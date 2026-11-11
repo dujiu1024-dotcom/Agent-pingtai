@@ -1,6 +1,7 @@
 .env
 .env.*
 *.key
+.venv-listener/
 __pycache__/
 .DS_Store
 data/backups/
