@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "paths": {
+    "agents": "agents",
+    "company": "company",
+    "projects": "clients",
+    "state": "agency/state",
+    "outputs": "agency/outputs"
+  },
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini"
+  }
+}
