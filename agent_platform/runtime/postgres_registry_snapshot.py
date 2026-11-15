@@ -1,7 +1,7 @@
 """PostgreSQL persistence for immutable per-Run registry snapshots."""
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from typing import Any, Callable
 
 from agent_platform.runtime.registry_snapshot import RunRegistrySnapshot
 
