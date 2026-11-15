@@ -16,8 +16,8 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.ingest(document=Document(tenant_id="t2",title="secret",source_uri="x",content_hash="x"),content=b"confidential")
         self.assertEqual(await service.retrieve(principal=KnowledgePrincipal(tenant_id="t1",user_id="u1"),query="confidential"),[])
     async def test_parser_rejects_unknown_binary_type(self):
-        service=KnowledgeService(InMemoryKnowledgeRepository()); doc=Document(tenant_id="t",title="pdf",source_uri="x",content_hash="x",media_type="application/pdf")
-        with self.assertRaises(ValueError): await service.ingest(document=doc,content=b"%PDF")
+        service=KnowledgeService(InMemoryKnowledgeRepository()); doc=Document(tenant_id="t",title="pdf",source_uri="x",content_hash="x",media_type="image/png")
+        with self.assertRaises(ValueError): await service.ingest(document=doc,content=b"\\x89PNG")
     async def test_chunking_preserves_source_offsets(self):
         from agent_platform.knowledge.chunking import chunk_document
         doc=Document(tenant_id="t",title="d",source_uri="x",content_hash="x"); chunks=chunk_document(doc,"a"*500,max_chars=200,overlap=20)
