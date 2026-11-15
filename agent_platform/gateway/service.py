@@ -37,7 +37,7 @@ class GatewayService:
   app_factory:Callable[[Any],Any],token_service:Any|None=None)->None:
   if not instance_id.strip():raise ValueError("instance_id required")
   parsed=urlsplit(public_base_url)
-  if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+  if parsed.scheme!="https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("","/"):
    raise ValueError("public Gateway URL must be a valid HTTPS URL without userinfo/query/fragment")
   self.instance_id=instance_id;self.base=public_base_url.rstrip("/");self.directory=directory
   self.app_factory=app_factory;self.token_service=token_service;self._apps={};self._lock=asyncio.Lock()
