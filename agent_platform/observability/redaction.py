@@ -10,8 +10,8 @@ _SENSITIVE_KEY = re.compile(
     r"(?:password|passwd|secret|token|api[_-]?key|authorization|cookie|credential|private[_-]?key)",
     re.IGNORECASE,
 )
-_BEARER = re.compile(r"(?i)\\bBearer\\s+[A-Za-z0-9._~+/-]+=*")
-_API_KEY = re.compile(r"\\b(?:sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{20,})\\b")
+_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
+_API_KEY = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{20,})\b")
 
 
 def redact_text(value: str, *, max_chars: int = 2000) -> str:
