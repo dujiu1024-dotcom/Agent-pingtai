@@ -111,12 +111,10 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
 
         @app.middleware("http")
         async def attach_principal(request, call_next):
-            request.state.identity = type("Identity", (), {
-                "principal": Principal(
-                    user_id="requester", tenant_id="tenant-a", session_id="s",
-                    email="r@example.test", display_name="Requester",
-                )
-            })()
+            request.scope.setdefault("state", {})["identity.principal"] = Principal(
+                user_id="requester", tenant_id="tenant-a", session_id="s",
+                email="r@example.test", display_name="Requester",
+            )
             return await call_next(request)
 
         client = TestClient(app)
