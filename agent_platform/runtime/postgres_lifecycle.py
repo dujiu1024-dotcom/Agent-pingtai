@@ -1,7 +1,8 @@
-"""PostgreSQL-backed optimistic Run state store."""
+"""PostgreSQL-backed optimistic Run state store with the in-memory transition contract."""
 from __future__ import annotations
 from typing import Any
-from agent_platform.runtime.lifecycle import RunSnapshot,RunStateStore,RunStatus
+from agent_platform.runtime.lifecycle import RunSnapshot,RunStateStore,RunStatus,_ALLOWED
+
 class PostgresRunStateStore(RunStateStore):
  def __init__(self,connection_factory:Any)->None:self._connect=connection_factory
  @classmethod
@@ -26,6 +27,13 @@ class PostgresRunStateStore(RunStateStore):
  async def transition(self,snapshot:RunSnapshot,*,expected_version:int)->RunSnapshot:
   c=await self._connect()
   async with c:
+   cur=await c.execute("SELECT status,version FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR UPDATE",(snapshot.tenant_id,snapshot.run_id))
+   current=await cur.fetchone()
+   if current is None or int(current["version"])!=expected_version:
+    raise RuntimeError("Run state version conflict or Run not found")
+   old_status=RunStatus(current["status"])
+   if snapshot.status not in _ALLOWED[old_status]:
+    raise ValueError(f"illegal Run transition {old_status.value} -> {snapshot.status.value}")
    cur=await c.execute("""UPDATE platform_runs SET status=%s,version=version+1,checkpoint_ref=%s,last_error=%s,updated_at=now(),
     started_at=CASE WHEN %s='running' AND started_at IS NULL THEN now() ELSE started_at END,
     finished_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN now() ELSE finished_at END
