@@ -92,6 +92,32 @@ class PostgresIdentityRepository:
                       AND team.status='active'
                      WHERE tm.tenant_id=%s AND tm.user_id=%s::uuid
                        AND tm.status='active'
+                   )
+                   SELECT DISTINCT b.role_id
+                   FROM platform_role_bindings b
+                   WHERE b.tenant_id=%s AND b.revoked_at IS NULL
+                     AND (
+                       (b.subject_type='user' AND b.subject_id=%s)
+                       OR (b.subject_type='team' AND b.subject_id IN (
+                         SELECT team_id FROM active_team_ids
+                       ))
+                     )""",
+                (tenant_id, user_id, tenant_id, user_id),
+            )
+            effective_role_ids = frozenset(
+                row["role_id"] for row in await cursor.fetchall()
+            )
+
+            cursor = await connection.execute(
+                """WITH active_team_ids AS (
+                     SELECT tm.team_id
+                     FROM platform_team_memberships tm
+                     JOIN platform_teams team
+                       ON team.tenant_id=tm.tenant_id
+                      AND team.team_id=tm.team_id
+                      AND team.status='active'
+                     WHERE tm.tenant_id=%s AND tm.user_id=%s::uuid
+                       AND tm.status='active'
                    ),
                    effective_permissions AS (
                      SELECT b.resource_type, b.resource_id, rp.permission_key
@@ -198,6 +224,7 @@ class PostgresIdentityRepository:
             tenant_id=tenant_id,
             user_id=user_id,
             tenant_roles=tenant_roles,
+            effective_role_ids=effective_role_ids,
             tenant_permissions=tenant_permissions,
             project_ids=project_ids,
             knowledge_manage_project_ids=knowledge_manage_project_ids,
