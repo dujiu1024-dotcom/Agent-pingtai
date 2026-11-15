@@ -9,7 +9,7 @@ from agent_platform.quotas import Budget, BudgetExceeded, InMemoryQuotaStore, Qu
 
 
 class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
+    async def asyncSetUp(self) -> None:
         self.start = datetime.now(timezone.utc) - timedelta(minutes=1)
         self.end = self.start + timedelta(days=1)
         self.budget = Budget(
@@ -20,11 +20,12 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.store = InMemoryQuotaStore()
         self.service = QuotaService(self.store)
+        await self.service.configure(self.budget)
 
     async def test_server_reservation_enforces_hard_tokens_and_concurrency(self) -> None:
         first, warnings = await self.service.reserve_run(
-            budget=self.budget, tenant_id="tenant-a", run_id="run-1",
-            estimated_tokens=80, estimated_cost_usd=Decimal("0.50"),
+            tenant_id="tenant-a", run_id="run-1",
+            scope_type="tenant", scope_id="tenant-a", estimated_tokens=80, estimated_cost_usd=Decimal("0.50"),
         )
         self.assertIn("soft token budget exceeded", warnings)
         with self.assertRaises(BudgetExceeded):
@@ -72,7 +73,7 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_tenant_mismatch_and_negative_usage_rejected(self) -> None:
         with self.assertRaises(PermissionError):
             await self.service.reserve_run(
-                budget=self.budget, tenant_id="tenant-b", run_id="run-1",
+                tenant_id="tenant-b", run_id="run-1",
                 estimated_tokens=1, estimated_cost_usd=Decimal("0.01"),
             )
         reservation, _ = await self.service.reserve_run(
