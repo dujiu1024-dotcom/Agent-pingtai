@@ -39,7 +39,7 @@ class OciSandboxConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not explicitly allowlisted"):
             runner.build_command(("python",), environment={"HOME": "/root"})
         with self.assertRaisesRegex(ValueError, "NUL-free"):
-            runner.build_command(("python", "bad\\x00arg"))
+            runner.build_command(("python", "bad\x00arg"))
 
     def test_only_explicit_non_secret_environment_is_passed(self):
         runner = OciSandboxRunner(
