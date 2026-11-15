@@ -14,7 +14,7 @@ if DSN:
     from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditSink
     from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
     from agent_platform.blackboard.protocol import VersionConflict
-    from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
+    from agent_platform.contracts import BlackboardEntry, BlackboardEvent, EntryKind, EntryStatus, Scope
     from agent_platform.events.outbox import PostgresOutboxStore
 
 
@@ -68,6 +68,36 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id,),
             )
             self.assertEqual((await cur.fetchone())["n"], 1)
+
+
+    async def test_event_and_outbox_write_roll_back_as_one_transaction(self):
+        entry = await self.repo.propose(self.make_entry())
+        event = BlackboardEvent(
+            event_type="blackboard.atomicity_probe",
+            scope=entry.scope,
+            scope_id=entry.scope_id,
+            entry_id=entry.entry_id,
+            entry_version=entry.version,
+            actor_id="integration-test",
+            correlation_id=entry.correlation_id,
+        )
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO platform_outbox (tenant_id, event_id, topic, payload) VALUES (%s,%s,%s,'{}'::jsonb)",
+                (self.tenant_id, event.event_id, "duplicate.event"),
+            )
+            await conn.commit()
+
+        from psycopg.errors import UniqueViolation
+        with self.assertRaises(UniqueViolation):
+            await self.repo.append_event(event)
+
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM blackboard_events WHERE tenant_id=%s AND event_id=%s",
+                (self.tenant_id, event.event_id),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 0)
 
     async def test_revision_is_append_only_and_rejects_stale_version(self):
         entry = await self.repo.propose(self.make_entry())
