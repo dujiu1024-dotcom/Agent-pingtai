@@ -38,6 +38,8 @@ class AuditSink(Protocol):
         resource: str,
         action_digest: str,
         outcome: str,
+        run_id: str | None = None,
+        agent_id: str | None = None,
         detail: str = "",
     ) -> None:
         """Persist an audit record; failure must prevent execution."""
@@ -90,6 +92,8 @@ class SupervisedToolGateway:
         resource: str,
         arguments: Mapping[str, Any],
         approval_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
     ) -> Any:
         definition = self._tools.get(tool_name)
         if definition is None:
@@ -129,6 +133,8 @@ class SupervisedToolGateway:
                 resource=resource,
                 action_digest=request.digest(),
                 outcome="denied",
+                run_id=run_id,
+                agent_id=agent_id,
                 detail=decision.reason,
             )
             raise ToolExecutionDenied(decision.reason)
@@ -141,6 +147,8 @@ class SupervisedToolGateway:
             resource=resource,
             action_digest=request.digest(),
             outcome="started",
+            run_id=run_id,
+            agent_id=agent_id,
         )
         try:
             result = await definition.handler(arguments)
@@ -152,6 +160,8 @@ class SupervisedToolGateway:
                 resource=resource,
                 action_digest=request.digest(),
                 outcome="failed",
+                run_id=run_id,
+                agent_id=agent_id,
                 detail=type(exc).__name__,
             )
             raise
@@ -163,5 +173,7 @@ class SupervisedToolGateway:
             resource=resource,
             action_digest=request.digest(),
             outcome="succeeded",
+            run_id=run_id,
+            agent_id=agent_id,
         )
         return result
