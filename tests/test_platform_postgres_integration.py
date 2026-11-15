@@ -23,6 +23,8 @@ if DSN:
     )
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
+    from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
+    from agent_platform.control_plane.data_connectors import DataConnection
     from agent_platform.tools.idempotency import PostgresToolEffectStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
     from agent_platform.identity.bootstrap import BootstrapError, bootstrap_tenant_owner
@@ -1170,6 +1172,32 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 entries=({"kind": "agent", "item_id": agent_id, "version": 2},),
                 digest="c" * 64,
             ))
+
+        connections = PostgresConnectorRepository(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        connection_id = f"source-{uuid4().hex}"
+        await connections.create(DataConnection(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            provider="test-drive", secret_ref="secret://integration/source",
+            scopes=("files.read",),
+        ), created_by="integration")
+        self.assertTrue(await connections.save_cursor(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            expected_version=0, cursor={"page": 2},
+        ))
+        self.assertFalse(await connections.save_cursor(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            expected_version=0, cursor={"page": 3},
+        ))
+        revoked = await connections.revoke(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+        )
+        self.assertEqual(revoked.status, "revoked")
+        self.assertFalse(await connections.save_cursor(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            expected_version=revoked.version, cursor={"page": 4},
+        ))
 
 
 if __name__ == "__main__":
