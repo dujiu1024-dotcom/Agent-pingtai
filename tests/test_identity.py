@@ -269,6 +269,18 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(credential.access_token, self.repo.api_credentials)
         authenticated = await self.service.authenticate_api_credential(credential.access_token)
         self.assertEqual(authenticated.scopes, ("agent.run", "project.read"))
+        self.repo.permissions.add(
+            ("tenant-a", "user-1", "project", "project-1", "project.read")
+        )
+        await self.service.authorize_api_credential(
+            credential=authenticated, resource=ResourceRef("project", "project-1"),
+            permission_key="project.read",
+        )
+        with self.assertRaises(AuthorizationDenied):
+            await self.service.authorize_api_credential(
+                credential=authenticated, resource=ResourceRef("project", "project-1"),
+                permission_key="tenant.manage",
+            )
         self.assertTrue(await self.service.revoke_api_credential(
             principal=principal, credential_id=credential.credential_id,
         ))
