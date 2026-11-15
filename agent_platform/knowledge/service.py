@@ -66,12 +66,47 @@ class KnowledgeService:
         if not (owns_private or manages_shared or manages_project):
             raise PermissionError("document deletion is not authorized")
         return await self.repository.delete_document(principal.tenant_id,document_id)
+    @staticmethod
+    def _connector_document(connector: KnowledgeConnector, tenant_id: str, document: Document) -> Document:
+        from dataclasses import replace
+        if not connector.connector_id.strip():
+            raise ValueError("connector_id must not be empty")
+        if document.tenant_id != tenant_id:
+            raise PermissionError("connector returned a document for another tenant")
+        metadata = dict(document.metadata)
+        owner = metadata.get("_knowledge_connector_id")
+        if owner is not None and owner != connector.connector_id:
+            raise PermissionError("document is already owned by another connector")
+        metadata["_knowledge_connector_id"] = connector.connector_id
+        return replace(document, metadata=metadata)
+
+    async def _apply_connector_deletions(
+        self, *, connector: KnowledgeConnector, tenant_id: str, document_ids: Sequence[str]
+    ) -> int:
+        deleted = 0
+        for document_id in document_ids:
+            if not isinstance(document_id, str) or not document_id.strip():
+                raise ValueError("connector deletion IDs must be non-empty strings")
+            document = await self.repository.get_document(tenant_id, document_id)
+            # Replayed tombstones are idempotent.
+            if document is None:
+                continue
+            if document.metadata.get("_knowledge_connector_id") != connector.connector_id:
+                raise PermissionError("connector cannot delete a document it does not own")
+            if await self.repository.delete_document(tenant_id, document_id):
+                deleted += 1
+        return deleted
+
     async def ingest_connector_page(self,*,connector: KnowledgeConnector,tenant_id: str,cursor: str|None=None,limit: int=100)->tuple[list[IngestResult],str|None,bool]:
         page=await connector.list_changed(tenant_id=tenant_id,cursor=cursor,limit=limit)
         results=[]
         for item in page.items:
-            if item.document.tenant_id!=tenant_id:raise PermissionError("connector returned a document for another tenant")
-            results.append(await self.ingest(document=item.document,content=item.content))
+            document=self._connector_document(connector,tenant_id,item.document)
+            results.append(await self.ingest(document=document,content=item.content))
+        await self._apply_connector_deletions(
+            connector=connector, tenant_id=tenant_id,
+            document_ids=page.deleted_document_ids,
+        )
         return results,page.next_cursor,page.has_more
     async def sync_connector(self,*,connector: KnowledgeConnector,tenant_id: str,limit: int=100,max_pages: int=10)->dict[str,object]:
         if limit<1 or limit>500:
@@ -81,13 +116,17 @@ class KnowledgeService:
         cursor=await self.repository.get_connector_cursor(tenant_id,connector.connector_id)
         page_count=0
         document_count=0
+        deleted_count=0
         while page_count<max_pages:
             page=await connector.list_changed(tenant_id=tenant_id,cursor=cursor,limit=limit)
             for item in page.items:
-                if item.document.tenant_id!=tenant_id:
-                    raise PermissionError("connector returned a document for another tenant")
-                await self.ingest(document=item.document,content=item.content)
+                document=self._connector_document(connector,tenant_id,item.document)
+                await self.ingest(document=document,content=item.content)
                 document_count+=1
+            deleted_count+=await self._apply_connector_deletions(
+                connector=connector, tenant_id=tenant_id,
+                document_ids=page.deleted_document_ids,
+            )
             if page.next_cursor is not None:
                 if page.has_more and page.next_cursor==cursor:
                     raise ValueError("connector cursor did not advance while more pages remain")
@@ -98,7 +137,7 @@ class KnowledgeService:
                 break
             if page.next_cursor is None:
                 raise ValueError("connector must return next_cursor when has_more is true")
-        return {"connector_id":connector.connector_id,"pages":page_count,"documents":document_count,"cursor":cursor,"has_more":page_count==max_pages and bool(page.has_more)}
+        return {"connector_id":connector.connector_id,"pages":page_count,"documents":document_count,"deleted_documents":deleted_count,"cursor":cursor,"has_more":page_count==max_pages and bool(page.has_more)}
 
     async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8)->list[RetrievalHit]:
         if not query.strip():raise ValueError("query must not be empty")
