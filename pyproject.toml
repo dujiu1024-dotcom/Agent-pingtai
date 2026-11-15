@@ -25,6 +25,7 @@ include = [
   "tests/test_platform_contracts.py",
   "tests/test_tool_gateway.py",
   "tests/test_outbox.py",
+  "tests/test_multi_expert_routing.py",
 ]
 
 [tool.ruff.lint]
@@ -47,6 +48,7 @@ files = [
   "agent_platform/blackboard/postgres_repository.py",
   "agent_platform/approval/postgres.py",
   "agent_platform/events/outbox.py",
+  "agent_platform/workflows/multi_expert.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
