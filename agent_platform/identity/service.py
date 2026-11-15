@@ -96,5 +96,6 @@ class IdentityService:
         )
         return await self._repository.revoke_role(
             tenant_id=principal.tenant_id, actor_id=principal.user_id,
-            binding_id=binding_id,
+            binding_id=binding_id, resource_type=resource.resource_type,
+            resource_id=resource.resource_id,
         )
