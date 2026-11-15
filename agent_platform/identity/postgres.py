@@ -211,13 +211,13 @@ class PostgresIdentityRepository:
         subject_id: str, resource_type: str, resource_id: str, role_id: str,
     ) -> str:
         binding_id = str(uuid4())
+        if not await self.can_assign_role(
+            tenant_id=tenant_id, actor_id=actor_id, role_id=role_id,
+        ):
+            raise PermissionError("cannot delegate permissions not held by actor")
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
-                if not await self.can_assign_role(
-                    tenant_id=tenant_id, actor_id=actor_id, role_id=role_id,
-                ):
-                    raise PermissionError("cannot delegate permissions not held by actor")
                 subject_exists = await connection.execute(
                     """SELECT CASE
                          WHEN %s='user' THEN EXISTS (
@@ -392,20 +392,13 @@ class PostgresIdentityRepository:
         self, *, invitation_id: str, tenant_id: str, email_normalized: str,
         role_id: str, token_hash: str, invited_by: str, expires_at: datetime,
     ) -> None:
+        if not await self.can_assign_role(
+            tenant_id=tenant_id, actor_id=invited_by, role_id=role_id,
+        ):
+            raise PermissionError("cannot invite a user with permissions not held by actor")
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
-                cursor = await connection.execute(
-                    """SELECT 1 FROM platform_roles
-                       WHERE tenant_id=%s AND role_id=%s""",
-                    (tenant_id, role_id),
-                )
-                if await cursor.fetchone() is None:
-                    raise ValueError("role does not exist in this tenant")
-                if not await self.can_assign_role(
-                    tenant_id=tenant_id, actor_id=invited_by, role_id=role_id,
-                ):
-                    raise PermissionError("cannot invite a user with permissions not held by actor")
                 cursor = await connection.execute(
                     """INSERT INTO platform_invitations
                        (invitation_id, tenant_id, email_normalized, role_id,
