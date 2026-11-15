@@ -22,3 +22,17 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         from agent_platform.knowledge.chunking import chunk_document
         doc=Document(tenant_id="t",title="d",source_uri="x",content_hash="x"); chunks=chunk_document(doc,"a"*500,max_chars=200,overlap=20)
         self.assertGreater(len(chunks),1); self.assertEqual(chunks[0].start_offset,0); self.assertLess(chunks[1].start_offset,chunks[0].end_offset)
+
+    async def test_query_rewrite_and_citation_provenance(self):
+        class Rewriter:
+            async def rewrite(self, query):
+                return "normalized term"
+        service=KnowledgeService(InMemoryKnowledgeRepository(),query_rewriter=Rewriter())
+        doc=Document(tenant_id="t",title="source",source_uri="file://source.md",content_hash="x")
+        await service.ingest(document=doc,content=b"normalized term appears here")
+        hits=await service.retrieve(principal=KnowledgePrincipal(tenant_id="t",user_id="u"),query="vague question")
+        self.assertEqual(hits[0].title,"source")
+        from agent_platform.knowledge.citations import citation_context
+        citation=citation_context(hits)[0]
+        self.assertEqual(citation["document_version"],1)
+        self.assertEqual(citation["source_uri"],"file://source.md")
