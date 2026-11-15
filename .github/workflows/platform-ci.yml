@@ -11,7 +11,6 @@ on:
       - "tests/test_service_identity.py"
       - "tests/test_knowledge_service.py"
       - "tests/test_knowledge_memory_api.py"
-      - "tests/test_knowledge_memory_api.py"
       - "tests/test_memory_service.py"
       - "tests/test_knowledge_memory_postgres_integration.py"
       - "tests/test_event_consumer.py"
