@@ -35,7 +35,7 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
                 user_id=request.headers.get("x-user", "user-a"),
                 project_ids=frozenset({"project-a"}),
                 agent_ids=frozenset({"agent-a"}),
-                roles=frozenset(request.headers.get("x-roles", "").split()),
+                permissions=frozenset(request.headers.get("x-permissions", "").split()),
             )
 
         class CitationGenerator:
