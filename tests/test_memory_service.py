@@ -49,6 +49,74 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await service.archive(principal=admin,memory_id=second.memory_id))
         self.assertEqual(await service.retrieve(principal=admin),[])
 
+    async def test_project_memory_management_requires_project_scoped_grant(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.PROJECT, scope_id="project-a",
+            content="project decision", source_ref="project:1",
+            confidence=.9, created_by="extractor",
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="reviewer",
+        )
+        reader = MemoryPrincipal(
+            tenant_id="t", user_id="reader",
+            project_ids=frozenset({"project-a"}),
+        )
+        with self.assertRaises(PermissionError):
+            await service.correct(
+                principal=reader, memory_id=candidate.memory_id,
+                content="unauthorized", source_ref="project:2",
+            )
+        with self.assertRaises(PermissionError):
+            await service.archive(principal=reader, memory_id=candidate.memory_id)
+        with self.assertRaises(PermissionError):
+            await service.forget(principal=reader, memory_id=candidate.memory_id)
+
+        manager = MemoryPrincipal(
+            tenant_id="t", user_id="manager",
+            project_ids=frozenset({"project-a"}),
+            manage_project_ids=frozenset({"project-a"}),
+        )
+        corrected = await service.correct(
+            principal=manager, memory_id=candidate.memory_id,
+            content="approved decision", source_ref="project:3",
+        )
+        self.assertEqual(corrected.candidate.content, "approved decision")
+        self.assertTrue(await service.archive(
+            principal=manager, memory_id=candidate.memory_id,
+        ))
+
+    async def test_agent_memory_management_requires_agent_scoped_grant(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.AGENT, scope_id="agent-a",
+            content="agent operating rule", source_ref="agent:1",
+            confidence=.9, created_by="extractor",
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="reviewer",
+        )
+        runner = MemoryPrincipal(
+            tenant_id="t", user_id="runner", agent_ids=frozenset({"agent-a"}),
+        )
+        with self.assertRaises(PermissionError):
+            await service.correct(
+                principal=runner, memory_id=candidate.memory_id,
+                content="unauthorized", source_ref="agent:2",
+            )
+        manager = MemoryPrincipal(
+            tenant_id="t", user_id="manager", agent_ids=frozenset({"agent-a"}),
+            manage_agent_ids=frozenset({"agent-a"}),
+        )
+        corrected = await service.correct(
+            principal=manager, memory_id=candidate.memory_id,
+            content="approved rule", source_ref="agent:3",
+        )
+        self.assertEqual(corrected.candidate.content, "approved rule")
+
     async def test_extraction_is_single_turn_provenance_bound_and_candidate_only(self):
         from agent_platform.memory.extraction import MemoryDraft,MemoryExtractionService,MemoryTurn
         class Extractor:
