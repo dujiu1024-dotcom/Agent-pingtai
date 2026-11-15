@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 
-from agent_platform.identity.models import ResourceRef, SessionRecord, UserRecord
+from agent_platform.identity.models import (
+    ApiCredentialRecord, InvitationRecord, ResourceRef, SessionRecord, UserRecord,
+)
 from agent_platform.identity.security import CredentialError, PasswordHasher, token_digest
 from agent_platform.identity.service import AuthenticationError, AuthorizationDenied, IdentityService
 
@@ -18,6 +20,8 @@ class FakeIdentityRepository:
         self.touched = []
         self.grants = []
         self.revokes = []
+        self.api_credentials = {}
+        self.invitations = {}
 
     async def get_user_by_email(self, normalized_email):
         return self.user if normalized_email == self.user.email.casefold() else None
@@ -83,6 +87,77 @@ class FakeIdentityRepository:
 
     async def revoke_role(self, **kwargs):
         self.revokes.append(kwargs)
+        return True
+
+
+    async def create_api_credential(
+        self, *, credential_id, tenant_id, user_id, name,
+        token_hash, scopes, expires_at,
+    ):
+        self.api_credentials[token_hash] = ApiCredentialRecord(
+            credential_id=credential_id, tenant_id=tenant_id, user_id=user_id,
+            name=name, scopes=scopes, expires_at=expires_at, revoked_at=None,
+            user_status=self.user.status, membership_status="active",
+        )
+
+    async def get_api_credential(self, token_hash):
+        return self.api_credentials.get(token_hash)
+
+    async def touch_api_credential(self, *, credential_id, tenant_id):
+        return any(
+            record.credential_id == credential_id and record.tenant_id == tenant_id
+            and record.revoked_at is None
+            and (record.expires_at is None or record.expires_at > datetime.now(timezone.utc))
+            and (tenant_id, record.user_id) in self.memberships
+            and self.user.status == "active"
+            for record in self.api_credentials.values()
+        )
+
+    async def revoke_api_credential(self, *, credential_id, tenant_id, user_id):
+        for key, record in list(self.api_credentials.items()):
+            if (record.credential_id, record.tenant_id, record.user_id) == (
+                credential_id, tenant_id, user_id
+            ):
+                self.api_credentials[key] = ApiCredentialRecord(
+                    credential_id=record.credential_id, tenant_id=record.tenant_id,
+                    user_id=record.user_id, name=record.name, scopes=record.scopes,
+                    expires_at=record.expires_at, revoked_at=datetime.now(timezone.utc),
+                    user_status=record.user_status, membership_status=record.membership_status,
+                )
+                return True
+        return False
+
+    async def create_invitation(
+        self, *, invitation_id, tenant_id, email_normalized, role_id,
+        token_hash, invited_by, expires_at,
+    ):
+        self.invitations[token_hash] = InvitationRecord(
+            invitation_id=invitation_id, tenant_id=tenant_id,
+            email_normalized=email_normalized, role_id=role_id,
+            expires_at=expires_at, accepted_at=None,
+        )
+
+    async def get_invitation(self, token_hash):
+        return self.invitations.get(token_hash)
+
+    async def accept_invitation(
+        self, *, invitation_id, token_hash, tenant_id, user_id, email_normalized,
+    ):
+        record = self.invitations.get(token_hash)
+        if (
+            record is None or record.invitation_id != invitation_id
+            or record.tenant_id != tenant_id
+            or record.email_normalized != email_normalized
+            or record.accepted_at is not None
+            or record.expires_at <= datetime.now(timezone.utc)
+        ):
+            return False
+        self.invitations[token_hash] = InvitationRecord(
+            invitation_id=record.invitation_id, tenant_id=record.tenant_id,
+            email_normalized=record.email_normalized, role_id=record.role_id,
+            expires_at=record.expires_at, accepted_at=datetime.now(timezone.utc),
+        )
+        self.memberships.add((tenant_id, user_id))
         return True
 
 
@@ -179,6 +254,50 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate(issued.access_token)
+
+
+
+    async def test_api_credential_is_one_time_shown_and_revocable(self):
+        issued = await self.service.login(
+            email="admin@example.com", password="correct horse battery staple",
+            tenant_id="tenant-a",
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        credential = await self.service.create_api_credential(
+            principal=principal, name="automation", scopes=("project.read", "agent.run"),
+        )
+        self.assertNotIn(credential.access_token, self.repo.api_credentials)
+        authenticated = await self.service.authenticate_api_credential(credential.access_token)
+        self.assertEqual(authenticated.scopes, ("agent.run", "project.read"))
+        self.assertTrue(await self.service.revoke_api_credential(
+            principal=principal, credential_id=credential.credential_id,
+        ))
+        with self.assertRaises(AuthenticationError):
+            await self.service.authenticate_api_credential(credential.access_token)
+
+    async def test_invitation_requires_user_manage_and_is_email_bound(self):
+        issued = await self.service.login(
+            email="admin@example.com", password="correct horse battery staple",
+            tenant_id="tenant-a",
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        with self.assertRaises(AuthorizationDenied):
+            await self.service.create_invitation(
+                principal=principal, email="new@example.com", role_id="viewer",
+            )
+        self.repo.permissions.add(
+            ("tenant-a", "user-1", "tenant", "tenant-a", "user.manage")
+        )
+        invitation_id, token, _ = await self.service.create_invitation(
+            principal=principal, email="admin@example.com", role_id="viewer",
+        )
+        self.assertTrue(await self.service.accept_invitation(
+            principal=principal, invitation_token=token,
+        ))
+        with self.assertRaises(AuthenticationError):
+            await self.service.accept_invitation(
+                principal=principal, invitation_token=token,
+            )
 
     async def test_authorization_is_default_deny_and_tenant_scoped(self):
         issued = await self.service.login(
