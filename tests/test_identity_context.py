@@ -16,6 +16,7 @@ class FakeIdentityRepository:
             user_id=user_id,
             tenant_permissions=frozenset({"project.read", "knowledge.manage"}),
             project_ids=frozenset({"project-a"}),
+            knowledge_manage_project_ids=frozenset({"project-a"}),
             agent_ids=frozenset({"agent-a"}),
         )
 
