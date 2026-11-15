@@ -49,6 +49,9 @@ files = [
   "agent_platform/blackboard/postgres_repository.py",
   "agent_platform/approval/postgres.py",
   "agent_platform/events/outbox.py",
+  "agent_platform/runtime/langgraph_adapter.py",
+  "agent_platform/tools/mcp_adapter.py",
+  "agent_platform/workflows/multi_expert.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/tools/mcp_adapter.py",
 ]
