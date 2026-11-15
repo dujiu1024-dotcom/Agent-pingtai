@@ -36,6 +36,7 @@ include = [
   "tests/test_platform_contracts.py",
   "tests/test_tool_gateway.py",
   "tests/test_observability.py",
+  "tests/test_observability_alerts.py",
   "tests/test_sandbox_oci.py",
   "tests/test_sandbox_lifecycle.py",
   "tests/test_audit_append_only_postgres.py",
