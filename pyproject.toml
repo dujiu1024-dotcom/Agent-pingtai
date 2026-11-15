@@ -28,6 +28,7 @@ include = [
   "tests/test_multi_expert_routing.py",
   "tests/test_mcp_adapter.py",
   "tests/test_model_templates.py",
+  "tests/test_deepseek_harness_adapter.py",
 ]
 
 [tool.ruff.lint]
@@ -54,6 +55,7 @@ files = [
   "agent_platform/tools/mcp_adapter.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/models/templates.py",
+  "agent_platform/runtime/deepseek_harness.py",
   "agent_platform/models/templates.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/tools/mcp_adapter.py",
