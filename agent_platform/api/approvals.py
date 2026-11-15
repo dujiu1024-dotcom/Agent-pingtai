@@ -66,6 +66,25 @@ def create_approval_router(*, service: ApprovalService,
             "status": x.status, "expires_at": x.expires_at.isoformat(),
         } for x in records]}
 
+    @router.get("/{approval_id}")
+    async def get_approval(approval_id: str, request: Request):
+        actor = principal(request)
+        try:
+            record = await service.get(tenant_id=actor.tenant_id, approval_id=approval_id)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if record is None:
+            raise HTTPException(404, "approval not found")
+        if record.requested_by != actor.user_id and not await can_approve(actor):
+            raise HTTPException(404, "approval not found")
+        return {
+            "approval_id": record.approval_id, "run_id": record.run_id,
+            "action": record.action, "resource": record.resource,
+            "risk_level": record.risk_level, "action_hash": record.action_hash,
+            "requested_by": record.requested_by, "decided_by": record.decided_by,
+            "status": record.status, "expires_at": record.expires_at.isoformat(),
+        }
+
     @router.post("/{approval_id}/decision")
     async def decide_approval(approval_id: str, request: Request):
         actor = principal(request)
