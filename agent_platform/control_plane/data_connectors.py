@@ -213,7 +213,11 @@ class DataConnectorService:
             tenant_id=tenant_id, connection_id=connection_id,
         )
         if connection is None:
-            return False
+            # A prior attempt may have revoked locally but failed during remote
+            # credential revocation or sink cleanup. Repeat those idempotent steps.
+            connection = await self.repository.get(tenant_id, connection_id)
+            if connection is None or connection.status != "revoked":
+                return False
         provider = self.providers.get(connection.provider)
         if provider is not None:
             try:
