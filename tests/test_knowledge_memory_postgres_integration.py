@@ -41,11 +41,14 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.knowledge.save_document(doc,[chunk])
         async with await self.connect() as conn:
             await conn.execute("INSERT INTO knowledge_document_acl(tenant_id,document_id,principal_type,principal_id,permission,granted_by) VALUES(%s,%s,'user','allowed','read','admin')",(self.tenant_id,doc.document_id))
+            await conn.execute("INSERT INTO knowledge_document_acl(tenant_id,document_id,principal_type,principal_id,permission,granted_by) VALUES(%s,%s,'role','reader','read','admin')",(self.tenant_id,doc.document_id))
             await conn.commit()
         denied=await self.knowledge.search(principal=KnowledgePrincipal(tenant_id=self.tenant_id,user_id="denied"),query="beta",query_vector=None,limit=5)
         allowed=await self.knowledge.search(principal=KnowledgePrincipal(tenant_id=self.tenant_id,user_id="allowed"),query="beta",query_vector=None,limit=5)
+        role_allowed=await self.knowledge.search(principal=KnowledgePrincipal(tenant_id=self.tenant_id,user_id="role-user",roles=frozenset({"reader"})),query="beta",query_vector=None,limit=5)
         self.assertEqual(denied,[])
         self.assertEqual(len(allowed),1)
+        self.assertEqual(len(role_allowed),1)
     async def test_document_deletion_removes_chunks_and_acl(self):
         doc=Document(tenant_id=self.tenant_id,title="delete source",source_uri="file://delete",content_hash="h")
         chunk=DocumentChunk(tenant_id=self.tenant_id,document_id=doc.document_id,document_version=1,ordinal=0,text="gamma document",content_hash="c",start_offset=0,end_offset=15)
