@@ -169,12 +169,15 @@ BEGIN
         RAISE EXCEPTION 'actual usage must be non-negative';
     END IF;
     SELECT * INTO r FROM platform_quota_reservations
-     WHERE reservation_id=p_reservation_id FOR UPDATE;
+     WHERE reservation_id=p_reservation_id;
     IF NOT FOUND THEN RETURN false; END IF;
     PERFORM 1 FROM platform_quota_budgets
      WHERE tenant_id=r.tenant_id AND scope_type=r.scope_type
        AND scope_id=r.scope_id AND period_start=r.period_start
      FOR UPDATE;
+    SELECT * INTO r FROM platform_quota_reservations
+     WHERE reservation_id=p_reservation_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN false; END IF;
     IF r.status = 'settled' THEN
         RETURN EXISTS (
             SELECT 1 FROM platform_usage_ledger
