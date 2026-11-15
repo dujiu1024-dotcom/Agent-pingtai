@@ -106,7 +106,12 @@ class LangGraphRunExecutor:
      timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
      already_claimed=acquired)
    except asyncio.TimeoutError:raise
-   except WorkerLeaseLost:raise
+   except WorkerLeaseLost:
+    current=await self.lifecycle.store.get(tenant_id,run_id)
+    if current and current.status==RunStatus.RUNNING:
+     ref=await self._checkpoint_ref(tenant_id,run_id)
+     await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="worker lease lost")
+    raise
    except asyncio.CancelledError:
     current=await self.lifecycle.store.get(tenant_id,run_id)
     if current and current.status==RunStatus.RUNNING:
