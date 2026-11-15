@@ -23,10 +23,14 @@ if DSN:
     )
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
+    from agent_platform.identity.models import ResourceRef
     from agent_platform.identity.postgres import PostgresIdentityRepository
     from agent_platform.identity.security import PasswordHasher
-    from agent_platform.identity.service import IdentityService, AuthenticationError, AuthorizationDenied
-    from agent_platform.identity.models import ResourceRef
+    from agent_platform.identity.service import (
+        AuthenticationError,
+        AuthorizationDenied,
+        IdentityService,
+    )
 
 
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
