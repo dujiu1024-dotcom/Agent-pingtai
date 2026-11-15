@@ -148,7 +148,18 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.05)
                 return await super().invoke_async(prompt, idempotency_token=idempotency_token)
 
-        adapter = self.adapter(agent_factory=lambda **kwargs: SlowAgent(**kwargs))
+        template_path = Path(self.temp.name) / "templates.json"
+        template_path.write_text(
+            template_path.read_text(encoding="utf-8").replace(
+                '"timeout_seconds": 15', '"timeout_seconds": 0.001'
+            ),
+            encoding="utf-8",
+        )
+        registry = ModelTemplateRegistry.from_file(template_path)
+        adapter = self.adapter(
+            templates=registry,
+            agent_factory=lambda **kwargs: SlowAgent(**kwargs),
+        )
         with self.assertRaises(TimeoutError):
             await adapter.run(self.request)
 
