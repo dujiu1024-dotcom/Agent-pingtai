@@ -63,8 +63,18 @@ class ToolCallRegistry:
   if tasks: await asyncio.gather(*tasks,return_exceptions=True)
   return len(tasks)
 class RunLifecycleManager:
- def __init__(self,store:RunStateStore,*,tools:ToolCallRegistry|None=None)->None:
-  self.store=store; self.tools=tools or ToolCallRegistry(); self._tasks={}; self._lock=asyncio.Lock()
+ def __init__(self,store:RunStateStore,*,tools:ToolCallRegistry|None=None,token_service:Any|None=None)->None:
+  self.store=store; self.tools=tools or ToolCallRegistry(); self.token_service=token_service; self._tasks={}; self._lock=asyncio.Lock()
+ async def finish(self,tenant_id:str,run_id:str,status:RunStatus,*,checkpoint_ref:str|None=None,error:str|None=None)->RunSnapshot:
+  if status not in TERMINAL: raise ValueError("finish requires a terminal Run status")
+  old=await self.store.get(tenant_id,run_id)
+  if old is None: raise KeyError("Run not found")
+  if old.status in TERMINAL: return old
+  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,status,old.version,
+   checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error),expected_version=old.version)
+  if self.token_service is not None:
+   await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
+  return updated
  async def start(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
@@ -74,14 +84,14 @@ class RunLifecycleManager:
   if old is None: raise KeyError("Run not found")
   if old.status in TERMINAL: return old
   target=RunStatus.CANCELLED if old.status in {RunStatus.QUEUED,RunStatus.PAUSED,RunStatus.INTERRUPTED} else RunStatus.CANCELLING
-  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
+  updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
   await self.tools.cancel_run(run_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
   if task is not None: task.cancel()
   if updated.status==RunStatus.CANCELLING:
    latest=await self.store.get(tenant_id,run_id)
    if latest and latest.status==RunStatus.CANCELLING:
-    updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.CANCELLED,latest.version),expected_version=latest.version)
+    updated=await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
   return updated
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
@@ -105,8 +115,8 @@ class RunLifecycleManager:
    except Exception as exc:
     latest=await self.store.get(row.tenant_id,row.run_id)
     if latest and latest.status in {RunStatus.RUNNING,RunStatus.INTERRUPTED}:
-     await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.FAILED,latest.version,
-      checkpoint_ref=row.checkpoint_ref,last_error=f"recovery failed: {str(exc)[:400]}"),expected_version=latest.version)
+     await self.finish(row.tenant_id,row.run_id,RunStatus.FAILED,
+      checkpoint_ref=row.checkpoint_ref,error=f"recovery failed: {str(exc)[:400]}")
     continue
    resumed.append(row.run_id)
   return resumed
@@ -118,7 +128,7 @@ class RunLifecycleManager:
   except asyncio.TimeoutError:
    old=await self.store.get(tenant_id,run_id)
    if old and old.status==RunStatus.RUNNING:
-    await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.TIMED_OUT,old.version,last_error="Run execution timed out"),expected_version=old.version)
+    await self.finish(tenant_id,run_id,RunStatus.TIMED_OUT,error="Run execution timed out")
    await self.tools.cancel_run(run_id); raise
   finally:
    async with self._lock: self._tasks.pop((tenant_id,run_id),None)
