@@ -86,12 +86,14 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
                 "email": "a@example.test", "password": "valid", "tenant_id": "tenant-a",
             })
             self.assertEqual(login.status_code, 200)
-            created = client.post("/api/platform/v1/knowledge/documents", json={
+            csrf = client.cookies.get("__Host-platform_csrf")
+            headers = {"X-CSRF-Token": csrf}
+            created = client.post("/api/platform/v1/knowledge/documents", headers=headers, json={
                 "title": "Runbook", "scope": "tenant",
                 "content": "The deployment runbook requires approval before production changes.",
             })
             self.assertEqual(created.status_code, 200)
-            answer = client.post("/api/platform/v1/knowledge/answer", json={
+            answer = client.post("/api/platform/v1/knowledge/answer", headers=headers, json={
                 "query": "What is required before production changes?",
             })
             self.assertEqual(answer.status_code, 200)
