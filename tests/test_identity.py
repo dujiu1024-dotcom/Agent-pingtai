@@ -36,7 +36,20 @@ class FakeIdentityRepository:
         )
 
     async def get_session_by_token_hash(self, token_hash):
-        return self.sessions.get(token_hash)
+        record = self.sessions.get(token_hash)
+        if record is None:
+            return None
+        membership_status = (
+            "active" if (record.tenant_id, record.user_id) in self.memberships
+            else "suspended"
+        )
+        return SessionRecord(
+            session_id=record.session_id, tenant_id=record.tenant_id,
+            user_id=record.user_id, email=record.email,
+            display_name=record.display_name, expires_at=record.expires_at,
+            revoked_at=record.revoked_at, user_status=self.user.status,
+            membership_status=membership_status,
+        )
 
     async def touch_session(self, *, session_id, tenant_id):
         self.touched.append((session_id, tenant_id))
