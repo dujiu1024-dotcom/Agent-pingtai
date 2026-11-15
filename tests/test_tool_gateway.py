@@ -1,6 +1,7 @@
 import unittest
 
 from agent_platform.approval.policy import RiskLevel
+from agent_platform.tools.idempotency import InMemoryToolEffectStore
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolDefinition,
@@ -34,6 +35,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.executed = []
         self.approvals = FakeApprovalVerifier()
         self.audit = FakeAuditSink()
+        self.effects = InMemoryToolEffectStore()
+        self.call_sequence = 0
 
         async def handler(arguments):
             self.executed.append(dict(arguments))
@@ -54,9 +57,11 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             ),
             approval_verifier=self.approvals,
             audit_sink=self.audit,
+            idempotency_store=self.effects,
         )
 
     async def call(self, tool, **kwargs):
+        self.call_sequence += 1
         defaults = {
             "tenant_id": "tenant-a",
             "actor_id": "agent-a",
@@ -64,6 +69,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             "tool_name": tool,
             "resource": "resource:1",
             "arguments": {"value": "x"},
+            "run_id": "00000000-0000-0000-0000-000000000001",
+            "call_id": f"call-{self.call_sequence}",
         }
         defaults.update(kwargs)
         return await self.gateway.call(**defaults)
@@ -87,6 +94,27 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("send", approval_id="approval-1")
         self.assertTrue(result["ok"])
         self.assertEqual(len(self.approvals.calls), 1)
+
+    async def test_external_action_replay_returns_cached_result_without_reexecution(self):
+        self.approvals.valid = True
+        kwargs = {
+            "approval_id": "approval-replay",
+            "call_id": "stable-call-id",
+        }
+        first = await self.call("send", **kwargs)
+        second = await self.call("send", **kwargs)
+        self.assertEqual(first, second)
+        self.assertEqual(len(self.executed), 1)
+
+    async def test_idempotency_key_cannot_be_reused_for_different_action(self):
+        self.approvals.valid = True
+        await self.call("send", approval_id="approval-1", call_id="stable-call")
+        with self.assertRaises(ToolExecutionDenied):
+            await self.call(
+                "send", approval_id="approval-2", call_id="stable-call",
+                arguments={"value": "different"},
+            )
+        self.assertEqual(len(self.executed), 1)
 
     async def test_l3_action_cannot_be_executed_by_agent(self):
         self.approvals.valid = True
