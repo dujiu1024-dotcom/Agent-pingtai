@@ -41,6 +41,13 @@ Read the source, extract supported claims, and cite every conclusion.
                 available_tools=set(),
             )
 
+    def test_duplicate_frontmatter_keys_are_rejected(self):
+        with self.assertRaises(SkillManifestError):
+            parse_skill_document(
+                "---\nname: first\nname: second\ndescription: test\n---\nInstructions",
+                available_tools=set(),
+            )
+
     def test_bundle_paths_reject_traversal_and_require_root_manifest(self):
         self.assertEqual(
             validate_skill_bundle_paths(("SKILL.md", "references/guide.md")),
