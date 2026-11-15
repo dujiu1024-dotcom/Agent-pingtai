@@ -15,6 +15,7 @@ on:
       - "tests/test_platform_postgres_integration.py"
       - "tests/test_knowledge_memory_postgres_integration.py"
       - "tests/test_redis_streams_integration.py"
+      - "tests/test_gateway_runtime_postgres_integration.py"
       - ".github/workflows/platform-integration.yml"
 
 concurrency:
