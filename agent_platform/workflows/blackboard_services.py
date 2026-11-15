@@ -72,9 +72,9 @@ class BlackboardMultiExpertServices:
         return await self.callbacks.plan_experts(objective=objective, run_context=run_context)
 
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]:
+        scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.run_expert(assignment=assignment, objective=objective, run_context=run_context))
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
-        scope, scope_id = self._scope(run_context)
         expert_id = str(assignment.get("expert_id") or "expert")
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_id, "expert:" + expert_id),
@@ -87,9 +87,9 @@ class BlackboardMultiExpertServices:
         return result
 
     async def synthesize(self, *, objective: str, contributions: Sequence[Mapping[str, Any]], run_context: Mapping[str, Any]) -> Mapping[str, Any]:
+        scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.synthesize(objective=objective, contributions=contributions, run_context=run_context))
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
-        scope, scope_id = self._scope(run_context)
         refs = tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_id, "synthesis"), scope=scope, scope_id=scope_id,
@@ -101,9 +101,9 @@ class BlackboardMultiExpertServices:
         return result
 
     async def review(self, *, synthesis: Mapping[str, Any], contributions: Sequence[Mapping[str, Any]], run_context: Mapping[str, Any]) -> Mapping[str, Any]:
+        scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.review(synthesis=synthesis, contributions=contributions, run_context=run_context))
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
-        scope, scope_id = self._scope(run_context)
         conflicts = []
         for index, raw in enumerate(result.get("conflicts", [])):
             conflict = dict(raw)
@@ -121,9 +121,9 @@ class BlackboardMultiExpertServices:
         return result
 
     async def resolve_conflicts(self, *, synthesis: Mapping[str, Any], conflicts: Sequence[Mapping[str, Any]], run_context: Mapping[str, Any]) -> Mapping[str, Any]:
+        scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.resolve_conflicts(synthesis=synthesis, conflicts=conflicts, run_context=run_context))
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
-        scope, scope_id = self._scope(run_context)
         decisions = result.get("decisions", [])
         decision_entry_ids = []
         for index, conflict in enumerate(conflicts):
