@@ -59,8 +59,14 @@ class MemoryExtractionService:
             raise ValueError("memory extraction requires a non-empty interaction turn")
         if len(turn.user_message) + len(turn.assistant_message) > 20000:
             raise ValueError("interaction turn exceeds the extraction size limit")
+        if turn.agent_id and turn.agent_id not in principal.agent_ids:
+            raise PermissionError("agent context is not authorized")
+        if turn.project_id and turn.project_id not in principal.project_ids:
+            raise PermissionError("project context is not authorized")
 
         drafts = await self.extractor.extract(turn=turn)
+        if len(drafts) > 50:
+            raise ValueError("extractor returned too many memory candidates")
         records = []
         for draft in drafts:
             if draft.scope is MemoryScope.USER:
