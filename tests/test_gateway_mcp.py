@@ -32,6 +32,10 @@ class FakeAuditSink:
 
 class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        try:
+            import jsonschema  # noqa: F401
+        except ImportError:
+            self.skipTest("jsonschema is installed in the dedicated platform CI job")
         self.executed = []
         self.approvals = FakeApprovalVerifier()
         self.audit = FakeAuditSink()
