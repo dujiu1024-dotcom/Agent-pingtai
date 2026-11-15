@@ -29,6 +29,7 @@ include = [
   "tests/test_mcp_adapter.py",
   "tests/test_model_templates.py",
   "tests/test_deepseek_harness_adapter.py",
+  "tests/test_event_consumer.py",
   "tests/test_platform_postgres_integration.py",
   "tests/test_redis_streams_integration.py",
 ]
