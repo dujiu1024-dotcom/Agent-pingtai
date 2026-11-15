@@ -120,7 +120,13 @@ class PostgresIdentityRepository:
                        (e.resource_type='tenant' AND e.resource_id=p.tenant_id)
                        OR (e.resource_type='project' AND e.resource_id=p.project_id)
                        OR (e.resource_type='organization'
-                         AND e.resource_id=p.organization_id)
+                         AND e.resource_id=p.organization_id
+                         AND EXISTS (
+                           SELECT 1 FROM platform_organizations o
+                           WHERE o.tenant_id=p.tenant_id
+                             AND o.organization_id=p.organization_id
+                             AND o.status='active'
+                         ))
                      )
                    WHERE p.tenant_id=%s AND p.status='active'
                    GROUP BY p.project_id""",
