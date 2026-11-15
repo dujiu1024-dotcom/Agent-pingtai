@@ -1,4 +1,5 @@
-import unittest\nfrom agent_platform.control_plane.tokens import InMemoryRunTokenStore,RunTokenService
+import unittest
+from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
 from types import SimpleNamespace
 from agent_platform.gateway.service import GatewayService,InMemoryEndpointDirectory
 class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
