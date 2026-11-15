@@ -533,6 +533,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_authorization_context_resolves_only_active_tenant_resources(self):
         project_ids = [f"project-{uuid4().hex[:8]}" for _ in range(3)]
         agent_id = f"agent-{uuid4().hex[:8]}"
+        team_id = f"team-{uuid4().hex[:8]}"
         user_id = uuid4()
         tenant_reader_id = uuid4()
         email = f"{user_id}@example.com"
@@ -625,6 +626,30 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    VALUES (%s, %s, %s, 'active')""",
                 (self.tenant_id, project_ids[0], user_id),
             )
+            await conn.execute(
+                """INSERT INTO platform_teams (tenant_id, team_id, name)
+                   VALUES (%s, %s, 'Role ACL Team')""",
+                (self.tenant_id, team_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_team_memberships
+                   (tenant_id, team_id, user_id, status)
+                   VALUES (%s, %s, %s, 'active')""",
+                (self.tenant_id, team_id, user_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'team-scoped-reader', 'Team Scoped Reader')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'team', %s, 'project', %s,
+                           'team-scoped-reader', 'integration')""",
+                (uuid4(), self.tenant_id, team_id, project_ids[1]),
+            )
             # Project 1 is read-only for the first user.
             await conn.execute(
                 """INSERT INTO platform_role_bindings
@@ -710,7 +735,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             context.effective_role_ids,
             frozenset({
                 "tenant-member", "project-reader", "tenant-project-reader",
-                "knowledge-manager", "agent-runner", "agent-memory-manager",
+                "team-scoped-reader", "knowledge-manager", "agent-runner",
+                "agent-memory-manager",
             }),
         )
         self.assertEqual(
