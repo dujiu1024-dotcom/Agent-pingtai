@@ -136,9 +136,17 @@ class MemoryService:
         records=await self.repository.list(tenant_id,limit=5000)
         expired=0
         for rec in records:
-            if rec.status is MemoryStatus.ACTIVE and rec.candidate.expires_at and rec.candidate.expires_at<=at:
+            due = rec.candidate.expires_at is not None and rec.candidate.expires_at <= at
+            if rec.status is MemoryStatus.ACTIVE and due:
                 await self.repository.put(replace(rec,status=MemoryStatus.EXPIRED,updated_at=at,version=rec.version+1))
                 expired+=1
+            # Expiry is a visibility boundary just like deletion. Re-run the
+            # idempotent cleanup hook for already-expired records so a prior
+            # cache/index outage cannot leave expired memory retrievable.
+            elif rec.status is MemoryStatus.EXPIRED and due and self.on_delete:
+                await self.on_delete(tenant_id,rec.candidate.memory_id)
+            if rec.status is MemoryStatus.ACTIVE and due and self.on_delete:
+                await self.on_delete(tenant_id,rec.candidate.memory_id)
         return expired
     async def forget(self,*,principal: MemoryPrincipal,memory_id: str)->bool:
         rec=await self.repository.get(principal.tenant_id,memory_id)
