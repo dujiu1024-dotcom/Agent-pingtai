@@ -73,7 +73,7 @@ class RunBoundTokenVerifier:
 def create_authenticated_mcp_asgi_app(
     *,
     bridge: Any,
-    bearer_token: str,
+    bearer_token: str | None = None,
     issuer_url: str,
     resource_server_url: str,
     expires_at: datetime | None = None,
