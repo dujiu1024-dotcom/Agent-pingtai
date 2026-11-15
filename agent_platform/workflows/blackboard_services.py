@@ -107,7 +107,8 @@ class BlackboardMultiExpertServices:
         conflicts = []
         for index, raw in enumerate(result.get("conflicts", [])):
             conflict = dict(raw)
-            key = str(conflict.get("conflict_key") or conflict.get("id") or index)
+            key = str(conflict.get("id") or conflict.get("conflict_key") or "conflict") + ":" + str(index)
+            conflict["conflict_instance_id"] = key
             refs = self._refs(conflict) or tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_id, "conflict:" + key),
@@ -142,7 +143,7 @@ class BlackboardMultiExpertServices:
             conflict_entry_id = conflict.get("blackboard_entry_id")
             if not conflict_entry_id:
                 raise ValueError("conflict is missing its durable Blackboard entry")
-            decision = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
+            decision = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_instance_id") == conflict.get("conflict_instance_id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
             evidence_refs = decision.get("evidence_refs", conflict.get("evidence_refs", []))
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_id, "decision:" + str(conflict_entry_id)),
