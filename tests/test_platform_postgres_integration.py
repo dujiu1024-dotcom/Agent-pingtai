@@ -23,6 +23,7 @@ if DSN:
     )
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
+    from agent_platform.identity.bootstrap import BootstrapError, bootstrap_tenant_owner
     from agent_platform.identity.models import ResourceRef
     from agent_platform.identity.postgres import PostgresIdentityRepository
     from agent_platform.identity.security import PasswordHasher
@@ -459,6 +460,69 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual([row["action"] for row in await cur.fetchall()],
                              ["role.granted", "role.revoked"])
+
+
+@unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
+class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tenant_id = f"bootstrap-it-{uuid4().hex}"
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            migration_dir = Path("agent_platform/storage/postgres")
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+        self.connection = await AsyncConnection.connect(DSN, row_factory=dict_row)
+        await self.connection.execute(
+            "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+            (self.tenant_id, "Bootstrap Integration"),
+        )
+        await self.connection.commit()
+
+    async def asyncTearDown(self):
+        await self.connection.close()
+
+    async def test_bootstrap_creates_first_owner_roles_and_audit_atomically(self):
+        user_id = await bootstrap_tenant_owner(
+            self.connection,
+            tenant_id=self.tenant_id,
+            email="owner@example.com",
+            display_name="Tenant Owner",
+            password="correct horse battery staple",
+        )
+        cursor = await self.connection.execute(
+            """SELECT u.email_normalized, m.status, b.role_id
+               FROM platform_users u
+               JOIN platform_tenant_memberships m ON m.user_id=u.user_id
+               JOIN platform_role_bindings b ON b.subject_id=u.user_id::text
+               WHERE u.user_id=%s AND m.tenant_id=%s AND b.tenant_id=%s""",
+            (user_id, self.tenant_id, self.tenant_id),
+        )
+        row = await cursor.fetchone()
+        self.assertEqual(row["email_normalized"], "owner@example.com")
+        self.assertEqual(row["status"], "active")
+        self.assertEqual(row["role_id"], "tenant_admin")
+        cursor = await self.connection.execute(
+            """SELECT count(*) AS n FROM platform_role_permissions
+               WHERE tenant_id=%s AND role_id='tenant_admin'""",
+            (self.tenant_id,),
+        )
+        self.assertEqual((await cursor.fetchone())["n"], 11)
+
+    async def test_bootstrap_refuses_a_tenant_that_already_has_members(self):
+        await bootstrap_tenant_owner(
+            self.connection,
+            tenant_id=self.tenant_id,
+            email="owner@example.com",
+            display_name="Tenant Owner",
+            password="correct horse battery staple",
+        )
+        with self.assertRaises(BootstrapError):
+            await bootstrap_tenant_owner(
+                self.connection,
+                tenant_id=self.tenant_id,
+                email="second@example.com",
+                display_name="Second Owner",
+                password="correct horse battery staple",
+            )
 
 
 if __name__ == "__main__":
