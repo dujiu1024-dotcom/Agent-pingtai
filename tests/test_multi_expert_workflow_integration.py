@@ -1,5 +1,8 @@
 import unittest
 
+from agent_platform.contracts import EntryKind
+from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
+
 class FakeMultiExpertServices:
     def __init__(self, *, conflict=True, require_approval=True):
         self.conflict = conflict
@@ -48,6 +51,20 @@ class FakeMultiExpertServices:
 
     async def reject(self, *, state):
         return {"reason": "human rejected"}
+
+
+class InMemoryBlackboard:
+    def __init__(self):
+        self.entries = {}
+
+    async def get(self, entry_id):
+        return self.entries.get(entry_id)
+
+    async def propose(self, entry):
+        if entry.entry_id in self.entries:
+            raise RuntimeError("duplicate entry")
+        self.entries[entry.entry_id] = entry
+        return entry
 
 
 class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -115,6 +132,35 @@ class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["final_result"]["expert_count"], 2)
         self.assertNotIn("__interrupt__", result)
+
+    async def test_langgraph_run_persists_blackboard_lineage_end_to_end(self):
+        repository = InMemoryBlackboard()
+        callbacks = FakeMultiExpertServices(conflict=True, require_approval=True)
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=repository,
+            callbacks=callbacks,
+        )
+        graph = self.build_multi_expert_workflow(
+            services=services, checkpointer=self.InMemorySaver()
+        )
+        config = {"configurable": {"thread_id": "tenant-a-run-blackboard"}}
+        paused = await graph.ainvoke(self.initial_state(), config=config)
+        self.assertIn("__interrupt__", paused)
+        completed = await graph.ainvoke(
+            self.Command(resume={"approved": True}), config=config
+        )
+        self.assertEqual(completed["status"], "completed")
+        kinds = {entry.kind for entry in repository.entries.values()}
+        self.assertTrue({
+            EntryKind.CLAIM,
+            EntryKind.ARTIFACT,
+            EntryKind.CONFLICT,
+            EntryKind.DECISION,
+            EntryKind.NOTE,
+        }.issubset(kinds))
+        final_entry = repository.entries[completed["final_result"]["blackboard_entry_id"]]
+        self.assertGreaterEqual(len(final_entry.source_refs), 4)
 
 
 if __name__ == "__main__":
