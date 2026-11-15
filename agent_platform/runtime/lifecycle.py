@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime,timezone
 from enum import Enum
-from typing import Any,Protocol
+from typing import Any, Protocol
 
 def _now() -> datetime: return datetime.now(timezone.utc)
 class WorkerLeaseLost(RuntimeError):
