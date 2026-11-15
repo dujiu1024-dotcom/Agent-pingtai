@@ -51,6 +51,25 @@ ResourceResolver = Callable[[Mapping[str, Any]], str]
 
 
 @dataclass(frozen=True)
+class ToolExecutionContext:
+    tenant_id: str
+    actor_id: str
+    actor_roles: tuple[str, ...]
+    run_id: str | None
+    agent_id: str | None
+    tool_name: str
+    resource: str
+
+
+ResourceAuthorizer = Callable[
+    [ToolExecutionContext, Mapping[str, Any]], Awaitable[bool]
+]
+ContextualToolHandler = Callable[
+    [Mapping[str, Any], ToolExecutionContext], Awaitable[Any]
+]
+
+
+@dataclass(frozen=True)
 class ToolDefinition:
     name: str
     risk: RiskLevel
@@ -59,6 +78,8 @@ class ToolDefinition:
     allowed_roles: tuple[str, ...] = ()
     input_schema: Mapping[str, Any] | None = None
     resource_resolver: ResourceResolver | None = None
+    resource_authorizer: ResourceAuthorizer | None = None
+    contextual_handler: ContextualToolHandler | None = None
 
 
 class SupervisedToolGateway:
@@ -111,6 +132,38 @@ class SupervisedToolGateway:
             actor_id=actor_id,
             approval_id=approval_id,
         )
+        execution_context = ToolExecutionContext(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            actor_roles=actor_roles,
+            run_id=run_id,
+            agent_id=agent_id,
+            tool_name=tool_name,
+            resource=resource,
+        )
+        if definition.resource_authorizer is not None:
+            try:
+                resource_allowed = await definition.resource_authorizer(
+                    execution_context, arguments
+                )
+            except Exception as exc:
+                resource_allowed = False
+                authorization_detail = type(exc).__name__
+            else:
+                authorization_detail = "resource access denied"
+            if not resource_allowed:
+                await self._audit_sink.record(
+                    tenant_id=tenant_id,
+                    actor_id=actor_id,
+                    action=tool_name,
+                    resource=resource,
+                    action_digest=request.digest(),
+                    outcome="denied",
+                    run_id=run_id,
+                    agent_id=agent_id,
+                    detail=authorization_detail,
+                )
+                raise ToolExecutionDenied("resource access is not authorized")
 
         approved_hash = None
         if approval_id and definition.risk == RiskLevel.EXTERNAL_OR_IRREVERSIBLE:
@@ -151,7 +204,10 @@ class SupervisedToolGateway:
             agent_id=agent_id,
         )
         try:
-            result = await definition.handler(arguments)
+            if definition.contextual_handler is not None:
+                result = await definition.contextual_handler(arguments, execution_context)
+            else:
+                result = await definition.handler(arguments)
         except Exception as exc:
             await self._audit_sink.record(
                 tenant_id=tenant_id,
