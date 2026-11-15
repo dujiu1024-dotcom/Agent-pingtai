@@ -926,14 +926,14 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_nonmember_cannot_create_session_for_another_tenant(self):
         with self.assertRaises(AuthenticationError):
             await self.service.login(
-                email="identity@example.com",
+                email=self.email,
                 password="correct horse battery staple",
                 tenant_id="tenant-not-a-member",
             )
 
     async def test_revoked_role_binding_takes_effect_without_session_reissue(self):
         issued = await self.service.login(
-            email="identity@example.com",
+            email=self.email,
             password="correct horse battery staple",
             tenant_id=self.tenant_id,
         )
@@ -956,7 +956,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_api_credential_issue_authenticate_and_revoke(self):
         issued = await self.service.login(
-            email="identity@example.com", password="correct horse battery staple",
+            email=self.email, password="correct horse battery staple",
             tenant_id=self.tenant_id,
         )
         principal = await self.service.authenticate(issued.access_token)
@@ -994,7 +994,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_role_grant_and_invitation_cannot_escalate_actor_privileges(self):
         issued = await self.service.login(
-            email="identity@example.com", password="correct horse battery staple",
+            email=self.email, password="correct horse battery staple",
             tenant_id=self.tenant_id,
         )
         principal = await self.service.authenticate(issued.access_token)
@@ -1005,17 +1005,17 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
         with self.assertRaises(PermissionError):
             await self.service.create_invitation(
-                principal=principal, email="identity@example.com", role_id="tenant_admin",
+                principal=principal, email=self.email, role_id="tenant_admin",
             )
 
     async def test_invitation_is_email_bound_single_use_and_audited(self):
         issued = await self.service.login(
-            email="identity@example.com", password="correct horse battery staple",
+            email=self.email, password="correct horse battery staple",
             tenant_id=self.tenant_id,
         )
         principal = await self.service.authenticate(issued.access_token)
         invitation_id, token, _ = await self.service.create_invitation(
-            principal=principal, email="identity@example.com", role_id="viewer",
+            principal=principal, email=self.email, role_id="viewer",
         )
         self.assertTrue(await self.service.accept_invitation(
             principal=principal, invitation_token=token,
@@ -1046,7 +1046,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_role_grant_and_revoke_are_audited_in_the_same_transaction(self):
         issued = await self.service.login(
-            email="identity@example.com",
+            email=self.email,
             password="correct horse battery staple",
             tenant_id=self.tenant_id,
         )
@@ -1165,7 +1165,7 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await bootstrap_tenant_owner(
             self.connection,
             tenant_id=self.tenant_id,
-            email="owner@example.com",
+            email=self.owner_email,
             display_name="Tenant Owner",
             password="correct horse battery staple",
         )
