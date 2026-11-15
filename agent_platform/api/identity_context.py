@@ -40,7 +40,8 @@ class IdentityContextResolver:
             tenant_id=context.tenant_id,
             user_id=context.user_id,
             project_ids=context.project_ids,
-            roles=context.tenant_permissions,
+            roles=context.tenant_roles,
+            permissions=context.tenant_permissions,
             manage_project_ids=context.knowledge_manage_project_ids,
         )
 
