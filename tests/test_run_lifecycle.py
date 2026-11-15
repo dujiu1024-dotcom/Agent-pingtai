@@ -2,7 +2,7 @@ import asyncio
 import unittest
 
 from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
-from agent_platform.runtime.lifecycle import InMemoryRunStateStore,RunLifecycleManager,RunStatus
+from agent_platform.runtime.lifecycle import InMemoryRunStateStore,RunLifecycleManager,RunStatus,WorkerLeaseLost
 class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.store=InMemoryRunStateStore(); await self.store.create("t","r"); self.manager=RunLifecycleManager(self.store)
@@ -53,6 +53,12 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(await self.manager.recover(checkpoint_loader=lambda row:_append(seen,"load"),
    resume=lambda row:_append(seen,row.status)),["r"])
   self.assertEqual(seen,[RunStatus.RUNNING])
+ async def test_lost_worker_lease_does_not_fail_run_owned_by_another_worker(self):
+  await self.manager.start("t","r")
+  await self.manager.mark_interrupted("t","r",checkpoint_ref="cp-1",reason="worker lost")
+  async def lost(row): raise WorkerLeaseLost("lease transferred")
+  self.assertEqual(await self.manager.recover(checkpoint_loader=lambda row:_append([],row),resume=lost),[])
+  self.assertEqual((await self.store.get("t","r")).status,RunStatus.RUNNING)
  async def test_checkpoint_validation_failure_is_persisted_as_failed(self):
   await self.manager.start("t","r")
   await self.manager.mark_interrupted("t","r",checkpoint_ref="missing",reason="worker lost")
