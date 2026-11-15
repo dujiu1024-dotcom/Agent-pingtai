@@ -139,3 +139,24 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(rejected.abstained)
         self.assertEqual(rejected.reason,"unknown_citation")
         self.assertEqual(rejected.answer,"")
+
+    async def test_rag_answer_evaluation_measures_grounding_and_citations(self):
+        from agent_platform.knowledge.evaluation import RAGAnswerEvalCase, evaluate_answers
+        from agent_platform.knowledge.rag import RAGService
+        knowledge=KnowledgeService(InMemoryKnowledgeRepository())
+        doc=Document(tenant_id="t",title="source",source_uri="file://source",content_hash="x")
+        await knowledge.ingest(document=doc,content=b"verified market evidence")
+        class Generator:
+            async def generate(self,*,query,context):
+                return {"answer":"Verified market evidence supports the conclusion.", "citation_ids":[context[0]["citation_id"]]}
+        rag=RAGService(knowledge=knowledge,generator=Generator())
+        principal=KnowledgePrincipal(tenant_id="t",user_id="u")
+        results=await evaluate_answers(rag,[RAGAnswerEvalCase(
+            case_id="answer-1",query="market evidence",principal=principal,
+            expected_answer_terms=frozenset({"verified","evidence"}),
+            expected_citation_document_ids=frozenset({doc.document_id}),
+        )])
+        self.assertTrue(results[0].grounded)
+        self.assertEqual(results[0].answer_term_coverage,1.0)
+        self.assertEqual(results[0].citation_precision,1.0)
+        self.assertEqual(results[0].citation_recall,1.0)
