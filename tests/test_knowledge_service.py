@@ -119,3 +119,23 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         changed_retry=await service.ingest(document=doc,content=b"updated content")
         self.assertEqual(changed_retry.document.version,2)
         self.assertEqual(changed.chunks[0].chunk_id,changed_retry.chunks[0].chunk_id)
+
+    async def test_rag_answer_requires_valid_retrieved_citations(self):
+        from agent_platform.knowledge.rag import RAGService
+        knowledge=KnowledgeService(InMemoryKnowledgeRepository())
+        doc=Document(tenant_id="t",title="source",source_uri="file://source",content_hash="x")
+        await knowledge.ingest(document=doc,content=b"verified evidence")
+        class GroundedGenerator:
+            async def generate(self,*,query,context):
+                return {"answer":"The evidence supports this.", "citation_ids":[context[0]["citation_id"]]}
+        principal=KnowledgePrincipal(tenant_id="t",user_id="u")
+        grounded=await RAGService(knowledge=knowledge,generator=GroundedGenerator()).answer(principal=principal,query="verified")
+        self.assertFalse(grounded.abstained)
+        self.assertEqual(len(grounded.citations),1)
+        class HallucinatedCitationGenerator:
+            async def generate(self,*,query,context):
+                return {"answer":"Unsupported claim.", "citation_ids":["not-in-context"]}
+        rejected=await RAGService(knowledge=knowledge,generator=HallucinatedCitationGenerator()).answer(principal=principal,query="verified")
+        self.assertTrue(rejected.abstained)
+        self.assertEqual(rejected.reason,"unknown_citation")
+        self.assertEqual(rejected.answer,"")
