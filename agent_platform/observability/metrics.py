@@ -7,7 +7,7 @@ import threading
 from collections import defaultdict
 from collections.abc import Mapping
 
-_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\\Z")
+_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\Z")
 _ALLOWED_LABELS = frozenset({"component", "status", "model_template", "finish_reason", "operation"})
 
 
@@ -72,4 +72,4 @@ class InMemoryMetricsRecorder:
                 base = self._format_key(key)
                 lines.append(f"{base}_count {len(values)}")
                 lines.append(f"{base}_sum {sum(values)}")
-            return "\\n".join(lines) + ("\\n" if lines else "")
+            return "\n".join(lines) + ("\n" if lines else "")
