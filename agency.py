@@ -6306,7 +6306,9 @@ EXPORT_FILES = [
     "boss.py", "conversation.py",
     "console.html",
     "run-listener.sh", "启动服务.command", "README.md", "CONSTITUTION.md",
-    "requirements-listener.txt", "agency/config.json", "agency/limits.json",
+    "requirements-listener.txt", "requirements-platform.txt",
+    "requirements-knowledge-parsers.txt", "requirements-harness-strands.txt",
+    "agency/config.json", "agency/limits.json",
 ]
 EXPORT_DIRS = [
     "agents", "company", "templates", "tools", "tests",
@@ -6360,15 +6362,23 @@ def _import_names(path):
     return names
 
 
+def _seed_files():
+    """从仓库内全部真实 .py 出发（按既有排除规则过滤），不硬编码模块目录。"""
+    for path in sorted(ROOT.rglob("*.py")):
+        rel = path.relative_to(ROOT)
+        if any(part in EXPORT_SKIP_NAMES or part.startswith("backup")
+               for part in rel.parts[:-1]):
+            continue
+        yield path
+
+
 def export_closure():
     """从入口文件出发收集本地模块依赖闭包，返回 (文件路径集合, 缺失说明)。
 
-    入口：根目录 .py、tools/*.py、tests/*.py。只纳入仓库内、未被排除的真实文件；
+    入口：仓库内所有未被排除的 .py。只纳入仓库内、未被排除的真实文件；
     第三方与标准库自动忽略。解析失败不静默：返回缺失清单，由调用方阻止导出。
     """
-    seeds = sorted(ROOT.glob("*.py"))
-    for sub in ("tools", "tests"):
-        seeds.extend(sorted((ROOT / sub).glob("*.py")))
+    seeds = list(_seed_files())
     files, queue, notes = set(), list(seeds), []
     while queue:
         path = queue.pop()
@@ -6385,6 +6395,22 @@ def export_closure():
             if local is not None and local not in files:
                 queue.append(local)
     return files, notes
+
+
+def _package_dirs(closure):
+    """由闭包推导带 __init__.py 的包根目录，用于一并带上 SQL/模板等包内资源。
+
+    目录来自真实 import 闭包，不维护第二份目录清单。
+    """
+    dirs = set()
+    for path in closure:
+        rel = path.relative_to(ROOT)
+        if len(rel.parts) < 2 or rel.parts[0] in EXPORT_DIRS:
+            continue
+        top = ROOT / rel.parts[0]
+        if (top / "__init__.py").is_file():
+            dirs.add(top)
+    return sorted(dirs)
 
 
 def _verify_export(path):
@@ -6437,6 +6463,7 @@ def cmd_export(args):
     for note in notes:
         print("[闭包] " + note, file=sys.stderr)
     packed = set()
+    package_dirs = _package_dirs(closure)
     with tarfile.open(out, "w:gz") as tar:
         for rel in EXPORT_FILES:
             src = ROOT / rel
@@ -6445,12 +6472,16 @@ def cmd_export(args):
                 packed.add(src.resolve())
                 public += 1
         for src in sorted(closure):
+            if any(src.is_relative_to(d) for d in package_dirs):
+                continue
             rel = src.relative_to(ROOT).as_posix()
             if (src.resolve() in packed or rel in EXPORT_FILES
                     or rel.split("/")[0] in EXPORT_DIRS):
                 continue
             tar.add(src, arcname=src.relative_to(ROOT))
             public += 1
+        for src in package_dirs:
+            public += _export_walk(tar, src, EXPORT_SKIP_NAMES)
         for rel in EXPORT_DIRS + [CFG["paths"]["projects"]]:
             src = ROOT / rel
             if src.is_dir():
@@ -6462,6 +6493,11 @@ def cmd_export(args):
             public += 1
             if with_state:
                 state_files = _export_walk(tar, state_dir, EXPORT_SKIP_NAMES)
+        # dev 环境库目录同样保留空目录；doctor 会检查两个环境路径都存在。
+        dev_state = ROOT / "agency" / "dev-state"
+        if dev_state.is_dir():
+            tar.add(dev_state, arcname=dev_state.relative_to(ROOT), recursive=False)
+            public += 1
         # outputs 只保留空目录，内容不进包。
         outputs = ROOT / CFG["paths"]["outputs"]
         if outputs.is_dir():

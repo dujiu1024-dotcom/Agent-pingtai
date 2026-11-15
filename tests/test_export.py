@@ -13,7 +13,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def run(*args):
-    env = {**os.environ, "AGENCY_ENV": "dev", "AGENCY_ALLOW_CUSTOM_DB": "1"}
+    # 显式指向 dev 库：父进程（如 doctor 以 prod 运行）可能已设置 AGENCY_DB，
+    # 不覆盖会让 init/export 读写不同环境的库。
+    env = {**os.environ, "AGENCY_ENV": "dev", "AGENCY_ALLOW_CUSTOM_DB": "1",
+           "AGENCY_DB": str(ROOT / "agency" / "dev-state" / "agency.db")}
     return subprocess.run([sys.executable, *args], cwd=ROOT, env=env,
                           capture_output=True, text=True)
 
@@ -21,6 +24,9 @@ def run(*args):
 class ExportImportTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
+        # dev 库是未跟踪的运行数据；干净检出（CI/交付包）里不存在，
+        # 先初始化，避免用例依赖开发机遗留文件。
+        run("agency.py", "init")
 
     def tearDown(self):
         import shutil
