@@ -103,7 +103,19 @@ class GatewayService:
    self._apps.pop(key,None);self._lease_expires.pop(key,None)
   if task is not None:await asyncio.gather(task,return_exceptions=True)
   return True
+ async def close(self)->None:
+  async with self._lock:keys=list(self._apps)
+  for tenant_id,run_id in keys:await self.unmount_run(tenant_id=tenant_id,run_id=run_id)
  async def __call__(self,scope:dict[str,Any],receive:Any,send:Any)->None:
+  if scope["type"]=="lifespan":
+   while True:
+    message=await receive()
+    if message["type"]=="lifespan.startup":
+     await send({"type":"lifespan.startup.complete"})
+    elif message["type"]=="lifespan.shutdown":
+     await self.close()
+     await send({"type":"lifespan.shutdown.complete"})
+     return
   if scope["type"]!="http":await self._respond(send,404,b"unsupported ASGI scope");return
   p=[x for x in scope.get("path","").split("/") if x]
   if len(p)!=5 or p[0]!="tenants" or p[2]!="runs" or p[4]!="mcp" or not self._valid_segment(p[1]) or not self._valid_segment(p[3]):
