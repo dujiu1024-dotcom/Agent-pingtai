@@ -172,6 +172,8 @@ class PostgresIdentityRepository:
                    JOIN platform_tenant_memberships m
                      ON m.tenant_id=r.tenant_id AND m.user_id=%s
                     AND m.status='active'
+                   JOIN platform_users u
+                     ON u.user_id=m.user_id AND u.status='active'
                    WHERE r.tenant_id=%s AND r.role_id=%s
                  )
                  AND NOT EXISTS (
