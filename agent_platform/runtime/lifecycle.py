@@ -48,19 +48,20 @@ class InMemoryRunStateStore:
   if limit<1: raise ValueError("limit must be positive")
   async with self._lock: return [r for r in self._rows.values() if r.status in {RunStatus.QUEUED,RunStatus.INTERRUPTED,RunStatus.PAUSED}][:limit]
 class ToolCallRegistry:
- """Tracks in-flight calls by Run and propagates cancellation to asyncio tasks."""
+ """Tracks in-flight calls by tenant and Run; cancellation cannot cross tenant boundaries."""
  def __init__(self)->None: self._calls={}; self._lock=asyncio.Lock()
- async def run(self,run_id:str,call_id:str,awaitable:Any,*,timeout:float|None=None)->Any:
-  key=(run_id,call_id)
+ async def run(self,run_id:str,call_id:str,awaitable:Any,*,tenant_id:str="",timeout:float|None=None)->Any:
+  key=(tenant_id,run_id,call_id)
   async with self._lock:
    if key in self._calls: raise ValueError("duplicate active tool call id")
    task=asyncio.create_task(awaitable); self._calls[key]=task
   try: return await asyncio.wait_for(task,timeout) if timeout is not None else await task
   finally:
    async with self._lock: self._calls.pop(key,None)
- async def cancel_run(self,run_id:str)->int:
+ async def cancel_run(self,run_id:str,*,tenant_id:str|None=None)->int:
   async with self._lock:
-   tasks=[t for (rid,_),t in self._calls.items() if rid==run_id]
+   tasks=[t for (tenant,rid,_),t in self._calls.items()
+    if rid==run_id and (tenant_id is None or tenant==tenant_id)]
    for task in tasks: task.cancel()
   if tasks: await asyncio.gather(*tasks,return_exceptions=True)
   return len(tasks)
@@ -92,7 +93,7 @@ class RunLifecycleManager:
   else:
    target=RunStatus.CANCELLED if old.status in {RunStatus.QUEUED,RunStatus.PAUSED,RunStatus.INTERRUPTED} else RunStatus.CANCELLING
    updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
-  await self.tools.cancel_run(run_id)
+  await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
   if task is not None: task.cancel()
   if updated.status==RunStatus.CANCELLING:
