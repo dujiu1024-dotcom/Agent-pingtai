@@ -47,6 +47,8 @@ class PostgresAuditSink:
         resource: str,
         action_digest: str,
         outcome: str,
+        run_id: str | None = None,
+        agent_id: str | None = None,
         detail: str = "",
     ) -> None:
         connection = await self._connection_factory()
@@ -56,11 +58,11 @@ class PostgresAuditSink:
                     """
                     INSERT INTO platform_tool_audit (
                         tenant_id, actor_id, action, resource,
-                        action_digest, outcome, detail
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        action_digest, outcome, run_id, agent_id, detail
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         tenant_id, actor_id, action, resource,
-                        action_digest, outcome, detail,
+                        action_digest, outcome, run_id, agent_id, detail,
                     ),
                 )
