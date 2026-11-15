@@ -39,6 +39,7 @@ class FakeSink:
     def __init__(self):
         self.items = {}
         self.revocations = []
+        self.fail_revoke_once = False
 
     async def upsert_page(self, *, tenant_id, connection_id, items):
         for item in items:
@@ -47,6 +48,9 @@ class FakeSink:
 
     async def revoke_connection(self, *, tenant_id, connection_id, disposition):
         self.revocations.append((tenant_id, connection_id, disposition))
+        if self.fail_revoke_once:
+            self.fail_revoke_once = False
+            raise RuntimeError("sink cleanup unavailable")
         if disposition == "delete":
             self.items = {
                 key: value for key, value in self.items.items()
@@ -116,6 +120,19 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
         saved = await self.repo.get("tenant-a", "drive-1")
         self.assertEqual(saved.status, "revoked")
         self.assertIn("remote revoke", saved.last_error)
+
+    async def test_revocation_cleanup_can_be_retried_after_local_revoke(self):
+        self.sink.fail_revoke_once = True
+        with self.assertRaises(RuntimeError):
+            await self.service.revoke(
+                tenant_id="tenant-a", connection_id="drive-1",
+            )
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.status, "revoked")
+        self.assertTrue(await self.service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+        ))
+        self.assertEqual(len(self.sink.revocations), 2)
 
     async def test_tenant_isolation(self):
         with self.assertRaises(ConnectorError):
