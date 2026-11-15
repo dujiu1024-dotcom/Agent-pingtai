@@ -88,6 +88,7 @@ class LangGraphRunExecutor:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None:raise KeyError("Run not found")
   if old.status!=RunStatus.QUEUED:raise ValueError(f"Run cannot start from {old.status.value}; use recovery for interrupted Runs")
+  config=await self._run_config(tenant_id,run_id)
   store=self.lifecycle.store
   acquire=getattr(store,"acquire_lease",None)
   release=getattr(store,"release_lease",None)
@@ -100,7 +101,6 @@ class LangGraphRunExecutor:
     raise WorkerLeaseLost("could not acquire Run worker lease")
   try:
    await self.lifecycle.start(tenant_id,run_id)
-   config=await self._run_config(tenant_id,run_id)
    try:
     result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
      timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
