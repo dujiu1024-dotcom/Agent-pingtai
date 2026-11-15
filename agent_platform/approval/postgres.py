@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+from uuid import UUID
 
 ConnectionFactory = Callable[[], Any]
 
@@ -28,7 +29,7 @@ class PostgresApprovalVerifier:
                       AND expires_at > now()
                     RETURNING approval_id
                     """,
-                    (tenant_id, approval_id, action_digest),
+                    (tenant_id, UUID(approval_id), action_digest),
                 )
                 return await cursor.fetchone() is not None
 
