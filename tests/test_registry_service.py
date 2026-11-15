@@ -77,6 +77,15 @@ class RegistryServiceTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="tenant-a", kind="agent", item_id="worker",
             )
 
+    async def test_reject_camel_case_and_generic_embedded_tokens(self) -> None:
+        for key in ("accessToken", "credential", "private-key"):
+            with self.subTest(key=key):
+                with self.assertRaises(RegistryError):
+                    await self.service.create_draft(
+                        tenant_id="tenant-a", kind="tool", item_id="unsafe",
+                        definition={key: "plaintext"}, actor_id="user-a",
+                    )
+
     async def test_tenant_isolation(self) -> None:
         await self.service.create_draft(
             tenant_id="tenant-a", kind="skill", item_id="summarize",
