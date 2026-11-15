@@ -463,7 +463,7 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
 class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tenant_id = f"identity-it-{uuid4().hex}"
-        self.user_id = uuid4();
+        self.user_id = uuid4()
         self.email = f"identity-{uuid4().hex}@example.com"
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
             migration_dir = Path("agent_platform/storage/postgres")
