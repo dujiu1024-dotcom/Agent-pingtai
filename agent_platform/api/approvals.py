@@ -1,6 +1,7 @@
 """HTTP API for human approval requests and decisions."""
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
@@ -19,6 +20,12 @@ def create_approval_router(*, service: ApprovalService,
         if not isinstance(value, Principal):
             raise HTTPException(401, "authenticated user required")
         return value
+
+    async def can_approve(actor: Principal) -> bool:
+        result = authorize_approver(actor)
+        if inspect.isawaitable(result):
+            result = await result
+        return result is True
 
     @router.post("", status_code=201)
     async def request_approval(request: Request):
@@ -46,7 +53,7 @@ def create_approval_router(*, service: ApprovalService,
     @router.get("")
     async def pending_approvals(request: Request, limit: int = 100):
         actor = principal(request)
-        if not await authorize_approver(actor):
+        if not await can_approve(actor):
             raise HTTPException(403, "approval permission required")
         try:
             records = await service.pending(tenant_id=actor.tenant_id, limit=limit)
