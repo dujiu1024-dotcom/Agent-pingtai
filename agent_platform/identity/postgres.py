@@ -69,7 +69,7 @@ class PostgresIdentityRepository:
                            ON team.tenant_id=tm.tenant_id
                           AND team.team_id=tm.team_id
                           AND team.status='active'
-                         WHERE tm.tenant_id=%s AND tm.user_id=%s
+                         WHERE tm.tenant_id=%s AND tm.user_id=%s::uuid
                            AND tm.status='active'
                        ))
                      )""",
@@ -90,7 +90,7 @@ class PostgresIdentityRepository:
                        ON team.tenant_id=tm.tenant_id
                       AND team.team_id=tm.team_id
                       AND team.status='active'
-                     WHERE tm.tenant_id=%s AND tm.user_id=%s
+                     WHERE tm.tenant_id=%s AND tm.user_id=%s::uuid
                        AND tm.status='active'
                    ),
                    effective_permissions AS (
@@ -147,7 +147,7 @@ class PostgresIdentityRepository:
                        ON team.tenant_id=tm.tenant_id
                       AND team.team_id=tm.team_id
                       AND team.status='active'
-                     WHERE tm.tenant_id=%s AND tm.user_id=%s
+                     WHERE tm.tenant_id=%s AND tm.user_id=%s::uuid
                        AND tm.status='active'
                    ),
                    effective_permissions AS (
