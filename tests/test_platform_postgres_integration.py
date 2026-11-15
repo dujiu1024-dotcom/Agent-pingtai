@@ -1085,6 +1085,9 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             for migration_path in sorted(migration_dir.glob("*.sql")):
                 await conn.execute(migration_path.read_text(), prepare=False)
         self.connection = await AsyncConnection.connect(DSN, row_factory=dict_row)
+        async def connect():
+            return await AsyncConnection.connect(DSN, row_factory=dict_row)
+        self.connect = connect
         await self.connection.execute(
             "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
             (self.tenant_id, "Bootstrap Integration"),
