@@ -39,9 +39,13 @@ class PasswordHasher:
             algorithm, n, r, p, salt_text, digest_text = encoded.split("$", 5)
             if algorithm != "scrypt":
                 return False
+            if (int(n), int(r), int(p)) != (PasswordHasher.N, PasswordHasher.R, PasswordHasher.P):
+                return False
             def decode(value: str) -> bytes:
                 return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
             salt, expected = decode(salt_text), decode(digest_text)
+            if len(salt) != 16 or len(expected) != PasswordHasher.DKLEN:
+                return False
             actual = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=int(n), r=int(r), p=int(p), dklen=len(expected), maxmem=128 * 1024 * 1024)
             return hmac.compare_digest(actual, expected)
         except (ValueError, TypeError, MemoryError):
