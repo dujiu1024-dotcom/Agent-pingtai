@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent_platform.contracts import BlackboardEntry, EntryKind, Scope
+from agent_platform.contracts import EntryKind
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 
 
