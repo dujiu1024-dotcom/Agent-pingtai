@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import urlsplit
+from uuid import UUID
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class WebhookPayload:
 
 @dataclass(frozen=True)
 class WebhookAttempt:
+    tenant_id: str
     delivery_id: str
     event_id: str
     attempt: int
@@ -131,3 +133,87 @@ class WebhookDispatcher:
                 )
                 result["retrying"] += 1
         return result
+
+
+class PostgresWebhookStore:
+    """Shared PostgreSQL lease/receipt store; secrets remain external secret references."""
+
+    def __init__(self, connection_factory: Callable[[], Any], *, lease_seconds: int = 60) -> None:
+        if lease_seconds < 5:
+            raise ValueError("lease_seconds must be at least 5")
+        self._connect = connection_factory
+        self.lease_seconds = lease_seconds
+
+    async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]:
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        from uuid import uuid4
+        lease = uuid4()
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """WITH due AS (
+                         SELECT tenant_id, delivery_id FROM platform_webhook_deliveries
+                         WHERE status IN ('pending','retrying','leased')
+                           AND (lease_until IS NULL OR lease_until < now())
+                           AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+                         ORDER BY created_at LIMIT %s FOR UPDATE SKIP LOCKED
+                       )
+                       UPDATE platform_webhook_deliveries d
+                       SET status='leased', attempts=d.attempts+1,
+                           lease_token=%s, lease_until=now()+make_interval(secs => %s)
+                       FROM due, platform_webhook_subscriptions s
+                       WHERE d.tenant_id=due.tenant_id AND d.delivery_id=due.delivery_id
+                         AND s.tenant_id=d.tenant_id AND s.subscription_id=d.subscription_id
+                         AND s.status='active'
+                       RETURNING d.tenant_id,d.delivery_id,d.event_id,d.topic,d.payload,
+                         d.attempts,s.subscription_id,s.target_url,s.secret_ref,s.topics""",
+                    (limit, lease, self.lease_seconds),
+                )
+                rows = await cursor.fetchall()
+        result = []
+        for row in rows:
+            tenant_id = row["tenant_id"]
+            subscription = WebhookSubscription(
+                subscription_id=str(row["subscription_id"]), tenant_id=tenant_id,
+                url=row["target_url"], secret_ref=row["secret_ref"],
+                topics=tuple(row["topics"]),
+            )
+            payload = WebhookPayload(
+                tenant_id=tenant_id, event_id=str(row["event_id"]),
+                topic=row["topic"], body=dict(row["payload"]),
+            )
+            attempt = WebhookAttempt(
+                tenant_id=tenant_id, delivery_id=str(row["delivery_id"]),
+                event_id=str(row["event_id"]), attempt=row["attempts"], status="leased",
+                next_attempt_at=None,
+            )
+            result.append((subscription, payload, attempt))
+        return result
+
+    async def complete(self, delivery_id: str, *, response_code: int) -> None:
+        await self._update(delivery_id, "delivered", response_code=response_code)
+
+    async def retry(self, delivery_id: str, *, next_attempt_at: datetime,
+                    response_code: int | None) -> None:
+        await self._update(delivery_id, "retrying", response_code=response_code,
+                           next_attempt_at=next_attempt_at)
+
+    async def dead_letter(self, delivery_id: str, *, response_code: int | None) -> None:
+        await self._update(delivery_id, "dead_lettered", response_code=response_code)
+
+    async def _update(self, delivery_id: str, status: str, *,
+                      response_code: int | None,
+                      next_attempt_at: datetime | None = None) -> None:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """UPDATE platform_webhook_deliveries
+                       SET status=%s,response_code=%s,next_attempt_at=%s,
+                           delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END,
+                           lease_token=NULL,lease_until=NULL
+                       WHERE delivery_id=%s AND status='leased'""",
+                    (status,response_code,next_attempt_at,status,UUID(delivery_id)),
+                )
