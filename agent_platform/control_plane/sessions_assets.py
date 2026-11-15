@@ -226,6 +226,10 @@ class SessionAssetService:
             session = await self.repository.get_session(tenant_id, session_id)
             if session is None:
                 raise SessionNotFound("session not found")
+            if project_id is None:
+                project_id = session.project_id
+            elif project_id != session.project_id:
+                raise SessionError("file project must match its linked session")
         clean_name = _SAFE_FILENAME.sub("_", filename.replace(chr(92), "/").rsplit("/", 1)[-1])[:180]
         if not clean_name or clean_name in {".", ".."}:
             raise SessionError("invalid filename")
