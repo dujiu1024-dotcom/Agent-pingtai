@@ -114,10 +114,18 @@ def build_multi_expert_workflow(
 ) -> Any:
     """Compile the multi-expert graph with a caller-supplied durable checkpointer."""
 
+    def workflow_context(state: MultiExpertState) -> dict[str, Any]:
+        return {
+            **state.get("run_context", {}),
+            "tenant_id": state["tenant_id"],
+            "task_id": state.get("task_id"),
+            "run_id": state["run_id"],
+        }
+
     async def plan(state: MultiExpertState) -> dict[str, Any]:
         assignments = await services.plan_experts(
             objective=state["objective"],
-            run_context=state["run_context"],
+            run_context=workflow_context(state),
         )
         return {"expert_assignments": [dict(item) for item in assignments]}
 
