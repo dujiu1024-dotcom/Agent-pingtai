@@ -134,6 +134,8 @@ CREATE TABLE IF NOT EXISTS platform_outbox (
     published_at    timestamptz,
     attempts        integer NOT NULL DEFAULT 0,
     last_error      text,
+    lease_token     uuid,
+    lease_until     timestamptz,
     PRIMARY KEY (tenant_id, outbox_id),
     UNIQUE (tenant_id, event_id)
 );
