@@ -181,8 +181,9 @@ class RegistryService:
             version=versions[-1].version + 1, definition=active.definition,
             status="disabled", created_by=actor_id,
         )
-        await self.repository.put(disabled, expected_latest=versions[-1].version)
+        # Fail closed: remove the active pointer before writing the audit version.
         await self.repository.clear_active(tenant_id, kind, item_id)
+        await self.repository.put(disabled, expected_latest=versions[-1].version)
         return disabled
 
     async def resolve_active(self, *, tenant_id: str, kind: str, item_id: str) -> RegistryVersion:
