@@ -160,6 +160,16 @@ class OciSandboxRunner:
                 process.stdin.close()
 
         feeder = asyncio.create_task(feed_stdin())
+        async def stop_process() -> None:
+            if process.returncode is not None:
+                return
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+
         timed_out = False
         try:
             await asyncio.wait_for(
@@ -168,13 +178,11 @@ class OciSandboxRunner:
             )
         except asyncio.TimeoutError:
             timed_out = True
-            process.kill()
-            await process.wait()
+            await stop_process()
             feeder.cancel()
             await asyncio.gather(feeder, return_exceptions=True)
         except asyncio.CancelledError:
-            process.kill()
-            await process.wait()
+            await stop_process()
             feeder.cancel()
             await asyncio.gather(feeder, return_exceptions=True)
             await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
