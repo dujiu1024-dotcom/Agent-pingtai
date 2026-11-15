@@ -112,6 +112,10 @@ class PostgresIdentityRepository:
                     SELECT 1 FROM platform_tenant_memberships tm
                     WHERE tm.tenant_id=%s AND tm.user_id=%s AND tm.status='active'
                   )
+                  AND EXISTS (
+                    SELECT 1 FROM platform_tenants t
+                    WHERE t.tenant_id=%s AND t.status='active'
+                  )
                   AND ((b.subject_type='user' AND b.subject_id=%s)
                     OR (b.subject_type='team' AND b.subject_id IN (
                       SELECT team_id FROM platform_team_memberships WHERE tenant_id=%s AND user_id=%s AND status='active'
@@ -128,7 +132,7 @@ class PostgresIdentityRepository:
                     )
                   )
             ) AS allowed""", (
-                tenant_id, permission_key, tenant_id, user_id, tenant_id, user_id, user_id,
+                tenant_id, permission_key, tenant_id, user_id, tenant_id, user_id,
                 tenant_id, user_id, resource_type, resource_id, tenant_id, resource_type,
                 tenant_id, resource_id,
             ))
