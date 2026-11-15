@@ -117,9 +117,44 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
             context=self.context, instructions="", input_text="",
             allowed_tools=("send_message",),
         )
-        with self.assertRaisesRegex(RuntimeError, "MCP Tool Gateway"):
+        with self.assertRaisesRegex(RuntimeError, "run-scoped MCP Tool Gateway"):
             await self.adapter().run(request)
         self.assertEqual(self.agents, [])
+
+    async def test_platform_tools_are_only_injected_from_gateway_session(self):
+        class FakeSession:
+            def __init__(self):
+                self.closed = False
+                self.tool = object()
+
+            async def __aenter__(self):
+                return [self.tool]
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                self.closed = True
+
+        class FakeProvider:
+            def __init__(self):
+                self.calls = []
+                self.session = FakeSession()
+
+            def open_session(self, *, context, allowed_tools):
+                self.calls.append((context, tuple(allowed_tools)))
+                return self.session
+
+        provider = FakeProvider()
+        request = HarnessRequest(
+            context=self.context,
+            instructions="Use only authorized tools.",
+            input_text="Read the approved document.",
+            allowed_tools=("read_document",),
+        )
+        result = await self.adapter(gateway_tool_provider=provider).run(request)
+        self.assertEqual(result.output_text, "Strands response\\n ready")
+        self.assertEqual(provider.calls, [(self.context, ("read_document",))])
+        self.assertEqual(self.agents[0].options["tools"], [provider.session.tool])
+        self.assertTrue(provider.session.closed)
+        self.assertFalse(self.agents[0].options["load_tools_from_directory"])
 
     async def test_requires_scoped_proxy_credentials(self):
         adapter = self.adapter(
