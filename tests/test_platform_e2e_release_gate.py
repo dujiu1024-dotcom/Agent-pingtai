@@ -124,6 +124,12 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
             self.assertEqual(results.json()["items"], [])
 
 
+    def test_conversation_metadata_schema_does_not_collide_with_identity_sessions(self):
+        from pathlib import Path
+        migration = (Path(__file__).resolve().parents[1] / "agent_platform" / "storage" / "postgres" / "011_registry_sessions_assets.sql").read_text()
+        self.assertIn("CREATE TABLE IF NOT EXISTS platform_conversation_sessions", migration)
+        self.assertIn("REFERENCES platform_conversation_sessions(tenant_id, session_id)", migration)
+        self.assertNotIn("CREATE TABLE IF NOT EXISTS platform_sessions", migration)
 
     def test_prompt_injection_cannot_self_authorize_high_risk_tool(self):
         policy = SupervisedPolicy({
