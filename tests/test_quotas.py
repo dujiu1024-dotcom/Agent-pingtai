@@ -63,6 +63,14 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             "tenant-a", "tenant", "tenant-a", self.start, self.end,
         )
         self.assertEqual((tokens, cost, concurrency), (50, Decimal("0.25"), 0))
+        exported = await self.store.list_usage(
+            "tenant-a", self.start, self.end, run_id="run-1", model_key="model-x",
+        )
+        self.assertEqual(len(exported), 1)
+        self.assertEqual(exported[0].total_tokens, 50)
+        self.assertEqual(
+            await self.store.list_usage("tenant-b", self.start, self.end), [],
+        )
 
     async def test_unconfigured_scope_and_tenant_mismatch_rejected(self) -> None:
         with self.assertRaises(BudgetExceeded):
