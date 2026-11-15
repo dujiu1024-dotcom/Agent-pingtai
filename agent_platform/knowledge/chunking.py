@@ -2,6 +2,7 @@
 from __future__ import annotations
 import hashlib
 import re
+from uuid import NAMESPACE_URL, uuid5
 from agent_platform.knowledge.contracts import Document, DocumentChunk
 
 def sha256_text(value: str) -> str:
@@ -25,7 +26,11 @@ def chunk_document(document: Document, text: str, *, max_chars: int = 1200, over
             offset = start + len(raw) - len(raw.lstrip())
             page_markers = list(re.finditer(r"\[page:(\d+)\]", normalized[:offset]))
             page_number = int(page_markers[-1].group(1)) if page_markers else None
-            chunks.append(DocumentChunk(tenant_id=document.tenant_id, document_id=document.document_id, document_version=document.version, ordinal=len(chunks), text=body, content_hash=sha256_text(body), start_offset=offset, end_offset=offset + len(body), page_number=page_number))
+            ordinal = len(chunks)
+            content_hash = sha256_text(body)
+            identity = ":".join((document.tenant_id, document.document_id, str(document.version), str(ordinal), content_hash))
+            chunk_id = str(uuid5(NAMESPACE_URL, identity))
+            chunks.append(DocumentChunk(tenant_id=document.tenant_id, document_id=document.document_id, document_version=document.version, ordinal=ordinal, text=body, content_hash=content_hash, start_offset=offset, end_offset=offset + len(body), page_number=page_number, chunk_id=chunk_id))
         if end >= len(normalized): break
         start = max(start + 1, end - overlap)
     return tuple(chunks)
