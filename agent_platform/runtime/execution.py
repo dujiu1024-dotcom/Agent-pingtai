@@ -3,10 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable
 from uuid import uuid4
-from agent_platform.runtime.lifecycle import RunLifecycleManager,RunSnapshot,RunStatus
-
-class WorkerLeaseLost(RuntimeError):
- """Raised when another worker has acquired this Run's expired execution lease."""
+from agent_platform.runtime.lifecycle import RunLifecycleManager, RunSnapshot, RunStatus, WorkerLeaseLost
 
 class LangGraphRunExecutor:
  """Execute a compiled LangGraph with durable checkpoints and a renewable worker lease."""
