@@ -27,25 +27,63 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-BASE = "https://open.feishu.cn/open-apis"
+# 默认国内站 + 北京时间；可用 FEISHU_BASE_URL / FEISHU_TZ_OFFSET 覆盖（如 Lark 国际站）。
+DEFAULT_BASE = "https://open.feishu.cn/open-apis"
+DEFAULT_TZ_OFFSET = 8
 
 # 凭据失效类错误码：换 token 后重试一次
 TOKEN_INVALID = {99991661, 99991663, 99991668}
 RATE_LIMIT = 99991400
 
-LOCAL_TZ = dt.timezone(dt.timedelta(hours=8))
+
+def base_url():
+    """飞书 OpenAPI 域名；默认值与历史硬编码完全一致。"""
+    load_env()
+    return (os.environ.get("FEISHU_BASE_URL") or DEFAULT_BASE).rstrip("/")
+
+
+def local_tz():
+    """业务时区；FEISHU_TZ_OFFSET 为小时偏移，默认 +8。"""
+    load_env()
+    raw = os.environ.get("FEISHU_TZ_OFFSET")
+    try:
+        hours = float(raw) if raw not in (None, "") else DEFAULT_TZ_OFFSET
+    except ValueError:
+        hours = DEFAULT_TZ_OFFSET
+    return dt.timezone(dt.timedelta(hours=hours))
+
+
+# 兼容旧引用；实际调用统一走 base_url() / local_tz()，运行时读环境变量。
+BASE = DEFAULT_BASE
+LOCAL_TZ = dt.timezone(dt.timedelta(hours=DEFAULT_TZ_OFFSET))
 
 
 def load_env():
-    path = ROOT / ".env"
-    if not path.exists():
-        return
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+    """按 AGENCY_ENV 读 .env / .env.prod / .env.dev；已存在的环境变量优先。
+
+    单独跑 `python3 feishu_bot.py check` 时也要能拿到正式凭据，
+    因此显式带 AGENCY_ENV 时追加对应环境文件；未带时只读 .env。
+    """
+    env = (os.environ.get("AGENCY_ENV") or "").strip().lower()
+    names = [".env"]
+    if env:
+        names.append(".env.prod" if env == "prod" else ".env." + env)
+    for name in names:
+        path = ROOT / name
+        if not path.exists():
             continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key, value = key.strip(), value.strip()
+            if not value:
+                continue
+            # dev 的飞书凭据只能来自 .env.dev，绝不继承 prod 应用
+            if env and env != "prod" and name == ".env" and key.startswith("FEISHU_"):
+                continue
+            os.environ.setdefault(key, value)
 
 
 class FeishuError(Exception):
@@ -84,18 +122,18 @@ def to_timestamp(value):
     s = str(value).strip()
     if len(s) == 10:
         d = dt.date.fromisoformat(s)
-        moment = dt.datetime.combine(d, dt.time(23, 59, 59), LOCAL_TZ)
+        moment = dt.datetime.combine(d, dt.time(23, 59, 59), local_tz())
     else:
         moment = dt.datetime.fromisoformat(s)
         if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=LOCAL_TZ)
+            moment = moment.replace(tzinfo=local_tz())
     return str(int(moment.timestamp()))
 
 
 def from_timestamp(ts):
     if not ts:
         return ""
-    return dt.datetime.fromtimestamp(int(ts), LOCAL_TZ).strftime("%Y-%m-%d %H:%M")
+    return dt.datetime.fromtimestamp(int(ts), local_tz()).strftime("%Y-%m-%d %H:%M")
 
 
 class Bot:
@@ -126,7 +164,7 @@ class Bot:
         return self._token
 
     def _raw(self, method, path, body=None, query=None):
-        url = BASE + path
+        url = base_url() + path
         if query:
             url += "?" + urllib.parse.urlencode(query)
         data = None
@@ -153,7 +191,7 @@ class Bot:
         while True:
             attempt += 1
             token = self._token_value(force=refreshed)
-            url = BASE + path
+            url = base_url() + path
             if query:
                 url += "?" + urllib.parse.urlencode(query)
             data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
@@ -321,13 +359,14 @@ def cmd_check(_):
             if p2p:
                 chat_id = p2p[0]["chat_id"]
                 bot.send_text("底座自检：机器人通道已打通。", receive_id=chat_id, id_type="chat_id")
-                print(f"[OK ] 改用单聊会话发送成功，把这一行写进 .env：")
+                print("[OK ] 改用单聊会话发送成功，把这一行写进 .env：")
                 print(f"      FEISHU_CHAT_ID={chat_id}")
             else:
                 print("      机器人还没有任何会话。请在飞书里搜索「FDE管家」并发送任意一句话。")
         return 1
     try:
-        t = bot.task_create("底座自检任务（可删除）", due=dt.datetime.now(LOCAL_TZ) + dt.timedelta(days=1))
+        t = bot.task_create("底座自检任务（可删除）",
+                            due=dt.datetime.now(local_tz()) + dt.timedelta(days=1))
         print(f"[OK ] 任务创建成功：{t.get('guid')}")
         bot.call("DELETE", f"/task/v2/tasks/{t.get('guid')}")
         print("[OK ] 自检任务已清理")
