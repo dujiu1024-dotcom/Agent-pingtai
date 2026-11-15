@@ -1209,10 +1209,10 @@ def cmd_doctor(_):
     ok = True
     for key, rel in CFG["paths"].items():
         p = ROOT / rel
-        if not p.exists() and key == "outputs":
-            # outputs 是运行产物目录，允许为空/缺失；doctor 直接补建，不再判失败
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            print(f"[OK ] {key}: {rel}（空目录，已自动创建）")
+        if not p.exists() and key in ("outputs", "state"):
+            # 运行目录允许首次启动时缺失；doctor 负责创建，不把可恢复状态误报为故障。
+            p.mkdir(parents=True, exist_ok=True)
+            print(f"[OK ] {key}: {rel}（目录已自动创建）")
             continue
         flag = "OK " if p.exists() else "缺失"
         if not p.exists():
