@@ -211,14 +211,22 @@ class PostgresWebhookStore:
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
-                    """UPDATE platform_webhook_subscriptions
-                       SET secret_ref=%s,updated_at=now()
+                    """SELECT secret_ref FROM platform_webhook_subscriptions
                        WHERE tenant_id=%s AND subscription_id=%s AND status='active'
-                       RETURNING secret_ref""",
-                    (secret_ref, tenant_id, UUID(subscription_id)),
+                       FOR UPDATE""",
+                    (tenant_id, UUID(subscription_id)),
                 )
                 row = await cursor.fetchone()
-        return row["secret_ref"] if row else None
+                if row is None:
+                    return None
+                old_secret_ref = row["secret_ref"]
+                await connection.execute(
+                    """UPDATE platform_webhook_subscriptions
+                       SET secret_ref=%s,updated_at=now()
+                       WHERE tenant_id=%s AND subscription_id=%s AND status='active'""",
+                    (secret_ref, tenant_id, UUID(subscription_id)),
+                )
+        return old_secret_ref
 
     async def disable_subscription(self, tenant_id: str, subscription_id: str) -> bool:
         connection = await self._connect()
@@ -228,10 +236,11 @@ class PostgresWebhookStore:
                     """UPDATE platform_webhook_subscriptions
                        SET status='disabled',updated_at=now()
                        WHERE tenant_id=%s AND subscription_id=%s AND status='active'
-                       RETURNING subscription_id""",
+                       RETURNING secret_ref""",
                     (tenant_id, UUID(subscription_id)),
                 )
-                return await cursor.fetchone() is not None
+                row = await cursor.fetchone()
+                return row["secret_ref"] if row else None
 
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]:
         if not 1 <= limit <= 500:
