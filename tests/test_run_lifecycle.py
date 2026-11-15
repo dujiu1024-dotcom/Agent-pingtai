@@ -2,7 +2,7 @@ import asyncio
 import unittest
 
 from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
-from agent_platform.runtime.lifecycle import InMemoryRunStateStore,RunLifecycleManager,RunStatus,WorkerLeaseLost
+from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager, RunStatus, WorkerLeaseLost
 class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.store=InMemoryRunStateStore(); await self.store.create("t","r"); self.manager=RunLifecycleManager(self.store)
