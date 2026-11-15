@@ -79,8 +79,7 @@ CREATE TABLE IF NOT EXISTS blackboard_entries (
     author_id       text NOT NULL,
     correlation_id  uuid NOT NULL,
     created_at      timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, entry_id, version),
-    UNIQUE (tenant_id, entry_id, version)
+    PRIMARY KEY (tenant_id, entry_id, version)
 );
 
 CREATE INDEX IF NOT EXISTS idx_blackboard_scope
