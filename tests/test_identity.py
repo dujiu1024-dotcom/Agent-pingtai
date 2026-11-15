@@ -38,6 +38,11 @@ class FakeIdentityRepository:
 
     async def touch_session(self, *, session_id, tenant_id):
         self.touched.append((session_id, tenant_id))
+        return any(
+            record.session_id == session_id and record.tenant_id == tenant_id
+            and record.revoked_at is None and record.expires_at > __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            for record in self.sessions.values()
+        )
 
     async def revoke_session(self, *, session_id, tenant_id, user_id, revoked_at):
         for key, record in list(self.sessions.items()):
