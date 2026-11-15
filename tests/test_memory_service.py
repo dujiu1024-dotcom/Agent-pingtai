@@ -84,3 +84,17 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
                 principal=MemoryPrincipal(tenant_id="t",user_id="u"),
                 turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="conversation:1",user_message="policy"),
             )
+
+    async def test_conflict_resolution_does_not_cross_memory_scope_ids(self):
+        service=MemoryService(InMemoryMemoryRepository())
+        own=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="old",source_ref="chat:1",confidence=.8,created_by="u1",conflict_key="preference")
+        other=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u2",content="other user's preference",source_ref="chat:2",confidence=.8,created_by="u2",conflict_key="preference")
+        await service.propose(own);await service.confirm(tenant_id="t",memory_id=own.memory_id,confirmer_id="u1")
+        await service.propose(other);await service.confirm(tenant_id="t",memory_id=other.memory_id,confirmer_id="u2")
+        revised=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="new",source_ref="chat:3",confidence=.9,created_by="u1",conflict_key="preference")
+        conflict=await service.propose(revised)
+        admin=MemoryPrincipal(tenant_id="t",user_id="admin",roles=frozenset({"memory.manage"}))
+        await service.resolve_conflict(principal=admin,conflict_key="preference",selected_memory_id=revised.memory_id)
+        self.assertEqual((await service.repository.get("t",other.memory_id)).status.value,"active")
+        self.assertEqual((await service.repository.get("t",own.memory_id)).status.value,"superseded")
+        self.assertEqual(conflict.status.value,"conflict")
