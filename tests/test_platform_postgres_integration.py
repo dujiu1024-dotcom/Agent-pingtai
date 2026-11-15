@@ -14,6 +14,8 @@ if DSN:
     from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditSink
     from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
     from agent_platform.blackboard.protocol import VersionConflict
+    from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
+    from agent_platform.workflows.multi_expert import build_multi_expert_workflow
     from agent_platform.contracts import (
         BlackboardEntry,
         BlackboardEvent,
@@ -83,6 +85,99 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             entry_id=entry_id or str(uuid4()),
             correlation_id=correlation_id or str(uuid4()),
         )
+
+    async def test_langgraph_multi_expert_workflow_persists_to_postgres_blackboard(self):
+        try:
+            from langgraph.checkpoint.memory import InMemorySaver
+            from langgraph.types import Command
+        except ImportError:
+            self.skipTest("LangGraph is required for workflow/PostgreSQL integration")
+
+        class Callbacks:
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher"}, {"expert_id": "critic"}]
+
+            async def run_expert(self, *, assignment, objective, run_context):
+                return {
+                    "claim": "verified claim from " + assignment["expert_id"],
+                    "source_refs": ["source:" + assignment["expert_id"]],
+                }
+
+            async def synthesize(self, *, objective, contributions, run_context):
+                return {"summary": "initial synthesis"}
+
+            async def review(self, *, synthesis, contributions, run_context):
+                return {
+                    "conflicts": [{
+                        "conflict_key": "claim-consistency",
+                        "reason": "claims need reconciliation",
+                        "evidence_refs": ["source:researcher", "source:critic"],
+                    }],
+                    "requires_approval": True,
+                }
+
+            async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
+                return {
+                    "synthesis": {"summary": "reconciled synthesis"},
+                    "decisions": [{
+                        "conflict_key": "claim-consistency",
+                        "outcome": "accept reconciled claim",
+                        "rationale": "evidence reviewed",
+                        "evidence_refs": ["source:researcher"],
+                    }],
+                    "requires_approval": True,
+                }
+
+            async def prepare_approval(self, *, state):
+                return {"action": "publish", "summary": state["synthesis"]["summary"]}
+
+            async def apply_approval(self, *, state, decision):
+                return {"approved": decision.get("approved") is True}
+
+            async def archive(self, *, state):
+                return {"summary": state["synthesis"]["summary"]}
+
+            async def reject(self, *, state):
+                return {"reason": "rejected"}
+
+        services = BlackboardMultiExpertServices(
+            tenant_id=self.tenant_id, repository=self.repo, callbacks=Callbacks()
+        )
+        graph = build_multi_expert_workflow(
+            services=services, checkpointer=InMemorySaver()
+        )
+        initial_state = {
+            "tenant_id": self.tenant_id,
+            "task_id": "task-postgres-blackboard",
+            "run_id": "run-postgres-blackboard",
+            "objective": "verify durable multi-expert lineage",
+            "run_context": {"model_template": "general"},
+        }
+        config = {"configurable": {"thread_id": self.tenant_id + "-blackboard-run"}}
+        paused = await graph.ainvoke(initial_state, config=config)
+        self.assertIn("__interrupt__", paused)
+        completed = await graph.ainvoke(
+            Command(resume={"approved": True}), config=config
+        )
+        self.assertEqual(completed["status"], "completed")
+        entries = await self.repo.list_entries(
+            scope=Scope.TASK, scope_id="task-postgres-blackboard", limit=100
+        )
+        kinds = {entry.kind for entry in entries}
+        self.assertTrue({
+            EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT,
+            EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE,
+        }.issubset(kinds))
+        final_entry = await self.repo.get(
+            completed["final_result"]["blackboard_entry_id"]
+        )
+        self.assertGreaterEqual(len(final_entry.source_refs), 6)
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM platform_outbox WHERE tenant_id=%s",
+                (self.tenant_id,),
+            )
+            self.assertGreaterEqual((await cur.fetchone())["n"], len(entries))
 
     async def test_migration_and_blackboard_write_are_atomic_with_outbox(self):
         entry = self.make_entry()
