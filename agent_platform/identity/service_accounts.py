@@ -171,7 +171,7 @@ class PostgresServiceIdentityRepository:
                      AND (
                        (b.subject_type='service_account'
                          AND b.subject_id=%s)
-                       OR (%s IS NOT NULL AND b.subject_type='agent'
+                       OR (%s::text IS NOT NULL AND b.subject_type='agent'
                          AND b.subject_id=%s)
                      )
                      AND (
