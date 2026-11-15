@@ -128,7 +128,7 @@ class LangGraphRunExecutor:
   finally:
    if acquired and release is not None:
     await release(tenant_id,run_id,self.worker_id)
- async def recover(self,*,load_initial_input:Callable[[RunSnapshot],Any],limit:int=100)->list[str]:
+ async def recover(self,*,load_initial_input:Callable[[RunSnapshot],Any],limit:int=100,tenant_id:str|None=None)->list[str]:
   async def verify_checkpoint(row:RunSnapshot)->None:
    actual=await self._checkpoint_ref(row.tenant_id,row.run_id)
    if actual is None or actual!=row.checkpoint_ref:
@@ -150,4 +150,4 @@ class LangGraphRunExecutor:
    ref=await self._checkpoint_ref(row.tenant_id,row.run_id)
    await self._finish(row.tenant_id,row.run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
   return await self.lifecycle.recover(checkpoint_loader=verify_checkpoint,resume=resume,limit=limit,
-   worker_id=self.worker_id,lease_seconds=self.lease_seconds)
+   worker_id=self.worker_id,lease_seconds=self.lease_seconds,tenant_id=tenant_id)
