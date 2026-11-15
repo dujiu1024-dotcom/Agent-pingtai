@@ -33,6 +33,12 @@ class KnowledgeRepository(Protocol):
         limit: int,
     ) -> list[RetrievalHit]: ...
 
+    async def get_connector_cursor(self, tenant_id: str, connector_id: str) -> str | None: ...
+
+    async def save_connector_cursor(
+        self, tenant_id: str, connector_id: str, cursor: str
+    ) -> None: ...
+
     async def delete_document(self, tenant_id: str, document_id: str) -> bool: ...
 
 
@@ -42,6 +48,7 @@ class InMemoryKnowledgeRepository:
     def __init__(self) -> None:
         self.documents: dict[tuple[str, str, int], Document] = {}
         self.chunks: dict[tuple[str, str, int], list[DocumentChunk]] = {}
+        self.connector_cursors: dict[tuple[str, str], str] = {}
 
     async def save_document(
         self, document: Document, chunks: Sequence[DocumentChunk]
@@ -127,6 +134,14 @@ class InMemoryKnowledgeRepository:
                         )
                     )
         return sorted(hits, key=lambda hit: hit.score, reverse=True)[:limit]
+
+    async def get_connector_cursor(self, tenant_id: str, connector_id: str) -> str | None:
+        return self.connector_cursors.get((tenant_id, connector_id))
+
+    async def save_connector_cursor(
+        self, tenant_id: str, connector_id: str, cursor: str
+    ) -> None:
+        self.connector_cursors[(tenant_id, connector_id)] = cursor
 
     async def delete_document(self, tenant_id: str, document_id: str) -> bool:
         from dataclasses import replace
