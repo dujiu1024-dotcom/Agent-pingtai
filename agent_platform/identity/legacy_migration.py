@@ -89,7 +89,7 @@ def write_mapping_template(
         if ref in accounts:
             raise ValueError("duplicate legacy subject reference")
         accounts[ref] = {"user_id": ""}
-        roles.setdefault(role, {"tenant_role_id": "", "project_role_id": None})
+        roles.setdefault(role, {"tenant_role_id": None, "project_role_id": None})
     payload = {
         "mapping_version": 1,
         "tenant_id": tenant_id,
@@ -341,7 +341,8 @@ async def _run_cli(args: argparse.Namespace) -> None:
     if not args.dsn or args.confirm != CONFIRMATION:
         raise ValueError("--apply requires --dsn and the exact --confirm string")
     from psycopg import AsyncConnection
-    connection = await AsyncConnection.connect(args.dsn)
+    from psycopg.rows import dict_row
+    connection = await AsyncConnection.connect(args.dsn, row_factory=dict_row)
     try:
         result = await apply_legacy_migration_plan(
             connection, plan, confirmation=args.confirm,
