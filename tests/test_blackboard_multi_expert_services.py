@@ -4,6 +4,7 @@ import unittest
 
 from agent_platform.contracts import EntryKind
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
+from agent_platform.workflows.expert_registry import ExpertProfile, InMemoryExpertRegistry
 
 
 class InMemoryBlackboard:
@@ -149,6 +150,47 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(approved["blackboard_entry_id"], final_entry.source_refs)
         kinds = {entry.kind for entry in repository.entries.values()}
         self.assertTrue({EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT, EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE}.issubset(kinds))
+
+    async def test_expert_assignments_require_registered_enabled_capabilities(self):
+        class CapabilityCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{
+                    "expert_id": "researcher",
+                    "required_capabilities": ["market_research", "source_review"],
+                }]
+
+        registry = InMemoryExpertRegistry((
+            ExpertProfile(
+                expert_id="researcher",
+                name="Researcher",
+                description="Researches market evidence",
+                capabilities=frozenset({"market_research", "source_review"}),
+            ),
+        ))
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=CapabilityCallbacks(),
+            expert_registry=registry,
+        )
+        assignments = await services.plan_experts(
+            objective="analyze market",
+            run_context={"tenant_id": "tenant-a", "run_id": "run-capability"},
+        )
+        self.assertEqual(assignments[0]["expert_id"], "researcher")
+
+        registry.register(ExpertProfile(
+            expert_id="researcher",
+            name="Researcher",
+            description="Disabled expert",
+            capabilities=frozenset({"market_research"}),
+            enabled=False,
+        ))
+        with self.assertRaises(PermissionError):
+            await services.plan_experts(
+                objective="analyze market",
+                run_context={"tenant_id": "tenant-a", "run_id": "run-capability"},
+            )
 
     async def test_rejects_cross_tenant_workflow_context(self):
         services = BlackboardMultiExpertServices(
