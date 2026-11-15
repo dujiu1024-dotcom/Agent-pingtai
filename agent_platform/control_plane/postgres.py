@@ -5,10 +5,9 @@ from datetime import datetime
 from typing import Any, Callable
 from uuid import UUID
 
-from agent_platform.control_plane.registry import RegistryConflict, RegistryVersion
+from agent_platform.control_plane.registry import RegistryConflict, RegistryNotFound, RegistryVersion
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus, ConversationMessage, ConversationSession, FileAsset, MessageRole,
-    SessionNotFound,
 )
 
 ConnectionFactory = Callable[[], Any]
@@ -110,7 +109,7 @@ class PostgresRegistryRepository:
                     (self.tenant_id, kind, item_id, version),
                 )
                 if await cursor.fetchone() is None:
-                    raise SessionNotFound("published registry version not found")
+                    raise RegistryNotFound("published registry version not found")
 
     async def get_active(self, tenant_id: str, kind: str, item_id: str) -> RegistryVersion | None:
         if tenant_id != self.tenant_id:
