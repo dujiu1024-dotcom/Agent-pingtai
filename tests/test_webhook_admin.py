@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.events.webhooks import WebhookSubscription
+from agent_platform.api.webhooks import create_webhook_admin_router
+from agent_platform.identity.models import Principal
 
 
 class FakeWebhookAdminStore:
@@ -89,6 +93,52 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="tenant-a", actor_id="user-a",
                 url="https://127.0.0.1/hook", topics=("run.completed",),
                 signing_secret=b"a" * 32,
+            )
+
+
+    async def test_http_api_derives_tenant_and_actor_from_authenticated_principal(self):
+        store, secrets = FakeWebhookAdminStore(), FakeSecrets()
+        service = WebhookSubscriptionService(store=store, secrets=secrets)
+
+        def client_for(user_id):
+            app = FastAPI()
+            app.include_router(create_webhook_admin_router(
+                service=service, authorize_manage=lambda actor: actor.user_id == "user-a",
+            ))
+
+            @app.middleware("http")
+            async def attach_principal(request, call_next):
+                setattr(request.state, "identity.principal", Principal(
+                    user_id=user_id, tenant_id="tenant-a", session_id="session-1",
+                    email="user@example.test", display_name=user_id,
+                ))
+                return await call_next(request)
+
+            return TestClient(app)
+
+        with client_for("user-a") as client:
+            created = client.post("/api/platform/v1/webhooks", json={
+                "url": "https://hooks.example.test/agent",
+                "topics": ["run.completed"],
+                "signing_secret": "s" * 32,
+                "tenant_id": "tenant-attacker",
+                "actor_id": "attacker",
+            })
+            self.assertEqual(created.status_code, 201)
+            subscription_id = created.json()["subscription_id"]
+            listed = client.get("/api/platform/v1/webhooks")
+            self.assertEqual(listed.status_code, 200)
+            self.assertEqual(len(listed.json()["items"]), 1)
+            self.assertNotIn("secret_ref", listed.json()["items"][0])
+            rotated = client.post(
+                f"/api/platform/v1/webhooks/{subscription_id}/rotate",
+                json={"signing_secret": "r" * 32},
+            )
+            self.assertEqual(rotated.status_code, 200)
+
+        with client_for("user-b") as denied:
+            self.assertEqual(
+                denied.get("/api/platform/v1/webhooks").status_code, 403,
             )
 
 
