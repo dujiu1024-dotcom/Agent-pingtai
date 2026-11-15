@@ -37,6 +37,7 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         except ImportError:
             self.skipTest("jsonschema is installed in the dedicated platform CI job")
         self.executed = []
+        self.execution_contexts = []
         self.approvals = FakeApprovalVerifier()
         self.audit = FakeAuditSink()
 
@@ -47,6 +48,23 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         async def send_message(arguments):
             self.executed.append(dict(arguments))
             return {"sent": True}
+
+        async def authorize_document(context, arguments):
+            return (
+                context.tenant_id == "tenant-a"
+                and arguments["document_id"] != "doc-secret"
+            )
+
+        async def authorize_message(context, arguments):
+            return context.tenant_id == "tenant-a"
+
+        async def contextual_handler(arguments, context):
+            self.execution_contexts.append(context)
+            return await read_document(arguments)
+
+        async def contextual_message_handler(arguments, context):
+            self.execution_contexts.append(context)
+            return await send_message(arguments)
 
         self.tools = (
             ToolDefinition(
@@ -62,6 +80,8 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
                     "additionalProperties": False,
                 },
                 resource_resolver=lambda args: f"document:{args['document_id']}",
+                resource_authorizer=authorize_document,
+                contextual_handler=contextual_handler,
             ),
             ToolDefinition(
                 name="send_message",
@@ -79,6 +99,8 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
                     "additionalProperties": False,
                 },
                 resource_resolver=lambda args: f"recipient:{args['recipient']}",
+                resource_authorizer=authorize_message,
+                contextual_handler=contextual_message_handler,
             ),
             ToolDefinition(
                 name="unconfigured",
@@ -128,6 +150,18 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.audit.records[0]["resource"], "document:doc-17")
         self.assertEqual(self.audit.records[0]["run_id"], "run-001")
         self.assertEqual(self.audit.records[0]["agent_id"], "researcher")
+        self.assertEqual(self.execution_contexts[0].tenant_id, "tenant-a")
+        self.assertEqual(self.execution_contexts[0].run_id, "run-001")
+        self.assertEqual(self.execution_contexts[0].agent_id, "researcher")
+
+    async def test_resource_authorizer_blocks_cross_tenant_or_forbidden_resource(self):
+        bridge = self.bridge()
+        with self.assertRaisesRegex(ToolExecutionDenied, "resource access"):
+            await bridge.call_tool(
+                name="read_document", arguments={"document_id": "doc-secret"}
+            )
+        self.assertEqual(self.executed, [])
+        self.assertEqual(self.audit.records[-1]["outcome"], "denied")
 
     async def test_model_cannot_inject_identity_or_approval_fields(self):
         bridge = self.bridge()
