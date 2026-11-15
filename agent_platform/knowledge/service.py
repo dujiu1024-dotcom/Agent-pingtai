@@ -31,6 +31,17 @@ class KnowledgeService:
             if len(vectors)!=len(chunks):raise ValueError("embedding count must match chunk count")
             await save_embeddings(tenant_id=document.tenant_id,chunks=chunks,vectors=vectors)
         return IngestResult(document=document,chunks=chunks,skipped_unchanged=not created)
+    async def list_documents(self,*,principal: KnowledgePrincipal,limit: int=100):
+        return await self.repository.list_documents(principal,limit=limit)
+    async def delete_document(self,*,principal: KnowledgePrincipal,document_id: str)->bool:
+        document=await self.repository.get_document(principal.tenant_id,document_id)
+        if document is None:
+            return False
+        owns_private=document.scope.value=="private" and document.owner_user_id==principal.user_id
+        manages_shared="knowledge.manage" in principal.roles
+        if not (owns_private or manages_shared):
+            raise PermissionError("document deletion is not authorized")
+        return await self.repository.delete_document(principal.tenant_id,document_id)
     async def ingest_connector_page(self,*,connector: KnowledgeConnector,tenant_id: str,cursor: str|None=None,limit: int=100)->tuple[list[IngestResult],str|None,bool]:
         page=await connector.list_changed(tenant_id=tenant_id,cursor=cursor,limit=limit)
         results=[]
