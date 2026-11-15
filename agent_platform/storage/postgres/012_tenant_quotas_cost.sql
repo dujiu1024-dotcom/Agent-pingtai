@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS platform_quota_reservations (
         REFERENCES platform_quota_budgets(tenant_id, scope_type, scope_id, period_start)
         DEFERRABLE INITIALLY DEFERRED
 );
+CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_quota_one_active_run_scope
+    ON platform_quota_reservations(tenant_id, run_id, scope_type, scope_id, period_start)
+    WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_platform_quota_reservations_active
     ON platform_quota_reservations(tenant_id, scope_type, scope_id, created_at)
     WHERE status = 'active';
