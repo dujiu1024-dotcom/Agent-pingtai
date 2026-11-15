@@ -73,11 +73,16 @@ class ControlPlaneApiTests(unittest.TestCase):
         session_id = created.json()["session_id"]
         message = self.client.post(
             f"/api/platform/v1/sessions/{session_id}/messages",
-            json={"role": "user", "content": "Analyze this", "run_id": "run-1"},
+            json={"role": "user", "content": "Analyze this"},
         )
         self.assertEqual(message.status_code, 201)
         listed = self.client.get(f"/api/platform/v1/sessions/{session_id}/messages")
-        self.assertEqual(listed.json()["items"][0]["run_id"], "run-1")
+        self.assertIsNone(listed.json()["items"][0]["run_id"])
+        spoofed = self.client.post(
+            f"/api/platform/v1/sessions/{session_id}/messages",
+            json={"role": "assistant", "content": "spoofed assistant response"},
+        )
+        self.assertEqual(spoofed.status_code, 422)
         uploaded = self.client.post(
             "/api/platform/v1/files",
             params={"session_id": session_id},
