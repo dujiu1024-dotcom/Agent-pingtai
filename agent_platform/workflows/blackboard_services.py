@@ -112,7 +112,7 @@ class BlackboardMultiExpertServices:
         result = dict(await self.callbacks.run_expert(assignment=assignment, objective=objective, run_context=run_context))
         expert_id = str(assignment.get("expert_id") or "expert")
         entry = BlackboardEntry(
-            entry_id=self._entry_id(state, "expert:" + expert_id),
+            entry_id=self._entry_id(run_context, "expert:" + expert_id),
             scope=scope, scope_id=scope_id, kind=EntryKind.CLAIM,
             content={"expert_id": expert_id, "contribution": result},
             author_id=expert_id, source_refs=self._refs(result),
@@ -126,7 +126,7 @@ class BlackboardMultiExpertServices:
         result = dict(await self.callbacks.synthesize(objective=objective, contributions=contributions, run_context=run_context))
         refs = tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
         entry = BlackboardEntry(
-            entry_id=self._entry_id(state, "synthesis"), scope=scope, scope_id=scope_id,
+            entry_id=self._entry_id(run_context, "synthesis"), scope=scope, scope_id=scope_id,
             kind=EntryKind.ARTIFACT, content={"synthesis": result},
             author_id="synthesizer", source_refs=refs,
         )
@@ -144,14 +144,14 @@ class BlackboardMultiExpertServices:
             conflict["conflict_instance_id"] = key
             refs = self._refs(conflict) or tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
             entry = BlackboardEntry(
-                entry_id=self._entry_id(state, "conflict:" + key),
+                entry_id=self._entry_id(run_context, "conflict:" + key),
                 scope=scope, scope_id=scope_id, kind=EntryKind.CONFLICT,
                 content={"conflict": conflict}, author_id="reviewer", source_refs=refs,
             )
             persisted = await self._propose_once(entry)
             conflict["blackboard_entry_id"] = persisted.entry_id
             challenge = BlackboardEntry(
-                entry_id=self._entry_id(state, "challenge:" + key),
+                entry_id=self._entry_id(run_context, "challenge:" + key),
                 scope=scope, scope_id=scope_id, kind=EntryKind.CHALLENGE,
                 content={
                     "conflict_entry_id": persisted.entry_id,
@@ -178,7 +178,7 @@ class BlackboardMultiExpertServices:
             decision = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_instance_id") == conflict.get("conflict_instance_id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
             evidence_refs = decision.get("evidence_refs", conflict.get("evidence_refs", []))
             entry = BlackboardEntry(
-                entry_id=self._entry_id(state, "decision:" + str(conflict_entry_id)),
+                entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),
                 scope=scope, scope_id=scope_id, kind=EntryKind.DECISION,
                 content={
                     "conflict_entry_id": conflict_entry_id,
@@ -195,7 +195,7 @@ class BlackboardMultiExpertServices:
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
         resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids)
         resolved_entry = BlackboardEntry(
-            entry_id=self._entry_id(state, "resolved-synthesis"),
+            entry_id=self._entry_id(run_context, "resolved-synthesis"),
             scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
             content={"resolved_synthesis": resolved_synthesis},
             author_id="conflict-resolver", source_refs=resolution_refs,
