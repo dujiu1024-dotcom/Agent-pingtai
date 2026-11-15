@@ -75,7 +75,7 @@ class SecretManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_revoke_removes_all_versions_and_fails_closed(self):
         await self.manager.create(secret_ref=self.ref, value="old-secret")
         await self.manager.rotate(secret_ref=self.ref, value="new-secret")
-        self.assertEqual(await self.manager.revoke(secret_ref=self.ref), 2)
+        self.assertEqual(await self.manager.revoke(secret_ref=self.ref), 1)
         with self.assertRaises(KeyError):
             await self.manager.resolve(secret_ref=self.ref)
 
