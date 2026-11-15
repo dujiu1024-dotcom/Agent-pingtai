@@ -228,8 +228,13 @@ class PostgresIdentityRepository:
                 subject_exists = await connection.execute(
                     """SELECT CASE
                          WHEN %s='user' THEN EXISTS (
-                           SELECT 1 FROM platform_tenant_memberships
-                           WHERE tenant_id=%s AND user_id::text=%s AND status='active'
+                           SELECT 1 FROM platform_tenant_memberships m
+                           JOIN platform_users u
+                             ON u.user_id=m.user_id AND u.status='active'
+                           JOIN platform_tenants t
+                             ON t.tenant_id=m.tenant_id AND t.status='active'
+                           WHERE m.tenant_id=%s AND m.user_id::text=%s
+                             AND m.status='active'
                          )
                          WHEN %s='team' THEN EXISTS (
                            SELECT 1 FROM platform_teams
