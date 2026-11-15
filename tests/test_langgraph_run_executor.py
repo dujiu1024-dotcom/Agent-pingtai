@@ -51,3 +51,16 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await self.store.get("tenant","queued")).status,RunStatus.SUCCEEDED)
   self.assertEqual(self.graph.calls[-1][0],{"initial":"queued"})
 if __name__=="__main__":unittest.main()
+
+ async def test_failed_worker_lease_does_not_start_run(self):
+  class LeaseRejectingStore(InMemoryRunStateStore):
+   async def acquire_lease(self,tenant_id,run_id,worker_id,*,lease_seconds):
+    return False
+  store=LeaseRejectingStore();manager=RunLifecycleManager(store);graph=FakeGraph()
+  executor=LangGraphRunExecutor(graph=graph,lifecycle=manager,timeout_seconds=1)
+  await store.create("tenant","unclaimed")
+  from agent_platform.runtime.lifecycle import WorkerLeaseLost
+  with self.assertRaises(WorkerLeaseLost):
+   await executor.execute(tenant_id="tenant",run_id="unclaimed",input={"prompt":"must not run"})
+  self.assertEqual((await store.get("tenant","unclaimed")).status,RunStatus.QUEUED)
+  self.assertEqual(graph.calls,[])
