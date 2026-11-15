@@ -51,6 +51,10 @@ class PostgresIdentityRepository:
                     ) RETURNING session_id""", (session_id, tenant_id, user_id, token_hash, expires_at, tenant_id, user_id))
                 if await cursor.fetchone() is None:
                     raise PermissionError("active tenant membership required")
+                await connection.execute(
+                    "UPDATE platform_users SET last_login_at=now(), updated_at=now() WHERE user_id=%s",
+                    (user_id,),
+                )
 
     async def get_session_by_token_hash(self, token_hash: str) -> SessionRecord | None:
         connection = await self._connection_factory()
@@ -87,8 +91,21 @@ class PostgresIdentityRepository:
                     OR (b.subject_type='team' AND b.subject_id IN (
                       SELECT team_id FROM platform_team_memberships WHERE tenant_id=%s AND user_id=%s AND status='active'
                     )))
-                  AND ((b.resource_type=%s AND b.resource_id=%s)
-                    OR (b.resource_type='tenant' AND b.resource_id=%s))
-            ) AS allowed""", (tenant_id, permission_key, user_id, tenant_id, user_id, resource_type, resource_id, tenant_id))
+                  AND (
+                    (b.resource_type=%s AND b.resource_id=%s)
+                    OR (b.resource_type='tenant' AND b.resource_id=%s)
+                    OR (
+                      %s='project' AND b.resource_type='organization'
+                      AND b.resource_id = (
+                        SELECT organization_id FROM platform_projects
+                        WHERE tenant_id=%s AND project_id=%s
+                      )
+                    )
+                  )
+            ) AS allowed""", (
+                tenant_id, permission_key, user_id, tenant_id, user_id,
+                resource_type, resource_id, tenant_id, resource_type,
+                tenant_id, resource_id,
+            ))
             row = await cursor.fetchone()
             return bool(row["allowed"])
