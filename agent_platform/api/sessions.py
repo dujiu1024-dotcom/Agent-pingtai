@@ -107,7 +107,16 @@ def create_sessions_router(
         service = await resolve_service(principal)
         filename = request.headers.get("x-filename", "upload.bin")
         media_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
-        content = await request.body()
+        max_bytes = int(getattr(service, "max_upload_bytes", 25 * 1024 * 1024))
+        declared_length = request.headers.get("content-length")
+        if declared_length and int(declared_length) > max_bytes:
+            raise HTTPException(413, "file exceeds upload size limit")
+        chunks = bytearray()
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > max_bytes:
+                raise HTTPException(413, "file exceeds upload size limit")
+        content = bytes(chunks)
         try:
             asset = await service.upload_asset(
                 tenant_id=principal.tenant_id, owner_id=principal.user_id,
