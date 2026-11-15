@@ -44,6 +44,15 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   current=await self.store.get("t","r")
   self.assertEqual(current.status,RunStatus.FAILED)
   self.assertIn("no checkpoint",current.last_error)
+ async def test_pre_checkpoint_worker_loss_can_restart_from_initial_input(self):
+  await self.manager.start("t","r")
+  old=await self.store.get("t","r")
+  await self.store.transition(__import__("agent_platform.runtime.lifecycle",fromlist=["RunSnapshot"]).RunSnapshot(
+   "t","r",RunStatus.INTERRUPTED,old.version,last_error="previous worker lease expired"),expected_version=old.version)
+  seen=[]
+  self.assertEqual(await self.manager.recover(checkpoint_loader=lambda row:_append(seen,"load"),
+   resume=lambda row:_append(seen,row.status)),["r"])
+  self.assertEqual(seen,[RunStatus.RUNNING])
  async def test_checkpoint_validation_failure_is_persisted_as_failed(self):
   await self.manager.start("t","r")
   await self.manager.mark_interrupted("t","r",checkpoint_ref="missing",reason="worker lost")
