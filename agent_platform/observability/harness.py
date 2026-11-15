@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from time import monotonic
 from typing import Any, Mapping, Protocol
 
+from agent_platform.observability.cost import ModelCostEstimator
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.redaction import redact_payload
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
@@ -47,6 +48,7 @@ class ObservedHarnessAdapter:
         metrics: MetricsPort | None = None,
         capture_content: bool = False,
         max_capture_chars: int = 2000,
+        cost_estimator: ModelCostEstimator | None = None,
     ) -> None:
         if max_capture_chars < 1:
             raise ValueError("max_capture_chars must be positive")
@@ -55,6 +57,7 @@ class ObservedHarnessAdapter:
         self.metrics = metrics or InMemoryMetricsRecorder()
         self.capture_content = capture_content
         self.max_capture_chars = max_capture_chars
+        self.cost_estimator = cost_estimator
 
     @contextmanager
     def _safe_observation(self, *, name: str, input: Mapping[str, Any], metadata: Mapping[str, Any]):
@@ -134,15 +137,25 @@ class ObservedHarnessAdapter:
                 }
                 if self.capture_content:
                     output["output_text"] = result.output_text[: self.max_capture_chars]
-                self._safe_update(span, output=redact_payload(output, max_text_chars=self.max_capture_chars))
                 input_tokens = int(result.usage.get("input_tokens", 0))
                 output_tokens = int(result.usage.get("output_tokens", 0))
+                cost_estimate = (
+                    self.cost_estimator.estimate(
+                        template, input_tokens=input_tokens, output_tokens=output_tokens
+                    )
+                    if self.cost_estimator is not None else None
+                )
+                if cost_estimate is not None:
+                    output["estimated_cost_usd"] = str(cost_estimate)
+                self._safe_update(span, output=redact_payload(output, max_text_chars=self.max_capture_chars))
                 if input_tokens > 0:
                     self._safe_metric("increment", "agent_input_tokens_total", input_tokens, labels=labels)
                 if output_tokens > 0:
                     self._safe_metric("increment", "agent_output_tokens_total", output_tokens, labels=labels)
                 if result.tool_calls:
                     self._safe_metric("increment", "agent_tool_calls_total", len(result.tool_calls), labels=labels)
+                if cost_estimate is not None and cost_estimate > 0:
+                    self._safe_metric("increment", "agent_estimated_cost_usd_total", float(cost_estimate), labels=labels)
                 return result
         finally:
             elapsed = monotonic() - started
