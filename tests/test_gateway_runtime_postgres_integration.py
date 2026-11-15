@@ -76,6 +76,7 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
    await conn.execute("UPDATE platform_runs SET lease_expires_at=now()-interval '1 second' WHERE tenant_id=%s AND run_id=%s",(self.tenant,self.run))
    await conn.commit()
   class Graph:
+   checkpointer=object()
    async def ainvoke(self,payload,*,config):return {"recovered":payload}
    async def aget_state(self,config):return type("State",(),{"config":{"configurable":{"checkpoint_id":None}}})()
   manager=RunLifecycleManager(self.states)
