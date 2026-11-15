@@ -55,7 +55,7 @@ def create_knowledge_memory_router(
         except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
         project_id=body.get("project_id")
         if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:raise HTTPException(403,"knowledge.manage role required")
-        if scope is KnowledgeScope.PROJECT and project_id not in principal.project_ids:raise HTTPException(403,"project access denied")
+        if scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:raise HTTPException(403,"project knowledge.manage permission required")
         try:document_id=str(UUID(str(body["document_id"]))) if body.get("document_id") else str(uuid4())
         except ValueError as exc:raise HTTPException(400,"document_id must be a UUID") from exc
         source_uri=body.get("source_uri") or ("upload://"+document_id)
@@ -73,8 +73,8 @@ def create_knowledge_memory_router(
         except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
         if document_scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:
             raise HTTPException(403,"knowledge.manage role required")
-        if document_scope is KnowledgeScope.PROJECT and project_id not in principal.project_ids:
-            raise HTTPException(403,"project access denied")
+        if document_scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:
+            raise HTTPException(403,"project knowledge.manage permission required")
         raw=await request.body()
         if not raw:raise HTTPException(400,"uploaded document is empty")
         media_type=request.headers.get("content-type","application/octet-stream").split(";")[0].strip()
