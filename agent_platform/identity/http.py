@@ -48,6 +48,7 @@ class IdentityASGIMiddleware:
         app: Any,
         *,
         identity: IdentityService,
+        service_identity: Any | None = None,
         session_cookie: str = "__Host-platform_session",
         csrf_cookie: str = "__Host-platform_csrf",
         allowed_origins: tuple[str, ...] = (),
@@ -68,6 +69,7 @@ class IdentityASGIMiddleware:
             raise ValueError("allowed_origins must be unique")
         self.app = app
         self.identity = identity
+        self.service_identity = service_identity
         self.session_cookie = session_cookie
         self.csrf_cookie = csrf_cookie
         self.allowed_origins = frozenset(normalized_origins)
@@ -189,16 +191,22 @@ class IdentityASGIMiddleware:
         principal: Any = None
 
         if token:
-            try:
-                principal = await self.identity.authenticate(token)
-            except AuthenticationError:
-                if bearer:
-                    try:
-                        principal = await self.identity.authenticate_api_credential(token)
-                    except AuthenticationError:
-                        principal = None
-                else:
+            if bearer and token.startswith("svc_") and self.service_identity is not None:
+                try:
+                    principal = await self.service_identity.authenticate(token)
+                except PermissionError:
                     principal = None
+            else:
+                try:
+                    principal = await self.identity.authenticate(token)
+                except AuthenticationError:
+                    if bearer:
+                        try:
+                            principal = await self.identity.authenticate_api_credential(token)
+                        except AuthenticationError:
+                            principal = None
+                    else:
+                        principal = None
 
         if cookie_token and method not in self.SAFE_METHODS:
             csrf_cookie = cookies.get(self.csrf_cookie, "")
