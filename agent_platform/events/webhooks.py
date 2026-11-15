@@ -6,7 +6,7 @@ import ipaddress
 import hmac
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -175,6 +175,63 @@ class PostgresWebhookStore:
                 )
                 rows = await cursor.fetchall()
         return len(rows)
+
+    async def create_subscription(self, subscription: WebhookSubscription, *, created_by: str) -> None:
+        if not created_by:
+            raise ValueError("created_by is required")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_webhook_subscriptions
+                       (tenant_id,subscription_id,target_url,secret_ref,topics,status,created_by)
+                       VALUES (%s,%s,%s,%s,%s,'active',%s)""",
+                    (subscription.tenant_id, UUID(subscription.subscription_id),
+                     subscription.url, subscription.secret_ref, list(subscription.topics), created_by),
+                )
+
+    async def list_subscriptions(self, tenant_id: str) -> list[dict[str, Any]]:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT subscription_id,target_url,topics,status,created_at,updated_at
+                   FROM platform_webhook_subscriptions
+                   WHERE tenant_id=%s ORDER BY created_at DESC""",
+                (tenant_id,),
+            )
+            rows = await cursor.fetchall()
+        return [{
+            "subscription_id": str(row["subscription_id"]), "url": row["target_url"],
+            "topics": tuple(row["topics"]), "status": row["status"],
+            "created_at": row["created_at"], "updated_at": row["updated_at"],
+        } for row in rows]
+
+    async def update_secret_ref(self, tenant_id: str, subscription_id: str, *, secret_ref: str) -> str | None:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_webhook_subscriptions
+                       SET secret_ref=%s,updated_at=now()
+                       WHERE tenant_id=%s AND subscription_id=%s AND status='active'
+                       RETURNING secret_ref""",
+                    (secret_ref, tenant_id, UUID(subscription_id)),
+                )
+                row = await cursor.fetchone()
+        return row["secret_ref"] if row else None
+
+    async def disable_subscription(self, tenant_id: str, subscription_id: str) -> bool:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_webhook_subscriptions
+                       SET status='disabled',updated_at=now()
+                       WHERE tenant_id=%s AND subscription_id=%s AND status='active'
+                       RETURNING subscription_id""",
+                    (tenant_id, UUID(subscription_id)),
+                )
+                return await cursor.fetchone() is not None
 
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]:
         if not 1 <= limit <= 500:
