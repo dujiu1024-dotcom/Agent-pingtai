@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Sequence
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.knowledge.rag import RAGService
 @dataclass(frozen=True)
 class RAGEvalCase:
     case_id: str
@@ -48,7 +49,7 @@ class RAGAnswerEvalResult:
     grounded: bool
 
 
-async def evaluate_answers(rag, cases: Sequence[RAGAnswerEvalCase], *, k: int = 5) -> list[RAGAnswerEvalResult]:
+async def evaluate_answers(rag: RAGService, cases: Sequence[RAGAnswerEvalCase], *, k: int = 5) -> list[RAGAnswerEvalResult]:
     """Deterministic answer/citation checks for release gates; not a substitute for human quality review."""
     if k < 1:
         raise ValueError("k must be >= 1")
