@@ -118,6 +118,20 @@ class RedisStreamsConsumer:
                     result["busy"] += 1
                 continue
 
+            if claim.attempts > self.max_attempts:
+                try:
+                    if await self._dead_letter(
+                        message_id=message_id, fields=fields, event_id=event_id,
+                        reason="max attempts exceeded after repeated worker interruption",
+                        claim=claim,
+                    ):
+                        result["dead_lettered"] += 1
+                    else:
+                        result["failed"] += 1
+                except Exception:
+                    result["failed"] += 1
+                continue
+
             envelope = EventEnvelope(
                 tenant_id=self.tenant_id, topic=self.topic, event_id=event_id,
                 message_id=message_id, payload=payload,
