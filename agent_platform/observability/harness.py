@@ -99,6 +99,14 @@ class ObservedHarnessAdapter:
                 if self.capture_content:
                     output["output_text"] = result.output_text[: self.max_capture_chars]
                 span.update(output=redact_payload(output, max_text_chars=self.max_capture_chars))
+                input_tokens = int(result.usage.get("input_tokens", 0))
+                output_tokens = int(result.usage.get("output_tokens", 0))
+                if input_tokens > 0:
+                    self.metrics.increment("agent_input_tokens_total", input_tokens, labels=labels)
+                if output_tokens > 0:
+                    self.metrics.increment("agent_output_tokens_total", output_tokens, labels=labels)
+                if result.tool_calls:
+                    self.metrics.increment("agent_tool_calls_total", len(result.tool_calls), labels=labels)
                 return result
         finally:
             elapsed = monotonic() - started
