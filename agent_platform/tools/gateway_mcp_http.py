@@ -134,6 +134,8 @@ def create_authenticated_mcp_asgi_app(
         from agent_platform.control_plane.gateway_auth import PersistentRunTokenVerifier
         verifier = PersistentRunTokenVerifier(token_service=token_service, resource_server_url=resource_server_url)
     else:
+        if bearer_token is None:
+            raise ValueError("bearer_token is required when token_service is not provided")
         if expires_at is None:
             raise ValueError("expires_at is required when using a local bearer token")
         verifier = RunBoundTokenVerifier(
