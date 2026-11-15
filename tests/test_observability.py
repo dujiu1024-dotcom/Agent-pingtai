@@ -60,6 +60,28 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('agent_runs_total{component="harness",model_template="general@2",status="succeeded"}', snapshot["counters"])
         self.assertIn('agent_run_duration_seconds{component="harness",model_template="general@2"}', snapshot["observation_counts"])
 
+    async def test_telemetry_backend_failure_does_not_break_harness(self):
+        class BrokenObserver:
+            def observe(self, **kwargs):
+                raise RuntimeError("telemetry unavailable")
+
+        class BrokenMetrics:
+            def increment(self, *args, **kwargs):
+                raise RuntimeError("metrics unavailable")
+
+            def observe(self, *args, **kwargs):
+                raise RuntimeError("metrics unavailable")
+
+        request = HarnessRequest(
+            context=RunContext("tenant-a", "run-safe", "agent-a", ModelTemplateRef("general")),
+            instructions="", input_text="",
+        )
+        adapter = ObservedHarnessAdapter(
+            FakeHarness(), observer=BrokenObserver(), metrics=BrokenMetrics(),
+        )
+        result = await adapter.run(request)
+        self.assertEqual(result.output_text, "approved answer")
+
     async def test_harness_failure_is_recorded_and_reraised(self):
         class BrokenHarness:
             async def run(self, request):
@@ -89,7 +111,7 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
             metrics.increment("agent_runs_total", labels={"run_id": "run-1"})
         metrics.increment("agent_runs_total", labels={"status": "ok"})
         exposition = metrics.render_prometheus()
-        self.assertTrue(exposition.endswith("\\n"))
+        self.assertTrue(exposition.endswith("\n"))
         self.assertIn('agent_runs_total_count{status="ok"}', exposition)
 
     def test_agent_and_rag_evaluation_gate(self):
