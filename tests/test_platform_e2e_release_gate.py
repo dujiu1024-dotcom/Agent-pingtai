@@ -63,6 +63,16 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
                 project_ids=frozenset(), permissions=frozenset({"knowledge.manage"}),
             )
 
+
+        async def _memory_principal(request):
+            principal = request.state.identity.principal
+            from agent_platform.memory.service import MemoryPrincipal
+            return MemoryPrincipal(
+                tenant_id=principal.tenant_id, user_id=principal.user_id,
+                permissions=frozenset({"memory.manage"}),
+                manage_project_ids=frozenset(), manage_agent_ids=frozenset(),
+            )
+
         class GroundedGenerator:
             async def generate(self, *, query, context):
                 return {
@@ -79,6 +89,7 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
         app.include_router(create_knowledge_memory_router(
             knowledge=knowledge, memory=memory,
             resolve_knowledge_principal=resolve_knowledge,
+            resolve_memory_principal=lambda request: _memory_principal(request),
             rag=RAGService(knowledge=knowledge, generator=GroundedGenerator()),
         ))
         with TestClient(app, base_url="https://platform.example.test") as client:
