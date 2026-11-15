@@ -60,6 +60,8 @@ include = [
   "tests/test_run_lifecycle.py",
   "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
+  "tests/test_quotas.py",
+  "tests/test_quota_postgres_integration.py",
 ]
 
 [tool.ruff.lint]
@@ -98,6 +100,7 @@ files = [
   "agent_platform/runtime/deepseek_harness.py",
   "agent_platform/runtime/strands_mcp_provider.py",
   "agent_platform/tools/gateway_mcp_http.py",
+  "agent_platform/quotas/*.py",
   "agent_platform/identity/*.py",
   "tests/test_identity.py",
 ]
