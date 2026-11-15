@@ -7,6 +7,7 @@ from typing import Protocol
 
 from agent_platform.identity.models import SessionRecord, UserRecord
 
+
 class IdentityRepository(Protocol):
     async def get_user_by_email(
         self, normalized_email: str
