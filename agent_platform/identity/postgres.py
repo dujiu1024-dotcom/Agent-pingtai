@@ -71,10 +71,24 @@ class PostgresIdentityRepository:
             return None
         return SessionRecord(session_id=str(row["session_id"]), tenant_id=row["tenant_id"], user_id=str(row["user_id"]), email=row["email"], display_name=row["display_name"], expires_at=row["expires_at"], revoked_at=row["revoked_at"], user_status=row["user_status"], membership_status=row["membership_status"])
 
-    async def touch_session(self, *, session_id: str, tenant_id: str) -> None:
+    async def touch_session(self, *, session_id: str, tenant_id: str) -> bool:
         connection = await self._connection_factory()
         async with connection:
-            await connection.execute("UPDATE platform_sessions SET last_seen_at=now() WHERE session_id=%s AND tenant_id=%s AND revoked_at IS NULL AND expires_at > now()", (session_id, tenant_id))
+            cursor = await connection.execute(
+                """UPDATE platform_sessions SET last_seen_at=now()
+                   WHERE session_id=%s AND tenant_id=%s
+                     AND revoked_at IS NULL AND expires_at > now()
+                     AND EXISTS (
+                       SELECT 1 FROM platform_users u
+                       JOIN platform_tenant_memberships m ON m.user_id=u.user_id
+                       WHERE u.user_id=platform_sessions.user_id
+                         AND m.tenant_id=platform_sessions.tenant_id
+                         AND u.status='active' AND m.status='active'
+                     )
+                   RETURNING session_id""",
+                (session_id, tenant_id),
+            )
+            return await cursor.fetchone() is not None
 
     async def revoke_session(self, *, session_id: str, tenant_id: str, user_id: str, revoked_at: datetime) -> bool:
         connection = await self._connection_factory()
