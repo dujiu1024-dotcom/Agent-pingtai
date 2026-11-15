@@ -178,11 +178,14 @@ class QuotaService:
         await self.store.put_budget(budget)
 
     async def reserve_run(
-        self, *, budget: Budget, tenant_id: str, run_id: str,
+        self, *, tenant_id: str, run_id: str, scope_type: str, scope_id: str,
         estimated_tokens: int, estimated_cost_usd: Decimal,
     ) -> tuple[QuotaReservation, tuple[str, ...]]:
-        if tenant_id != budget.tenant_id:
-            raise PermissionError("budget tenant mismatch")
+        if not tenant_id or not run_id:
+            raise ValueError("tenant_id and run_id are required")
+        budget = await self.store.get_budget(tenant_id, scope_type, scope_id, datetime.now(timezone.utc))
+        if budget is None:
+            raise BudgetExceeded("quota budget not configured")
         if estimated_tokens < 0 or estimated_cost_usd < 0:
             raise ValueError("reservation estimates must be non-negative")
         reservation = QuotaReservation(
