@@ -119,4 +119,5 @@ def create_authenticated_mcp_asgi_app(
         host=host,
         transport_security=transport_security,
         stateless_http=False,
+        json_response=True,
     )
