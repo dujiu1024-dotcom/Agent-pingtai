@@ -213,5 +213,26 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             await services.plan_experts(objective="x", run_context={"tenant_id": "tenant-b"})
 
 
+    async def test_idempotency_key_rejects_changed_payload(self):
+        from dataclasses import replace
+
+        repository = InMemoryBlackboard()
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository,
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task-1", "run_id": "run-idempotent"}
+        await services.run_expert(
+            assignment={"expert_id": "researcher"},
+            objective="analyze market", run_context=context,
+        )
+        existing = next(iter(repository.entries.values()))
+        changed = replace(
+            existing,
+            content={"expert_id": "researcher", "contribution": {"claim": "different result"}},
+        )
+        with self.assertRaisesRegex(RuntimeError, "idempotency conflict"):
+            await services._propose_once(changed)
+
 if __name__ == "__main__":
     unittest.main()
