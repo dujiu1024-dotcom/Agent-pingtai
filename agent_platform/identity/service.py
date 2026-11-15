@@ -60,3 +60,34 @@ class IdentityService:
         allowed = await self._repository.has_permission(tenant_id=principal.tenant_id, user_id=principal.user_id, resource_type=resource.resource_type, resource_id=resource.resource_id, permission_key=permission_key)
         if not allowed:
             raise AuthorizationDenied("permission denied")
+
+    async def grant_role(
+        self, *, principal: Principal, subject_type: str, subject_id: str,
+        resource: ResourceRef, role_id: str,
+    ) -> str:
+        if subject_type not in {"user", "team", "service_account", "agent"}:
+            raise ValueError("unsupported role binding subject_type")
+        if not subject_id.strip() or not role_id.strip():
+            raise ValueError("subject_id and role_id must not be empty")
+        await self.authorize(
+            principal=principal, resource=resource,
+            permission_key="identity.role.manage",
+        )
+        return await self._repository.grant_role(
+            tenant_id=principal.tenant_id, actor_id=principal.user_id,
+            subject_type=subject_type, subject_id=subject_id,
+            resource_type=resource.resource_type, resource_id=resource.resource_id,
+            role_id=role_id,
+        )
+
+    async def revoke_role(
+        self, *, principal: Principal, binding_id: str, resource: ResourceRef
+    ) -> bool:
+        await self.authorize(
+            principal=principal, resource=resource,
+            permission_key="identity.role.manage",
+        )
+        return await self._repository.revoke_role(
+            tenant_id=principal.tenant_id, actor_id=principal.user_id,
+            binding_id=binding_id,
+        )
