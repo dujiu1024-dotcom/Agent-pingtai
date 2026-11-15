@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS platform_data_migration_batches (
     target_checksum text,
     started_at timestamptz,
     finished_at timestamptz,
+    rollback_reason text,
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, batch_id)
 );
