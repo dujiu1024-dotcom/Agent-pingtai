@@ -143,18 +143,31 @@ class OciSandboxRunner:
 
         stdout_task = asyncio.create_task(collect(process.stdout))
         stderr_task = asyncio.create_task(collect(process.stderr))
-        if stdin and process.stdin is not None:
-            process.stdin.write(stdin)
-            await process.stdin.drain()
-            process.stdin.close()
 
+        async def feed_stdin() -> None:
+            if not stdin or process.stdin is None:
+                return
+            try:
+                process.stdin.write(stdin)
+                await process.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            finally:
+                process.stdin.close()
+
+        feeder = asyncio.create_task(feed_stdin())
         timed_out = False
         try:
-            await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+            await asyncio.wait_for(
+                asyncio.gather(process.wait(), feeder),
+                timeout=timeout_seconds,
+            )
         except asyncio.TimeoutError:
             timed_out = True
             process.kill()
             await process.wait()
+            feeder.cancel()
+            await asyncio.gather(feeder, return_exceptions=True)
         stdout, out_truncated = await stdout_task
         stderr, err_truncated = await stderr_task
         return SandboxResult(
