@@ -127,6 +127,34 @@ class FakeIdentityRepository:
                 return True
         return False
 
+
+    async def rotate_api_credential(
+        self, *, old_credential_id, new_credential_id, tenant_id, user_id,
+        name, token_hash, scopes, expires_at,
+    ):
+        old_key = next(
+            (key for key, value in self.api_credentials.items()
+             if value.credential_id == old_credential_id
+             and value.tenant_id == tenant_id and value.user_id == user_id
+             and value.revoked_at is None),
+            None,
+        )
+        if old_key is None or (tenant_id, user_id) not in self.memberships:
+            return False
+        old = self.api_credentials[old_key]
+        self.api_credentials[old_key] = ApiCredentialRecord(
+            credential_id=old.credential_id, tenant_id=old.tenant_id,
+            user_id=old.user_id, name=old.name, scopes=old.scopes,
+            expires_at=old.expires_at, revoked_at=datetime.now(timezone.utc),
+            user_status=old.user_status, membership_status=old.membership_status,
+        )
+        self.api_credentials[token_hash] = ApiCredentialRecord(
+            credential_id=new_credential_id, tenant_id=tenant_id, user_id=user_id,
+            name=name, scopes=scopes, expires_at=expires_at, revoked_at=None,
+            user_status=self.user.status, membership_status="active",
+        )
+        return True
+
     async def create_invitation(
         self, *, invitation_id, tenant_id, email_normalized, role_id,
         token_hash, invited_by, expires_at,
@@ -286,6 +314,26 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         ))
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate_api_credential(credential.access_token)
+
+
+
+    async def test_api_credential_rotation_revokes_old_and_issues_new_atomically(self):
+        issued = await self.service.login(
+            email="admin@example.com", password="correct horse battery staple",
+            tenant_id="tenant-a",
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        old = await self.service.create_api_credential(
+            principal=principal, name="automation", scopes=("project.read",),
+        )
+        rotated = await self.service.rotate_api_credential(
+            principal=principal, old_credential_id=old.credential_id,
+            name="automation", scopes=("project.read",),
+        )
+        with self.assertRaises(AuthenticationError):
+            await self.service.authenticate_api_credential(old.access_token)
+        current = await self.service.authenticate_api_credential(rotated.access_token)
+        self.assertEqual(current.credential_id, rotated.credential_id)
 
     async def test_invitation_requires_user_manage_and_is_email_bound(self):
         issued = await self.service.login(
