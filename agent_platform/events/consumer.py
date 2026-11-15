@@ -60,13 +60,16 @@ class RedisStreamsConsumer:
         self, *, message_id: str, fields: Mapping[str, str], event_id: str | None,
         reason: str, claim: EventReceiptClaim | None = None,
     ) -> bool:
-        if claim is not None and not await self.receipts.dead_letter(claim, reason):
-            return False
+        # Persist the original message in Redis DLQ before changing the receipt
+        # or considering the source entry acknowledged. A Redis failure therefore
+        # leaves the source pending; a later DB failure can at worst duplicate DLQ.
         await self.transport.dead_letter(
             tenant_id=self.tenant_id, topic=self.topic, group=self.group,
             message_id=message_id, fields=dict(fields), event_id=event_id or "",
             reason=reason[:1000], consumer_name=self.consumer_name,
         )
+        if claim is not None:
+            await self.receipts.dead_letter(claim, reason)
         return True
 
     async def consume_batch(
