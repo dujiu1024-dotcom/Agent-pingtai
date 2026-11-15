@@ -36,6 +36,6 @@ if(view==="tools")$("toolList").innerHTML=capabilities.registry?unavailable("工
 $("refresh").onclick=()=>load();
 $("submitTask").onclick=async()=>{if(!capabilities.task_execution){msg("任务执行 API 尚未接入；不会提交到占位接口。");return}try{const r=await api("/tasks",{method:"POST",body:JSON.stringify({agent_id:$("agentId").value,project_id:$("projectId").value||null,input:{text:$("taskInput").value}})});msg("任务已提交："+r.task_id);show("runs")}catch(e){msg(e.message)}};
 $("createAgent").onclick=async()=>{if(!capabilities.agent_management){msg("Agent 管理 API 尚未接入；当前请勿创建占位 Agent。");return}try{await api("/agents",{method:"POST",body:JSON.stringify({agent_id:$("newAgentId").value,name:$("newAgentName").value,role_definition:$("agentRole").value,model_template_ref:$("templateRef").value})});msg("Agent 已创建");load("agents")}catch(e){msg(e.message)}};
-$("ingestDoc").onclick=async()=>{try{await api("/knowledge/documents",{method:"POST",body:JSON.stringify({title:$("docTitle").value,scope:$("docScope").value,content:$("docText").value,media_type:"text/plain"})});msg("文档已提交入库");load("knowledge")}catch(e){msg(e.message)}};
+$("ingestDoc").onclick=async()=>{if(!capabilities.knowledge){msg("知识库 API 尚未接入；不会提交到占位接口。");return}try{await api("/knowledge/documents",{method:"POST",body:JSON.stringify({title:$("docTitle").value,scope:$("docScope").value,content:$("docText").value,media_type:"text/plain"})});msg("文档已提交入库");load("knowledge")}catch(e){msg(e.message)}};
 load("overview");
 </script></body></html>
