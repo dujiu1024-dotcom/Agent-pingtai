@@ -79,6 +79,73 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await cur.fetchone())["n"],4)
         self.assertEqual(await self.memory.retrieve(principal=principal),[])
 
+    async def test_cross_tenant_document_and_memory_ids_are_not_visible_or_mutable(self):
+        other_tenant = self.tenant_id + "-other"
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants(tenant_id,display_name) VALUES(%s,%s)",
+                (other_tenant, "Other Tenant"),
+            )
+            await conn.commit()
+
+        document = Document(
+            tenant_id=self.tenant_id,
+            title="tenant-private evidence",
+            source_uri="file://tenant-a",
+            content_hash="tenant-a-hash",
+            scope=KnowledgeScope.TENANT,
+        )
+        chunk = DocumentChunk(
+            tenant_id=self.tenant_id,
+            document_id=document.document_id,
+            document_version=1,
+            ordinal=0,
+            text="tenant-a-only confidential marker",
+            content_hash="chunk-a",
+            start_offset=0,
+            end_offset=34,
+        )
+        await self.knowledge.save_document(document, [chunk])
+
+        other_principal = KnowledgePrincipal(
+            tenant_id=other_tenant, user_id="other-user",
+        )
+        self.assertIsNone(await self.knowledge.get_document(
+            other_tenant, document.document_id,
+        ))
+        self.assertEqual(await self.knowledge.search(
+            principal=other_principal, query="confidential",
+            query_vector=None, limit=5,
+        ), [])
+        self.assertFalse(await self.knowledge.delete_document(
+            other_tenant, document.document_id,
+        ))
+        self.assertIsNotNone(await self.knowledge.get_document(
+            self.tenant_id, document.document_id,
+        ))
+
+        candidate = MemoryCandidate(
+            tenant_id=self.tenant_id,
+            scope=MemoryScope.USER,
+            scope_id="owner-a",
+            content="tenant-a memory",
+            source_ref="conversation:tenant-a",
+            confidence=0.9,
+            created_by="owner-a",
+        )
+        await self.memory.propose(candidate)
+        self.assertIsNone(await self.memory.repository.get(
+            other_tenant, candidate.memory_id,
+        ))
+        self.assertEqual(await self.memory.repository.list(other_tenant), [])
+        self.assertFalse(await self.memory.forget(
+            principal=MemoryPrincipal(tenant_id=other_tenant, user_id="owner-a"),
+            memory_id=candidate.memory_id,
+        ))
+        self.assertIsNotNone(await self.memory.repository.get(
+            self.tenant_id, candidate.memory_id,
+        ))
+
     async def test_connector_cursor_is_durable_and_tenant_scoped(self):
         await self.knowledge.save_connector_cursor(self.tenant_id,"fixture","cursor-1")
         self.assertEqual(await self.knowledge.get_connector_cursor(self.tenant_id,"fixture"),"cursor-1")
