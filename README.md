@@ -156,7 +156,7 @@ python3 agency.py init && python3 agency.py doctor
 - Supervised 审批策略：`agent_platform/approval/`
 - LangGraph 与 Harness 适配端口：`agent_platform/runtime/`
 - DeepSeek Harness 实验适配器（需隔离环境）：`agent_platform/runtime/deepseek_harness.py`，可选依赖 `pip install -r requirements-harness-dsh.txt`
-- Strands Agents 对比适配器（无平台工具、受控模型代理）：`agent_platform/runtime/strands_agents.py`，可选依赖 `pip install -r requirements-harness-strands.txt`
+- Strands Agents 对比适配器（受控模型代理、Gateway-only 工具）：`agent_platform/runtime/strands_agents.py`；官方 MCP Client Provider：`agent_platform/runtime/strands_mcp_provider.py`；可选依赖 `pip install -r requirements-harness-strands.txt`
 - Harness 同任务基准测试：`agent_platform/runtime/harness_benchmark.py`，统一比较通过率、延迟、Token 用量与失败类型
 - 多专家真实运行时集成测试：覆盖 LangGraph 并行专家、冲突处理、人工审批暂停/恢复
 - PostgreSQL + pgvector / Redis Streams 服务级集成测试：`tests/test_platform_postgres_integration.py`、`tests/test_redis_streams_integration.py`，由 `platform-integration` 工作流自动运行
@@ -173,5 +173,5 @@ python3 agency.py init && python3 agency.py doctor
 - `agent_platform/tools/gateway_mcp.py`：按 Run 创建 MCP Server，只暴露可信白名单内的工具。
 - 工具身份、租户、角色、审批 ID、资源解析均来自服务端上下文；参数使用 JSON Schema 校验。
 - MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
-- Strands 仅通过 `GatewayToolProvider` 接收当前 Run 的 MCP 工具；缺少 Provider 时拒绝工具调用。L2 审批 ID 按动作摘要绑定，不按工具名宽泛复用。
-- 已通过 MCP SDK 内存传输验证 ClientSession 工具发现和调用；生产传输连接和认证部署仍需完成端到端验证。
+- Strands 通过官方 `MCPClient` 连接当前 Run 的 HTTPS MCP endpoint；短期 Bearer Token 由可信控制面按 Run 签发，服务端将 Token 映射到不可变的 tenant/actor/role/run/agent/审批上下文。Provider 使用精确工具过滤，并校验发现集合与 Run 白名单完全一致；缺少 Provider 或 endpoint 时拒绝工具调用。L2 审批 ID 按动作摘要绑定，不按工具名宽泛复用。
+- 已通过 MCP SDK 内存传输验证 ClientSession 工具发现和调用；已实现 Strands 官方 MCPClient 的 HTTPS/短期 Token 连接 Provider，并增加连接生命周期、白名单和失败关闭测试。Gateway endpoint 的生产服务化、Token 签发/撤销及真实网络联调仍需完成。
