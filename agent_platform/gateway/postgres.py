@@ -1,6 +1,6 @@
 """Shared PostgreSQL endpoint directory with renewable owner leases."""
 from __future__ import annotations
-from datetime import datetime,timezone
+from datetime import datetime,timedelta,timezone
 from typing import Any
 from agent_platform.gateway.service import EndpointDirectory,EndpointRecord
 
@@ -21,12 +21,12 @@ class PostgresEndpointDirectory(EndpointDirectory):
   if row is None:return None
   return EndpointRecord(row["tenant_id"],str(row["run_id"]),row["instance_id"],row["endpoint_url"],row["status"],row["created_at"],row.get("lease_expires_at"))
  async def register(self,r:EndpointRecord)->None:
-  lease=r.lease_expires_at or datetime.now(timezone.utc)
+  lease=r.lease_expires_at or datetime.now(timezone.utc)+timedelta(seconds=30)
   c=await self._connect()
   async with c:
    cur=await c.execute("""INSERT INTO platform_gateway_endpoints
     (tenant_id,run_id,instance_id,endpoint_url,status,created_at,updated_at,lease_expires_at)
-    VALUES(%s,%s,%s,'active',%s,now(),now(),%s)
+    VALUES(%s,%s,%s,%s,'active',%s,now(),%s)
     ON CONFLICT(tenant_id,run_id) DO UPDATE SET instance_id=EXCLUDED.instance_id,endpoint_url=EXCLUDED.endpoint_url,
     status='active',created_at=EXCLUDED.created_at,updated_at=now(),lease_expires_at=EXCLUDED.lease_expires_at
     WHERE platform_gateway_endpoints.status='inactive' OR platform_gateway_endpoints.lease_expires_at<=now()
