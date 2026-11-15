@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from typing import Any
 
 
@@ -43,3 +44,19 @@ def build_state_graph(
         graph.add_conditional_edges(source, router, normalized)
 
     return graph.compile(checkpointer=checkpointer)
+
+
+
+@asynccontextmanager
+async def postgres_checkpointer(dsn: str) -> AsyncIterator[Any]:
+    """Yield a LangGraph PostgreSQL checkpointer with its schema initialized."""
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    except ImportError as exc:
+        raise RuntimeError(
+            "Install langgraph-checkpoint-postgres to use durable workflow checkpoints"
+        ) from exc
+
+    async with AsyncPostgresSaver.from_conn_string(dsn) as checkpointer:
+        await checkpointer.setup()
+        yield checkpointer
