@@ -26,7 +26,7 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
                 tenant_id=request.headers.get("x-tenant", "tenant-a"),
                 user_id=request.headers.get("x-user", "user-a"),
                 project_ids=frozenset({"project-a"}),
-                roles=frozenset(request.headers.get("x-roles", "").split()),
+                permissions=frozenset(request.headers.get("x-roles", "").split()),
             )
 
         async def resolve_memory(request):
