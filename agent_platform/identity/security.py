@@ -25,8 +25,11 @@ class PasswordHasher:
             raise CredentialError("password is too long")
         salt = secrets.token_bytes(16)
         derived = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=cls.N, r=cls.R, p=cls.P, dklen=cls.DKLEN, maxmem=128 * 1024 * 1024)
-        encode = lambda value: base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
-        return "scrypt$%s$%s$%s$%s$%s" % (cls.N, cls.R, cls.P, encode(salt), encode(derived))
+        salt_text = base64.urlsafe_b64encode(salt).decode("ascii").rstrip("=")
+        digest_text = base64.urlsafe_b64encode(derived).decode("ascii").rstrip("=")
+        return "scrypt$%s$%s$%s$%s$%s" % (
+            cls.N, cls.R, cls.P, salt_text, digest_text
+        )
 
     @staticmethod
     def verify(password: str, encoded: str) -> bool:
@@ -34,7 +37,8 @@ class PasswordHasher:
             algorithm, n, r, p, salt_text, digest_text = encoded.split("$", 5)
             if algorithm != "scrypt":
                 return False
-            decode = lambda value: base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+            def decode(value: str) -> bytes:
+                return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
             salt, expected = decode(salt_text), decode(digest_text)
             actual = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=int(n), r=int(r), p=int(p), dklen=len(expected), maxmem=128 * 1024 * 1024)
             return hmac.compare_digest(actual, expected)
