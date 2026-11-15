@@ -147,12 +147,30 @@ class PostgresApprovalRepository:
     async def list_pending(self, tenant_id: str, *, limit: int) -> list[ApprovalRecord]:
         connection = await self._connect()
         async with connection:
-            cursor = await connection.execute(
-                """SELECT * FROM platform_approvals
-                WHERE tenant_id=%s AND status='pending' AND expires_at>now()
-                ORDER BY created_at ASC LIMIT %s""", (tenant_id, limit),
-            )
-            rows = await cursor.fetchall()
+            async with connection.transaction():
+                expired_cursor = await connection.execute(
+                    """UPDATE platform_approvals
+                       SET status='expired',decided_at=now()
+                       WHERE tenant_id=%s AND status='pending' AND expires_at<=now()
+                       RETURNING approval_id,action,resource,action_hash,run_id""",
+                    (tenant_id,),
+                )
+                expired_rows = await expired_cursor.fetchall()
+                for expired in expired_rows:
+                    await connection.execute(
+                        """INSERT INTO platform_tool_audit
+                           (tenant_id,actor_id,action,resource,action_digest,outcome,detail,run_id)
+                           VALUES (%s,'platform-system','approval.expire',%s,%s,'failed',%s,%s)""",
+                        (tenant_id,f"approval:{expired['approval_id']}",expired["action_hash"],
+                         f"expired;action={expired['action']};resource={expired['resource']}",
+                         str(expired["run_id"]) if expired["run_id"] else None),
+                    )
+                cursor = await connection.execute(
+                    """SELECT * FROM platform_approvals
+                    WHERE tenant_id=%s AND status='pending' AND expires_at>now()
+                    ORDER BY created_at ASC LIMIT %s""", (tenant_id, limit),
+                )
+                rows = await cursor.fetchall()
         return [self._record(row) for row in rows]
 
     async def revoke(self, tenant_id: str, approval_id: str, *,
