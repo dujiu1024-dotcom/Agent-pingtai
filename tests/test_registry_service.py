@@ -59,6 +59,24 @@ class RegistryServiceTests(unittest.IsolatedAsyncioTestCase):
                 definition={"config": {"api_key": "plaintext"}}, actor_id="user-a",
             )
 
+    async def test_disable_adds_a_version_and_removes_active_pointer(self) -> None:
+        draft = await self.service.create_draft(
+            tenant_id="tenant-a", kind="agent", item_id="worker",
+            definition={"model_template": {"id": "base", "version": 1}},
+            actor_id="user-a",
+        )
+        await self.service.publish(
+            tenant_id="tenant-a", kind="agent", item_id="worker", version=draft.version,
+        )
+        disabled = await self.service.disable(
+            tenant_id="tenant-a", kind="agent", item_id="worker", actor_id="user-a",
+        )
+        self.assertEqual(disabled.status, "disabled")
+        with self.assertRaises(Exception):
+            await self.service.resolve_active(
+                tenant_id="tenant-a", kind="agent", item_id="worker",
+            )
+
     async def test_tenant_isolation(self) -> None:
         await self.service.create_draft(
             tenant_id="tenant-a", kind="skill", item_id="summarize",
