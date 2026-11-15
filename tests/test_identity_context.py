@@ -73,7 +73,7 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.manage_project_ids, frozenset({"project-a"}))
         self.assertEqual(resolved.manage_agent_ids, frozenset({"agent-a"}))
         self.assertEqual(
-            resolved.roles,
+            resolved.permissions,
             frozenset({"project.read", "knowledge.manage"}),
         )
 
