@@ -63,8 +63,16 @@ def auth_cookie_headers(
     """Build secure session and double-submit CSRF Set-Cookie headers."""
     if not session_token or not csrf_token or max_age_seconds < 1:
         raise ValueError("tokens and positive max_age_seconds are required")
-    if not session_cookie.startswith("__Host-") or not csrf_cookie.startswith("__Host-"):
-        raise ValueError("auth cookies must use __Host- prefix")
+    for value in (session_token, csrf_token):
+        if not value.isascii() or not all(
+            character.isalnum() or character in "-_." for character in value
+        ):
+            raise ValueError("cookie token contains unsafe characters")
+    for name in (session_cookie, csrf_cookie):
+        if not name.startswith("__Host-") or not all(
+            character.isalnum() or character in "-_" for character in name
+        ):
+            raise ValueError("auth cookie names must be valid __Host- names")
     return [
         (b"set-cookie", (
             f"{session_cookie}={session_token}; Path=/; Max-Age={max_age_seconds}; "
@@ -81,8 +89,11 @@ def clear_auth_cookie_headers(
     *, session_cookie: str = "__Host-platform_session",
     csrf_cookie: str = "__Host-platform_csrf",
 ) -> list[tuple[bytes, bytes]]:
-    if not session_cookie.startswith("__Host-") or not csrf_cookie.startswith("__Host-"):
-        raise ValueError("auth cookies must use __Host- prefix")
+    for name in (session_cookie, csrf_cookie):
+        if not name.startswith("__Host-") or not all(
+            character.isalnum() or character in "-_" for character in name
+        ):
+            raise ValueError("auth cookie names must be valid __Host- names")
     return [
         (b"set-cookie", f"{session_cookie}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict".encode("ascii")),
         (b"set-cookie", f"{csrf_cookie}=; Path=/; Max-Age=0; Secure; SameSite=Strict".encode("ascii")),
