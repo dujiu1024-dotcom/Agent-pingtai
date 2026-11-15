@@ -102,6 +102,23 @@ class StrandsMCPGatewayToolProviderTests(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("agent failed")
         self.assertTrue(self.clients[0].closed)
 
+    async def test_closes_client_when_agent_run_is_cancelled(self):
+        entered = __import__("asyncio").Event()
+
+        async def running_agent():
+            async with self.provider().open_session(
+                context=self.context, allowed_tools=("read_document",)
+            ):
+                entered.set()
+                await __import__("asyncio").Event().wait()
+
+        task = __import__("asyncio").create_task(running_agent())
+        await entered.wait()
+        task.cancel()
+        with self.assertRaises(__import__("asyncio").CancelledError):
+            await task
+        self.assertTrue(self.clients[0].closed)
+
     async def test_rejects_empty_or_duplicate_allowlist(self):
         with self.assertRaisesRegex(ValueError, "non-empty"):
             async with self.provider().open_session(
