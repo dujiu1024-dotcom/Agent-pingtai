@@ -32,3 +32,19 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         expired=await service.expire_due(tenant_id="t",now=expiry+timedelta(seconds=1))
         self.assertEqual(expired,1)
         self.assertEqual(await service.retrieve(principal=principal),[])
+
+    async def test_conflict_resolution_and_archive(self):
+        from agent_platform.memory.service import MemoryStatus
+        service=MemoryService(InMemoryMemoryRepository())
+        first=MemoryCandidate(tenant_id="t",scope=MemoryScope.TENANT,scope_id="t",content="old policy",source_ref="policy:1",confidence=.9,created_by="admin",conflict_key="policy.version")
+        await service.propose(first)
+        await service.confirm(tenant_id="t",memory_id=first.memory_id,confirmer_id="admin")
+        second=MemoryCandidate(tenant_id="t",scope=MemoryScope.TENANT,scope_id="t",content="new policy",source_ref="policy:2",confidence=.95,created_by="admin",conflict_key="policy.version")
+        proposed=await service.propose(second)
+        self.assertEqual(proposed.status,MemoryStatus.CONFLICT)
+        admin=MemoryPrincipal(tenant_id="t",user_id="admin",roles=frozenset({"memory.manage"}))
+        selected=await service.resolve_conflict(principal=admin,conflict_key="policy.version",selected_memory_id=second.memory_id)
+        self.assertEqual(selected.status,MemoryStatus.ACTIVE)
+        self.assertEqual(await service.retrieve(principal=admin),[selected])
+        self.assertTrue(await service.archive(principal=admin,memory_id=second.memory_id))
+        self.assertEqual(await service.retrieve(principal=admin),[])
