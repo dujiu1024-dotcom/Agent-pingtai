@@ -111,7 +111,9 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(review["conflicts"]), 1)
         conflict_id = review["conflicts"][0]["blackboard_entry_id"]
+        challenge_id = review["conflicts"][0]["blackboard_challenge_entry_id"]
         self.assertEqual((await repository.get(conflict_id)).kind, EntryKind.CONFLICT)
+        self.assertEqual((await repository.get(challenge_id)).kind, EntryKind.CHALLENGE)
 
         resolution = await services.resolve_conflicts(
             synthesis=synthesis,
@@ -142,10 +144,11 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(synthesis["blackboard_entry_id"], final_entry.source_refs)
         self.assertIn(resolution["synthesis"]["blackboard_entry_id"], final_entry.source_refs)
         self.assertIn(conflict_id, final_entry.source_refs)
+        self.assertIn(challenge_id, final_entry.source_refs)
         self.assertIn(resolution["synthesis"]["blackboard_decision_entry_ids"][0], final_entry.source_refs)
         self.assertIn(approved["blackboard_entry_id"], final_entry.source_refs)
         kinds = {entry.kind for entry in repository.entries.values()}
-        self.assertTrue({EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT, EntryKind.DECISION, EntryKind.NOTE}.issubset(kinds))
+        self.assertTrue({EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT, EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE}.issubset(kinds))
 
     async def test_rejects_cross_tenant_workflow_context(self):
         services = BlackboardMultiExpertServices(
