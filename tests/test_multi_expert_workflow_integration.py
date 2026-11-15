@@ -156,6 +156,7 @@ class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
             EntryKind.CLAIM,
             EntryKind.ARTIFACT,
             EntryKind.CONFLICT,
+            EntryKind.CHALLENGE,
             EntryKind.DECISION,
             EntryKind.NOTE,
         }.issubset(kinds))
