@@ -32,6 +32,7 @@ class ToolEffect:
     error: str | None = None
     created_at: datetime = datetime.min.replace(tzinfo=timezone.utc)
     updated_at: datetime = datetime.min.replace(tzinfo=timezone.utc)
+    created: bool = False
 
 
 class ToolEffectStore(Protocol):
@@ -65,7 +66,7 @@ class InMemoryToolEffectStore:
             return copy.deepcopy(old)
         now = datetime.now(timezone.utc)
         row = ToolEffect(tenant_id, run_id, call_id, action_digest, actor_id, "pending",
-                         created_at=now, updated_at=now)
+                         created_at=now, updated_at=now, created=True)
         self._rows[key] = row
         return copy.deepcopy(row)
 
@@ -111,13 +112,15 @@ class PostgresToolEffectStore:
         db = await self._connect()
         async with db:
             async with db.transaction():
-                await db.execute(
+                inserted = await db.execute(
                     """INSERT INTO platform_tool_effects
                        (tenant_id,run_id,call_id,action_digest,actor_id,state)
                        VALUES (%s,%s,%s,%s,%s,'pending')
-                       ON CONFLICT (tenant_id,run_id,call_id) DO NOTHING""",
+                       ON CONFLICT (tenant_id,run_id,call_id) DO NOTHING
+                       RETURNING call_id""",
                     (tenant_id, run_id, call_id, action_digest, actor_id),
                 )
+                created = await inserted.fetchone() is not None
                 cur = await db.execute(
                     """SELECT tenant_id,run_id,call_id,action_digest,actor_id,state,
                               result,error,created_at,updated_at
@@ -129,7 +132,8 @@ class PostgresToolEffectStore:
         effect = self._to_effect(row)
         if effect.action_digest != action_digest or effect.actor_id != actor_id:
             raise EffectConflict("idempotency key was reused for a different action")
-        return effect
+        from dataclasses import replace
+        return replace(effect, created=created)
 
     async def complete(self, *, tenant_id: str, run_id: str, call_id: str, result: Any) -> None:
         try:
