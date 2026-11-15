@@ -66,7 +66,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_runs SET worker_id=%s,lease_expires_at=now()+(%s * interval '1 second')
-    WHERE tenant_id=%s AND run_id=%s AND status='running'
+    WHERE tenant_id=%s AND run_id=%s AND status IN ('queued','running')
       AND (worker_id IS NULL OR worker_id=%s OR lease_expires_at<=now()) RETURNING run_id""",
     (worker_id,lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
