@@ -62,10 +62,19 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.memory.retrieve(principal=principal),[])
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
-            self.assertEqual((await cur.fetchone())["n"],4)
+            self.assertEqual((await cur.fetchone())["n"],1)
         await self.memory.confirm(tenant_id=self.tenant_id,memory_id=candidate.memory_id,confirmer_id="user-1")
+        async with await self.connect() as conn:
+            cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
+            self.assertEqual((await cur.fetchone())["n"],2)
         updated=await self.memory.correct(principal=principal,memory_id=candidate.memory_id,content="corrected preference",source_ref="conversation:2")
+        async with await self.connect() as conn:
+            cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
+            self.assertEqual((await cur.fetchone())["n"],3)
         self.assertEqual(updated.version,3)
         self.assertEqual((await self.memory.export(principal=principal))[0]["content"],"corrected preference")
         self.assertTrue(await self.memory.forget(principal=principal,memory_id=candidate.memory_id))
+        async with await self.connect() as conn:
+            cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
+            self.assertEqual((await cur.fetchone())["n"],4)
         self.assertEqual(await self.memory.retrieve(principal=principal),[])
