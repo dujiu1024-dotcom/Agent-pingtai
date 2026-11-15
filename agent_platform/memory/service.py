@@ -147,5 +147,10 @@ class MemoryService:
         if not self._can_manage_scope(c.scope, c.scope_id, principal):
             raise PermissionError("memory deletion is not authorized")
         deleted=await self.repository.delete(principal.tenant_id,memory_id,utc_now())
-        if deleted and self.on_delete:await self.on_delete(principal.tenant_id,memory_id)
+        # Deletion propagation is retryable: the soft-deleted row remains as
+        # an audit marker, so a retry must re-run cache/index cleanup even when
+        # the repository reports that no new state transition was necessary.
+        latest=await self.repository.get(principal.tenant_id,memory_id)
+        if self.on_delete and (deleted or (latest is not None and latest.status is MemoryStatus.DELETED)):
+            await self.on_delete(principal.tenant_id,memory_id)
         return deleted
