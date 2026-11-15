@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import subprocess
 from pathlib import Path
 
 
@@ -37,6 +38,22 @@ class BackupRecoveryScriptTests(unittest.TestCase):
         self.assertIn("pg_restore --list", restore)
         self.assertIn("--single-transaction", restore)
         self.assertIn("ALLOW_DIFFERENT_DATABASE", restore)
+
+    def test_all_shell_scripts_parse_without_syntax_errors(self):
+        for name in ("backup_postgres.sh", "restore_postgres.sh", "migrate_postgres.sh"):
+            with self.subTest(script=name):
+                result = subprocess.run(
+                    ["bash", "-n", str(ROOT / "scripts" / name)],
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_migration_runner_expands_required_environment_and_file_list(self):
+        script = (ROOT / "scripts" / "migrate_postgres.sh").read_text()
+        self.assertIn(': "${PG_DSN:', script)
+        self.assertIn('files=("$MIGRATION_DIR"/*.sql)', script)
+        self.assertNotIn(r'\${PG_DSN', script)
+        self.assertNotIn(r'\${#files[@]}', script)
 
     def test_migration_runner_is_checksummed_and_serialized(self):
         script = (ROOT / "scripts" / "migrate_postgres.sh").read_text()
