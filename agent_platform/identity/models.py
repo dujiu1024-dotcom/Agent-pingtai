@@ -108,7 +108,6 @@ class AuthorizationContext:
     tenant_id: str
     user_id: str
     tenant_roles: frozenset[str]
-    effective_role_ids: frozenset[str]
     tenant_permissions: frozenset[str]
     project_ids: frozenset[str]
     knowledge_manage_project_ids: frozenset[str]
