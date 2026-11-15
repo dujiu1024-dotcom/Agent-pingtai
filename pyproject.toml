@@ -40,6 +40,8 @@ include = [
   "tests/test_event_consumer.py",
   "tests/test_platform_postgres_integration.py",
   "tests/test_redis_streams_integration.py",
+  "tests/test_gateway_runtime_postgres_integration.py",
+  "tests/test_langgraph_run_executor.py",
 ]
 
 [tool.ruff.lint]
@@ -66,6 +68,7 @@ files = [
   "agent_platform/events/receipts.py",
   "agent_platform/events/consumer.py",
   "agent_platform/runtime/langgraph_adapter.py",
+  "agent_platform/runtime/execution.py",
   "agent_platform/tools/mcp_adapter.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/models/templates.py",
