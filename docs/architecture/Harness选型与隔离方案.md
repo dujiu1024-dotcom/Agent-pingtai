@@ -21,7 +21,7 @@
 
 ## 3. DeepSeek Harness 的集成判断
 
-官方项目说明其核心采用 Everything-is-a-Plugin 架构，包含 headless、SDK、ACP 等 Profile；官方架构文档指出 Python SDK 会启动对应的 dsh SDK Profile。该模式适合将 dsh 放在独立进程/服务中，由平台通过适配器调用，而不是把其内部实现复制进 Python 单体。
+官方项目说明其核心采用 Everything-is-a-Plugin 架构，包含 headless、SDK、ACP 等 Profile。官方 Python SDK（`deepseek-harness-sdk`）通过 stdio 上的 newline-delimited JSON-RPC 启动匹配版本的 `dsh` 子进程；调用方必须显式提供 Harness home 和 workspace，正常 SDK 运行不需要系统 Node.js。该模式适合将 dsh 放在独立进程/服务中，由平台通过适配器调用，而不是把其内部实现复制进 Python 单体。
 
 官方仓库当前标记为 Developer Preview，且官方安全声明明确表示尚未经过安全审计；它能够执行模型生成的代码和命令、加载第三方插件并访问被授予的文件、进程、网络和凭据。沙箱和审批不能被视为绝对隔离。
 
@@ -34,6 +34,8 @@
 6. 资金、权限、对外发布等 L2/L3 操作仍由平台审批策略控制，不能依赖 dsh 自身审批弹窗。
 7. dsh 插件必须固定版本、审查源码和依赖许可证；未经审查不允许加载社区插件。
 8. 任何运行产物、工具调用和审批记录回传平台，平台才认定任务完成。
+
+当前代码已增加 `DeepSeekHarnessAdapter` 实验适配器：通过官方 Python SDK 调用 dsh；默认只接受显式隔离环境、read-only 权限和无平台工具请求。非 DeepSeek Provider 必须使用经过审查的 SDK Profile patch；平台工具调用在 MCP Gateway Profile 验证完成前一律拒绝。该适配器目前只用于 PoC，不代表生产可用。
 
 ## 4. PoC 验证矩阵
 
@@ -59,6 +61,8 @@
 ## 6. 官方资料
 
 - DeepSeek Harness：<https://github.com/deepseek-ai/deepseek-harness>
+- DeepSeek Harness Python SDK：<https://github.com/deepseek-ai/deepseek-harness/tree/master/python/sdk>
+- Python SDK 入门：<https://deepseek-harness.github.io/deepseek-harness/guide/python-sdk>
 - DeepSeek Harness Architecture：<https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md>
 - DeepSeek Harness Safety：<https://github.com/deepseek-ai/deepseek-harness/blob/master/SAFETY.md>
 - Strands Agents：<https://github.com/strands-agents/strands-agents>
