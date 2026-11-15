@@ -225,3 +225,28 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await service.repository.get("t",candidate.memory_id)).status.value,"deleted")
         self.assertFalse(await service.forget(principal=principal,memory_id=candidate.memory_id))
         self.assertEqual(attempts,[("t",candidate.memory_id),("t",candidate.memory_id)])
+
+    async def test_expiry_retries_derived_data_cleanup(self):
+        from datetime import datetime, timedelta, timezone
+
+        attempts = []
+        async def cleanup(tenant_id, memory_id):
+            attempts.append((tenant_id, memory_id))
+            if len(attempts) == 1:
+                raise RuntimeError("index unavailable")
+
+        service = MemoryService(InMemoryMemoryRepository(), on_delete=cleanup)
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u",
+            content="temporary preference", source_ref="chat:expiry",
+            confidence=0.9, created_by="extractor",
+            expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        await service.propose(candidate)
+        await service.confirm(tenant_id="t", memory_id=candidate.memory_id, confirmer_id="u")
+        with self.assertRaisesRegex(RuntimeError, "index unavailable"):
+            await service.expire_due(tenant_id="t")
+        self.assertEqual((await service.repository.get("t", candidate.memory_id)).status.value, "expired")
+        self.assertEqual(await service.expire_due(tenant_id="t"), 0)
+        self.assertEqual(attempts, [("t", candidate.memory_id), ("t", candidate.memory_id)])
+
