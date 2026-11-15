@@ -54,6 +54,7 @@ files = [
   "agent_platform/tools/mcp_adapter.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/models/templates.py",
+  "agent_platform/models/templates.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/tools/mcp_adapter.py",
 ]
