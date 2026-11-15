@@ -69,7 +69,9 @@ class InMemoryMetricsRecorder:
             for key, value in sorted(self._counters.items(), key=lambda item: item[0][0]):
                 lines.append(f"{self._format_key(key)} {value}")
             for key, values in sorted(self._observations.items(), key=lambda item: item[0][0]):
-                base = self._format_key(key)
-                lines.append(f"{base}_count {len(values)}")
-                lines.append(f"{base}_sum {sum(values)}")
+                name, labels = key
+                count_key = self._format_key((name + "_count", labels))
+                sum_key = self._format_key((name + "_sum", labels))
+                lines.append(f"{count_key} {len(values)}")
+                lines.append(f"{sum_key} {sum(values)}")
             return "\n".join(lines) + ("\n" if lines else "")
