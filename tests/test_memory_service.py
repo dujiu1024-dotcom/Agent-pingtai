@@ -278,3 +278,22 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         with self.assertRaises(ValueError):
             await service.history(principal=owner, memory_id="missing")
+
+    async def test_memory_history_retains_forget_tombstone(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u",
+            content="temporary fact", source_ref="chat:1",
+            confidence=0.8, created_by="extractor",
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="u",
+        )
+        principal = MemoryPrincipal(tenant_id="t", user_id="u")
+        self.assertTrue(await service.forget(
+            principal=principal, memory_id=candidate.memory_id,
+        ))
+        history = await service.history(principal=principal, memory_id=candidate.memory_id)
+        self.assertEqual(history[-1].status.value, "deleted")
+        self.assertEqual(history[-1].version, 3)
