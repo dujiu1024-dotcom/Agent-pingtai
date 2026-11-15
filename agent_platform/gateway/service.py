@@ -29,7 +29,7 @@ class InMemoryEndpointDirectory:
  async def register(self,row:EndpointRecord)->None:
   async with self._lock:
    key=(row.tenant_id,row.run_id);old=self._rows.get(key)
-   if old and old.status=="active" and (old.lease_expires_at is None or old.lease_expires_at>datetime.now(timezone.utc)):
+   if old and old.status=="active" and (old.lease_expires_at is not None and old.lease_expires_at>datetime.now(timezone.utc)):
     raise ValueError("active endpoint lease already exists")
    self._rows[key]=row
  async def get(self,tenant_id:str,run_id:str)->EndpointRecord|None:
