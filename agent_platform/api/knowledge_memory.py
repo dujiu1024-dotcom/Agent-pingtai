@@ -84,6 +84,26 @@ def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryS
         try:records=await memory.retrieve(principal=principal,limit=limit)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"items":[{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"status":r.status.value,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None} for r in records]}
+    @router.get("/memories/candidates")
+    async def list_memory_candidates(request: Request):
+        principal=await resolve_memory_principal(request)
+        records=await memory.repository.list(principal.tenant_id,limit=1000)
+        visible=[r for r in records if r.status.value in {"candidate","conflict"} and _memory_visible_for_review(r,principal)]
+        return {"items":[{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"conflict_key":r.candidate.conflict_key,"status":r.status.value,"version":r.version} for r in visible]}
+    @router.post("/memories/conflicts/resolve")
+    async def resolve_memory_conflict(request: Request):
+        principal=await resolve_memory_principal(request);body=await request.json()
+        try:record=await memory.resolve_conflict(principal=principal,conflict_key=str(body.get("conflict_key") or ""),selected_memory_id=str(body.get("selected_memory_id") or ""))
+        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+        return {"memory_id":record.candidate.memory_id,"status":record.status.value,"version":record.version}
+    @router.post("/memories/{memory_id}/archive")
+    async def archive_memory(memory_id: str,request: Request):
+        principal=await resolve_memory_principal(request)
+        try:archived=await memory.archive(principal=principal,memory_id=memory_id)
+        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+        if not archived:raise HTTPException(404,"active memory not found")
+        return {"memory_id":memory_id,"status":"archived"}
     @router.get("/memories/export")
     async def export_memories(request: Request):
         principal=await resolve_memory_principal(request)
@@ -103,7 +123,7 @@ def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryS
         except ValueError as exc:raise HTTPException(400,"expires_at must be ISO-8601") from exc
         try:
             confidence=float(body.get("confidence",0.5))
-            candidate=MemoryCandidate(tenant_id=principal.tenant_id,scope=scope,scope_id=scope_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=confidence,created_by=principal.user_id,expires_at=expires_at)
+            candidate=MemoryCandidate(tenant_id=principal.tenant_id,scope=scope,scope_id=scope_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=confidence,created_by=principal.user_id,expires_at=expires_at,conflict_key=str(body.get("conflict_key")) if body.get("conflict_key") else None)
             record=await memory.propose(candidate)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"memory_id":record.candidate.memory_id,"status":record.status.value}
