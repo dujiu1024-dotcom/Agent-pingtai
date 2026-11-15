@@ -88,7 +88,9 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "high-cardinality"):
             metrics.increment("agent_runs_total", labels={"run_id": "run-1"})
         metrics.increment("agent_runs_total", labels={"status": "ok"})
-        self.assertTrue(metrics.render_prometheus().endswith("\\n"))
+        exposition = metrics.render_prometheus()
+        self.assertTrue(exposition.endswith("\\n"))
+        self.assertIn('agent_runs_total_count{status="ok"}', exposition)
 
     def test_agent_and_rag_evaluation_gate(self):
         dataset = EvalDataset("smoke", 1, (
