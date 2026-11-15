@@ -93,7 +93,7 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
             })
             self.assertEqual(answer.status_code, 200)
             self.assertEqual(answer.json()["answer"], "Evidence-backed answer.")
-            self.assertTrue(answer.json()["citation_ids"])
+            self.assertTrue(answer.json()["citations"])
 
             # A separately authenticated tenant cannot retrieve tenant-a's document.
             client.cookies.clear()
