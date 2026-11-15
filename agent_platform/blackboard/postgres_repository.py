@@ -187,6 +187,20 @@ class PostgresBlackboardRepository(BlackboardRepository):
             rows = await cursor.fetchall()
         return [self._to_entry(row) for row in rows]
 
+    async def list_versions(self, entry_id: str) -> list[BlackboardEntry]:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """
+                SELECT * FROM blackboard_entries
+                WHERE tenant_id = %s AND entry_id = %s
+                ORDER BY version ASC
+                """,
+                (self.tenant_id, UUID(entry_id)),
+            )
+            rows = await cursor.fetchall()
+        return [self._to_entry(row) for row in rows]
+
     async def revise(
         self,
         entry_id: str,
