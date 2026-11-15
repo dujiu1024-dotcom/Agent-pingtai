@@ -86,10 +86,27 @@ def create_authenticated_mcp_asgi_app(
 
     parsed_issuer = urlsplit(issuer_url)
     parsed_resource = urlsplit(resource_server_url)
-    if parsed_issuer.scheme != "https" or not parsed_issuer.hostname:
-        raise ValueError("issuer_url must be HTTPS")
-    if parsed_resource.scheme != "https" or not parsed_resource.hostname:
-        raise ValueError("resource_server_url must be HTTPS")
+    if (
+        parsed_issuer.scheme != "https"
+        or not parsed_issuer.hostname
+        or parsed_issuer.username is not None
+        or parsed_issuer.password is not None
+        or parsed_issuer.query
+        or parsed_issuer.fragment
+    ):
+        raise ValueError("issuer_url must be HTTPS without userinfo, query, or fragment")
+    if (
+        parsed_resource.scheme != "https"
+        or not parsed_resource.hostname
+        or parsed_resource.username is not None
+        or parsed_resource.password is not None
+        or parsed_resource.query
+        or parsed_resource.fragment
+        or not parsed_resource.path
+    ):
+        raise ValueError(
+            "resource_server_url must be an HTTPS endpoint URL without userinfo, query, or fragment"
+        )
 
     try:
         from mcp.server.auth.settings import AuthSettings
@@ -120,4 +137,5 @@ def create_authenticated_mcp_asgi_app(
         transport_security=transport_security,
         stateless_http=False,
         json_response=True,
+        streamable_http_path=parsed_resource.path,
     )
