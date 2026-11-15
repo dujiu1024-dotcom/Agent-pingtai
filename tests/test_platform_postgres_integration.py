@@ -470,11 +470,19 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(authenticated.tenant_id, self.tenant_id)
         self.assertEqual(authenticated.user_id, str(self.user_id))
-        self.assertTrue(await self.service.revoke_api_credential(
-            principal=principal, credential_id=credential.credential_id,
-        ))
+        rotated = await self.service.rotate_api_credential(
+            principal=principal, old_credential_id=credential.credential_id,
+            name="integration-key", scopes=("project.read",),
+        )
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate_api_credential(credential.access_token)
+        current = await self.service.authenticate_api_credential(rotated.access_token)
+        self.assertEqual(current.credential_id, rotated.credential_id)
+        self.assertTrue(await self.service.revoke_api_credential(
+            principal=principal, credential_id=rotated.credential_id,
+        ))
+        with self.assertRaises(AuthenticationError):
+            await self.service.authenticate_api_credential(rotated.access_token)
 
 
 
