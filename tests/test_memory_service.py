@@ -20,7 +20,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_correct_export_and_expiry(self):
         from datetime import datetime, timedelta, timezone
         service=MemoryService(InMemoryMemoryRepository())
-        expiry=datetime.now(timezone.utc)+timedelta(seconds=1)
+        expiry=datetime.now(timezone.utc)+timedelta(days=1)
         candidate=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u",content="old",source_ref="chat:1",confidence=.7,created_by="extractor",expires_at=expiry)
         await service.propose(candidate)
         await service.confirm(tenant_id="t",memory_id=candidate.memory_id,confirmer_id="u")
