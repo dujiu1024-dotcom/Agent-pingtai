@@ -36,14 +36,15 @@ def create_blackboard_router(
             raise HTTPException(403, "Blackboard repository tenant mismatch")
         return repository
 
-    async def verify_refs(principal: Principal, scope: Scope, scope_id: str, refs: Sequence[str]) -> None:
+    async def verify_refs(principal: Principal, scope: Scope, scope_id: str, refs: Sequence[str]) -> tuple[str, ...]:
         normalized = tuple(dict.fromkeys(ref.strip() for ref in refs if ref.strip()))
         if not normalized:
-            return
+            return ()
         if verify_evidence_refs is None:
             raise HTTPException(503, "evidence reference verification is not configured")
         if not await verify_evidence_refs(principal, scope, scope_id, normalized):
             raise HTTPException(422, "one or more evidence references are missing or inaccessible")
+        return normalized
 
     async def scope_context(request: Request, scope: Scope, scope_id: str, action: str):
         principal = await resolve_principal(request)
@@ -108,7 +109,7 @@ def create_blackboard_router(
             raise HTTPException(400, "source_refs must be an array of strings")
         if not await authorize_scope(principal, scope, scope_id, "write"):
             raise HTTPException(403, "Blackboard scope access denied")
-        await verify_refs(principal, scope, scope_id, refs)
+        refs = await verify_refs(principal, scope, scope_id, refs)
         repository = await repository_for(principal)
         entry = BlackboardEntry(scope=scope, scope_id=scope_id, kind=kind, content=content,
                                  author_id=principal.user_id, source_refs=tuple(refs),
@@ -134,7 +135,7 @@ def create_blackboard_router(
         refs = body.get("evidence_refs", [])
         if not reason or not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
             raise HTTPException(400, "reason and evidence_refs are required")
-        await verify_refs(principal, entry.scope, entry.scope_id, refs)
+        refs = await verify_refs(principal, entry.scope, entry.scope_id, refs)
         challenged = await repository.record_challenge(entry.entry_id, principal.user_id, reason, refs)
         return serialize(challenged)
 
@@ -151,7 +152,7 @@ def create_blackboard_router(
         refs = body.get("evidence_refs", [])
         if not outcome or not rationale or not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
             raise HTTPException(400, "outcome, rationale and evidence_refs are required")
-        await verify_refs(principal, entry.scope, entry.scope_id, refs)
+        refs = await verify_refs(principal, entry.scope, entry.scope_id, refs)
         decision = await repository.record_decision(entry.entry_id, principal.user_id, outcome, rationale, refs)
         return serialize(decision)
 
