@@ -912,7 +912,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         # A tenant-B asset cannot attach to tenant-A's session through the composite FK.
-        with self.assertRaises(Exception):
+        from psycopg.errors import ForeignKeyViolation
+        with self.assertRaises(ForeignKeyViolation):
             await repo_b.create_asset(FileAsset(
                 tenant_id=tenant_b, asset_id=str(uuid4()), owner_id="tenant-b-user",
                 object_key=f"tenant/{tenant_b}/assets/{uuid4().hex}",
