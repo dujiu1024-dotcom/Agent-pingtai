@@ -46,6 +46,9 @@ include = [
   "tests/test_platform_postgres_integration.py",
   "tests/test_redis_streams_integration.py",
   "tests/test_gateway_runtime_postgres_integration.py",
+  "tests/test_gateway_service.py",
+  "tests/test_run_lifecycle.py",
+  "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
 ]
 
