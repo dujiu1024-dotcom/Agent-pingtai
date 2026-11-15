@@ -63,6 +63,11 @@ class LangGraphRunExecutor:
      raise
    return await task
   finally:
+   # Cancelling the caller (or losing the lease) must not leave the
+   # underlying graph task running after the Run has been marked interrupted.
+   if not task.done():
+    task.cancel()
+    await asyncio.gather(task,return_exceptions=True)
    if beat_task is not None:
     beat_task.cancel();await asyncio.gather(beat_task,return_exceptions=True)
    if not already_claimed and acquired and release is not None:
