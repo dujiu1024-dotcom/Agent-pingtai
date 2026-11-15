@@ -106,6 +106,10 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             end_offset=34,
         )
         await self.knowledge.save_document(document, [chunk])
+        query_vector = [1.0] + [0.0] * 1535
+        await self.knowledge.save_embeddings(
+            tenant_id=self.tenant_id, chunks=[chunk], vectors=[query_vector],
+        )
 
         other_principal = KnowledgePrincipal(
             tenant_id=other_tenant, user_id="other-user",
@@ -117,6 +121,14 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             principal=other_principal, query="confidential",
             query_vector=None, limit=5,
         ), [])
+        self.assertEqual(await self.knowledge.search(
+            principal=other_principal, query="no lexical match",
+            query_vector=query_vector, limit=5,
+        ), [])
+        self.assertEqual(len(await self.knowledge.search(
+            principal=KnowledgePrincipal(tenant_id=self.tenant_id, user_id="owner"),
+            query="no lexical match", query_vector=query_vector, limit=5,
+        )), 1)
         self.assertFalse(await self.knowledge.delete_document(
             other_tenant, document.document_id,
         ))
