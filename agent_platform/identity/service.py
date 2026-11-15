@@ -8,11 +8,14 @@ from agent_platform.identity.models import IssuedSession, Principal, ResourceRef
 from agent_platform.identity.protocols import IdentityRepository
 from agent_platform.identity.security import CredentialError, PasswordHasher, issue_opaque_token, token_digest
 
+
 class AuthenticationError(PermissionError):
     """Invalid, expired, revoked, or suspended identity."""
 
+
 class AuthorizationDenied(PermissionError):
     """Default-deny authorization result."""
+
 
 class IdentityService:
     def __init__(self, repository: IdentityRepository) -> None:
