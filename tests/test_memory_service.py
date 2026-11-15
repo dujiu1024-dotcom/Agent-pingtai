@@ -174,7 +174,12 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             project_ids=frozenset({"project-a"}),
             manage_project_ids=frozenset({"project-a"}),
         )
-        records = await pipeline.propose_from_turn(principal=manager, turn=turn)
+        manager_turn = MemoryTurn(
+            tenant_id="t", user_id="manager", source_ref="conversation:2",
+            user_message="Project decision",
+            project_id="project-a",
+        )
+        records = await pipeline.propose_from_turn(principal=manager, turn=manager_turn)
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].candidate.scope, MemoryScope.PROJECT)
 
