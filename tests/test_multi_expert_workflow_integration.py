@@ -1,11 +1,5 @@
 import unittest
 
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import Command
-
-from agent_platform.workflows.multi_expert import build_multi_expert_workflow
-
-
 class FakeMultiExpertServices:
     def __init__(self, *, conflict=True, require_approval=True):
         self.conflict = conflict
@@ -57,6 +51,17 @@ class FakeMultiExpertServices:
 
 
 class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        try:
+            from langgraph.checkpoint.memory import InMemorySaver
+            from langgraph.types import Command
+            from agent_platform.workflows.multi_expert import build_multi_expert_workflow
+        except ImportError:
+            self.skipTest("LangGraph is installed in the dedicated runtime CI job")
+        self.InMemorySaver = InMemorySaver
+        self.Command = Command
+        self.build_multi_expert_workflow = build_multi_expert_workflow
+
     def initial_state(self):
         return {
             "tenant_id": "tenant-a",
@@ -68,8 +73,8 @@ class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_parallel_experts_resolve_conflict_and_pause_for_approval(self):
         services = FakeMultiExpertServices(conflict=True, require_approval=True)
-        graph = build_multi_expert_workflow(
-            services=services, checkpointer=InMemorySaver()
+        graph = self.build_multi_expert_workflow(
+            services=services, checkpointer=self.InMemorySaver()
         )
         config = {"configurable": {"thread_id": "tenant-a-run-001"}}
         paused = await graph.ainvoke(self.initial_state(), config=config)
@@ -80,28 +85,28 @@ class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("status", paused)
 
         completed = await graph.ainvoke(
-            Command(resume={"approved": True}), config=config
+            self.Command(resume={"approved": True}), config=config
         )
         self.assertEqual(completed["status"], "completed")
         self.assertEqual(completed["final_result"]["expert_count"], 2)
 
     async def test_rejected_human_approval_uses_reject_branch(self):
         services = FakeMultiExpertServices(conflict=False, require_approval=True)
-        graph = build_multi_expert_workflow(
-            services=services, checkpointer=InMemorySaver()
+        graph = self.build_multi_expert_workflow(
+            services=services, checkpointer=self.InMemorySaver()
         )
         config = {"configurable": {"thread_id": "tenant-a-run-002"}}
         await graph.ainvoke(self.initial_state(), config=config)
         rejected = await graph.ainvoke(
-            Command(resume={"approved": False}), config=config
+            self.Command(resume={"approved": False}), config=config
         )
         self.assertEqual(rejected["status"], "rejected")
         self.assertEqual(rejected["final_result"]["reason"], "human rejected")
 
     async def test_no_conflict_and_no_approval_archives_without_interrupt(self):
         services = FakeMultiExpertServices(conflict=False, require_approval=False)
-        graph = build_multi_expert_workflow(
-            services=services, checkpointer=InMemorySaver()
+        graph = self.build_multi_expert_workflow(
+            services=services, checkpointer=self.InMemorySaver()
         )
         result = await graph.ainvoke(
             self.initial_state(),
