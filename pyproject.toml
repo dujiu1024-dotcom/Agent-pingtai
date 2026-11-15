@@ -21,15 +21,79 @@ include = [
   "tests/test_sync.py",
   "tests/test_feishu_config.py",
   "tests/test_conversation.py",
+  "agent_platform/**/*.py",
+  "tests/test_identity.py",
+  "tests/test_platform_api_app.py",
+  "tests/test_identity_http.py",
+  "tests/test_identity_api.py",
+  "tests/test_identity_context.py",
+  "tests/test_legacy_identity_audit.py",
+  "tests/test_legacy_identity_revoke.py",
+  "tests/test_knowledge_service.py",
+  "tests/test_knowledge_memory_api.py",
+  "tests/test_memory_service.py",
+  "tests/test_knowledge_memory_postgres_integration.py",
+  "tests/test_platform_contracts.py",
+  "tests/test_tool_gateway.py",
+  "tests/test_outbox.py",
+  "tests/test_multi_expert_routing.py",
+  "tests/test_blackboard_multi_expert_services.py",
+  "tests/test_blackboard_api.py",
+  "tests/test_mcp_adapter.py",
+  "tests/test_gateway_mcp.py",
+  "tests/test_strands_mcp_provider.py",
+  "tests/test_gateway_mcp_http.py",
+  "tests/test_strands_gateway_mcp_http_integration.py",
+  "tests/test_model_templates.py",
+  "tests/test_deepseek_harness_adapter.py",
+  "tests/test_event_consumer.py",
+  "tests/test_platform_postgres_integration.py",
+  "tests/test_tenant_creation_integration.py",
+  "tests/test_service_identity_authorization_integration.py",
+  "tests/test_redis_streams_integration.py",
+  "tests/test_gateway_runtime_postgres_integration.py",
+  "tests/test_gateway_service.py",
+  "tests/test_run_lifecycle.py",
+  "tests/test_run_token_service.py",
+  "tests/test_langgraph_run_executor.py",
 ]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["agent_platform", "tests"]
+
 [tool.mypy]
 python_version = "3.11"
-files = ["intent.py", "tools/schedule_wbs.py"]
+files = [
+  "intent.py",
+  "tools/schedule_wbs.py",
+  "agent_platform/contracts.py",
+  "agent_platform/approval/policy.py",
+  "agent_platform/runtime/protocols.py",
+  "agent_platform/blackboard/protocol.py",
+  "agent_platform/tools/gateway.py",
+  "agent_platform/tools/gateway_mcp.py",
+  "agent_platform/blackboard/postgres_repository.py",
+  "agent_platform/approval/postgres.py",
+  "agent_platform/events/outbox.py",
+  "agent_platform/events/receipts.py",
+  "agent_platform/events/consumer.py",
+  "agent_platform/runtime/langgraph_adapter.py",
+  "agent_platform/runtime/execution.py",
+  "agent_platform/tools/mcp_adapter.py",
+  "agent_platform/workflows/multi_expert.py",
+  "agent_platform/workflows/blackboard_services.py",
+  "agent_platform/workflows/expert_registry.py",
+  "agent_platform/models/templates.py",
+  "agent_platform/runtime/deepseek_harness.py",
+  "agent_platform/runtime/strands_mcp_provider.py",
+  "agent_platform/tools/gateway_mcp_http.py",
+  "agent_platform/identity/*.py",
+  "tests/test_identity.py",
+]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
 follow_imports = "silent"

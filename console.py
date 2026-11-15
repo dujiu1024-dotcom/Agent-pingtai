@@ -42,6 +42,7 @@ TASK_ID = re.compile(r"^/api/tasks/(T-\d{4})/(close|update)$")
 AGENT_RUN = re.compile(r"^/api/agents/([a-z0-9-]+)/run$")
 # 访问令牌：环境变量可固定，否则每次启动随机生成（只打印在本机终端）。
 CONSOLE_TOKEN = os.environ.get("AGENCY_CONSOLE_TOKEN") or secrets.token_urlsafe(24)
+LEGACY_CONSOLE_AUTH_ENABLED = os.environ.get("AGENCY_LEGACY_CONSOLE_AUTH_ENABLED", "true").strip().lower() not in {"0", "false", "off"}
 TOKEN_HEADER = "X-Console-Token"
 ALLOWED_HOSTS = ("127.0.0.1", "localhost", "::1")
 # 看板独立进程：只提供 /board 与 /api/board，端口与环境绑定。
@@ -1139,7 +1140,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._principal() is not None
 
     def _principal(self):
-        """token → 角色：env 令牌=founder；users.console_token 绑定角色与项目。"""
+        """Legacy token auth is retained only until the new identity API cutover."""
+        if not LEGACY_CONSOLE_AUTH_ENABLED:
+            return None
         if getattr(self, "_p_cache", False):
             return self._p_cache
         supplied = self.headers.get(TOKEN_HEADER) or ""

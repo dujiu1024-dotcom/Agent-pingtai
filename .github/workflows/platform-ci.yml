@@ -1,0 +1,37 @@
+name: platform-ci
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  platform-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install platform test dependencies
+        run: python -m pip install -U pip ruff mypy jsonschema PyYAML "fastapi>=0.115,<1.0" "httpx>=0.27,<1.0" "langgraph>=1.0,<2.0"
+      - name: 平台领域与审批策略测试
+        run: python -m unittest tests.test_platform_api_app tests.test_console tests.test_platform_contracts tests.test_identity tests.test_identity_http tests.test_identity_api tests.test_identity_context tests.test_legacy_identity_audit tests.test_legacy_identity_revoke tests.test_service_identity tests.test_knowledge_service tests.test_memory_service tests.test_knowledge_memory_api tests.test_tool_gateway tests.test_tool_registry_catalog tests.test_outbox tests.test_multi_expert_routing tests.test_blackboard_multi_expert_services tests.test_blackboard_api tests.test_mcp_adapter tests.test_gateway_mcp tests.test_model_templates tests.test_model_registry_resolver tests.test_deepseek_harness_adapter tests.test_strands_agents_adapter tests.test_strands_mcp_provider tests.test_harness_benchmark tests.test_event_consumer tests.test_run_token_service tests.test_run_lifecycle tests.test_gateway_service tests.test_langgraph_run_executor tests.test_registry_service tests.test_skill_manifest tests.test_session_assets tests.test_s3_object_storage tests.test_control_plane_api tests.test_runs_api tests.test_connectors_api tests.test_data_connectors tests.test_run_registry_snapshot -v
+      - name: 平台代码 Lint
+        run: ruff check tests/test_platform_api_app.py tests/test_console.py tests/test_legacy_identity_revoke.py agent_platform tests/test_platform_contracts.py tests/test_identity.py tests/test_identity_http.py tests/test_identity_api.py tests/test_identity_context.py tests/test_legacy_identity_audit.py tests/test_service_identity.py tests/test_knowledge_service.py tests/test_knowledge_memory_api.py tests/test_memory_service.py tests/test_knowledge_memory_postgres_integration.py tests/test_tool_gateway.py tests/test_tool_registry_catalog.py tests/test_outbox.py tests/test_multi_expert_routing.py tests/test_blackboard_multi_expert_services.py tests/test_blackboard_api.py tests/test_mcp_adapter.py tests/test_gateway_mcp.py tests/test_gateway_mcp_http.py tests/test_strands_gateway_mcp_http_integration.py tests/test_model_templates.py tests/test_model_registry_resolver.py tests/test_deepseek_harness_adapter.py tests/test_strands_agents_adapter.py tests/test_strands_mcp_provider.py tests/test_harness_benchmark.py tests/test_event_consumer.py tests/test_run_token_service.py tests/test_run_lifecycle.py tests/test_gateway_service.py tests/test_langgraph_run_executor.py tests/test_gateway_runtime_postgres_integration.py tests/test_platform_postgres_integration.py tests/test_redis_streams_integration.py tests/test_registry_service.py tests/test_skill_manifest.py tests/test_session_assets.py tests/test_s3_object_storage.py tests/test_control_plane_api.py tests/test_runs_api.py tests/test_connectors_api.py tests/test_data_connectors.py tests/test_run_registry_snapshot.py
+      - name: 平台接口类型检查
+        run: mypy
+      - name: Install Strands SDK
+        run: python -m pip install -r requirements-harness-strands.txt "jsonschema>=4.23,<5"
+      - name: Verify Strands and OpenAI-compatible model adapter APIs
+        run: >-
+          python -c 'from strands import Agent; from strands.models.openai import OpenAIModel; from strands.tools.mcp import MCPClient;
+          model = OpenAIModel(model_id="smoke-model", client_args={"api_key":"scoped-proxy-token","base_url":"http://127.0.0.1:1/v1"}, params={"max_tokens":32});
+          client = MCPClient(url="https://127.0.0.1:1/mcp", headers={"Authorization":"Bearer smoke-token"}, tool_filters={"allowed":["smoke_tool"]}, continue_on_error=False); assert client.continue_on_error is False; agent = Agent(model=model, tools=[], load_tools_from_directory=False, plugins=[], callback_handler=None, context_manager=False);
+          agent.shutdown()'
+      - name: Verify multi-expert execution and human approval recovery
+        run: python -m unittest tests.test_multi_expert_workflow_integration -v
+      - name: Verify Gateway-only MCP server contract
+        run: python -m unittest tests.test_gateway_mcp tests.test_gateway_mcp_http tests.test_strands_gateway_mcp_http_integration -v

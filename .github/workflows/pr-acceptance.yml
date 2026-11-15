@@ -1,0 +1,42 @@
+name: pr-acceptance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  platform-ci:
+    name: Platform CI
+    uses: ./.github/workflows/platform-ci.yml
+
+  platform-integration:
+    name: Platform Integration
+    uses: ./.github/workflows/platform-integration.yml
+
+  acceptance:
+    name: PR Acceptance Gate
+    if: always()
+    needs: [platform-ci, platform-integration]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required workflows
+        env:
+          PLATFORM_CI_RESULT: ${{ needs.platform-ci.result }}
+          PLATFORM_INTEGRATION_RESULT: ${{ needs.platform-integration.result }}
+        run: |
+          echo "platform-ci: ${PLATFORM_CI_RESULT}"
+          echo "platform-integration: ${PLATFORM_INTEGRATION_RESULT}"
+          if [ "${PLATFORM_CI_RESULT}" != "success" ] || [ "${PLATFORM_INTEGRATION_RESULT}" != "success" ]; then
+            echo "PR acceptance failed: all required workflows must succeed."
+            exit 1
+          fi
+          echo "PR acceptance passed."
