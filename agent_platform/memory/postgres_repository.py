@@ -15,7 +15,7 @@ class PostgresMemoryRepository:
         return MemoryRecord(candidate=c,status=MemoryStatus(row["status"]),version=row["version"],confirmed_by=row["confirmed_by"],created_at=row["created_at"],updated_at=row["updated_at"],deleted_at=row["deleted_at"])
     async def _persist_version(self,conn: Any,record: MemoryRecord)->None:
         c=record.candidate
-        await conn.execute("""INSERT INTO platform_memory_versions(tenant_id,memory_id,version,scope,scope_id,content,source_ref,confidence,conflict_key,status,created_by,confirmed_by,expires_at,metadata,recorded_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(tenant_id,memory_id,version) DO NOTHING""",(c.tenant_id,c.memory_id,record.version,c.scope.value,c.scope_id,c.content,c.source_ref,c.confidence,c.conflict_key,record.status.value,c.created_by,record.confirmed_by,c.expires_at,_jsonb(c.metadata),record.updated_at))
+        await conn.execute("""INSERT INTO platform_memory_versions(tenant_id,memory_id,version,scope,scope_id,content,source_ref,confidence,conflict_key,status,created_by,confirmed_by,expires_at,metadata,recorded_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",(c.tenant_id,c.memory_id,record.version,c.scope.value,c.scope_id,c.content,c.source_ref,c.confidence,c.conflict_key,record.status.value,c.created_by,record.confirmed_by,c.expires_at,_jsonb(c.metadata),record.updated_at))
     async def put(self,record: MemoryRecord)->None:
         c=record.candidate; conn=await self._connect()
         async with conn:
