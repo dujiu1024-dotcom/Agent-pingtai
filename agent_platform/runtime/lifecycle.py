@@ -69,7 +69,9 @@ class RunLifecycleManager:
   if status not in TERMINAL: raise ValueError("finish requires a terminal Run status")
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  if old.status in TERMINAL: return old
+  if old.status in TERMINAL:
+   if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
+   return old
   updated=await self.store.transition(RunSnapshot(tenant_id,run_id,status,old.version,
    checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error),expected_version=old.version)
   if self.token_service is not None:
