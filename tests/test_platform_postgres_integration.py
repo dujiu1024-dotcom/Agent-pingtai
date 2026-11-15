@@ -745,9 +745,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             context.effective_role_ids,
             frozenset({
-                "tenant-member", "project-reader", "tenant-project-reader",
-                "team-scoped-reader", "knowledge-manager", "agent-runner",
-                "agent-memory-manager",
+                "tenant-member", "project-reader", "team-scoped-reader",
+                "knowledge-manager", "agent-runner", "agent-memory-manager",
             }),
         )
         self.assertEqual(
@@ -768,6 +767,10 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, user_id=str(tenant_reader_id),
         )
         self.assertIsNotNone(tenant_reader_context)
+        self.assertEqual(
+            tenant_reader_context.effective_role_ids,
+            frozenset({"tenant-project-reader"}),
+        )
         self.assertEqual(tenant_reader_context.project_ids, frozenset(project_ids))
         self.assertEqual(tenant_reader_context.effective_role_ids, frozenset({"tenant-project-reader"}))
         self.assertEqual(tenant_reader_context.knowledge_manage_project_ids, frozenset())
