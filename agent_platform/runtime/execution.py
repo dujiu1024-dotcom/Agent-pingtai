@@ -1,7 +1,7 @@
 """Connect Run lifecycle management to real LangGraph durable execution."""
 from __future__ import annotations
 import asyncio
-from typing import Any,Callable
+from typing import Any, Callable
 from agent_platform.runtime.lifecycle import RunLifecycleManager,RunSnapshot,RunStatus
 
 class LangGraphRunExecutor:
@@ -38,7 +38,7 @@ class LangGraphRunExecutor:
   config=self._config(tenant_id,run_id)
   try:
    result=await self.lifecycle.run_with_timeout(tenant_id,run_id,
-    self.graph.ainvoke(input,config=config),timeout=timeout_seconds or self.timeout_seconds)
+    self.graph.ainvoke(input,config=config),timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds)
   except asyncio.TimeoutError:raise
   except asyncio.CancelledError:
    current=await self.lifecycle.store.get(tenant_id,run_id)
