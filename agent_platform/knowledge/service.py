@@ -61,7 +61,7 @@ class KnowledgeService:
         if document is None:
             return False
         owns_private=document.scope.value=="private" and document.owner_user_id==principal.user_id
-        manages_shared="knowledge.manage" in principal.roles
+        manages_shared="knowledge.manage" in principal.permissions
         manages_project=(document.scope.value=="project" and document.project_id in principal.manage_project_ids)
         if not (owns_private or manages_shared or manages_project):
             raise PermissionError("document deletion is not authorized")
