@@ -1,7 +1,8 @@
 import unittest
-from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
 from types import SimpleNamespace
-from agent_platform.gateway.service import GatewayService,InMemoryEndpointDirectory
+
+from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
+from agent_platform.gateway.service import GatewayService, InMemoryEndpointDirectory
 class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
  async def test_isolates_runs_and_routes_to_owner_instance(self):
   directory=InMemoryEndpointDirectory(); app1=object(); app2=object()
