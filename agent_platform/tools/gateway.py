@@ -101,6 +101,15 @@ class SupervisedToolGateway:
         self._approval_verifier = approval_verifier
         self._audit_sink = audit_sink
         self._idempotency_store = idempotency_store
+        self._input_validators: dict[str, Any] = {}
+        for tool in tools:
+            if tool.input_schema is not None:
+                try:
+                    from jsonschema import Draft202012Validator
+                except ImportError as exc:
+                    raise RuntimeError("jsonschema is required for registered tool schemas") from exc
+                Draft202012Validator.check_schema(dict(tool.input_schema))
+                self._input_validators[tool.name] = Draft202012Validator(dict(tool.input_schema))
 
     @property
     def registered_tools(self) -> tuple[ToolDefinition, ...]:
@@ -137,6 +146,18 @@ class SupervisedToolGateway:
             actor_id=actor_id,
             approval_id=approval_id,
         )
+        validator = self._input_validators.get(tool_name)
+        if validator is not None:
+            try:
+                validator.validate(dict(arguments))
+            except Exception as exc:
+                await self._audit_sink.record(
+                    tenant_id=tenant_id, actor_id=actor_id, action=tool_name,
+                    resource=resource, action_digest=request.digest(), outcome="denied",
+                    run_id=run_id, agent_id=agent_id, detail="input_schema_validation_failed",
+                )
+                raise ToolExecutionDenied("tool arguments do not match the registered schema") from exc
+
         execution_context = ToolExecutionContext(
             tenant_id=tenant_id,
             actor_id=actor_id,
