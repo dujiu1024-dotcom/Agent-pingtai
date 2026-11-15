@@ -25,6 +25,8 @@ if DSN:
     from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
     from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
     from agent_platform.control_plane.data_connectors import DataConnection
+    from agent_platform.control_plane.postgres import PostgresSessionRepository
+    from agent_platform.control_plane.sessions_assets import InMemoryObjectStorage, MessageRole, SessionAssetService
     from agent_platform.tools.idempotency import PostgresToolEffectStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
     from agent_platform.identity.bootstrap import BootstrapError, bootstrap_tenant_owner
@@ -1198,6 +1200,32 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, connection_id=connection_id,
             expected_version=revoked.version, cursor={"page": 4},
         ))
+
+        session_repo = PostgresSessionRepository(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        session_service = SessionAssetService(session_repo, InMemoryObjectStorage())
+        session = await session_service.create_session(
+            tenant_id=self.tenant_id, owner_id="integration-user", title="Postgres session",
+        )
+        message = await session_service.append_message(
+            tenant_id=self.tenant_id, actor_id="integration-user",
+            session_id=session.session_id, role=MessageRole.USER,
+            content="trace this file", task_id="task-integration", run_id=str(run_id),
+        )
+        messages = await session_repo.list_messages(self.tenant_id, session.session_id)
+        self.assertEqual(messages[0].message_id, message.message_id)
+        self.assertEqual(messages[0].run_id, str(run_id))
+        asset = await session_service.upload_asset(
+            tenant_id=self.tenant_id, owner_id="integration-user",
+            filename="evidence.txt", media_type="text/plain",
+            content=b"durable metadata test", session_id=session.session_id,
+        )
+        saved_asset, saved_content = await session_service.download_asset(
+            tenant_id=self.tenant_id, asset_id=asset.asset_id,
+        )
+        self.assertEqual(saved_asset.sha256, asset.sha256)
+        self.assertEqual(saved_content, b"durable metadata test")
 
 
 if __name__ == "__main__":
