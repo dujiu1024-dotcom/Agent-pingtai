@@ -30,7 +30,7 @@ class ApprovalRepository:
     async def list_pending(self, tenant_id: str, *, limit: int) -> list[ApprovalRecord]: ...
     async def decide(self, tenant_id: str, approval_id: str, *, approver_id: str,
                      approved: bool, now: datetime) -> bool: ...
-    async def revoke(self, tenant_id: str, approval_id: str, *, actor_id: str, now: datetime) -> bool: ...
+    async def revoke(self, tenant_id: str, approval_id: str, *, actor_id: str, now: datetime, allow_admin: bool = False) -> bool: ...
 
 
 class ApprovalService:
@@ -75,7 +75,7 @@ class ApprovalService:
         if record.requested_by != actor_id and not allow_admin:
             raise PermissionError("only the requester or an authorized approver may revoke")
         return await self.repository.revoke(
-            tenant_id, approval_id, actor_id=actor_id, now=self.clock(),
+            tenant_id, approval_id, actor_id=actor_id, now=self.clock(), allow_admin=allow_admin,
         )
 
     async def decide(self, *, tenant_id: str, approval_id: str,
@@ -156,7 +156,7 @@ class PostgresApprovalRepository:
         return [self._record(row) for row in rows]
 
     async def revoke(self, tenant_id: str, approval_id: str, *,
-                     actor_id: str, now: datetime) -> bool:
+                     actor_id: str, now: datetime, allow_admin: bool = False) -> bool:
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
@@ -165,9 +165,9 @@ class PostgresApprovalRepository:
                        SET status='revoked',revoked_by=%s,revoked_at=%s
                        WHERE tenant_id=%s AND approval_id=%s
                          AND status='pending' AND expires_at>%s
-                         AND (requested_by=%s OR %s='platform-admin')
+                         AND (requested_by=%s OR %s)
                        RETURNING action,resource,action_hash,run_id""",
-                    (actor_id,now,tenant_id,UUID(approval_id),now,actor_id,actor_id),
+                    (actor_id,now,tenant_id,UUID(approval_id),now,actor_id,allow_admin),
                 )
                 row = await cursor.fetchone()
                 if row is None:
@@ -175,7 +175,7 @@ class PostgresApprovalRepository:
                 await connection.execute(
                     """INSERT INTO platform_tool_audit
                        (tenant_id,actor_id,action,resource,action_digest,outcome,detail,run_id)
-                       VALUES (%s,%s,'approval.revoke',%s,%s,'denied',%s,%s)""",
+                       VALUES (%s,%s,'approval.revoke',%s,%s,'succeeded',%s,%s)""",
                     (tenant_id,actor_id,f"approval:{approval_id}",row["action_hash"],
                      f"revoked;action={row['action']};resource={row['resource']}",
                      str(row["run_id"]) if row["run_id"] else None),
