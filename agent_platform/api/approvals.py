@@ -69,7 +69,7 @@ def create_approval_router(*, service: ApprovalService,
     @router.post("/{approval_id}/decision")
     async def decide_approval(approval_id: str, request: Request):
         actor = principal(request)
-        if not await authorize_approver(actor):
+        if not await can_approve(actor):
             raise HTTPException(403, "approval permission required")
         try:
             body = await request.json()
