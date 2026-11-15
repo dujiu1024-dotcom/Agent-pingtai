@@ -41,6 +41,18 @@ class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await directory.get("t","r")).instance_id,"gw-2")
   await one.unmount_run(tenant_id="t",run_id="r")
   await two.unmount_run(tenant_id="t",run_id="r")
+ async def test_asgi_shutdown_unmounts_runs_and_revokes_tokens(self):
+  directory=InMemoryEndpointDirectory(); tokens=RunTokenService(InMemoryRunTokenStore())
+  issued=await tokens.issue(tenant_id="t",run_id="r",agent_id="a",actor_id="u",endpoint_url="https://gw.example/tenants/t/runs/r/mcp")
+  service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,app_factory=lambda _:SimpleNamespace(state=SimpleNamespace()),token_service=tokens)
+  await service.mount_run(tenant_id="t",run_id="r",bridge=object())
+  messages=iter([{"type":"lifespan.startup"},{"type":"lifespan.shutdown"}]);sent=[]
+  async def receive():return next(messages)
+  async def send(event):sent.append(event)
+  await service({"type":"lifespan"},receive,send)
+  self.assertEqual([item["type"] for item in sent],["lifespan.startup.complete","lifespan.shutdown.complete"])
+  self.assertEqual((await directory.get("t","r")).status,"inactive")
+  self.assertIsNone(await tokens.resolve(issued.token))
  async def test_local_gateway_fails_closed_after_lease_deadline(self):
   from datetime import datetime, timezone, timedelta
   directory=InMemoryEndpointDirectory()
