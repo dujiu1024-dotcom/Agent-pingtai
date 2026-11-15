@@ -1,7 +1,7 @@
 """Real PostgreSQL integration for Gateway credentials, endpoint ownership and Run state."""
 import os
 import unittest
-from datetime import datetime,timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 DSN=os.environ.get("AGENT_PLATFORM_TEST_DSN")
@@ -11,10 +11,9 @@ if DSN:
  from agent_platform.control_plane.tokens import PostgresRunTokenStore,RunTokenService
  from agent_platform.gateway.postgres import PostgresEndpointDirectory
  from agent_platform.gateway.service import EndpointRecord
- from agent_platform.runtime.lifecycle import RunSnapshot,RunStatus
- from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
  from agent_platform.runtime.execution import LangGraphRunExecutor
- from agent_platform.runtime.lifecycle import RunLifecycleManager
+ from agent_platform.runtime.lifecycle import RunLifecycleManager, RunSnapshot, RunStatus
+ from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
 @unittest.skipUnless(DSN,"AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
