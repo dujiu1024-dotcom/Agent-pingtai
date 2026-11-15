@@ -41,3 +41,14 @@ class IdentityRepository(Protocol):
         resource_id: str, permission_key: str,
     ) -> bool:
         ...
+
+    async def grant_role(
+        self, *, tenant_id: str, actor_id: str, subject_type: str,
+        subject_id: str, resource_type: str, resource_id: str, role_id: str,
+    ) -> str:
+        ...
+
+    async def revoke_role(
+        self, *, tenant_id: str, actor_id: str, binding_id: str,
+    ) -> bool:
+        ...
