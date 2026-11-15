@@ -141,6 +141,23 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.acked, ["4-0"])
         self.assertEqual(transport.dead_letters[0]["fields"]["event_id"], "event-4")
 
+    async def test_repeated_worker_interruptions_cannot_exceed_max_attempts(self):
+        message = ("6-0", {"event_id": "event-6", "payload": "{}"})
+        transport, receipts, handled = FakeTransport([message]), FakeReceipts(), []
+
+        async def handler(event):
+            handled.append(event.event_id)
+
+        receipts.rows[("tenant-a", "worker-a", "event-6")] = {
+            "status": "processing", "attempts": 5
+        }
+        result = await self.make_consumer(
+            transport, receipts, handler, max_attempts=5
+        ).consume_batch()
+        self.assertEqual(result["dead_lettered"], 1)
+        self.assertEqual(handled, [])
+        self.assertEqual(transport.acked, ["6-0"])
+
     async def test_handler_failure_moves_to_dlq_after_max_attempts(self):
         message = ("5-0", {"event_id": "event-5", "payload": "{}"})
         transport, receipts = FakeTransport([message]), FakeReceipts()
