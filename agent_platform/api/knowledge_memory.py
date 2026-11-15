@@ -197,8 +197,8 @@ def create_knowledge_memory_router(
         except ValueError as exc:raise HTTPException(400,"invalid memory scope") from exc
         scope_id=str(body.get("scope_id") or (principal.user_id if scope is MemoryScope.USER else ""))
         if scope is MemoryScope.USER and scope_id!=principal.user_id:raise HTTPException(403,"cannot write another user's memory")
-        if scope is MemoryScope.PROJECT and scope_id not in principal.project_ids:raise HTTPException(403,"project access denied")
-        if scope is MemoryScope.AGENT and scope_id not in principal.agent_ids:raise HTTPException(403,"agent access denied")
+        if scope is MemoryScope.PROJECT and scope_id not in principal.manage_project_ids and "memory.manage" not in principal.roles:raise HTTPException(403,"project memory.manage permission required")
+        if scope is MemoryScope.AGENT and scope_id not in principal.manage_agent_ids and "memory.manage" not in principal.roles:raise HTTPException(403,"agent memory.manage permission required")
         if scope is MemoryScope.TENANT and "memory.manage" not in principal.roles:raise HTTPException(403,"memory.manage role required")
         expiry=body.get("expires_at")
         try:expires_at=datetime.fromisoformat(expiry) if expiry else None
