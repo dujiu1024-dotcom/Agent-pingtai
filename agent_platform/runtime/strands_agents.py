@@ -130,6 +130,8 @@ class StrandsAgentsAdapter:
                 result = await invoke
             else:
                 result = await asyncio.wait_for(invoke, timeout=float(timeout))
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError("Strands agent invocation exceeded its template timeout") from exc
         finally:
             shutdown = getattr(agent, "shutdown_async", None)
             if callable(shutdown):
