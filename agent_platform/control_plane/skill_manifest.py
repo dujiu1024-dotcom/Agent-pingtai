@@ -96,8 +96,9 @@ def validate_skill_bundle_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
     for raw in paths:
         if not isinstance(raw, str) or not raw or "\\" in raw:
             raise SkillManifestError("bundle paths must be non-empty POSIX paths")
+        segments = raw.split("/")
         path = PurePosixPath(raw)
-        if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        if path.is_absolute() or any(part in {"", ".", ".."} for part in segments):
             raise SkillManifestError("bundle path traversal is not allowed")
         value = str(path)
         if value in seen:
