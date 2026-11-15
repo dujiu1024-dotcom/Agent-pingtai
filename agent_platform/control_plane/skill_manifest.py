@@ -11,6 +11,7 @@ from pathlib import PurePosixPath
 from typing import Mapping
 
 import yaml
+from yaml.nodes import MappingNode
 
 from agent_platform.control_plane.registry import RegistryService, RegistryVersion
 
@@ -19,7 +20,7 @@ class _UniqueKeySafeLoader(yaml.SafeLoader):
     pass
 
 
-def _construct_unique_mapping(loader: _UniqueKeySafeLoader, node: yaml.MappingNode, deep: bool = False):
+def _construct_unique_mapping(loader: _UniqueKeySafeLoader, node: MappingNode, deep: bool = False):
     loader.flatten_mapping(node)
     mapping = {}
     for key_node, value_node in node.value:
