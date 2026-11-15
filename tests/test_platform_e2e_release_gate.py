@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.identity.http import IdentityASGIMiddleware
-from agent_platform.identity.models import IssuedSession, Principal
+from agent_platform.identity.models import AuthorizationContext, IssuedSession, Principal
 from agent_platform.identity.service import AuthenticationError
 from agent_platform.approval.policy import ActionRequest, RiskLevel, SupervisedPolicy
 from agent_platform.observability.redaction import redact_payload
@@ -50,28 +50,32 @@ class E2EFakeIdentity:
         return True
 
 
+class E2EFakeIdentityRepository:
+    """Tenant-scoped authorization context used by the router's real resolver."""
+
+    async def get_authorization_context(self, *, tenant_id, user_id):
+        if (tenant_id, user_id) not in {
+            ("tenant-a", "user-a"), ("tenant-b", "user-b"),
+        }:
+            return None
+        return AuthorizationContext(
+            tenant_id=tenant_id, user_id=user_id,
+            tenant_roles=frozenset({"tenant_admin"}),
+            effective_role_ids=frozenset({"tenant_admin"}),
+            tenant_permissions=frozenset({"knowledge.manage", "memory.manage"}),
+            project_ids=frozenset(),
+            knowledge_manage_project_ids=frozenset(),
+            memory_manage_project_ids=frozenset(),
+            agent_ids=frozenset(), memory_manage_agent_ids=frozenset(),
+        )
+
+
 class PlatformE2EReleaseGateTests(unittest.TestCase):
     def test_authenticated_login_knowledge_upload_rag_and_tenant_isolation(self):
         identity = E2EFakeIdentity()
         knowledge = KnowledgeService(InMemoryKnowledgeRepository())
         memory = MemoryService(InMemoryMemoryRepository())
 
-        async def resolve_knowledge(request):
-            principal = request.state.identity.principal
-            return KnowledgePrincipal(
-                tenant_id=principal.tenant_id, user_id=principal.user_id,
-                project_ids=frozenset(), permissions=frozenset({"knowledge.manage"}),
-            )
-
-
-        async def _memory_principal(request):
-            principal = request.state.identity.principal
-            from agent_platform.memory.service import MemoryPrincipal
-            return MemoryPrincipal(
-                tenant_id=principal.tenant_id, user_id=principal.user_id,
-                permissions=frozenset({"memory.manage"}),
-                manage_project_ids=frozenset(), manage_agent_ids=frozenset(),
-            )
 
         class GroundedGenerator:
             async def generate(self, *, query, context):
@@ -88,8 +92,7 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
         app.include_router(create_identity_router(identity=identity))
         app.include_router(create_knowledge_memory_router(
             knowledge=knowledge, memory=memory,
-            resolve_knowledge_principal=resolve_knowledge,
-            resolve_memory_principal=lambda request: _memory_principal(request),
+            identity_repository=E2EFakeIdentityRepository(),
             rag=RAGService(knowledge=knowledge, generator=GroundedGenerator()),
         ))
         with TestClient(app, base_url="https://platform.example.test") as client:
