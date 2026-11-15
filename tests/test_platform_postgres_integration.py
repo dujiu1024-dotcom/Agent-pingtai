@@ -350,7 +350,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await conn.execute(
                 """INSERT INTO platform_permissions (permission_key, description)
                    VALUES ('project.read', 'Read project'),
-                          ('identity.role.manage', 'Manage role bindings')
+                          ('identity.role.manage', 'Manage role bindings'),
+                          ('user.manage', 'Manage tenant users')
                    ON CONFLICT DO NOTHING"""
             )
             await conn.execute(
@@ -362,8 +363,9 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO platform_role_permissions
                    (tenant_id, role_id, permission_key)
                    VALUES (%s, 'reader', 'project.read'),
-                          (%s, 'reader', 'identity.role.manage')""",
-                (self.tenant_id, self.tenant_id),
+                          (%s, 'reader', 'identity.role.manage'),
+                          (%s, 'reader', 'user.manage')""",
+                (self.tenant_id, self.tenant_id, self.tenant_id),
             )
             await conn.execute(
                 """INSERT INTO platform_roles (tenant_id, role_id, name)
@@ -431,6 +433,63 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 resource=ResourceRef("project", "project-1"),
                 permission_key="project.read",
             )
+
+
+
+    async def test_api_credential_issue_authenticate_and_revoke(self):
+        issued = await self.service.login(
+            email="identity@example.com", password="correct horse battery staple",
+            tenant_id=self.tenant_id,
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        credential = await self.service.create_api_credential(
+            principal=principal, name="integration-key",
+            scopes=("project.read", "agent.run"),
+        )
+        authenticated = await self.service.authenticate_api_credential(credential.access_token)
+        self.assertEqual(authenticated.tenant_id, self.tenant_id)
+        self.assertEqual(authenticated.user_id, str(self.user_id))
+        self.assertTrue(await self.service.revoke_api_credential(
+            principal=principal, credential_id=credential.credential_id,
+        ))
+        with self.assertRaises(AuthenticationError):
+            await self.service.authenticate_api_credential(credential.access_token)
+
+    async def test_invitation_is_email_bound_single_use_and_audited(self):
+        issued = await self.service.login(
+            email="identity@example.com", password="correct horse battery staple",
+            tenant_id=self.tenant_id,
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        invitation_id, token, _ = await self.service.create_invitation(
+            principal=principal, email="identity@example.com", role_id="viewer",
+        )
+        self.assertTrue(await self.service.accept_invitation(
+            principal=principal, invitation_token=token,
+        ))
+        with self.assertRaises(AuthenticationError):
+            await self.service.accept_invitation(
+                principal=principal, invitation_token=token,
+            )
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT action FROM platform_identity_audit
+                   WHERE tenant_id=%s AND action IN
+                     ('invitation.created', 'invitation.accepted')
+                   ORDER BY audit_id""",
+                (self.tenant_id,),
+            )
+            self.assertEqual(
+                [row["action"] for row in await cur.fetchall()],
+                ["invitation.created", "invitation.accepted"],
+            )
+            cur = await conn.execute(
+                """SELECT count(*) AS n FROM platform_role_bindings
+                   WHERE tenant_id=%s AND subject_id=%s
+                     AND role_id='viewer' AND revoked_at IS NULL""",
+                (self.tenant_id, str(self.user_id)),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 1)
 
     async def test_role_grant_and_revoke_are_audited_in_the_same_transaction(self):
         issued = await self.service.login(
