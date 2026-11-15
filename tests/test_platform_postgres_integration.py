@@ -298,13 +298,17 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, actor_id="expert-a", action="read",
             resource="blackboard:run-integration", action_digest="b" * 64,
             outcome="succeeded", detail="integration test",
+            run_id="run-audit-integration", agent_id="expert-a",
         )
         async with await self.connect() as conn:
             cur = await conn.execute(
-                "SELECT outcome FROM platform_tool_audit WHERE tenant_id=%s",
+                "SELECT outcome, run_id, agent_id FROM platform_tool_audit WHERE tenant_id=%s",
                 (self.tenant_id,),
             )
-            self.assertEqual((await cur.fetchone())["outcome"], "succeeded")
+            row = await cur.fetchone()
+            self.assertEqual(row["outcome"], "succeeded")
+            self.assertEqual(row["run_id"], "run-audit-integration")
+            self.assertEqual(row["agent_id"], "expert-a")
 
 
 if __name__ == "__main__":
