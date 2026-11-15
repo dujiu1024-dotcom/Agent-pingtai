@@ -211,3 +211,18 @@ class IdentityService:
             tenant_id=invitation.tenant_id, user_id=principal.user_id,
             email_normalized=invitation.email_normalized,
         )
+
+
+    async def authorize_api_credential(
+        self, *, credential: AuthenticatedApiCredential,
+        resource: ResourceRef, permission_key: str,
+    ) -> None:
+        if permission_key not in credential.scopes:
+            raise AuthorizationDenied("API credential scope denied")
+        allowed = await self._repository.has_permission(
+            tenant_id=credential.tenant_id, user_id=credential.user_id,
+            resource_type=resource.resource_type, resource_id=resource.resource_id,
+            permission_key=permission_key,
+        )
+        if not allowed:
+            raise AuthorizationDenied("permission denied")
