@@ -11,6 +11,7 @@ from agent_platform.events.webhooks import (
 )
 from agent_platform.sdk.client import ApiResponse, PlatformApiError, PlatformClient
 from agent_platform.extensions.manifest import ExtensionManifest, validate_platform_compatibility
+from agent_platform.i18n.context import format_datetime, format_number, locale_context
 
 
 SECRET = b"s" * 32
@@ -65,7 +66,8 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
 
     def test_subscription_rejects_non_https_and_local_targets(self):
         for url in ("http://hooks.example.test", "https://localhost/hook",
-                    "https://user:pass@hooks.example.test/hook"):
+                    "https://user:pass@hooks.example.test/hook", "https://10.0.0.1/hook",
+                    "https://service.internal/hook"):
             with self.assertRaises(ValueError):
                 WebhookSubscription("s", "t", url, "secret://ref", ("topic",))
 
@@ -135,6 +137,14 @@ class SdkAndExtensionTests(unittest.TestCase):
         )
         with self.assertRaises(PlatformApiError):
             client.get("/me")
+
+    def test_tenant_locale_formats_timezone_and_numbers_without_global_locale(self):
+        context = locale_context("de-DE", "Europe/Berlin")
+        value = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        self.assertIn("+01:00", format_datetime(value, context))
+        self.assertEqual(format_number(12345.67, context), "12.345,67")
+        with self.assertRaises(ValueError):
+            locale_context("xx-XX", "Mars/Olympus")
 
     def test_extension_manifest_requires_declared_permissions_and_compatible_api(self):
         manifest = ExtensionManifest(
