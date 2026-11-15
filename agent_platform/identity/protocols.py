@@ -30,6 +30,9 @@ class IdentityRepository(Protocol):
         self, *, tenant_id: str, user_id: str, resource_type: str,
         resource_id: str, permission_key: str,
     ) -> bool: ...
+    async def can_assign_role(
+        self, *, tenant_id: str, actor_id: str, role_id: str,
+    ) -> bool: ...
     async def grant_role(
         self, *, tenant_id: str, actor_id: str, subject_type: str,
         subject_id: str, resource_type: str, resource_id: str, role_id: str,
