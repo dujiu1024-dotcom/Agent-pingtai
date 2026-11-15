@@ -14,6 +14,10 @@ on:
       - "tests/test_redis_streams_integration.py"
       - ".github/workflows/platform-integration.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   postgres-redis-integration:
     runs-on: ubuntu-latest
