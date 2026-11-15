@@ -8,6 +8,8 @@ from fastapi import FastAPI
 
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
+from agent_platform.api.registry import create_registry_router
+from agent_platform.api.sessions import create_sessions_router
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
@@ -17,6 +19,15 @@ from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
+
+
+async def _principal_from_request(request: Any) -> Any:
+    from agent_platform.identity.models import Principal
+    principal = getattr(request.state, "identity.principal", None)
+    if not isinstance(principal, Principal):
+        from fastapi import HTTPException
+        raise HTTPException(401, "authentication required")
+    return principal
 
 
 def create_platform_app(
@@ -30,6 +41,10 @@ def create_platform_app(
     service_identity: Any | None = None,
     rag: RAGService | None = None,
     memory_extraction: MemoryExtractionService | None = None,
+    registry_service_resolver: Any | None = None,
+    session_service_resolver: Any | None = None,
+    registry_authorizer: Any | None = None,
+    session_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -73,4 +88,22 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
+    registry_configured = any(value is not None for value in (registry_service_resolver, registry_authorizer))
+    sessions_configured = any(value is not None for value in (session_service_resolver, session_authorizer))
+    if registry_configured:
+        if registry_service_resolver is None or registry_authorizer is None:
+            raise ValueError("registry service resolver and authorizer must be configured together")
+        app.include_router(create_registry_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=registry_service_resolver,
+            authorize=registry_authorizer,
+        ))
+    if sessions_configured:
+        if session_service_resolver is None or session_authorizer is None:
+            raise ValueError("session service resolver and authorizer must be configured together")
+        app.include_router(create_sessions_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=session_service_resolver,
+            authorize=session_authorizer,
+        ))
     return app
