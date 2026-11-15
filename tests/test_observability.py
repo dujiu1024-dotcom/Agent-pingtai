@@ -7,6 +7,7 @@ from agent_platform.observability.evaluation import (
 )
 from agent_platform.observability.harness import ObservedHarnessAdapter
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
+from agent_platform.observability.prompts import PromptRegistry
 from agent_platform.observability.redaction import redact_payload, redact_text
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
@@ -100,6 +101,23 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         allowed, reasons = gate_report(report, EvalGatePolicy(min_pass_rate=1.0, min_average_score=0.9))
         self.assertTrue(allowed)
         self.assertEqual(reasons, ())
+
+    def test_prompt_versions_validate_variables_canary_and_rollback(self):
+        registry = PromptRegistry()
+        v1 = registry.register("answer", "Answer {question}")
+        registry.activate("answer", v1.version)
+        v2 = registry.register("answer", "Answer carefully: {question}")
+        registry.set_canary("answer", v2.version, 100)
+        rendered, selected = registry.render("answer", {"question": "why"}, rollout_key="run-1")
+        self.assertEqual(selected.version, v2.version)
+        self.assertEqual(rendered, "Answer carefully: why")
+        registry.activate("answer", v1.version)
+        rendered, selected = registry.render("answer", {"question": "why"})
+        self.assertEqual(selected.version, v1.version)
+        with self.assertRaisesRegex(ValueError, "variables mismatch"):
+            registry.render("answer", {"unexpected": "value"})
+        with self.assertRaisesRegex(ValueError, "simple variable"):
+            registry.register("unsafe", "Value {user.name}")
 
     def test_evaluation_gate_blocks_regression(self):
         case = EvalCase("case-1", expected_terms=("expected",))
