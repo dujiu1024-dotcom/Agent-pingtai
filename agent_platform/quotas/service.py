@@ -128,6 +128,12 @@ class InMemoryQuotaStore:
         async with self._lock:
             if reservation.reservation_id in self._reservations or reservation.reservation_id in self._settled:
                 raise ValueError("reservation already exists")
+            if any(
+                r.tenant_id == reservation.tenant_id and r.run_id == reservation.run_id
+                and r.scope_type == reservation.scope_type and r.scope_id == reservation.scope_id
+                for r in self._reservations.values()
+            ):
+                raise ValueError("active reservation already exists for this Run and quota scope")
             budget = self._budgets.get((reservation.tenant_id, reservation.scope_type, reservation.scope_id, reservation.period_start))
             if budget is None:
                 raise BudgetExceeded("quota budget not configured")
@@ -155,6 +161,10 @@ class InMemoryQuotaStore:
             reservation = self._reservations[reservation_id]
             if (reservation.tenant_id, reservation.run_id) != (event.tenant_id, event.run_id):
                 raise PermissionError("usage event does not match reservation tenant and Run")
+            if not reservation.period_start <= event.occurred_at < reservation.period_end:
+                raise ValueError("usage event is outside the reserved budget period")
+            if not self._matches(event, reservation.scope_type, reservation.scope_id):
+                raise PermissionError("usage event does not match reserved quota scope")
             self._events[event.event_id] = event
             self._reservations.pop(reservation_id)
             self._settled.add(reservation_id)
@@ -200,7 +210,8 @@ class QuotaService:
     async def settle_run(
         self, reservation: QuotaReservation, *, model_key: str,
         input_tokens: int, output_tokens: int, cost_usd: Decimal,
-        occurred_at: datetime | None = None,
+        occurred_at: datetime | None = None, project_id: str | None = None,
+        agent_id: str | None = None,
     ) -> UsageEvent:
         if min(input_tokens, output_tokens) < 0 or cost_usd < 0:
             raise ValueError("actual usage must be non-negative")
@@ -208,6 +219,7 @@ class QuotaService:
             event_id=str(uuid4()), tenant_id=reservation.tenant_id, run_id=reservation.run_id,
             model_key=model_key, input_tokens=input_tokens, output_tokens=output_tokens,
             cost_usd=cost_usd, occurred_at=occurred_at or datetime.now(timezone.utc),
+            project_id=project_id, agent_id=agent_id,
         )
         await self.store.settle(reservation.reservation_id, event)
         return event
