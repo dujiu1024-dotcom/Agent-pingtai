@@ -81,11 +81,11 @@ class MemoryExtractionService:
             elif draft.scope is MemoryScope.PROJECT:
                 if (
                     draft.scope_id not in principal.manage_project_ids
-                    and "memory.manage" not in principal.roles
+                    and "memory.manage" not in principal.permissions
                 ):
                     raise PermissionError("project memory management is not authorized")
             elif draft.scope is MemoryScope.TENANT:
-                if "memory.manage" not in principal.roles:
+                if "memory.manage" not in principal.permissions:
                     raise PermissionError("tenant memory requires memory.manage")
             candidate = MemoryCandidate(
                 tenant_id=principal.tenant_id,
