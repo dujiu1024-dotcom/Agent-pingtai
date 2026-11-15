@@ -419,6 +419,14 @@ class PostgresIdentityRepository:
                 invitation = await cursor.fetchone()
                 if invitation is None:
                     return False
+                cursor = await connection.execute(
+                    """UPDATE platform_invitations SET accepted_at=now()
+                       WHERE invitation_id=%s AND accepted_at IS NULL
+                       RETURNING invitation_id""",
+                    (invitation_id,),
+                )
+                if await cursor.fetchone() is None:
+                    return False
                 await connection.execute(
                     """INSERT INTO platform_tenant_memberships
                        (tenant_id, user_id, status, joined_at)
@@ -431,17 +439,10 @@ class PostgresIdentityRepository:
                     """INSERT INTO platform_role_bindings
                        (binding_id, tenant_id, subject_type, subject_id,
                         resource_type, resource_id, role_id, created_by)
-                       VALUES (%s, %s, 'user', %s, 'tenant', %s, %s, 'invitation')""",
+                       VALUES (%s, %s, 'user', %s, 'tenant', %s, %s, 'invitation')
+                       ON CONFLICT DO NOTHING""",
                     (str(uuid4()), tenant_id, user_id, tenant_id, invitation["role_id"]),
                 )
-                cursor = await connection.execute(
-                    """UPDATE platform_invitations SET accepted_at=now()
-                       WHERE invitation_id=%s AND accepted_at IS NULL
-                       RETURNING invitation_id""",
-                    (invitation_id,),
-                )
-                if await cursor.fetchone() is None:
-                    return False
                 await connection.execute(
                     """INSERT INTO platform_identity_audit
                        (tenant_id, actor_id, action, subject_id, outcome, detail)
