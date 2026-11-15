@@ -9,11 +9,23 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def test_cancel_propagates_to_tool_and_run(self):
   await self.manager.start("t","r"); entered=asyncio.Event()
   async def tool(): entered.set(); await asyncio.Event().wait()
-  task=asyncio.create_task(self.manager.tools.run("r","call-1",tool()))
+  task=asyncio.create_task(self.manager.tools.run("r","call-1",tool(),tenant_id="t"))
   await entered.wait()
   result=await self.manager.cancel("t","r")
   self.assertEqual(result.status,RunStatus.CANCELLED)
   with self.assertRaises(asyncio.CancelledError): await task
+ async def test_tool_cancellation_is_tenant_scoped(self):
+  entered_a=asyncio.Event(); entered_b=asyncio.Event()
+  async def wait(event):
+   event.set(); await asyncio.Event().wait()
+  task_a=asyncio.create_task(self.manager.tools.run("same-run","call-a",wait(entered_a),tenant_id="tenant-a"))
+  task_b=asyncio.create_task(self.manager.tools.run("same-run","call-b",wait(entered_b),tenant_id="tenant-b"))
+  await asyncio.gather(entered_a.wait(),entered_b.wait())
+  self.assertEqual(await self.manager.tools.cancel_run("same-run",tenant_id="tenant-a"),1)
+  with self.assertRaises(asyncio.CancelledError): await task_a
+  self.assertFalse(task_b.done())
+  await self.manager.tools.cancel_run("same-run",tenant_id="tenant-b")
+  with self.assertRaises(asyncio.CancelledError): await task_b
  async def test_timeout_sets_terminal_status(self):
   await self.manager.start("t","r")
   with self.assertRaises(asyncio.TimeoutError):
