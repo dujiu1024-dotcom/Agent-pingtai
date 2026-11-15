@@ -8,8 +8,6 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: false
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
 
 jobs:
   test:
