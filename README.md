@@ -142,3 +142,20 @@ python3 agency.py init && python3 agency.py doctor
 - 报「闸门未通过」：先 `gate confirm`，或确认该项目确实已签确认单
 - 报「没有证据不能关闭任务」：`--evidence` 填产出物路径或命令输出摘要
 - 测试失败：单跑 `python3 -m unittest tests.test_gate -v` 看具体用例
+
+
+---
+
+## 智能体平台改造（新架构）
+
+当前主干保留原 FDE 工作台。新平台在独立目录 `agent_platform/` 中并行建设，按阶段迁移，不影响现有 CLI。
+
+- 架构总设计：[`docs/architecture/智能体平台改造总设计.md`](docs/architecture/智能体平台改造总设计.md)
+- 共享领域契约：`agent_platform/contracts.py`
+- Hybrid Blackboard 接口：`agent_platform/blackboard/`
+- Supervised 审批策略：`agent_platform/approval/`
+- LangGraph 与 Harness 适配端口：`agent_platform/runtime/`
+- PostgreSQL 核心结构：`agent_platform/storage/postgres/`
+- Redis Streams 事件传输：`agent_platform/events/`
+
+旧 CLI 继续使用标准库。新平台可选依赖单独安装：`pip install -r requirements-platform.txt`。尚未完成的基础设施接入不会影响旧系统运行。
