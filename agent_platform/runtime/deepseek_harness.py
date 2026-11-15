@@ -40,11 +40,11 @@ class DeepSeekHarnessAdapter:
         self.templates = templates
         self.workspace_resolver = workspace_resolver
         self.home_resolver = home_resolver
-        self.credential_resolver = credential_resolver
+        self.provider_environment_resolver = provider_environment_resolver
         self.profile = profile
         self.permission_mode = permission_mode
         self.patches = patches
-        self.sandbox_verified = sandbox_verified
+        self.container_isolation_verified = container_isolation_verified
         self.sdk_factory = sdk_factory
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
