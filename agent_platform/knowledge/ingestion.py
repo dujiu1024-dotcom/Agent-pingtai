@@ -10,10 +10,10 @@ class _TextHTMLParser(HTMLParser):
     def __init__(self) -> None: super().__init__(); self.parts: list[str] = []; self.hidden = 0
     def handle_starttag(self, tag: str, attrs: list[tuple[str,str|None]]) -> None:
         if tag in {"script","style","noscript","svg"}: self.hidden += 1
-        if tag in {"p","div","br","li","h1","h2","h3","tr"}: self.parts.append("\\n")
+        if tag in {"p","div","br","li","h1","h2","h3","tr"}: self.parts.append("\n")
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script","style","noscript","svg"}: self.hidden = max(0,self.hidden-1)
-        if tag in {"p","div","li","h1","h2","h3","tr"}: self.parts.append("\\n")
+        if tag in {"p","div","li","h1","h2","h3","tr"}: self.parts.append("\n")
     def handle_data(self, data: str) -> None:
         if not self.hidden: self.parts.append(data)
 @dataclass
