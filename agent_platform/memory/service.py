@@ -15,6 +15,7 @@ class MemoryPrincipal:
     user_id: str
     project_ids: frozenset[str]=frozenset()
     agent_ids: frozenset[str]=frozenset()
+    roles: frozenset[str]=frozenset()
 @dataclass(frozen=True)
 class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
@@ -33,7 +34,11 @@ class MemoryRepository(Protocol):
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:...
 class InMemoryMemoryRepository:
     def __init__(self)->None:self.records:dict[tuple[str,str],MemoryRecord]={}
-    async def put(self,record: MemoryRecord)->None:self.records[(record.candidate.tenant_id,record.candidate.memory_id)]=record
+    async def put(self,record: MemoryRecord)->None:
+        key=(record.candidate.tenant_id,record.candidate.memory_id); current=self.records.get(key)
+        if current is not None and record.version!=current.version+1:raise RuntimeError("memory version conflict")
+        if current is None and record.version!=1:raise RuntimeError("memory version conflict")
+        self.records[key]=record
     async def get(self,tenant_id: str,memory_id: str)->MemoryRecord|None:return self.records.get((tenant_id,memory_id))
     async def list(self,tenant_id: str,limit: int=1000)->Sequence[MemoryRecord]:return [r for (t,_),r in self.records.items() if t==tenant_id][:limit]
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:
@@ -65,8 +70,10 @@ class MemoryService:
     async def forget(self,*,principal: MemoryPrincipal,memory_id: str)->bool:
         rec=await self.repository.get(principal.tenant_id,memory_id)
         if rec is None:return False
-        c=rec.candidate; allowed=(c.scope is MemoryScope.USER and c.scope_id==principal.user_id) or (c.scope is MemoryScope.PROJECT and c.scope_id in principal.project_ids) or (c.scope is MemoryScope.AGENT and c.scope_id in principal.agent_ids) or c.scope is MemoryScope.TENANT
-        if not allowed:raise PermissionError("memory deletion is not authorized")
+        c=rec.candidate
+        owns_user=(c.scope is MemoryScope.USER and c.scope_id==principal.user_id)
+        manages_shared=(c.scope is not MemoryScope.USER and "memory.manage" in principal.roles)
+        if not (owns_user or manages_shared):raise PermissionError("memory deletion is not authorized")
         deleted=await self.repository.delete(principal.tenant_id,memory_id,utc_now())
         if deleted and self.on_delete:await self.on_delete(principal.tenant_id,memory_id)
         return deleted
