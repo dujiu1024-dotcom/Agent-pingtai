@@ -83,145 +83,109 @@ class PostgresIdentityRepository:
             )
 
             cursor = await connection.execute(
-                """SELECT DISTINCT p.project_id
+                """WITH active_team_ids AS (
+                     SELECT tm.team_id
+                     FROM platform_team_memberships tm
+                     JOIN platform_teams team
+                       ON team.tenant_id=tm.tenant_id
+                      AND team.team_id=tm.team_id
+                      AND team.status='active'
+                     WHERE tm.tenant_id=%s AND tm.user_id=%s
+                       AND tm.status='active'
+                   ),
+                   effective_permissions AS (
+                     SELECT b.resource_type, b.resource_id, rp.permission_key
+                     FROM platform_role_bindings b
+                     JOIN platform_role_permissions rp
+                       ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
+                     WHERE b.tenant_id=%s AND b.revoked_at IS NULL
+                       AND (
+                         (b.subject_type='user' AND b.subject_id=%s)
+                         OR (b.subject_type='team' AND b.subject_id IN (
+                           SELECT team_id FROM active_team_ids
+                         ))
+                       )
+                   )
+                   SELECT p.project_id,
+                     COALESCE(bool_or(e.permission_key IN (
+                       'project.read','knowledge.read','knowledge.manage','memory.manage'
+                     )), FALSE) AS can_read,
+                     COALESCE(bool_or(e.permission_key='knowledge.manage'), FALSE)
+                       AS can_manage_knowledge,
+                     COALESCE(bool_or(e.permission_key='memory.manage'), FALSE)
+                       AS can_manage_memory
                    FROM platform_projects p
+                   LEFT JOIN effective_permissions e
+                     ON (
+                       (e.resource_type='tenant' AND e.resource_id=p.tenant_id)
+                       OR (e.resource_type='project' AND e.resource_id=p.project_id)
+                       OR (e.resource_type='organization'
+                         AND e.resource_id=p.organization_id)
+                     )
                    WHERE p.tenant_id=%s AND p.status='active'
-                     AND EXISTS (
-                         SELECT 1
-                         FROM platform_role_bindings b
-                         JOIN platform_role_permissions rp
-                           ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
-                         WHERE b.tenant_id=p.tenant_id AND b.revoked_at IS NULL
-                           AND rp.permission_key IN (
-                             'project.read','knowledge.read','knowledge.manage',
-                             'memory.manage'
-                           )
-                           AND (
-                             (b.resource_type='project' AND b.resource_id=p.project_id)
-                             OR (b.resource_type='organization'
-                               AND b.resource_id=p.organization_id)
-                           )
-                           AND (
-                             (b.subject_type='user' AND b.subject_id=%s)
-                             OR (b.subject_type='team' AND b.subject_id IN (
-                               SELECT tm.team_id
-                               FROM platform_team_memberships tm
-                               JOIN platform_teams team
-                                 ON team.tenant_id=tm.tenant_id
-                                AND team.team_id=tm.team_id
-                                AND team.status='active'
-                               WHERE tm.tenant_id=p.tenant_id
-                                 AND tm.user_id=%s AND tm.status='active'
-                             ))
-                           )
-                       )""",
-                (tenant_id, user_id, user_id),
+                   GROUP BY p.project_id""",
+                (tenant_id, user_id, tenant_id, user_id, tenant_id),
             )
-            project_ids = frozenset(row["project_id"] for row in await cursor.fetchall())
-
-            cursor = await connection.execute(
-                """SELECT DISTINCT p.project_id
-                   FROM platform_projects p
-                   WHERE p.tenant_id=%s AND p.status='active'
-                     AND EXISTS (
-                       SELECT 1
-                       FROM platform_role_bindings b
-                       JOIN platform_role_permissions rp
-                         ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
-                       WHERE b.tenant_id=p.tenant_id AND b.revoked_at IS NULL
-                         AND rp.permission_key='knowledge.manage'
-                         AND (
-                           (b.resource_type='project' AND b.resource_id=p.project_id)
-                           OR (b.resource_type='organization'
-                             AND b.resource_id=p.organization_id)
-                         )
-                         AND (
-                           (b.subject_type='user' AND b.subject_id=%s)
-                           OR (b.subject_type='team' AND b.subject_id IN (
-                             SELECT tm.team_id
-                             FROM platform_team_memberships tm
-                             JOIN platform_teams team
-                               ON team.tenant_id=tm.tenant_id
-                              AND team.team_id=tm.team_id
-                              AND team.status='active'
-                             WHERE tm.tenant_id=p.tenant_id
-                               AND tm.user_id=%s AND tm.status='active'
-                           ))
-                         )
-                     )""",
-                (tenant_id, user_id, user_id),
+            project_rows = await cursor.fetchall()
+            project_ids = frozenset(
+                row["project_id"] for row in project_rows if row["can_read"]
             )
             knowledge_manage_project_ids = frozenset(
-                row["project_id"] for row in await cursor.fetchall()
-            )
-
-            cursor = await connection.execute(
-                """SELECT DISTINCT p.project_id
-                   FROM platform_projects p
-                   WHERE p.tenant_id=%s AND p.status='active'
-                     AND EXISTS (
-                       SELECT 1
-                       FROM platform_role_bindings b
-                       JOIN platform_role_permissions rp
-                         ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
-                       WHERE b.tenant_id=p.tenant_id AND b.revoked_at IS NULL
-                         AND rp.permission_key='memory.manage'
-                         AND (
-                           (b.resource_type='project' AND b.resource_id=p.project_id)
-                           OR (b.resource_type='organization'
-                             AND b.resource_id=p.organization_id)
-                         )
-                         AND (
-                           (b.subject_type='user' AND b.subject_id=%s)
-                           OR (b.subject_type='team' AND b.subject_id IN (
-                             SELECT tm.team_id
-                             FROM platform_team_memberships tm
-                             JOIN platform_teams team
-                               ON team.tenant_id=tm.tenant_id
-                              AND team.team_id=tm.team_id
-                              AND team.status='active'
-                             WHERE tm.tenant_id=p.tenant_id
-                               AND tm.user_id=%s AND tm.status='active'
-                           ))
-                         )
-                     )""",
-                (tenant_id, user_id, user_id),
+                row["project_id"] for row in project_rows
+                if row["can_manage_knowledge"]
             )
             memory_manage_project_ids = frozenset(
-                row["project_id"] for row in await cursor.fetchall()
+                row["project_id"] for row in project_rows
+                if row["can_manage_memory"]
             )
 
             cursor = await connection.execute(
-                """SELECT DISTINCT a.agent_id, rp.permission_key
+                """WITH active_team_ids AS (
+                     SELECT tm.team_id
+                     FROM platform_team_memberships tm
+                     JOIN platform_teams team
+                       ON team.tenant_id=tm.tenant_id
+                      AND team.team_id=tm.team_id
+                      AND team.status='active'
+                     WHERE tm.tenant_id=%s AND tm.user_id=%s
+                       AND tm.status='active'
+                   ),
+                   effective_permissions AS (
+                     SELECT b.resource_type, b.resource_id, rp.permission_key
+                     FROM platform_role_bindings b
+                     JOIN platform_role_permissions rp
+                       ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
+                     WHERE b.tenant_id=%s AND b.revoked_at IS NULL
+                       AND (
+                         (b.subject_type='user' AND b.subject_id=%s)
+                         OR (b.subject_type='team' AND b.subject_id IN (
+                           SELECT team_id FROM active_team_ids
+                         ))
+                       )
+                   )
+                   SELECT a.agent_id,
+                     COALESCE(bool_or(e.permission_key IN (
+                       'agent.run','agent.manage','memory.manage'
+                     )), FALSE) AS can_access,
+                     COALESCE(bool_or(e.permission_key='memory.manage'), FALSE)
+                       AS can_manage_memory
                    FROM platform_agents a
-                   JOIN platform_role_bindings b
-                     ON b.tenant_id=a.tenant_id
-                    AND b.resource_type='agent' AND b.resource_id=a.agent_id
-                    AND b.revoked_at IS NULL
-                   JOIN platform_role_permissions rp
-                     ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
+                   LEFT JOIN effective_permissions e
+                     ON (
+                       (e.resource_type='tenant' AND e.resource_id=a.tenant_id)
+                       OR (e.resource_type='agent' AND e.resource_id=a.agent_id)
+                     )
                    WHERE a.tenant_id=%s AND a.status='active'
-                     AND rp.permission_key IN ('agent.run','agent.manage','memory.manage')
-                     AND (
-                       (b.subject_type='user' AND b.subject_id=%s)
-                       OR (b.subject_type='team' AND b.subject_id IN (
-                         SELECT tm.team_id
-                         FROM platform_team_memberships tm
-                         JOIN platform_teams team
-                           ON team.tenant_id=tm.tenant_id
-                          AND team.team_id=tm.team_id
-                          AND team.status='active'
-                         WHERE tm.tenant_id=a.tenant_id
-                           AND tm.user_id=%s AND tm.status='active'
-                       ))
-                     )""",
-                (tenant_id, user_id, user_id),
+                   GROUP BY a.agent_id""",
+                (tenant_id, user_id, tenant_id, user_id, tenant_id),
             )
-            agent_role_rows = await cursor.fetchall()
-            agent_ids = frozenset(row["agent_id"] for row in agent_role_rows)
+            agent_rows = await cursor.fetchall()
+            agent_ids = frozenset(
+                row["agent_id"] for row in agent_rows if row["can_access"]
+            )
             memory_manage_agent_ids = frozenset(
-                row["agent_id"] for row in agent_role_rows
-                if row["permission_key"] == "memory.manage"
+                row["agent_id"] for row in agent_rows
+                if row["can_manage_memory"]
             )
 
         return AuthorizationContext(
