@@ -2,6 +2,7 @@ import unittest
 
 from agent_platform.approval.policy import RiskLevel
 from agent_platform.tools.idempotency import InMemoryToolEffectStore
+from agent_platform.tools.idempotency import InMemoryToolEffectStore
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolDefinition,
@@ -37,6 +38,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.audit = FakeAuditSink()
         self.effects = InMemoryToolEffectStore()
         self.call_sequence = 0
+        self.effects = InMemoryToolEffectStore()
+        self.call_sequence = 0
 
         async def handler(arguments):
             self.executed.append(dict(arguments))
@@ -58,6 +61,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             approval_verifier=self.approvals,
             audit_sink=self.audit,
             idempotency_store=self.effects,
+            idempotency_store=self.effects,
         )
 
     async def call(self, tool, **kwargs):
@@ -69,6 +73,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             "tool_name": tool,
             "resource": "resource:1",
             "arguments": {"value": "x"},
+            "run_id": "00000000-0000-0000-0000-000000000001",
+            "call_id": f"call-{self.call_sequence}",
             "run_id": "00000000-0000-0000-0000-000000000001",
             "call_id": f"call-{self.call_sequence}",
         }
