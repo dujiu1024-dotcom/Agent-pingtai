@@ -20,7 +20,6 @@ from agent_platform.contracts import (
     utc_now,
 )
 
-
 ConnectionFactory = Callable[[], Any]
 
 
