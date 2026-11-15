@@ -77,7 +77,7 @@ class PostgresBlackboardRepository(BlackboardRepository):
             """,
             (
                 self.tenant_id,
-                event.event_id,
+                UUID(event.event_id),
                 event.event_type,
                 _jsonb({
                     "event_id": event.event_id,
@@ -200,7 +200,7 @@ class PostgresBlackboardRepository(BlackboardRepository):
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
-                cursor = await connection.execute(
+                await connection.execute(
                     "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
                     (f"{self.tenant_id}:{entry_id}",),
                 )
@@ -211,7 +211,7 @@ class PostgresBlackboardRepository(BlackboardRepository):
                     WHERE tenant_id = %s AND entry_id = %s
                     ORDER BY version DESC LIMIT 1 FOR UPDATE
                     """,
-                    (self.tenant_id, entry_id),
+                    (self.tenant_id, UUID(entry_id)),
                 )
                 current = await cursor.fetchone()
                 if current is None:
