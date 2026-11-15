@@ -36,17 +36,26 @@ class BlackboardMultiExpertServices:
         self.callbacks = callbacks
         self.expert_registry = expert_registry
 
-    @staticmethod
-    def _entry_id(run_id: str, key: str) -> str:
-        return str(uuid5(NAMESPACE_URL, "agent-platform:" + run_id + ":" + key))
+    def _entry_id(self, state: Mapping[str, Any], key: str) -> str:
+        run_id = str(state.get("run_id") or state.get("thread_id") or "").strip()
+        if not run_id:
+            raise ValueError("Blackboard workflow context requires run_id or thread_id")
+        scope, scope_id = self._scope(state)
+        identity = ":".join((
+            "agent-platform", self.tenant_id, scope.value, scope_id, run_id, key,
+        ))
+        return str(uuid5(NAMESPACE_URL, identity))
 
     def _scope(self, state: Mapping[str, Any]) -> tuple[Scope, str]:
         if state.get("tenant_id") != self.tenant_id:
             raise PermissionError("workflow tenant does not match Blackboard tenant")
+        run_id = str(state.get("run_id") or state.get("thread_id") or "").strip()
+        if not run_id:
+            raise ValueError("Blackboard workflow context requires run_id or thread_id")
         task_id = state.get("task_id")
         if task_id:
             return Scope.TASK, str(task_id)
-        return Scope.RUN, str(state["run_id"])
+        return Scope.RUN, run_id
 
     @staticmethod
     def _assert_same_entry(existing: BlackboardEntry, proposed: BlackboardEntry) -> None:
@@ -104,7 +113,7 @@ class BlackboardMultiExpertServices:
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
         expert_id = str(assignment.get("expert_id") or "expert")
         entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "expert:" + expert_id),
+            entry_id=self._entry_id(state, "expert:" + expert_id),
             scope=scope, scope_id=scope_id, kind=EntryKind.CLAIM,
             content={"expert_id": expert_id, "contribution": result},
             author_id=expert_id, source_refs=self._refs(result),
@@ -119,7 +128,7 @@ class BlackboardMultiExpertServices:
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
         refs = tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
         entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "synthesis"), scope=scope, scope_id=scope_id,
+            entry_id=self._entry_id(state, "synthesis"), scope=scope, scope_id=scope_id,
             kind=EntryKind.ARTIFACT, content={"synthesis": result},
             author_id="synthesizer", source_refs=refs,
         )
@@ -138,14 +147,14 @@ class BlackboardMultiExpertServices:
             conflict["conflict_instance_id"] = key
             refs = self._refs(conflict) or tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
             entry = BlackboardEntry(
-                entry_id=self._entry_id(run_id, "conflict:" + key),
+                entry_id=self._entry_id(state, "conflict:" + key),
                 scope=scope, scope_id=scope_id, kind=EntryKind.CONFLICT,
                 content={"conflict": conflict}, author_id="reviewer", source_refs=refs,
             )
             persisted = await self._propose_once(entry)
             conflict["blackboard_entry_id"] = persisted.entry_id
             challenge = BlackboardEntry(
-                entry_id=self._entry_id(run_id, "challenge:" + key),
+                entry_id=self._entry_id(state, "challenge:" + key),
                 scope=scope, scope_id=scope_id, kind=EntryKind.CHALLENGE,
                 content={
                     "conflict_entry_id": persisted.entry_id,
@@ -173,7 +182,7 @@ class BlackboardMultiExpertServices:
             decision = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_instance_id") == conflict.get("conflict_instance_id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
             evidence_refs = decision.get("evidence_refs", conflict.get("evidence_refs", []))
             entry = BlackboardEntry(
-                entry_id=self._entry_id(run_id, "decision:" + str(conflict_entry_id)),
+                entry_id=self._entry_id(state, "decision:" + str(conflict_entry_id)),
                 scope=scope, scope_id=scope_id, kind=EntryKind.DECISION,
                 content={
                     "conflict_entry_id": conflict_entry_id,
@@ -190,7 +199,7 @@ class BlackboardMultiExpertServices:
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
         resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids)
         resolved_entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "resolved-synthesis"),
+            entry_id=self._entry_id(state, "resolved-synthesis"),
             scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
             content={"resolved_synthesis": resolved_synthesis},
             author_id="conflict-resolver", source_refs=resolution_refs,
@@ -205,7 +214,7 @@ class BlackboardMultiExpertServices:
         run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "approval-request"), scope=scope,
+            entry_id=self._entry_id(state, "approval-request"), scope=scope,
             scope_id=scope_id, kind=EntryKind.NOTE,
             content={"approval_request": request}, author_id="approval-policy",
         )
@@ -217,10 +226,10 @@ class BlackboardMultiExpertServices:
         run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "approval-result"), scope=scope,
+            entry_id=self._entry_id(state, "approval-result"), scope=scope,
             scope_id=scope_id, kind=EntryKind.DECISION,
             content={"approval_result": result}, author_id="human-approver",
-            source_refs=(self._entry_id(run_id, "approval-request"),),
+            source_refs=(self._entry_id(state, "approval-request"),),
             status=EntryStatus.ACCEPTED if result.get("approved") is True else EntryStatus.REJECTED,
         )
         persisted = await self._propose_once(entry)
@@ -250,7 +259,7 @@ class BlackboardMultiExpertServices:
         if approval.get("blackboard_entry_id"):
             refs.append(str(approval["blackboard_entry_id"]))
         entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "final-artifact"), scope=scope,
+            entry_id=self._entry_id(state, "final-artifact"), scope=scope,
             scope_id=scope_id, kind=EntryKind.ARTIFACT,
             content={"final_result": result}, author_id="workflow-archive",
             source_refs=tuple(refs), status=EntryStatus.ACCEPTED,
@@ -264,7 +273,7 @@ class BlackboardMultiExpertServices:
         run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
-            entry_id=self._entry_id(run_id, "rejected-result"), scope=scope,
+            entry_id=self._entry_id(state, "rejected-result"), scope=scope,
             scope_id=scope_id, kind=EntryKind.NOTE,
             content={"rejection": result}, author_id="workflow-rejection",
             status=EntryStatus.REJECTED,
