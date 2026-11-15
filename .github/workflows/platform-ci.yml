@@ -6,6 +6,7 @@ on:
       - "agent_platform/**"
       - "tests/test_platform_contracts.py"
       - "requirements-platform.txt"
+      - "requirements-harness-dsh.txt"
       - "pyproject.toml"
       - ".github/workflows/platform-ci.yml"
   pull_request:
