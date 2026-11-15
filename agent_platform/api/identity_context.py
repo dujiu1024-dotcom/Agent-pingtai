@@ -36,6 +36,7 @@ class IdentityContextResolver:
             user_id=context.user_id,
             project_ids=context.project_ids,
             roles=context.tenant_permissions,
+            manage_project_ids=context.knowledge_manage_project_ids,
         )
 
     async def memory(self, request: Request) -> MemoryPrincipal:
