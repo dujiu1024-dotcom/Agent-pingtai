@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.knowledge.contracts import KnowledgePrincipal
-from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.rag import RAGService
+from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService
 from agent_platform.memory.service import (
