@@ -23,6 +23,11 @@ from agent_platform.tools.gateway_mcp import (
 from agent_platform.tools.gateway_mcp_http import create_authenticated_mcp_asgi_app
 
 
+class FakeApprovalVerifier:
+    async def consume(self, *, tenant_id, approval_id, action_digest):
+        return False
+
+
 class FakeAuditSink:
     def __init__(self):
         self.records = []
@@ -66,7 +71,7 @@ class StrandsGatewayMCPHttpIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         gateway = SupervisedToolGateway(
             tools=(definition,),
-            approval_verifier=None,
+            approval_verifier=FakeApprovalVerifier(),
             audit_sink=audit,
         )
         session = GatewaySessionContext(
