@@ -63,6 +63,28 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 200)
+        document_id = response.json()["document_id"]
+        overwrite = self.client.post(
+            "/api/platform/v1/knowledge/documents",
+            json={
+                "document_id": document_id,
+                "title": "attempted takeover",
+                "scope": "private",
+                "content": "overwritten private evidence",
+            },
+            headers={"x-user": "user-b"},
+        )
+        self.assertEqual(overwrite.status_code, 403)
+        scope_change = self.client.post(
+            "/api/platform/v1/knowledge/documents",
+            json={
+                "document_id": document_id,
+                "title": "scope change",
+                "scope": "tenant",
+                "content": "scope escalation attempt",
+            },
+        )
+        self.assertEqual(scope_change.status_code, 409)
         other = self.client.get(
             "/api/platform/v1/knowledge/search",
             params={"q": "confidential"},
