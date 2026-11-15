@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
 
 from agent_platform.approval.policy import RiskLevel
 from agent_platform.approval.service import ApprovalRecord, ApprovalService
+from agent_platform.api.approvals import create_approval_router
+from agent_platform.identity.models import Principal
 
 
 class MemoryApprovalRepository:
@@ -84,6 +88,37 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a", approval_id=record.approval_id,
             approver_id="user-c", approved=True,
         ))
+
+
+    def test_api_uses_authenticated_tenant_and_approver_authorization(self):
+        repository = MemoryApprovalRepository()
+        service = ApprovalService(repository, clock=lambda: self.now)
+        app = FastAPI()
+        app.include_router(create_approval_router(
+            service=service, authorize_approver=lambda actor: actor.user_id == "approver",
+        ))
+
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="requester", tenant_id="tenant-a", session_id="s",
+                    email="r@example.test", display_name="Requester",
+                )
+            })()
+            return await call_next(request)
+
+        client = TestClient(app)
+        created = client.post("/api/platform/v1/approvals", json={
+            "action": "external.write", "resource": "account:7",
+            "risk_level": 2, "parameters": {"amount": 10},
+            "tenant_id": "tenant-attacker", "requested_by": "attacker",
+        })
+        self.assertEqual(created.status_code, 201)
+        approval_id = created.json()["approval_id"]
+        self.assertIn(("tenant-a", approval_id), repository.records)
+        self.assertNotIn(("tenant-attacker", approval_id), repository.records)
+        self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 403)
 
     async def test_expired_approval_cannot_be_decided(self):
         record = await self.service.request(
