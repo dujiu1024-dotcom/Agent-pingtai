@@ -110,7 +110,7 @@ class IdentityASGIMiddleware:
     """Authenticate HTTP requests and enforce cookie CSRF/CORS/security headers."""
 
     SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-    PUBLIC_PATHS = {"/health", "/ready", "/auth/login", "/auth/invitations/accept"}
+    PUBLIC_PATHS = {"/health", "/ready", "/auth/login"}
 
     def __init__(
         self,
@@ -121,7 +121,7 @@ class IdentityASGIMiddleware:
         session_cookie: str = "__Host-platform_session",
         csrf_cookie: str = "__Host-platform_csrf",
         allowed_origins: tuple[str, ...] = (),
-        protected_paths: tuple[str, ...] = ("/api",),
+        protected_paths: tuple[str, ...] = ("/api", "/auth"),
         login_rate_limiter: RateLimiter | None = None,
         login_limit: int = 10,
         login_window_seconds: int = 300,
