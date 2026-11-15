@@ -99,16 +99,26 @@ class PostgresApprovalRepository:
     async def create(self, record: ApprovalRecord) -> None:
         connection = await self._connect()
         async with connection:
-            await connection.execute(
-                """INSERT INTO platform_approvals
-                (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
-                 requested_by,status,expires_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)""",
-                (record.tenant_id, UUID(record.approval_id),
-                 UUID(record.run_id) if record.run_id else None,
-                 record.action, record.resource, record.risk_level,
-                 record.action_hash, record.requested_by, record.expires_at),
-            )
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_approvals
+                    (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
+                     requested_by,status,expires_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)""",
+                    (record.tenant_id, UUID(record.approval_id),
+                     UUID(record.run_id) if record.run_id else None,
+                     record.action, record.resource, record.risk_level,
+                     record.action_hash, record.requested_by, record.expires_at),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_tool_audit
+                       (tenant_id,actor_id,action,resource,action_digest,outcome,detail,run_id)
+                       VALUES (%s,%s,'approval.request',%s,%s,'started',%s,%s)""",
+                    (record.tenant_id,record.requested_by,
+                     f"approval:{record.approval_id}",record.action_hash,
+                     f"risk_level={record.risk_level};action={record.action}",
+                     record.run_id),
+                )
 
     async def get(self, tenant_id: str, approval_id: str) -> ApprovalRecord | None:
         connection = await self._connect()
@@ -135,14 +145,29 @@ class PostgresApprovalRepository:
                      approved: bool, now: datetime) -> bool:
         connection = await self._connect()
         async with connection:
-            cursor = await connection.execute(
-                """UPDATE platform_approvals
-                SET status=%s, decided_by=%s, decided_at=%s
-                WHERE tenant_id=%s AND approval_id=%s
-                  AND status='pending' AND expires_at>%s
-                  AND requested_by<>%s
-                RETURNING approval_id""",
-                ("approved" if approved else "rejected", approver_id, now,
-                 tenant_id, UUID(approval_id), now, approver_id),
-            )
-            return await cursor.fetchone() is not None
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_approvals
+                    SET status=%s, decided_by=%s, decided_at=%s
+                    WHERE tenant_id=%s AND approval_id=%s
+                      AND status='pending' AND expires_at>%s
+                      AND requested_by<>%s
+                    RETURNING approval_id,action,resource,action_hash,run_id""",
+                    ("approved" if approved else "rejected", approver_id, now,
+                     tenant_id, UUID(approval_id), now, approver_id),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    return False
+                await connection.execute(
+                    """INSERT INTO platform_tool_audit
+                       (tenant_id,actor_id,action,resource,action_digest,outcome,detail,run_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (tenant_id,approver_id,
+                     "approval.approve" if approved else "approval.reject",
+                     f"approval:{approval_id}",row["action_hash"],
+                     "succeeded" if approved else "denied",
+                     f"decision={'approved' if approved else 'rejected'};action={row['action']};resource={row['resource']}",
+                     str(row["run_id"]) if row["run_id"] else None),
+                )
+                return True
