@@ -4,8 +4,9 @@ import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
-from agent_platform.quotas import Budget, BudgetExceeded, InMemoryQuotaStore, QuotaService, UsageEvent
+from agent_platform.quotas import Budget, BudgetExceeded, InMemoryQuotaStore, QuotaEnforcedHarnessAdapter, QuotaService, UsageEvent
 
 
 class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -74,6 +75,58 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="tenant-a", run_id="run-1", scope_type="agent", scope_id="agent-x",
                 estimated_tokens=1, estimated_cost_usd=Decimal("0.01"),
             )
+
+    async def test_harness_adapter_reserves_then_settles_actual_usage(self) -> None:
+        context = SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-harness", agent_id="agent-a",
+            project_id="project-a",
+            model_template=SimpleNamespace(template_id="general", version=2),
+        )
+        request = SimpleNamespace(context=context)
+
+        class Harness:
+            async def run(self, _request):
+                return SimpleNamespace(
+                    usage={"input_tokens": 30, "output_tokens": 20},
+                    tool_calls=[{"name": "search"}],
+                    output_text="done",
+                )
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            Harness(), quota_service=self.service,
+            estimate_request=lambda _request: (100, Decimal("0.50")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.25"),
+        )
+        result = await adapter.run(request)
+        self.assertEqual(result.output_text, "done")
+        tokens, cost, concurrency = await self.store.usage(
+            "tenant-a", "tenant", "tenant-a", self.start, self.end,
+        )
+        self.assertEqual((tokens, cost, concurrency), (50, Decimal("0.25"), 0))
+
+    async def test_harness_failure_releases_quota_reservation(self) -> None:
+        context = SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-failed", agent_id="agent-a",
+            project_id=None,
+            model_template=SimpleNamespace(template_id="general", version=1),
+        )
+        request = SimpleNamespace(context=context)
+
+        class BrokenHarness:
+            async def run(self, _request):
+                raise RuntimeError("model failed")
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            BrokenHarness(), quota_service=self.service,
+            estimate_request=lambda _request: (50, Decimal("0.20")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.10"),
+        )
+        with self.assertRaisesRegex(RuntimeError, "model failed"):
+            await adapter.run(request)
+        tokens, cost, concurrency = await self.store.usage(
+            "tenant-a", "tenant", "tenant-a", self.start, self.end,
+        )
+        self.assertEqual((tokens, cost, concurrency), (0, Decimal("0"), 0))
 
     async def test_negative_usage_rejected(self) -> None:
         reservation, _ = await self.reserve("run-1", 10, "0.10")
