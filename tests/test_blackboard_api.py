@@ -195,6 +195,42 @@ class BlackboardApiTests(unittest.TestCase):
         )
         self.assertEqual(accepted.status_code, 201)
 
+    def test_evidence_verifier_is_required_when_references_are_present(self):
+        async def resolve_principal(request):
+            return Principal(
+                user_id="user-a",
+                tenant_id="tenant-a",
+                session_id="session-a",
+                email="user@example.com",
+                display_name="User",
+            )
+
+        async def resolve_repository(principal):
+            return self.repository
+
+        async def authorize_scope(principal, scope, scope_id, action):
+            return True
+
+        app = FastAPI()
+        app.include_router(create_blackboard_router(
+            resolve_principal=resolve_principal,
+            resolve_repository=resolve_repository,
+            authorize_scope=authorize_scope,
+        ))
+        client = TestClient(app)
+        response = client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "task",
+                "scope_id": "task-a",
+                "kind": "fact",
+                "content": {"fact": "unverified"},
+                "source_refs": ["source:unknown"],
+            },
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.repository.entries, {})
+
     def test_scope_and_repository_tenant_are_enforced(self):
         denied = self.client.post(
             "/api/platform/v1/blackboard/entries",
