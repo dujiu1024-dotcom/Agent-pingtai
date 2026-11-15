@@ -4,7 +4,7 @@ import asyncio
 import re
 from dataclasses import dataclass
 from datetime import datetime,timezone
-from typing import Any,Callable,Protocol
+from typing import Any, Callable, Protocol
 from urllib.parse import urlsplit
 
 @dataclass(frozen=True)
