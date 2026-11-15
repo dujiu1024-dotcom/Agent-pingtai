@@ -91,6 +91,178 @@ class SessionRepository(Protocol):
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None: ...
 
 
+
+class PostgresSessionRepository:
+    """PostgreSQL-backed session/message/asset metadata repository.
+
+    Every lookup and mutation is tenant-qualified. The database composite keys
+    are the final isolation boundary; callers must never use an unscoped ID.
+    """
+
+    def __init__(self, connection_factory: Any) -> None:
+        self._connect = connection_factory
+
+    @staticmethod
+    def _session(row: Mapping[str, Any]) -> ConversationSession:
+        return ConversationSession(
+            tenant_id=row["tenant_id"], session_id=str(row["session_id"]),
+            owner_id=row["owner_id"], title=row["title"],
+            project_id=row["project_id"], status=row["status"],
+            created_at=row["created_at"], updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _message(row: Mapping[str, Any]) -> ConversationMessage:
+        return ConversationMessage(
+            tenant_id=row["tenant_id"], message_id=str(row["message_id"]),
+            session_id=str(row["session_id"]), role=MessageRole(row["role"]),
+            content=row["content"], actor_id=row["actor_id"],
+            task_id=row["task_id"], run_id=row["run_id"],
+            asset_ids=tuple(row["asset_ids"] or ()),
+            metadata=dict(row["metadata"] or {}), created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _asset(row: Mapping[str, Any]) -> FileAsset:
+        return FileAsset(
+            tenant_id=row["tenant_id"], asset_id=str(row["asset_id"]),
+            owner_id=row["owner_id"], object_key=row["object_key"],
+            filename=row["filename"], media_type=row["media_type"],
+            size_bytes=row["size_bytes"], sha256=row["sha256"],
+            status=AssetStatus(row["status"]), project_id=row["project_id"],
+            session_id=str(row["session_id"]) if row["session_id"] else None,
+            created_at=row["created_at"],
+        )
+
+    async def create_session(self, session: ConversationSession) -> None:
+        conn = await self._connect()
+        async with conn:
+            await conn.execute(
+                """INSERT INTO platform_sessions
+                   (tenant_id, session_id, owner_id, project_id, title, status)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                (session.tenant_id, session.session_id, session.owner_id,
+                 session.project_id, session.title, session.status),
+            )
+
+    async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None:
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT * FROM platform_sessions
+                   WHERE tenant_id=%s AND session_id=%s AND status<>'deleted'""",
+                (tenant_id, session_id),
+            )
+            row = await cur.fetchone()
+        return self._session(row) if row else None
+
+    async def append_message(self, message: ConversationMessage) -> None:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    """INSERT INTO platform_messages
+                       (tenant_id,message_id,session_id,role,content,actor_id,
+                        task_id,run_id,asset_ids,metadata)
+                       SELECT %s,%s,s.session_id,%s,%s,%s,%s,%s,%s,%s
+                       FROM platform_sessions s
+                       WHERE s.tenant_id=%s AND s.session_id=%s AND s.status='active'
+                       AND NOT EXISTS (
+                         SELECT 1 FROM jsonb_array_elements_text(%s::jsonb) requested(asset_id)
+                         WHERE NOT EXISTS (
+                           SELECT 1 FROM platform_file_assets a
+                           WHERE a.tenant_id=s.tenant_id
+                             AND a.asset_id=requested.asset_id::uuid
+                             AND a.status='available'
+                         )
+                       )
+                       RETURNING message_id""",
+                    (message.tenant_id, message.message_id, message.role.value,
+                     message.content, message.actor_id, message.task_id,
+                     message.run_id, _session_jsonb(list(message.asset_ids)),
+                     _session_jsonb(dict(message.metadata)), message.tenant_id,
+                     message.session_id, _session_jsonb(list(message.asset_ids))),
+                )
+                if await cur.fetchone() is None:
+                    raise SessionNotFound("session or referenced file asset not found")
+
+    async def list_messages(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+    ) -> tuple[ConversationMessage, ...]:
+        if limit < 1 or limit > 1000:
+            raise SessionError("message limit must be between 1 and 1000")
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT m.* FROM platform_messages m
+                   JOIN platform_sessions s
+                     ON s.tenant_id=m.tenant_id AND s.session_id=m.session_id
+                   WHERE m.tenant_id=%s AND m.session_id=%s
+                     AND s.status<>'deleted'
+                   ORDER BY m.created_at DESC,m.message_id DESC LIMIT %s""",
+                (tenant_id, session_id, limit),
+            )
+            rows = await cur.fetchall()
+        return tuple(self._message(row) for row in reversed(rows))
+
+    async def create_asset(self, asset: FileAsset) -> None:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    """INSERT INTO platform_file_assets
+                       (tenant_id,asset_id,owner_id,project_id,session_id,
+                        object_key,filename,media_type,size_bytes,sha256,status)
+                       SELECT %s,%s,%s,%s,s.session_id,%s,%s,%s,%s,%s,%s
+                       FROM (SELECT %s::uuid AS session_id) requested
+                       LEFT JOIN platform_sessions s
+                         ON s.tenant_id=%s AND s.session_id=requested.session_id
+                        AND s.status='active'
+                       WHERE (%s::uuid IS NULL OR s.session_id IS NOT NULL)
+                       RETURNING asset_id""",
+                    (asset.tenant_id, asset.asset_id, asset.owner_id,
+                     asset.project_id, asset.session_id, asset.object_key,
+                     asset.filename, asset.media_type, asset.size_bytes,
+                     asset.sha256, asset.status.value, asset.session_id,
+                     asset.tenant_id, asset.session_id),
+                )
+                if await cur.fetchone() is None:
+                    raise SessionNotFound("session not found in tenant")
+
+    async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None:
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT * FROM platform_file_assets
+                   WHERE tenant_id=%s AND asset_id=%s AND status<>'deleted'""",
+                (tenant_id, asset_id),
+            )
+            row = await cur.fetchone()
+        return self._asset(row) if row else None
+
+    async def set_asset_status(
+        self, tenant_id: str, asset_id: str, status: AssetStatus,
+    ) -> None:
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """UPDATE platform_file_assets SET status=%s
+                   WHERE tenant_id=%s AND asset_id=%s AND status<>'deleted'
+                   RETURNING asset_id""",
+                (status.value, tenant_id, asset_id),
+            )
+            if await cur.fetchone() is None:
+                raise SessionNotFound("asset not found")
+
+
+def _session_jsonb(value: Any) -> Any:
+    try:
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise RuntimeError("Install psycopg[binary,pool]") from exc
+    return Jsonb(value)
+
+
 class ObjectStorage(Protocol):
     async def put(self, object_key: str, content: bytes, *, media_type: str) -> None: ...
     async def get(self, object_key: str) -> bytes: ...
