@@ -38,6 +38,12 @@ class PostgresMemoryRepository:
         async with conn:
             cur=await conn.execute("SELECT * FROM platform_memories WHERE tenant_id=%s ORDER BY updated_at DESC LIMIT %s",(tenant_id,limit)); rows=await cur.fetchall()
         return [self._record(r) for r in rows]
+    async def list_versions(self,tenant_id: str,memory_id: str)->Sequence[MemoryRecord]:
+        conn=await self._connect()
+        async with conn:
+            cur=await conn.execute("SELECT * FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s ORDER BY version ASC",(tenant_id,memory_id))
+            rows=await cur.fetchall()
+        return [self._record({**row,"created_at":row["recorded_at"],"updated_at":row["recorded_at"],"deleted_at":None}) for row in rows]
     async def delete(self,tenant_id: str,memory_id: str,at)->bool:
         conn=await self._connect()
         async with conn:
