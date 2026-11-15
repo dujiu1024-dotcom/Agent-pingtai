@@ -128,7 +128,7 @@ class DeepSeekHarnessAdapter:
             "request_timeout_seconds": template.parameters.get("timeout_seconds"),
             "env": dict(child_env),
         }
-        if template.provider:
+        if template.provider and self.profile != "sdk-minimal":
             options["provider"] = template.provider
         if reasoning_effort:
             options["reasoning_effort"] = reasoning_effort
