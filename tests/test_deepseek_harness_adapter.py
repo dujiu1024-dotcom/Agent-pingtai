@@ -108,7 +108,7 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options["dsh_home"], str(self.home.resolve()))
         self.assertEqual(options["env"]["DSH_PERMISSION_MODE"], "read-only")
 
-    async def test_requires_verified_sandbox(self):
+    async def test_requires_verified_container_isolation(self):
         with self.assertRaisesRegex(RuntimeError, "verified container filesystem and network isolation"):
             await self.adapter(container_isolation_verified=False).run(self.request)
 
@@ -121,6 +121,25 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "gateway-only profile"):
             await self.adapter().run(request)
+
+    async def test_requires_scoped_model_proxy(self):
+        adapter = self.adapter(
+            provider_environment_resolver=lambda _template, _ctx: {
+                "DEEPSEEK_API_KEY": "direct-provider-key"
+            }
+        )
+        with self.assertRaisesRegex(RuntimeError, "scoped model proxy"):
+            await adapter.run(self.request)
+
+    async def test_provider_environment_cannot_override_runtime_controls(self):
+        adapter = self.adapter(
+            provider_environment_resolver=lambda _template, _ctx: {
+                "DEEPSEEK_BASE_URL": "http://model-proxy.internal/v1",
+                "DSH_PERMISSION_MODE": "danger-full-access",
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "cannot override Harness"):
+            await adapter.run(self.request)
 
     async def test_requires_custom_profile_for_non_deepseek_provider(self):
         path = Path(self.temp.name) / "other.json"
