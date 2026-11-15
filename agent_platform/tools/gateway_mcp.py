@@ -83,10 +83,15 @@ class GatewayMCPBridge:
                 definition.allowed_roles
             ):
                 continue
-            if definition.input_schema is None or definition.resource_resolver is None:
+            if (
+                definition.input_schema is None
+                or definition.resource_resolver is None
+                or definition.resource_authorizer is None
+                or definition.contextual_handler is None
+            ):
                 raise ValueError(
-                    f"tool {name!r} needs a JSON Schema and trusted resource resolver "
-                    "before MCP exposure"
+                    f"tool {name!r} needs a JSON Schema, trusted resource resolver, "
+                    "resource authorizer, and tenant-aware handler before MCP exposure"
                 )
             schema = copy.deepcopy(dict(definition.input_schema))
             if schema.get("type") != "object":
