@@ -1,7 +1,6 @@
 """PostgreSQL adapters for the registry and session/asset metadata ports."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Callable
 from uuid import UUID
 
