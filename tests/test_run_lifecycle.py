@@ -108,5 +108,16 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def test_illegal_transition_rejected(self):
   with self.assertRaises(ValueError):
    await self.store.transition(__import__("agent_platform.runtime.lifecycle",fromlist=["RunSnapshot"]).RunSnapshot("t","r",RunStatus.SUCCEEDED,1),expected_version=1)
+ async def test_repeated_cancel_of_terminal_run_revokes_remaining_tokens(self):
+  await self.manager.start("t","r")
+  await self.manager.finish("t","r",RunStatus.SUCCEEDED)
+  tokens=RunTokenService(InMemoryRunTokenStore())
+  issued=await tokens.issue(tenant_id="t",run_id="r",agent_id="agent",actor_id="actor",
+   endpoint_url="https://gateway.example/tenants/t/runs/r/mcp")
+  manager=RunLifecycleManager(self.store,token_service=tokens)
+  result=await manager.cancel("t","r")
+  self.assertEqual(result.status,RunStatus.SUCCEEDED)
+  self.assertIsNone(await tokens.resolve(issued.token))
+
 async def _append(target,value): target.append(value)
 if __name__=="__main__": unittest.main()
