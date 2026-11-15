@@ -208,3 +208,20 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await service.repository.get("t",other.memory_id)).status.value,"active")
         self.assertEqual((await service.repository.get("t",own.memory_id)).status.value,"superseded")
         self.assertEqual(conflict.status.value,"conflict")
+
+    async def test_forget_retries_cleanup_after_soft_delete(self):
+        attempts=[]
+        async def cleanup(tenant_id,memory_id):
+            attempts.append((tenant_id,memory_id))
+            if len(attempts)==1:
+                raise RuntimeError("cache unavailable")
+        service=MemoryService(InMemoryMemoryRepository(),on_delete=cleanup)
+        candidate=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u",content="private fact",source_ref="chat:1",confidence=.9,created_by="u")
+        await service.propose(candidate)
+        await service.confirm(tenant_id="t",memory_id=candidate.memory_id,confirmer_id="u")
+        principal=MemoryPrincipal(tenant_id="t",user_id="u")
+        with self.assertRaisesRegex(RuntimeError,"cache unavailable"):
+            await service.forget(principal=principal,memory_id=candidate.memory_id)
+        self.assertEqual((await service.repository.get("t",candidate.memory_id)).status.value,"deleted")
+        self.assertFalse(await service.forget(principal=principal,memory_id=candidate.memory_id))
+        self.assertEqual(attempts,[("t",candidate.memory_id),("t",candidate.memory_id)])
