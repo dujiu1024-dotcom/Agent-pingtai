@@ -73,7 +73,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_runs SET lease_expires_at=now()+(%s * interval '1 second')
-    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND status IN ('running','cancelling')
+    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND lease_expires_at>now() AND status IN ('running','cancelling')
     RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
  async def release_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
