@@ -63,7 +63,8 @@ class InMemoryToolEffectStore:
         if old is not None:
             if old.action_digest != action_digest or old.actor_id != actor_id:
                 raise EffectConflict("idempotency key was reused for a different action")
-            return copy.deepcopy(old)
+            from dataclasses import replace
+            return copy.deepcopy(replace(old, created=False))
         now = datetime.now(timezone.utc)
         row = ToolEffect(tenant_id, run_id, call_id, action_digest, actor_id, "pending",
                          created_at=now, updated_at=now, created=True)
