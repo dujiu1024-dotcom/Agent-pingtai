@@ -1,7 +1,8 @@
-"""Experimental Strands Agents adapter for controlled, tool-free runtime comparison.
+"""Experimental Strands Agents adapter with supervised Gateway-only tools.
 
-The platform retains tool authority in Tool Gateway. This adapter intentionally
-constructs agents with no tools, no tool-directory loading, and no plugins.
+The platform retains tool authority in Tool Gateway. Agents receive tools only
+from a trusted, run-scoped Gateway MCP provider; tool-directory loading and
+plugins remain disabled.
 """
 
 from __future__ import annotations
