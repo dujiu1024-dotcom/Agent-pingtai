@@ -1,12 +1,12 @@
 import unittest
 
 from agent_platform.approval.policy import RiskLevel
-from agent_platform.tools.idempotency import InMemoryToolEffectStore
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolDefinition,
     ToolExecutionDenied,
 )
+from agent_platform.tools.idempotency import InMemoryToolEffectStore
 
 
 class FakeApprovalVerifier:
