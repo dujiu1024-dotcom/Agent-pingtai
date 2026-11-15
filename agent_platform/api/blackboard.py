@@ -11,7 +11,8 @@ from typing import Any, Awaitable, Callable
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.blackboard.protocol import BlackboardRepository, VersionConflict
-from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Principal, Scope
+from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
+from agent_platform.identity.models import Principal
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 RepositoryResolver = Callable[[Principal], Awaitable[BlackboardRepository]]
@@ -81,6 +82,8 @@ def create_blackboard_router(
         principal = await resolve_principal(request)
         try:
             body = await request.json()
+            if not isinstance(body, dict):
+                raise TypeError("JSON object required")
             scope = Scope(body.get("scope"))
             kind = EntryKind(body.get("kind"))
         except (TypeError, ValueError) as exc:
@@ -113,6 +116,8 @@ def create_blackboard_router(
     async def challenge_entry(entry_id: str, request: Request):
         principal, repository, entry = await target_context(request, entry_id, "write")
         body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON object required")
         reason = str(body.get("reason") or "").strip()
         refs = body.get("evidence_refs", [])
         if not reason or not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
@@ -126,6 +131,8 @@ def create_blackboard_router(
         if entry.kind is not EntryKind.CONFLICT:
             raise HTTPException(400, "decisions can only be recorded against conflicts")
         body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON object required")
         outcome = str(body.get("outcome") or "").strip()
         rationale = str(body.get("rationale") or "").strip()
         refs = body.get("evidence_refs", [])
@@ -138,6 +145,8 @@ def create_blackboard_router(
     async def revise_entry(entry_id: str, request: Request):
         principal, repository, entry = await target_context(request, entry_id, "write")
         body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON object required")
         content = body.get("content")
         expected_version = body.get("expected_version")
         if not isinstance(content, dict) or not isinstance(expected_version, int):
