@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from typing import Any, Callable, Sequence
+from uuid import UUID
 
 from agent_platform.blackboard.protocol import BlackboardRepository, VersionConflict
 from agent_platform.contracts import (
@@ -64,9 +65,9 @@ class PostgresBlackboardRepository(BlackboardRepository):
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                self.tenant_id, event.event_id, event.event_type, event.scope.value,
-                event.scope_id, event.entry_id, event.entry_version, event.actor_id,
-                _jsonb(event.payload), event.correlation_id, event.occurred_at,
+                self.tenant_id, UUID(event.event_id), event.event_type, event.scope.value,
+                event.scope_id, UUID(event.entry_id), event.entry_version, event.actor_id,
+                _jsonb(event.payload), UUID(event.correlation_id), event.occurred_at,
             ),
         )
         await connection.execute(
@@ -115,10 +116,10 @@ class PostgresBlackboardRepository(BlackboardRepository):
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        self.tenant_id, entry.entry_id, entry.scope.value, entry.scope_id,
+                        self.tenant_id, UUID(entry.entry_id), entry.scope.value, entry.scope_id,
                         entry.kind.value, entry.version, entry.status.value,
                         _jsonb(entry.content), _jsonb(list(entry.source_refs)),
-                        entry.author_id, entry.correlation_id, entry.created_at,
+                        entry.author_id, UUID(entry.correlation_id), entry.created_at,
                     ),
                 )
                 await self._persist_event(connection, event)
@@ -149,7 +150,7 @@ class PostgresBlackboardRepository(BlackboardRepository):
                 WHERE tenant_id = %s AND entry_id = %s
                 ORDER BY version DESC LIMIT 1
                 """,
-                (self.tenant_id, entry_id),
+                (self.tenant_id, UUID(entry_id)),
             )
             row = await cursor.fetchone()
         return self._to_entry(row) if row else None
@@ -200,6 +201,10 @@ class PostgresBlackboardRepository(BlackboardRepository):
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (f"{self.tenant_id}:{entry_id}",),
+                )
+                cursor = await connection.execute(
                     """
                     SELECT version, scope, scope_id
                     FROM blackboard_entries
@@ -233,11 +238,11 @@ class PostgresBlackboardRepository(BlackboardRepository):
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        self.tenant_id, next_entry.entry_id, next_entry.scope.value,
+                        self.tenant_id, UUID(next_entry.entry_id), next_entry.scope.value,
                         next_entry.scope_id, next_entry.kind.value, next_entry.version,
                         next_entry.status.value, _jsonb(next_entry.content),
                         _jsonb(list(next_entry.source_refs)), next_entry.author_id,
-                        next_entry.correlation_id, next_entry.created_at,
+                        UUID(next_entry.correlation_id), next_entry.created_at,
                     ),
                 )
                 await self._persist_event(
