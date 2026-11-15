@@ -76,6 +76,24 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([row.run_id for row in reclaimed],[self.run])
   self.assertFalse(await self.states.heartbeat(self.tenant,self.run,"worker-a",lease_seconds=5))
   self.assertTrue(await self.states.release_lease(self.tenant,self.run,"worker-b"))
+ async def test_worker_recovery_claim_is_tenant_scoped(self):
+  other_tenant=f"gateway-it-{uuid4().hex}"
+  other_agent=f"agent-{uuid4().hex}"
+  other_template=f"template-{uuid4().hex}"
+  other_run=str(uuid4())
+  async with await AsyncConnection.connect(DSN) as conn:
+   await conn.execute("INSERT INTO platform_tenants(tenant_id,display_name) VALUES(%s,%s)",(other_tenant,"Other gateway integration"))
+   await conn.execute("INSERT INTO platform_agents(tenant_id,agent_id,display_name,role_definition) VALUES(%s,%s,'Other Agent','test')",(other_tenant,other_agent))
+   await conn.execute("INSERT INTO platform_model_templates(tenant_id,template_id,version,definition,status,created_by) VALUES(%s,%s,1,'{}'::jsonb,'active','integration')",(other_tenant,other_template))
+   await conn.execute("INSERT INTO platform_runs(tenant_id,run_id,agent_id,template_id,template_version,status) VALUES(%s,%s,%s,%s,1,'queued')",(other_tenant,other_run,other_agent,other_template))
+   await conn.commit()
+  claimed=await self.states.claim_recoverable("worker-tenant-scope",tenant_id=self.tenant,limit=100,lease_seconds=5)
+  self.assertEqual([row.run_id for row in claimed],[self.run])
+  async with await self.connect() as conn:
+   cur=await conn.execute("SELECT worker_id FROM platform_runs WHERE tenant_id=%s AND run_id=%s",(other_tenant,other_run))
+   other=await cur.fetchone()
+  self.assertIsNone(other["worker_id"])
+
  async def test_expired_worker_lease_recovers_run_through_langgraph_executor(self):
   claimed=await self.states.claim_recoverable("worker-dead",tenant_id=self.tenant,limit=10,lease_seconds=5)
   self.assertEqual([row.run_id for row in claimed],[self.run])
