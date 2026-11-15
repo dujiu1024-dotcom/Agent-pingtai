@@ -37,6 +37,7 @@ include = [
   "tests/test_outbox.py",
   "tests/test_multi_expert_routing.py",
   "tests/test_blackboard_multi_expert_services.py",
+  "tests/test_blackboard_api.py",
   "tests/test_mcp_adapter.py",
   "tests/test_gateway_mcp.py",
   "tests/test_strands_mcp_provider.py",
