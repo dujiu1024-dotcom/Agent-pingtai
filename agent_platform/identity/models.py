@@ -112,4 +112,6 @@ class AuthorizationContext:
     tenant_permissions: frozenset[str]
     project_ids: frozenset[str]
     knowledge_manage_project_ids: frozenset[str]
+    memory_manage_project_ids: frozenset[str]
     agent_ids: frozenset[str]
+    memory_manage_agent_ids: frozenset[str]
