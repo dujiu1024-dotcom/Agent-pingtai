@@ -14,6 +14,8 @@ agency/state/*.db-wal
 agency/state/*.db-shm
 agency/state/*.log
 agency/state/*.jsonl
+agency/state/tasks.json
+agency/state/gates.json
 agency/state/backups/
 agency/state/backup-*/
 agency/state/gui/
