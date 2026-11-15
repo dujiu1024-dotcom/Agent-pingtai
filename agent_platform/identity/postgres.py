@@ -10,6 +10,7 @@ from agent_platform.identity.models import SessionRecord, UserRecord
 
 ConnectionFactory = Callable[[], Any]
 
+
 class PostgresIdentityRepository:
     def __init__(self, connection_factory: ConnectionFactory) -> None:
         self._connection_factory = connection_factory
