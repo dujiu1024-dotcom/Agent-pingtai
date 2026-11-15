@@ -126,7 +126,7 @@ class BlackboardMultiExpertServices:
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
         decisions = result.get("decisions", [])
         decision_entry_ids = []
-        for index, conflict in enumerate(conflicts):
+        for conflict in conflicts:
             conflict_entry_id = conflict.get("blackboard_entry_id")
             if not conflict_entry_id:
                 raise ValueError("conflict is missing its durable Blackboard entry")
