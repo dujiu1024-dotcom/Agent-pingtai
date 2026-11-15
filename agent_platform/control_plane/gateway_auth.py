@@ -1,6 +1,8 @@
 """MCP SDK Bearer verifier backed by the shared RunTokenService."""
 from __future__ import annotations
 from typing import Any
+
+
 class PersistentRunTokenVerifier:
  """No process-local credential cache: revocation is visible across instances."""
  def __init__(self,*,token_service:Any,resource_server_url:str)->None:
