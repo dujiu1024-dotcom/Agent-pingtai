@@ -126,7 +126,11 @@ class PostgresIdentityRepository:
                   )
                   AND ((b.subject_type='user' AND b.subject_id=%s)
                     OR (b.subject_type='team' AND b.subject_id IN (
-                      SELECT team_id FROM platform_team_memberships WHERE tenant_id=%s AND user_id=%s AND status='active'
+                      SELECT tm.team_id FROM platform_team_memberships tm
+                      JOIN platform_teams team
+                        ON team.tenant_id=tm.tenant_id AND team.team_id=tm.team_id
+                       AND team.status='active'
+                      WHERE tm.tenant_id=%s AND tm.user_id=%s AND tm.status='active'
                     )))
                   AND (
                     (b.resource_type=%s AND b.resource_id=%s)
@@ -134,8 +138,12 @@ class PostgresIdentityRepository:
                     OR (
                       %s='project' AND b.resource_type='organization'
                       AND b.resource_id = (
-                        SELECT organization_id FROM platform_projects
-                        WHERE tenant_id=%s AND project_id=%s
+                        SELECT p.organization_id FROM platform_projects p
+                        JOIN platform_organizations o
+                          ON o.tenant_id=p.tenant_id
+                         AND o.organization_id=p.organization_id
+                         AND o.status='active'
+                        WHERE p.tenant_id=%s AND p.project_id=%s
                       )
                     )
                   )
