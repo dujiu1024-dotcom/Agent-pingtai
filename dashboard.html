@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FDE 工作室 · 创始人管理看板</title>
+<style>
+:root{
+  --bg:#f4f6f8;--card:#fff;--line:#e2e6ea;--t:#171c22;--t2:#5a6572;--muted:#8b959f;
+  --gn:#127a49;--gn-bg:#e7f4ed;--rd:#bf3a2c;--rd-bg:#fceceb;--yl:#a45c05;--yl-bg:#fdf3e3;
+  --bl:#1463a8;--bl-bg:#eaf2fa;--gy-bg:#f0f2f4;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--t);
+  font:14px/1.45 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1440px;margin:0 auto;padding:16px 20px 28px}
+/* 顶栏 */
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.top h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px}
+.badge{font-size:12px;padding:2px 9px;border-radius:3px;font-weight:600;letter-spacing:.3px}
+.badge.prod{background:var(--bl-bg);color:var(--bl)}
+.badge.dev{background:var(--yl-bg);color:var(--yl)}
+.meta{color:var(--t2);font-size:12px;margin-left:auto;display:flex;gap:14px;align-items:center}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.dot.ok{background:var(--gn)}.dot.bad{background:var(--rd)}
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.kpi .l{font-size:11.5px;color:var(--t2)}
+.kpi .v{font-size:27px;font-weight:680;line-height:1.15;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:11px;color:var(--muted);margin-top:1px}
+.kpi.warn .v{color:var(--yl)}.kpi.bad .v{color:var(--rd)}.kpi.good .v{color:var(--gn)}
+/* 卡片 */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:0;overflow:hidden}
+.card > h2{font-size:12.5px;font-weight:650;margin:0;padding:8px 12px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;color:var(--t)}
+.card > h2 .n{color:var(--muted);font-weight:500;font-size:11.5px}
+.card .body{padding:8px 12px 10px}
+.span2{grid-column:1 / -1}
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{ text-align:left;font-weight:600;color:var(--t2);padding:4px 7px;border-bottom:1px solid var(--line);
+  font-size:11px;white-space:nowrap;background:#fbfcfd}
+td{padding:5px 7px;border-bottom:1px solid #f0f2f4;vertical-align:top;line-height:1.35}
+tr:last-child td{border-bottom:0}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.role{font-weight:600;white-space:nowrap}
+.sub{color:var(--muted);font-size:11.5px}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:3px;white-space:nowrap;font-weight:600}
+.tag.run{background:var(--bl-bg);color:var(--bl)}
+.tag.on{background:var(--gn-bg);color:var(--gn)}
+.tag.bad{background:var(--rd-bg);color:var(--rd)}
+.tag.idle{background:var(--gy-bg);color:var(--t2)}
+.tag.pin{background:var(--yl-bg);color:var(--yl)}
+.tag.blk{background:var(--rd-bg);color:var(--rd)}
+/* 健康列表 */
+.hl{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
+.hrow{display:flex;align-items:center;gap:7px;padding:5px 7px;border:1px solid var(--line);border-radius:5px}
+.hrow .name{font-size:12.5px;font-weight:600}
+.hrow .desc{font-size:11px;color:var(--muted);margin-left:auto;text-align:right}
+.hdot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.hdot.ok{background:var(--gn)}.hdot.bad{background:var(--rd)}.hdot.warn{background:var(--yl)}
+/* 配置 */
+.cfg{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12.5px;margin-top:10px}
+.cfg dt{color:var(--t2)}
+.cfg dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-all}
+/* 列表 */
+.list{margin:0;padding:0;list-style:none}
+.list li{padding:4px 0;border-bottom:1px solid #f1f3f5;font-size:12px}
+.list li:last-child{border-bottom:0}
+.list li.one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#errTable{table-layout:fixed;width:100%}
+#jobTable{table-layout:fixed;width:100%}
+td.clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list .k{color:var(--muted);font-size:11.5px;margin-right:6px}
+.empty{color:var(--muted);font-size:12.5px;padding:8px 0}
+.alert{background:var(--rd-bg);border:1px solid #f3c9c4;color:#8f2c20;border-radius:6px;
+  padding:9px 12px;margin-bottom:12px;font-size:13px}
+.hide{display:none}
+footer{color:var(--muted);font-size:11.5px;margin-top:14px;line-height:1.6}
+@media (max-width:1100px){
+  .kpis{grid-template-columns:repeat(3,1fr)}
+  .grid{grid-template-columns:1fr}
+  .hl{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>创始人管理看板</h1>
+    <span id="envBadge" class="badge dev">—</span>
+    <div class="meta">
+      <span><span id="liveDot" class="dot bad"></span><span id="liveText">连接中</span></span>
+      <span id="genAt">—</span>
+    </div>
+  </div>
+
+  <div id="banner" class="alert hide"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid">
+    <!-- Agent 状态 -->
+    <section class="card">
+      <h2>Agent 状态 <span class="n" id="agentCount"></span></h2>
+      <div class="body" style="overflow-x:auto">
+        <table id="agentTable">
+          <thead><tr>
+            <th style="width:150px">角色</th><th style="width:80px">状态</th>
+            <th>手上在干什么</th><th style="width:130px">最近一次运行</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 健康与配置 -->
+    <section class="card">
+      <h2>健康与自检 <span class="n" id="healthSum"></span></h2>
+      <div class="body">
+        <div class="hl" id="healthList"></div>
+        <div class="cfg" id="cfgList"></div>
+      </div>
+    </section>
+
+    <!-- 定时任务 -->
+    <section class="card span2">
+      <h2>定时任务 <span class="n" id="jobSum"></span></h2>
+      <div class="body" style="overflow-x:auto">
+        <table id="jobTable">
+          <thead><tr>
+            <th style="width:122px">任务</th><th>干什么</th>
+            <th style="width:104px">周期</th><th style="width:96px">上次运行</th>
+            <th style="width:230px">上次结果</th>
+            <th style="width:96px">下次预计</th><th style="width:66px">状态</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="jobEmpty" class="empty hide">暂无定时任务记录</div>
+      </div>
+    </section>
+
+    <!-- 任务盘子 -->
+    <section class="card">
+      <h2>未关闭任务 <span class="n" id="openCount"></span></h2>
+      <div class="body">
+        <table id="taskTable">
+          <thead><tr><th style="width:66px">编号</th><th>事项</th><th style="width:88px">负责人</th>
+            <th style="width:76px">截止</th><th style="width:74px">状态</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="taskEmpty" class="empty hide">没有未关闭任务</div>
+      </div>
+    </section>
+
+    <!-- 需要拍板 -->
+    <section class="card">
+      <h2>需要你拍板 <span class="n" id="decideCount"></span></h2>
+      <div class="body">
+        <ul class="list" id="decideList"></ul>
+        <div id="decideEmpty" class="empty hide">暂无需要拍板的事项</div>
+      </div>
+    </section>
+
+    <!-- 今日进展 -->
+    <section class="card">
+      <h2>今天的实际进展 <span class="n" id="todayCount"></span></h2>
+      <div class="body">
+        <ul class="list" id="todayList"></ul>
+        <div id="todayEmpty" class="empty hide">今天还没有记录到进展</div>
+      </div>
+    </section>
+
+    <!-- 最近异常 -->
+    <section class="card">
+      <h2>最近的异常 <span class="n" id="errCount"></span></h2>
+      <div class="body">
+        <table id="errTable">
+          <thead><tr><th style="width:74px">时间</th><th style="width:110px">来源</th><th>内容</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div id="errEmpty" class="empty hide">最近没有异常</div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    数据全部来自本地台账 agency/state/agency.db，页面只读，不写入任何内容。看板服务只监听 127.0.0.1，局域网和外网都访问不到。每 30 秒自动刷新一次。
+  </footer>
+</div>
+
+<script>
+(function () {
+  const TOKEN = new URLSearchParams(location.search).get('token') || '';
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  let D = null;
+
+  function fail(msg) {
+    const b = $('#banner');
+    b.textContent = msg;
+    b.classList.remove('hide');
+    $('#liveDot').className = 'dot bad';
+    $('#liveText').textContent = '连接失败';
+  }
+
+  function ok() {
+    $('#banner').classList.add('hide');
+    $('#liveDot').className = 'dot ok';
+    $('#liveText').textContent = '数据在线';
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    // 库里是 UTC ISO，转成本地时间
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    const p = n => String(n).padStart(2, '0');
+    return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function fmtDay(s) { return s ? s.slice(5) : '—'; }
+
+  function tag(text, cls) { return '<span class="tag ' + cls + '">' + esc(text) + '</span>'; }
+
+  // ===== KPI =====
+  function renderKpis(s, b) {
+    const m = s.metrics || {};
+    const tk = (b.health || {}).tokens || {};
+    const used = tk.used != null ? tk.used : (s.llm || {}).tokens_today;
+    const limit = tk.budget || (s.llm || {}).token_limit || 0;
+    const pct = limit ? Math.round(used / limit * 100) : 0;
+    const items = [
+      { l: '任务总数', v: m.total || 0, s: (m.hours_total || 0) + ' h 计划', cls: '' },
+      { l: '已完成', v: m.done || 0, s: (m.hours_done || 0) + ' h 已投入', cls: 'good' },
+      { l: '未关闭', v: m.open || 0, s: '作废 ' + (m.canceled || 0), cls: m.open ? 'warn' : 'good' },
+      { l: '逾期', v: m.overdue || 0, s: '今日到期 ' + (m.due_today || 0), cls: m.overdue ? 'bad' : '' },
+      { l: '在岗 Agent', v: m.agents || 0, s: ((s.llm || {}).running || []).length + ' 个在跑', cls: '' },
+      { l: '今日 tokens', v: (used || 0).toLocaleString(),
+        s: '预算 ' + (limit || 0).toLocaleString() + ' · ' + pct + '%',
+        cls: pct >= 80 ? 'bad' : '' }
+    ];
+    $('#kpis').innerHTML = items.map(i =>
+      '<div class="kpi ' + i.cls + '"><div class="l">' + esc(i.l) + '</div>' +
+      '<div class="v">' + esc(i.v) + '</div><div class="s">' + esc(i.s) + '</div></div>').join('');
+  }
+
+  // ===== Agent =====
+  function renderAgents(b) {
+    const s = b.state;
+    const running = new Set((s.llm || {}).running || []);
+    const lastByRole = b.last_runs || {};
+    const tasks = (s.tasks || []).filter(t => t.status !== 'closed' && t.db_status !== 'done' && t.db_status !== 'canceled');
+    const rows = (s.agents || []).map(a => {
+      const mine = tasks.filter(t => t.owner === a.name);
+      const last = lastByRole[a.name];
+      let st, cls;
+      if (running.has(a.name)) { st = '运行中'; cls = 'run'; }
+      else if (last && last.ok === 0) { st = '异常'; cls = 'bad'; }
+      else if (mine.length) { st = '在岗'; cls = 'on'; }
+      else { st = '待命'; cls = 'idle'; }
+      let doing;
+      if (mine.length) {
+        doing = mine.map(t => esc(t.title) + ' <span class="sub">(' + esc(t.id) + ' · 截止 ' + esc(fmtDay(t.due)) + ')</span>').join('<br>');
+      } else if (last && last.task_id) {
+        doing = '<span class="sub">已完成 ' + esc(last.task_id) + '，暂无新任务</span>';
+      } else {
+        doing = '<span class="sub">暂无在办任务</span>';
+      }
+      const lastText = last
+        ? '<span class="sub">' + esc(fmtTime(last.created_at)) + (last.ok ? '' : ' · 失败') + '</span>'
+        : '<span class="sub">无记录</span>';
+      return '<tr><td><span class="role">' + esc(a.name) + '</span></td>' +
+        '<td>' + tag(st, cls) + '</td><td>' + doing + '</td><td>' + lastText + '</td></tr>';
+    });
+    $('#agentTable tbody').innerHTML = rows.join('');
+    $('#agentCount').textContent = (s.agents || []).length + ' 个角色 · ' + running.size + ' 个运行中';
+  }
+
+  // ===== 定时任务 =====
+  function renderJobs(b) {
+    const jobs = ((b.jobs || {}).jobs) || [];
+    const rows = jobs.map(x => {
+      let st, cls;
+      if (x.running) { st = '运行中'; cls = 'run'; }
+      else if (x.ok === true) { st = '正常'; cls = 'on'; }
+      else if (x.ok === false) { st = '异常'; cls = 'bad'; }
+      else { st = '无记录'; cls = 'idle'; }
+      const detail = x.last_detail || '—';
+      const note = x.note
+        ? ' <span class="tag ' + (x.ok === false ? 'bad' : 'pin') + '">' + esc(x.note) + '</span>'
+        : '';
+      const label = x.name + ' · ' + x.what;
+      return '<tr><td class="clip" title="' + esc(label) + '">' +
+        '<span class="role">' + esc(x.name) + '</span></td>' +
+        '<td class="clip" title="' + esc(x.kind + ' · ' + x.what) + '">' +
+        esc(x.what) + ' <span class="sub">' + esc(x.kind) + '</span></td>' +
+        '<td>' + esc(x.schedule) + '</td>' +
+        '<td class="sub">' + esc(x.last_at ? fmtTime(x.last_at) : '—') + '</td>' +
+        '<td class="clip" title="' + esc(detail) + '">' + esc(detail) + note + '</td>' +
+        '<td class="sub">' + esc(x.next_at ? fmtTime(x.next_at) : '—') + '</td>' +
+        '<td>' + tag(st, cls) + '</td></tr>';
+    });
+    $('#jobTable tbody').innerHTML = rows.join('');
+    $('#jobEmpty').classList.toggle('hide', rows.length > 0);
+    $('#jobTable').classList.toggle('hide', rows.length === 0);
+    const bad = jobs.filter(x => x.ok === false).length;
+    const none = jobs.filter(x => x.ok === null).length;
+    $('#jobSum').textContent = jobs.length + ' 项 · ' +
+      (bad ? bad + ' 项异常' : '全部正常') + (none ? ' · ' + none + ' 项无记录' : '');
+  }
+
+  // ===== 任务 =====
+  function renderTasks(b) {
+    const s = b.state;
+    const open = (s.tasks || []).filter(t =>
+      t.status !== 'closed' && t.db_status !== 'done' && t.db_status !== 'canceled');
+    const pendingDepTasks = new Set();
+    (b.deps || []).forEach(d => {
+      (String(d.impact || '').match(/T-\d{4}/g) || []).forEach(x => pendingDepTasks.add(x));
+    });
+    const rows = open.map(t => {
+      const blocked = t.db_status === 'blocked' || !!t.blocked_reason || (t.overdue_days || 0) > 0;
+      const needsYou = !!t.blocked_reason || pendingDepTasks.has(t.id);
+      const st = needsYou ? tag('等你定', 'pin') : (blocked ? tag('卡住', 'blk') : tag('进行中', 'run'));
+      let sub = '';
+      if (t.blocked_reason) sub = '<div class="sub">卡点：' + esc(t.blocked_reason) + '</div>';
+      return '<tr><td class="sub">' + esc(t.id) + '</td><td>' + esc(t.title) + sub + '</td>' +
+        '<td>' + esc(t.owner) + '</td><td>' + esc(fmtDay(t.due)) +
+        ((t.overdue_days || 0) > 0 ? ' <span class="sub">逾期' + t.overdue_days + '天</span>' : '') +
+        '</td><td>' + st + '</td></tr>';
+    });
+    $('#taskTable tbody').innerHTML = rows.join('');
+    $('#taskEmpty').classList.toggle('hide', rows.length > 0);
+    $('#taskTable').classList.toggle('hide', rows.length === 0);
+    $('#openCount').textContent = open.length + ' 条 · 共 ' + (s.metrics || {}).total + ' 条';
+  }
+
+  // ===== 健康 =====
+  function renderHealth(b) {
+    const h = b.health || {};
+    const svc = h.services || {};
+    const v = b.version || {};
+    const items = [];
+    const label = { listener: '监听器', console: '看板服务', tick: '定时器', selfcheck: '自检任务' };
+    Object.keys(label).forEach(k => {
+      const s = svc[k] || {};
+      const alive = k === 'console' ? s.ok : s.ok;
+      let desc = '';
+      if (k === 'console') desc = s.running ? ('pid ' + s.pid + ' · :' + (s.port || '')) : '未运行';
+      else if (k === 'tick') desc = s.loaded ? ('最近 ' + (s.last_run_min == null ? '—' : s.last_run_min + ' 分钟前')) : '未加载';
+      else desc = s.running ? ('pid ' + s.pid) : (s.loaded ? '已加载' : '未加载');
+      if (!alive && s.reason) desc = s.reason;
+      items.push({ n: label[k], ok: !!alive, d: desc });
+    });
+    const cred = h.credential || {};
+    items.push({ n: '飞书凭据', ok: !!cred.ok, d: cred.message || '' });
+    items.push({ n: '死信', ok: !(h.dead_letters > 0), d: (h.dead_letters || 0) + ' 条未处理' });
+    items.push({ n: '24h 失败运行', ok: !(h.failed_runs_24h > 0), d: (h.failed_runs_24h || 0) + ' 次' });
+    items.push({ n: '待确认依赖', ok: true,
+      warn: (h.pending_dependencies || 0) > 0, d: (h.pending_dependencies || 0) + ' 项' });
+
+    $('#healthList').innerHTML = items.map(i =>
+      '<div class="hrow"><span class="hdot ' + (i.ok ? (i.warn ? 'warn' : 'ok') : 'bad') + '"></span>' +
+      '<span class="name">' + esc(i.n) + '</span><span class="desc">' + esc(i.d) + '</span></div>').join('');
+    const bad = items.filter(i => !i.ok).length;
+    const warn = items.filter(i => i.ok && i.warn).length;
+    $('#healthSum').textContent = bad ? (bad + ' 项异常')
+      : (warn ? (warn + ' 项待确认，其余正常') : '全部正常');
+
+    const t = h.tokens || {};
+    $('#cfgList').innerHTML = [
+      ['环境', (v.env || '—').toUpperCase()],
+      ['数据库', v.db || '—'],
+      ['控制台端口', v.port || '—'],
+      ['看板端口', (v.board_port || '—') + '（仅 127.0.0.1）'],
+      ['模型', (b.state.llm || {}).model || '—'],
+      ['商务闸门', v.gate_mode || '—'],
+      ['日 token 预算', (t.budget || 0).toLocaleString()],
+      ['圆桌 token 预算', (v.roundtable_tokens || 0).toLocaleString()]
+    ].map(r => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('');
+  }
+
+  // ===== 需要拍板 =====
+  function renderDecide(b) {
+    const deps = b.deps || [];
+    const blocked = (b.state.tasks || []).filter(t =>
+      t.status !== 'closed' && t.blocked_reason);
+    const items = [];
+    deps.forEach(d => {
+      items.push('<li class="one" title="' + esc(d.need + '｜' + (d.impact || d.note || '')) + '">' +
+        '<span class="k">待确认</span>' + esc(d.need) +
+        '<span class="sub"> · ' + esc(d.assignee || '') + ' · 截止 ' + esc(d.due_at) + '</span></li>');
+    });
+    blocked.forEach(t => {
+      items.push('<li class="one" title="' + esc(t.blocked_reason) + '">' +
+        '<span class="k">卡住</span>' + esc(t.id) + ' ' + esc(t.title) +
+        '<span class="sub"> · ' + esc(t.owner) + ' · ' + esc(t.blocked_reason) + '</span></li>');
+    });
+    $('#decideList').innerHTML = items.join('');
+    $('#decideEmpty').classList.toggle('hide', items.length > 0);
+    $('#decideList').classList.toggle('hide', items.length === 0);
+    $('#decideCount').textContent = items.length ? items.length + ' 件' : '';
+  }
+
+  // ===== 今日进展 =====
+  function renderToday(b) {
+    const today = b.state.today;
+    const closed = b.closed_today || [];
+    const runs = b.runs_today || [];
+    const evs = ((b.state.events || {}).list || []).filter(e => String(e.at || '').slice(0, 10) === today);
+    const items = [];
+    closed.forEach(t => items.push({ at: t.closed_at, html:
+      '<span class="k">' + esc(fmtTime(t.closed_at)) + '</span>关闭任务 ' +
+      esc(t.id) + ' ' + esc(t.title) + ' <span class="sub">· ' + esc(t.owner) + '</span>' }));
+    runs.forEach(r => items.push({ at: r.created_at, html:
+      '<span class="k">' + esc(fmtTime(r.created_at)) + '</span>' + esc(r.role) +
+      (r.task_id ? ' 处理 ' + esc(r.task_id) : ' 运行') +
+      ' <span class="sub">· ' + (r.ok ? '成功' : '失败') + ' · ' +
+      ((r.tokens_in || 0) + (r.tokens_out || 0)).toLocaleString() + ' tokens</span>' }));
+    evs.forEach(e => items.push({ at: e.at, html:
+      '<span class="k">' + esc(fmtTime(e.at)) + '</span>事件 ' + esc(e.type) + '：' + esc(e.text) }));
+    items.sort((a, c) => String(c.at).localeCompare(String(a.at)));
+    const shown = items.slice(0, 4);
+    $('#todayList').innerHTML = shown.map(i => '<li class="one">' + i.html + '</li>').join('') +
+      (items.length > shown.length
+        ? '<li class="sub">另有 ' + (items.length - shown.length) + ' 条（共 关闭 ' +
+          closed.length + ' · 运行 ' + runs.length + ' · 事件 ' + evs.length + '）</li>'
+        : '');
+    $('#todayEmpty').classList.toggle('hide', items.length > 0);
+    $('#todayList').classList.toggle('hide', items.length === 0);
+    $('#todayCount').textContent = '关闭 ' + closed.length + ' · 运行 ' + runs.length + ' · 事件 ' + evs.length;
+  }
+
+  // ===== 异常 =====
+  function renderErrors(b) {
+    const rows = [];
+    (b.failed_runs || []).forEach(r => {
+      rows.push({ at: r.created_at, src: r.role + ' 运行', text: (r.error || '未记录原因') + (r.task_id ? '（' + r.task_id + '）' : '') });
+    });
+    (b.dead_letters || []).forEach(d => {
+      rows.push({ at: d.created_at, src: '死信 ' + (d.role || ''), text: d.error + '（尝试 ' + d.attempts + ' 次）' });
+    });
+    (b.failed_events || []).forEach(e => {
+      rows.push({ at: e.at, src: '事件 ' + e.type, text: e.text });
+    });
+    rows.sort((a, c) => String(c.at).localeCompare(String(a.at)));
+    const shown = rows.slice(0, 4);
+    $('#errTable tbody').innerHTML = shown.map(r =>
+      '<tr><td class="sub">' + esc(fmtTime(r.at)) + '</td><td>' + esc(r.src) + '</td>' +
+      '<td class="clip" title="' + esc(r.text) + '">' + esc(r.text) + '</td></tr>').join('') +
+      (rows.length > shown.length
+        ? '<tr><td colspan="3" class="sub">另有 ' + (rows.length - shown.length) +
+          ' 条，完整清单见 agency.py alerts</td></tr>' : '');
+    $('#errEmpty').classList.toggle('hide', rows.length > 0);
+    $('#errTable').classList.toggle('hide', rows.length === 0);
+    $('#errCount').textContent = rows.length ? rows.length + ' 条' : '无';
+  }
+
+  function render() {
+    const b = D;
+    if (!b) return;
+    const env = ((b.version || {}).env || '').toLowerCase();
+    const badge = $('#envBadge');
+    badge.textContent = env === 'prod' ? '正式环境 PROD' : '开发环境 DEV';
+    badge.className = 'badge ' + (env === 'prod' ? 'prod' : 'dev');
+    $('#genAt').textContent = '数据时间 ' + fmtTime((b.state || {}).generated_at);
+    renderKpis(b.state || {}, b);
+    renderAgents(b);
+    renderJobs(b);
+    renderTasks(b);
+    renderHealth(b);
+    renderDecide(b);
+    renderToday(b);
+    renderErrors(b);
+  }
+
+  async function load() {
+    try {
+      const res = await fetch('/api/board', {
+        headers: TOKEN ? { 'X-Console-Token': TOKEN } : {}
+      });
+      const body = await res.json();
+      if (!res.ok || body.ok === false) throw new Error(body.error || ('请求失败 ' + res.status));
+      D = body.data;
+      ok();
+      render();
+    } catch (e) {
+      fail('连不上看板服务或没有权限：' + e.message);
+    }
+  }
+
+  if (!TOKEN) {
+    fail('地址缺少访问令牌，请使用带 ?token=… 的完整地址打开本页。');
+  } else {
+    load();
+    setInterval(load, 30000);
+  }
+})();
+</script>
+</body>
+</html>

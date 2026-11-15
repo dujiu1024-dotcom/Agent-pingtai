@@ -1,0 +1,144 @@
+# 龍奕FDE工作室 · Agent 运行底座
+
+单文件、纯 Python 标准库、状态全部落盘，可整包迁移。
+唯一事实源：`agency/state/agency.db`（SQLite）；飞书只做映射与提醒。
+
+---
+
+## 三步安装
+
+### 第 1 步：装环境
+
+需要 Python 3.8+。主程序（agency.py / doctor）**不需要 pip 安装任何第三方包**；
+仅飞书监听 `listener.py` 额外依赖 `lark-oapi`，按 `requirements-listener.txt` 安装：
+`pip install -r requirements-listener.txt`。
+
+```bash
+python3 --version          # 确认 ≥ 3.8
+cd /path/to/FDE工程
+python3 agency.py init     # 建库、补表、生成 agency/config.json
+```
+
+`init` 可重复执行：已有表不会被覆盖，只补缺失的迁移版本。
+
+### 第 2 步：填密钥
+
+复制 `.env.example` 为 `.env`（没有该文件时直接新建 `.env`），填模型服务的地址与密钥：
+
+```bash
+OPENAI_API_KEY=你的密钥
+OPENAI_BASE_URL=https://token.sensenova.cn/v1
+OPENAI_MODEL=deepseek-v4-flash
+```
+
+- `.env` 只放在本地，权限建议 `chmod 600 .env`，不提交、不导出。
+- 没有密钥也能用：`doctor`、`task`、`gate`、`wbs`、`check`、`brief`、`vector`（hash 降级）均可离线运行，只有 `run` 需要密钥。
+
+### 第 3 步：自检
+
+```bash
+python3 agency.py doctor
+```
+
+全部显示 `[OK ]` 即安装成功，末行应为 `自检结果: 通过`。
+自检包含路径、角色、闸门、数据库表、单元测试、LLM 密钥、公司宪法 7 项；任一失败退出码为 1。
+
+---
+
+## 常用命令
+
+| 命令 | 作用 |
+|---|---|
+| `python3 agency.py doctor` | 自检（含单元测试） |
+| `python3 agency.py task add --title "..." --project OPC-002 --owner pm --start 2026-11-12 --due 2026-11-13 --done-when "..." --kind code` | 建任务；`--kind code` 需闸门已确认 |
+| `python3 agency.py task list` | 看任务与状态（未开始／明日开始／进行中／临期／逾期） |
+| `python3 agency.py task close T-0011 --evidence "报告路径"` | 关任务；无证据会被拒绝 |
+| `python3 agency.py check` | 检查临期与逾期 |
+| `python3 agency.py brief` | 一页态势 |
+| `python3 agency.py gate confirm OPC-002 --by 龍奕 --scope "范围"` | 开闸门 |
+| `python3 agency.py gate revoke OPC-002` | 撤销闸门（范围变更时先撤销再确认） |
+| `python3 agency.py wbs --project OPC-002` | 导出 WBS CSV（只读） |
+| `python3 agency.py run planner --task T-0011` | 调用某个 Agent（需密钥） |
+| `python3 agency.py export dist.tar.gz` | 交付包：代码/模板/配置，不含 state 数据（自动排除 .env、state 内容、outputs、WAL） |
+| `python3 agency.py export backup.tar.gz --with-state` | 迁移包：额外包含 `agency.db` 与事实数据 |
+| `python3 agency.py import backup.tar.gz --into /新目录` | 在另一目录恢复（非空目录需 `--force`） |
+
+---
+
+## 本地控制台
+
+不想敲命令时，起一个只绑定本机的操作台：
+
+```bash
+python3 console.py              # http://127.0.0.1:8787
+python3 console.py --port 9000  # 换端口
+```
+
+- 四个视图：态势、任务、里程碑、Agent；支持搜索、筛选、新建任务、关任务（仍须证据）、改期与改负责人。
+- 派活：Agent 视图点「派活 →」，选绑定任务、填本次指令，即调用
+  `python3 agency.py run <role> --task <id> --note "<指令>"`；页面回显执行输出、耗时、token 与产出路径，
+  下方「最近调度」列出历史运行。产出落在 `agency/outputs/`，消耗计入每日 token 上限。
+- 只绑定 `127.0.0.1`，不对外网开放；读写同一张台账 `agency/state/agency.db`。
+- 纯标准库 `http.server`，无第三方依赖；`Ctrl+C` 停止。
+- 属于自用工具（P1），不计入 P0 的 90 小时交付工时。
+
+---
+
+## 单元测试
+
+```bash
+python3 -m unittest discover -s tests -t . -v
+```
+
+- `tests/test_state.py`：任务状态判定全覆盖（已关闭／要素不全／未开始／明日开始／进行中／临期／逾期）
+- `tests/test_gate.py`：闸门三态（未确认／已确认／已撤销）与 `code` 任务拦截；使用临时数据库，不影响正式数据
+
+---
+
+## 目录结构
+
+```
+agency.py            运行底座（CLI 全部命令）
+console.py           本地控制台服务（127.0.0.1，标准库）
+console.html         控制台页面（态势/任务/里程碑/Agent）
+db.py                表结构与迁移，枚举唯一定义处
+memory.py            工作记忆六槽位
+vectors.py           嵌入与检索（Ollama bge-m3 / hash-tfidf 降级）
+agents/<角色>/ROLE.md 9 个 Agent 角色定义
+company/公司宪法.md   最高优先级规则
+clients/<项目>/       客户项目文档
+templates/           诊断、报价、报告等可复用模板
+tests/               单元测试
+agency/state/agency.db 唯一事实源
+```
+
+---
+
+## 导出与迁移
+
+两种模式，按用途选：
+
+| 用途 | 命令 | 包内内容 |
+|---|---|---|
+| 对外交付/分享 | `python3 agency.py export dist.tar.gz` | 代码、模板、配置、测试；`agency/state` 只有空目录，**不含数据库与客户资料** |
+| 整包迁移 | `python3 agency.py export backup.tar.gz --with-state` | 在上者基础上增加 `agency.db` 与事实数据 |
+
+交付包在干净目录解压后初始化空库并自检：
+
+```bash
+tar -xzf dist.tar.gz -C /新目录 && cd /新目录
+python3 agency.py init && python3 agency.py doctor
+```
+
+迁移到另一台机器：
+
+1. 旧机器：`python3 agency.py export backup.tar.gz --with-state`
+2. 新机器：`python3 agency.py import backup.tar.gz --into /新目录`
+3. 重新填 `.env`（密钥不随包导出），再跑 `python3 agency.py doctor`
+
+## 出问题时
+
+- `doctor` 报缺表：`python3 agency.py init`
+- 报「闸门未通过」：先 `gate confirm`，或确认该项目确实已签确认单
+- 报「没有证据不能关闭任务」：`--evidence` 填产出物路径或命令输出摘要
+- 测试失败：单跑 `python3 -m unittest tests.test_gate -v` 看具体用例

@@ -1,0 +1,16 @@
+{
+  "id": "safari",
+  "name": "Safari 浏览器",
+  "bundle_id": "com.apple.Safari",
+  "launch": "open -b com.apple.Safari",
+  "window_match": "Safari",
+  "interactive": [
+    {"key": "search", "role": "AXTextField", "title": "搜索"},
+    {"key": "text_field", "role": "AXTextField", "title": "文本栏"},
+    {"key": "text_area", "role": "AXTextArea", "title": "文本输入区"},
+    {"key": "smart_search", "role": "AXTextField", "title": "智能搜索栏"}
+  ],
+  "dialogs": ["登录", "更新", "权限申请", "允许"],
+  "dangerous": ["删除", "退出登录", "清空"],
+  "verified_at": "2026-11-11"
+}

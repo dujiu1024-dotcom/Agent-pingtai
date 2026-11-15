@@ -1,0 +1,73 @@
+{
+  "measured_at": "2026-11-12",
+  "note": "递进式实测得出（每次请求记录真实 prompt_tokens）；数值为保守值，宁慢勿 429",
+  "roles": {
+    "pm": [
+      "glm-5.2"
+    ],
+    "auditor": [
+      "glm-5.2"
+    ],
+    "content": [
+      "glm-5.2"
+    ],
+    "chief-of-staff": [
+      "glm-5.2"
+    ],
+    "qa": [
+      "glm-5.2"
+    ]
+  },
+  "models": {
+    "sensenova-6.8-flash-lite": {
+      "callable": true,
+      "avoid_roles": [
+        "pm",
+        "auditor",
+        "content"
+      ],
+      "max_prompt_tokens": 32000,
+      "tpm": 18000,
+      "rpm": 60,
+      "concurrency": 4,
+      "recovery_s": 60,
+      "evidence": "2k x 6 @1s 全 200；并发 4 全 200，并发 8 出现 3/8 429；单请求 24k/48k prompt 200"
+    },
+    "glm-5.2": {
+      "callable": true,
+      "max_prompt_tokens": 24000,
+      "tpm": 10000,
+      "rpm": 10,
+      "concurrency": 2,
+      "recovery_s": 60,
+      "evidence": "24k prompt 200，36k 级请求 429 rpm exhausted；与 deepseek 共享窗口的迹象不明显"
+    },
+    "deepseek-v4-flash": {
+      "callable": true,
+      "max_prompt_tokens": 6000,
+      "tpm": 4000,
+      "rpm": 4,
+      "concurrency": 1,
+      "recovery_s": 60,
+      "evidence": "冷却 180s 后首次 200、其后 2k 请求 10s 间隔仍 429；约 5k prompt 连发 3 次全 429"
+    },
+    "sensenova-6.8-flash": {
+      "callable": true,
+      "max_prompt_tokens": 8000,
+      "tpm": 6000,
+      "rpm": 6,
+      "concurrency": 2,
+      "recovery_s": 60,
+      "evidence": "小请求多次 200，未单独压测边界，取默认保守值"
+    },
+    "sensenova-u1.5-lite": {
+      "callable": false,
+      "max_prompt_tokens": 0,
+      "tpm": 0,
+      "rpm": 0,
+      "concurrency": 0,
+      "recovery_s": 0,
+      "evidence": "两次均 404 model is not found，目录里有但不可调用"
+    }
+  }
+}

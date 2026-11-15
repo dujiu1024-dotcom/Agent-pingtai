@@ -1,0 +1,3 @@
+# 飞书长连接监听依赖（listener.py）
+# 装进当前 python3 即可（单套运行环境）；升级前先跑 tests/test_listener_gate.py
+lark-oapi==1.7.5
