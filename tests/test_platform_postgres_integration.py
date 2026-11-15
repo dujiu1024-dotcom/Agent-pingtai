@@ -14,8 +14,6 @@ if DSN:
     from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditSink
     from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
     from agent_platform.blackboard.protocol import VersionConflict
-    from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
-    from agent_platform.workflows.multi_expert import build_multi_expert_workflow
     from agent_platform.contracts import (
         BlackboardEntry,
         BlackboardEvent,
@@ -38,6 +36,8 @@ if DSN:
     from agent_platform.identity.service_accounts import (
         PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
     )
+    from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
+    from agent_platform.workflows.multi_expert import build_multi_expert_workflow
 
 
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
