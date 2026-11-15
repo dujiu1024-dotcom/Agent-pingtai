@@ -159,6 +159,53 @@ class PostgresIdentityRepository:
             row = await cursor.fetchone()
             return bool(row["allowed"])
 
+
+    async def can_assign_role(
+        self, *, tenant_id: str, actor_id: str, role_id: str,
+    ) -> bool:
+        """Only delegate permissions the actor already holds at tenant scope."""
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT
+                     EXISTS (
+                       SELECT 1 FROM platform_roles r
+                       JOIN platform_tenants t
+                         ON t.tenant_id=r.tenant_id AND t.status='active'
+                       JOIN platform_tenant_memberships m
+                         ON m.tenant_id=r.tenant_id AND m.user_id=%s
+                        AND m.status='active'
+                       WHERE r.tenant_id=%s AND r.role_id=%s
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM platform_role_permissions target
+                       WHERE target.tenant_id=%s AND target.role_id=%s
+                         AND NOT EXISTS (
+                           SELECT 1 FROM platform_role_bindings b
+                           JOIN platform_role_permissions held
+                             ON held.tenant_id=b.tenant_id AND held.role_id=b.role_id
+                           WHERE b.tenant_id=%s AND b.revoked_at IS NULL
+                             AND b.resource_type='tenant' AND b.resource_id=%s
+                             AND held.permission_key=target.permission_key
+                             AND (
+                               (b.subject_type='user' AND b.subject_id=%s)
+                               OR (b.subject_type='team' AND b.subject_id IN (
+                                 SELECT tm.team_id FROM platform_team_memberships tm
+                                 JOIN platform_teams team
+                                   ON team.tenant_id=tm.tenant_id
+                                  AND team.team_id=tm.team_id AND team.status='active'
+                                 WHERE tm.tenant_id=%s AND tm.user_id=%s
+                                   AND tm.status='active'
+                               ))
+                             )
+                         )
+                     ) AS allowed""",
+                (actor_id, tenant_id, role_id, tenant_id, role_id,
+                 tenant_id, tenant_id, actor_id, tenant_id, actor_id),
+            )
+            row = await cursor.fetchone()
+            return bool(row["allowed"])
+
     async def grant_role(
         self, *, tenant_id: str, actor_id: str, subject_type: str,
         subject_id: str, resource_type: str, resource_id: str, role_id: str,
@@ -167,6 +214,10 @@ class PostgresIdentityRepository:
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
+                if not await self.can_assign_role(
+                    tenant_id=tenant_id, actor_id=actor_id, role_id=role_id,
+                ):
+                    raise PermissionError("cannot delegate permissions not held by actor")
                 subject_exists = await connection.execute(
                     """SELECT CASE
                          WHEN %s='user' THEN EXISTS (
@@ -351,6 +402,10 @@ class PostgresIdentityRepository:
                 )
                 if await cursor.fetchone() is None:
                     raise ValueError("role does not exist in this tenant")
+                if not await self.can_assign_role(
+                    tenant_id=tenant_id, actor_id=invited_by, role_id=role_id,
+                ):
+                    raise PermissionError("cannot invite a user with permissions not held by actor")
                 cursor = await connection.execute(
                     """INSERT INTO platform_invitations
                        (invitation_id, tenant_id, email_normalized, role_id,
