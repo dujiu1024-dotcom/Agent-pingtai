@@ -27,6 +27,7 @@ include = [
   "tests/test_outbox.py",
   "tests/test_multi_expert_routing.py",
   "tests/test_mcp_adapter.py",
+  "tests/test_model_templates.py",
 ]
 
 [tool.ruff.lint]
@@ -52,6 +53,7 @@ files = [
   "agent_platform/runtime/langgraph_adapter.py",
   "agent_platform/tools/mcp_adapter.py",
   "agent_platform/workflows/multi_expert.py",
+  "agent_platform/models/templates.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/tools/mcp_adapter.py",
 ]
