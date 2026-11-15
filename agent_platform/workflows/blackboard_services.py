@@ -68,6 +68,7 @@ class BlackboardMultiExpertServices:
         return tuple(str(ref) for ref in refs if str(ref).strip())
 
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
+        self._scope(run_context)
         return await self.callbacks.plan_experts(objective=objective, run_context=run_context)
 
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]:
