@@ -10,6 +10,7 @@ from agent_platform.tools.gateway_mcp import (
     GatewayMCPBridge,
     GatewaySessionContext,
 )
+from agent_platform.tools.idempotency import InMemoryToolEffectStore
 
 
 class FakeApprovalVerifier:
@@ -112,6 +113,9 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
             tools=self.tools,
             approval_verifier=self.approvals,
             audit_sink=self.audit,
+            # 外发类工具在后续提交里要求持久幂等；本用例只验证审批注入，
+            # 补上内存幂等存储以匹配新契约，断言不变。
+            idempotency_store=InMemoryToolEffectStore(),
         )
 
     def bridge(self, **overrides):

@@ -6,6 +6,7 @@ durable and idempotent in the injected Blackboard repository.
 """
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
@@ -114,7 +115,7 @@ class BlackboardMultiExpertServices:
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "expert:" + expert_id),
             scope=scope, scope_id=scope_id, kind=EntryKind.CLAIM,
-            content={"expert_id": expert_id, "contribution": result},
+            content={"expert_id": expert_id, "contribution": copy.deepcopy(result)},
             author_id=expert_id, source_refs=self._refs(result),
         )
         persisted = await self._propose_once(entry)
@@ -127,7 +128,7 @@ class BlackboardMultiExpertServices:
         refs = tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "synthesis"), scope=scope, scope_id=scope_id,
-            kind=EntryKind.ARTIFACT, content={"synthesis": result},
+            kind=EntryKind.ARTIFACT, content={"synthesis": copy.deepcopy(result)},
             author_id="synthesizer", source_refs=refs,
         )
         persisted = await self._propose_once(entry)
@@ -146,7 +147,7 @@ class BlackboardMultiExpertServices:
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "conflict:" + key),
                 scope=scope, scope_id=scope_id, kind=EntryKind.CONFLICT,
-                content={"conflict": conflict}, author_id="reviewer", source_refs=refs,
+                content={"conflict": copy.deepcopy(conflict)}, author_id="reviewer", source_refs=refs,
             )
             persisted = await self._propose_once(entry)
             conflict["blackboard_entry_id"] = persisted.entry_id
@@ -192,12 +193,15 @@ class BlackboardMultiExpertServices:
             persisted = await self._propose_once(entry)
             decision_entry_ids.append(persisted.entry_id)
         resolved_synthesis = dict(result.get("synthesis", synthesis))
+        parent_synthesis_id = str(synthesis.get("blackboard_entry_id") or "")
+        if parent_synthesis_id:
+            resolved_synthesis.setdefault("parent_blackboard_entry_id", parent_synthesis_id)
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
-        resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids)
+        resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids) + ((parent_synthesis_id,) if parent_synthesis_id else ())
         resolved_entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "resolved-synthesis"),
             scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
-            content={"resolved_synthesis": resolved_synthesis},
+            content={"resolved_synthesis": copy.deepcopy(resolved_synthesis)},
             author_id="conflict-resolver", source_refs=resolution_refs,
         )
         persisted_synthesis = await self._propose_once(resolved_entry)
@@ -222,7 +226,7 @@ class BlackboardMultiExpertServices:
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "approval-result"), scope=scope,
             scope_id=scope_id, kind=EntryKind.DECISION,
-            content={"approval_result": result}, author_id="human-approver",
+            content={"approval_result": copy.deepcopy(result)}, author_id="human-approver",
             source_refs=(self._entry_id(state, "approval-request"),),
             status=EntryStatus.ACCEPTED if result.get("approved") is True else EntryStatus.REJECTED,
         )
@@ -241,6 +245,8 @@ class BlackboardMultiExpertServices:
         synthesis = state.get("synthesis", {})
         if synthesis.get("blackboard_entry_id"):
             refs.append(str(synthesis["blackboard_entry_id"]))
+        if synthesis.get("parent_blackboard_entry_id"):
+            refs.append(str(synthesis["parent_blackboard_entry_id"]))
         refs.extend(str(item) for item in synthesis.get("blackboard_decision_entry_ids", []))
         refs.extend(
             str(item[key])
@@ -254,7 +260,7 @@ class BlackboardMultiExpertServices:
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "final-artifact"), scope=scope,
             scope_id=scope_id, kind=EntryKind.ARTIFACT,
-            content={"final_result": result}, author_id="workflow-archive",
+            content={"final_result": copy.deepcopy(result)}, author_id="workflow-archive",
             source_refs=tuple(refs), status=EntryStatus.ACCEPTED,
         )
         persisted = await self._propose_once(entry)

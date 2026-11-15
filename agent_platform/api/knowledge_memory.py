@@ -91,14 +91,15 @@ def create_knowledge_memory_router(
         try:scope=KnowledgeScope(body.get("scope","private"))
         except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
         project_id=body.get("project_id")
-        if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.permissions:raise HTTPException(403,"knowledge.manage role required")
-        if scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:raise HTTPException(403,"project knowledge.manage permission required")
+        # 已存在文档的身份与作用域不可原地变更：先判不可变（409），再判新作用域权限（403）。
         try:document_id=str(UUID(str(body["document_id"]))) if body.get("document_id") else str(uuid4())
         except ValueError as exc:raise HTTPException(400,"document_id must be a UUID") from exc
         await _authorize_document_update(
             knowledge, principal, document_id=document_id,
             scope=scope, project_id=project_id,
         )
+        if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.permissions:raise HTTPException(403,"knowledge.manage role required")
+        if scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:raise HTTPException(403,"project knowledge.manage permission required")
         source_uri=body.get("source_uri") or ("upload://"+document_id)
         content=body.get("content")
         if not isinstance(content,str) or not content.strip():raise HTTPException(400,"text content is required")

@@ -146,15 +146,66 @@ def create_authenticated_mcp_asgi_app(
         )
     from agent_platform.tools.gateway_mcp import create_mcp_server
 
+    try:
+        from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
+        from mcp.server.auth.middleware.bearer_auth import (
+            BearerAuthBackend,
+            RequireAuthMiddleware,
+        )
+        from mcp.server.auth.routes import (
+            build_resource_metadata_url,
+            create_protected_resource_routes,
+        )
+        from mcp.server.fastmcp.server import StreamableHTTPASGIApp
+        from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+        from starlette.applications import Starlette
+        from starlette.middleware import Middleware
+        from starlette.middleware.authentication import AuthenticationMiddleware
+        from starlette.routing import Route
+    except ImportError as exc:
+        raise RuntimeError("Install the MCP SDK Streamable HTTP dependencies") from exc
+
     server = create_mcp_server(bridge=bridge)
-    app = server.streamable_http_app(
-        auth=auth,
-        token_verifier=verifier,
-        host=host,
-        transport_security=transport_security,
-        stateless_http=False,
+    # mcp 1.x 的底层 Server 只做协议处理；Streamable HTTP 的 ASGI 承载由
+    # SessionManager + Starlette 组装，FastMCP 内部也是同一套组件。
+    session_manager = StreamableHTTPSessionManager(
+        app=server,
         json_response=True,
-        streamable_http_path=parsed_resource.path,
+        stateless=False,
+        security_settings=transport_security,
+    )
+    handler = StreamableHTTPASGIApp(session_manager)
+    resource_url = url_adapter.validate_python(resource_server_url)
+    required_scopes = list(auth.required_scopes or [])
+    routes = [
+        Route(
+            parsed_resource.path,
+            endpoint=RequireAuthMiddleware(
+                handler,
+                required_scopes,
+                build_resource_metadata_url(resource_url),
+            ),
+        )
+    ]
+    routes.extend(
+        create_protected_resource_routes(
+            resource_url=resource_url,
+            authorization_servers=[url_adapter.validate_python(issuer_url)],
+            scopes_supported=required_scopes,
+        )
+    )
+    app = Starlette(
+        routes=routes,
+        middleware=[
+            Middleware(
+                AuthenticationMiddleware,
+                backend=BearerAuthBackend(
+                    verifier, resource_server_url=resource_url
+                ),
+            ),
+            Middleware(AuthContextMiddleware),
+        ],
+        lifespan=lambda _: session_manager.run(),
     )
     # The hosting control plane can revoke the run token during shutdown or
     # incident response without exposing token material to the MCP client.

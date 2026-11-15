@@ -159,6 +159,9 @@ class GatewayMCPBridge:
             approval_id=approval_id,
             run_id=self.session.run_id,
             agent_id=self.session.agent_id,
+            # MCP 没有业务层面的调用号；用动作摘要在同一 run 内作为稳定幂等键，
+            # 重试同一调用会命中缓存，而不是重复产生外部副作用。
+            call_id=action_digest,
         )
 
 
