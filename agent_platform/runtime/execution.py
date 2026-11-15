@@ -1,19 +1,20 @@
-"""Connect Run lifecycle management to real LangGraph durable execution."""
+"""Connect Run lifecycle management to LangGraph execution and worker recovery."""
 from __future__ import annotations
 import asyncio
 from typing import Any, Callable
+from uuid import uuid4
 from agent_platform.runtime.lifecycle import RunLifecycleManager,RunSnapshot,RunStatus
 
-class LangGraphRunExecutor:
- """Executes a compiled LangGraph using a stable tenant/Run checkpoint thread.
+class WorkerLeaseLost(RuntimeError):
+ """Raised when another worker has acquired this Run's expired execution lease."""
 
- The graph must be compiled with a durable LangGraph checkpointer, for example
- the platform postgres_checkpointer context manager. A checkpoint is addressed
- by tenant + Run thread; its checkpoint ID is recorded on the platform Run.
- """
- def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900)->None:
-  if timeout_seconds<=0:raise ValueError("timeout_seconds must be positive")
+class LangGraphRunExecutor:
+ """Execute a compiled LangGraph with durable checkpoints and a renewable worker lease."""
+ def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900,
+  worker_id:str|None=None,lease_seconds:int=60)->None:
+  if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   self.graph=graph;self.lifecycle=lifecycle;self.timeout_seconds=timeout_seconds
+  self.worker_id=worker_id or uuid4().hex;self.lease_seconds=lease_seconds
  @staticmethod
  def _config(tenant_id:str,run_id:str)->dict[str,Any]:
   return {"configurable":{"thread_id":f"{tenant_id}:{run_id}"}}
@@ -24,6 +25,39 @@ class LangGraphRunExecutor:
   configurable=(getattr(state,"config",None) or {}).get("configurable",{})
   value=configurable.get("checkpoint_id")
   return str(value) if value else None
+ async def _run_leased(self,tenant_id:str,run_id:str,awaitable:Any,*,timeout:float,already_claimed:bool=False)->Any:
+  store=self.lifecycle.store
+  acquire=getattr(store,"acquire_lease",None)
+  heartbeat=getattr(store,"heartbeat",None)
+  release=getattr(store,"release_lease",None)
+  acquired=False
+  if not already_claimed and acquire is not None:
+   acquired=await acquire(tenant_id,run_id,self.worker_id,lease_seconds=self.lease_seconds)
+   if not acquired:raise WorkerLeaseLost("could not acquire Run worker lease")
+  task=asyncio.create_task(self.lifecycle.run_with_timeout(tenant_id,run_id,awaitable,timeout=timeout))
+  beat_task=None
+  if heartbeat is not None and (already_claimed or acquired):
+   async def beat()->None:
+    while True:
+     await asyncio.sleep(max(1,self.lease_seconds/3))
+     if not await heartbeat(tenant_id,run_id,self.worker_id,lease_seconds=self.lease_seconds):
+      task.cancel()
+      raise WorkerLeaseLost("Run worker lease was lost")
+   beat_task=asyncio.create_task(beat())
+  try:
+   if beat_task is None:return await task
+   done,_=await asyncio.wait({task,beat_task},return_when=asyncio.FIRST_COMPLETED)
+   if beat_task in done:
+    try:await beat_task
+    except WorkerLeaseLost:
+     await asyncio.gather(task,return_exceptions=True)
+     raise
+   return await task
+  finally:
+   if beat_task is not None:
+    beat_task.cancel();await asyncio.gather(beat_task,return_exceptions=True)
+   if not already_claimed and acquired and release is not None:
+    await release(tenant_id,run_id,self.worker_id)
  async def _finish(self,tenant_id:str,run_id:str,status:RunStatus,*,checkpoint_ref:str|None=None,error:str|None=None)->RunSnapshot|None:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None or old.status!=RunStatus.RUNNING:return old
@@ -31,14 +65,14 @@ class LangGraphRunExecutor:
  async def execute(self,*,tenant_id:str,run_id:str,input:Any,timeout_seconds:float|None=None)->Any:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None:raise KeyError("Run not found")
-  if old.status not in {RunStatus.QUEUED,RunStatus.INTERRUPTED}:
-   raise ValueError(f"Run cannot start from {old.status.value}")
+  if old.status!=RunStatus.QUEUED:raise ValueError(f"Run cannot start from {old.status.value}; use recovery for interrupted Runs")
   await self.lifecycle.start(tenant_id,run_id)
   config=self._config(tenant_id,run_id)
   try:
-   result=await self.lifecycle.run_with_timeout(tenant_id,run_id,
-    self.graph.ainvoke(input,config=config),timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds)
+   result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
+    timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds)
   except asyncio.TimeoutError:raise
+  except WorkerLeaseLost:raise
   except asyncio.CancelledError:
    current=await self.lifecycle.store.get(tenant_id,run_id)
    if current and current.status==RunStatus.RUNNING:
@@ -60,10 +94,11 @@ class LangGraphRunExecutor:
   async def resume(row:RunSnapshot)->None:
    payload=None if row.checkpoint_ref else load_initial_input(row)
    if hasattr(payload,"__await__"):payload=await payload
+   ref_input=self.graph.ainvoke(payload,config=self._config(row.tenant_id,row.run_id))
    try:
-    await self.lifecycle.run_with_timeout(row.tenant_id,row.run_id,
-     self.graph.ainvoke(payload,config=self._config(row.tenant_id,row.run_id)),timeout=self.timeout_seconds)
+    await self._run_leased(row.tenant_id,row.run_id,ref_input,timeout=self.timeout_seconds,already_claimed=True)
    except asyncio.TimeoutError:raise
    ref=await self._checkpoint_ref(row.tenant_id,row.run_id)
    await self._finish(row.tenant_id,row.run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
-  return await self.lifecycle.recover(checkpoint_loader=verify_checkpoint,resume=resume,limit=limit)
+  return await self.lifecycle.recover(checkpoint_loader=verify_checkpoint,resume=resume,limit=limit,
+   worker_id=self.worker_id,lease_seconds=self.lease_seconds)
