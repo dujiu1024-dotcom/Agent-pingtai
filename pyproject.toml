@@ -22,6 +22,7 @@ include = [
   "tests/test_feishu_config.py",
   "tests/test_conversation.py",
   "agent_platform/**/*.py",
+  "tests/test_identity.py",
   "tests/test_platform_contracts.py",
   "tests/test_tool_gateway.py",
   "tests/test_outbox.py",
@@ -63,6 +64,8 @@ files = [
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/models/templates.py",
   "agent_platform/runtime/deepseek_harness.py",
+  "agent_platform/identity/*.py",
+  "tests/test_identity.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
