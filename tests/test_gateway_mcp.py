@@ -1,6 +1,6 @@
 import unittest
 
-from agent_platform.approval.policy import RiskLevel
+from agent_platform.approval.policy import ActionRequest, RiskLevel
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolDefinition,
@@ -153,10 +153,16 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.executed, [])
 
     async def test_l2_approval_id_is_injected_by_trusted_session(self):
+        action_digest = ActionRequest(
+            action="send_message",
+            resource="recipient:customer-1",
+            parameters={"recipient": "customer-1", "text": "hello"},
+            actor_id="agent-researcher",
+        ).digest()
         bridge = self.bridge(
             actor_roles=("operator",),
             allowed_tool_names=("send_message",),
-            approval_ids={"send_message": "approval-123"},
+            approval_ids={action_digest: "approval-123"},
         )
         with self.assertRaises(ToolExecutionDenied):
             await bridge.call_tool(
@@ -181,8 +187,8 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
             await bridge.call_tool(name="read_document", arguments={})
         self.assertEqual(self.executed, [])
 
-    def test_session_rejects_approval_for_unallowlisted_tool(self):
-        with self.assertRaisesRegex(ValueError, "only be bound"):
+    def test_session_rejects_malformed_approval_digest(self):
+        with self.assertRaisesRegex(ValueError, "SHA-256 action digest"):
             self.bridge(approval_ids={"send_message": "approval-1"})
 
     async def test_server_factory_uses_optional_mcp_sdk(self):
