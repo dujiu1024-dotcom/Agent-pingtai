@@ -50,6 +50,11 @@ class IdentityRepository(Protocol):
     async def revoke_api_credential(
         self, *, credential_id: str, tenant_id: str, user_id: str,
     ) -> bool: ...
+    async def rotate_api_credential(
+        self, *, old_credential_id: str, new_credential_id: str,
+        tenant_id: str, user_id: str, name: str, token_hash: str,
+        scopes: tuple[str, ...], expires_at: datetime | None,
+    ) -> bool: ...
     async def create_invitation(
         self, *, invitation_id: str, tenant_id: str, email_normalized: str,
         role_id: str, token_hash: str, invited_by: str, expires_at: datetime,
