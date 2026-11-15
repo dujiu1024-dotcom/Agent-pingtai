@@ -40,6 +40,7 @@ class FakeIdentityRepository:
             tenant_id=tenant_id,
             user_id=user_id,
             tenant_roles=frozenset({"tenant_admin"}),
+            effective_role_ids=frozenset({"tenant_admin"}),
             tenant_permissions=frozenset({"knowledge.manage", "memory.manage"}),
             project_ids=frozenset(),
             knowledge_manage_project_ids=frozenset(),
