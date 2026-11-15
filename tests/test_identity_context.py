@@ -78,16 +78,21 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
             frozenset({"project.read", "knowledge.manage"}),
         )
 
-    async def test_api_credential_is_denied_until_route_scopes_are_enforced(self):
+    async def test_user_bound_api_credential_resolves_live_user_rbac(self):
         credential = AuthenticatedApiCredential(
             credential_id="credential-a",
             tenant_id="tenant-a",
             user_id="user-a",
             scopes=("project.read",),
         )
-        with self.assertRaises(Exception) as raised:
-            await self.resolver.knowledge(make_request(credential))
-        self.assertEqual(getattr(raised.exception, "status_code", None), 403)
+        resolved = await self.resolver.knowledge(make_request(credential))
+        self.assertEqual(resolved.tenant_id, "tenant-a")
+        self.assertEqual(resolved.user_id, "user-a")
+        self.assertEqual(resolved.roles, frozenset({"tenant_admin"}))
+        self.assertEqual(
+            resolved.permissions,
+            frozenset({"project.read", "knowledge.manage"}),
+        )
 
     async def test_missing_identity_is_rejected(self):
         with self.assertRaises(Exception) as raised:
