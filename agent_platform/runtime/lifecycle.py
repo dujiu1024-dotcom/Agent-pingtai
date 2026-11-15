@@ -97,13 +97,14 @@ class RunLifecycleManager:
     await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.FAILED,row.version,
      last_error="interrupted Run has no checkpoint; automatic recovery refused"),expected_version=row.version)
     continue
-   if row.checkpoint_ref: await checkpoint_loader(row)
-   running=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.RUNNING,row.version,
-    checkpoint_ref=row.checkpoint_ref),expected_version=row.version)
-   try: await resume(running)
+   try:
+    if row.checkpoint_ref: await checkpoint_loader(row)
+    running=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.RUNNING,row.version,
+     checkpoint_ref=row.checkpoint_ref),expected_version=row.version)
+    await resume(running)
    except Exception as exc:
     latest=await self.store.get(row.tenant_id,row.run_id)
-    if latest and latest.status==RunStatus.RUNNING:
+    if latest and latest.status in {RunStatus.RUNNING,RunStatus.INTERRUPTED}:
      await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.FAILED,latest.version,
       checkpoint_ref=row.checkpoint_ref,last_error=f"recovery failed: {str(exc)[:400]}"),expected_version=latest.version)
     continue
