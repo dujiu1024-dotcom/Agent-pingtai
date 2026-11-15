@@ -142,6 +142,24 @@ CREATE INDEX IF NOT EXISTS idx_platform_outbox_pending
     ON platform_outbox (created_at)
     WHERE published_at IS NULL;
 
+CREATE TABLE IF NOT EXISTS platform_tool_audit (
+    tenant_id       text NOT NULL REFERENCES platform_tenants(tenant_id),
+    audit_id        bigserial,
+    actor_id        text NOT NULL,
+    action          text NOT NULL,
+    resource        text NOT NULL,
+    action_digest   text NOT NULL,
+    outcome         text NOT NULL CHECK (
+        outcome IN ('denied', 'started', 'succeeded', 'failed')
+    ),
+    detail          text NOT NULL DEFAULT '',
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, audit_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_platform_tool_audit_recent
+    ON platform_tool_audit (tenant_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS platform_embeddings (
     tenant_id       text NOT NULL REFERENCES platform_tenants(tenant_id),
     object_type     text NOT NULL,
