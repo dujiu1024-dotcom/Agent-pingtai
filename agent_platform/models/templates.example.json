@@ -3,7 +3,7 @@
   "templates": [
     {
       "id": "general-reasoning",
-      "version": "1",
+      "version": 1,
       "purpose": "通用分析与推理",
       "provider": "openai-compatible",
       "model": "replace-with-deployment-model",
