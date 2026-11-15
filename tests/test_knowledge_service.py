@@ -100,3 +100,18 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         hits=await service.retrieve(principal=KnowledgePrincipal(tenant_id="t",user_id="u"),query="second")
         self.assertIn("\n",hits[0].text)
         self.assertNotIn("secret",hits[0].text)
+
+    async def test_ingestion_auto_versions_updates_and_retries_idempotently(self):
+        service=KnowledgeService(InMemoryKnowledgeRepository())
+        doc=Document(tenant_id="t",title="connector doc",source_uri="connector://doc/1",content_hash="source-hash")
+        first=await service.ingest(document=doc,content=b"initial content")
+        retry=await service.ingest(document=doc,content=b"initial content")
+        self.assertEqual(first.document.version,1)
+        self.assertEqual(retry.document.version,1)
+        self.assertTrue(retry.skipped_unchanged)
+        self.assertEqual(first.chunks[0].chunk_id,retry.chunks[0].chunk_id)
+        changed=await service.ingest(document=doc,content=b"updated content")
+        self.assertEqual(changed.document.version,2)
+        changed_retry=await service.ingest(document=doc,content=b"updated content")
+        self.assertEqual(changed_retry.document.version,2)
+        self.assertEqual(changed.chunks[0].chunk_id,changed_retry.chunks[0].chunk_id)
