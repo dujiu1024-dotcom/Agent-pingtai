@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS platform_approvals (
                     CHECK (status IN ('pending', 'approved', 'rejected', 'expired', 'consumed')),
     expires_at      timestamptz NOT NULL,
     decided_at      timestamptz,
+    consumed_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, approval_id),
     FOREIGN KEY (tenant_id, run_id) REFERENCES platform_runs(tenant_id, run_id)
