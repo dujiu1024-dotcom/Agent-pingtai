@@ -31,6 +31,7 @@ include = [
   "tests/test_gateway_mcp.py",
   "tests/test_strands_mcp_provider.py",
   "tests/test_gateway_mcp_http.py",
+  "tests/test_strands_gateway_mcp_http_integration.py",
   "tests/test_model_templates.py",
   "tests/test_deepseek_harness_adapter.py",
   "tests/test_event_consumer.py",
