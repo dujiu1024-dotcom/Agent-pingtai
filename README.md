@@ -155,6 +155,9 @@ python3 agency.py init && python3 agency.py doctor
 - Hybrid Blackboard 接口：`agent_platform/blackboard/`
 - Supervised 审批策略：`agent_platform/approval/`
 - LangGraph 与 Harness 适配端口：`agent_platform/runtime/`
+- DeepSeek Harness 实验适配器（需隔离环境）：`agent_platform/runtime/deepseek_harness.py`，可选依赖 `pip install -r requirements-harness-dsh.txt`
+- 模型模板注册与校验：`agent_platform/models/`
+- 多专家 LangGraph 流程：`agent_platform/workflows/multi_expert.py`
 - PostgreSQL 核心结构：`agent_platform/storage/postgres/`
 - Redis Streams 事件传输：`agent_platform/events/`
 
