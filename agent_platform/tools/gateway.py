@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
+from agent_platform.tools.idempotency import EffectConflict, ToolEffectStore
+
 from agent_platform.approval.policy import (
     ActionRequest,
     RiskLevel,
@@ -89,6 +91,7 @@ class SupervisedToolGateway:
         tools: tuple[ToolDefinition, ...],
         approval_verifier: ApprovalVerifier,
         audit_sink: AuditSink,
+        idempotency_store: ToolEffectStore | None = None,
     ) -> None:
         names = [tool.name for tool in tools]
         if len(names) != len(set(names)):
@@ -97,6 +100,7 @@ class SupervisedToolGateway:
         self._policy = SupervisedPolicy({tool.name: tool.risk for tool in tools})
         self._approval_verifier = approval_verifier
         self._audit_sink = audit_sink
+        self._idempotency_store = idempotency_store
 
     @property
     def registered_tools(self) -> tuple[ToolDefinition, ...]:
@@ -115,6 +119,7 @@ class SupervisedToolGateway:
         approval_id: str | None = None,
         run_id: str | None = None,
         agent_id: str | None = None,
+        call_id: str | None = None,
     ) -> Any:
         definition = self._tools.get(tool_name)
         if definition is None:
@@ -165,6 +170,32 @@ class SupervisedToolGateway:
                 )
                 raise ToolExecutionDenied("resource access is not authorized")
 
+        requires_idempotency = definition.risk in {
+            RiskLevel.EXTERNAL_OR_IRREVERSIBLE,
+            RiskLevel.FINANCIAL_OR_SECURITY,
+        }
+        if requires_idempotency:
+            if self._idempotency_store is None or not run_id or not call_id:
+                raise ToolExecutionDenied(
+                    "durable idempotency requires an idempotency store, run_id and call_id"
+                )
+            existing = await self._idempotency_store.get(
+                tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+            )
+            if existing is not None:
+                if existing.action_digest != request.digest() or existing.actor_id != actor_id:
+                    raise ToolExecutionDenied("idempotency key conflicts with a different action")
+                if existing.state == "succeeded":
+                    await self._audit_sink.record(
+                        tenant_id=tenant_id, actor_id=actor_id, action=tool_name,
+                        resource=resource, action_digest=request.digest(),
+                        outcome="replayed", run_id=run_id, agent_id=agent_id,
+                    )
+                    return existing.result
+                raise ToolExecutionDenied(
+                    "previous side effect is pending or failed and requires reconciliation"
+                )
+
         approved_hash = None
         if approval_id and definition.risk == RiskLevel.EXTERNAL_OR_IRREVERSIBLE:
             consumed = await self._approval_verifier.consume(
@@ -203,12 +234,26 @@ class SupervisedToolGateway:
             run_id=run_id,
             agent_id=agent_id,
         )
+        if requires_idempotency:
+            claimed = await self._idempotency_store.claim(
+                tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+                action_digest=request.digest(), actor_id=actor_id,
+            )
+            if claimed.state == "succeeded":
+                return claimed.result
+            if claimed.state != "pending":
+                raise ToolExecutionDenied("previous side effect requires reconciliation")
         try:
             if definition.contextual_handler is not None:
                 result = await definition.contextual_handler(arguments, execution_context)
             else:
                 result = await definition.handler(arguments)
         except Exception as exc:
+            if requires_idempotency:
+                await self._idempotency_store.fail(
+                    tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+                    error=type(exc).__name__,
+                )
             await self._audit_sink.record(
                 tenant_id=tenant_id,
                 actor_id=actor_id,
@@ -222,6 +267,10 @@ class SupervisedToolGateway:
             )
             raise
 
+        if requires_idempotency:
+            await self._idempotency_store.complete(
+                tenant_id=tenant_id, run_id=run_id, call_id=call_id, result=result,
+            )
         await self._audit_sink.record(
             tenant_id=tenant_id,
             actor_id=actor_id,
