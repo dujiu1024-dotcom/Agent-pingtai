@@ -30,10 +30,17 @@ class LangGraphRunExecutor:
   acquire=getattr(store,"acquire_lease",None)
   heartbeat=getattr(store,"heartbeat",None)
   release=getattr(store,"release_lease",None)
+  if timeout<=0:
+   close=getattr(awaitable,"close",None)
+   if close is not None:close()
+   raise ValueError("Run timeout must be positive")
   acquired=False
   if not already_claimed and acquire is not None:
    acquired=await acquire(tenant_id,run_id,self.worker_id,lease_seconds=self.lease_seconds)
-   if not acquired:raise WorkerLeaseLost("could not acquire Run worker lease")
+   if not acquired:
+    close=getattr(awaitable,"close",None)
+    if close is not None:close()
+    raise WorkerLeaseLost("could not acquire Run worker lease")
   task=asyncio.create_task(self.lifecycle.run_with_timeout(tenant_id,run_id,awaitable,timeout=timeout))
   beat_task=None
   if heartbeat is not None and (already_claimed or acquired):
@@ -49,7 +56,8 @@ class LangGraphRunExecutor:
    done,_=await asyncio.wait({task,beat_task},return_when=asyncio.FIRST_COMPLETED)
    if beat_task in done:
     try:await beat_task
-    except WorkerLeaseLost:
+    except Exception:
+     task.cancel()
      await asyncio.gather(task,return_exceptions=True)
      raise
    return await task
