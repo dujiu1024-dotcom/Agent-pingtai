@@ -58,6 +58,8 @@ class QuotaReservation:
     reserved_tokens: int
     reserved_cost_usd: Decimal
     created_at: datetime
+    period_start: datetime
+    period_end: datetime
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,8 @@ class UsageEvent:
     output_tokens: int
     cost_usd: Decimal
     occurred_at: datetime
+    project_id: str | None = None
+    agent_id: str | None = None
 
     @property
     def total_tokens(self) -> int:
@@ -100,14 +104,19 @@ class InMemoryQuotaStore:
 
     def _totals(self, tenant_id: str, scope_type: str, scope_id: str, start: datetime, end: datetime) -> tuple[int, Decimal, int]:
         events = [e for e in self._events.values() if e.tenant_id == tenant_id and start <= e.occurred_at < end and self._matches(e, scope_type, scope_id)]
-        reservations = [r for r in self._reservations.values() if r.tenant_id == tenant_id and r.scope_type == scope_type and r.scope_id == scope_id]
+        reservations = [r for r in self._reservations.values() if r.tenant_id == tenant_id and r.scope_type == scope_type and r.scope_id == scope_id and r.period_start == start and r.period_end == end]
         tokens = sum(e.total_tokens for e in events) + sum(r.reserved_tokens for r in reservations)
         cost = sum((e.cost_usd for e in events), Decimal("0")) + sum((r.reserved_cost_usd for r in reservations), Decimal("0"))
         return tokens, cost, len(reservations)
 
     @staticmethod
     def _matches(event: UsageEvent, scope_type: str, scope_id: str) -> bool:
-        return scope_type == "tenant" and event.tenant_id == scope_id or scope_type == "model" and event.model_key == scope_id
+        return (
+            (scope_type == "tenant" and event.tenant_id == scope_id)
+            or (scope_type == "model" and event.model_key == scope_id)
+            or (scope_type == "project" and event.project_id == scope_id)
+            or (scope_type == "agent" and event.agent_id == scope_id)
+        )
 
     async def reserve(self, reservation: QuotaReservation, budget: Budget) -> tuple[QuotaReservation, tuple[str, ...]]:
         async with self._lock:
@@ -172,6 +181,7 @@ class QuotaService:
             scope_type=budget.scope_type, scope_id=budget.scope_id,
             reserved_tokens=estimated_tokens, reserved_cost_usd=estimated_cost_usd,
             created_at=datetime.now(timezone.utc),
+            period_start=budget.period_start, period_end=budget.period_end,
         )
         return await self.store.reserve(reservation, budget)
 
