@@ -28,7 +28,7 @@ class IdentityRepository(Protocol):
     ) -> SessionRecord | None:
         ...
 
-    async def touch_session(self, *, session_id: str, tenant_id: str) -> None:
+    async def touch_session(self, *, session_id: str, tenant_id: str) -> bool:
         ...
 
     async def revoke_session(
