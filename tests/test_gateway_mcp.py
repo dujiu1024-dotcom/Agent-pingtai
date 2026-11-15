@@ -225,6 +225,55 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "SHA-256 action digest"):
             self.bridge(approval_ids={"send_message": "approval-1"})
 
+    async def test_mcp_protocol_lists_and_calls_only_gateway_tools(self):
+        try:
+            import anyio
+            from mcp.client import ClientSession
+        except ImportError:
+            self.skipTest("MCP SDK is installed in the dedicated SDK CI job")
+
+        from agent_platform.tools.gateway_mcp import create_mcp_server
+
+        bridge = self.bridge()
+        server = create_mcp_server(bridge=bridge)
+        client_to_server_send, client_to_server_receive = anyio.create_memory_object_stream(16)
+        server_to_client_send, server_to_client_receive = anyio.create_memory_object_stream(16)
+        async with (
+            client_to_server_send,
+            client_to_server_receive,
+            server_to_client_send,
+            server_to_client_receive,
+            anyio.create_task_group() as task_group,
+        ):
+            task_group.start_soon(
+                server.run,
+                client_to_server_receive,
+                server_to_client_send,
+                server.create_initialization_options(),
+            )
+            async with ClientSession(
+                server_to_client_receive, client_to_server_send
+            ) as client:
+                await client.initialize()
+                discovered = await client.list_tools()
+                self.assertEqual(
+                    [tool.name for tool in discovered.tools],
+                    ["read_document"],
+                )
+                result = await client.call_tool(
+                    "read_document", {"document_id": "doc-17"}
+                )
+                self.assertFalse(result.isError)
+                self.assertIn('"document": "approved"', result.content[0].text)
+                denied = await client.call_tool(
+                    "read_document", {"document_id": "doc-secret"}
+                )
+                self.assertTrue(denied.isError)
+                self.assertEqual(
+                    self.executed, [{"document_id": "doc-17"}]
+                )
+            task_group.cancel_scope.cancel()
+
     async def test_server_factory_uses_optional_mcp_sdk(self):
         try:
             from mcp.server import Server
