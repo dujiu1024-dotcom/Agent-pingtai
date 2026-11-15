@@ -11,9 +11,9 @@ CREATE INDEX IF NOT EXISTS idx_platform_run_tokens_expiry ON platform_run_tokens
 CREATE TABLE IF NOT EXISTS platform_gateway_endpoints (
  tenant_id text NOT NULL, run_id uuid NOT NULL, instance_id text NOT NULL, endpoint_url text NOT NULL,
  status text NOT NULL CHECK(status IN ('active','inactive')), created_at timestamptz NOT NULL DEFAULT now(),
- updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,run_id),
+ updated_at timestamptz NOT NULL DEFAULT now(), lease_expires_at timestamptz, PRIMARY KEY(tenant_id,run_id),
  FOREIGN KEY(tenant_id,run_id) REFERENCES platform_runs(tenant_id,run_id));
-CREATE INDEX IF NOT EXISTS idx_platform_gateway_endpoint_instance ON platform_gateway_endpoints(instance_id,status);
+CREATE INDEX IF NOT EXISTS idx_platform_gateway_endpoint_instance ON platform_gateway_endpoints(instance_id,status);\nCREATE INDEX IF NOT EXISTS idx_platform_gateway_endpoint_lease ON platform_gateway_endpoints(lease_expires_at) WHERE status='active';
 ALTER TABLE platform_runs ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
 ALTER TABLE platform_runs ADD COLUMN IF NOT EXISTS checkpoint_ref text;
 ALTER TABLE platform_runs ADD COLUMN IF NOT EXISTS last_error text;
