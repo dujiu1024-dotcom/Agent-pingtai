@@ -21,16 +21,14 @@ if DSN:
         EntryStatus,
         Scope,
     )
-    from agent_platform.events.outbox import PostgresOutboxStore
-    from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
-    from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
-    from agent_platform.control_plane.postgres import PostgresRegistryRepository
-    from agent_platform.control_plane.registry import RegistryService
-    from agent_platform.runtime.registry_snapshot import RunRegistrySnapshotService
     from agent_platform.control_plane.data_connectors import DataConnection
-    from agent_platform.control_plane.postgres import PostgresSessionRepository
-    from agent_platform.control_plane.sessions_assets import InMemoryObjectStorage, MessageRole, SessionAssetService
-    from agent_platform.tools.idempotency import PostgresToolEffectStore
+    from agent_platform.control_plane.postgres import PostgresRegistryRepository, PostgresSessionRepository
+    from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
+    from agent_platform.control_plane.registry import RegistryService
+    from agent_platform.control_plane.sessions_assets import (
+        InMemoryObjectStorage, MessageRole, SessionAssetService,
+    )
+    from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
     from agent_platform.identity.bootstrap import BootstrapError, bootstrap_tenant_owner
     from agent_platform.identity.models import ResourceRef
@@ -45,6 +43,9 @@ if DSN:
         PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
     )
     from agent_platform.identity.tenants import create_tenant_with_owner
+    from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
+    from agent_platform.runtime.registry_snapshot import RunRegistrySnapshotService
+    from agent_platform.tools.idempotency import PostgresToolEffectStore
     from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
     from agent_platform.workflows.multi_expert import build_multi_expert_workflow
 
