@@ -1,7 +1,9 @@
 import unittest
 from contextlib import contextmanager
+from decimal import Decimal
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
+from agent_platform.observability.cost import ModelCostEstimator, ModelPricing
 from agent_platform.observability.evaluation import (
     EvalCase, EvalDataset, EvalGatePolicy, build_report, evaluate_case, gate_report,
 )
@@ -50,6 +52,9 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         )
         adapter = ObservedHarnessAdapter(
             FakeHarness(), observer=observer, metrics=metrics, capture_content=True,
+            cost_estimator=ModelCostEstimator({
+                "general@2": ModelPricing(Decimal("1.0"), Decimal("2.0")),
+            }),
         )
         result = await adapter.run(request)
         self.assertEqual(result.output_text, "approved answer")
@@ -57,7 +62,9 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[REDACTED]", observer.calls[0][1]["input_text"])
         self.assertEqual(observer.calls[0][2]["run_id"], "run-a")
         self.assertEqual(len(observer.span.updates), 1)
+        self.assertIn("estimated_cost_usd", observer.span.updates[0]["output"])
         snapshot = metrics.snapshot()
+        self.assertIn("agent_estimated_cost_usd_total", " ".join(snapshot["counters"]))
         self.assertIn('agent_runs_total{component="harness",model_template="general@2",status="succeeded"}', snapshot["counters"])
         self.assertIn('agent_run_duration_seconds{component="harness",model_template="general@2"}', snapshot["observation_counts"])
 
