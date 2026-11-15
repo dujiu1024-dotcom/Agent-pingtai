@@ -15,6 +15,7 @@ class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
   async def send(event): sent.append(event)
   await one({"type":"http","path":"/tenants/t/runs/r2/mcp"},None,send)
   self.assertEqual(sent[0]["status"],307); self.assertIn(b"gw2.example",dict(sent[0]["headers"])[b"location"])
+  await one.unmount_run(tenant_id="t",run_id="r1"); await two.unmount_run(tenant_id="t",run_id="r2")
  async def test_unmount_revokes_persistent_run_tokens(self):
   directory=InMemoryEndpointDirectory()
   tokens=RunTokenService(InMemoryRunTokenStore())
@@ -40,6 +41,17 @@ class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await directory.get("t","r")).instance_id,"gw-2")
   await one.unmount_run(tenant_id="t",run_id="r")
   await two.unmount_run(tenant_id="t",run_id="r")
+ async def test_local_gateway_fails_closed_after_lease_deadline(self):
+  from datetime import datetime, timezone, timedelta
+  directory=InMemoryEndpointDirectory()
+  service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,app_factory=lambda _:object(),lease_seconds=60)
+  await service.mount_run(tenant_id="t",run_id="r",bridge=object())
+  service._lease_expires[("t","r")]=datetime.now(timezone.utc)-timedelta(seconds=1)
+  sent=[]
+  async def send(event):sent.append(event)
+  await service({"type":"http","path":"/tenants/t/runs/r/mcp"},None,send)
+  self.assertEqual(sent[0]["status"],503)
+  await service.unmount_run(tenant_id="t",run_id="r")
  async def test_gateway_renews_endpoint_owner_lease(self):
   directory=InMemoryEndpointDirectory()
   service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,app_factory=lambda _:object(),lease_seconds=6)
