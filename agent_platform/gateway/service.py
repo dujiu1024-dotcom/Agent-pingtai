@@ -98,8 +98,8 @@ class GatewayService:
    verifier=getattr(getattr(app,"state",None),"gateway_token_verifier",None)
    if verifier is not None and hasattr(verifier,"revoke"):verifier.revoke()
    token_service=self.token_service or getattr(verifier,"token_service",None)
-   if token_service is not None:await token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
-   await self.directory.deactivate(tenant_id,run_id,self.instance_id)
+   deactivated=await self.directory.deactivate(tenant_id,run_id,self.instance_id)
+   if token_service is not None and deactivated:await token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
    self._apps.pop(key,None);self._lease_expires.pop(key,None)
   if task is not None:await asyncio.gather(task,return_exceptions=True)
   return True
