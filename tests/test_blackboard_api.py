@@ -75,6 +75,7 @@ class InMemoryBlackboard:
 class BlackboardApiTests(unittest.TestCase):
     def setUp(self):
         self.repository = InMemoryBlackboard()
+        self.evidence_allowed = True
 
         async def resolve_principal(request):
             return Principal(
@@ -87,6 +88,11 @@ class BlackboardApiTests(unittest.TestCase):
 
         async def resolve_repository(principal):
             return self.repository
+
+        async def verify_evidence_refs(principal, scope, scope_id, refs):
+            return self.evidence_allowed and all(
+                ref.startswith(("source:", "claim:", "filing:")) for ref in refs
+            )
 
         async def authorize_scope(principal, scope, scope_id, action):
             return (
@@ -101,6 +107,7 @@ class BlackboardApiTests(unittest.TestCase):
             resolve_principal=resolve_principal,
             resolve_repository=resolve_repository,
             authorize_scope=authorize_scope,
+            verify_evidence_refs=verify_evidence_refs,
         ))
         self.client = TestClient(app)
 
@@ -159,6 +166,34 @@ class BlackboardApiTests(unittest.TestCase):
             json={"expected_version": 1, "content": {"reason": "stale update"}},
         )
         self.assertEqual(stale.status_code, 409)
+
+    def test_evidence_references_must_be_verified_before_persisting(self):
+        self.evidence_allowed = False
+        denied = self.client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "task",
+                "scope_id": "task-a",
+                "kind": "fact",
+                "content": {"fact": "unsupported"},
+                "source_refs": ["source:missing"],
+            },
+        )
+        self.assertEqual(denied.status_code, 422)
+        self.assertEqual(self.repository.entries, {})
+
+        self.evidence_allowed = True
+        accepted = self.client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "task",
+                "scope_id": "task-a",
+                "kind": "fact",
+                "content": {"fact": "supported"},
+                "source_refs": ["source:verified"],
+            },
+        )
+        self.assertEqual(accepted.status_code, 201)
 
     def test_scope_and_repository_tenant_are_enforced(self):
         denied = self.client.post(
