@@ -25,6 +25,30 @@ class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
   self.assertIsNotNone(await tokens.resolve(issued.token))
   self.assertTrue(await service.unmount_run(tenant_id="t",run_id="r"))
   self.assertIsNone(await tokens.resolve(issued.token))
+ async def test_expired_owner_lease_can_be_taken_over_without_old_owner_deactivating_new_owner(self):
+  from datetime import datetime, timedelta, timezone
+  directory=InMemoryEndpointDirectory()
+  one=GatewayService(instance_id="gw-1",public_base_url="https://gw1.example",directory=directory,app_factory=lambda _:object(),lease_seconds=60)
+  two=GatewayService(instance_id="gw-2",public_base_url="https://gw2.example",directory=directory,app_factory=lambda _:object(),lease_seconds=60)
+  await one.mount_run(tenant_id="t",run_id="r",bridge=object())
+  async with directory._lock:
+   old=directory._rows[("t","r")]
+   directory._rows[("t","r")]=type(old)(old.tenant_id,old.run_id,old.instance_id,old.endpoint_url,old.status,old.created_at,datetime.now(timezone.utc)-timedelta(seconds=1))
+  await two.mount_run(tenant_id="t",run_id="r",bridge=object())
+  self.assertEqual((await directory.get("t","r")).instance_id,"gw-2")
+  self.assertFalse(await directory.deactivate("t","r","gw-1"))
+  self.assertEqual((await directory.get("t","r")).instance_id,"gw-2")
+  await one.unmount_run(tenant_id="t",run_id="r")
+  await two.unmount_run(tenant_id="t",run_id="r")
+ async def test_gateway_renews_endpoint_owner_lease(self):
+  directory=InMemoryEndpointDirectory()
+  service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,app_factory=lambda _:object(),lease_seconds=6)
+  await service.mount_run(tenant_id="t",run_id="r",bridge=object())
+  before=(await directory.get("t","r")).lease_expires_at
+  self.assertTrue(await directory.heartbeat("t","r","gw",lease_seconds=12))
+  after=(await directory.get("t","r")).lease_expires_at
+  self.assertGreater(after,before)
+  await service.unmount_run(tenant_id="t",run_id="r")
  async def test_rejects_unsafe_run_path_segments(self):
   service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=InMemoryEndpointDirectory(),app_factory=lambda _:object())
   with self.assertRaises(ValueError):
