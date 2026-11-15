@@ -113,7 +113,8 @@ class PostgresConnectorRepository:
         return DataConnection(
             tenant_id=row["tenant_id"], connection_id=row["connection_id"],
             provider=row["provider"], secret_ref=row["secret_ref"],
-            scopes=tuple(row["scopes"] or ()), status=row["status"],
+            scopes=tuple(row["scopes"] or ()), display_name=row["display_name"],
+            status=row["status"],
             cursor=dict(row["cursor"]) if row["cursor"] is not None else None,
             version=row["version"], last_synced_at=row["last_synced_at"],
             revoked_at=row["revoked_at"], last_error=row["last_error"],
