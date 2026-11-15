@@ -40,9 +40,14 @@ class PostgresIdentityRepository:
     async def is_active_member(self, *, tenant_id: str, user_id: str) -> bool:
         connection = await self._connection_factory()
         async with connection:
-            cursor = await connection.execute("SELECT 1 FROM platform_tenant_memberships m
-                   JOIN platform_tenants t ON t.tenant_id=m.tenant_id AND t.status='active'
-                   WHERE m.tenant_id=%s AND m.user_id=%s AND m.status='active'", (tenant_id, user_id))
+            cursor = await connection.execute(
+                """SELECT 1 FROM platform_tenant_memberships m
+                   JOIN platform_tenants t
+                     ON t.tenant_id=m.tenant_id AND t.status='active'
+                   JOIN platform_users u ON u.user_id=m.user_id AND u.status='active'
+                   WHERE m.tenant_id=%s AND m.user_id=%s AND m.status='active'""",
+                (tenant_id, user_id),
+            )
             return await cursor.fetchone() is not None
 
     async def create_session(self, *, session_id: str, tenant_id: str, user_id: str, token_hash: str, expires_at: datetime) -> None:
@@ -51,7 +56,10 @@ class PostgresIdentityRepository:
             async with connection.transaction():
                 cursor = await connection.execute("""INSERT INTO platform_sessions (session_id, tenant_id, user_id, token_hash, expires_at)
                     SELECT %s, %s, %s, %s, %s WHERE EXISTS (
-                      SELECT 1 FROM platform_tenant_memberships WHERE tenant_id=%s AND user_id=%s AND status='active'
+                      SELECT 1 FROM platform_tenant_memberships m
+                    JOIN platform_tenants t ON t.tenant_id=m.tenant_id AND t.status='active'
+                    JOIN platform_users u ON u.user_id=m.user_id AND u.status='active'
+                    WHERE m.tenant_id=%s AND m.user_id=%s AND m.status='active'
                     ) RETURNING session_id""", (session_id, tenant_id, user_id, token_hash, expires_at, tenant_id, user_id))
                 if await cursor.fetchone() is None:
                     raise PermissionError("active tenant membership required")
