@@ -8,14 +8,22 @@ from agent_platform.runtime.lifecycle import RunLifecycleManager, RunSnapshot, R
 class LangGraphRunExecutor:
  """Execute a compiled LangGraph with durable checkpoints and a renewable worker lease."""
  def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900,
-  worker_id:str|None=None,lease_seconds:int=60)->None:
+  worker_id:str|None=None,lease_seconds:int=60,registry_snapshot_service:Any|None=None)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
   self.graph=graph;self.lifecycle=lifecycle;self.timeout_seconds=timeout_seconds
   self.worker_id=worker_id or uuid4().hex;self.lease_seconds=lease_seconds
+  self.registry_snapshot_service=registry_snapshot_service
  @staticmethod
  def _config(tenant_id:str,run_id:str)->dict[str,Any]:
   return {"configurable":{"thread_id":f"{tenant_id}:{run_id}"}}
+ async def _run_config(self,tenant_id:str,run_id:str)->dict[str,Any]:
+  config=self._config(tenant_id,run_id)
+  if self.registry_snapshot_service is not None:
+   snapshot=await self.registry_snapshot_service.get(tenant_id=tenant_id,run_id=run_id)
+   config["configurable"]["platform_registry_snapshot"]=[dict(entry) for entry in snapshot.entries]
+   config["configurable"]["platform_registry_snapshot_digest"]=snapshot.digest
+  return config
  async def _checkpoint_ref(self,tenant_id:str,run_id:str)->str|None:
   getter=getattr(self.graph,"aget_state",None)
   if getter is None:return None
@@ -92,7 +100,7 @@ class LangGraphRunExecutor:
     raise WorkerLeaseLost("could not acquire Run worker lease")
   try:
    await self.lifecycle.start(tenant_id,run_id)
-   config=self._config(tenant_id,run_id)
+   config=await self._run_config(tenant_id,run_id)
    try:
     result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
      timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
@@ -123,7 +131,7 @@ class LangGraphRunExecutor:
   async def resume(row:RunSnapshot)->None:
    payload=None if row.checkpoint_ref else load_initial_input(row)
    if hasattr(payload,"__await__"):payload=await payload
-   ref_input=self.graph.ainvoke(payload,config=self._config(row.tenant_id,row.run_id))
+   ref_input=self.graph.ainvoke(payload,config=await self._run_config(row.tenant_id,row.run_id))
    try:
     await self._run_leased(row.tenant_id,row.run_id,ref_input,timeout=self.timeout_seconds,already_claimed=True)
    except asyncio.TimeoutError:raise
