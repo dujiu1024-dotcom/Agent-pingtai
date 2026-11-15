@@ -1,5 +1,6 @@
 """Real PostgreSQL integration for Gateway credentials, endpoint ownership and Run state."""
-import os\nimport unittest
+import os
+import unittest
 from datetime import datetime,timezone
 from pathlib import Path
 from uuid import uuid4
