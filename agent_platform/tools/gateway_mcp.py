@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from agent_platform.approval.policy import ActionRequest
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolExecutionDenied,
@@ -37,8 +38,12 @@ class GatewaySessionContext:
             raise ValueError("allowed tool names must be unique")
         if any(not name.strip() for name in self.allowed_tool_names):
             raise ValueError("allowed tool names must not be empty")
-        if set(self.approval_ids) - set(self.allowed_tool_names):
-            raise ValueError("approval IDs may only be bound to allowed tools")
+        if any(
+            len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest.lower())
+            for digest in self.approval_ids
+        ):
+            raise ValueError("approval IDs must be keyed by a SHA-256 action digest")
         object.__setattr__(self, "actor_roles", tuple(self.actor_roles))
         object.__setattr__(self, "allowed_tool_names", tuple(self.allowed_tool_names))
         object.__setattr__(
@@ -131,6 +136,14 @@ class GatewayMCPBridge:
         if not isinstance(resource, str) or not resource.strip():
             raise ToolExecutionDenied("tool resource resolver returned an empty resource")
 
+        action_digest = ActionRequest(
+            action=name,
+            resource=resource,
+            parameters=safe_arguments,
+            actor_id=self.session.actor_id,
+        ).digest()
+        approval_id = self.session.approval_ids.get(action_digest)
+
         return await self.gateway.call(
             tenant_id=self.session.tenant_id,
             actor_id=self.session.actor_id,
@@ -138,7 +151,7 @@ class GatewayMCPBridge:
             tool_name=name,
             resource=resource,
             arguments=safe_arguments,
-            approval_id=self.session.approval_ids.get(name),
+            approval_id=approval_id,
             run_id=self.session.run_id,
             agent_id=self.session.agent_id,
         )
