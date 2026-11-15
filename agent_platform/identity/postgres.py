@@ -44,7 +44,7 @@ class PostgresIdentityRepository:
                      AND t.status='active'
                    JOIN platform_users u ON u.user_id=m.user_id
                      AND u.status='active'
-                   WHERE m.tenant_id=%s AND m.user_id=%s
+                   WHERE m.tenant_id=%s AND m.user_id=%s::uuid
                      AND m.status='active'""",
                 (tenant_id, user_id),
             )
