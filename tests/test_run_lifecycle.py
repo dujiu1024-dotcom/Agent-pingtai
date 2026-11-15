@@ -1,4 +1,5 @@
-import asyncio\nimport unittest
+import asyncio
+import unittest
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore,RunLifecycleManager,RunStatus
 class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
