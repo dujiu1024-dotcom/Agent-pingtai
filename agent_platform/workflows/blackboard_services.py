@@ -48,17 +48,30 @@ class BlackboardMultiExpertServices:
             return Scope.TASK, str(task_id)
         return Scope.RUN, str(state["run_id"])
 
+    @staticmethod
+    def _assert_same_entry(existing: BlackboardEntry, proposed: BlackboardEntry) -> None:
+        # Deterministic IDs make retries idempotent only when the retried
+        # operation has the same semantic payload. Never silently accept a
+        # different model result under an already-used run/stage key.
+        fields = ("scope", "scope_id", "kind", "content", "author_id", "source_refs")
+        if any(getattr(existing, field) != getattr(proposed, field) for field in fields):
+            raise RuntimeError(
+                f"Blackboard idempotency conflict for entry {proposed.entry_id}"
+            )
+
     async def _propose_once(self, entry: BlackboardEntry) -> BlackboardEntry:
         existing = await self.repository.get(entry.entry_id)
         if existing is not None:
+            self._assert_same_entry(existing, entry)
             return existing
         try:
             return await self.repository.propose(entry)
         except Exception:
             # A concurrent retry may have won the unique insert; only suppress
-            # the error when the durable entry is now present.
+            # the error when the durable entry is now present and identical.
             existing = await self.repository.get(entry.entry_id)
             if existing is not None:
+                self._assert_same_entry(existing, entry)
                 return existing
             raise
 
