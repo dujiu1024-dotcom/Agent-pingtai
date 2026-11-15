@@ -63,6 +63,7 @@ def create_knowledge_memory_router(
     resolve_knowledge_principal: KnowledgePrincipalResolver | None = None,
     resolve_memory_principal: MemoryPrincipalResolver | None = None,
     rag: RAGService | None = None,
+    memory_extraction: MemoryExtractionService | None = None,
     identity_repository: Any | None = None,
 ) -> APIRouter:
     if identity_repository is not None:
