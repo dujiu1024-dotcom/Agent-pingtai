@@ -42,7 +42,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         second=MemoryCandidate(tenant_id="t",scope=MemoryScope.TENANT,scope_id="t",content="new policy",source_ref="policy:2",confidence=.95,created_by="admin",conflict_key="policy.version")
         proposed=await service.propose(second)
         self.assertEqual(proposed.status,MemoryStatus.CONFLICT)
-        admin=MemoryPrincipal(tenant_id="t",user_id="admin",roles=frozenset({"memory.manage"}))
+        admin=MemoryPrincipal(tenant_id="t",user_id="admin",permissions=frozenset({"memory.manage"}))
         selected=await service.resolve_conflict(principal=admin,conflict_key="policy.version",selected_memory_id=second.memory_id)
         self.assertEqual(selected.status,MemoryStatus.ACTIVE)
         self.assertEqual(await service.retrieve(principal=admin),[selected])
