@@ -68,10 +68,14 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.ingest(document=newer,content=b"second version")
         private=Document(tenant_id="t",title="private",source_uri="file://private",content_hash="x",scope=KnowledgeScope.PRIVATE,owner_user_id="u2")
         await service.ingest(document=private,content=b"private content")
+        changing_scope=Document(tenant_id="t",title="shared v1",source_uri="file://changing-scope",content_hash="x")
+        await service.ingest(document=changing_scope,content=b"formerly shared")
+        private_revision=replace(changing_scope,version=2,title="private revision",scope=KnowledgeScope.PRIVATE,owner_user_id="u2")
+        await service.ingest(document=private_revision,content=b"now private")
         docs=await service.list_documents(principal=KnowledgePrincipal(tenant_id="t",user_id="u1"))
         self.assertEqual({doc.title for doc in docs},{"tenant v2"})
         owner_docs=await service.list_documents(principal=KnowledgePrincipal(tenant_id="t",user_id="u2"))
-        self.assertEqual({doc.title for doc in owner_docs},{"tenant v2","private"})
+        self.assertEqual({doc.title for doc in owner_docs},{"tenant v2","private","private revision"})
 
     async def test_chunking_recovers_pdf_page_number(self):
         from agent_platform.knowledge.chunking import chunk_document
