@@ -73,6 +73,17 @@ class PostgresKnowledgeRepository:
         for score,row,kinds in ordered:
             enriched=dict(row);enriched["score"]=score;hits.append(self._hit(enriched,"hybrid:"+ "+".join(sorted(kinds))))
         return hits
+    async def get_connector_cursor(self,tenant_id: str,connector_id: str)->str|None:
+        conn=await self._connect()
+        async with conn:
+            cur=await conn.execute("SELECT cursor FROM knowledge_connector_sync_state WHERE tenant_id=%s AND connector_id=%s",(tenant_id,connector_id))
+            row=await cur.fetchone()
+        return row["cursor"] if row else None
+    async def save_connector_cursor(self,tenant_id: str,connector_id: str,cursor: str)->None:
+        conn=await self._connect()
+        async with conn:
+            async with conn.transaction():
+                await conn.execute("""INSERT INTO knowledge_connector_sync_state(tenant_id,connector_id,cursor,last_synced_at) VALUES(%s,%s,%s,now()) ON CONFLICT(tenant_id,connector_id) DO UPDATE SET cursor=EXCLUDED.cursor,last_synced_at=now(),last_error=NULL""",(tenant_id,connector_id,cursor))
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
         conn=await self._connect()
         async with conn:
