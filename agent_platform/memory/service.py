@@ -105,13 +105,15 @@ class MemoryService:
         records=await self.retrieve(principal=principal,limit=1000)
         return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"updated_at":r.updated_at.isoformat()} for r in records]
     async def resolve_conflict(self,*,principal: MemoryPrincipal,conflict_key: str,selected_memory_id: str)->MemoryRecord:
-        if "memory.manage" not in principal.roles:
-            raise PermissionError("memory.manage role required")
         records=await self.repository.list(principal.tenant_id,limit=5000)
         candidates=[r for r in records if r.candidate.conflict_key==conflict_key and r.status in {MemoryStatus.CONFLICT,MemoryStatus.ACTIVE}]
         selected=next((r for r in candidates if r.candidate.memory_id==selected_memory_id),None)
         if selected is None:
             raise ValueError("selected memory is not part of this conflict set")
+        if not self._can_manage_scope(
+            selected.candidate.scope, selected.candidate.scope_id, principal,
+        ):
+            raise PermissionError("memory conflict management is not authorized")
         group=[r for r in candidates if r.candidate.scope is selected.candidate.scope and r.candidate.scope_id==selected.candidate.scope_id]
         now=utc_now()
         for record in group:
