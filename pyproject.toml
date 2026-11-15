@@ -23,6 +23,7 @@ include = [
   "tests/test_conversation.py",
   "agent_platform/**/*.py",
   "tests/test_identity.py",
+  "tests/test_identity_http.py",
   "tests/test_knowledge_service.py",
   "tests/test_memory_service.py",
   "tests/test_knowledge_memory_postgres_integration.py",
