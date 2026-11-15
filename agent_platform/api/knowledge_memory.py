@@ -48,6 +48,23 @@ def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryS
         try:result=await knowledge.ingest(document=document,content=raw)
         except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
         return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"skipped_unchanged":result.skipped_unchanged}
+    @router.post("/knowledge/upload")
+    async def upload_document(request: Request,title: str,scope: str="private",project_id: str|None=None,source_uri: str|None=None):
+        principal=await resolve_knowledge_principal(request)
+        try:document_scope=KnowledgeScope(scope)
+        except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
+        if document_scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:
+            raise HTTPException(403,"knowledge.manage role required")
+        if document_scope is KnowledgeScope.PROJECT and project_id not in principal.project_ids:
+            raise HTTPException(403,"project access denied")
+        raw=await request.body()
+        if not raw:raise HTTPException(400,"uploaded document is empty")
+        media_type=request.headers.get("content-type","application/octet-stream").split(";")[0].strip()
+        document_id=str(uuid4())
+        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=title,source_uri=source_uri or ("upload://"+document_id),content_hash=hashlib.sha256(raw).hexdigest(),scope=document_scope,project_id=project_id,owner_user_id=principal.user_id if document_scope is KnowledgeScope.PRIVATE else None,media_type=media_type)
+        try:result=await knowledge.ingest(document=document,content=raw)
+        except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
+        return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"media_type":media_type}
     @router.delete("/knowledge/documents/{document_id}",status_code=204)
     async def delete_document(document_id: str,request: Request):
         principal=await resolve_knowledge_principal(request)
