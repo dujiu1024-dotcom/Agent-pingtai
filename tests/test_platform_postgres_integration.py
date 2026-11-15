@@ -621,7 +621,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     resource_type, resource_id, role_id, created_by)
                    VALUES (%s, %s, 'user', %s, 'tenant', %s,
                            'tenant-project-reader', 'integration')""",
-                (uuid4(), self.tenant_id, str(user_id), self.tenant_id),
+                (uuid4(), self.tenant_id, str(tenant_reader_id), self.tenant_id),
             )
             for project_id in project_ids:
                 await conn.execute(
@@ -745,7 +745,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             context.effective_role_ids,
             frozenset({
-                "tenant-member", "project-reader", "tenant-project-reader",
+                "tenant-member", "project-reader",
                 "team-scoped-reader", "knowledge-manager", "agent-runner",
                 "agent-memory-manager",
             }),
