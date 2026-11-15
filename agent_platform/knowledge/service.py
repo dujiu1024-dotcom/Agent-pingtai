@@ -62,7 +62,8 @@ class KnowledgeService:
             return False
         owns_private=document.scope.value=="private" and document.owner_user_id==principal.user_id
         manages_shared="knowledge.manage" in principal.roles
-        if not (owns_private or manages_shared):
+        manages_project=(document.scope.value=="project" and document.project_id in principal.manage_project_ids)
+        if not (owns_private or manages_shared or manages_project):
             raise PermissionError("document deletion is not authorized")
         return await self.repository.delete_document(principal.tenant_id,document_id)
     async def ingest_connector_page(self,*,connector: KnowledgeConnector,tenant_id: str,cursor: str|None=None,limit: int=100)->tuple[list[IngestResult],str|None,bool]:
