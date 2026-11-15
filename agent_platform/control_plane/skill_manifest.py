@@ -15,6 +15,32 @@ import yaml
 from agent_platform.control_plane.registry import RegistryService, RegistryVersion
 
 
+class _UniqueKeySafeLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_unique_mapping(loader: _UniqueKeySafeLoader, node: yaml.MappingNode, deep: bool = False):
+    loader.flatten_mapping(node)
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                "while constructing a Skill manifest",
+                node.start_mark,
+                f"duplicate frontmatter key: {key}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_UniqueKeySafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_unique_mapping,
+)
+
+
 class SkillManifestError(ValueError):
     pass
 
@@ -47,7 +73,7 @@ def parse_skill_document(
     except StopIteration as exc:
         raise SkillManifestError("YAML frontmatter closing delimiter is missing") from exc
     try:
-        metadata = yaml.safe_load("\n".join(lines[1:closing]))
+        metadata = yaml.load("\n".join(lines[1:closing]), Loader=_UniqueKeySafeLoader)
     except yaml.YAMLError as exc:
         raise SkillManifestError("invalid YAML frontmatter") from exc
     if not isinstance(metadata, dict):
