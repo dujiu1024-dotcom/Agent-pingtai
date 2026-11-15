@@ -40,6 +40,9 @@ def create_sessions_router(
         if not await authorize(principal, "session", "*", "create"):
             raise HTTPException(403, "session creation denied")
         service = await resolve_service(principal)
+        repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
+        if repository_tenant != principal.tenant_id:
+            raise HTTPException(403, "session repository tenant mismatch")
         try:
             body = await request.json()
         except Exception as exc:
@@ -85,14 +88,17 @@ def create_sessions_router(
             raise HTTPException(400, "JSON object is required")
         try:
             role = MessageRole(body.get("role"))
+            if role is not MessageRole.USER:
+                raise ValueError("human session endpoint only accepts user messages")
             assets = body.get("asset_ids", [])
             if not isinstance(assets, list) or any(not isinstance(v, str) for v in assets):
                 raise ValueError("asset_ids must be an array of strings")
+            for asset_id in assets:
+                if not await authorize(principal, "file", asset_id, "read"):
+                    raise HTTPException(403, "referenced file access denied")
             message = await service.append_message(
                 tenant_id=principal.tenant_id, actor_id=principal.user_id,
                 session_id=session_id, role=role, content=str(body.get("content") or ""),
-                run_id=str(body["run_id"]) if body.get("run_id") else None,
-                task_id=str(body["task_id"]) if body.get("task_id") else None,
                 asset_ids=tuple(assets), metadata=body.get("metadata") or {},
             )
         except (SessionError, ValueError) as exc:
@@ -105,6 +111,11 @@ def create_sessions_router(
         if not await authorize(principal, "file", "*", "create"):
             raise HTTPException(403, "file upload denied")
         service = await resolve_service(principal)
+        repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
+        if repository_tenant != principal.tenant_id:
+            raise HTTPException(403, "session repository tenant mismatch")
+        if session_id and not await authorize(principal, "session", session_id, "write"):
+            raise HTTPException(403, "session attachment denied")
         filename = request.headers.get("x-filename", "upload.bin")
         media_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
         max_bytes = int(getattr(service, "max_upload_bytes", 25 * 1024 * 1024))
