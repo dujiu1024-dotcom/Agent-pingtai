@@ -7,6 +7,7 @@
 - `ExpertRegistry` 提供专家能力目录契约，分派结果可校验专家是否已注册、启用及满足所需能力；生产适配器应连接控制面 Agent/Skill 目录。
 - `BlackboardMultiExpertServices` 将工作流服务输出写入 `BlackboardRepository`，生产环境使用绑定租户的 PostgreSQL Repository。
 - `create_blackboard_router` 提供条目写入、查询、读取、质疑、裁决和版本修订 API；宿主必须注入身份解析、租户绑定 Repository 工厂和作用域授权器。
+- API 对新写入来源引用调用宿主 `verify_evidence_refs`；有引用但未配置验证器时返回 503，引用缺失或不可访问时返回 422；通过验证后仅持久化去重、去空白的引用。生产宿主需将验证器连接到知识库/文档权限服务，不能以字符串格式检查替代真实校验。
 - PostgreSQL Repository 的 `propose` 在同一事务内写入 Blackboard Entry、事件和 Outbox；事件由既有 Outbox Relay 至 Redis Streams。
 
 ## 持久化节点
@@ -36,4 +37,4 @@
 - `tests/test_blackboard_multi_expert_services.py` 覆盖候选 Entry、冲突、裁决、审批、归档、幂等重试及专家能力匹配/禁用校验。
 - `tests/test_multi_expert_workflow_integration.py` 验证 LangGraph + Blackboard Adapter 的并行专家执行、冲突裁决、人工中断恢复和最终产物血缘。
 - `tests/test_platform_postgres_integration.py` 增加真实 PostgreSQL Repository 工作流集成用例，覆盖事务 Outbox 和租户隔离；该用例仍须由 CI 实际运行通过，不能仅凭代码存在视为验收完成。
-- `tests/test_blackboard_api.py` 覆盖 HTTP API 的读写、质疑、裁决、版本冲突和作用域越权拒绝。
+- `tests/test_blackboard_api.py` 覆盖 HTTP API 的读写、质疑、裁决、版本冲突、作用域越权、证据校验失败及验证器未配置时的 fail-closed 行为。
