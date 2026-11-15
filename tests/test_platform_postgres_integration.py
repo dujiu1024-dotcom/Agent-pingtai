@@ -14,7 +14,13 @@ if DSN:
     from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditSink
     from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
     from agent_platform.blackboard.protocol import VersionConflict
-    from agent_platform.contracts import BlackboardEntry, BlackboardEvent, EntryKind, EntryStatus, Scope
+    from agent_platform.contracts import (
+        BlackboardEntry,
+        BlackboardEvent,
+        EntryKind,
+        EntryStatus,
+        Scope,
+    )
     from agent_platform.events.outbox import PostgresOutboxStore
 
 
@@ -149,7 +155,7 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await other.list_entries(scope=Scope.RUN, scope_id="run-integration"), [])
 
     async def test_concurrent_outbox_claims_do_not_claim_same_row(self):
-        entry = await self.repo.propose(self.make_entry())
+        await self.repo.propose(self.make_entry())
         store_a = PostgresOutboxStore(connection_factory=self.connect)
         store_b = PostgresOutboxStore(connection_factory=self.connect)
         a, b = await asyncio.gather(
