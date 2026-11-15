@@ -67,6 +67,7 @@ class KnowledgePrincipal:
     user_id: str
     project_ids: frozenset[str] = frozenset()
     roles: frozenset[str] = frozenset()
+    permissions: frozenset[str] = frozenset()
     manage_project_ids: frozenset[str] = frozenset()
 
 @dataclass(frozen=True)
