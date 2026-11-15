@@ -88,6 +88,19 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         )
         self.assertTrue(denied_answer.json()["abstained"])
 
+    def test_project_document_write_requires_manage_permission(self):
+        response = self.client.post(
+            "/api/platform/v1/knowledge/documents",
+            json={
+                "title": "project note",
+                "scope": "project",
+                "project_id": "project-a",
+                "content": "project evidence",
+            },
+            headers={"x-roles": "project.read"},
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_memory_requires_confirmation_and_respects_user_scope(self):
         proposed = self.client.post(
             "/api/platform/v1/memories/candidates",
