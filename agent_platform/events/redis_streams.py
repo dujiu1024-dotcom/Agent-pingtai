@@ -1,0 +1,102 @@
+"""Redis Streams transport adapter; PostgreSQL remains the source of truth."""
+
+from __future__ import annotations
+
+import json
+from typing import Any, Mapping
+
+
+class RedisStreamsTransport:
+    def __init__(self, url: str, *, stream_prefix: str = "agent-platform") -> None:
+        if not url:
+            raise ValueError("Redis URL is required")
+        self.url = url
+        self.stream_prefix = stream_prefix
+        self._client: Any = None
+
+    async def connect(self) -> None:
+        try:
+            from redis.asyncio import Redis
+        except ImportError as exc:
+            raise RuntimeError("Install redis>=5 to use Redis Streams transport") from exc
+        self._client = Redis.from_url(self.url, decode_responses=True)
+
+    def _stream(self, tenant_id: str, topic: str) -> str:
+        if not tenant_id or not topic:
+            raise ValueError("tenant_id and topic are required")
+        return f"{self.stream_prefix}:{tenant_id}:{topic}"
+
+    async def publish(
+        self,
+        *,
+        tenant_id: str,
+        topic: str,
+        event_id: str,
+        payload: Mapping[str, Any],
+        maxlen: int = 100_000,
+    ) -> str:
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        if not event_id:
+            raise ValueError("event_id is required for idempotent consumption")
+        fields = {
+            "event_id": event_id,
+            "payload": json.dumps(dict(payload), ensure_ascii=False, separators=(",", ":")),
+        }
+        message_id = await self._client.xadd(
+            self._stream(tenant_id, topic), fields, maxlen=maxlen, approximate=True
+        )
+        return str(message_id)
+
+    async def ensure_group(
+        self, *, tenant_id: str, topic: str, group: str, start_id: str = "0"
+    ) -> None:
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        try:
+            await self._client.xgroup_create(
+                self._stream(tenant_id, topic), group, id=start_id, mkstream=True
+            )
+        except Exception as exc:
+            # BUSYGROUP is the only expected idempotent failure.
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    async def read_group(
+        self,
+        *,
+        tenant_id: str,
+        topic: str,
+        group: str,
+        consumer: str,
+        count: int = 20,
+        block_ms: int = 5_000,
+    ) -> list[tuple[str, dict[str, str]]]:
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        rows = await self._client.xreadgroup(
+            group,
+            consumer,
+            {self._stream(tenant_id, topic): ">"},
+            count=count,
+            block=block_ms,
+        )
+        return [
+            (message_id, fields)
+            for _stream_name, messages in rows
+            for message_id, fields in messages
+        ]
+
+    async def acknowledge(
+        self, *, tenant_id: str, topic: str, group: str, message_id: str
+    ) -> int:
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        return int(await self._client.xack(
+            self._stream(tenant_id, topic), group, message_id
+        ))
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
