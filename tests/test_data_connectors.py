@@ -65,6 +65,21 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
             secret_ref="secret://tenant-a/source", scopes=("files.read",),
         ))
 
+    async def test_connection_registration_requires_secret_reference(self):
+        connection = await self.service.create_connection(
+            tenant_id="tenant-a", connection_id="drive-2", provider="drive",
+            display_name="Shared Drive", secret_ref="secret://tenant-a/drive-2",
+            scopes=("files.read", " files.read "), actor_id="user-a",
+        )
+        self.assertEqual(connection.display_name, "Shared Drive")
+        self.assertEqual(connection.scopes, ("files.read",))
+        with self.assertRaises(ConnectorError):
+            await self.service.create_connection(
+                tenant_id="tenant-a", connection_id="drive-3", provider="drive",
+                display_name="Unsafe", secret_ref="plaintext-token",
+                scopes=("files.read",), actor_id="user-a",
+            )
+
     async def test_incremental_sync_advances_cursor_and_is_idempotent(self):
         self.assertEqual(await self.service.sync_once(
             tenant_id="tenant-a", connection_id="drive-1",
