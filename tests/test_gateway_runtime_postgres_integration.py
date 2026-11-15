@@ -51,6 +51,19 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(found.instance_id,"gateway-a")
   self.assertTrue(await other.deactivate(self.tenant,self.run))
   self.assertEqual((await self.directory.get(self.tenant,self.run)).status,"inactive")
+ async def test_worker_lease_is_exclusive_and_expired_lease_can_be_reclaimed(self):
+  first=await self.states.claim_recoverable("worker-a",tenant_id=self.tenant,limit=10,lease_seconds=5)
+  self.assertEqual([row.run_id for row in first],[self.run])
+  second=await self.states.claim_recoverable("worker-b",tenant_id=self.tenant,limit=10,lease_seconds=5)
+  self.assertEqual(second,[])
+  self.assertTrue(await self.states.heartbeat(self.tenant,self.run,"worker-a",lease_seconds=5))
+  async with await self.connect() as conn:
+   await conn.execute("UPDATE platform_runs SET lease_expires_at=now()-interval '1 second' WHERE tenant_id=%s AND run_id=%s",(self.tenant,self.run))
+   await conn.commit()
+  reclaimed=await self.states.claim_recoverable("worker-b",tenant_id=self.tenant,limit=10,lease_seconds=5)
+  self.assertEqual([row.run_id for row in reclaimed],[self.run])
+  self.assertFalse(await self.states.heartbeat(self.tenant,self.run,"worker-a",lease_seconds=5))
+  self.assertTrue(await self.states.release_lease(self.tenant,self.run,"worker-b"))
  async def test_run_state_store_enforces_transitions_and_optimistic_version(self):
   queued=await self.states.get(self.tenant,self.run); self.assertEqual(queued.status,RunStatus.QUEUED)
   running=await self.states.transition(RunSnapshot(self.tenant,self.run,RunStatus.RUNNING,queued.version),expected_version=queued.version)
