@@ -1,0 +1,112 @@
+"""FastAPI router for Knowledge and Memory use cases.
+
+Authentication is supplied by the host application; this router never trusts
+tenant/user identifiers from request bodies.
+"""
+from __future__ import annotations
+import hashlib
+from datetime import datetime
+from typing import Awaitable,Callable,Any
+from fastapi import APIRouter,HTTPException,Request
+from fastapi.responses import JSONResponse
+from agent_platform.knowledge.contracts import Document,KnowledgePrincipal,KnowledgeScope
+from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService
+KnowledgePrincipalResolver=Callable[[Request],Awaitable[KnowledgePrincipal]]
+MemoryPrincipalResolver=Callable[[Request],Awaitable[MemoryPrincipal]]
+def _memory_visible_for_review(record: Any,principal: MemoryPrincipal)->bool:
+    candidate=record.candidate
+    if candidate.tenant_id!=principal.tenant_id:return False
+    if candidate.scope is MemoryScope.USER:return candidate.scope_id==principal.user_id
+    if candidate.scope is MemoryScope.PROJECT:return candidate.scope_id in principal.project_ids and "memory.manage" in principal.roles
+    if candidate.scope is MemoryScope.AGENT:return candidate.scope_id in principal.agent_ids and "memory.manage" in principal.roles
+    return "memory.manage" in principal.roles
+def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryService,resolve_knowledge_principal: KnowledgePrincipalResolver,resolve_memory_principal: MemoryPrincipalResolver)->APIRouter:
+    router=APIRouter(prefix="/api/platform/v1",tags=["knowledge","memory"])
+    @router.get("/knowledge/documents")
+    async def list_documents(request: Request,limit: int=100):
+        principal=await resolve_knowledge_principal(request)
+        try:documents=await knowledge.list_documents(principal=principal,limit=limit)
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+        return {"items":[{"document_id":d.document_id,"version":d.version,"title":d.title,"source_uri":d.source_uri,"scope":d.scope.value,"project_id":d.project_id,"media_type":d.media_type,"content_hash":d.content_hash} for d in documents]}
+    @router.post("/knowledge/documents")
+    async def ingest_document(request: Request):
+        principal=await resolve_knowledge_principal(request);body=await request.json()
+        try:scope=KnowledgeScope(body.get("scope","private"))
+        except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
+        project_id=body.get("project_id")
+        if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:raise HTTPException(403,"knowledge.manage role required")
+        if scope is KnowledgeScope.PROJECT and project_id not in principal.project_ids:raise HTTPException(403,"project access denied")
+        document_id=body.get("document_id")
+        source_uri=body.get("source_uri") or ("upload://"+str(document_id or "pending"))
+        content=body.get("content")
+        if not isinstance(content,str) or not content.strip():raise HTTPException(400,"text content is required")
+        raw=content.encode("utf-8")
+        from uuid import uuid4
+        document=Document(tenant_id=principal.tenant_id,document_id=str(document_id or uuid4()),title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"))
+        try:result=await knowledge.ingest(document=document,content=raw)
+        except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
+        return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"skipped_unchanged":result.skipped_unchanged}
+    @router.delete("/knowledge/documents/{document_id}",status_code=204)
+    async def delete_document(document_id: str,request: Request):
+        principal=await resolve_knowledge_principal(request)
+        try:deleted=await knowledge.delete_document(principal=principal,document_id=document_id)
+        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+        if not deleted:raise HTTPException(404,"document not found")
+        return JSONResponse(status_code=204,content=None)
+    @router.get("/knowledge/search")
+    async def search_knowledge(request: Request,q: str,limit: int=8):
+        principal=await resolve_knowledge_principal(request)
+        try:hits=await knowledge.retrieve(principal=principal,query=q,limit=limit)
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+        return {"items":[{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":h.retrieval_trace} for h in hits]}
+    @router.get("/memories")
+    async def list_memories(request: Request,limit: int=100):
+        principal=await resolve_memory_principal(request)
+        try:records=await memory.retrieve(principal=principal,limit=limit)
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+        return {"items":[{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"status":r.status.value,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None} for r in records]}
+    @router.get("/memories/export")
+    async def export_memories(request: Request):
+        principal=await resolve_memory_principal(request)
+        return {"items":await memory.export(principal=principal)}
+    @router.post("/memories/candidates")
+    async def propose_memory(request: Request):
+        principal=await resolve_memory_principal(request);body=await request.json()
+        try:scope=MemoryScope(body.get("scope","user"))
+        except ValueError as exc:raise HTTPException(400,"invalid memory scope") from exc
+        scope_id=str(body.get("scope_id") or (principal.user_id if scope is MemoryScope.USER else ""))
+        if scope is MemoryScope.USER and scope_id!=principal.user_id:raise HTTPException(403,"cannot write another user's memory")
+        if scope is MemoryScope.PROJECT and scope_id not in principal.project_ids:raise HTTPException(403,"project access denied")
+        if scope is MemoryScope.AGENT and scope_id not in principal.agent_ids:raise HTTPException(403,"agent access denied")
+        if scope is MemoryScope.TENANT and "memory.manage" not in principal.roles:raise HTTPException(403,"memory.manage role required")
+        expiry=body.get("expires_at")
+        try:expires_at=datetime.fromisoformat(expiry) if expiry else None
+        except ValueError as exc:raise HTTPException(400,"expires_at must be ISO-8601") from exc
+        candidate=MemoryCandidate(tenant_id=principal.tenant_id,scope=scope,scope_id=scope_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=float(body.get("confidence",0.5)),created_by=principal.user_id,expires_at=expires_at)
+        try:record=await memory.propose(candidate)
+        except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+        return {"memory_id":record.candidate.memory_id,"status":record.status.value}
+    @router.post("/memories/{memory_id}/confirm")
+    async def confirm_memory(memory_id: str,request: Request):
+        principal=await resolve_memory_principal(request);record=await memory.repository.get(principal.tenant_id,memory_id)
+        if record is None:raise HTTPException(404,"memory candidate not found")
+        if not _memory_visible_for_review(record,principal):raise HTTPException(403,"memory confirmation is not authorized")
+        try:updated=await memory.confirm(tenant_id=principal.tenant_id,memory_id=memory_id,confirmer_id=principal.user_id)
+        except ValueError as exc:raise HTTPException(409,str(exc)) from exc
+        return {"memory_id":updated.candidate.memory_id,"status":updated.status.value,"version":updated.version}
+    @router.patch("/memories/{memory_id}")
+    async def correct_memory(memory_id: str,request: Request):
+        principal=await resolve_memory_principal(request);body=await request.json()
+        try:updated=await memory.correct(principal=principal,memory_id=memory_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=body.get("confidence"))
+        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+        except ValueError as exc:raise HTTPException(404,str(exc)) from exc
+        return {"memory_id":updated.candidate.memory_id,"version":updated.version,"status":updated.status.value}
+    @router.delete("/memories/{memory_id}",status_code=204)
+    async def forget_memory(memory_id: str,request: Request):
+        principal=await resolve_memory_principal(request)
+        try:deleted=await memory.forget(principal=principal,memory_id=memory_id)
+        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+        if not deleted:raise HTTPException(404,"memory not found")
+        return JSONResponse(status_code=204,content=None)
+    return router
