@@ -58,10 +58,10 @@ class WebhookTransport(Protocol):
 
 class WebhookStore(Protocol):
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]: ...
-    async def complete(self, delivery_id: str, *, response_code: int) -> None: ...
-    async def retry(self, delivery_id: str, *, next_attempt_at: datetime,
+    async def complete(self, tenant_id: str, delivery_id: str, *, response_code: int) -> None: ...
+    async def retry(self, tenant_id: str, delivery_id: str, *, next_attempt_at: datetime,
                     response_code: int | None) -> None: ...
-    async def dead_letter(self, delivery_id: str, *, response_code: int | None) -> None: ...
+    async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None) -> None: ...
 
 
 def signature(secret: bytes, timestamp: str, body: bytes) -> str:
@@ -117,18 +117,18 @@ class WebhookDispatcher:
                     timeout_seconds=self.timeout_seconds,
                 )
                 if 200 <= code < 300:
-                    await self.store.complete(attempt.delivery_id, response_code=code)
+                    await self.store.complete(attempt.tenant_id, attempt.delivery_id, response_code=code)
                     result["delivered"] += 1
                     continue
             except Exception:
                 code = None
             if attempt.attempt >= self.max_attempts:
-                await self.store.dead_letter(attempt.delivery_id, response_code=code)
+                await self.store.dead_letter(attempt.tenant_id, attempt.delivery_id, response_code=code)
                 result["dead_lettered"] += 1
             else:
                 delay = min(3600, 2 ** min(attempt.attempt, 10))
                 await self.store.retry(
-                    attempt.delivery_id, next_attempt_at=self.clock() + timedelta(seconds=delay),
+                    attempt.tenant_id, attempt.delivery_id, next_attempt_at=self.clock() + timedelta(seconds=delay),
                     response_code=code,
                 )
                 result["retrying"] += 1
@@ -192,18 +192,18 @@ class PostgresWebhookStore:
             result.append((subscription, payload, attempt))
         return result
 
-    async def complete(self, delivery_id: str, *, response_code: int) -> None:
-        await self._update(delivery_id, "delivered", response_code=response_code)
+    async def complete(self, tenant_id: str, delivery_id: str, *, response_code: int) -> None:
+        await self._update(tenant_id, delivery_id, "delivered", response_code=response_code)
 
-    async def retry(self, delivery_id: str, *, next_attempt_at: datetime,
+    async def retry(self, tenant_id: str, delivery_id: str, *, next_attempt_at: datetime,
                     response_code: int | None) -> None:
-        await self._update(delivery_id, "retrying", response_code=response_code,
+        await self._update(tenant_id, delivery_id, "retrying", response_code=response_code,
                            next_attempt_at=next_attempt_at)
 
-    async def dead_letter(self, delivery_id: str, *, response_code: int | None) -> None:
-        await self._update(delivery_id, "dead_lettered", response_code=response_code)
+    async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None) -> None:
+        await self._update(tenant_id, delivery_id, "dead_lettered", response_code=response_code)
 
-    async def _update(self, delivery_id: str, status: str, *,
+    async def _update(self, tenant_id: str, delivery_id: str, status: str, *,
                       response_code: int | None,
                       next_attempt_at: datetime | None = None) -> None:
         connection = await self._connect()
@@ -214,6 +214,6 @@ class PostgresWebhookStore:
                        SET status=%s,response_code=%s,next_attempt_at=%s,
                            delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END,
                            lease_token=NULL,lease_until=NULL
-                       WHERE delivery_id=%s AND status='leased'""",
-                    (status,response_code,next_attempt_at,status,UUID(delivery_id)),
+                       WHERE tenant_id=%s AND delivery_id=%s AND status='leased'""",
+                    (status,response_code,next_attempt_at,status,tenant_id,UUID(delivery_id)),
                 )
