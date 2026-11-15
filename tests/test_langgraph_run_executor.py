@@ -62,4 +62,23 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
    await executor.execute(tenant_id="tenant",run_id="unclaimed",input={"prompt":"must not run"})
   self.assertEqual((await store.get("tenant","unclaimed")).status,RunStatus.QUEUED)
   self.assertEqual(graph.calls,[])
+
+ async def test_cancellation_stops_graph_task_and_marks_run_interrupted(self):
+  started=asyncio.Event();cancelled=asyncio.Event()
+  class BlockingGraph(FakeGraph):
+   async def ainvoke(self,payload,*,config):
+    started.set()
+    try: await asyncio.Event().wait()
+    except asyncio.CancelledError:
+     cancelled.set()
+     raise
+  await self.store.create("tenant","cancelled")
+  executor=LangGraphRunExecutor(graph=BlockingGraph(),lifecycle=self.manager,timeout_seconds=10)
+  task=asyncio.create_task(executor.execute(tenant_id="tenant",run_id="cancelled",input={}))
+  await started.wait()
+  task.cancel()
+  with self.assertRaises(asyncio.CancelledError): await task
+  self.assertTrue(cancelled.is_set())
+  self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.INTERRUPTED)
+
 if __name__=="__main__":unittest.main()
