@@ -140,6 +140,13 @@ class LangGraphRunExecutor:
    try:
     await self._run_leased(row.tenant_id,row.run_id,ref_input,timeout=self.timeout_seconds,already_claimed=True)
    except asyncio.TimeoutError:raise
+   except WorkerLeaseLost:
+    current=await self.lifecycle.store.get(row.tenant_id,row.run_id)
+    if current and current.status==RunStatus.RUNNING:
+     ref=await self._checkpoint_ref(row.tenant_id,row.run_id)
+     await self.lifecycle.mark_interrupted(
+      row.tenant_id,row.run_id,checkpoint_ref=ref,reason="worker lease lost during recovery")
+    raise
    ref=await self._checkpoint_ref(row.tenant_id,row.run_id)
    await self._finish(row.tenant_id,row.run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
   return await self.lifecycle.recover(checkpoint_loader=verify_checkpoint,resume=resume,limit=limit,
