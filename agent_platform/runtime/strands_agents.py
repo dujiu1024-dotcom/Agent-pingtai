@@ -7,9 +7,9 @@ constructs agents with no tools, no tool-directory loading, and no plugins.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncContextManager, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, Callable, Protocol
+from typing import Any, AsyncContextManager, Callable, Protocol
 
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
