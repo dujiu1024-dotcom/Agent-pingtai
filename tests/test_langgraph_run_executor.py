@@ -107,4 +107,31 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(cancelled.is_set())
   self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.INTERRUPTED)
 
+
+ async def test_recovery_lease_loss_keeps_run_interrupted(self):
+  started=asyncio.Event();cancelled=asyncio.Event()
+  class LeaseExpiringStore(InMemoryRunStateStore):
+   async def heartbeat(self,tenant_id,run_id,worker_id,*,lease_seconds):
+    return False
+   async def release_lease(self,tenant_id,run_id,worker_id):
+    return True
+  class BlockingGraph(FakeGraph):
+   async def ainvoke(self,payload,*,config):
+    started.set()
+    try: await asyncio.Event().wait()
+    except asyncio.CancelledError:
+     cancelled.set()
+     raise
+  store=LeaseExpiringStore();manager=RunLifecycleManager(store);graph=BlockingGraph()
+  executor=LangGraphRunExecutor(graph=graph,lifecycle=manager,timeout_seconds=10,lease_seconds=5)
+  await store.create("tenant","recovery-lease-lost")
+  await manager.start("tenant","recovery-lease-lost")
+  await manager.mark_interrupted("tenant","recovery-lease-lost",checkpoint_ref="checkpoint-1",reason="previous worker lost")
+  graph.checkpoints["tenant:recovery-lease-lost"]="checkpoint-1"
+  recovered=await executor.recover(load_initial_input=lambda row:{})
+  self.assertEqual(recovered,[])
+  self.assertTrue(started.is_set())
+  self.assertTrue(cancelled.is_set())
+  self.assertEqual((await store.get("tenant","recovery-lease-lost")).status,RunStatus.INTERRUPTED)
+
 if __name__=="__main__":unittest.main()
