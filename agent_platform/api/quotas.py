@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import csv
+import inspect
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import Any
@@ -10,9 +12,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 from agent_platform.identity.models import Principal
+from agent_platform.quotas.service import Budget, QuotaService
 
 
-def create_quota_reporting_router(*, quota_store: Any) -> APIRouter:
+def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/quotas", tags=["quotas"])
 
     def actor(request: Request) -> Principal:
@@ -33,6 +36,57 @@ def create_quota_reporting_router(*, quota_store: Any) -> APIRouter:
             principal.tenant_id, start, end,
             run_id=run_id, model_key=model_key, limit=limit,
         )
+
+    @router.post("/budgets", status_code=201)
+    async def configure_budget(request: Request):
+        principal = actor(request)
+        if quota_service is None or authorize_manage is None:
+            raise HTTPException(503, "quota administration is not configured")
+        allowed = authorize_manage(principal)
+        if inspect.isawaitable(allowed):
+            allowed = await allowed
+        if allowed is not True:
+            raise HTTPException(403, "quota management permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON object required")
+            scope_type = str(body.get("scope_type") or "")
+            scope_id = str(body.get("scope_id") or "")
+            if scope_type == "tenant":
+                if scope_id != principal.tenant_id:
+                    raise PermissionError("tenant budget scope must match authenticated tenant")
+            elif scope_type in {"project", "agent", "model"}:
+                if authorize_scope is None:
+                    raise PermissionError("resource scope authorization is not configured")
+                scope_allowed = authorize_scope(principal, scope_type, scope_id)
+                if inspect.isawaitable(scope_allowed):
+                    scope_allowed = await scope_allowed
+                if scope_allowed is not True:
+                    raise PermissionError("quota scope is not accessible")
+            else:
+                raise ValueError("unsupported quota scope")
+            def optional_decimal(name: str):
+                value = body.get(name)
+                return None if value is None else Decimal(str(value))
+            budget = Budget(
+                tenant_id=principal.tenant_id, scope_type=scope_type, scope_id=scope_id,
+                period_start=datetime.fromisoformat(str(body["period_start"])),
+                period_end=datetime.fromisoformat(str(body["period_end"])),
+                hard_tokens=int(body["hard_tokens"]) if body.get("hard_tokens") is not None else None,
+                hard_cost_usd=optional_decimal("hard_cost_usd"),
+                hard_concurrency=int(body["hard_concurrency"]) if body.get("hard_concurrency") is not None else None,
+                soft_tokens=int(body["soft_tokens"]) if body.get("soft_tokens") is not None else None,
+                soft_cost_usd=optional_decimal("soft_cost_usd"),
+            )
+            await quota_service.configure(budget)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"tenant_id": budget.tenant_id, "scope_type": budget.scope_type,
+                "scope_id": budget.scope_id, "period_start": budget.period_start.isoformat(),
+                "period_end": budget.period_end.isoformat(), "configured": True}
 
     @router.get("/usage")
     async def usage_report(request: Request, start: datetime, end: datetime,
