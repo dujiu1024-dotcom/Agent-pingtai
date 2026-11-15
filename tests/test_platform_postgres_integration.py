@@ -534,43 +534,82 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         project_ids = [f"project-{uuid4().hex[:8]}" for _ in range(3)]
         agent_id = f"agent-{uuid4().hex[:8]}"
         user_id = uuid4()
+        tenant_reader_id = uuid4()
         email = f"{user_id}@example.com"
+        tenant_reader_email = f"{tenant_reader_id}@example.com"
         async with await self.connect() as conn:
+            for subject_id, subject_email, display_name in (
+                (user_id, email, "Scoped Integration User"),
+                (tenant_reader_id, tenant_reader_email, "Tenant Reader"),
+            ):
+                await conn.execute(
+                    """INSERT INTO platform_users
+                       (user_id, email, email_normalized, display_name, password_hash, status)
+                       VALUES (%s, %s, %s, %s, 'integration-hash', 'active')""",
+                    (subject_id, subject_email, subject_email, display_name),
+                )
+                await conn.execute(
+                    """INSERT INTO platform_tenant_memberships
+                       (tenant_id, user_id, status)
+                       VALUES (%s, %s, 'active')""",
+                    (self.tenant_id, subject_id),
+                )
             await conn.execute(
-                """INSERT INTO platform_users
-                   (user_id, email, email_normalized, display_name, password_hash, status)
-                   VALUES (%s, %s, %s, 'RBAC Integration User', 'integration-hash', 'active')""",
-                (user_id, email, email, ),
-            )
-            await conn.execute(
-                """INSERT INTO platform_tenant_memberships
-                   (tenant_id, user_id, status)
-                   VALUES (%s, %s, 'active')""",
-                (self.tenant_id, user_id),
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'tenant-member', 'Tenant Member')""",
+                (self.tenant_id,),
             )
             await conn.execute(
                 """INSERT INTO platform_roles (tenant_id, role_id, name)
-                   VALUES (%s, 'reader', 'Reader')""",
+                   VALUES (%s, 'project-reader', 'Project Reader')""",
                 (self.tenant_id,),
             )
-            for permission_key in ("project.read", "identity.role.manage", "user.manage"):
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'tenant-project-reader', 'Tenant Project Reader')""",
+                (self.tenant_id,),
+            )
+            for permission_key in ("identity.role.manage", "user.manage", "project.read",
+                                   "knowledge.manage", "memory.manage", "agent.run"):
                 await conn.execute(
                     """INSERT INTO platform_permissions (permission_key, description)
                        VALUES (%s, %s) ON CONFLICT DO NOTHING""",
                     (permission_key, permission_key),
                 )
+            for permission_key in ("identity.role.manage", "user.manage"):
                 await conn.execute(
                     """INSERT INTO platform_role_permissions
                        (tenant_id, role_id, permission_key)
-                       VALUES (%s, 'reader', %s)""",
+                       VALUES (%s, 'tenant-member', %s)""",
                     (self.tenant_id, permission_key),
                 )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'project-reader', 'project.read')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'tenant-project-reader', 'project.read')""",
+                (self.tenant_id,),
+            )
             await conn.execute(
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
-                   VALUES (%s, %s, 'user', %s, 'tenant', %s, 'reader', 'integration')""",
+                   VALUES (%s, %s, 'user', %s, 'tenant', %s,
+                           'tenant-member', 'integration')""",
                 (uuid4(), self.tenant_id, str(user_id), self.tenant_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'tenant', %s,
+                           'tenant-project-reader', 'integration')""",
+                (uuid4(), self.tenant_id, str(tenant_reader_id), self.tenant_id),
             )
             for project_id in project_ids:
                 await conn.execute(
@@ -579,49 +618,34 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                        VALUES (%s, %s, %s, %s)""",
                     (self.tenant_id, project_id, project_id, project_id),
                 )
-            # Membership without an RBAC binding is not an effective grant.
+            # Project membership without an RBAC binding is not an effective grant.
             await conn.execute(
                 """INSERT INTO platform_project_members
                    (tenant_id, project_id, user_id, status)
                    VALUES (%s, %s, %s, 'active')""",
                 (self.tenant_id, project_ids[0], user_id),
             )
-            # Project 1 is read-only.
+            # Project 1 is read-only for the first user.
             await conn.execute(
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
-                   VALUES (%s, %s, 'user', %s, 'project', %s, 'reader', 'integration')""",
+                   VALUES (%s, %s, 'user', %s, 'project', %s,
+                           'project-reader', 'integration')""",
                 (uuid4(), self.tenant_id, str(user_id), project_ids[1]),
-            )
-            # Project 2 grants knowledge management, independently of project 1.
-            await conn.execute(
-                """INSERT INTO platform_permissions (permission_key, description)
-                   VALUES ('knowledge.manage', 'Manage project knowledge')
-                   ON CONFLICT DO NOTHING"""
             )
             await conn.execute(
                 """INSERT INTO platform_roles (tenant_id, role_id, name)
                    VALUES (%s, 'knowledge-manager', 'Knowledge Manager')""",
                 (self.tenant_id,),
             )
-            await conn.execute(
-                """INSERT INTO platform_role_permissions
-                   (tenant_id, role_id, permission_key)
-                   VALUES (%s, 'knowledge-manager', 'knowledge.manage')""",
-                (self.tenant_id,),
-            )
-            await conn.execute(
-                """INSERT INTO platform_permissions (permission_key, description)
-                   VALUES ('memory.manage', 'Manage scoped memory')
-                   ON CONFLICT DO NOTHING"""
-            )
-            await conn.execute(
-                """INSERT INTO platform_role_permissions
-                   (tenant_id, role_id, permission_key)
-                   VALUES (%s, 'knowledge-manager', 'memory.manage')""",
-                (self.tenant_id,),
-            )
+            for permission_key in ("knowledge.manage", "memory.manage"):
+                await conn.execute(
+                    """INSERT INTO platform_role_permissions
+                       (tenant_id, role_id, permission_key)
+                       VALUES (%s, 'knowledge-manager', %s)""",
+                    (self.tenant_id, permission_key),
+                )
             await conn.execute(
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
@@ -637,20 +661,22 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id, agent_id),
             )
             await conn.execute(
-                """INSERT INTO platform_permissions (permission_key, description)
-                   VALUES ('agent.run', 'Run agents') ON CONFLICT DO NOTHING"""
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'agent-runner', 'Agent Runner')""",
+                (self.tenant_id,),
             )
             await conn.execute(
                 """INSERT INTO platform_role_permissions
                    (tenant_id, role_id, permission_key)
-                   VALUES (%s, 'reader', 'agent.run') ON CONFLICT DO NOTHING""",
+                   VALUES (%s, 'agent-runner', 'agent.run')""",
                 (self.tenant_id,),
             )
             await conn.execute(
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
-                   VALUES (%s, %s, 'user', %s, 'agent', %s, 'reader', 'integration')""",
+                   VALUES (%s, %s, 'user', %s, 'agent', %s,
+                           'agent-runner', 'integration')""",
                 (uuid4(), self.tenant_id, str(user_id), agent_id),
             )
             await conn.execute(
@@ -679,10 +705,10 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, user_id=str(user_id),
         )
         self.assertIsNotNone(context)
-        self.assertEqual(context.tenant_roles, frozenset({"reader"}))
+        self.assertEqual(context.tenant_roles, frozenset({"tenant-member"}))
         self.assertEqual(
             context.tenant_permissions,
-            frozenset({"project.read", "identity.role.manage", "user.manage"}),
+            frozenset({"identity.role.manage", "user.manage"}),
         )
         self.assertEqual(context.project_ids, frozenset(project_ids[1:]))
         self.assertEqual(
@@ -693,6 +719,15 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(context.agent_ids, frozenset({agent_id}))
         self.assertEqual(context.memory_manage_agent_ids, frozenset({agent_id}))
+
+        tenant_reader_context = await repository.get_authorization_context(
+            tenant_id=self.tenant_id, user_id=str(tenant_reader_id),
+        )
+        self.assertIsNotNone(tenant_reader_context)
+        self.assertEqual(tenant_reader_context.project_ids, frozenset(project_ids))
+        self.assertEqual(tenant_reader_context.knowledge_manage_project_ids, frozenset())
+        self.assertEqual(tenant_reader_context.agent_ids, frozenset())
+
         self.assertIsNone(await repository.get_authorization_context(
             tenant_id=f"other-{uuid4().hex}", user_id=str(user_id),
         ))
