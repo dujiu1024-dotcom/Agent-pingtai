@@ -41,6 +41,7 @@ class PasswordHasher:
                 return False
             if (int(n), int(r), int(p)) != (PasswordHasher.N, PasswordHasher.R, PasswordHasher.P):
                 return False
+
             def decode(value: str) -> bytes:
                 return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
             salt, expected = decode(salt_text), decode(digest_text)
