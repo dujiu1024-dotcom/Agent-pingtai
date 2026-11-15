@@ -1,6 +1,6 @@
 """FastAPI identity route integration tests."""
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from agent_platform.api.identity import create_identity_router
 from agent_platform.identity.http import IdentityASGIMiddleware
