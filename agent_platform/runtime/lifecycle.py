@@ -104,28 +104,43 @@ class RunLifecycleManager:
   updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500]),expected_version=old.version)
   if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
   return updated
- async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100)->list[str]:
+ async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100,worker_id:str|None=None,lease_seconds:int=60)->list[str]:
   resumed=[]
-  for row in await self.store.recoverable(limit):
-   # Human approval pauses are deliberate and must never be auto-resumed.
-   if row.status==RunStatus.PAUSED: continue
-   # An interrupted execution without a durable checkpoint cannot be resumed safely.
-   if row.status==RunStatus.INTERRUPTED and not row.checkpoint_ref:
-    await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.FAILED,row.version,
-     last_error="interrupted Run has no checkpoint; automatic recovery refused"),expected_version=row.version)
-    continue
+  claim=getattr(self.store,"claim_recoverable",None)
+  rows=await claim(worker_id,limit=limit,lease_seconds=lease_seconds) if worker_id and claim else await self.store.recoverable(limit)
+  release=getattr(self.store,"release_lease",None)
+  for row in rows:
+   running=None
    try:
+    # Human approval pauses are deliberate and must never be auto-resumed.
+    if row.status==RunStatus.PAUSED: continue
+    # A claimed RUNNING row has an expired worker lease and is now safe to interrupt.
+    if row.status==RunStatus.RUNNING:
+     row=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.INTERRUPTED,row.version,
+      checkpoint_ref=row.checkpoint_ref,last_error="previous worker lease expired"),expected_version=row.version)
+     if self.token_service is not None:
+      await self.token_service.revoke_run(tenant_id=row.tenant_id,run_id=row.run_id)
+    # Interrupted execution without a checkpoint cannot be resumed safely.
+    if row.status==RunStatus.INTERRUPTED and not row.checkpoint_ref:
+     await self.finish(row.tenant_id,row.run_id,RunStatus.FAILED,
+      error="interrupted Run has no checkpoint; automatic recovery refused")
+     continue
     if row.checkpoint_ref: await checkpoint_loader(row)
     running=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.RUNNING,row.version,
      checkpoint_ref=row.checkpoint_ref),expected_version=row.version)
     await resume(running)
+    resumed.append(row.run_id)
    except Exception as exc:
     latest=await self.store.get(row.tenant_id,row.run_id)
-    if latest and latest.status in {RunStatus.RUNNING,RunStatus.INTERRUPTED}:
+    # Do not fail a Run if another worker won the optimistic claim race.
+    owns_running=running is not None and latest is not None and latest.status==RunStatus.RUNNING and latest.version==running.version
+    checkpoint_invalid=running is None and latest is not None and latest.status==RunStatus.INTERRUPTED
+    if owns_running or checkpoint_invalid:
      await self.finish(row.tenant_id,row.run_id,RunStatus.FAILED,
       checkpoint_ref=row.checkpoint_ref,error=f"recovery failed: {str(exc)[:400]}")
-    continue
-   resumed.append(row.run_id)
+   finally:
+    if worker_id and release is not None:
+     await release(row.tenant_id,row.run_id,worker_id)
   return resumed
  async def run_with_timeout(self,tenant_id:str,run_id:str,operation:Any,*,timeout:float)->Any:
   if timeout<=0: raise ValueError("timeout must be positive")
