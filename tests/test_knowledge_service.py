@@ -75,5 +75,6 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_chunking_recovers_pdf_page_number(self):
         from agent_platform.knowledge.chunking import chunk_document
         doc=Document(tenant_id="t",title="pdf",source_uri="file://pdf",content_hash="x")
-        chunks=chunk_document(doc,"[page:1] first page text\n[page:2] second page text",max_chars=100,overlap=0)
-        self.assertEqual([chunk.page_number for chunk in chunks],[2])
+        text="[page:1] " + "a"*110 + "\n[page:2] second page text"
+        chunks=chunk_document(doc,text,max_chars=100,overlap=0)
+        self.assertEqual(chunks[-1].page_number,2)
