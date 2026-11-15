@@ -55,6 +55,33 @@ class KnowledgeService:
             if item.document.tenant_id!=tenant_id:raise PermissionError("connector returned a document for another tenant")
             results.append(await self.ingest(document=item.document,content=item.content))
         return results,page.next_cursor,page.has_more
+    async def sync_connector(self,*,connector: KnowledgeConnector,tenant_id: str,limit: int=100,max_pages: int=10)->dict[str,object]:
+        if limit<1 or limit>500:
+            raise ValueError("limit must be between 1 and 500")
+        if max_pages<1 or max_pages>100:
+            raise ValueError("max_pages must be between 1 and 100")
+        cursor=await self.repository.get_connector_cursor(tenant_id,connector.connector_id)
+        page_count=0
+        document_count=0
+        while page_count<max_pages:
+            page=await connector.list_changed(tenant_id=tenant_id,cursor=cursor,limit=limit)
+            for item in page.items:
+                if item.document.tenant_id!=tenant_id:
+                    raise PermissionError("connector returned a document for another tenant")
+                await self.ingest(document=item.document,content=item.content)
+                document_count+=1
+            if page.next_cursor is not None:
+                if page.has_more and page.next_cursor==cursor:
+                    raise ValueError("connector cursor did not advance while more pages remain")
+                await self.repository.save_connector_cursor(tenant_id,connector.connector_id,page.next_cursor)
+                cursor=page.next_cursor
+            page_count+=1
+            if not page.has_more:
+                break
+            if page.next_cursor is None:
+                raise ValueError("connector must return next_cursor when has_more is true")
+        return {"connector_id":connector.connector_id,"pages":page_count,"documents":document_count,"cursor":cursor,"has_more":page_count==max_pages and bool(page.has_more)}
+
     async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8)->list[RetrievalHit]:
         if not query.strip():raise ValueError("query must not be empty")
         if limit<1 or limit>50:raise ValueError("limit must be between 1 and 50")
