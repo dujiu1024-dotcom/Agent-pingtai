@@ -1,0 +1,1 @@
+# Optional Strands Agents runtime comparison adapter.\nstrands-agents[openai]>=1.42,<2.0\n
