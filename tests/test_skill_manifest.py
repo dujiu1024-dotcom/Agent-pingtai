@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import unittest
 
+from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
 from agent_platform.control_plane.skill_manifest import (
-    SkillManifestError, parse_skill_document, validate_skill_bundle_paths,
+    SkillManifestError, create_skill_draft, parse_skill_document,
+    validate_skill_bundle_paths,
 )
 
 
@@ -52,6 +54,20 @@ Read the source, extract supported claims, and cite every conclusion.
         ):
             with self.assertRaises(SkillManifestError):
                 validate_skill_bundle_paths(paths)
+
+
+class SkillRegistryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_validated_skill_is_saved_as_declarative_registry_draft(self):
+        registry = RegistryService(InMemoryRegistryRepository())
+        document = "---\nname: safe-skill\ndescription: A safe skill.\nallowed-tools: [knowledge.search]\n---\nUse cited sources only."
+        saved = await create_skill_draft(
+            registry=registry, tenant_id="tenant-a", item_id="safe-skill",
+            document=document, bundle_paths=("SKILL.md", "references/guide.md"),
+            available_tools={"knowledge.search"}, actor_id="admin",
+        )
+        self.assertEqual(saved.kind, "skill")
+        self.assertEqual(saved.definition["format"], "agent-skills")
+        self.assertEqual(saved.definition["manifest"]["allowed_tools"], ["knowledge.search"])
 
 
 if __name__ == "__main__":
