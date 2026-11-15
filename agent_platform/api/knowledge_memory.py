@@ -133,6 +133,22 @@ def create_knowledge_memory_router(
     async def export_memories(request: Request):
         principal=await resolve_memory_principal(request)
         return {"items":await memory.export(principal=principal)}
+    if memory_extraction is not None:
+        @router.post("/memories/extract")
+        async def extract_memory_candidates(request: Request):
+            principal=await resolve_memory_principal(request);body=await request.json()
+            turn=MemoryTurn(
+                tenant_id=principal.tenant_id,user_id=principal.user_id,
+                source_ref=str(body.get("source_ref") or ""),
+                user_message=str(body.get("user_message") or ""),
+                assistant_message=str(body.get("assistant_message") or ""),
+                agent_id=str(body["agent_id"]) if body.get("agent_id") else None,
+                project_id=str(body["project_id"]) if body.get("project_id") else None,
+            )
+            try:records=await memory_extraction.propose_from_turn(principal=principal,turn=turn)
+            except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
+            except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+            return {"items":[{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"confidence":r.candidate.confidence,"status":r.status.value} for r in records]}
     @router.post("/memories/candidates")
     async def propose_memory(request: Request):
         principal=await resolve_memory_principal(request);body=await request.json()
