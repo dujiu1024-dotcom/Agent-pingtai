@@ -44,3 +44,10 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             "platform_quota_budgets", "platform_quota_reservations",
             "platform_usage_ledger", "platform_usage_reconciliation",
         })
+        columns = await (
+            await conn.execute(
+                """SELECT column_name FROM information_schema.columns
+                   WHERE table_name='platform_usage_ledger' AND column_name='reservation_id'"""
+            )
+        ).fetchall()
+        self.assertEqual(len(columns), 1)
