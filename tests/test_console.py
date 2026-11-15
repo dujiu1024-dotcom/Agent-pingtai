@@ -26,6 +26,7 @@ class ConsoleHttpTest(unittest.TestCase):
         cls.orig_db = dbm.DB_PATH
         cls.orig_out = agency.OUTPUT_DIR
         cls.orig_token = console.CONSOLE_TOKEN
+        cls.orig_legacy_auth_enabled = console.LEGACY_CONSOLE_AUTH_ENABLED
         dbm.DB_PATH = cls.tmp / "agency.db"
         agency.OUTPUT_DIR = cls.tmp / "outputs"
         agency.OUTPUT_DIR.mkdir(parents=True)
@@ -45,6 +46,7 @@ class ConsoleHttpTest(unittest.TestCase):
         dbm.DB_PATH = cls.orig_db
         agency.OUTPUT_DIR = cls.orig_out
         console.CONSOLE_TOKEN = cls.orig_token
+        console.LEGACY_CONSOLE_AUTH_ENABLED = cls.orig_legacy_auth_enabled
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def request(self, method, path, body=None, headers=None):
@@ -60,6 +62,15 @@ class ConsoleHttpTest(unittest.TestCase):
     def test_missing_token_rejected(self):
         status, _ = self.request("GET", "/api/state")
         self.assertEqual(status, 401)
+
+    def test_legacy_auth_can_be_disabled_at_identity_cutover(self):
+        original = console.LEGACY_CONSOLE_AUTH_ENABLED
+        console.LEGACY_CONSOLE_AUTH_ENABLED = False
+        try:
+            status, _ = self.request("GET", "/api/state?token=" + TOKEN)
+            self.assertEqual(status, 401)
+        finally:
+            console.LEGACY_CONSOLE_AUTH_ENABLED = original
 
     def test_path_traversal_rejected(self):
         status, _ = self.request(

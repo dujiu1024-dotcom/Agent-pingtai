@@ -142,3 +142,37 @@ python3 agency.py init && python3 agency.py doctor
 - 报「闸门未通过」：先 `gate confirm`，或确认该项目确实已签确认单
 - 报「没有证据不能关闭任务」：`--evidence` 填产出物路径或命令输出摘要
 - 测试失败：单跑 `python3 -m unittest tests.test_gate -v` 看具体用例
+
+
+---
+
+## 智能体平台改造（新架构）
+
+当前主干保留原 FDE 工作台。新平台在独立目录 `agent_platform/` 中并行建设，按阶段迁移，不影响现有 CLI。
+
+- 架构总设计：[`docs/architecture/智能体平台改造总设计.md`](docs/architecture/智能体平台改造总设计.md)
+- 共享领域契约：`agent_platform/contracts.py`
+- Hybrid Blackboard 接口：`agent_platform/blackboard/`
+- Supervised 审批策略：`agent_platform/approval/`
+- LangGraph 与 Harness 适配端口：`agent_platform/runtime/`
+- DeepSeek Harness 实验适配器（需隔离环境）：`agent_platform/runtime/deepseek_harness.py`，可选依赖 `pip install -r requirements-harness-dsh.txt`
+- Strands Agents 对比适配器（受控模型代理、Gateway-only 工具）：`agent_platform/runtime/strands_agents.py`；官方 MCP Client Provider：`agent_platform/runtime/strands_mcp_provider.py`；可选依赖 `pip install -r requirements-harness-strands.txt`
+- Harness 同任务基准测试：`agent_platform/runtime/harness_benchmark.py`，统一比较通过率、延迟、Token 用量与失败类型
+- 多专家真实运行时集成测试：覆盖 LangGraph 并行专家、冲突处理、人工审批暂停/恢复
+- PostgreSQL + pgvector / Redis Streams 服务级集成测试：`tests/test_platform_postgres_integration.py`、`tests/test_redis_streams_integration.py`，由 `platform-integration` 工作流自动运行
+- 模型模板注册与校验：`agent_platform/models/`
+- 多专家 LangGraph 流程：`agent_platform/workflows/multi_expert.py`
+- PostgreSQL 核心结构：`agent_platform/storage/postgres/`
+- Redis Streams 事件传输、Pending Entries 恢复、PostgreSQL 消费回执与幂等消费者：`agent_platform/events/`
+- 事件可靠性：PostgreSQL 指数退避（2 秒起、最多 300 秒）、默认 5 次失败上限、Redis 死信 Stream；迁移脚本：`agent_platform/storage/postgres/003_event_retry_and_dlq.sql`
+
+旧 CLI 继续使用标准库。新平台可选依赖单独安装：`pip install -r requirements-platform.txt`。尚未完成的基础设施接入不会影响旧系统运行。
+
+
+### Gateway-only MCP Profile
+- `agent_platform/tools/gateway_mcp.py`：按 Run 创建 MCP Server，只暴露可信白名单内的工具。
+- `agent_platform/tools/gateway_mcp_http.py`：按 Run 创建带短期 Bearer Token 校验的 Streamable HTTP ASGI App；Token 校验绑定 actor、资源 URL、过期时间和撤销状态。
+- 工具身份、租户、角色、审批 ID、资源解析均来自服务端上下文；参数使用 JSON Schema 校验。
+- MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
+- Strands 通过官方 `MCPClient` 连接当前 Run 的 HTTPS MCP endpoint；短期 Bearer Token 由可信控制面按 Run 签发，服务端将 Token 映射到不可变的 tenant/actor/role/run/agent/审批上下文。Provider 使用精确工具过滤，并校验发现集合与 Run 白名单完全一致；缺少 Provider 或 endpoint 时拒绝工具调用。L2 审批 ID 按动作摘要绑定，不按工具名宽泛复用。
+- 已通过 MCP SDK 内存传输验证 ClientSession 工具发现和调用；已实现 Strands 官方 MCPClient 的 HTTPS/短期 Token 连接 Provider，并增加连接生命周期、白名单和失败关闭测试。Gateway endpoint 的生产服务化、Token 签发/撤销及真实网络联调仍需完成。

@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "general-reasoning",
+      "version": 1,
+      "purpose": "通用分析与推理",
+      "provider": "openai-compatible",
+      "model": "replace-with-deployment-model",
+      "fallback_model": null,
+      "parameters": {
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_tokens": 8192,
+        "timeout_seconds": 120
+      },
+      "reasoning": {
+        "effort": "medium"
+      },
+      "limits": {
+        "max_retries": 2,
+        "daily_token_budget": 200000
+      },
+      "capabilities": [
+        "text",
+        "tool_calling",
+        "structured_output"
+      ],
+      "allowed_data_levels": [
+        "public",
+        "internal"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "expert-analysis",
+      "version": "1",
+      "purpose": "专家并行分析",
+      "provider": "openai-compatible",
+      "model": "replace-with-deployment-model",
+      "fallback_model": null,
+      "parameters": {
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "max_tokens": 6144,
+        "timeout_seconds": 150
+      },
+      "reasoning": {
+        "effort": "high"
+      },
+      "limits": {
+        "max_retries": 2,
+        "daily_token_budget": 300000
+      },
+      "capabilities": [
+        "text",
+        "tool_calling",
+        "structured_output"
+      ],
+      "allowed_data_levels": [
+        "public",
+        "internal",
+        "confidential"
+      ],
+      "status": "draft"
+    }
+  ]
+}
