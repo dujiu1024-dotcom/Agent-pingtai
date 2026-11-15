@@ -116,6 +116,24 @@ class RedisStreamsTransport:
             results = await pipe.execute()
         return str(results[0])
 
+    async def pending_summary(
+        self, *, tenant_id: str, topic: str, group: str
+    ) -> dict[str, Any]:
+        """Return operational counters for dashboards and health checks."""
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        source = self._stream(tenant_id, topic)
+        pending = await self._client.xpending(source, group)
+        return {
+            "pending": int(pending.get("pending", 0)),
+            "oldest_pending_id": pending.get("min"),
+            "newest_pending_id": pending.get("max"),
+            "consumer_count": len(pending.get("consumers", [])),
+            "dead_letter_count": int(await self._client.xlen(
+                self._dead_letter_stream(tenant_id, topic)
+            )),
+        }
+
     async def close(self) -> None:
         if self._client is not None:
             await self._client.aclose()
