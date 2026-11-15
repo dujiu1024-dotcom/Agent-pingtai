@@ -1,4 +1,4 @@
-"""PostgreSQL-backed idempotency receipts for at-least-once event consumers."""
+"""PostgreSQL-backed idempotency receipts with exponential retry backoff."""
 
 from __future__ import annotations
 
@@ -40,9 +40,10 @@ class PostgresEventReceiptStore:
                     ON CONFLICT (tenant_id, consumer_name, event_id) DO UPDATE
                     SET status = 'processing', attempts = platform_event_receipts.attempts + 1,
                         lease_token = EXCLUDED.lease_token, lease_until = EXCLUDED.lease_until,
-                        last_error = NULL
+                        last_error = NULL, next_attempt_at = NULL
                     WHERE platform_event_receipts.status = 'processing'
                       AND (platform_event_receipts.lease_until IS NULL OR platform_event_receipts.lease_until < now())
+                      AND (platform_event_receipts.next_attempt_at IS NULL OR platform_event_receipts.next_attempt_at <= now())
                     RETURNING attempts
                     ''',
                     (tenant_id, consumer_name, UUID(event_id), token, self.lease_seconds),
@@ -57,7 +58,8 @@ class PostgresEventReceiptStore:
         async with connection:
             cursor = await connection.execute(
                 '''SELECT 1 FROM platform_event_receipts
-                   WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s AND status='completed' ''',
+                   WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s
+                     AND status IN ('completed', 'dead_lettered') ''',
                 (tenant_id, consumer_name, UUID(event_id)),
             )
             return await cursor.fetchone() is not None
@@ -69,7 +71,7 @@ class PostgresEventReceiptStore:
                 cursor = await connection.execute(
                     '''UPDATE platform_event_receipts
                        SET status='completed', completed_at=now(), lease_token=NULL,
-                           lease_until=NULL, last_error=NULL
+                           lease_until=NULL, last_error=NULL, next_attempt_at=NULL
                        WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s
                          AND status='processing' AND lease_token=%s
                        RETURNING event_id''',
@@ -83,7 +85,26 @@ class PostgresEventReceiptStore:
             async with connection.transaction():
                 cursor = await connection.execute(
                     '''UPDATE platform_event_receipts
-                       SET lease_token=NULL, lease_until=NULL, last_error=%s
+                       SET lease_token=NULL, lease_until=NULL, last_error=%s,
+                           next_attempt_at=now() + make_interval(
+                               secs => LEAST(300, power(2, LEAST(attempts, 8)))::int
+                           )
+                       WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s
+                         AND status='processing' AND lease_token=%s
+                       RETURNING event_id''',
+                    (error[:1000], claim.tenant_id, claim.consumer_name, UUID(claim.event_id), UUID(claim.lease_token)),
+                )
+                return await cursor.fetchone() is not None
+
+    async def dead_letter(self, claim: EventReceiptClaim, error: str) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    '''UPDATE platform_event_receipts
+                       SET status='dead_lettered', dead_lettered_at=now(),
+                           lease_token=NULL, lease_until=NULL, next_attempt_at=NULL,
+                           last_error=%s
                        WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s
                          AND status='processing' AND lease_token=%s
                        RETURNING event_id''',
