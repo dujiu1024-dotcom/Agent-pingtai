@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
+from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.service import (
     InMemoryMemoryRepository,
@@ -35,13 +36,19 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
                 roles=frozenset(request.headers.get("x-roles", "").split()),
             )
 
+        class CitationGenerator:
+            async def generate(self, *, query, context):
+                return {"answer": "Evidence-backed response.", "citation_ids": [context[0]["citation_id"]]}
+
+        self.knowledge = KnowledgeService(InMemoryKnowledgeRepository())
         app = FastAPI()
         app.include_router(
             create_knowledge_memory_router(
-                knowledge=KnowledgeService(InMemoryKnowledgeRepository()),
+                knowledge=self.knowledge,
                 memory=MemoryService(InMemoryMemoryRepository()),
                 resolve_knowledge_principal=resolve_knowledge,
                 resolve_memory_principal=resolve_memory,
+                rag=RAGService(knowledge=self.knowledge, generator=CitationGenerator()),
             )
         )
         self.client = TestClient(app)
@@ -67,6 +74,19 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         )
         self.assertEqual(other.json()["items"], [])
         self.assertEqual(len(owner.json()["items"]), 1)
+        grounded = self.client.post(
+            "/api/platform/v1/knowledge/answer",
+            json={"query": "confidential"},
+        )
+        self.assertEqual(grounded.status_code, 200)
+        self.assertFalse(grounded.json()["abstained"])
+        self.assertEqual(len(grounded.json()["citations"]), 1)
+        denied_answer = self.client.post(
+            "/api/platform/v1/knowledge/answer",
+            json={"query": "confidential"},
+            headers={"x-user": "user-b"},
+        )
+        self.assertTrue(denied_answer.json()["abstained"])
 
     def test_memory_requires_confirmation_and_respects_user_scope(self):
         proposed = self.client.post(
