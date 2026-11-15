@@ -75,34 +75,35 @@ class GatewayService:
   return url
  async def _heartbeat_loop(self,tenant_id:str,run_id:str)->None:
   key=(tenant_id,run_id)
-  try:
-   while True:
-    await asyncio.sleep(max(1,self.lease_seconds/3))
+  while True:
+   await asyncio.sleep(max(1,self.lease_seconds/3))
+   try:
     renewed=await self.directory.heartbeat(tenant_id,run_id,self.instance_id,lease_seconds=self.lease_seconds)
+   except asyncio.CancelledError:
+    raise
+   except Exception:
+    # Keep retrying transient directory failures, but never serve past the
+    # locally enforced deadline. Retire the local verifier once it expires.
     async with self._lock:
-     if renewed and key in self._apps:
-      self._lease_expires[key]=datetime.now(timezone.utc)+timedelta(seconds=self.lease_seconds)
+     deadline=self._lease_expires.get(key)
+     if deadline is not None and deadline>datetime.now(timezone.utc):
       continue
-     app=self._apps.pop(key,None);self._heartbeat_tasks.pop(key,None);self._lease_expires.pop(key,None)
-     verifier=getattr(getattr(app,"state",None),"gateway_token_verifier",None)
-     if verifier is not None and hasattr(verifier,"revoke"):verifier.revoke()
-     return
-  except asyncio.CancelledError:
-   raise
-  except Exception:
-   # A transient directory outage must not silently kill the lease task. The
-   # local deadline still makes the endpoint fail closed while retries run.
-   await asyncio.sleep(1)
-   async with self._lock:
-    deadline=self._lease_expires.get(key)
-    if deadline is None or deadline<=datetime.now(timezone.utc):
      app=self._apps.pop(key,None)
      self._heartbeat_tasks.pop(key,None)
      self._lease_expires.pop(key,None)
      verifier=getattr(getattr(app,"state",None),"gateway_token_verifier",None)
      if verifier is not None and hasattr(verifier,"revoke"):verifier.revoke()
-     return
-   await self._heartbeat_loop(tenant_id,run_id)
+    return
+   async with self._lock:
+    if renewed and key in self._apps:
+     self._lease_expires[key]=datetime.now(timezone.utc)+timedelta(seconds=self.lease_seconds)
+     continue
+    app=self._apps.pop(key,None)
+    self._heartbeat_tasks.pop(key,None)
+    self._lease_expires.pop(key,None)
+    verifier=getattr(getattr(app,"state",None),"gateway_token_verifier",None)
+    if verifier is not None and hasattr(verifier,"revoke"):verifier.revoke()
+    return
  async def unmount_run(self,*,tenant_id:str,run_id:str)->bool:
   key=(tenant_id,run_id)
   async with self._lock:
