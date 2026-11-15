@@ -39,7 +39,7 @@ class GatewayMCPEndpoint:
             or parsed.fragment
         ):
             raise ValueError(
-                "Gateway MCP endpoint must be an HTTPS URL without userinfo, query, or fragment"
+                "Gateway MCP endpoint must be HTTPS (or loopback HTTP) without userinfo, query, or fragment"
             )
         if not self.bearer_token.strip():
             raise ValueError("Gateway MCP endpoint bearer token must not be empty")
