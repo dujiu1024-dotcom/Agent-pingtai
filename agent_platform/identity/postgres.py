@@ -79,14 +79,7 @@ class PostgresIdentityRepository:
                 """SELECT DISTINCT p.project_id
                    FROM platform_projects p
                    WHERE p.tenant_id=%s AND p.status='active'
-                     AND (
-                       EXISTS (
-                         SELECT 1 FROM platform_project_members pm
-                         WHERE pm.tenant_id=p.tenant_id
-                           AND pm.project_id=p.project_id
-                           AND pm.user_id=%s AND pm.status='active'
-                       )
-                       OR EXISTS (
+                     AND EXISTS (
                          SELECT 1
                          FROM platform_role_bindings b
                          JOIN platform_role_permissions rp
@@ -114,9 +107,8 @@ class PostgresIdentityRepository:
                                  AND tm.user_id=%s AND tm.status='active'
                              ))
                            )
-                       )
-                     )""",
-                (tenant_id, user_id, user_id, user_id),
+                       )""",
+                (tenant_id, user_id, user_id),
             )
             project_ids = frozenset(row["project_id"] for row in await cursor.fetchall())
 
