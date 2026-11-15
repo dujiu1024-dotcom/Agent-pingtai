@@ -27,7 +27,6 @@ if DSN:
     from agent_platform.identity.models import ResourceRef
     from agent_platform.identity.postgres import PostgresIdentityRepository
     from agent_platform.identity.security import PasswordHasher
-    from agent_platform.identity.tenants import create_tenant_with_owner
     from agent_platform.identity.service import (
         AuthenticationError,
         AuthorizationDenied,
@@ -36,6 +35,7 @@ if DSN:
     from agent_platform.identity.service_accounts import (
         PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
     )
+    from agent_platform.identity.tenants import create_tenant_with_owner
     from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
     from agent_platform.workflows.multi_expert import build_multi_expert_workflow
 
