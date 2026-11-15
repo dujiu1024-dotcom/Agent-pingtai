@@ -74,6 +74,14 @@ class ApiCredentialRecord:
 
 
 @dataclass(frozen=True)
+class AuthenticatedApiCredential:
+    credential_id: str
+    tenant_id: str
+    user_id: str
+    scopes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class InvitationRecord:
     invitation_id: str
     tenant_id: str
