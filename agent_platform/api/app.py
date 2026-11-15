@@ -14,6 +14,8 @@ from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.workbench import create_workbench_router
+from agent_platform.api.quotas import create_quota_reporting_router
+from agent_platform.quotas.service import QuotaService
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
@@ -127,6 +129,17 @@ def create_platform_app(
         "approvals": False,
         "blackboard": False,
     }))
+    quota_configured = any(value is not None for value in (
+        quota_reporting_store, quota_service, quota_manage_authorizer, quota_scope_authorizer,
+    ))
+    if quota_configured:
+        if quota_reporting_store is None:
+            raise ValueError("quota reporting store is required when quota routes are configured")
+        app.include_router(create_quota_reporting_router(
+            quota_store=quota_reporting_store, quota_service=quota_service,
+            authorize_manage=quota_manage_authorizer,
+            authorize_scope=quota_scope_authorizer,
+        ))
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
