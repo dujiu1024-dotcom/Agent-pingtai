@@ -2,8 +2,9 @@
 
 This adapter is intentionally restricted to isolated, no-platform-tool PoCs.
 The DSH runtime can execute code and commands; it is not the platform security
-boundary. Production use requires a reviewed profile that routes all tools
-through the platform gateway and a verified disposable execution sandbox.
+boundary. Its read-only mode does not isolate filesystem reads or network access.
+Production use requires an externally verified container boundary, a scoped model
+proxy, and a reviewed profile that routes all platform tools through the gateway.
 """
 
 from __future__ import annotations
@@ -42,6 +43,10 @@ class DeepSeekHarnessAdapter:
         self.home_resolver = home_resolver
         self.provider_environment_resolver = provider_environment_resolver
         self.profile = profile
+        if permission_mode not in {"read-only", "workspace-write"}:
+            raise ValueError("only read-only or workspace-write DSH modes are allowed")
+        if any(not Path(patch).is_absolute() for patch in patches):
+            raise ValueError("all DSH profile patch paths must be absolute")
         self.permission_mode = permission_mode
         self.patches = patches
         self.container_isolation_verified = container_isolation_verified
@@ -77,6 +82,13 @@ class DeepSeekHarnessAdapter:
         provider_env = dict(
             self.provider_environment_resolver(template, request.context)
         )
+        forbidden_env = {
+            key for key in provider_env
+            if key.startswith("DSH_")
+            or key in {"HOME", "PATH", "PYTHONPATH", "NODE_OPTIONS", "BASH_ENV"}
+        }
+        if forbidden_env:
+            raise ValueError("provider environment cannot override Harness or process controls")
         if not any(key.endswith("_BASE_URL") for key in provider_env):
             raise RuntimeError(
                 "DeepSeek Harness must use a scoped model proxy; direct provider credentials are not allowed"
