@@ -1,3 +1,4 @@
 # Optional Strands Agents runtime comparison adapter.
 strands-agents[openai]>=1.42,<2.0
 mcp>=1.27.2,<2.0
+uvicorn>=0.30,<1
