@@ -40,7 +40,9 @@ class PostgresIdentityRepository:
     async def is_active_member(self, *, tenant_id: str, user_id: str) -> bool:
         connection = await self._connection_factory()
         async with connection:
-            cursor = await connection.execute("SELECT 1 FROM platform_tenant_memberships WHERE tenant_id=%s AND user_id=%s AND status='active'", (tenant_id, user_id))
+            cursor = await connection.execute("SELECT 1 FROM platform_tenant_memberships m
+                   JOIN platform_tenants t ON t.tenant_id=m.tenant_id AND t.status='active'
+                   WHERE m.tenant_id=%s AND m.user_id=%s AND m.status='active'", (tenant_id, user_id))
             return await cursor.fetchone() is not None
 
     async def create_session(self, *, session_id: str, tenant_id: str, user_id: str, token_hash: str, expires_at: datetime) -> None:
@@ -65,6 +67,7 @@ class PostgresIdentityRepository:
                     u.email, u.display_name, u.status AS user_status, m.status AS membership_status
                 FROM platform_sessions s JOIN platform_users u ON u.user_id=s.user_id
                 JOIN platform_tenant_memberships m ON m.tenant_id=s.tenant_id AND m.user_id=s.user_id
+                JOIN platform_tenants t ON t.tenant_id=s.tenant_id AND t.status='active'
                 WHERE s.token_hash=%s""", (token_hash,))
             row = await cursor.fetchone()
         if row is None:
@@ -81,9 +84,11 @@ class PostgresIdentityRepository:
                      AND EXISTS (
                        SELECT 1 FROM platform_users u
                        JOIN platform_tenant_memberships m ON m.user_id=u.user_id
+                       JOIN platform_tenants t ON t.tenant_id=m.tenant_id
                        WHERE u.user_id=platform_sessions.user_id
                          AND m.tenant_id=platform_sessions.tenant_id
                          AND u.status='active' AND m.status='active'
+                         AND t.status='active'
                      )
                    RETURNING session_id""",
                 (session_id, tenant_id),
@@ -123,7 +128,7 @@ class PostgresIdentityRepository:
                     )
                   )
             ) AS allowed""", (
-                tenant_id, permission_key, tenant_id, user_id, user_id,
+                tenant_id, permission_key, tenant_id, user_id, tenant_id, user_id, user_id,
                 tenant_id, user_id, resource_type, resource_id, tenant_id, resource_type,
                 tenant_id, resource_id,
             ))
