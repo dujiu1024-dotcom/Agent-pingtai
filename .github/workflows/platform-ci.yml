@@ -12,6 +12,8 @@ on:
       - "tests/test_mcp_adapter.py"
       - "tests/test_model_templates.py"
       - "tests/test_deepseek_harness_adapter.py"
+      - "tests/test_strands_agents_adapter.py"
+      - "tests/test_harness_benchmark.py"
       - "requirements-platform.txt"
       - "requirements-harness-dsh.txt"
       - "requirements-harness-strands.txt"
