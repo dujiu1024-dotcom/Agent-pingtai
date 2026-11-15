@@ -148,6 +148,15 @@ class BlackboardMultiExpertServices:
             decision_entry_ids.append(persisted.entry_id)
         resolved_synthesis = dict(result.get("synthesis", synthesis))
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
+        resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(decision_entry_ids)
+        resolved_entry = BlackboardEntry(
+            entry_id=self._entry_id(run_id, "resolved-synthesis"),
+            scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
+            content={"resolved_synthesis": resolved_synthesis},
+            author_id="conflict-resolver", source_refs=resolution_refs,
+        )
+        persisted_synthesis = await self._propose_once(resolved_entry)
+        resolved_synthesis["blackboard_entry_id"] = persisted_synthesis.entry_id
         result["synthesis"] = resolved_synthesis
         return result
 
