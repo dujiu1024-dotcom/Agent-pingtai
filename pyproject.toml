@@ -30,6 +30,7 @@ include = [
   "tests/test_mcp_adapter.py",
   "tests/test_gateway_mcp.py",
   "tests/test_strands_mcp_provider.py",
+  "tests/test_gateway_mcp_http.py",
   "tests/test_model_templates.py",
   "tests/test_deepseek_harness_adapter.py",
   "tests/test_event_consumer.py",
@@ -66,6 +67,7 @@ files = [
   "agent_platform/models/templates.py",
   "agent_platform/runtime/deepseek_harness.py",
   "agent_platform/runtime/strands_mcp_provider.py",
+  "agent_platform/tools/gateway_mcp_http.py",
   "agent_platform/identity/*.py",
   "tests/test_identity.py",
 ]
