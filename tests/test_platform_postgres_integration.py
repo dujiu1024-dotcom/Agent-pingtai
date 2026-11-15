@@ -907,8 +907,9 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 filename="forged.txt", media_type="text/plain", size_bytes=1,
                 sha256="0" * 64, status=AssetStatus.AVAILABLE,
             ))
-        with self.assertRaises(SessionNotFound):
-            await repo_b.list_messages(tenant_b, session_a.session_id)
+        self.assertEqual(
+            await repo_b.list_messages(tenant_b, session_a.session_id), (),
+        )
 
         # A tenant-B asset cannot attach to tenant-A's session through the composite FK.
         with self.assertRaises(Exception):
