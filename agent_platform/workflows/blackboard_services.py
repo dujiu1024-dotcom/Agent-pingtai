@@ -116,6 +116,18 @@ class BlackboardMultiExpertServices:
             )
             persisted = await self._propose_once(entry)
             conflict["blackboard_entry_id"] = persisted.entry_id
+            challenge = BlackboardEntry(
+                entry_id=self._entry_id(run_id, "challenge:" + key),
+                scope=scope, scope_id=scope_id, kind=EntryKind.CHALLENGE,
+                content={
+                    "conflict_entry_id": persisted.entry_id,
+                    "reason": str(conflict.get("reason") or "expert evidence requires review"),
+                    "evidence_refs": list(refs),
+                },
+                author_id="reviewer", source_refs=refs,
+            )
+            persisted_challenge = await self._propose_once(challenge)
+            conflict["blackboard_challenge_entry_id"] = persisted_challenge.entry_id
             conflicts.append(conflict)
         result["conflicts"] = conflicts
         return result
@@ -148,7 +160,7 @@ class BlackboardMultiExpertServices:
             decision_entry_ids.append(persisted.entry_id)
         resolved_synthesis = dict(result.get("synthesis", synthesis))
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
-        resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(decision_entry_ids)
+        resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids)
         resolved_entry = BlackboardEntry(
             entry_id=self._entry_id(run_id, "resolved-synthesis"),
             scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
@@ -180,6 +192,7 @@ class BlackboardMultiExpertServices:
             entry_id=self._entry_id(run_id, "approval-result"), scope=scope,
             scope_id=scope_id, kind=EntryKind.DECISION,
             content={"approval_result": result}, author_id="human-approver",
+            source_refs=(self._entry_id(run_id, "approval-request"),),
             status=EntryStatus.ACCEPTED if result.get("approved") is True else EntryStatus.REJECTED,
         )
         persisted = await self._propose_once(entry)
@@ -200,9 +213,10 @@ class BlackboardMultiExpertServices:
             refs.append(str(synthesis["blackboard_entry_id"]))
         refs.extend(str(item) for item in synthesis.get("blackboard_decision_entry_ids", []))
         refs.extend(
-            str(item["blackboard_entry_id"])
+            str(item[key])
             for item in state.get("conflicts", [])
-            if item.get("blackboard_entry_id")
+            for key in ("blackboard_entry_id", "blackboard_challenge_entry_id")
+            if item.get(key)
         )
         approval = state.get("approval_result", {})
         if approval.get("blackboard_entry_id"):
