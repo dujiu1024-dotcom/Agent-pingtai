@@ -51,7 +51,11 @@ class IdentityService:
         now = datetime.now(timezone.utc)
         if record is None or record.revoked_at is not None or record.expires_at <= now or record.user_status != "active" or record.membership_status != "active":
             raise AuthenticationError("invalid session")
-        await self._repository.touch_session(session_id=record.session_id, tenant_id=record.tenant_id)
+        touched = await self._repository.touch_session(
+            session_id=record.session_id, tenant_id=record.tenant_id
+        )
+        if not touched:
+            raise AuthenticationError("invalid session")
         return Principal(user_id=record.user_id, tenant_id=record.tenant_id, session_id=record.session_id, email=record.email, display_name=record.display_name)
 
     async def logout(self, principal: Principal) -> bool:
