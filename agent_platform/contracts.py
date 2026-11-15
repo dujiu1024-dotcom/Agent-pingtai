@@ -89,11 +89,13 @@ class BlackboardEvent:
 @dataclass(frozen=True)
 class ModelTemplateRef:
     template_id: str
-    version: str = "1"
+    version: int = 1
 
     def __post_init__(self) -> None:
         if not self.template_id.strip():
             raise ValueError("template_id must not be empty")
+        if self.version < 1:
+            raise ValueError("template version must be >= 1")
 
 
 @dataclass(frozen=True)
