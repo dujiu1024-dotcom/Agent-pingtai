@@ -26,8 +26,12 @@ class GatewayMCPEndpoint:
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.url)
+        loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        secure_transport = parsed.scheme == "https" or (
+            parsed.scheme == "http" and loopback
+        )
         if (
-            parsed.scheme != "https"
+            not secure_transport
             or not parsed.hostname
             or parsed.username is not None
             or parsed.password is not None
