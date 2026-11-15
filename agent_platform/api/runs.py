@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
-from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
+from agent_platform.runtime.lifecycle import RunLifecycleManager
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
