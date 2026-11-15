@@ -55,6 +55,7 @@ include = [
   "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
   "tests/test_quotas.py",
+  "tests/test_quota_postgres_integration.py",
 ]
 
 [tool.ruff.lint]
