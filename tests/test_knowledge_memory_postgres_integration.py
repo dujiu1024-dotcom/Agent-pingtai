@@ -78,3 +78,10 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
             self.assertEqual((await cur.fetchone())["n"],4)
         self.assertEqual(await self.memory.retrieve(principal=principal),[])
+
+    async def test_connector_cursor_is_durable_and_tenant_scoped(self):
+        await self.knowledge.save_connector_cursor(self.tenant_id,"fixture","cursor-1")
+        self.assertEqual(await self.knowledge.get_connector_cursor(self.tenant_id,"fixture"),"cursor-1")
+        self.assertIsNone(await self.knowledge.get_connector_cursor(self.tenant_id+"-other","fixture"))
+        await self.knowledge.save_connector_cursor(self.tenant_id,"fixture","cursor-2")
+        self.assertEqual(await self.knowledge.get_connector_cursor(self.tenant_id,"fixture"),"cursor-2")
