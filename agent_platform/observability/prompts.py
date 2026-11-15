@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from string import Formatter
 
-_VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\\Z")
+_VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ class PromptRegistry:
             raise KeyError("prompt has no active version")
         if version is None and prompt_id in self._canary:
             candidate, percentage = self._canary[prompt_id]
-            bucket = int(hashlib.sha256(rollout_key.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF * 100
+            bucket = int(hashlib.sha256(rollout_key.encode("utf-8")).hexdigest()[:8], 16) / 0x100000000 * 100
             if bucket < percentage:
                 selected = candidate
         try:
