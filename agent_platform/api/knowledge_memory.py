@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime
 from typing import Awaitable,Callable,Any
+from uuid import UUID,uuid4
 from fastapi import APIRouter,HTTPException,Request
 from fastapi.responses import JSONResponse
 from agent_platform.knowledge.contracts import Document,KnowledgePrincipal,KnowledgeScope
@@ -37,13 +38,13 @@ def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryS
         project_id=body.get("project_id")
         if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:raise HTTPException(403,"knowledge.manage role required")
         if scope is KnowledgeScope.PROJECT and project_id not in principal.project_ids:raise HTTPException(403,"project access denied")
-        document_id=body.get("document_id")
-        source_uri=body.get("source_uri") or ("upload://"+str(document_id or "pending"))
+        try:document_id=str(UUID(str(body["document_id"]))) if body.get("document_id") else str(uuid4())
+        except ValueError as exc:raise HTTPException(400,"document_id must be a UUID") from exc
+        source_uri=body.get("source_uri") or ("upload://"+document_id)
         content=body.get("content")
         if not isinstance(content,str) or not content.strip():raise HTTPException(400,"text content is required")
         raw=content.encode("utf-8")
-        from uuid import uuid4
-        document=Document(tenant_id=principal.tenant_id,document_id=str(document_id or uuid4()),title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"))
+        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"))
         try:result=await knowledge.ingest(document=document,content=raw)
         except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
         return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"skipped_unchanged":result.skipped_unchanged}
@@ -83,8 +84,10 @@ def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryS
         expiry=body.get("expires_at")
         try:expires_at=datetime.fromisoformat(expiry) if expiry else None
         except ValueError as exc:raise HTTPException(400,"expires_at must be ISO-8601") from exc
-        candidate=MemoryCandidate(tenant_id=principal.tenant_id,scope=scope,scope_id=scope_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=float(body.get("confidence",0.5)),created_by=principal.user_id,expires_at=expires_at)
-        try:record=await memory.propose(candidate)
+        try:
+            confidence=float(body.get("confidence",0.5))
+            candidate=MemoryCandidate(tenant_id=principal.tenant_id,scope=scope,scope_id=scope_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=confidence,created_by=principal.user_id,expires_at=expires_at)
+            record=await memory.propose(candidate)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"memory_id":record.candidate.memory_id,"status":record.status.value}
     @router.post("/memories/{memory_id}/confirm")
