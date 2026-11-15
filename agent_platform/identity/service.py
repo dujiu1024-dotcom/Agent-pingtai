@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
-from agent_platform.identity.models import IssuedSession, Principal, ResourceRef
+from agent_platform.identity.models import (
+    AuthenticatedApiCredential, IssuedApiCredential, IssuedSession,
+    Principal, ResourceRef,
+)
 from agent_platform.identity.protocols import IdentityRepository
 from agent_platform.identity.security import CredentialError, PasswordHasher, issue_opaque_token, token_digest
 
@@ -98,4 +102,112 @@ class IdentityService:
             tenant_id=principal.tenant_id, actor_id=principal.user_id,
             binding_id=binding_id, resource_type=resource.resource_type,
             resource_id=resource.resource_id,
+        )
+
+
+    async def create_api_credential(
+        self, *, principal: Principal, name: str, scopes: tuple[str, ...],
+        ttl: timedelta | None = timedelta(days=90),
+    ) -> IssuedApiCredential:
+        clean_name = name.strip()
+        normalized_scopes = tuple(sorted(set(scope.strip() for scope in scopes if scope.strip())))
+        if not clean_name or len(clean_name) > 100:
+            raise ValueError("credential name must contain 1 to 100 characters")
+        if not normalized_scopes or len(normalized_scopes) > 50:
+            raise ValueError("between 1 and 50 non-empty scopes are required")
+        if any(len(scope) > 128 for scope in normalized_scopes):
+            raise ValueError("scope is too long")
+        if ttl is not None and (ttl <= timedelta(0) or ttl > timedelta(days=365)):
+            raise ValueError("credential ttl must be at most 365 days")
+        token = issue_opaque_token("api")
+        credential_id = str(uuid4())
+        expires_at = datetime.now(timezone.utc) + ttl if ttl is not None else None
+        await self._repository.create_api_credential(
+            credential_id=credential_id, tenant_id=principal.tenant_id,
+            user_id=principal.user_id, name=clean_name,
+            token_hash=token_digest(token), scopes=normalized_scopes,
+            expires_at=expires_at,
+        )
+        return IssuedApiCredential(
+            credential_id=credential_id, tenant_id=principal.tenant_id,
+            user_id=principal.user_id, name=clean_name, access_token=token,
+            scopes=normalized_scopes, expires_at=expires_at,
+        )
+
+    async def authenticate_api_credential(
+        self, access_token: str,
+    ) -> AuthenticatedApiCredential:
+        if not access_token or len(access_token) > 512:
+            raise AuthenticationError("invalid API credential")
+        record = await self._repository.get_api_credential(token_digest(access_token))
+        now = datetime.now(timezone.utc)
+        if (
+            record is None or record.revoked_at is not None
+            or (record.expires_at is not None and record.expires_at <= now)
+            or record.user_status != "active" or record.membership_status != "active"
+        ):
+            raise AuthenticationError("invalid API credential")
+        if not await self._repository.touch_api_credential(
+            credential_id=record.credential_id, tenant_id=record.tenant_id,
+        ):
+            raise AuthenticationError("invalid API credential")
+        return AuthenticatedApiCredential(
+            credential_id=record.credential_id, tenant_id=record.tenant_id,
+            user_id=record.user_id, scopes=record.scopes,
+        )
+
+    async def revoke_api_credential(
+        self, *, principal: Principal, credential_id: str,
+    ) -> bool:
+        if not credential_id.strip():
+            raise ValueError("credential_id is required")
+        return await self._repository.revoke_api_credential(
+            credential_id=credential_id, tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+        )
+
+    async def create_invitation(
+        self, *, principal: Principal, email: str, role_id: str,
+        ttl: timedelta = timedelta(days=7),
+    ) -> tuple[str, str, datetime]:
+        normalized_email = self.normalize_email(email)
+        clean_role = role_id.strip()
+        if not clean_role or len(clean_role) > 100:
+            raise ValueError("role_id is required")
+        if ttl <= timedelta(0) or ttl > timedelta(days=30):
+            raise ValueError("invitation ttl must be at most 30 days")
+        await self.authorize(
+            principal=principal,
+            resource=ResourceRef("tenant", principal.tenant_id),
+            permission_key="user.manage",
+        )
+        token = issue_opaque_token("inv")
+        invitation_id = str(uuid4())
+        expires_at = datetime.now(timezone.utc) + ttl
+        await self._repository.create_invitation(
+            invitation_id=invitation_id, tenant_id=principal.tenant_id,
+            email_normalized=normalized_email, role_id=clean_role,
+            token_hash=token_digest(token), invited_by=principal.user_id,
+            expires_at=expires_at,
+        )
+        return invitation_id, token, expires_at
+
+    async def accept_invitation(
+        self, *, principal: Principal, invitation_token: str,
+    ) -> bool:
+        if not invitation_token or len(invitation_token) > 512:
+            raise AuthenticationError("invalid invitation")
+        token_hash = token_digest(invitation_token)
+        invitation = await self._repository.get_invitation(token_hash)
+        now = datetime.now(timezone.utc)
+        if (
+            invitation is None or invitation.accepted_at is not None
+            or invitation.expires_at <= now
+            or invitation.email_normalized != self.normalize_email(principal.email)
+        ):
+            raise AuthenticationError("invalid invitation")
+        return await self._repository.accept_invitation(
+            invitation_id=invitation.invitation_id, token_hash=token_hash,
+            tenant_id=invitation.tenant_id, user_id=principal.user_id,
+            email_normalized=invitation.email_normalized,
         )
