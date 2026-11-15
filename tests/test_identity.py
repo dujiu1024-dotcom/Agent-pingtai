@@ -139,7 +139,7 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate(issued.access_token)
 
-    async def test_suspended_user_or_membership_is_rejected_on_every_request(self):
+    async def test_suspended_user_is_rejected_on_every_request(self):
         issued = await self.service.login(
             email="admin@example.com", password="correct horse battery staple",
             tenant_id="tenant-a",
@@ -207,6 +207,7 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
             principal=principal, binding_id=binding_id, resource=resource
         ))
         self.assertEqual(self.repo.revokes[0]["tenant_id"], "tenant-a")
+        self.assertEqual(self.repo.revokes[0]["resource_type"], "tenant")
 
 
 if __name__ == "__main__":
