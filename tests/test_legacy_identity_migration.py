@@ -83,6 +83,46 @@ class LegacyIdentityMigrationPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "missing account claim"):
                 build_legacy_migration_plan(database, mapping)
 
+    def test_missing_role_mapping_is_rejected_after_account_claim_is_present(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "legacy.sqlite"
+            mapping = Path(directory) / "mapping.json"
+            self._database(database)
+            mapping.write_text(json.dumps({
+                "mapping_version": 1, "tenant_id": "tenant-a",
+                "provider": "wechat-work", "role_mappings": {},
+                "accounts": {
+                    hashlib.sha256(b"wx-user-1").hexdigest()[:16]:
+                        {"user_id": str(uuid4())},
+                    hashlib.sha256(b"wx-user-2").hexdigest()[:16]:
+                        {"user_id": str(uuid4())},
+                },
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "has no explicit role mapping"):
+                build_legacy_migration_plan(database, mapping)
+
+    def test_role_mapping_must_explicitly_define_both_role_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "legacy.sqlite"
+            mapping = Path(directory) / "mapping.json"
+            self._database(database)
+            mapping.write_text(json.dumps({
+                "mapping_version": 1, "tenant_id": "tenant-a",
+                "provider": "wechat-work",
+                "role_mappings": {
+                    "member": {"tenant_role_id": "member"},
+                    "viewer": {"tenant_role_id": None, "project_role_id": None},
+                },
+                "accounts": {
+                    hashlib.sha256(b"wx-user-1").hexdigest()[:16]:
+                        {"user_id": str(uuid4())},
+                    hashlib.sha256(b"wx-user-2").hexdigest()[:16]:
+                        {"user_id": str(uuid4())},
+                },
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must explicitly define"):
+                build_legacy_migration_plan(database, mapping)
+
     def test_mapping_template_never_overwrites_existing_file(self):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "legacy.sqlite"
