@@ -80,14 +80,14 @@ class GatewayMCPHttpTests(unittest.IsolatedAsyncioTestCase):
         }
         with TestClient(app) as client:
             denied = client.post(
-                "/mcp",
+                "/runs/run-a/mcp",
                 json=initialize,
                 headers={"Accept": "application/json, text/event-stream"},
             )
             self.assertEqual(denied.status_code, 401)
 
             accepted = client.post(
-                "/mcp",
+                "/runs/run-a/mcp",
                 json=initialize,
                 headers={
                     "Authorization": "Bearer run-secret",
