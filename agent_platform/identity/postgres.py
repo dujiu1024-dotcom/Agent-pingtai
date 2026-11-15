@@ -400,6 +400,53 @@ class PostgresIdentityRepository:
                 )
         return True
 
+
+    async def rotate_api_credential(
+        self, *, old_credential_id: str, new_credential_id: str,
+        tenant_id: str, user_id: str, name: str, token_hash: str,
+        scopes: tuple[str, ...], expires_at: datetime | None,
+    ) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_api_credentials
+                       SET revoked_at=now()
+                       WHERE credential_id=%s AND tenant_id=%s AND user_id=%s
+                         AND revoked_at IS NULL
+                         AND (expires_at IS NULL OR expires_at > now())
+                       RETURNING name""",
+                    (old_credential_id, tenant_id, user_id),
+                )
+                old = await cursor.fetchone()
+                if old is None:
+                    return False
+                cursor = await connection.execute(
+                    """INSERT INTO platform_api_credentials
+                       (credential_id, tenant_id, user_id, name, token_hash, scopes, expires_at)
+                       SELECT %s, %s, %s, %s, %s, %s, %s
+                       WHERE EXISTS (
+                         SELECT 1 FROM platform_tenant_memberships m
+                         JOIN platform_tenants t ON t.tenant_id=m.tenant_id AND t.status='active'
+                         JOIN platform_users u ON u.user_id=m.user_id AND u.status='active'
+                         WHERE m.tenant_id=%s AND m.user_id=%s AND m.status='active'
+                       )
+                       RETURNING credential_id""",
+                    (new_credential_id, tenant_id, user_id, name, token_hash,
+                     list(scopes), expires_at, tenant_id, user_id),
+                )
+                if await cursor.fetchone() is None:
+                    raise PermissionError("active tenant membership required")
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id, actor_id, action, subject_id, outcome, detail)
+                       VALUES (%s, %s, 'api_credential.rotated', %s, 'succeeded',
+                         jsonb_build_object('old_credential_id', %s,
+                           'new_credential_id', %s))""",
+                    (tenant_id, user_id, user_id, old_credential_id, new_credential_id),
+                )
+        return True
+
     async def create_invitation(
         self, *, invitation_id: str, tenant_id: str, email_normalized: str,
         role_id: str, token_hash: str, invited_by: str, expires_at: datetime,
