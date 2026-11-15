@@ -79,8 +79,11 @@ def signature(secret: bytes, timestamp: str, body: bytes) -> str:
     return "sha256=" + digest
 
 
-def verify_signature(secret: bytes, timestamp: str, body: bytes, supplied: str) -> bool:
-    if not timestamp.isdigit() or len(timestamp) > 12:
+def verify_signature(secret: bytes, timestamp: str, body: bytes, supplied: str, *,
+                      now: int | None = None, tolerance_seconds: int = 300) -> bool:
+    if not timestamp.isdigit() or len(timestamp) > 12 or tolerance_seconds < 0:
+        return False
+    if now is not None and abs(now - int(timestamp)) > tolerance_seconds:
         return False
     return hmac.compare_digest(signature(secret, timestamp, body), supplied)
 
@@ -183,11 +186,15 @@ class PostgresWebhookStore:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """WITH due AS (
-                         SELECT tenant_id, delivery_id FROM platform_webhook_deliveries
-                         WHERE status IN ('pending','retrying','leased')
-                           AND (lease_until IS NULL OR lease_until < now())
-                           AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-                         ORDER BY created_at LIMIT %s FOR UPDATE SKIP LOCKED
+                         SELECT d.tenant_id, d.delivery_id
+                         FROM platform_webhook_deliveries d
+                         JOIN platform_webhook_subscriptions s
+                           ON s.tenant_id=d.tenant_id AND s.subscription_id=d.subscription_id
+                         WHERE s.status='active' AND d.topic=ANY(s.topics)
+                           AND d.status IN ('pending','retrying','leased')
+                           AND (d.lease_until IS NULL OR d.lease_until < now())
+                           AND (d.next_attempt_at IS NULL OR d.next_attempt_at <= now())
+                         ORDER BY d.created_at LIMIT %s FOR UPDATE OF d SKIP LOCKED
                        )
                        UPDATE platform_webhook_deliveries d
                        SET status='leased', attempts=d.attempts+1,
@@ -195,7 +202,7 @@ class PostgresWebhookStore:
                        FROM due, platform_webhook_subscriptions s
                        WHERE d.tenant_id=due.tenant_id AND d.delivery_id=due.delivery_id
                          AND s.tenant_id=d.tenant_id AND s.subscription_id=d.subscription_id
-                         AND s.status='active'
+                         AND s.status='active' AND d.topic=ANY(s.topics)
                        RETURNING d.tenant_id,d.delivery_id,d.event_id,d.topic,d.payload,
                          d.attempts,s.subscription_id,s.target_url,s.secret_ref,s.topics""",
                     (limit, lease, self.lease_seconds),
