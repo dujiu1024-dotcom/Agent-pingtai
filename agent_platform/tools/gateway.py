@@ -45,6 +45,7 @@ class AuditSink(Protocol):
 
 
 ToolHandler = Callable[[Mapping[str, Any]], Awaitable[Any]]
+ResourceResolver = Callable[[Mapping[str, Any]], str]
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,8 @@ class ToolDefinition:
     handler: ToolHandler
     description: str = ""
     allowed_roles: tuple[str, ...] = ()
+    input_schema: Mapping[str, Any] | None = None
+    resource_resolver: ResourceResolver | None = None
 
 
 class SupervisedToolGateway:
@@ -71,6 +74,11 @@ class SupervisedToolGateway:
         self._policy = SupervisedPolicy({tool.name: tool.risk for tool in tools})
         self._approval_verifier = approval_verifier
         self._audit_sink = audit_sink
+
+    @property
+    def registered_tools(self) -> tuple[ToolDefinition, ...]:
+        """Return immutable tool definitions for trusted composition code."""
+        return tuple(self._tools.values())
 
     async def call(
         self,
