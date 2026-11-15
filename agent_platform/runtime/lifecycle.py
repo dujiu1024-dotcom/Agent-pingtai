@@ -87,7 +87,9 @@ class RunLifecycleManager:
  async def cancel(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  if old.status in TERMINAL: return old
+  if old.status in TERMINAL:
+   if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
+   return old
   if old.status==RunStatus.CANCELLING:
    updated=old
   else:
