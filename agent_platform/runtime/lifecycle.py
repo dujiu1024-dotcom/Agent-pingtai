@@ -7,6 +7,8 @@ from enum import Enum
 from typing import Any,Protocol
 
 def _now() -> datetime: return datetime.now(timezone.utc)
+class WorkerLeaseLost(RuntimeError):
+ """Raised when a worker no longer owns the Run execution lease."""
 class RunStatus(str,Enum):
     QUEUED="queued"; RUNNING="running"; PAUSED="paused"; CANCELLING="cancelling"
     SUCCEEDED="succeeded"; FAILED="failed"; CANCELLED="cancelled"; TIMED_OUT="timed_out"; INTERRUPTED="interrupted"
@@ -131,6 +133,7 @@ class RunLifecycleManager:
     await resume(running)
     resumed.append(row.run_id)
    except Exception as exc:
+    if isinstance(exc,WorkerLeaseLost): continue
     latest=await self.store.get(row.tenant_id,row.run_id)
     # Do not fail a Run if another worker won the optimistic claim race.
     owns_running=running is not None and latest is not None and latest.status==RunStatus.RUNNING and latest.version==running.version
