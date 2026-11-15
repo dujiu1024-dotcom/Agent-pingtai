@@ -8,22 +8,31 @@
 <section id="knowledge" class="hidden"><div class="panel"><h2>知识库</h2><div class="row"><input id="docTitle" placeholder="文档标题"><input id="docScope" value="tenant" placeholder="tenant/project/private"></div><textarea id="docText" placeholder="粘贴文本内容"></textarea><button class="btn primary" id="ingestDoc">入库</button><div id="knowledgeList"></div></div></section>
 <section id="memory" class="hidden"><div class="panel"><h2>记忆治理</h2><div id="memoryList"></div></div></section><section id="models" class="hidden"><div class="panel"><h2>模型模板</h2><div id="modelList"></div></div></section><section id="tools" class="hidden"><div class="panel"><h2>工具与 Skills</h2><div id="toolList"></div></div></section></main></div>
 <script>
-const $=id=>document.getElementById(id);let current="overview";
+const $=id=>document.getElementById(id);let current="overview",capabilities={};
 function api(path,opts={}){return fetch($("apiBase").value.replace(/\/$/,"")+path,{...opts,headers:{"Content-Type":"application/json",...(opts.headers||{})}}).then(async r=>{if(!r.ok)throw new Error(String(r.status)+" "+await r.text());return r.status===204?null:r.json()})}
 function msg(s){$("message").textContent=s}
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function table(rows){if(!rows||!rows.length)return "<p class='muted'>暂无数据</p>";return "<table><tbody>"+rows.map(r=>"<tr>"+r.map(v=>"<td>"+esc(v)+"</td>").join("")+"</tr>").join("")+"</tbody></table>"}
+function unavailable(feature){return "<p class='muted'>当前服务未挂载："+esc(feature)+"。工作台不会调用未实现的占位 API。</p>"}
+async function loadCapabilities(){const r=await api("/workbench/capabilities");capabilities=r.features||{}}
 function show(view){current=view;document.querySelectorAll("main section").forEach(s=>s.classList.toggle("hidden",s.id!==view));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));$("heading").textContent=document.querySelector('[data-view="'+view+'"]').textContent;load(view)}
 $("nav").addEventListener("click",e=>{const b=e.target.closest("button[data-view]");if(b)show(b.dataset.view)});
 async function load(view=current){msg("");try{
-if(view==="overview"||view==="agents"){const a=await api("/agents");const items=a.items||a;if(view==="overview")$("agentCount").textContent=items.length;$("agentList").innerHTML=table(items.map(x=>[x.name||x.agent_id,x.status,x.model_template_ref]));}
-if(view==="overview"||view==="runs"){const r=await api("/runs");const items=r.items||r;if(view==="overview"){$("runCount").textContent=items.filter(x=>["running","queued"].includes(x.status)).length;$("recentRuns").innerHTML=table(items.slice(0,8).map(x=>[x.run_id,x.agent_id,x.status]));}else $("runsList").innerHTML=table(items.map(x=>[x.run_id,x.agent_id,x.status,x.created_at]));}
-if(view==="overview"||view==="approvals"){const a=await api("/approvals?status=pending");const items=a.items||a;if(view==="overview")$("approvalCount").textContent=items.length;else $("approvalList").innerHTML=table(items.map(x=>[x.approval_id,x.action,x.resource,x.status]));}
-if(view==="knowledge")$("knowledgeList").innerHTML=table(((await api("/knowledge/documents")).items||[]).map(x=>[x.title,x.version,x.scope,x.status]));
-if(view==="memory")$("memoryList").innerHTML=table(((await api("/memories")).items||[]).map(x=>[x.memory_id,x.scope,x.status,x.confidence]));
-if(view==="models")$("modelList").innerHTML=table(((await api("/model-templates")).items||[]).map(x=>[x.template_id,x.version,x.status]));
-if(view==="tools")$("toolList").innerHTML=table(((await api("/tools")).items||[]).map(x=>[x.name,x.risk_level,x.status]));
-}catch(e){msg("API 未连接或请求失败："+e.message)}}
+if(!Object.keys(capabilities).length)await loadCapabilities();
+if(view==="overview"||view==="agents"){
+if(capabilities.agent_management){const a=await api("/agents");const items=a.items||a;if(view==="overview")$("agentCount").textContent=items.length;$("agentList").innerHTML=table(items.map(x=>[x.name||x.agent_id,x.status,x.model_template_ref]));}
+else{$("agentCount").textContent="未接入";$("agentList").innerHTML=unavailable("Agent 管理 API（总控 #2 注册中心依赖）");}}
+if(view==="overview"||view==="runs"){
+if(capabilities.task_execution){const r=await api("/runs");const items=r.items||r;if(view==="overview"){$("runCount").textContent=items.filter(x=>["running","queued"].includes(x.status)).length;$("recentRuns").innerHTML=table(items.slice(0,8).map(x=>[x.run_id,x.agent_id,x.status]));}else $("runsList").innerHTML=table(items.map(x=>[x.run_id,x.agent_id,x.status,x.created_at]));}
+else{$("runCount").textContent="未接入";$("recentRuns").innerHTML=unavailable("任务与运行 API（总控 #2 任务中心依赖）");$("runsList").innerHTML=unavailable("任务与运行 API");}}
+if(view==="overview"||view==="approvals"){
+if(capabilities.approvals){const a=await api("/approvals?status=pending");const items=a.items||a;if(view==="overview")$("approvalCount").textContent=items.length;else $("approvalList").innerHTML=table(items.map(x=>[x.approval_id,x.action,x.resource,x.status]));}
+else{$("approvalCount").textContent="未接入";$("approvalList").innerHTML=unavailable("人工审批 API（总控 #2 任务协同依赖）");}}
+if(view==="knowledge"){if(capabilities.knowledge)$("knowledgeList").innerHTML=table(((await api("/knowledge/documents")).items||[]).map(x=>[x.title,x.version,x.scope,x.document_id]));else $("knowledgeList").innerHTML=unavailable("知识库 API");}
+if(view==="memory"){if(capabilities.memory)$("memoryList").innerHTML=table(((await api("/memories")).items||[]).map(x=>[x.memory_id,x.scope,x.status,x.confidence]));else $("memoryList").innerHTML=unavailable("记忆 API");}
+if(view==="models")$("modelList").innerHTML=capabilities.registry?unavailable("模型模板版本列表 API（当前仅提供按 ID 读取/发布）"):unavailable("注册中心 API");
+if(view==="tools")$("toolList").innerHTML=capabilities.registry?unavailable("工具与 Skills 列表 API（注册中心列表查询待接入）"):unavailable("注册中心 API");
+}catch(e){msg("API 请求失败："+e.message)}}
 $("refresh").onclick=()=>load();
 $("submitTask").onclick=async()=>{try{const r=await api("/tasks",{method:"POST",body:JSON.stringify({agent_id:$("agentId").value,project_id:$("projectId").value||null,input:{text:$("taskInput").value}})});msg("任务已提交："+r.task_id);show("runs")}catch(e){msg(e.message)}};
 $("createAgent").onclick=async()=>{try{await api("/agents",{method:"POST",body:JSON.stringify({agent_id:$("newAgentId").value,name:$("newAgentName").value,role_definition:$("agentRole").value,model_template_ref:$("templateRef").value})});msg("Agent 已创建");load("agents")}catch(e){msg(e.message)}};
