@@ -31,6 +31,8 @@ on:
       - "agent_platform/**"
       - "tests/test_platform_contracts.py"
       - "tests/test_identity.py"
+      - "tests/test_knowledge_service.py"
+      - "tests/test_memory_service.py"
       - "tests/test_event_consumer.py"
       - "tests/test_tool_gateway.py"
       - "tests/test_outbox.py"
