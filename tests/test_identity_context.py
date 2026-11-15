@@ -4,7 +4,9 @@ import unittest
 from starlette.requests import Request
 
 from agent_platform.api.identity_context import IdentityContextResolver
-from agent_platform.identity.models import AuthorizationContext, Principal
+from agent_platform.identity.models import (
+    AuthenticatedApiCredential, AuthorizationContext, Principal,
+)
 
 
 class FakeIdentityRepository:
@@ -62,6 +64,17 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         resolved = await self.resolver.memory(make_request(principal))
         self.assertEqual(resolved.agent_ids, frozenset({"agent-a"}))
         self.assertEqual(resolved.project_ids, frozenset({"project-a"}))
+
+    async def test_api_credential_is_denied_until_route_scopes_are_enforced(self):
+        credential = AuthenticatedApiCredential(
+            credential_id="credential-a",
+            tenant_id="tenant-a",
+            user_id="user-a",
+            scopes=("project.read",),
+        )
+        with self.assertRaises(Exception) as raised:
+            await self.resolver.knowledge(make_request(credential))
+        self.assertEqual(getattr(raised.exception, "status_code", None), 403)
 
     async def test_missing_identity_is_rejected(self):
         with self.assertRaises(Exception) as raised:
