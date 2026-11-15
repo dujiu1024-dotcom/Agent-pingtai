@@ -8,16 +8,16 @@ remain enforced by SupervisedToolGateway before this handler is invoked.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 
 from agent_platform.runtime.lifecycle import ToolCallRegistry
 from agent_platform.sandbox.oci import SandboxResult
-from agent_platform.tools.gateway import ToolExecutionContext
+from agent_platform.tools.gateway import ContextualToolHandler, ToolExecutionContext
 
 
 class SandboxRunner(Protocol):
     async def run(
-        self, command: list[str], *, stdin: bytes = b"",
+        self, command: Sequence[str], *, stdin: bytes = b"",
         environment: Mapping[str, str] | None = None,
         timeout_seconds: float = 30.0,
     ) -> SandboxResult: ...
@@ -26,7 +26,7 @@ class SandboxRunner(Protocol):
 def make_sandbox_tool_handler(
     runner: SandboxRunner,
     calls: ToolCallRegistry,
-):
+) -> ContextualToolHandler:
     """Create a Gateway contextual handler with Run-scoped cancellation.
 
     Expected arguments: command (argv list), optional stdin (text),
