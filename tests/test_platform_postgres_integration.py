@@ -22,15 +22,17 @@ if DSN:
         Scope,
     )
     from agent_platform.events.outbox import PostgresOutboxStore
+    from agent_platform.events.receipts import PostgresEventReceiptStore
 
 
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tenant_id = f"it-{uuid4().hex}"
-        migration = Path("agent_platform/storage/postgres/001_platform_core.sql").read_text()
+        migration_dir = Path("agent_platform/storage/postgres")
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
-            await conn.execute(migration, prepare=False)
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
         async with await AsyncConnection.connect(DSN) as conn:
             await conn.execute(
                 "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
@@ -207,6 +209,35 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await verifier.consume(
             tenant_id=self.tenant_id, approval_id=str(approval_id),
             action_digest=digest,
+        ))
+
+
+    async def test_event_receipts_prevent_concurrent_and_completed_reprocessing(self):
+        store = PostgresEventReceiptStore(self.connect, lease_seconds=5)
+        event_id = str(uuid4())
+        first = await store.claim(
+            tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
+        )
+        self.assertIsNotNone(first)
+        self.assertEqual(first.attempts, 1)
+
+        concurrent = await store.claim(
+            tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
+        )
+        self.assertIsNone(concurrent)
+
+        self.assertTrue(await store.fail(first, "temporary failure"))
+        retry = await store.claim(
+            tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
+        )
+        self.assertIsNotNone(retry)
+        self.assertEqual(retry.attempts, 2)
+        self.assertTrue(await store.complete(retry))
+        self.assertTrue(await store.is_completed(
+            tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
+        ))
+        self.assertIsNone(await store.claim(
+            tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
         ))
 
     async def test_audit_sink_persists_outcome(self):
