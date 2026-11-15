@@ -203,7 +203,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.propose(other);await service.confirm(tenant_id="t",memory_id=other.memory_id,confirmer_id="u2")
         revised=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="new",source_ref="chat:3",confidence=.9,created_by="u1",conflict_key="preference")
         conflict=await service.propose(revised)
-        admin=MemoryPrincipal(tenant_id="t",user_id="admin",roles=frozenset({"memory.manage"}))
+        admin=MemoryPrincipal(tenant_id="t",user_id="admin",permissions=frozenset({"memory.manage"}))
         await service.resolve_conflict(principal=admin,conflict_key="preference",selected_memory_id=revised.memory_id)
         self.assertEqual((await service.repository.get("t",other.memory_id)).status.value,"active")
         self.assertEqual((await service.repository.get("t",own.memory_id)).status.value,"superseded")
