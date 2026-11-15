@@ -25,6 +25,7 @@ def create_blackboard_router(
     resolve_principal: PrincipalResolver,
     resolve_repository: RepositoryResolver,
     authorize_scope: ScopeAuthorizer,
+    verify_evidence_refs: EvidenceReferenceVerifier | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/blackboard", tags=["blackboard"])
 
