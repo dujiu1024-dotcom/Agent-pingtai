@@ -74,6 +74,7 @@ class RegistryRepository(Protocol):
     async def put(self, item: RegistryVersion, *, expected_latest: int | None) -> None: ...
     async def set_active(self, tenant_id: str, kind: str, item_id: str, version: int) -> None: ...
     async def get_active(self, tenant_id: str, kind: str, item_id: str) -> RegistryVersion | None: ...
+    async def clear_active(self, tenant_id: str, kind: str, item_id: str) -> None: ...
 
 
 class InMemoryRegistryRepository:
@@ -111,6 +112,9 @@ class InMemoryRegistryRepository:
     async def get_active(self, tenant_id: str, kind: str, item_id: str) -> RegistryVersion | None:
         version = self._active.get((tenant_id, kind, item_id))
         return await self.get(tenant_id, kind, item_id, version) if version else None
+
+    async def clear_active(self, tenant_id: str, kind: str, item_id: str) -> None:
+        self._active.pop((tenant_id, kind, item_id), None)
 
 
 class RegistryService:
@@ -168,6 +172,18 @@ class RegistryService:
         await self.repository.put(rollback_version, expected_latest=versions[-1].version)
         await self.repository.set_active(tenant_id, kind, item_id, rollback_version.version)
         return rollback_version
+
+    async def disable(self, *, tenant_id: str, kind: str, item_id: str, actor_id: str) -> RegistryVersion:
+        active = await self.resolve_active(tenant_id=tenant_id, kind=kind, item_id=item_id)
+        versions = await self.repository.list_versions(tenant_id, kind, item_id)
+        disabled = RegistryVersion(
+            tenant_id=tenant_id, kind=kind, item_id=item_id,
+            version=versions[-1].version + 1, definition=active.definition,
+            status="disabled", created_by=actor_id,
+        )
+        await self.repository.put(disabled, expected_latest=versions[-1].version)
+        await self.repository.clear_active(tenant_id, kind, item_id)
+        return disabled
 
     async def resolve_active(self, *, tenant_id: str, kind: str, item_id: str) -> RegistryVersion:
         item = await self.repository.get_active(tenant_id, kind, item_id)
