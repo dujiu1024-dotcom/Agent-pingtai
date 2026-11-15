@@ -12,6 +12,8 @@ from typing import Mapping
 
 import yaml
 
+from agent_platform.control_plane.registry import RegistryService, RegistryVersion
+
 
 class SkillManifestError(ValueError):
     pass
@@ -108,3 +110,30 @@ def validate_skill_bundle_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
     if "SKILL.md" not in seen:
         raise SkillManifestError("bundle must contain SKILL.md at its root")
     return tuple(sorted(normalized))
+
+
+async def create_skill_draft(
+    *, registry: RegistryService, tenant_id: str, item_id: str,
+    document: str, bundle_paths: tuple[str, ...],
+    available_tools: set[str], actor_id: str,
+) -> RegistryVersion:
+    """Validate an Agent Skills document and persist only declarative content."""
+    manifest = parse_skill_document(document, available_tools=available_tools)
+    if manifest.name != item_id:
+        raise SkillManifestError("registry item_id must match the Skill manifest name")
+    paths = validate_skill_bundle_paths(bundle_paths)
+    definition = {
+        "format": "agent-skills",
+        "manifest": {
+            "name": manifest.name,
+            "description": manifest.description,
+            "allowed_tools": list(manifest.allowed_tools),
+            "dependencies": dict(manifest.dependencies),
+        },
+        "bundle_paths": list(paths),
+        "skill_md": document,
+    }
+    return await registry.create_draft(
+        tenant_id=tenant_id, kind="skill", item_id=item_id,
+        definition=definition, actor_id=actor_id,
+    )
