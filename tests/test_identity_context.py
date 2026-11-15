@@ -14,7 +14,7 @@ class FakeIdentityRepository:
         return AuthorizationContext(
             tenant_id=tenant_id,
             user_id=user_id,
-            tenant_roles=frozenset({"tenant_admin"}),
+            tenant_permissions=frozenset({"project.read", "knowledge.manage"}),
             project_ids=frozenset({"project-a"}),
             agent_ids=frozenset({"agent-a"}),
         )
@@ -50,7 +50,7 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.tenant_id, "tenant-a")
         self.assertEqual(resolved.user_id, "user-a")
         self.assertEqual(resolved.project_ids, frozenset({"project-a"}))
-        self.assertEqual(resolved.roles, frozenset({"tenant_admin"}))
+        self.assertEqual(resolved.roles, frozenset({"project.read", "knowledge.manage"}))
 
     async def test_memory_principal_includes_only_granted_agents(self):
         principal = Principal(
