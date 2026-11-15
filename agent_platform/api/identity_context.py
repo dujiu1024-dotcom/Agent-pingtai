@@ -46,5 +46,5 @@ class IdentityContextResolver:
             user_id=context.user_id,
             project_ids=context.project_ids,
             agent_ids=context.agent_ids,
-            roles=context.tenant_roles,
+            roles=context.tenant_permissions,
         )
