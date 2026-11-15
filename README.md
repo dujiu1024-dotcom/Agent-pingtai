@@ -160,6 +160,6 @@ python3 agency.py init && python3 agency.py doctor
 - 模型模板注册与校验：`agent_platform/models/`
 - 多专家 LangGraph 流程：`agent_platform/workflows/multi_expert.py`
 - PostgreSQL 核心结构：`agent_platform/storage/postgres/`
-- Redis Streams 事件传输：`agent_platform/events/`
+- Redis Streams 事件传输、Pending Entries 恢复、PostgreSQL 消费回执与幂等消费者：`agent_platform/events/`
 
 旧 CLI 继续使用标准库。新平台可选依赖单独安装：`pip install -r requirements-platform.txt`。尚未完成的基础设施接入不会影响旧系统运行。
