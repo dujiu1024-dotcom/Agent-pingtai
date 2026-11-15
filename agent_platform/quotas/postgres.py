@@ -152,3 +152,37 @@ class PostgresQuotaStore:
             )
             row = await cursor.fetchone()
         return int(row["tokens"]), Decimal(row["cost"]), int(row["concurrency"])
+
+    async def list_usage(
+        self, tenant_id: str, start: datetime, end: datetime, *,
+        run_id: str | None = None, model_key: str | None = None, limit: int = 1000,
+    ) -> list[UsageEvent]:
+        if limit < 1 or limit > 10000 or end <= start:
+            raise ValueError("invalid usage export range or limit")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT event_id,tenant_id,run_id,model_key,input_tokens,output_tokens,
+                          cost_usd,occurred_at,project_id,agent_id,tool_calls,runtime_ms,
+                          storage_bytes,price_card_version,source
+                   FROM platform_usage_ledger
+                   WHERE tenant_id=%s AND occurred_at >= %s AND occurred_at < %s
+                     AND (%s IS NULL OR run_id=%s)
+                     AND (%s IS NULL OR model_key=%s)
+                   ORDER BY occurred_at,event_id LIMIT %s""",
+                (tenant_id,start,end,run_id,run_id,model_key,model_key,limit),
+            )
+            rows = await cursor.fetchall()
+        return [
+            UsageEvent(
+                event_id=str(row["event_id"]),tenant_id=row["tenant_id"],
+                run_id=str(row["run_id"]),model_key=row["model_key"],
+                input_tokens=row["input_tokens"],output_tokens=row["output_tokens"],
+                cost_usd=Decimal(row["cost_usd"]),occurred_at=row["occurred_at"],
+                project_id=row["project_id"],agent_id=row["agent_id"],
+                tool_calls=row["tool_calls"],runtime_ms=row["runtime_ms"],
+                storage_bytes=row["storage_bytes"],price_card_version=row["price_card_version"],
+                source=row["source"],
+            )
+            for row in rows
+        ]
