@@ -55,6 +55,22 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.sha256, asset.sha256)
         self.assertEqual(content, b"%PDF-sample")
 
+    async def test_file_inherits_session_project_and_rejects_mismatch(self) -> None:
+        session = await self.service.create_session(
+            tenant_id="tenant-a", owner_id="user-a", project_id="project-a",
+        )
+        inherited = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="a.txt",
+            media_type="text/plain", content=b"a", session_id=session.session_id,
+        )
+        self.assertEqual(inherited.project_id, "project-a")
+        with self.assertRaises(SessionError):
+            await self.service.upload_asset(
+                tenant_id="tenant-a", owner_id="user-a", filename="b.txt",
+                media_type="text/plain", content=b"b", session_id=session.session_id,
+                project_id="project-b",
+            )
+
     async def test_upload_size_and_scanner_rejection(self) -> None:
         limited = SessionAssetService(self.repository, self.storage, max_upload_bytes=3)
         with self.assertRaises(SessionError):
