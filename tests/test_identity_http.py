@@ -1,9 +1,12 @@
 """HTTP middleware security regression tests."""
 import unittest
 
-from agent_platform.identity.http import IdentityASGIMiddleware, InMemorySlidingWindowRateLimiter
-from agent_platform.identity.service import AuthenticationError
+from agent_platform.identity.http import (
+    IdentityASGIMiddleware, InMemorySlidingWindowRateLimiter,
+    auth_cookie_headers, clear_auth_cookie_headers,
+)
 from agent_platform.identity.models import Principal
+from agent_platform.identity.service import AuthenticationError
 
 
 class FakeIdentity:
@@ -82,6 +85,22 @@ class IdentityHttpMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             middleware, headers=[(b"origin", b"https://evil.example")],
         )
         self.assertEqual(sent[0]["status"], 403)
+
+
+    async def test_cookie_helpers_set_secure_flags_and_clear_both_cookies(self):
+        headers = auth_cookie_headers(
+            session_token="session", csrf_token="csrf", max_age_seconds=3600,
+        )
+        self.assertEqual(len(headers), 2)
+        session = headers[0][1].decode()
+        csrf = headers[1][1].decode()
+        self.assertIn("HttpOnly", session)
+        self.assertIn("Secure", session)
+        self.assertIn("SameSite=Strict", session)
+        self.assertNotIn("HttpOnly", csrf)
+        cleared = clear_auth_cookie_headers()
+        self.assertEqual(len(cleared), 2)
+        self.assertTrue(all(b"Max-Age=0" in value for _, value in cleared))
 
     async def test_login_rate_limit_returns_429(self):
         limiter = InMemorySlidingWindowRateLimiter()
