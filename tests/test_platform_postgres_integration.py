@@ -862,6 +862,64 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate(issued.access_token)
 
+    async def test_postgres_session_and_asset_are_isolated_across_tenants(self):
+        from agent_platform.control_plane.sessions_assets import (
+            AssetStatus, ConversationSession, FileAsset, SessionNotFound,
+        )
+        from agent_platform.control_plane.postgres import PostgresSessionRepository
+
+        tenant_b = f"it-{uuid4().hex}"
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_b, "Second Integration Tenant"),
+            )
+            await conn.commit()
+
+        repo_a = PostgresSessionRepository(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        repo_b = PostgresSessionRepository(
+            tenant_id=tenant_b, connection_factory=self.connect,
+        )
+        service_a = SessionAssetService(repo_a, InMemoryObjectStorage())
+        session_a = await service_a.create_session(
+            tenant_id=self.tenant_id, owner_id="tenant-a-user",
+        )
+        asset_a = await service_a.upload_asset(
+            tenant_id=self.tenant_id, owner_id="tenant-a-user",
+            filename="tenant-a.txt", media_type="text/plain",
+            content=b"tenant-a-secret", session_id=session_a.session_id,
+        )
+
+        # Tenant-B repository must not resolve either resource by the same IDs.
+        self.assertIsNone(await repo_b.get_session(tenant_b, session_a.session_id))
+        self.assertIsNone(await repo_b.get_asset(tenant_b, asset_a.asset_id))
+        with self.assertRaises(PermissionError):
+            await repo_b.create_session(ConversationSession(
+                tenant_id=self.tenant_id, session_id=str(uuid4()),
+                owner_id="forged-tenant-a",
+            ))
+        with self.assertRaises(PermissionError):
+            await repo_b.create_asset(FileAsset(
+                tenant_id=self.tenant_id, asset_id=str(uuid4()),
+                owner_id="forged-tenant-a", object_key="tenant/a/forged",
+                filename="forged.txt", media_type="text/plain", size_bytes=1,
+                sha256="0" * 64, status=AssetStatus.AVAILABLE,
+            ))
+        with self.assertRaises(SessionNotFound):
+            await repo_b.list_messages(tenant_b, session_a.session_id)
+
+        # A tenant-B asset cannot attach to tenant-A's session through the composite FK.
+        with self.assertRaises(Exception):
+            await repo_b.create_asset(FileAsset(
+                tenant_id=tenant_b, asset_id=str(uuid4()), owner_id="tenant-b-user",
+                object_key=f"tenant/{tenant_b}/assets/{uuid4().hex}",
+                filename="cross-link.txt", media_type="text/plain", size_bytes=1,
+                sha256="1" * 64, status=AssetStatus.AVAILABLE,
+                session_id=session_a.session_id,
+            ))
+
     async def test_nonmember_cannot_create_session_for_another_tenant(self):
         with self.assertRaises(AuthenticationError):
             await self.service.login(
