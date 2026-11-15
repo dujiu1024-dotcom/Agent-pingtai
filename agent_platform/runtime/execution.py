@@ -48,6 +48,9 @@ class LangGraphRunExecutor:
     while True:
      await asyncio.sleep(max(1,self.lease_seconds/3))
      if not await heartbeat(tenant_id,run_id,self.worker_id,lease_seconds=self.lease_seconds):
+      current=await store.get(tenant_id,run_id)
+      if current is not None and current.status in {RunStatus.SUCCEEDED,RunStatus.FAILED,RunStatus.CANCELLED,RunStatus.TIMED_OUT}:
+       return
       task.cancel()
       raise WorkerLeaseLost("Run worker lease was lost")
    beat_task=asyncio.create_task(beat())
