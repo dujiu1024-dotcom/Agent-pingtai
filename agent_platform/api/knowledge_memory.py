@@ -12,6 +12,7 @@ from fastapi import APIRouter,HTTPException,Request
 from fastapi.responses import JSONResponse
 from agent_platform.knowledge.contracts import Document,KnowledgePrincipal,KnowledgeScope
 from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.knowledge.rag import RAGService
 from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService
 KnowledgePrincipalResolver=Callable[[Request],Awaitable[KnowledgePrincipal]]
 MemoryPrincipalResolver=Callable[[Request],Awaitable[MemoryPrincipal]]
@@ -22,7 +23,7 @@ def _memory_visible_for_review(record: Any,principal: MemoryPrincipal)->bool:
     if candidate.scope is MemoryScope.PROJECT:return candidate.scope_id in principal.project_ids and "memory.manage" in principal.roles
     if candidate.scope is MemoryScope.AGENT:return candidate.scope_id in principal.agent_ids and "memory.manage" in principal.roles
     return "memory.manage" in principal.roles
-def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryService,resolve_knowledge_principal: KnowledgePrincipalResolver,resolve_memory_principal: MemoryPrincipalResolver)->APIRouter:
+def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryService,resolve_knowledge_principal: KnowledgePrincipalResolver,resolve_memory_principal: MemoryPrincipalResolver,rag: RAGService|None=None)->APIRouter:
     router=APIRouter(prefix="/api/platform/v1",tags=["knowledge","memory"])
     @router.get("/knowledge/documents")
     async def list_documents(request: Request,limit: int=100):
@@ -72,6 +73,13 @@ def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryS
         except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
         if not deleted:raise HTTPException(404,"document not found")
         return JSONResponse(status_code=204,content=None)
+    if rag is not None:
+        @router.post("/knowledge/answer")
+        async def answer_knowledge(request: Request):
+            principal=await resolve_knowledge_principal(request);body=await request.json()
+            try:result=await rag.answer(principal=principal,query=str(body.get("query") or ""),limit=int(body.get("limit",8)))
+            except ValueError as exc:raise HTTPException(400,str(exc)) from exc
+            return {"answer":result.answer,"citations":list(result.citations),"abstained":result.abstained,"reason":result.reason}
     @router.get("/knowledge/search")
     async def search_knowledge(request: Request,q: str,limit: int=8):
         principal=await resolve_knowledge_principal(request)
