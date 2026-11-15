@@ -56,7 +56,7 @@ class PostgresIdentityRepository:
                    FROM platform_role_bindings b
                    JOIN platform_roles r
                      ON r.tenant_id=b.tenant_id AND r.role_id=b.role_id
-                   JOIN platform_role_permissions rp
+                   LEFT JOIN platform_role_permissions rp
                      ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
                    WHERE b.tenant_id=%s AND b.resource_type='tenant'
                      AND b.resource_id=%s AND b.revoked_at IS NULL
@@ -79,6 +79,7 @@ class PostgresIdentityRepository:
             tenant_roles = frozenset(row["role_id"] for row in tenant_role_rows)
             tenant_permissions = frozenset(
                 row["permission_key"] for row in tenant_role_rows
+                if row["permission_key"] is not None
             )
 
             cursor = await connection.execute(
