@@ -574,6 +574,17 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id,),
             )
             await conn.execute(
+                """INSERT INTO platform_permissions (permission_key, description)
+                   VALUES ('memory.manage', 'Manage scoped memory')
+                   ON CONFLICT DO NOTHING"""
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'knowledge-manager', 'memory.manage')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
@@ -604,6 +615,25 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    VALUES (%s, %s, 'user', %s, 'agent', %s, 'reader', 'integration')""",
                 (uuid4(), self.tenant_id, str(self.user_id), agent_id),
             )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'agent-memory-manager', 'Agent Memory Manager')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'agent-memory-manager', 'memory.manage')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'agent', %s,
+                           'agent-memory-manager', 'integration')""",
+                (uuid4(), self.tenant_id, str(self.user_id), agent_id),
+            )
             await conn.commit()
 
         context = await self.repository.get_authorization_context(
@@ -613,7 +643,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.tenant_roles, frozenset({"reader"}))
         self.assertEqual(
             context.effective_role_ids,
-            frozenset({"reader", "knowledge-manager"}),
+            frozenset({"reader", "knowledge-manager", "agent-memory-manager"}),
         )
         self.assertEqual(
             context.tenant_permissions,
@@ -623,7 +653,11 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             context.knowledge_manage_project_ids, frozenset({project_ids[2]}),
         )
+        self.assertEqual(
+            context.memory_manage_project_ids, frozenset({project_ids[2]}),
+        )
         self.assertEqual(context.agent_ids, frozenset({agent_id}))
+        self.assertEqual(context.memory_manage_agent_ids, frozenset({agent_id}))
         self.assertIsNone(await self.repository.get_authorization_context(
             tenant_id=f"other-{uuid4().hex}", user_id=str(self.user_id),
         ))
