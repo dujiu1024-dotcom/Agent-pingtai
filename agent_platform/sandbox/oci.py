@@ -37,7 +37,7 @@ class OciSandboxConfig:
             raise ValueError("runtime must be docker or podman")
         if not re.fullmatch(r"[1-9][0-9]*(?:m|g)", self.memory_limit.lower()):
             raise ValueError("memory_limit must be a positive value such as 512m or 1g")
-        if not re.fullmatch(r"(?:[0-9]+)(?:\\.[0-9]+)?", self.cpu_limit):
+        if not re.fullmatch(r"(?:[0-9]+)(?:\.[0-9]+)?", self.cpu_limit):
             raise ValueError("cpu_limit must be a positive CPU quantity")
         if float(self.cpu_limit) <= 0:
             raise ValueError("cpu_limit must be positive")
@@ -82,7 +82,7 @@ class OciSandboxRunner:
         *,
         environment: Mapping[str, str] | None = None,
     ) -> tuple[str, ...]:
-        if not command or any(not isinstance(arg, str) or not arg or "\\x00" in arg for arg in command):
+        if not command or any(not isinstance(arg, str) or not arg or "\x00" in arg for arg in command):
             raise ValueError("command must contain non-empty NUL-free arguments")
         env = dict(environment or {})
         unknown = set(env) - self.config.allowed_environment_keys
@@ -98,7 +98,7 @@ class OciSandboxRunner:
             "--tmpfs", f"/workspace:rw,noexec,nosuid,nodev,size={self.config.tmpfs_size}",
         ]
         for key, value in sorted(env.items()):
-            if not isinstance(value, str) or "\\x00" in value or len(value) > 4096:
+            if not isinstance(value, str) or "\x00" in value or len(value) > 4096:
                 raise ValueError("environment values must be short NUL-free strings")
             args.extend(("--env", f"{key}={value}"))
         args.append(self.config.image)
