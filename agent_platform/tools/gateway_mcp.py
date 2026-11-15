@@ -11,8 +11,6 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from jsonschema import Draft202012Validator, ValidationError
-
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolExecutionDenied,
@@ -50,6 +48,13 @@ class GatewayMCPBridge:
         gateway: SupervisedToolGateway,
         session: GatewaySessionContext,
     ) -> None:
+        try:
+            from jsonschema import Draft202012Validator
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install jsonschema to expose MCP tools with schema validation"
+            ) from exc
+        self._validator_class = Draft202012Validator
         self.gateway = gateway
         self.session = session
         definitions = {tool.name: tool for tool in gateway.registered_tools}
@@ -78,7 +83,7 @@ class GatewayMCPBridge:
                 raise ValueError(
                     f"tool {name!r} input schema must set additionalProperties=false"
                 )
-            Draft202012Validator.check_schema(schema)
+            self._validator_class.check_schema(schema)
             self._definitions[name] = (definition, schema)
 
     def list_tools(self) -> list[dict[str, Any]]:
@@ -99,12 +104,14 @@ class GatewayMCPBridge:
         if bound is None:
             raise ToolExecutionDenied("tool is not available in this run's MCP session")
         definition, schema = bound
-        try:
-            Draft202012Validator(schema).validate(dict(arguments))
-        except ValidationError as exc:
+        validation_errors = list(
+            self._validator_class(schema).iter_errors(dict(arguments))
+        )
+        if validation_errors:
             raise ToolExecutionDenied(
-                f"tool arguments do not match the registered schema: {exc.message}"
-            ) from exc
+                "tool arguments do not match the registered schema: "
+                + validation_errors[0].message
+            )
 
         resolver = definition.resource_resolver
         if resolver is None:
