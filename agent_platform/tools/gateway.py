@@ -9,13 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
-from agent_platform.tools.idempotency import ToolEffectStore
-
 from agent_platform.approval.policy import (
     ActionRequest,
     RiskLevel,
     SupervisedPolicy,
 )
+from agent_platform.tools.idempotency import ToolEffectStore
 
 
 class ToolExecutionDenied(PermissionError):
