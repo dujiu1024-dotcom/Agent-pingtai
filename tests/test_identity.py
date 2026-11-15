@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timedelta, timezone
-
-from agent_platform.identity.models import SessionRecord, UserRecord, ResourceRef
+from agent_platform.identity.models import ResourceRef, SessionRecord, UserRecord
 from agent_platform.identity.security import CredentialError, PasswordHasher, token_digest
 from agent_platform.identity.service import AuthenticationError, AuthorizationDenied, IdentityService
 
