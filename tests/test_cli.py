@@ -16,20 +16,12 @@ class CliSmokeTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         self.db = self.dir / "agency.db"
-        self.state_dir = ROOT / "agency" / "dev-state"
-        self.created_state_dir = not self.state_dir.exists()
-        self.state_dir.mkdir(parents=True, exist_ok=True)
         # doctor 会跑全量测试；冒烟里跳过，避免 test_cli → doctor → test_cli 递归
         self.env = dict(os.environ, AGENCY_DB=str(self.db), AGENCY_SKIP_TESTS="1",
                         AGENCY_ENV="dev", AGENCY_ALLOW_CUSTOM_DB="1")
 
     def tearDown(self):
         self.tmp.cleanup()
-        if self.created_state_dir:
-            try:
-                self.state_dir.rmdir()
-            except OSError:
-                pass
 
     def run_cli(self, *args, cwd=ROOT, env=None):
         return subprocess.run(
@@ -65,7 +57,6 @@ class CliSmokeTest(unittest.TestCase):
 
         target = self.dir / "restored"
         target.mkdir()
-        (target / "agency" / "dev-state").mkdir(parents=True, exist_ok=True)
         r = self.run_cli("import", str(tar), "--into", str(target))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
