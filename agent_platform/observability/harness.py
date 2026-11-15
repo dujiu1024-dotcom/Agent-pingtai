@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from time import monotonic
 from typing import Any, Mapping, Protocol
 
@@ -55,6 +56,41 @@ class ObservedHarnessAdapter:
         self.capture_content = capture_content
         self.max_capture_chars = max_capture_chars
 
+    @contextmanager
+    def _safe_observation(self, *, name: str, input: Mapping[str, Any], metadata: Mapping[str, Any]):
+        try:
+            manager = self.observer.observe(name=name, input=input, metadata=metadata)
+            span = manager.__enter__()
+        except Exception:
+            yield _NoopObservation()
+            return
+        try:
+            yield span
+        except BaseException as exc:
+            try:
+                manager.__exit__(type(exc), exc, exc.__traceback__)
+            except Exception:
+                pass
+            raise
+        else:
+            try:
+                manager.__exit__(None, None, None)
+            except Exception:
+                pass
+
+    @staticmethod
+    def _safe_update(span: Any, **kwargs: Any) -> None:
+        try:
+            span.update(**kwargs)
+        except Exception:
+            pass
+
+    def _safe_metric(self, method: str, *args: Any, **kwargs: Any) -> None:
+        try:
+            getattr(self.metrics, method)(*args, **kwargs)
+        except Exception:
+            pass
+
     async def run(self, request: HarnessRequest) -> HarnessResult:
         context = request.context
         template = f"{context.model_template.template_id}@{context.model_template.version}"
@@ -78,16 +114,16 @@ class ObservedHarnessAdapter:
         started = monotonic()
         status = "succeeded"
         try:
-            with self.observer.observe(name="agent.run", input=trace_input, metadata=metadata) as span:
+            with self._safe_observation(name="agent.run", input=trace_input, metadata=metadata) as span:
                 try:
                     result = await self.inner.run(request)
                 except asyncio.CancelledError:
                     status = "cancelled"
-                    span.update(output={"status": status})
+                    self._safe_update(span, output={"status": status})
                     raise
                 except Exception as exc:
                     status = "failed"
-                    span.update(output={"status": status, "error_type": type(exc).__name__})
+                    self._safe_update(span, output={"status": status, "error_type": type(exc).__name__})
                     raise
                 output: dict[str, Any] = {
                     "status": status,
@@ -98,17 +134,17 @@ class ObservedHarnessAdapter:
                 }
                 if self.capture_content:
                     output["output_text"] = result.output_text[: self.max_capture_chars]
-                span.update(output=redact_payload(output, max_text_chars=self.max_capture_chars))
+                self._safe_update(span, output=redact_payload(output, max_text_chars=self.max_capture_chars))
                 input_tokens = int(result.usage.get("input_tokens", 0))
                 output_tokens = int(result.usage.get("output_tokens", 0))
                 if input_tokens > 0:
-                    self.metrics.increment("agent_input_tokens_total", input_tokens, labels=labels)
+                    self._safe_metric("increment", "agent_input_tokens_total", input_tokens, labels=labels)
                 if output_tokens > 0:
-                    self.metrics.increment("agent_output_tokens_total", output_tokens, labels=labels)
+                    self._safe_metric("increment", "agent_output_tokens_total", output_tokens, labels=labels)
                 if result.tool_calls:
-                    self.metrics.increment("agent_tool_calls_total", len(result.tool_calls), labels=labels)
+                    self._safe_metric("increment", "agent_tool_calls_total", len(result.tool_calls), labels=labels)
                 return result
         finally:
             elapsed = monotonic() - started
-            self.metrics.increment("agent_runs_total", labels={**labels, "status": status})
-            self.metrics.observe("agent_run_duration_seconds", elapsed, labels=labels)
+            self._safe_metric("increment", "agent_runs_total", labels={**labels, "status": status})
+            self._safe_metric("observe", "agent_run_duration_seconds", elapsed, labels=labels)
