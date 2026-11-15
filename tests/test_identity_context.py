@@ -16,6 +16,7 @@ class FakeIdentityRepository:
         return AuthorizationContext(
             tenant_id=tenant_id,
             user_id=user_id,
+            tenant_roles=frozenset({"tenant_admin"}),
             tenant_permissions=frozenset({"project.read", "knowledge.manage"}),
             project_ids=frozenset({"project-a"}),
             knowledge_manage_project_ids=frozenset({"project-a"}),
@@ -53,8 +54,11 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.tenant_id, "tenant-a")
         self.assertEqual(resolved.user_id, "user-a")
         self.assertEqual(resolved.project_ids, frozenset({"project-a"}))
-        self.assertEqual(resolved.roles, frozenset({"project.read", "knowledge.manage"}))
-        self.assertEqual(resolved.roles, frozenset({"project.read", "knowledge.manage"}))
+        self.assertEqual(resolved.roles, frozenset({"tenant_admin"}))
+        self.assertEqual(
+            resolved.permissions,
+            frozenset({"project.read", "knowledge.manage"}),
+        )
 
     async def test_memory_principal_includes_only_granted_agents(self):
         principal = Principal(
@@ -64,6 +68,10 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         resolved = await self.resolver.memory(make_request(principal))
         self.assertEqual(resolved.agent_ids, frozenset({"agent-a"}))
         self.assertEqual(resolved.project_ids, frozenset({"project-a"}))
+        self.assertEqual(
+            resolved.roles,
+            frozenset({"project.read", "knowledge.manage"}),
+        )
 
     async def test_api_credential_is_denied_until_route_scopes_are_enforced(self):
         credential = AuthenticatedApiCredential(
