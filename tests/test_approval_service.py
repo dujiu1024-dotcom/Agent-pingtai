@@ -25,6 +25,17 @@ class MemoryApprovalRepository:
         return [r for (t, _), r in self.records.items()
                 if t == tenant_id and r.status == "pending"][:limit]
 
+    async def revoke(self, tenant_id, approval_id, *, actor_id, now, allow_admin=False):
+        key = (tenant_id, approval_id)
+        record = self.records.get(key)
+        if not record or record.status != "pending" or record.expires_at <= now:
+            return False
+        if record.requested_by != actor_id and not allow_admin:
+            return False
+        from dataclasses import replace
+        self.records[key] = replace(record, status="revoked", decided_by=actor_id)
+        return True
+
     async def decide(self, tenant_id, approval_id, *, approver_id, approved, now):
         key = (tenant_id, approval_id)
         record = self.records.get(key)
@@ -119,6 +130,26 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(("tenant-a", approval_id), repository.records)
         self.assertNotIn(("tenant-attacker", approval_id), repository.records)
         self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 403)
+
+    async def test_requester_can_revoke_and_other_user_cannot(self):
+        record = await self.service.request(
+            tenant_id="tenant-a", actor_id="user-a", action="external.write",
+            resource="x", parameters={"value": 1},
+            risk_level=RiskLevel.EXTERNAL_OR_IRREVERSIBLE,
+        )
+        with self.assertRaises(PermissionError):
+            await self.service.revoke(
+                tenant_id="tenant-a", approval_id=record.approval_id,
+                actor_id="user-b",
+            )
+        self.assertTrue(await self.service.revoke(
+            tenant_id="tenant-a", approval_id=record.approval_id,
+            actor_id="user-a",
+        ))
+        self.assertEqual(
+            (await self.repository.get("tenant-a", record.approval_id)).status,
+            "revoked",
+        )
 
     async def test_expired_approval_cannot_be_decided(self):
         record = await self.service.request(
