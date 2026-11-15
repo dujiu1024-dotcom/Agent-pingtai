@@ -103,6 +103,10 @@ class PostgresIdentityRepository:
                 SELECT 1 FROM platform_role_bindings b
                 JOIN platform_role_permissions rp ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
                 WHERE b.tenant_id=%s AND b.revoked_at IS NULL AND rp.permission_key=%s
+                  AND EXISTS (
+                    SELECT 1 FROM platform_tenant_memberships tm
+                    WHERE tm.tenant_id=%s AND tm.user_id=%s AND tm.status='active'
+                  )
                   AND ((b.subject_type='user' AND b.subject_id=%s)
                     OR (b.subject_type='team' AND b.subject_id IN (
                       SELECT team_id FROM platform_team_memberships WHERE tenant_id=%s AND user_id=%s AND status='active'
@@ -119,8 +123,8 @@ class PostgresIdentityRepository:
                     )
                   )
             ) AS allowed""", (
-                tenant_id, permission_key, user_id, tenant_id, user_id,
-                resource_type, resource_id, tenant_id, resource_type,
+                tenant_id, permission_key, tenant_id, user_id, user_id,
+                tenant_id, user_id, resource_type, resource_id, tenant_id, resource_type,
                 tenant_id, resource_id,
             ))
             row = await cursor.fetchone()
@@ -134,6 +138,31 @@ class PostgresIdentityRepository:
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
+                subject_exists = await connection.execute(
+                    """SELECT CASE
+                         WHEN %s='user' THEN EXISTS (
+                           SELECT 1 FROM platform_tenant_memberships
+                           WHERE tenant_id=%s AND user_id::text=%s AND status='active'
+                         )
+                         WHEN %s='team' THEN EXISTS (
+                           SELECT 1 FROM platform_teams
+                           WHERE tenant_id=%s AND team_id=%s AND status='active'
+                         )
+                         WHEN %s='service_account' THEN EXISTS (
+                           SELECT 1 FROM platform_service_accounts
+                           WHERE tenant_id=%s AND service_account_id=%s AND status='active'
+                         )
+                         WHEN %s='agent' THEN EXISTS (
+                           SELECT 1 FROM platform_agent_identities
+                           WHERE tenant_id=%s AND agent_id=%s AND status='active'
+                         )
+                         ELSE false END AS allowed""",
+                    (subject_type, tenant_id, subject_id, subject_type, tenant_id,
+                     subject_id, subject_type, tenant_id, subject_id,
+                     subject_type, tenant_id, subject_id),
+                )
+                if not (await subject_exists.fetchone())["allowed"]:
+                    raise PermissionError("role binding subject is not active in this tenant")
                 await connection.execute(
                     """INSERT INTO platform_role_bindings
                        (binding_id, tenant_id, subject_type, subject_id,
@@ -155,15 +184,18 @@ class PostgresIdentityRepository:
 
     async def revoke_role(
         self, *, tenant_id: str, actor_id: str, binding_id: str,
+        resource_type: str, resource_id: str,
     ) -> bool:
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """UPDATE platform_role_bindings SET revoked_at=now()
-                       WHERE tenant_id=%s AND binding_id=%s AND revoked_at IS NULL
+                       WHERE tenant_id=%s AND binding_id=%s
+                         AND resource_type=%s AND resource_id=%s
+                         AND revoked_at IS NULL
                        RETURNING subject_id, role_id, resource_type, resource_id""",
-                    (tenant_id, binding_id),
+                    (tenant_id, binding_id, resource_type, resource_id),
                 )
                 row = await cursor.fetchone()
                 if row is None:
