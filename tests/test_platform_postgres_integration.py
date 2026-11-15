@@ -174,10 +174,14 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             scope=Scope.TASK, scope_id="task-postgres-blackboard", limit=100
         )
         kinds = {entry.kind for entry in entries}
-        self.assertTrue({
+        required_kinds = {
             EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT,
             EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE,
-        }.issubset(kinds))
+        }
+        self.assertTrue(
+            required_kinds.issubset(kinds),
+            f"missing Blackboard kinds: {required_kinds - kinds}; got: {kinds}",
+        )
         final_entry = await self.repo.get(
             completed["final_result"]["blackboard_entry_id"]
         )
