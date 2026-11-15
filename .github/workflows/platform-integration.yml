@@ -12,6 +12,7 @@ on:
     paths:
       - "agent_platform/**"
       - "tests/test_platform_postgres_integration.py"
+      - "tests/test_knowledge_memory_postgres_integration.py"
       - "tests/test_redis_streams_integration.py"
       - ".github/workflows/platform-integration.yml"
 
