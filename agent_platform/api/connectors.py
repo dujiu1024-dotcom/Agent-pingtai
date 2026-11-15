@@ -1,7 +1,7 @@
 """Authenticated external data connector administration API."""
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
