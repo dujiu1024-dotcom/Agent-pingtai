@@ -343,7 +343,10 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id, self.user_id),
             )
             await conn.execute(
-                "INSERT INTO platform_permissions (permission_key, description) VALUES ('project.read', 'Read project') ON CONFLICT DO NOTHING"
+                """INSERT INTO platform_permissions (permission_key, description)
+                   VALUES ('project.read', 'Read project'),
+                          ('identity.role.manage', 'Manage role bindings')
+                   ON CONFLICT DO NOTHING"""
             )
             await conn.execute(
                 """INSERT INTO platform_roles (tenant_id, role_id, name, is_system)
@@ -353,7 +356,13 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await conn.execute(
                 """INSERT INTO platform_role_permissions
                    (tenant_id, role_id, permission_key)
-                   VALUES (%s, 'reader', 'project.read')""",
+                   VALUES (%s, 'reader', 'project.read'),
+                          (%s, 'reader', 'identity.role.manage')""",
+                (self.tenant_id, self.tenant_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'viewer', 'viewer')""",
                 (self.tenant_id,),
             )
             await conn.execute(
@@ -417,6 +426,35 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 resource=ResourceRef("project", "project-1"),
                 permission_key="project.read",
             )
+
+    async def test_role_grant_and_revoke_are_audited_in_the_same_transaction(self):
+        issued = await self.service.login(
+            email="identity@example.com",
+            password="correct horse battery staple",
+            tenant_id=self.tenant_id,
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        binding_id = await self.service.grant_role(
+            principal=principal,
+            subject_type="user",
+            subject_id="user-target",
+            resource=ResourceRef("tenant", self.tenant_id),
+            role_id="viewer",
+        )
+        self.assertTrue(await self.service.revoke_role(
+            principal=principal,
+            binding_id=binding_id,
+            resource=ResourceRef("tenant", self.tenant_id),
+        ))
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT action FROM platform_identity_audit
+                   WHERE tenant_id=%s AND subject_id='user-target'
+                   ORDER BY audit_id""",
+                (self.tenant_id,),
+            )
+            self.assertEqual([row["action"] for row in await cur.fetchall()],
+                             ["role.granted", "role.revoked"])
 
 
 if __name__ == "__main__":
