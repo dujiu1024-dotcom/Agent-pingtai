@@ -22,9 +22,9 @@
 - `agent_runs_total`：按组件、模型模板、状态计数；
 - `agent_run_duration_seconds`：运行耗时；
 - `agent_input_tokens_total` / `agent_output_tokens_total`：Token 计数；
-- `agent_tool_calls_total`：工具调用次数。
+- `agent_tool_calls_total`：工具调用次数；`agent_estimated_cost_usd_total`：基于显式模型价格卡估算的成本。
 
-`InMemoryMetricsRecorder` 提供线程安全的测试/单进程实现和 Prometheus 文本格式导出。标签仅允许有限枚举字段，不允许 tenant_id、run_id、user_id 等高基数字段。
+`ModelCostEstimator` 只使用部署方明确配置的模型价格卡计算成本，不猜测或硬编码厂商价格。`MetricsAuditSink` 在审计持久化成功后记录工具调用与拒绝指标。`InMemoryMetricsRecorder` 提供线程安全的测试/单进程实现和 Prometheus 文本格式导出。标签仅允许有限枚举字段，不允许 tenant_id、run_id、user_id 等高基数字段。
 
 该实现尚未提供 HTTP /metrics endpoint、Prometheus 服务发现、告警规则、通知渠道或队列积压指标。生产环境应将 MetricsPort 替换为 Prometheus/OpenTelemetry exporter，并在 Gateway、模型代理、RAG、事件消费者和审批服务中逐一埋点。
 
