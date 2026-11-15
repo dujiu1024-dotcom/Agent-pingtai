@@ -60,6 +60,11 @@ class ApprovalService:
         await self.repository.create(record)
         return record
 
+    async def get(self, *, tenant_id: str, approval_id: str) -> ApprovalRecord | None:
+        if not tenant_id or not approval_id:
+            raise ValueError("tenant and approval ids are required")
+        return await self.repository.get(tenant_id, approval_id)
+
     async def pending(self, *, tenant_id: str, limit: int = 100) -> list[ApprovalRecord]:
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
