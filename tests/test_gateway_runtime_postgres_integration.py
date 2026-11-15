@@ -13,6 +13,8 @@ if DSN:
  from agent_platform.gateway.service import EndpointRecord
  from agent_platform.runtime.lifecycle import RunSnapshot,RunStatus
  from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+ from agent_platform.runtime.execution import LangGraphRunExecutor
+ from agent_platform.runtime.lifecycle import RunLifecycleManager
 @unittest.skipUnless(DSN,"AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
@@ -66,6 +68,22 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([row.run_id for row in reclaimed],[self.run])
   self.assertFalse(await self.states.heartbeat(self.tenant,self.run,"worker-a",lease_seconds=5))
   self.assertTrue(await self.states.release_lease(self.tenant,self.run,"worker-b"))
+ async def test_expired_worker_lease_recovers_run_through_langgraph_executor(self):
+  claimed=await self.states.claim_recoverable("worker-dead",tenant_id=self.tenant,limit=10,lease_seconds=5)
+  self.assertEqual([row.run_id for row in claimed],[self.run])
+  await self.states.transition(RunSnapshot(self.tenant,self.run,RunStatus.RUNNING,claimed[0].version),
+   expected_version=claimed[0].version)
+  async with await self.connect() as conn:
+   await conn.execute("UPDATE platform_runs SET lease_expires_at=now()-interval '1 second' WHERE tenant_id=%s AND run_id=%s",(self.tenant,self.run))
+   await conn.commit()
+  class Graph:
+   async def ainvoke(self,payload,*,config):return {"recovered":payload}
+   async def aget_state(self,config):return type("State",(),{"config":{"configurable":{"checkpoint_id":None}}})()
+  manager=RunLifecycleManager(self.states)
+  executor=LangGraphRunExecutor(graph=Graph(),lifecycle=manager,worker_id="worker-new",lease_seconds=5)
+  recovered=await executor.recover(load_initial_input=lambda row:{"run":row.run_id})
+  self.assertEqual(recovered,[self.run])
+  self.assertEqual((await self.states.get(self.tenant,self.run)).status,RunStatus.SUCCEEDED)
  async def test_run_state_store_enforces_transitions_and_optimistic_version(self):
   queued=await self.states.get(self.tenant,self.run); self.assertEqual(queued.status,RunStatus.QUEUED)
   running=await self.states.transition(RunSnapshot(self.tenant,self.run,RunStatus.RUNNING,queued.version),expected_version=queued.version)
