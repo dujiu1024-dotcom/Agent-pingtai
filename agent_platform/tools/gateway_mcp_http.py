@@ -76,7 +76,8 @@ def create_authenticated_mcp_asgi_app(
     bearer_token: str,
     issuer_url: str,
     resource_server_url: str,
-    expires_at: datetime,
+    expires_at: datetime | None = None,
+    token_service: Any | None = None,
     host: str = "127.0.0.1",
     transport_security: Any | None = None,
 ) -> Any:
@@ -129,12 +130,18 @@ def create_authenticated_mcp_asgi_app(
         required_scopes=["platform:tools"],
         validate_token_resource=True,
     )
-    verifier = RunBoundTokenVerifier(
-        bearer_token=bearer_token,
-        actor_id=bridge.session.actor_id,
-        resource_server_url=resource_server_url,
-        expires_at=expires_at,
-    )
+    if token_service is not None:
+        from agent_platform.control_plane.gateway_auth import PersistentRunTokenVerifier
+        verifier = PersistentRunTokenVerifier(token_service=token_service, resource_server_url=resource_server_url)
+    else:
+        if expires_at is None:
+            raise ValueError("expires_at is required when using a local bearer token")
+        verifier = RunBoundTokenVerifier(
+            bearer_token=bearer_token,
+            actor_id=bridge.session.actor_id,
+            resource_server_url=resource_server_url,
+            expires_at=expires_at,
+        )
     from agent_platform.tools.gateway_mcp import create_mcp_server
 
     server = create_mcp_server(bridge=bridge)
