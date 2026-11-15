@@ -140,6 +140,7 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         final_entry = await repository.get(archived["blackboard_entry_id"])
         self.assertIn(first["blackboard_entry_id"], final_entry.source_refs)
         self.assertIn(synthesis["blackboard_entry_id"], final_entry.source_refs)
+        self.assertIn(resolution["synthesis"]["blackboard_entry_id"], final_entry.source_refs)
         self.assertIn(conflict_id, final_entry.source_refs)
         self.assertIn(resolution["synthesis"]["blackboard_decision_entry_ids"][0], final_entry.source_refs)
         self.assertIn(approved["blackboard_entry_id"], final_entry.source_refs)
