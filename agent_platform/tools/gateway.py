@@ -241,8 +241,8 @@ class SupervisedToolGateway:
             )
             if claimed.state == "succeeded":
                 return claimed.result
-            if claimed.state != "pending":
-                raise ToolExecutionDenied("previous side effect requires reconciliation")
+            if claimed.state != "pending" or not claimed.created:
+                raise ToolExecutionDenied("side effect is already claimed or requires reconciliation")
         try:
             if definition.contextual_handler is not None:
                 result = await definition.contextual_handler(arguments, execution_context)
