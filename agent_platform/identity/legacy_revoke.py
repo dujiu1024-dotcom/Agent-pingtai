@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ def invalidate_legacy_console_tokens(
         raise FileExistsError(backup)
 
     backup.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(source) as connection:
+    with closing(sqlite3.connect(source)) as connection:
         connection.execute("PRAGMA busy_timeout=5000")
         columns = {
             row[1] for row in connection.execute("PRAGMA table_info(users)")
