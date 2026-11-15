@@ -7,8 +7,10 @@ import hashlib
 import hmac
 import secrets
 
+
 class CredentialError(ValueError):
     """Raised for invalid credentials or password policy violations."""
+
 
 class PasswordHasher:
     """scrypt password hashing; parameters are versioned in the encoded value."""
@@ -45,8 +47,10 @@ class PasswordHasher:
         except (ValueError, TypeError, MemoryError):
             return False
 
+
 def issue_opaque_token(prefix: str = "aps") -> str:
     return "%s_%s" % (prefix, secrets.token_urlsafe(32))
+
 
 def token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
