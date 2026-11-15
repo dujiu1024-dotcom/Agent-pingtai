@@ -30,4 +30,8 @@ CREATE TABLE IF NOT EXISTS platform_run_checkpoints (
  FOREIGN KEY(tenant_id,run_id) REFERENCES platform_runs(tenant_id,run_id));
 CREATE INDEX IF NOT EXISTS idx_platform_run_checkpoints_recovery ON platform_run_checkpoints(status,lease_until,created_at)
  WHERE status IN ('available','claimed');
+ALTER TABLE platform_runs ADD COLUMN IF NOT EXISTS worker_id text;
+ALTER TABLE platform_runs ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
+CREATE INDEX IF NOT EXISTS idx_platform_runs_recovery_lease ON platform_runs(status,lease_expires_at,created_at)
+ WHERE status IN ('queued','interrupted','running');
 COMMIT;
