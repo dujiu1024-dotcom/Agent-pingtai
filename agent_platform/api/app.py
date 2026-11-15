@@ -6,10 +6,10 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 
+from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.registry import create_registry_router
-from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.workbench import create_workbench_router
