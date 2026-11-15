@@ -24,6 +24,9 @@ if DSN:
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
     from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
+    from agent_platform.control_plane.postgres import PostgresRegistryRepository
+    from agent_platform.control_plane.registry import RegistryService
+    from agent_platform.runtime.registry_snapshot import RunRegistrySnapshotService
     from agent_platform.control_plane.data_connectors import DataConnection
     from agent_platform.control_plane.postgres import PostgresSessionRepository
     from agent_platform.control_plane.sessions_assets import InMemoryObjectStorage, MessageRole, SessionAssetService
@@ -1158,22 +1161,41 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(duplicate.state, "succeeded")
         self.assertEqual(duplicate.result, {"external_id": "effect-1"})
 
-        snapshots = PostgresRunSnapshotStore(self.connect)
-        from agent_platform.runtime.registry_snapshot import RunRegistrySnapshot
-        snapshot = RunRegistrySnapshot(
-            tenant_id=self.tenant_id, run_id=str(run_id),
-            entries=({"kind": "agent", "item_id": agent_id, "version": 1},),
-            digest="b" * 64,
+        registry_repository = PostgresRegistryRepository(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
         )
-        await snapshots.save_once(snapshot)
-        loaded = await snapshots.get(self.tenant_id, str(run_id))
+        registry = RegistryService(registry_repository)
+        draft = await registry.create_draft(
+            tenant_id=self.tenant_id, kind="agent", item_id=agent_id,
+            definition={"system_prompt": "version one"}, actor_id="integration-admin",
+        )
+        await registry.publish(
+            tenant_id=self.tenant_id, kind="agent", item_id=agent_id,
+            version=draft.version,
+        )
+        snapshots = PostgresRunSnapshotStore(self.connect)
+        snapshot_service = RunRegistrySnapshotService(registry=registry, store=snapshots)
+        snapshot = await snapshot_service.pin(
+            tenant_id=self.tenant_id, run_id=str(run_id),
+            references=(("agent", agent_id),),
+        )
+        loaded = await snapshot_service.get(
+            tenant_id=self.tenant_id, run_id=str(run_id),
+        )
         self.assertEqual(loaded.digest, snapshot.digest)
+        next_draft = await registry.create_draft(
+            tenant_id=self.tenant_id, kind="agent", item_id=agent_id,
+            definition={"system_prompt": "version two"}, actor_id="integration-admin",
+        )
+        await registry.publish(
+            tenant_id=self.tenant_id, kind="agent", item_id=agent_id,
+            version=next_draft.version,
+        )
         with self.assertRaises(ValueError):
-            await snapshots.save_once(RunRegistrySnapshot(
+            await snapshot_service.pin(
                 tenant_id=self.tenant_id, run_id=str(run_id),
-                entries=({"kind": "agent", "item_id": agent_id, "version": 2},),
-                digest="c" * 64,
-            ))
+                references=(("agent", agent_id),),
+            )
 
         connections = PostgresConnectorRepository(
             tenant_id=self.tenant_id, connection_factory=self.connect,
