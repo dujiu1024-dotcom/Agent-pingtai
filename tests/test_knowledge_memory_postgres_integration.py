@@ -71,12 +71,23 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, chunks=[newer_chunk],
             vectors=[[0.0, 1.0] + [0.0] * 1534],
         )
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO knowledge_document_acl(tenant_id,document_id,principal_type,principal_id,permission,granted_by) VALUES(%s,%s,'user','reader','read','admin')",
+                (self.tenant_id, doc.document_id),
+            )
+            await conn.commit()
         self.assertTrue(await self.knowledge.delete_document(self.tenant_id,doc.document_id))
         self.assertEqual(await self.knowledge.search(principal=KnowledgePrincipal(tenant_id=self.tenant_id,user_id="u"),query="gamma",query_vector=None,limit=5),[])
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s",(self.tenant_id,doc.document_id))
             self.assertEqual((await cur.fetchone())["n"],0)
             cur=await conn.execute("SELECT count(*) n FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id IN (%s,%s)",(self.tenant_id,chunk.chunk_id,newer_chunk.chunk_id))
+            self.assertEqual((await cur.fetchone())["n"],0)
+            cur=await conn.execute(
+                "SELECT count(*) n FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",
+                (self.tenant_id, doc.document_id),
+            )
             self.assertEqual((await cur.fetchone())["n"],0)
     async def test_memory_candidate_confirmation_correction_export_expiry_and_delete(self):
         candidate=MemoryCandidate(tenant_id=self.tenant_id,scope=MemoryScope.USER,scope_id="user-1",content="old preference",source_ref="conversation:1",confidence=.8,created_by="extractor")
