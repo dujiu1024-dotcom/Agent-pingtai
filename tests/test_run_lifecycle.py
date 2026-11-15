@@ -29,6 +29,16 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   seen=[]
   result=await self.manager.recover(checkpoint_loader=lambda row: _append(seen,"load"),resume=lambda row:_append(seen,"resume"))
   self.assertEqual(result,["r"]); self.assertEqual(seen,["load","resume"])
+ async def test_human_paused_run_is_not_auto_resumed(self):
+  await self.manager.start("t","r")
+  current=await self.store.get("t","r")
+  from agent_platform.runtime.lifecycle import RunSnapshot
+  await self.store.transition(RunSnapshot("t","r",RunStatus.PAUSED,current.version),expected_version=current.version)
+  called=[]
+  self.assertEqual(await self.manager.recover(checkpoint_loader=lambda row:_append(called,"load"),
+   resume=lambda row:_append(called,"resume")),[])
+  self.assertEqual(called,[])
+  self.assertEqual((await self.store.get("t","r")).status,RunStatus.PAUSED)
  async def test_queued_run_recovers_from_initial_input_without_checkpoint(self):
   seen=[]
   result=await self.manager.recover(checkpoint_loader=lambda row:_append(seen,"load"),
