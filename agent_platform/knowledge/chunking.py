@@ -23,7 +23,7 @@ def chunk_document(document: Document, text: str, *, max_chars: int = 1200, over
         body = raw.strip()
         if body:
             offset = start + len(raw) - len(raw.lstrip())
-            page_markers = list(re.finditer(r"\\[page:(\\d+)\\]", normalized[:offset]))
+            page_markers = list(re.finditer(r"\[page:(\d+)\]", normalized[:offset]))
             page_number = int(page_markers[-1].group(1)) if page_markers else None
             chunks.append(DocumentChunk(tenant_id=document.tenant_id, document_id=document.document_id, document_version=document.version, ordinal=len(chunks), text=body, content_hash=sha256_text(body), start_offset=offset, end_offset=offset + len(body), page_number=page_number))
         if end >= len(normalized): break
