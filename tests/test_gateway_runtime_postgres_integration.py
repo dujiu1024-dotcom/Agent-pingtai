@@ -90,7 +90,7 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
    async def aget_state(self,config):return type("State",(),{"config":{"configurable":{"checkpoint_id":None}}})()
   manager=RunLifecycleManager(self.states)
   executor=LangGraphRunExecutor(graph=Graph(),lifecycle=manager,worker_id="worker-new",lease_seconds=5)
-  recovered=await executor.recover(load_initial_input=lambda row:{"run":row.run_id})
+  recovered=await executor.recover(load_initial_input=lambda row:{"run":row.run_id},tenant_id=self.tenant)
   self.assertEqual(recovered,[self.run])
   self.assertEqual((await self.states.get(self.tenant,self.run)).status,RunStatus.SUCCEEDED)
  async def test_executor_can_acquire_lease_while_run_is_queued(self):
