@@ -38,15 +38,15 @@ async def _authorize_document_update(
     if existing.scope is KnowledgeScope.PRIVATE:
         allowed = (
             existing.owner_user_id == principal.user_id
-            or "knowledge.manage" in principal.roles
+            or "knowledge.manage" in principal.permissions
         )
     elif existing.scope is KnowledgeScope.PROJECT:
         allowed = (
-            "knowledge.manage" in principal.roles
+            "knowledge.manage" in principal.permissions
             or existing.project_id in principal.manage_project_ids
         )
     else:
-        allowed = "knowledge.manage" in principal.roles
+        allowed = "knowledge.manage" in principal.permissions
     if not allowed:
         raise HTTPException(403, "document update permission denied")
 
