@@ -10,6 +10,7 @@ from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.connectors import create_connectors_router
+from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.workbench import create_workbench_router
 from agent_platform.identity.http import (
@@ -49,6 +50,8 @@ def create_platform_app(
     session_authorizer: Any | None = None,
     connector_service_resolver: Any | None = None,
     connector_authorizer: Any | None = None,
+    run_lifecycle_resolver: Any | None = None,
+    run_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -128,5 +131,14 @@ def create_platform_app(
             resolve_principal=_principal_from_request,
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
+        ))
+    runs_configured = any(value is not None for value in (run_lifecycle_resolver, run_authorizer))
+    if runs_configured:
+        if run_lifecycle_resolver is None or run_authorizer is None:
+            raise ValueError("Run lifecycle resolver and authorizer must be configured together")
+        app.include_router(create_runs_router(
+            resolve_principal=_principal_from_request,
+            resolve_lifecycle=run_lifecycle_resolver,
+            authorize=run_authorizer,
         ))
     return app
