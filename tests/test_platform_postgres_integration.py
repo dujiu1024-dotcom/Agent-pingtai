@@ -22,9 +22,10 @@ if DSN:
 class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tenant_id = f"it-{uuid4().hex}"
-        async with await AsyncConnection.connect(DSN) as conn:
-            migration = Path("agent_platform/storage/postgres/001_platform_core.sql").read_text()
+        migration = Path("agent_platform/storage/postgres/001_platform_core.sql").read_text()
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
             await conn.execute(migration, prepare=False)
+        async with await AsyncConnection.connect(DSN) as conn:
             await conn.execute(
                 "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
                 (self.tenant_id, "Integration Test"),
@@ -38,6 +39,17 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.repo = PostgresBlackboardRepository(
             tenant_id=self.tenant_id, connection_factory=connect
         )
+
+    async def asyncTearDown(self):
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_outbox
+                   SET published_at=COALESCE(published_at, now()),
+                       lease_token=NULL, lease_until=NULL
+                   WHERE tenant_id=%s""",
+                (self.tenant_id,),
+            )
+            await conn.commit()
 
     def make_entry(self, *, content=None, status=EntryStatus.PROPOSED, entry_id=None, correlation_id=None):
         return BlackboardEntry(
