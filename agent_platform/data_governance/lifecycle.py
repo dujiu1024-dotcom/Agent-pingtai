@@ -164,13 +164,23 @@ class PostgresMigrationRepository:
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
-                    """SELECT payload_hash FROM platform_data_migration_rows
+                    """SELECT payload_hash,status FROM platform_data_migration_rows
                        WHERE tenant_id=%s AND batch_id=%s AND source_key=%s FOR UPDATE""",
                     (row.tenant_id,row.batch_id,row.source_key),
                 )
                 old = await cursor.fetchone()
-                if old is not None and old["payload_hash"] != row.payload_hash:
-                    raise ValueError("source row payload changed; create a new migration revision")
+                if old is not None:
+                    if old["payload_hash"] != row.payload_hash:
+                        raise ValueError("source row payload changed; create a new migration revision")
+                    transitions = {
+                        "pending": {"pending","imported","skipped","failed"},
+                        "failed": {"failed","pending"},
+                        "imported": {"imported","validated","failed"},
+                        "validated": {"validated"},
+                        "skipped": {"skipped"},
+                    }
+                    if row.status not in transitions.get(old["status"], set()):
+                        raise ValueError("invalid migration row status transition")
                 await connection.execute(
                     """INSERT INTO platform_data_migration_rows
                        (tenant_id,batch_id,source_key,target_key,payload_hash,status,error_code)
@@ -223,10 +233,10 @@ class PostgresMigrationRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """UPDATE platform_data_migration_batches
-                       SET status='rolled_back',finished_at=now()
+                       SET status='rolled_back',rollback_reason=%s,finished_at=now()
                        WHERE tenant_id=%s AND batch_id=%s AND status='switched'
                        RETURNING batch_id""",
-                    (tenant_id,batch_id),
+                    (reason,tenant_id,batch_id),
                 )
                 return await cursor.fetchone() is not None
 
