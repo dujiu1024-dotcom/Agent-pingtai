@@ -31,7 +31,7 @@ class WebhookSubscription:
         if (
             parsed.scheme != "https" or not hostname
             or parsed.username is not None or parsed.password is not None
-            or parsed.fragment or hostname.endswith((".localhost", ".local", ".internal"))
+            or parsed.fragment or hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal"))
             or (address is not None and (
                 address.is_private or address.is_loopback or address.is_link_local
                 or address.is_reserved or address.is_unspecified
