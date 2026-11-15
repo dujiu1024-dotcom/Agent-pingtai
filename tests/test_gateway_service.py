@@ -84,4 +84,23 @@ class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
   service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,app_factory=lambda _:app)
   await service.mount_run(tenant_id="t",run_id="r",bridge=object())
   self.assertTrue(await service.unmount_run(tenant_id="t",run_id="r")); self.assertTrue(verifier.revoked)
+ async def test_heartbeat_retries_after_transient_directory_failure(self):
+  import asyncio
+  class FlakyDirectory(InMemoryEndpointDirectory):
+   def __init__(self):
+    super().__init__(); self.calls=0; self.recovered=asyncio.Event()
+   async def heartbeat(self,tenant_id,run_id,instance_id,*,lease_seconds):
+    self.calls+=1
+    if self.calls==1: raise RuntimeError("temporary database outage")
+    self.recovered.set()
+    return await super().heartbeat(tenant_id,run_id,instance_id,lease_seconds=lease_seconds)
+  directory=FlakyDirectory()
+  service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,
+   app_factory=lambda _:object(),lease_seconds=6)
+  await service.mount_run(tenant_id="t",run_id="r",bridge=object())
+  await asyncio.wait_for(directory.recovered.wait(),timeout=6)
+  self.assertGreaterEqual(directory.calls,2)
+  self.assertFalse(service._heartbeat_tasks[("t","r")].done())
+  await service.unmount_run(tenant_id="t",run_id="r")
+
 if __name__=="__main__": unittest.main()
