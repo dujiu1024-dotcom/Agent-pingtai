@@ -1,7 +1,7 @@
 """PostgreSQL Run state store with optimistic transitions and worker leases."""
 from __future__ import annotations
 from typing import Any
-from agent_platform.runtime.lifecycle import RunSnapshot,RunStateStore,RunStatus,_ALLOWED
+from agent_platform.runtime.lifecycle import RunSnapshot, RunStateStore, RunStatus, _ALLOWED
 
 class PostgresRunStateStore(RunStateStore):
  def __init__(self,connection_factory:Any)->None:self._connect=connection_factory
