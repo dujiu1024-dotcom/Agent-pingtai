@@ -10,6 +10,7 @@ class LangGraphRunExecutor:
  def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900,
   worker_id:str|None=None,lease_seconds:int=60)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
+  if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
   self.graph=graph;self.lifecycle=lifecycle;self.timeout_seconds=timeout_seconds
   self.worker_id=worker_id or uuid4().hex;self.lease_seconds=lease_seconds
  @staticmethod
