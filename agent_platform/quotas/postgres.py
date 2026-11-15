@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Callable
 from uuid import UUID
 
-from agent_platform.quotas.service import Budget, QuotaReservation, UsageEvent
+from agent_platform.quotas.service import Budget, BudgetExceeded, QuotaReservation, UsageEvent
 
 ConnectionFactory = Callable[[], Any]
 
@@ -77,14 +77,23 @@ class PostgresQuotaStore:
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
-                cursor = await connection.execute(
-                    """SELECT warning_soft_tokens,warning_soft_cost
-                    FROM platform_quota_reserve(%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (UUID(reservation.reservation_id),reservation.tenant_id,UUID(reservation.run_id),
-                     reservation.scope_type,reservation.scope_id,reservation.period_start,
-                     reservation.reserved_tokens,reservation.reserved_cost_usd),
-                )
-                row = await cursor.fetchone()
+                try:
+                    cursor = await connection.execute(
+                        """SELECT warning_soft_tokens,warning_soft_cost
+                        FROM platform_quota_reserve(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (UUID(reservation.reservation_id),reservation.tenant_id,UUID(reservation.run_id),
+                         reservation.scope_type,reservation.scope_id,reservation.period_start,
+                         reservation.reserved_tokens,reservation.reserved_cost_usd),
+                    )
+                    row = await cursor.fetchone()
+                except Exception as exc:
+                    message = str(exc)
+                    if any(reason in message for reason in (
+                        "quota budget not configured", "hard token budget exceeded",
+                        "hard cost budget exceeded", "concurrency quota exceeded",
+                    )):
+                        raise BudgetExceeded(message) from exc
+                    raise
         warnings = []
         if row["warning_soft_tokens"]:
             warnings.append("soft token budget exceeded")
