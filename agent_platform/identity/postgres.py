@@ -217,29 +217,26 @@ class PostgresIdentityRepository:
             cursor = await connection.execute(
                 """SELECT DISTINCT a.agent_id, rp.permission_key
                    FROM platform_agents a
+                   JOIN platform_role_bindings b
+                     ON b.tenant_id=a.tenant_id
+                    AND b.resource_type='agent' AND b.resource_id=a.agent_id
+                    AND b.revoked_at IS NULL
+                   JOIN platform_role_permissions rp
+                     ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
                    WHERE a.tenant_id=%s AND a.status='active'
-                     AND EXISTS (
-                       SELECT 1
-                       FROM platform_role_bindings b
-                       JOIN platform_role_permissions rp
-                         ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
-                       WHERE b.tenant_id=a.tenant_id
-                         AND b.resource_type='agent' AND b.resource_id=a.agent_id
-                         AND b.revoked_at IS NULL
-                         AND rp.permission_key IN ('agent.run','agent.manage','memory.manage')
-                         AND (
-                           (b.subject_type='user' AND b.subject_id=%s)
-                           OR (b.subject_type='team' AND b.subject_id IN (
-                             SELECT tm.team_id
-                             FROM platform_team_memberships tm
-                             JOIN platform_teams team
-                               ON team.tenant_id=tm.tenant_id
-                              AND team.team_id=tm.team_id
-                              AND team.status='active'
-                             WHERE tm.tenant_id=a.tenant_id
-                               AND tm.user_id=%s AND tm.status='active'
-                           ))
-                         )
+                     AND rp.permission_key IN ('agent.run','agent.manage','memory.manage')
+                     AND (
+                       (b.subject_type='user' AND b.subject_id=%s)
+                       OR (b.subject_type='team' AND b.subject_id IN (
+                         SELECT tm.team_id
+                         FROM platform_team_memberships tm
+                         JOIN platform_teams team
+                           ON team.tenant_id=tm.tenant_id
+                          AND team.team_id=tm.team_id
+                          AND team.status='active'
+                         WHERE tm.tenant_id=a.tenant_id
+                           AND tm.user_id=%s AND tm.status='active'
+                       ))
                      )""",
                 (tenant_id, user_id, user_id),
             )
