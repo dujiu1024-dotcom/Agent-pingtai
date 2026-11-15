@@ -1,4 +1,4 @@
-# HR Agent（HR / 组织）
+# 人事 Agent（HR / 组织）
 
 ## 1. 身份
 

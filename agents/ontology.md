@@ -1,9 +1,9 @@
 # FDE OPC 领域本体（Ontology）
 
-- 版本：v1.0
+- 版本：v1.1
 - 更新：2026-11-11
 - 定位：所有 Agent 角色、数据模型、事件语义的集中式参照；代码层校验规则与提示词组装都以此为源
-- 引用：[公司宪法](../company/公司宪法.md)、[06 技术方案](../clients/002-FDE一人公司/06-技术方案.md)、[08 语义与记忆设计](../clients/002-FDE一人公司/08-语义与记忆设计.md)
+- 引用：[公司宪法](../company/公司宪法.md)、[06 技术方案](../clients/002-FDE一人公司/06-技术方案.md)、[08 语义与记忆设计](../clients/002-FDE一人公司/08-语义与记忆设计.md)、[11 调度与财务层实现方案](../clients/002-FDE一人公司/11-调度与财务层实现方案.md)
 
 ---
 
@@ -36,7 +36,7 @@
 
 ## 2. 实体定义（Entities）
 
-### 2.1 Agent 角色（9 个）
+### 2.1 Agent 角色（11 个）
 
 两层一共享 + 独立监督架构：
 
@@ -54,7 +54,8 @@
   ├─ 商机侦察 Scout
   ├─ 内容 Content
   ├─ HR
-  └─ 产品经理 PM
+  ├─ 财务 Finance
+  └─ 制作人 Producer
 ```
 
 | 角色 | 定位 | 触发方式 | 独立直属 |
@@ -68,6 +69,8 @@
 | Scout（商机侦察） | 线索发现与初步筛选 | 线索源更新 | 幕僚长 |
 | Content（内容） | 案例沉淀、对外内容生产 | 阶段结束 / 复盘完成 | 幕僚长 |
 | HR | 外援协调、合同与用工合规 | 招聘需求 / 合同到期 | 幕僚长 |
+| Finance（财务） | 接单审查、开票清单、回款跟踪、成本归集；A1 只起草 | `task_created`（kind=code）/ `invoice_overdue` | 幕僚长 |
+| Producer（制作人） | 目标 → 任务草案；不写库、不关任务 | 目标下达 | 幕僚长 |
 
 ### 2.2 核心实体
 
@@ -81,6 +84,26 @@
 | Doc | 文档 | 本地路径 + 飞书 node_token 映射 |
 | AgentRun | Agent 运行记录 | 角色、任务、模型、token、产出路径 |
 | DeadLetter | 失败事件队列 | 连续失败的事件，不静默丢弃 |
+| Quote | 报价 | 金额、成本、毛利、付款条件、有效期；不计入 90h |
+| Contract | 合同 | 由报价转来，登记签署时间与付款条件 |
+| Invoice | 发票 | 开票号、金额、开票日、到期日、状态 |
+| Payment | 回款 | 对应发票的实际到账记录 |
+| Cost | 成本 | 按项目归集的人工与外部成本 |
+| Entity / Relation | 图谱占位 | 空表已建，T-0020 启用；ID 前缀见 2.3 |
+| Subscription | 事件订阅 | 事件类型 → 角色/动作，默认关闭 |
+
+### 2.3 实体 ID 规范
+
+图谱启用后所有实体统一前缀，避免与任务 ID 混淆：
+
+| 类型 | 前缀 | 示例 |
+|---|---|---|
+| 项目 | `proj:` | `proj:OPC-002` |
+| 任务 | `task:` | `task:T-0016` |
+| 角色 | `role:` | `role:finance` |
+| 文档 | `doc:` | `doc:09-分项计划` |
+| 客户 | `client:` | `client:OPC` |
+| 事实 | `fact:` | `fact:F-0001` |
 
 ---
 
@@ -143,14 +166,23 @@
 | `task_due_soon` | 任务距开始 ≤1 天 / 距截止 ≤2 天 | 秘书 |
 | `task_overdue` | 任务已过截止日 | 秘书、幕僚长（超 3 天） |
 | `task_blocked` | 任务标记阻塞 | 幕僚长 |
-| `task_closed` | 任务关闭 | 秘书（验证证据）、审计 |
+| `task_closed` | 任务关闭（done） | 秘书（验证证据）、审计 |
+| `task_canceled` | 任务作废（canceled，需写明原因） | 秘书、审计 |
+| `task_reopened` | 已完成/已作废任务重开（需写明原因） | 秘书、审计 |
 | `tasks_created` | 规划师产出任务清单 | 秘书（排日程）、教练（新任务指南） |
 | `milestone_hit` | 里程碑到达 | 幕僚长、审计 |
 | `milestone_deviation` | 里程碑偏离 | 幕僚长 |
 | `gate_blocked` | 开工闸门未过 | PM / 规划师（停手） |
+| `gate_confirmed` | 开工/商务闸门通过 | 规划师（排期草案） |
+| `gate_revoked` | 闸门被撤销 | PM / 规划师（停手） |
+| `agent_run` | Agent 调用完成 | 调度层（推进下一个 ready） |
+| `audit_flag` | 审计发现无来源信息 | 审计（复核） |
+| `check` | 定时巡检 | 秘书（按巡检结果分派） |
 | `sync_conflict` | 飞书同步冲突 | 秘书 / 人工 |
 | `doc_ready_review` | 文档对外发布前 | 审计 |
-| `contract_signed` | 合同签署 | PM |
+| `contract_signed` | 合同签署 | PM / 财务 |
+| `invoice_overdue` | 发票到期未回款 | 财务（催款） |
+| `dependency_overdue` | 依赖清单缺料逾期未提供 | 秘书（催办）/ 创始人 |
 
 ### 3.7 其他常量
 
@@ -187,7 +219,7 @@ Project ──has──▶ Task ──generates──▶ Event
 | 关系 | 含义 | 约束 |
 |---|---|---|
 | `Project has Task` | 项目包含任务 | Task 必须属于且仅属于一个 Project |
-| `Task has Owner` | 任务由某角色负责 | Owner 必须是 9 个角色之一，或"创始人" |
+| `Task has Owner` | 任务由某角色负责 | Owner 必须是 11 个角色之一，或"创始人" |
 | `Task generates Event` | 任务状态变化产生事件 | dedup_key 唯一，同一任务同一日期不重复 |
 | `Role subscribes EventType` | 角色订阅某类事件 | 声明式配置，不硬编码在流程里 |
 | `Fact has SourceLevel` | 事实有来源等级 | 非法值拒绝写入 |
