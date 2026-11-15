@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Callable
 from uuid import uuid4
 
-from agent_platform.identity.models import SessionRecord, UserRecord
+from agent_platform.identity.models import ApiCredentialRecord, InvitationRecord, SessionRecord, UserRecord
 
 ConnectionFactory = Callable[[], Any]
 
@@ -237,5 +237,216 @@ class PostgresIdentityRepository:
                            'resource_type', %s, 'resource_id', %s))""",
                     (tenant_id, actor_id, row["subject_id"], binding_id,
                      row["role_id"], row["resource_type"], row["resource_id"]),
+                )
+        return True
+
+
+    async def create_api_credential(
+        self, *, credential_id: str, tenant_id: str, user_id: str, name: str,
+        token_hash: str, scopes: tuple[str, ...], expires_at: datetime | None,
+    ) -> None:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """INSERT INTO platform_api_credentials
+                   (credential_id, tenant_id, user_id, name, token_hash, scopes, expires_at)
+                   SELECT %s, %s, %s, %s, %s, %s, %s
+                   WHERE EXISTS (
+                     SELECT 1 FROM platform_tenant_memberships m
+                     JOIN platform_tenants t ON t.tenant_id=m.tenant_id AND t.status='active'
+                     JOIN platform_users u ON u.user_id=m.user_id AND u.status='active'
+                     WHERE m.tenant_id=%s AND m.user_id=%s AND m.status='active'
+                   ) RETURNING credential_id""",
+                (credential_id, tenant_id, user_id, name, token_hash,
+                 list(scopes), expires_at, tenant_id, user_id),
+            )
+            if await cursor.fetchone() is None:
+                raise PermissionError("active tenant membership required")
+
+    async def get_api_credential(self, token_hash: str) -> ApiCredentialRecord | None:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT c.credential_id, c.tenant_id, c.user_id, c.name,
+                          c.scopes, c.expires_at, c.revoked_at,
+                          u.status AS user_status, m.status AS membership_status
+                   FROM platform_api_credentials c
+                   JOIN platform_users u ON u.user_id=c.user_id
+                   JOIN platform_tenant_memberships m
+                     ON m.tenant_id=c.tenant_id AND m.user_id=c.user_id
+                   JOIN platform_tenants t
+                     ON t.tenant_id=c.tenant_id AND t.status='active'
+                   WHERE c.token_hash=%s""",
+                (token_hash,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return ApiCredentialRecord(
+            credential_id=str(row["credential_id"]), tenant_id=row["tenant_id"],
+            user_id=str(row["user_id"]), name=row["name"],
+            scopes=tuple(row["scopes"]), expires_at=row["expires_at"],
+            revoked_at=row["revoked_at"], user_status=row["user_status"],
+            membership_status=row["membership_status"],
+        )
+
+    async def touch_api_credential(self, *, credential_id: str, tenant_id: str) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """UPDATE platform_api_credentials c SET last_used_at=now()
+                   WHERE c.credential_id=%s AND c.tenant_id=%s
+                     AND c.revoked_at IS NULL
+                     AND (c.expires_at IS NULL OR c.expires_at > now())
+                     AND EXISTS (
+                       SELECT 1 FROM platform_users u
+                       JOIN platform_tenant_memberships m ON m.user_id=u.user_id
+                       JOIN platform_tenants t ON t.tenant_id=m.tenant_id
+                       WHERE u.user_id=c.user_id AND m.tenant_id=c.tenant_id
+                         AND u.status='active' AND m.status='active'
+                         AND t.status='active'
+                     )
+                   RETURNING c.credential_id""",
+                (credential_id, tenant_id),
+            )
+            return await cursor.fetchone() is not None
+
+    async def revoke_api_credential(
+        self, *, credential_id: str, tenant_id: str, user_id: str,
+    ) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_api_credentials
+                       SET revoked_at=now()
+                       WHERE credential_id=%s AND tenant_id=%s AND user_id=%s
+                         AND revoked_at IS NULL
+                       RETURNING name""",
+                    (credential_id, tenant_id, user_id),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    return False
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id, actor_id, action, subject_id, outcome, detail)
+                       VALUES (%s, %s, 'api_credential.revoked', %s, 'succeeded',
+                               jsonb_build_object('credential_id', %s, 'name', %s))""",
+                    (tenant_id, user_id, credential_id, credential_id, row["name"]),
+                )
+        return True
+
+    async def create_invitation(
+        self, *, invitation_id: str, tenant_id: str, email_normalized: str,
+        role_id: str, token_hash: str, invited_by: str, expires_at: datetime,
+    ) -> None:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT 1 FROM platform_roles
+                       WHERE tenant_id=%s AND role_id=%s""",
+                    (tenant_id, role_id),
+                )
+                if await cursor.fetchone() is None:
+                    raise ValueError("role does not exist in this tenant")
+                cursor = await connection.execute(
+                    """INSERT INTO platform_invitations
+                       (invitation_id, tenant_id, email_normalized, role_id,
+                        token_hash, invited_by, expires_at)
+                       SELECT %s, %s, %s, %s, %s, %s, %s
+                       WHERE EXISTS (
+                         SELECT 1 FROM platform_tenants
+                         WHERE tenant_id=%s AND status='active'
+                       )
+                       RETURNING invitation_id""",
+                    (invitation_id, tenant_id, email_normalized, role_id,
+                     token_hash, invited_by, expires_at, tenant_id),
+                )
+                if await cursor.fetchone() is None:
+                    raise PermissionError("active tenant required")
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id, actor_id, action, subject_id, outcome, detail)
+                       VALUES (%s, %s, 'invitation.created', %s, 'succeeded',
+                         jsonb_build_object('email', %s, 'role_id', %s,
+                           'invitation_id', %s))""",
+                    (tenant_id, invited_by, email_normalized, email_normalized,
+                     role_id, invitation_id),
+                )
+
+    async def get_invitation(self, token_hash: str) -> InvitationRecord | None:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT invitation_id, tenant_id, email_normalized, role_id,
+                          expires_at, accepted_at
+                   FROM platform_invitations
+                   WHERE token_hash=%s""",
+                (token_hash,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return InvitationRecord(
+            invitation_id=str(row["invitation_id"]), tenant_id=row["tenant_id"],
+            email_normalized=row["email_normalized"], role_id=row["role_id"],
+            expires_at=row["expires_at"], accepted_at=row["accepted_at"],
+        )
+
+    async def accept_invitation(
+        self, *, invitation_id: str, token_hash: str, tenant_id: str,
+        user_id: str, email_normalized: str,
+    ) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT i.email_normalized, i.role_id
+                       FROM platform_invitations i
+                       JOIN platform_tenants t
+                         ON t.tenant_id=i.tenant_id AND t.status='active'
+                       JOIN platform_users u
+                         ON u.user_id=%s AND u.email_normalized=i.email_normalized
+                        AND u.status='active'
+                       WHERE i.invitation_id=%s AND i.token_hash=%s
+                         AND i.tenant_id=%s AND i.email_normalized=%s
+                         AND i.accepted_at IS NULL AND i.expires_at > now()
+                       FOR UPDATE OF i""",
+                    (user_id, invitation_id, token_hash, tenant_id, email_normalized),
+                )
+                invitation = await cursor.fetchone()
+                if invitation is None:
+                    return False
+                await connection.execute(
+                    """INSERT INTO platform_tenant_memberships
+                       (tenant_id, user_id, status, joined_at)
+                       VALUES (%s, %s, 'active', now())
+                       ON CONFLICT (tenant_id, user_id)
+                       DO UPDATE SET status='active', joined_at=now()""",
+                    (tenant_id, user_id),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_role_bindings
+                       (binding_id, tenant_id, subject_type, subject_id,
+                        resource_type, resource_id, role_id, created_by)
+                       VALUES (%s, %s, 'user', %s, 'tenant', %s, %s, 'invitation')""",
+                    (str(uuid4()), tenant_id, user_id, tenant_id, invitation["role_id"]),
+                )
+                cursor = await connection.execute(
+                    """UPDATE platform_invitations SET accepted_at=now()
+                       WHERE invitation_id=%s AND accepted_at IS NULL
+                       RETURNING invitation_id""",
+                    (invitation_id,),
+                )
+                if await cursor.fetchone() is None:
+                    return False
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id, actor_id, action, subject_id, outcome, detail)
+                       VALUES (%s, %s, 'invitation.accepted', %s, 'succeeded',
+                         jsonb_build_object('invitation_id', %s, 'role_id', %s))""",
+                    (tenant_id, user_id, user_id, invitation_id, invitation["role_id"]),
                 )
         return True
