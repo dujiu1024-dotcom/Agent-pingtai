@@ -6,16 +6,18 @@ tenant/user identifiers from request bodies.
 from __future__ import annotations
 import hashlib
 from datetime import datetime
-from typing import Awaitable,Callable,Any
-from uuid import UUID,uuid4
-from fastapi import APIRouter,HTTPException,Request
+from typing import Any, Awaitable, Callable
+from uuid import UUID, uuid4
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+
 from agent_platform.api.identity_context import IdentityContextResolver
-from agent_platform.knowledge.contracts import Document,KnowledgePrincipal,KnowledgeScope
-from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
 from agent_platform.knowledge.rag import RAGService
-from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService
-from agent_platform.memory.extraction import MemoryExtractionService,MemoryTurn
+from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
+from agent_platform.memory.service import MemoryCandidate, MemoryPrincipal, MemoryScope, MemoryService
 KnowledgePrincipalResolver=Callable[[Request],Awaitable[KnowledgePrincipal]]
 MemoryPrincipalResolver=Callable[[Request],Awaitable[MemoryPrincipal]]
 async def _authorize_document_update(
