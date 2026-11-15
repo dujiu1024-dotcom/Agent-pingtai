@@ -92,6 +92,7 @@ class QuotaStore(Protocol):
     async def settle(self, reservation_id: str, event: UsageEvent) -> None: ...
     async def release(self, reservation_id: str) -> bool: ...
     async def usage(self, tenant_id: str, scope_type: str, scope_id: str, start: datetime, end: datetime) -> tuple[int, Decimal, int]: ...
+    async def list_usage(self, tenant_id: str, start: datetime, end: datetime, *, run_id: str | None = None, model_key: str | None = None, limit: int = 1000) -> list[UsageEvent]: ...
 
 
 class InMemoryQuotaStore:
@@ -181,6 +182,21 @@ class InMemoryQuotaStore:
     async def usage(self, tenant_id: str, scope_type: str, scope_id: str, start: datetime, end: datetime) -> tuple[int, Decimal, int]:
         async with self._lock:
             return self._totals(tenant_id, scope_type, scope_id, start, end)
+
+    async def list_usage(
+        self, tenant_id: str, start: datetime, end: datetime, *,
+        run_id: str | None = None, model_key: str | None = None, limit: int = 1000,
+    ) -> list[UsageEvent]:
+        if limit < 1 or limit > 10000 or end <= start:
+            raise ValueError("invalid usage export range or limit")
+        async with self._lock:
+            rows = [
+                event for event in self._events.values()
+                if event.tenant_id == tenant_id and start <= event.occurred_at < end
+                and (run_id is None or event.run_id == run_id)
+                and (model_key is None or event.model_key == model_key)
+            ]
+            return sorted(rows, key=lambda event: event.occurred_at)[:limit]
 
 
 class QuotaService:
