@@ -42,6 +42,14 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   current=await self.store.get("t","r")
   self.assertEqual(current.status,RunStatus.FAILED)
   self.assertIn("no checkpoint",current.last_error)
+ async def test_checkpoint_validation_failure_is_persisted_as_failed(self):
+  await self.manager.start("t","r")
+  await self.manager.mark_interrupted("t","r",checkpoint_ref="missing",reason="worker lost")
+  async def fail(row): raise RuntimeError("checkpoint missing")
+  self.assertEqual(await self.manager.recover(checkpoint_loader=fail,resume=lambda row:_append([],row)),[])
+  current=await self.store.get("t","r")
+  self.assertEqual(current.status,RunStatus.FAILED)
+  self.assertIn("checkpoint missing",current.last_error)
  async def test_recovery_exception_is_persisted_as_failed(self):
   await self.manager.start("t","r")
   await self.manager.mark_interrupted("t","r",checkpoint_ref="cp-1",reason="worker lost")
