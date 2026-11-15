@@ -55,8 +55,10 @@ def _memory_visible_for_review(record: Any,principal: MemoryPrincipal)->bool:
     candidate=record.candidate
     if candidate.tenant_id!=principal.tenant_id:return False
     if candidate.scope is MemoryScope.USER:return candidate.scope_id==principal.user_id
-    if candidate.scope is MemoryScope.PROJECT:return candidate.scope_id in principal.project_ids and "memory.manage" in principal.roles
-    if candidate.scope is MemoryScope.AGENT:return candidate.scope_id in principal.agent_ids and "memory.manage" in principal.roles
+    if candidate.scope is MemoryScope.PROJECT:
+        return candidate.scope_id in principal.manage_project_ids or "memory.manage" in principal.roles
+    if candidate.scope is MemoryScope.AGENT:
+        return candidate.scope_id in principal.manage_agent_ids or "memory.manage" in principal.roles
     return "memory.manage" in principal.roles
 def create_knowledge_memory_router(
     *,
