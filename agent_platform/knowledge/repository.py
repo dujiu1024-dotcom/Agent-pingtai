@@ -101,6 +101,8 @@ class InMemoryKnowledgeRepository:
         for key, document in self.documents.items():
             if document.tenant_id != principal.tenant_id or document.deleted_at is not None:
                 continue
+            if any(other.tenant_id == document.tenant_id and other.document_id == document.document_id and other.version > document.version and other.deleted_at is None for other in self.documents.values()):
+                continue
             if document.scope.value == "private" and document.owner_user_id != principal.user_id:
                 continue
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
