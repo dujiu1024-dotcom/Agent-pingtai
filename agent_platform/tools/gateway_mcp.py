@@ -7,8 +7,10 @@ resource names, remote server names, or risk classifications.
 
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any, Mapping
 
 from agent_platform.tools.gateway import (
@@ -37,6 +39,11 @@ class GatewaySessionContext:
             raise ValueError("allowed tool names must not be empty")
         if set(self.approval_ids) - set(self.allowed_tool_names):
             raise ValueError("approval IDs may only be bound to allowed tools")
+        object.__setattr__(self, "actor_roles", tuple(self.actor_roles))
+        object.__setattr__(self, "allowed_tool_names", tuple(self.allowed_tool_names))
+        object.__setattr__(
+            self, "approval_ids", MappingProxyType(dict(self.approval_ids))
+        )
 
 
 class GatewayMCPBridge:
@@ -76,7 +83,7 @@ class GatewayMCPBridge:
                     f"tool {name!r} needs a JSON Schema and trusted resource resolver "
                     "before MCP exposure"
                 )
-            schema = dict(definition.input_schema)
+            schema = copy.deepcopy(dict(definition.input_schema))
             if schema.get("type") != "object":
                 raise ValueError(f"tool {name!r} input schema must be an object")
             if schema.get("additionalProperties", True) is not False:
@@ -92,7 +99,7 @@ class GatewayMCPBridge:
             {
                 "name": name,
                 "description": definition.description,
-                "inputSchema": schema,
+                "inputSchema": copy.deepcopy(schema),
             }
             for name, (definition, schema) in self._definitions.items()
         ]
@@ -104,8 +111,9 @@ class GatewayMCPBridge:
         if bound is None:
             raise ToolExecutionDenied("tool is not available in this run's MCP session")
         definition, schema = bound
+        safe_arguments = copy.deepcopy(dict(arguments))
         validation_errors = list(
-            self._validator_class(schema).iter_errors(dict(arguments))
+            self._validator_class(schema).iter_errors(safe_arguments)
         )
         if validation_errors:
             raise ToolExecutionDenied(
@@ -117,7 +125,7 @@ class GatewayMCPBridge:
         if resolver is None:
             raise ToolExecutionDenied("tool has no trusted resource resolver")
         try:
-            resource = resolver(arguments)
+            resource = resolver(safe_arguments)
         except Exception as exc:
             raise ToolExecutionDenied("tool resource could not be resolved") from exc
         if not isinstance(resource, str) or not resource.strip():
@@ -129,7 +137,7 @@ class GatewayMCPBridge:
             actor_roles=self.session.actor_roles,
             tool_name=name,
             resource=resource,
-            arguments=arguments,
+            arguments=safe_arguments,
             approval_id=self.session.approval_ids.get(name),
         )
 
