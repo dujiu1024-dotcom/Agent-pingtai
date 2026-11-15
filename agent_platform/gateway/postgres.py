@@ -2,6 +2,8 @@
 from __future__ import annotations
 from typing import Any
 from agent_platform.gateway.service import EndpointDirectory, EndpointRecord
+
+
 class PostgresEndpointDirectory(EndpointDirectory):
  def __init__(self,connection_factory:Any)->None:self._connect=connection_factory
  @classmethod
