@@ -41,6 +41,7 @@ on:
       - "tests/test_harness_benchmark.py"
       - "tests/test_registry_service.py"
       - "tests/test_session_assets.py"
+      - "tests/test_control_plane_api.py"
       - "tests/test_data_connectors.py"
       - "tests/test_multi_expert_workflow_integration.py"
       - "requirements-platform.txt"
