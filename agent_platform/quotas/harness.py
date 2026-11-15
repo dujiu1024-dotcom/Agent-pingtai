@@ -39,7 +39,13 @@ class QuotaEnforcedHarnessAdapter:
     async def run(self, request: Any) -> Any:
         context = request.context
         scope_type, scope_id = self.scope_resolver(request)
+        if scope_type == "tenant" and scope_id != context.tenant_id:
+            raise ValueError("tenant quota scope must match authenticated Run tenant")
         estimated_tokens, estimated_cost = self.estimate_request(request)
+        if not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool) or estimated_tokens < 0:
+            raise ValueError("estimated tokens must be a non-negative integer")
+        if not isinstance(estimated_cost, Decimal) or not estimated_cost.is_finite() or estimated_cost < 0:
+            raise ValueError("estimated cost must be a finite non-negative Decimal")
         reservation, _warnings = await self.quota_service.reserve_run(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
@@ -56,6 +62,10 @@ class QuotaEnforcedHarnessAdapter:
             output_tokens = int(usage.get("output_tokens", 0))
             tool_calls = len(getattr(result, "tool_calls", ()) or ())
             actual_cost = self.estimate_actual_cost(request, result)
+            if not isinstance(actual_cost, Decimal) or not actual_cost.is_finite() or actual_cost < 0:
+                raise ValueError("actual cost must be a finite non-negative Decimal")
+            if min(input_tokens, output_tokens, tool_calls) < 0:
+                raise ValueError("actual usage counters must be non-negative")
             model_key = (
                 f"{context.model_template.template_id}@{context.model_template.version}"
             )
