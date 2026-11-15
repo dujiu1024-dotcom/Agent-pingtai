@@ -227,6 +227,13 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(concurrent)
 
         self.assertTrue(await store.fail(first, "temporary failure"))
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_event_receipts SET next_attempt_at=now()
+                   WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s""",
+                (self.tenant_id, "worker-a", event_id),
+            )
+            await conn.commit()
         retry = await store.claim(
             tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
         )
@@ -239,6 +246,33 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await store.claim(
             tenant_id=self.tenant_id, consumer_name="worker-a", event_id=event_id
         ))
+
+
+    async def test_event_receipt_can_be_terminally_dead_lettered(self):
+        store = PostgresEventReceiptStore(self.connect, lease_seconds=5)
+        event_id = str(uuid4())
+        claim = await store.claim(
+            tenant_id=self.tenant_id, consumer_name="worker-dlq", event_id=event_id
+        )
+        self.assertIsNotNone(claim)
+        self.assertTrue(await store.dead_letter(claim, "max attempts reached"))
+        self.assertTrue(await store.is_completed(
+            tenant_id=self.tenant_id, consumer_name="worker-dlq", event_id=event_id
+        ))
+        self.assertIsNone(await store.claim(
+            tenant_id=self.tenant_id, consumer_name="worker-dlq", event_id=event_id
+        ))
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT status, last_error, dead_lettered_at
+                   FROM platform_event_receipts
+                   WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s""",
+                (self.tenant_id, "worker-dlq", event_id),
+            )
+            row = await cur.fetchone()
+            self.assertEqual(row["status"], "dead_lettered")
+            self.assertEqual(row["last_error"], "max attempts reached")
+            self.assertIsNotNone(row["dead_lettered_at"])
 
     async def test_audit_sink_persists_outcome(self):
         sink = PostgresAuditSink(self.connect)
