@@ -8,7 +8,7 @@ from uuid import uuid4
 
 def utc_now()->datetime:return datetime.now(timezone.utc)
 class MemoryScope(str,Enum): USER="user"; AGENT="agent"; PROJECT="project"; TENANT="tenant"
-class MemoryStatus(str,Enum): CANDIDATE="candidate"; ACTIVE="active"; EXPIRED="expired"; DELETED="deleted"
+class MemoryStatus(str,Enum): CANDIDATE="candidate"; CONFLICT="conflict"; ACTIVE="active"; SUPERSEDED="superseded"; ARCHIVED="archived"; EXPIRED="expired"; DELETED="deleted"
 @dataclass(frozen=True)
 class MemoryPrincipal:
     tenant_id: str
@@ -19,10 +19,11 @@ class MemoryPrincipal:
 @dataclass(frozen=True)
 class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
-    expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict)
+    expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict); conflict_key: str|None=None
     def __post_init__(self)->None:
         if not all(x.strip() for x in (self.tenant_id,self.scope_id,self.content,self.source_ref,self.created_by)):raise ValueError("memory fields must not be empty")
         if not 0<=self.confidence<=1:raise ValueError("confidence must be between 0 and 1")
+        if self.expires_at is not None and self.expires_at.tzinfo is None:raise ValueError("expires_at must be timezone-aware")
 @dataclass(frozen=True)
 class MemoryRecord:
     candidate: MemoryCandidate; status: MemoryStatus; version: int=1; confirmed_by: str|None=None
@@ -48,7 +49,12 @@ class InMemoryMemoryRepository:
 class MemoryService:
     def __init__(self,repository: MemoryRepository,*,on_delete: Callable[[str,str],Awaitable[None]]|None=None)->None:self.repository=repository;self.on_delete=on_delete
     async def propose(self,candidate: MemoryCandidate)->MemoryRecord:
-        rec=MemoryRecord(candidate=candidate,status=MemoryStatus.CANDIDATE);await self.repository.put(rec);return rec
+        status=MemoryStatus.CANDIDATE
+        if candidate.conflict_key:
+            existing=await self.repository.list(candidate.tenant_id,limit=5000)
+            conflict=any(r.status is MemoryStatus.ACTIVE and r.candidate.scope is candidate.scope and r.candidate.scope_id==candidate.scope_id and r.candidate.conflict_key==candidate.conflict_key and r.candidate.content!=candidate.content for r in existing)
+            if conflict:status=MemoryStatus.CONFLICT
+        rec=MemoryRecord(candidate=candidate,status=status);await self.repository.put(rec);return rec
     async def confirm(self,*,tenant_id: str,memory_id: str,confirmer_id: str)->MemoryRecord:
         rec=await self.repository.get(tenant_id,memory_id)
         if rec is None or rec.status is not MemoryStatus.CANDIDATE:raise ValueError("candidate memory not found or already reviewed")
@@ -81,6 +87,30 @@ class MemoryService:
     async def export(self,*,principal: MemoryPrincipal)->list[dict[str,object]]:
         records=await self.retrieve(principal=principal,limit=1000)
         return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"updated_at":r.updated_at.isoformat()} for r in records]
+    async def resolve_conflict(self,*,principal: MemoryPrincipal,conflict_key: str,selected_memory_id: str)->MemoryRecord:
+        if "memory.manage" not in principal.roles:
+            raise PermissionError("memory.manage role required")
+        records=await self.repository.list(principal.tenant_id,limit=5000)
+        group=[r for r in records if r.candidate.conflict_key==conflict_key and r.status in {MemoryStatus.CONFLICT,MemoryStatus.ACTIVE}]
+        selected=next((r for r in group if r.candidate.memory_id==selected_memory_id),None)
+        if selected is None:
+            raise ValueError("selected memory is not part of this conflict set")
+        now=utc_now()
+        for record in group:
+            target=MemoryStatus.ACTIVE if record.candidate.memory_id==selected_memory_id else MemoryStatus.SUPERSEDED
+            if record.status is not target:
+                await self.repository.put(replace(record,status=target,confirmed_by=principal.user_id,updated_at=now,version=record.version+1))
+        return await self.repository.get(principal.tenant_id,selected_memory_id)
+    async def archive(self,*,principal: MemoryPrincipal,memory_id: str)->bool:
+        record=await self.repository.get(principal.tenant_id,memory_id)
+        if record is None or record.status is not MemoryStatus.ACTIVE:
+            return False
+        owns_user=record.candidate.scope is MemoryScope.USER and record.candidate.scope_id==principal.user_id
+        manages_shared=record.candidate.scope is not MemoryScope.USER and "memory.manage" in principal.roles
+        if not (owns_user or manages_shared):
+            raise PermissionError("memory archive is not authorized")
+        await self.repository.put(replace(record,status=MemoryStatus.ARCHIVED,updated_at=utc_now(),version=record.version+1))
+        return True
     async def expire_due(self,*,tenant_id: str,now: datetime|None=None)->int:
         at=now or utc_now()
         records=await self.repository.list(tenant_id,limit=5000)
