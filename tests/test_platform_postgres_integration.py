@@ -656,11 +656,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             context.memory_manage_project_ids, frozenset({project_ids[2]}),
         )
-        self.assertEqual(
-            context.memory_manage_project_ids, frozenset({project_ids[2]}),
-        )
         self.assertEqual(context.agent_ids, frozenset({agent_id}))
-        self.assertEqual(context.memory_manage_agent_ids, frozenset({agent_id}))
         self.assertEqual(context.memory_manage_agent_ids, frozenset({agent_id}))
         self.assertIsNone(await self.repository.get_authorization_context(
             tenant_id=f"other-{uuid4().hex}", user_id=str(self.user_id),
