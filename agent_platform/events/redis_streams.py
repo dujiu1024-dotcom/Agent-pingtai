@@ -87,6 +87,34 @@ class RedisStreamsTransport:
             for message_id, fields in messages
         ]
 
+
+    async def claim_pending(
+        self,
+        *,
+        tenant_id: str,
+        topic: str,
+        group: str,
+        consumer: str,
+        min_idle_ms: int = 30_000,
+        start_id: str = "0-0",
+        count: int = 20,
+    ) -> list[tuple[str, dict[str, str]]]:
+        """Reassign idle pending messages after a consumer crash."""
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        if min_idle_ms < 0 or count < 1 or count > 500:
+            raise ValueError("min_idle_ms must be >= 0 and count must be between 1 and 500")
+        result = await self._client.xautoclaim(
+            self._stream(tenant_id, topic),
+            group,
+            consumer,
+            min_idle_time=min_idle_ms,
+            start_id=start_id,
+            count=count,
+        )
+        messages = result[1] if len(result) > 1 else []
+        return [(message_id, fields) for message_id, fields in messages]
+
     async def acknowledge(
         self, *, tenant_id: str, topic: str, group: str, message_id: str
     ) -> int:
