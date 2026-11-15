@@ -127,6 +127,10 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(created.status_code, 201)
         approval_id = created.json()["approval_id"]
+        detail = client.get(f"/api/platform/v1/approvals/{approval_id}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["requested_by"], "requester")
+        self.assertEqual(detail.json()["status"], "pending")
         self.assertIn(("tenant-a", approval_id), repository.records)
         self.assertNotIn(("tenant-attacker", approval_id), repository.records)
         self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 403)
