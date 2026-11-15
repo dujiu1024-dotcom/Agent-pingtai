@@ -32,6 +32,7 @@ class HarnessResult:
     usage: dict[str, int] = field(default_factory=dict)
     finish_reason: str = "completed"
     trace_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class HarnessAdapter(Protocol):
