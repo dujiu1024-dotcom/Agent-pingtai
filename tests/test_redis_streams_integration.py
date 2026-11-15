@@ -50,6 +50,34 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
             message_id=reclaimed[0][0],
         ), 1)
 
+    async def test_dead_letter_copies_message_and_acknowledges_source(self):
+        event_id = str(uuid4())
+        await self.transport.publish(
+            tenant_id=self.tenant_id, topic=self.topic, event_id=event_id,
+            payload={"value": "poison"},
+        )
+        rows = await self.transport.read_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
+            consumer=self.consumer, count=10, block_ms=100,
+        )
+        message_id, fields = rows[0]
+        dlq_id = await self.transport.dead_letter(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
+            message_id=message_id, fields=fields, event_id=event_id,
+            reason="invalid payload", consumer_name=self.consumer,
+        )
+        self.assertTrue(dlq_id)
+        self.assertEqual(await self.transport.claim_pending(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
+            consumer="replacement", min_idle_ms=0, count=10,
+        ), [])
+        dlq_rows = await self.transport._client.xrange(
+            self.transport._dead_letter_stream(self.tenant_id, self.topic)
+        )
+        self.assertEqual(len(dlq_rows), 1)
+        self.assertEqual(dlq_rows[0][1]["failure_reason"], "invalid payload")
+        self.assertEqual(dlq_rows[0][1]["source_message_id"], message_id)
+
     async def test_publish_read_and_ack(self):
         event_id = str(uuid4())
         await self.transport.publish(
