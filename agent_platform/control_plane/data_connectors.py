@@ -108,7 +108,7 @@ class InMemoryConnectorRepository:
     async def mark_error(self, *, tenant_id: str, connection_id: str, error: str) -> None:
         key = (tenant_id, connection_id)
         item = self.records.get(key)
-        if item is not None and item.status == "active":
+        if item is not None and item.status in {"active", "revoked"}:
             from dataclasses import replace
             self.records[key] = replace(item, last_error=error[:500])
 
@@ -219,9 +219,12 @@ class DataConnectorService:
             try:
                 credential = await self.secrets.resolve(connection.secret_ref)
                 await provider.revoke(credential=credential)
-            except Exception:
-                # Local revocation is authoritative; remote revocation can be retried.
-                pass
+            except Exception as exc:
+                # Local revocation is authoritative; retain a retryable diagnostic.
+                await self.repository.mark_error(
+                    tenant_id=tenant_id, connection_id=connection_id,
+                    error=f"remote revoke: {type(exc).__name__}",
+                )
         await self.sink.revoke_connection(
             tenant_id=tenant_id, connection_id=connection_id,
             disposition=revocation_disposition,
