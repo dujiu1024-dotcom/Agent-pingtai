@@ -5,6 +5,20 @@ from agent_platform.knowledge.contracts import Document, DocumentChunk, Knowledg
 class KnowledgeRepository(Protocol):
     async def save_document(self, document: Document, chunks: Sequence[DocumentChunk]) -> bool: ...
     async def get_document(self, tenant_id: str, document_id: str, version: int|None=None) -> Document|None: ...
+    async def list_documents(self, principal: KnowledgePrincipal, limit: int=100) -> list[Document]: ...
+    async def list_documents(self, principal: KnowledgePrincipal, limit: int=100) -> list[Document]:
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        visible=[]
+        for doc in self.documents.values():
+            if doc.tenant_id != principal.tenant_id or doc.deleted_at is not None:
+                continue
+            if doc.scope.value == "private" and doc.owner_user_id != principal.user_id:
+                continue
+            if doc.scope.value == "project" and doc.project_id not in principal.project_ids:
+                continue
+            visible.append(doc)
+        return sorted(visible,key=lambda d:d.created_at,reverse=True)[:limit]
     async def search(self, *, principal: KnowledgePrincipal, query: str, query_vector: Sequence[float]|None, limit: int) -> list[RetrievalHit]: ...
     async def delete_document(self, tenant_id: str, document_id: str) -> bool: ...
 class InMemoryKnowledgeRepository:
