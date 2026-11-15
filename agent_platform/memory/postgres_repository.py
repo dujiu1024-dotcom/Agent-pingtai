@@ -20,7 +20,7 @@ class PostgresMemoryRepository:
                 if record.version==1:
                     await conn.execute("""INSERT INTO platform_memories(tenant_id,memory_id,scope,scope_id,content,source_ref,confidence,status,version,created_by,confirmed_by,expires_at,metadata,created_at,updated_at,deleted_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)""",(c.tenant_id,c.memory_id,c.scope.value,c.scope_id,c.content,c.source_ref,c.confidence,record.status.value,c.created_by,record.confirmed_by,c.expires_at,_jsonb(c.metadata),record.created_at,record.updated_at,record.deleted_at))
                 else:
-                    cur=await conn.execute("""UPDATE platform_memories SET status=%s,version=%s,confirmed_by=%s,updated_at=%s,deleted_at=%s WHERE tenant_id=%s AND memory_id=%s AND version=%s AND deleted_at IS NULL""",(record.status.value,record.version,record.confirmed_by,record.updated_at,record.deleted_at,c.tenant_id,c.memory_id,record.version-1))
+                    cur=await conn.execute("""UPDATE platform_memories SET content=%s,source_ref=%s,confidence=%s,status=%s,version=%s,confirmed_by=%s,updated_at=%s,deleted_at=%s WHERE tenant_id=%s AND memory_id=%s AND version=%s AND deleted_at IS NULL""",(c.content,c.source_ref,c.confidence,record.status.value,record.version,record.confirmed_by,record.updated_at,record.deleted_at,c.tenant_id,c.memory_id,record.version-1))
                     if cur.rowcount!=1:raise RuntimeError("memory version conflict")
     async def get(self,tenant_id: str,memory_id: str)->MemoryRecord|None:
         conn=await self._connect()
