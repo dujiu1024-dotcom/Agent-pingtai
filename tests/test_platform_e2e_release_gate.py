@@ -129,7 +129,7 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
 
     def test_conversation_metadata_schema_does_not_collide_with_identity_sessions(self):
         from pathlib import Path
-        migration = (Path(__file__).resolve().parents[1] / "agent_platform" / "storage" / "postgres" / "015_registry_sessions_assets.sql").read_text()
+        migration = (Path(__file__).resolve().parents[1] / "agent_platform" / "storage" / "postgres" / "024_registry_sessions_assets.sql").read_text()
         self.assertIn("CREATE TABLE IF NOT EXISTS platform_conversation_sessions", migration)
         self.assertIn("REFERENCES platform_conversation_sessions(tenant_id, session_id)", migration)
         self.assertNotIn("CREATE TABLE IF NOT EXISTS platform_sessions", migration)
