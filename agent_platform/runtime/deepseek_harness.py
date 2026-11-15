@@ -19,7 +19,7 @@ from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
 WorkspaceResolver = Callable[[RunContext], str | Path]
 HomeResolver = Callable[[RunContext], str | Path]
-CredentialResolver = Callable[[ModelTemplate, RunContext], Mapping[str, str]]
+ProviderEnvironmentResolver = Callable[[ModelTemplate, RunContext], Mapping[str, str]]
 HarnessFactory = Callable[..., Any]
 
 
@@ -30,11 +30,11 @@ class DeepSeekHarnessAdapter:
         templates: ModelTemplateRegistry,
         workspace_resolver: WorkspaceResolver,
         home_resolver: HomeResolver,
-        credential_resolver: CredentialResolver,
+        provider_environment_resolver: ProviderEnvironmentResolver,
         profile: str = "sdk-minimal",
         permission_mode: str = "read-only",
         patches: tuple[str, ...] = (),
-        sandbox_verified: bool = False,
+        container_isolation_verified: bool = False,
         sdk_factory: HarnessFactory | None = None,
     ) -> None:
         self.templates = templates
@@ -48,9 +48,9 @@ class DeepSeekHarnessAdapter:
         self.sdk_factory = sdk_factory
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
-        if not self.sandbox_verified:
+        if not self.container_isolation_verified:
             raise RuntimeError(
-                "DeepSeek Harness requires an explicitly verified isolated sandbox"
+                "DeepSeek Harness requires verified container filesystem and network isolation"
             )
         if request.allowed_tools:
             raise RuntimeError(
@@ -74,11 +74,15 @@ class DeepSeekHarnessAdapter:
             raise ValueError(f"isolated workspace does not exist: {workspace}")
         home.mkdir(parents=True, exist_ok=True)
 
-        credentials = dict(
-            self.credential_resolver(template, request.context)
+        provider_env = dict(
+            self.provider_environment_resolver(template, request.context)
         )
+        if not any(key.endswith("_BASE_URL") for key in provider_env):
+            raise RuntimeError(
+                "DeepSeek Harness must use a scoped model proxy; direct provider credentials are not allowed"
+            )
         child_env = {
-            **credentials,
+            **provider_env,
             "DSH_PERMISSION_MODE": self.permission_mode,
         }
         prompt = (
