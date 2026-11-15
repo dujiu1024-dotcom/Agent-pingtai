@@ -66,6 +66,8 @@ class QuotaReservation:
     window_start: int
     amount: int
     idempotency_key: str
+    limit: int
+    hard_limit: bool
     created_at: datetime
 
 
@@ -136,7 +138,7 @@ class InMemoryQuotaStore:
                 raise QuotaExceeded(policy.tenant_id, policy.dimension, policy.limit, projected)
             reservation = QuotaReservation(
                 str(uuid4()), policy.tenant_id, run_id, policy.dimension, window,
-                amount, idempotency_key, self._clock(),
+                amount, idempotency_key, policy.limit, policy.hard_limit, self._clock(),
             )
             self._reservations[reservation.reservation_id] = reservation
             self._idempotency[idem] = reservation.reservation_id
@@ -147,23 +149,34 @@ class InMemoryQuotaStore:
 
     async def commit(self, reservation_id: str, *, actual_amount: int | None = None) -> QuotaSettlement:
         async with self._lock:
-            reservation = self._reservations.pop(reservation_id, None)
+            reservation = self._reservations.get(reservation_id)
             if reservation is None:
                 raise KeyError("active quota reservation not found")
             if reservation.dimension == QuotaDimension.CONCURRENT_RUNS:
                 raise ValueError("concurrency reservations must be released, not committed")
             amount = reservation.amount if actual_amount is None else actual_amount
             if amount < 0:
-                self._reservations[reservation_id] = reservation
                 raise ValueError("actual_amount must be non-negative")
+            self._reservations.pop(reservation_id)
             key = (reservation.tenant_id, reservation.dimension, reservation.window_start)
             used = self._used.get(key, 0) + amount
             self._used[key] = used
-            return QuotaSettlement(reservation.tenant_id, reservation.dimension, used, 0, False)
+            return QuotaSettlement(
+                reservation.tenant_id,
+                reservation.dimension,
+                used,
+                reservation.limit,
+                reservation.hard_limit and used > reservation.limit,
+            )
 
     async def release(self, reservation_id: str) -> bool:
         async with self._lock:
             reservation = self._reservations.pop(reservation_id, None)
+            if reservation is not None:
+                self._idempotency.pop(
+                    (reservation.tenant_id, reservation.run_id, reservation.dimension, reservation.idempotency_key),
+                    None,
+                )
             return reservation is not None
 
     async def current_usage(self, policy: QuotaPolicy) -> tuple[int, int]:
@@ -181,6 +194,8 @@ class QuotaService:
     def __init__(self, store: QuotaStore, policies: tuple[QuotaPolicy, ...]) -> None:
         self.store = store
         self._policies = {(p.tenant_id, p.dimension): p for p in policies}
+        if len(self._policies) != len(policies):
+            raise ValueError("duplicate tenant quota policy for a dimension")
 
     def policy_for(self, tenant_id: str, dimension: QuotaDimension) -> QuotaPolicy:
         policy = self._policies.get((tenant_id, dimension))
