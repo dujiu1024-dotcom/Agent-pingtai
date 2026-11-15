@@ -52,7 +52,7 @@ class IdentityContextResolver:
             user_id=context.user_id,
             project_ids=context.project_ids,
             agent_ids=context.agent_ids,
-            roles=context.tenant_permissions,
+            permissions=context.tenant_permissions,
             manage_project_ids=context.memory_manage_project_ids,
             manage_agent_ids=context.memory_manage_agent_ids,
         )
