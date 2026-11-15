@@ -10,6 +10,7 @@ from typing import Awaitable,Callable,Any
 from uuid import UUID,uuid4
 from fastapi import APIRouter,HTTPException,Request
 from fastapi.responses import JSONResponse
+from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.knowledge.contracts import Document,KnowledgePrincipal,KnowledgeScope
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.knowledge.rag import RAGService
@@ -23,7 +24,23 @@ def _memory_visible_for_review(record: Any,principal: MemoryPrincipal)->bool:
     if candidate.scope is MemoryScope.PROJECT:return candidate.scope_id in principal.project_ids and "memory.manage" in principal.roles
     if candidate.scope is MemoryScope.AGENT:return candidate.scope_id in principal.agent_ids and "memory.manage" in principal.roles
     return "memory.manage" in principal.roles
-def create_knowledge_memory_router(*,knowledge: KnowledgeService,memory: MemoryService,resolve_knowledge_principal: KnowledgePrincipalResolver,resolve_memory_principal: MemoryPrincipalResolver,rag: RAGService|None=None)->APIRouter:
+def create_knowledge_memory_router(
+    *,
+    knowledge: KnowledgeService,
+    memory: MemoryService,
+    resolve_knowledge_principal: KnowledgePrincipalResolver | None = None,
+    resolve_memory_principal: MemoryPrincipalResolver | None = None,
+    rag: RAGService | None = None,
+    identity_repository: Any | None = None,
+) -> APIRouter:
+    if identity_repository is not None:
+        resolver = IdentityContextResolver(identity_repository)
+        resolve_knowledge_principal = resolve_knowledge_principal or resolver.knowledge
+        resolve_memory_principal = resolve_memory_principal or resolver.memory
+    if resolve_knowledge_principal is None or resolve_memory_principal is None:
+        raise ValueError(
+            "provide identity_repository or both explicit principal resolvers"
+        )
     router=APIRouter(prefix="/api/platform/v1",tags=["knowledge","memory"])
     @router.get("/knowledge/documents")
     async def list_documents(request: Request,limit: int=100):
