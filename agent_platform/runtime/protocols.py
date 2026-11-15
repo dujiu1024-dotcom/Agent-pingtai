@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
 
-from agent_platform.contracts import RunContext
+from agent_platform.contracts import ModelTemplateRef, RunContext
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ class ModelProvider(Protocol):
     async def complete(
         self,
         *,
-        template_id: str,
+        template: ModelTemplateRef,
         messages: Sequence[dict[str, Any]],
         response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
