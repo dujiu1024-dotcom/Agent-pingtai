@@ -351,7 +351,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO platform_permissions (permission_key, description)
                    VALUES ('project.read', 'Read project'),
                           ('identity.role.manage', 'Manage role bindings'),
-                          ('user.manage', 'Manage tenant users')
+                          ('user.manage', 'Manage tenant users'),
+                          ('tenant.manage', 'Manage tenant')
                    ON CONFLICT DO NOTHING"""
             )
             await conn.execute(
@@ -370,6 +371,17 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await conn.execute(
                 """INSERT INTO platform_roles (tenant_id, role_id, name)
                    VALUES (%s, 'viewer', 'viewer')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'tenant_admin', 'tenant_admin')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'tenant_admin', 'tenant.manage')""",
                 (self.tenant_id,),
             )
             await conn.execute(
@@ -463,6 +475,24 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         ))
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate_api_credential(credential.access_token)
+
+
+
+    async def test_role_grant_and_invitation_cannot_escalate_actor_privileges(self):
+        issued = await self.service.login(
+            email="identity@example.com", password="correct horse battery staple",
+            tenant_id=self.tenant_id,
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        with self.assertRaises(PermissionError):
+            await self.service.grant_role(
+                principal=principal, subject_type="user", subject_id=str(self.user_id),
+                resource=ResourceRef("tenant", self.tenant_id), role_id="tenant_admin",
+            )
+        with self.assertRaises(PermissionError):
+            await self.service.create_invitation(
+                principal=principal, email="identity@example.com", role_id="tenant_admin",
+            )
 
     async def test_invitation_is_email_bound_single_use_and_audited(self):
         issued = await self.service.login(
