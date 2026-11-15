@@ -150,7 +150,7 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
             allowed_tools=("read_document",),
         )
         result = await self.adapter(gateway_tool_provider=provider).run(request)
-        self.assertEqual(result.output_text, "Strands response\\n ready")
+        self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(provider.calls, [(self.context, ("read_document",))])
         self.assertEqual(self.agents[0].options["tools"], [provider.session.tool])
         self.assertTrue(provider.session.closed)
