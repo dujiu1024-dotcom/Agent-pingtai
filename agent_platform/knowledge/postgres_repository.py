@@ -90,6 +90,8 @@ class PostgresKnowledgeRepository:
             async with conn.transaction():
                 cur=await conn.execute("UPDATE knowledge_documents SET deleted_at=now() WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",(tenant_id,document_id))
                 if cur.rowcount!=1:return False
+                # Remove derived vectors in the same transaction as source chunks.
+                await conn.execute("DELETE FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id IN (SELECT chunk_id FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s)",(tenant_id,tenant_id,document_id))
                 await conn.execute("DELETE FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s",(tenant_id,document_id))
                 await conn.execute("DELETE FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",(tenant_id,document_id))
                 return True
