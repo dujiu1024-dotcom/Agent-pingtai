@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Sequence
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 
@@ -36,11 +37,24 @@ def create_platform_app(
     so multi-instance deployments do not silently fall back to process-local
     security controls.
     """
+    if isinstance(allowed_origins, str):
+        raise ValueError("allowed_origins must be a sequence of exact origins")
     origins = tuple(origin.strip() for origin in allowed_origins if origin.strip())
     if not origins:
         raise ValueError("at least one exact HTTPS allowed_origin is required")
-    if any(not origin.startswith("https://") for origin in origins):
-        raise ValueError("allowed_origins must contain HTTPS origins only")
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+            or "*" in parsed.netloc
+        ):
+            raise ValueError("allowed_origins must contain exact HTTPS origins only")
 
     app = FastAPI()
     app.add_middleware(
