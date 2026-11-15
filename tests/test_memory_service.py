@@ -250,3 +250,31 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await service.expire_due(tenant_id="t"), 0)
         self.assertEqual(attempts, [("t", candidate.memory_id), ("t", candidate.memory_id)])
 
+
+    async def test_memory_history_is_versioned_and_scope_authorized(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u1",
+            content="prefers concise answers", source_ref="chat:1",
+            confidence=0.8, created_by="extractor",
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="u1",
+        )
+        owner = MemoryPrincipal(tenant_id="t", user_id="u1")
+        await service.correct(
+            principal=owner, memory_id=candidate.memory_id,
+            content="prefers concise technical answers", source_ref="chat:2",
+        )
+        history = await service.history(principal=owner, memory_id=candidate.memory_id)
+        self.assertEqual([record.version for record in history], [1, 2, 3])
+        self.assertEqual(history[0].candidate.content, "prefers concise answers")
+        self.assertEqual(history[-1].candidate.source_ref, "chat:2")
+        with self.assertRaises(PermissionError):
+            await service.history(
+                principal=MemoryPrincipal(tenant_id="t", user_id="u2"),
+                memory_id=candidate.memory_id,
+            )
+        with self.assertRaises(ValueError):
+            await service.history(principal=owner, memory_id="missing")
