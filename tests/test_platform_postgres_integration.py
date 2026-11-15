@@ -22,6 +22,8 @@ if DSN:
         Scope,
     )
     from agent_platform.events.outbox import PostgresOutboxStore
+    from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
+    from agent_platform.tools.idempotency import PostgresToolEffectStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
     from agent_platform.identity.bootstrap import BootstrapError, bootstrap_tenant_owner
     from agent_platform.identity.models import ResourceRef
@@ -1107,6 +1109,67 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 display_name="Second Owner",
                 password="correct horse battery staple",
             )
+
+
+    async def test_run_registry_snapshot_and_tool_effect_idempotency_are_durable(self):
+        agent_id = f"agent-{uuid4().hex}"
+        template_id = f"template-{uuid4().hex}"
+        run_id = uuid4()
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id,agent_id,display_name,role_definition)
+                   VALUES (%s,%s,'Idempotency Integration Agent','test')""",
+                (self.tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id,template_id,version,definition,status,created_by)
+                   VALUES (%s,%s,1,'{}'::jsonb,'active','integration')""",
+                (self.tenant_id, template_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id,run_id,agent_id,template_id,template_version,status)
+                   VALUES (%s,%s,%s,%s,1,'queued')""",
+                (self.tenant_id, run_id, agent_id, template_id),
+            )
+            await conn.commit()
+
+        effects = PostgresToolEffectStore(self.connect)
+        claimed = await effects.claim(
+            tenant_id=self.tenant_id, run_id=str(run_id), call_id="call-1",
+            action_digest="a" * 64, actor_id="integration-agent",
+        )
+        self.assertTrue(claimed.created)
+        await effects.complete(
+            tenant_id=self.tenant_id, run_id=str(run_id), call_id="call-1",
+            result={"external_id": "effect-1"},
+        )
+        duplicate = await effects.claim(
+            tenant_id=self.tenant_id, run_id=str(run_id), call_id="call-1",
+            action_digest="a" * 64, actor_id="integration-agent",
+        )
+        self.assertFalse(duplicate.created)
+        self.assertEqual(duplicate.state, "succeeded")
+        self.assertEqual(duplicate.result, {"external_id": "effect-1"})
+
+        snapshots = PostgresRunSnapshotStore(self.connect)
+        from agent_platform.runtime.registry_snapshot import RunRegistrySnapshot
+        snapshot = RunRegistrySnapshot(
+            tenant_id=self.tenant_id, run_id=str(run_id),
+            entries=({"kind": "agent", "item_id": agent_id, "version": 1},),
+            digest="b" * 64,
+        )
+        await snapshots.save_once(snapshot)
+        loaded = await snapshots.get(self.tenant_id, str(run_id))
+        self.assertEqual(loaded.digest, snapshot.digest)
+        with self.assertRaises(ValueError):
+            await snapshots.save_once(RunRegistrySnapshot(
+                tenant_id=self.tenant_id, run_id=str(run_id),
+                entries=({"kind": "agent", "item_id": agent_id, "version": 2},),
+                digest="c" * 64,
+            ))
 
 
 if __name__ == "__main__":
