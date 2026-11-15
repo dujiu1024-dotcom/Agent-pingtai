@@ -444,9 +444,18 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         principal = await self.service.authenticate(issued.access_token)
         credential = await self.service.create_api_credential(
             principal=principal, name="integration-key",
-            scopes=("project.read", "agent.run"),
+            scopes=("project.read",),
         )
         authenticated = await self.service.authenticate_api_credential(credential.access_token)
+        await self.service.authorize_api_credential(
+            credential=authenticated, resource=ResourceRef("project", "project-1"),
+            permission_key="project.read",
+        )
+        with self.assertRaises(AuthorizationDenied):
+            await self.service.authorize_api_credential(
+                credential=authenticated, resource=ResourceRef("project", "project-1"),
+                permission_key="agent.run",
+            )
         self.assertEqual(authenticated.tenant_id, self.tenant_id)
         self.assertEqual(authenticated.user_id, str(self.user_id))
         self.assertTrue(await self.service.revoke_api_credential(
