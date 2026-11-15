@@ -183,6 +183,24 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await store.mark_published(first))
         self.assertTrue(await store.mark_published(second))
 
+
+    async def test_outbox_failure_uses_persistent_retry_backoff(self):
+        await self.repo.propose(self.make_entry())
+        store = PostgresOutboxStore(connection_factory=self.connect)
+        record = (await store.claim_batch(limit=1))[0]
+        await store.mark_failed(record, "redis unavailable")
+        self.assertEqual(await store.claim_batch(limit=1), [])
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_outbox SET next_attempt_at=now()
+                   WHERE tenant_id=%s AND outbox_id=%s""",
+                (self.tenant_id, record.outbox_id),
+            )
+            await conn.commit()
+        retry = await store.claim_batch(limit=1)
+        self.assertEqual(len(retry), 1)
+        self.assertEqual(retry[0].event_id, record.event_id)
+
     async def test_approval_is_tenant_scoped_and_consumed_once(self):
         approval_id = uuid4()
         digest = "a" * 64
