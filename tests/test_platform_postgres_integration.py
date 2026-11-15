@@ -23,6 +23,10 @@ if DSN:
     )
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
+    from agent_platform.identity.postgres import PostgresIdentityRepository
+    from agent_platform.identity.security import PasswordHasher
+    from agent_platform.identity.service import IdentityService, AuthenticationError, AuthorizationDenied
+    from agent_platform.identity.models import ResourceRef
 
 
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
@@ -309,6 +313,110 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(row["outcome"], "succeeded")
             self.assertEqual(row["run_id"], "run-audit-integration")
             self.assertEqual(row["agent_id"], "expert-a")
+
+
+@unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
+class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tenant_id = f"identity-it-{uuid4().hex}"
+        self.user_id = uuid4()
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            migration_dir = Path("agent_platform/storage/postgres")
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+        async with await AsyncConnection.connect(DSN) as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (self.tenant_id, "Identity Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_users
+                   (user_id, email, email_normalized, display_name, password_hash)
+                   VALUES (%s, %s, %s, %s, %s)""",
+                (self.user_id, "identity@example.com", "identity@example.com",
+                 "Identity User", PasswordHasher.hash("correct horse battery staple")),
+            )
+            await conn.execute(
+                """INSERT INTO platform_tenant_memberships
+                   (tenant_id, user_id, status, joined_at)
+                   VALUES (%s, %s, 'active', now())""",
+                (self.tenant_id, self.user_id),
+            )
+            await conn.execute(
+                "INSERT INTO platform_permissions (permission_key, description) VALUES ('project.read', 'Read project') ON CONFLICT DO NOTHING"
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name, is_system)
+                   VALUES (%s, 'reader', 'reader', true)""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'reader', 'project.read')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'project', 'project-1', 'reader', 'bootstrap')""",
+                (uuid4(), self.tenant_id, str(self.user_id)),
+            )
+            await conn.commit()
+
+        async def connect():
+            return await AsyncConnection.connect(DSN, row_factory=dict_row)
+
+        self.connect = connect
+        self.repository = PostgresIdentityRepository(connect)
+        self.service = IdentityService(self.repository)
+
+    async def test_tenant_scoped_login_authorization_and_logout(self):
+        issued = await self.service.login(
+            email="IDENTITY@example.com",
+            password="correct horse battery staple",
+            tenant_id=self.tenant_id,
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        self.assertEqual(principal.tenant_id, self.tenant_id)
+        await self.service.authorize(
+            principal=principal,
+            resource=ResourceRef("project", "project-1"),
+            permission_key="project.read",
+        )
+        self.assertTrue(await self.service.logout(principal))
+        with self.assertRaises(AuthenticationError):
+            await self.service.authenticate(issued.access_token)
+
+    async def test_nonmember_cannot_create_session_for_another_tenant(self):
+        with self.assertRaises(AuthenticationError):
+            await self.service.login(
+                email="identity@example.com",
+                password="correct horse battery staple",
+                tenant_id="tenant-not-a-member",
+            )
+
+    async def test_revoked_role_binding_takes_effect_without_session_reissue(self):
+        issued = await self.service.login(
+            email="identity@example.com",
+            password="correct horse battery staple",
+            tenant_id=self.tenant_id,
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_role_bindings SET revoked_at=now()
+                   WHERE tenant_id=%s AND subject_id=%s""",
+                (self.tenant_id, str(self.user_id)),
+            )
+            await conn.commit()
+        with self.assertRaises(AuthorizationDenied):
+            await self.service.authorize(
+                principal=principal,
+                resource=ResourceRef("project", "project-1"),
+                permission_key="project.read",
+            )
 
 
 if __name__ == "__main__":
