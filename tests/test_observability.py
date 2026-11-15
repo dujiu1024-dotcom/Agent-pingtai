@@ -138,7 +138,9 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         metrics.increment("agent_runs_total", labels={"status": "ok"})
         exposition = metrics.render_prometheus()
         self.assertTrue(exposition.endswith("\n"))
-        self.assertIn('agent_runs_total_count{status="ok"}', exposition)
+        # 计数器名本身已带 _total（与 docs/architecture 的指标契约一致），
+        # Prometheus 暴露时不再追加 _count；_count 只用于观测值的条数。
+        self.assertIn('agent_runs_total{status="ok"}', exposition)
 
     def test_agent_and_rag_evaluation_gate(self):
         dataset = EvalDataset("smoke", 1, (
