@@ -12,6 +12,18 @@ CREATE TABLE IF NOT EXISTS platform_users (
     last_login_at timestamptz
 );
 
+CREATE TABLE IF NOT EXISTS platform_external_identities (
+    external_identity_id uuid PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES platform_users(user_id),
+    provider text NOT NULL,
+    provider_subject text NOT NULL,
+    email_claim text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (provider, provider_subject)
+);
+CREATE INDEX IF NOT EXISTS idx_platform_external_identities_user
+    ON platform_external_identities (user_id);
+
 CREATE TABLE IF NOT EXISTS platform_tenant_memberships (
     tenant_id text NOT NULL REFERENCES platform_tenants(tenant_id),
     user_id uuid NOT NULL REFERENCES platform_users(user_id),
