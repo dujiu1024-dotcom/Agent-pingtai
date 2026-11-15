@@ -31,7 +31,7 @@ class OciSandboxConfig:
     allowed_environment_keys: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[A-Za-z0-9._/-]+@sha256:[a-fA-F0-9]{64}", self.image):
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]+@sha256:[a-fA-F0-9]{64}", self.image):
             raise ValueError("sandbox image must be pinned by sha256 digest")
         if self.runtime not in {"docker", "podman"}:
             raise ValueError("runtime must be docker or podman")
@@ -141,6 +141,10 @@ class OciSandboxRunner:
                     truncated = True
             return bytes(captured), truncated
 
+        if process.stdout is None or process.stderr is None:
+            process.kill()
+            await process.wait()
+            raise SandboxExecutionError("OCI runtime did not provide output pipes")
         stdout_task = asyncio.create_task(collect(process.stdout))
         stderr_task = asyncio.create_task(collect(process.stderr))
 
