@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS platform_registry_active (
 CREATE INDEX IF NOT EXISTS idx_registry_versions_recent
     ON platform_registry_versions (tenant_id, kind, item_id, version DESC);
 
-CREATE TABLE IF NOT EXISTS platform_sessions (
+CREATE TABLE IF NOT EXISTS platform_conversation_sessions (
     tenant_id       text NOT NULL REFERENCES platform_tenants(tenant_id),
     session_id      uuid NOT NULL,
     owner_id        text NOT NULL,
@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS platform_sessions (
     PRIMARY KEY (tenant_id, session_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_platform_sessions_owner
-    ON platform_sessions (tenant_id, owner_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_platform_conversation_sessions_owner
+    ON platform_conversation_sessions (tenant_id, owner_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS platform_messages (
     tenant_id       text NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS platform_messages (
     created_at      timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, message_id),
     FOREIGN KEY (tenant_id, session_id)
-        REFERENCES platform_sessions(tenant_id, session_id)
+        REFERENCES platform_conversation_sessions(tenant_id, session_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_platform_messages_session
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS platform_file_assets (
     PRIMARY KEY (tenant_id, asset_id),
     UNIQUE (tenant_id, object_key),
     FOREIGN KEY (tenant_id, session_id)
-        REFERENCES platform_sessions(tenant_id, session_id)
+        REFERENCES platform_conversation_sessions(tenant_id, session_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_platform_assets_owner
