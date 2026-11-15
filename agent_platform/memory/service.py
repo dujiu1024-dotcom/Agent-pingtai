@@ -53,7 +53,10 @@ class InMemoryMemoryRepository:
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:
         key=(tenant_id,memory_id); rec=self.records.get(key)
         if rec is None or rec.status is MemoryStatus.DELETED:return False
-        self.records[key]=replace(rec,status=MemoryStatus.DELETED,deleted_at=at,updated_at=at,version=rec.version+1);return True
+        updated=replace(rec,status=MemoryStatus.DELETED,deleted_at=at,updated_at=at,version=rec.version+1)
+        self.records[key]=updated
+        self.versions.setdefault(key,[]).append(updated)
+        return True
 class MemoryService:
     def __init__(self,repository: MemoryRepository,*,on_delete: Callable[[str,str],Awaitable[None]]|None=None)->None:self.repository=repository;self.on_delete=on_delete
     async def propose(self,candidate: MemoryCandidate)->MemoryRecord:
