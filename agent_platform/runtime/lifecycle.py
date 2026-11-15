@@ -155,7 +155,7 @@ class RunLifecycleManager:
    old=await self.store.get(tenant_id,run_id)
    if old and old.status==RunStatus.RUNNING:
     await self.finish(tenant_id,run_id,RunStatus.TIMED_OUT,error="Run execution timed out")
-   await self.tools.cancel_run(run_id); raise
+   await self.tools.cancel_run(run_id,tenant_id=tenant_id); raise
   finally:
    async with self._lock: self._tasks.pop((tenant_id,run_id),None)
  async def on_client_disconnect(self,tenant_id:str,run_id:str,*,policy:str="continue")->None:
