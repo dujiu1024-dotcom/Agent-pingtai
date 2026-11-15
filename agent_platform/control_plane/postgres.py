@@ -110,6 +110,17 @@ class PostgresRegistryRepository:
                 if await cursor.fetchone() is None:
                     raise RegistryNotFound("published registry version not found")
 
+    async def clear_active(self, tenant_id: str, kind: str, item_id: str) -> None:
+        if tenant_id != self.tenant_id:
+            raise PermissionError("registry tenant mismatch")
+        connection = await self._connection_factory()
+        async with connection:
+            await connection.execute(
+                """DELETE FROM platform_registry_active
+                   WHERE tenant_id=%s AND kind=%s AND item_id=%s""",
+                (self.tenant_id, kind, item_id),
+            )
+
     async def get_active(self, tenant_id: str, kind: str, item_id: str) -> RegistryVersion | None:
         if tenant_id != self.tenant_id:
             return None
