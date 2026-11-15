@@ -1,5 +1,6 @@
 """Tenant-scoped server-enforced quotas and cost accounting."""
 
+from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
     Budget,
     BudgetExceeded,
@@ -11,5 +12,5 @@ from agent_platform.quotas.service import (
 
 __all__ = [
     "Budget", "BudgetExceeded", "InMemoryQuotaStore",
-    "QuotaReservation", "QuotaService", "UsageEvent",
+    "PostgresQuotaStore", "QuotaReservation", "QuotaService", "UsageEvent",
 ]
