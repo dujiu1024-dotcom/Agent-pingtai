@@ -149,6 +149,39 @@ BEGIN
 END;
 $quota$;
 
+CREATE OR REPLACE FUNCTION platform_quota_settle(
+    p_reservation_id uuid, p_event_id uuid, p_model_key text,
+    p_input_tokens bigint, p_output_tokens bigint, p_cost_usd numeric,
+    p_project_id text DEFAULT NULL, p_agent_id text DEFAULT NULL, p_task_id text DEFAULT NULL,
+    p_tool_calls integer DEFAULT 0, p_runtime_ms bigint DEFAULT 0, p_storage_bytes bigint DEFAULT 0,
+    p_price_card_version text DEFAULT NULL, p_source text DEFAULT 'estimated',
+    p_occurred_at timestamptz DEFAULT now()
+) RETURNS boolean
+LANGUAGE plpgsql AS $quota$
+DECLARE r platform_quota_reservations%ROWTYPE;
+BEGIN
+    IF p_input_tokens < 0 OR p_output_tokens < 0 OR p_cost_usd < 0
+       OR p_tool_calls < 0 OR p_runtime_ms < 0 OR p_storage_bytes < 0 THEN
+        RAISE EXCEPTION 'actual usage must be non-negative';
+    END IF;
+    SELECT * INTO r FROM platform_quota_reservations
+     WHERE reservation_id=p_reservation_id FOR UPDATE;
+    IF NOT FOUND OR r.status <> 'active' THEN RETURN false; END IF;
+    INSERT INTO platform_usage_ledger(
+        event_id,tenant_id,run_id,model_key,project_id,agent_id,task_id,
+        input_tokens,output_tokens,tool_calls,runtime_ms,storage_bytes,
+        cost_usd,price_card_version,source,occurred_at
+    ) VALUES (
+        p_event_id,r.tenant_id,r.run_id,p_model_key,p_project_id,p_agent_id,p_task_id,
+        p_input_tokens,p_output_tokens,p_tool_calls,p_runtime_ms,p_storage_bytes,
+        p_cost_usd,p_price_card_version,p_source,p_occurred_at
+    );
+    UPDATE platform_quota_reservations SET status='settled', settled_at=now()
+     WHERE reservation_id=p_reservation_id;
+    RETURN true;
+END;
+$quota$;
+
 CREATE OR REPLACE FUNCTION platform_quota_release(p_reservation_id uuid) RETURNS boolean
 LANGUAGE plpgsql AS $quota$
 DECLARE changed integer;
