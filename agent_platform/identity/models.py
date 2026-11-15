@@ -99,3 +99,14 @@ class ResourceRef:
     def __post_init__(self) -> None:
         if not self.resource_type.strip() or not self.resource_id.strip():
             raise ValueError("resource_type and resource_id must not be empty")
+
+
+@dataclass(frozen=True)
+class AuthorizationContext:
+    """Tenant-scoped effective resource context for an authenticated human user."""
+
+    tenant_id: str
+    user_id: str
+    tenant_roles: frozenset[str]
+    project_ids: frozenset[str]
+    agent_ids: frozenset[str]
