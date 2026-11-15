@@ -139,6 +139,8 @@ class GatewayMCPBridge:
             resource=resource,
             arguments=safe_arguments,
             approval_id=self.session.approval_ids.get(name),
+            run_id=self.session.run_id,
+            agent_id=self.session.agent_id,
         )
 
 
