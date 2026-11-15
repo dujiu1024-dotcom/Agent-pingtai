@@ -93,6 +93,21 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
   recovered=await executor.recover(load_initial_input=lambda row:{"run":row.run_id})
   self.assertEqual(recovered,[self.run])
   self.assertEqual((await self.states.get(self.tenant,self.run)).status,RunStatus.SUCCEEDED)
+ async def test_executor_can_acquire_lease_while_run_is_queued(self):
+  class Graph:
+   checkpointer=object()
+   async def ainvoke(self,payload,*,config):return {"accepted":payload}
+   async def aget_state(self,config):return type("State",(),{"config":{"configurable":{"checkpoint_id":None}}})()
+  executor=LangGraphRunExecutor(
+   graph=Graph(),lifecycle=RunLifecycleManager(self.states),
+   worker_id="worker-queued",lease_seconds=5,
+  )
+  result=await executor.execute(
+   tenant_id=self.tenant,run_id=self.run,input={"hello":"world"},
+  )
+  self.assertEqual(result,{"accepted":{"hello":"world"}})
+  self.assertEqual((await self.states.get(self.tenant,self.run)).status,RunStatus.SUCCEEDED)
+
  async def test_run_state_store_enforces_transitions_and_optimistic_version(self):
   queued=await self.states.get(self.tenant,self.run); self.assertEqual(queued.status,RunStatus.QUEUED)
   running=await self.states.transition(RunSnapshot(self.tenant,self.run,RunStatus.RUNNING,queued.version),expected_version=queued.version)
