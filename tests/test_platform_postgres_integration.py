@@ -374,8 +374,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
-                   VALUES (%s, %s, 'user', %s, 'project', 'project-1', 'reader', 'bootstrap')""",
-                (uuid4(), self.tenant_id, str(self.user_id)),
+                   VALUES (%s, %s, 'user', %s, 'tenant', %s, 'reader', 'bootstrap')""",
+                (uuid4(), self.tenant_id, str(self.user_id), self.tenant_id),
             )
             await conn.commit()
 
