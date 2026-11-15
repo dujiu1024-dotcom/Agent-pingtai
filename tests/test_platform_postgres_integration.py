@@ -27,6 +27,9 @@ if DSN:
     from agent_platform.identity.models import ResourceRef
     from agent_platform.identity.postgres import PostgresIdentityRepository
     from agent_platform.identity.security import PasswordHasher
+    from agent_platform.identity.service_accounts import (
+        PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
+    )
     from agent_platform.identity.service import (
         AuthenticationError,
         AuthorizationDenied,
@@ -399,6 +402,137 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.connect = connect
         self.repository = PostgresIdentityRepository(connect)
         self.service = IdentityService(self.repository)
+
+
+    async def test_authorization_context_resolves_only_active_tenant_resources(self):
+        project_ids = [f"project-{uuid4().hex[:8]}" for _ in range(2)]
+        agent_id = f"agent-{uuid4().hex[:8]}"
+        async with await self.connect() as conn:
+            for project_id in project_ids:
+                await conn.execute(
+                    """INSERT INTO platform_projects
+                       (tenant_id, project_id, slug, name)
+                       VALUES (%s, %s, %s, %s)""",
+                    (self.tenant_id, project_id, project_id, project_id),
+                )
+            await conn.execute(
+                """INSERT INTO platform_project_members
+                   (tenant_id, project_id, user_id, status)
+                   VALUES (%s, %s, %s, 'active')""",
+                (self.tenant_id, project_ids[0], self.user_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'project', %s, 'reader', 'integration')""",
+                (uuid4(), self.tenant_id, str(self.user_id), project_ids[1]),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Integration Agent', 'test agent')""",
+                (self.tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_permissions (permission_key, description)
+                   VALUES ('agent.run', 'Run agents') ON CONFLICT DO NOTHING"""
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'reader', 'agent.run') ON CONFLICT DO NOTHING""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'agent', %s, 'reader', 'integration')""",
+                (uuid4(), self.tenant_id, str(self.user_id), agent_id),
+            )
+            await conn.commit()
+
+        context = await self.repository.get_authorization_context(
+            tenant_id=self.tenant_id, user_id=str(self.user_id),
+        )
+        self.assertIsNotNone(context)
+        self.assertEqual(context.tenant_roles, frozenset({"reader"}))
+        self.assertEqual(context.project_ids, frozenset(project_ids))
+        self.assertEqual(context.agent_ids, frozenset({agent_id}))
+        self.assertIsNone(await self.repository.get_authorization_context(
+            tenant_id=f"other-{uuid4().hex}", user_id=str(self.user_id),
+        ))
+
+    async def test_service_identity_credentials_are_persisted_and_revoked_in_postgres(self):
+        service_account_id = f"svc-{uuid4().hex}"
+        agent_id = f"agent-{uuid4().hex}"
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_service_accounts
+                   (tenant_id, service_account_id, name, status)
+                   VALUES (%s, %s, 'Integration Worker', 'active')""",
+                (self.tenant_id, service_account_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Integration Agent', 'test agent')""",
+                (self.tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agent_identities
+                   (tenant_id, agent_id, service_account_id, status)
+                   VALUES (%s, %s, %s, 'active')""",
+                (self.tenant_id, agent_id, service_account_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_permissions (permission_key, description)
+                   VALUES ('agent.run', 'Run agents') ON CONFLICT DO NOTHING"""
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'machine-runner', 'Machine Runner')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'machine-runner', 'agent.run')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'service_account', %s, 'agent', %s,
+                           'machine-runner', 'integration')""",
+                (uuid4(), self.tenant_id, service_account_id, agent_id),
+            )
+            await conn.commit()
+
+        service = ServiceIdentityService(PostgresServiceIdentityRepository(self.connect))
+        issued = await service.issue_credential(
+            tenant_id=self.tenant_id, service_account_id=service_account_id,
+            agent_id=agent_id, name="integration credential", scopes=("agent.run",),
+        )
+        principal = await service.authenticate(issued.token)
+        self.assertEqual(principal.agent_id, agent_id)
+        await service.authorize(
+            principal=principal, resource=ResourceRef("agent", agent_id),
+            permission_key="agent.run",
+        )
+        with self.assertRaises(ServiceIdentityError):
+            await service.authorize(
+                principal=principal, resource=ResourceRef("agent", agent_id),
+                permission_key="identity.role.manage",
+            )
+        self.assertTrue(await service.revoke(
+            tenant_id=self.tenant_id, service_account_id=service_account_id,
+            credential_id=issued.credential_id,
+        ))
+        with self.assertRaises(ServiceIdentityError):
+            await service.authenticate(issued.token)
 
     async def test_tenant_scoped_login_authorization_and_logout(self):
         issued = await self.service.login(
