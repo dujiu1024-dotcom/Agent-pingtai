@@ -48,6 +48,8 @@ include = [
   "tests/test_deepseek_harness_adapter.py",
   "tests/test_event_consumer.py",
   "tests/test_platform_postgres_integration.py",
+  "tests/test_tenant_creation_integration.py",
+  "tests/test_service_identity_authorization_integration.py",
   "tests/test_redis_streams_integration.py",
   "tests/test_gateway_runtime_postgres_integration.py",
   "tests/test_gateway_service.py",
