@@ -29,7 +29,8 @@ _KINDS = frozenset({"agent", "workflow", "tool", "skill", "model_provider", "mod
 _STATUSES = frozenset({"draft", "published", "disabled", "deprecated"})
 _SECRET_KEYS = frozenset({
     "api_key", "api_secret", "access_token", "refresh_token", "password",
-    "secret", "client_secret", "private_key", "authorization",
+    "secret", "secret_key", "token", "credential", "credentials",
+    "client_secret", "private_key", "authorization",
 })
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
@@ -37,8 +38,10 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 def _validate_definition(value: Any, path: str = "definition") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
-            name = str(key).strip().lower()
-            if name in _SECRET_KEYS:
+            raw_name = str(key).strip()
+            name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", raw_name).lower().replace("-", "_")
+            secret_suffix = name.endswith(("_token", "_secret", "_password", "_private_key"))
+            if name in _SECRET_KEYS or secret_suffix:
                 raise RegistryError(f"secret material is forbidden at {path}.{key}; use a secret reference")
             _validate_definition(child, f"{path}.{key}")
     elif isinstance(value, list):
@@ -61,8 +64,8 @@ class RegistryVersion:
     published_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant_id.strip() or not _ID.fullmatch(self.item_id):
-            raise RegistryError("tenant_id and valid item_id are required")
+        if not self.tenant_id.strip() or not self.created_by.strip() or not _ID.fullmatch(self.item_id):
+            raise RegistryError("tenant_id, actor_id and valid item_id are required")
         if self.kind not in _KINDS or self.status not in _STATUSES or self.version < 1:
             raise RegistryError("invalid kind, status or version")
         _validate_definition(self.definition)
