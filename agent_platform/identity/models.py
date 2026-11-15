@@ -50,6 +50,40 @@ class IssuedSession:
 
 
 @dataclass(frozen=True)
+class IssuedApiCredential:
+    credential_id: str
+    tenant_id: str
+    user_id: str
+    name: str
+    access_token: str
+    scopes: tuple[str, ...]
+    expires_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ApiCredentialRecord:
+    credential_id: str
+    tenant_id: str
+    user_id: str
+    name: str
+    scopes: tuple[str, ...]
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    user_status: UserStatus
+    membership_status: str
+
+
+@dataclass(frozen=True)
+class InvitationRecord:
+    invitation_id: str
+    tenant_id: str
+    email_normalized: str
+    role_id: str
+    expires_at: datetime
+    accepted_at: datetime | None
+
+
+@dataclass(frozen=True)
 class ResourceRef:
     resource_type: str
     resource_id: str
