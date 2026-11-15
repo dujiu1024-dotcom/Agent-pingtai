@@ -181,6 +181,45 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.tenant_id, candidate.memory_id,
         ))
 
+    async def test_postgres_memory_expiry_cleanup_is_retryable(self):
+        from datetime import datetime, timedelta, timezone
+
+        attempts = []
+        async def cleanup(tenant_id, memory_id):
+            attempts.append((tenant_id, memory_id))
+            if len(attempts) == 1:
+                raise RuntimeError("derived index unavailable")
+
+        service = MemoryService(
+            PostgresMemoryRepository(self.connect), on_delete=cleanup,
+        )
+        candidate = MemoryCandidate(
+            tenant_id=self.tenant_id, scope=MemoryScope.USER, scope_id="expiry-user",
+            content="temporary memory", source_ref="conversation:expiry",
+            confidence=0.9, created_by="extractor",
+            expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id=self.tenant_id, memory_id=candidate.memory_id,
+            confirmer_id="expiry-user",
+        )
+        with self.assertRaisesRegex(RuntimeError, "derived index unavailable"):
+            await service.expire_due(tenant_id=self.tenant_id)
+        expired = await service.repository.get(self.tenant_id, candidate.memory_id)
+        self.assertEqual(expired.status, MemoryStatus.EXPIRED)
+        self.assertEqual(await service.expire_due(tenant_id=self.tenant_id), 0)
+        self.assertEqual(attempts, [
+            (self.tenant_id, candidate.memory_id),
+            (self.tenant_id, candidate.memory_id),
+        ])
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 3)
+
     async def test_connector_cursor_is_durable_and_tenant_scoped(self):
         await self.knowledge.save_connector_cursor(self.tenant_id,"fixture","cursor-1")
         self.assertEqual(await self.knowledge.get_connector_cursor(self.tenant_id,"fixture"),"cursor-1")
