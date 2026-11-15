@@ -39,7 +39,7 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, connection_factory=connect
         )
 
-    def make_entry(self, *, content=None, status=EntryStatus.PROPOSED):
+    def make_entry(self, *, content=None, status=EntryStatus.PROPOSED, entry_id=None, correlation_id=None):
         return BlackboardEntry(
             scope=Scope.RUN,
             scope_id="run-integration",
@@ -47,6 +47,8 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             content=content or {"fact": "original"},
             author_id="expert-a",
             status=status,
+            entry_id=entry_id or str(uuid4()),
+            correlation_id=correlation_id or str(uuid4()),
         )
 
     async def test_migration_and_blackboard_write_are_atomic_with_outbox(self):
@@ -73,7 +75,8 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             entry.entry_id,
             expected_version=1,
             replacement=self.make_entry(
-                content={"fact": "revised"}, status=EntryStatus.ACCEPTED
+                content={"fact": "revised"}, status=EntryStatus.ACCEPTED,
+                entry_id=entry.entry_id, correlation_id=entry.correlation_id,
             ),
         )
         self.assertEqual(revised.version, 2)
@@ -82,7 +85,10 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(VersionConflict):
             await self.repo.revise(
                 entry.entry_id, expected_version=1,
-                replacement=self.make_entry(content={"fact": "stale"}),
+                replacement=self.make_entry(
+                    content={"fact": "stale"}, entry_id=entry.entry_id,
+                    correlation_id=entry.correlation_id,
+                ),
             )
 
         async with await self.connect() as conn:
