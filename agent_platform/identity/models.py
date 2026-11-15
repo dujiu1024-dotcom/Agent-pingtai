@@ -8,6 +8,7 @@ from typing import Literal
 
 UserStatus = Literal["active", "suspended", "disabled"]
 
+
 @dataclass(frozen=True)
 class UserRecord:
     user_id: str
@@ -15,6 +16,7 @@ class UserRecord:
     display_name: str
     password_hash: str
     status: UserStatus
+
 
 @dataclass(frozen=True)
 class SessionRecord:
@@ -28,6 +30,7 @@ class SessionRecord:
     user_status: UserStatus
     membership_status: str
 
+
 @dataclass(frozen=True)
 class Principal:
     user_id: str
@@ -36,6 +39,7 @@ class Principal:
     email: str
     display_name: str
 
+
 @dataclass(frozen=True)
 class IssuedSession:
     session_id: str
@@ -43,6 +47,7 @@ class IssuedSession:
     user_id: str
     access_token: str
     expires_at: datetime
+
 
 @dataclass(frozen=True)
 class ResourceRef:
