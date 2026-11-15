@@ -171,6 +171,10 @@ BEGIN
     SELECT * INTO r FROM platform_quota_reservations
      WHERE reservation_id=p_reservation_id FOR UPDATE;
     IF NOT FOUND THEN RETURN false; END IF;
+    PERFORM 1 FROM platform_quota_budgets
+     WHERE tenant_id=r.tenant_id AND scope_type=r.scope_type
+       AND scope_id=r.scope_id AND period_start=r.period_start
+     FOR UPDATE;
     IF r.status = 'settled' THEN
         RETURN EXISTS (
             SELECT 1 FROM platform_usage_ledger
@@ -197,6 +201,12 @@ CREATE OR REPLACE FUNCTION platform_quota_release(p_reservation_id uuid) RETURNS
 LANGUAGE plpgsql AS $quota$
 DECLARE changed integer;
 BEGIN
+    PERFORM 1 FROM platform_quota_budgets b
+     JOIN platform_quota_reservations r
+       ON r.tenant_id=b.tenant_id AND r.scope_type=b.scope_type
+      AND r.scope_id=b.scope_id AND r.period_start=b.period_start
+     WHERE r.reservation_id=p_reservation_id
+     FOR UPDATE OF b;
     UPDATE platform_quota_reservations SET status='released', settled_at=now()
      WHERE reservation_id=p_reservation_id AND status='active';
     GET DIAGNOSTICS changed = ROW_COUNT;
