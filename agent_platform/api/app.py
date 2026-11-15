@@ -10,6 +10,7 @@ from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.sessions import create_sessions_router
+from agent_platform.api.workbench import create_workbench_router
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
@@ -106,4 +107,14 @@ def create_platform_app(
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
         ))
+    app.include_router(create_workbench_router(features={
+        "knowledge": True,
+        "memory": True,
+        "sessions": sessions_configured,
+        "registry": registry_configured,
+        "agent_management": False,
+        "task_execution": False,
+        "approvals": False,
+        "blackboard": False,
+    }))
     return app
