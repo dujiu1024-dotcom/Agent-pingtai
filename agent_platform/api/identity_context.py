@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
-from agent_platform.identity.models import AuthenticatedApiCredential, Principal
+from agent_platform.identity.models import Principal
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.memory.service import MemoryPrincipal
 
@@ -18,8 +18,13 @@ class IdentityContextResolver:
 
     async def _context(self, request: Request):
         authenticated = getattr(request.state, "identity.principal", None)
-        if not isinstance(authenticated, (Principal, AuthenticatedApiCredential)):
-            raise HTTPException(status_code=401, detail="authenticated human identity required")
+        if authenticated is None:
+            raise HTTPException(status_code=401, detail="authentication required")
+        if not isinstance(authenticated, Principal):
+            raise HTTPException(
+                status_code=403,
+                detail="Knowledge/Memory routes currently require a human session",
+            )
 
         context = await self.identity_repository.get_authorization_context(
             tenant_id=authenticated.tenant_id,
