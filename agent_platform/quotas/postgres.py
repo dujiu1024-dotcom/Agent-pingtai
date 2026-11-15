@@ -98,9 +98,10 @@ class PostgresQuotaStore:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """SELECT platform_quota_settle(
-                    %s,%s,%s,%s,%s,%s,%s,%s,NULL,0,0,0,NULL,'estimated',%s) AS settled""",
+                    %s,%s,%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s,%s,%s,%s) AS settled""",
                     (UUID(reservation_id),UUID(event.event_id),event.model_key,event.input_tokens,
-                     event.output_tokens,event.cost_usd,event.project_id,event.agent_id,event.occurred_at),
+                     event.output_tokens,event.cost_usd,event.project_id,event.agent_id,event.tool_calls,
+                     event.runtime_ms,event.storage_bytes,event.price_card_version,event.source,event.occurred_at),
                 )
                 row = await cursor.fetchone()
                 if not row["settled"]:
@@ -121,8 +122,14 @@ class PostgresQuotaStore:
         connection = await self._connection_factory()
         async with connection:
             cursor = await connection.execute(
-                """SELECT COALESCE(SUM(u.input_tokens+u.output_tokens),0) AS tokens,
-                COALESCE(SUM(u.cost_usd),0) AS cost,
+                """SELECT COALESCE(SUM(u.input_tokens+u.output_tokens),0)
+                  + COALESCE((SELECT SUM(r.reserved_tokens) FROM platform_quota_reservations r
+                    WHERE r.tenant_id=%s AND r.scope_type=%s AND r.scope_id=%s
+                    AND r.period_start=%s AND r.status='active'),0) AS tokens,
+                COALESCE(SUM(u.cost_usd),0)
+                  + COALESCE((SELECT SUM(r.reserved_cost_usd) FROM platform_quota_reservations r
+                    WHERE r.tenant_id=%s AND r.scope_type=%s AND r.scope_id=%s
+                    AND r.period_start=%s AND r.status='active'),0) AS cost,
                 (SELECT COUNT(*) FROM platform_quota_reservations r
                  WHERE r.tenant_id=%s AND r.scope_type=%s AND r.scope_id=%s
                  AND r.period_start=%s AND r.status='active') AS concurrency
@@ -130,7 +137,8 @@ class PostgresQuotaStore:
                 WHERE u.tenant_id=%s AND u.occurred_at>=%s AND u.occurred_at<%s
                 AND ((%s='tenant' AND u.tenant_id=%s) OR (%s='model' AND u.model_key=%s)
                 OR (%s='project' AND u.project_id=%s) OR (%s='agent' AND u.agent_id=%s))""",
-                (tenant_id,scope_type,scope_id,start,tenant_id,start,end,
+                (tenant_id,scope_type,scope_id,start,tenant_id,scope_type,scope_id,start,
+                 tenant_id,scope_type,scope_id,start,tenant_id,start,end,
                  scope_type,scope_id,scope_type,scope_id,scope_type,scope_id,scope_type,scope_id),
             )
             row = await cursor.fetchone()
