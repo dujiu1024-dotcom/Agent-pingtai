@@ -52,6 +52,7 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.user_id, "user-a")
         self.assertEqual(resolved.project_ids, frozenset({"project-a"}))
         self.assertEqual(resolved.roles, frozenset({"project.read", "knowledge.manage"}))
+        self.assertEqual(resolved.roles, frozenset({"project.read", "knowledge.manage"}))
 
     async def test_memory_principal_includes_only_granted_agents(self):
         principal = Principal(
