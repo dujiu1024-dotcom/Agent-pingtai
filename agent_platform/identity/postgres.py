@@ -83,6 +83,29 @@ class PostgresIdentityRepository:
             )
 
             cursor = await connection.execute(
+                """SELECT DISTINCT b.role_id
+                   FROM platform_role_bindings b
+                   WHERE b.tenant_id=%s AND b.revoked_at IS NULL
+                     AND (
+                       (b.subject_type='user' AND b.subject_id=%s)
+                       OR (b.subject_type='team' AND b.subject_id IN (
+                         SELECT tm.team_id
+                         FROM platform_team_memberships tm
+                         JOIN platform_teams team
+                           ON team.tenant_id=tm.tenant_id
+                          AND team.team_id=tm.team_id
+                          AND team.status='active'
+                         WHERE tm.tenant_id=%s AND tm.user_id=%s
+                           AND tm.status='active'
+                       ))
+                     )""",
+                (tenant_id, user_id, tenant_id, user_id),
+            )
+            effective_role_ids = frozenset(
+                row["role_id"] for row in await cursor.fetchall()
+            )
+
+            cursor = await connection.execute(
                 """SELECT DISTINCT p.project_id
                    FROM platform_projects p
                    WHERE p.tenant_id=%s AND p.status='active'
@@ -190,6 +213,7 @@ class PostgresIdentityRepository:
             tenant_id=tenant_id,
             user_id=user_id,
             tenant_roles=tenant_roles,
+            effective_role_ids=effective_role_ids,
             tenant_permissions=tenant_permissions,
             project_ids=project_ids,
             knowledge_manage_project_ids=knowledge_manage_project_ids,
