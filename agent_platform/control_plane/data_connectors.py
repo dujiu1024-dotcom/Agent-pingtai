@@ -22,6 +22,7 @@ class DataConnection:
     provider: str
     secret_ref: str
     scopes: tuple[str, ...]
+    display_name: str = ""
     status: str = "active"
     cursor: Mapping[str, Any] | None = None
     version: int = 0
@@ -47,6 +48,7 @@ class ConnectorProvider(Protocol):
 
 
 class ConnectorRepository(Protocol):
+    async def create(self, connection: DataConnection, *, created_by: str) -> None: ...
     async def get(self, tenant_id: str, connection_id: str) -> DataConnection | None: ...
     async def save_cursor(
         self, *, tenant_id: str, connection_id: str, expected_version: int,
@@ -76,6 +78,9 @@ class InMemoryConnectorRepository:
         self.records: dict[tuple[str, str], DataConnection] = {}
 
     async def add(self, connection: DataConnection) -> None:
+        await self.create(connection, created_by="test")
+
+    async def create(self, connection: DataConnection, *, created_by: str) -> None:
         key = (connection.tenant_id, connection.connection_id)
         if key in self.records:
             raise ConnectorError("connection already exists")
@@ -128,6 +133,28 @@ class DataConnectorService:
         self.providers = dict(providers)
         self.secrets = secrets
         self.sink = sink
+
+    async def create_connection(
+        self, *, tenant_id: str, connection_id: str, provider: str,
+        display_name: str, secret_ref: str, scopes: tuple[str, ...], actor_id: str,
+    ) -> DataConnection:
+        if not tenant_id.strip() or not actor_id.strip() or not connection_id.strip():
+            raise ConnectorError("tenant, connection and actor identifiers are required")
+        if provider not in self.providers:
+            raise ConnectorError("connector provider is not registered")
+        if not display_name.strip() or len(display_name) > 120:
+            raise ConnectorError("display name must contain 1 to 120 characters")
+        if not secret_ref.startswith("secret://") or len(secret_ref) > 512:
+            raise ConnectorError("credentials must be stored as a secret:// reference")
+        normalized_scopes = tuple(sorted(set(scope.strip() for scope in scopes if scope.strip())))
+        if not normalized_scopes or any(len(scope) > 128 for scope in normalized_scopes):
+            raise ConnectorError("one or more valid connector scopes are required")
+        connection = DataConnection(
+            tenant_id=tenant_id, connection_id=connection_id, provider=provider,
+            secret_ref=secret_ref, scopes=normalized_scopes, display_name=display_name.strip(),
+        )
+        await self.repository.create(connection, created_by=actor_id)
+        return connection
 
     async def sync_once(
         self, *, tenant_id: str, connection_id: str,
