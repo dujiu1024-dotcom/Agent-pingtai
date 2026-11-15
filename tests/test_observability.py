@@ -6,6 +6,7 @@ from agent_platform.observability.evaluation import (
     EvalCase, EvalDataset, EvalGatePolicy, build_report, evaluate_case, gate_report,
 )
 from agent_platform.observability.harness import ObservedHarnessAdapter
+from agent_platform.observability.langfuse import LangfuseObservationSink
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.prompts import PromptRegistry
 from agent_platform.observability.redaction import redact_payload, redact_text
@@ -96,6 +97,24 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "provider unavailable"):
             await adapter.run(request)
         self.assertTrue(any('status="failed"' in key for key in metrics.snapshot()["counters"]))
+
+    def test_langfuse_sink_uses_sdk_v3_observation_contract(self):
+        class FakeClient:
+            def __init__(self):
+                self.args = None
+
+            @contextmanager
+            def start_as_current_observation(self, **kwargs):
+                self.args = kwargs
+                yield FakeSpan()
+
+        client = FakeClient()
+        sink = LangfuseObservationSink(client=client)
+        with sink.observe(name="agent.run", input={"input_chars": 3}, metadata={"run_id": "run-1"}):
+            pass
+        self.assertEqual(client.args["as_type"], "span")
+        self.assertEqual(client.args["name"], "agent.run")
+        self.assertEqual(client.args["metadata"]["run_id"], "run-1")
 
     def test_redaction_recurses_and_truncates(self):
         payload = {"api_key": "secret-value", "nested": ["Authorization: Bearer abc.def", "sk-12345678901234567890"]}
