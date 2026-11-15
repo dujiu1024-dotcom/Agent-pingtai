@@ -207,7 +207,6 @@ class BlackboardMultiExpertServices:
 
     async def prepare_approval(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
         request = dict(await self.callbacks.prepare_approval(state=state))
-        run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "approval-request"), scope=scope,
@@ -219,7 +218,6 @@ class BlackboardMultiExpertServices:
 
     async def apply_approval(self, *, state: Mapping[str, Any], decision: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(await self.callbacks.apply_approval(state=state, decision=decision))
-        run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "approval-result"), scope=scope,
@@ -234,7 +232,6 @@ class BlackboardMultiExpertServices:
 
     async def archive(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(await self.callbacks.archive(state=state))
-        run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         refs = [
             str(item["blackboard_entry_id"])
@@ -266,7 +263,6 @@ class BlackboardMultiExpertServices:
 
     async def reject(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(await self.callbacks.reject(state=state))
-        run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "rejected-result"), scope=scope,
