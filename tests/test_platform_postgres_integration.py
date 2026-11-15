@@ -28,13 +28,13 @@ if DSN:
     from agent_platform.identity.postgres import PostgresIdentityRepository
     from agent_platform.identity.security import PasswordHasher
     from agent_platform.identity.tenants import create_tenant_with_owner
-    from agent_platform.identity.service_accounts import (
-        PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
-    )
     from agent_platform.identity.service import (
         AuthenticationError,
         AuthorizationDenied,
         IdentityService,
+    )
+    from agent_platform.identity.service_accounts import (
+        PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
     )
 
 
