@@ -45,6 +45,15 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.gateway = SupervisedToolGateway(
             tools=(
                 ToolDefinition("read", RiskLevel.READ_ONLY, handler),
+                ToolDefinition(
+                    "validated_read", RiskLevel.READ_ONLY, handler,
+                    input_schema={
+                        "type": "object",
+                        "properties": {"value": {"type": "string"}},
+                        "required": ["value"],
+                        "additionalProperties": False,
+                    },
+                ),
                 ToolDefinition("draft", RiskLevel.INTERNAL_REVERSIBLE, handler),
                 ToolDefinition("send", RiskLevel.EXTERNAL_OR_IRREVERSIBLE, handler),
                 ToolDefinition(
@@ -79,6 +88,14 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.call("read"))["ok"], True)
         self.assertEqual((await self.call("draft"))["ok"], True)
         self.assertEqual(len(self.executed), 2)
+
+    async def test_tool_json_schema_is_enforced_before_handler(self):
+        with self.assertRaises(ToolExecutionDenied):
+            await self.call("validated_read", arguments={"value": 42})
+        self.assertEqual(self.executed, [])
+        result = await self.call("validated_read", arguments={"value": "ok"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(self.executed), 1)
 
     async def test_unknown_tool_is_denied(self):
         with self.assertRaises(ToolExecutionDenied):
