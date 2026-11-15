@@ -61,7 +61,9 @@ class FakeConnection:
 class AlertStoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_record_is_idempotent_and_acknowledge_resolve_are_guarded(self):
         connection = FakeConnection()
-        store = PostgresAlertEventStore(lambda: connection)
+        async def connect():
+            return connection
+        store = PostgresAlertEventStore(connect)
         event = AlertEvent("cpu", "cpu_percent", 95, 90, "critical",
                            datetime.now(timezone.utc), "CPU high")
         first = await store.record(event, scope_key="tenant-a", dedupe_key="cpu:window-1")
