@@ -75,15 +75,18 @@ class InMemoryKnowledgeRepository:
         for document in self.documents.values():
             if document.tenant_id != principal.tenant_id or document.deleted_at is not None:
                 continue
-            if document.scope.value == "private" and document.owner_user_id != principal.user_id:
-                continue
-            if document.scope.value == "project" and document.project_id not in principal.project_ids:
-                continue
             key = (document.tenant_id, document.document_id)
             current = latest.get(key)
             if current is None or document.version > current.version:
                 latest[key] = document
-        return sorted(latest.values(), key=lambda doc: doc.created_at, reverse=True)[:limit]
+        visible = []
+        for document in latest.values():
+            if document.scope.value == "private" and document.owner_user_id != principal.user_id:
+                continue
+            if document.scope.value == "project" and document.project_id not in principal.project_ids:
+                continue
+            visible.append(document)
+        return sorted(visible, key=lambda doc: doc.created_at, reverse=True)[:limit]
 
     async def search(
         self,
