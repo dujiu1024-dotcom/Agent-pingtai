@@ -125,6 +125,7 @@ class BlackboardMultiExpertServices:
         run_id = str(run_context.get("run_id") or run_context.get("thread_id") or "run")
         scope, scope_id = self._scope(run_context)
         decisions = result.get("decisions", [])
+        decision_entry_ids = []
         for index, conflict in enumerate(conflicts):
             conflict_entry_id = conflict.get("blackboard_entry_id")
             if not conflict_entry_id:
@@ -143,7 +144,11 @@ class BlackboardMultiExpertServices:
                 source_refs=tuple(str(ref) for ref in evidence_refs),
                 status=EntryStatus.ACCEPTED,
             )
-            await self._propose_once(entry)
+            persisted = await self._propose_once(entry)
+            decision_entry_ids.append(persisted.entry_id)
+        resolved_synthesis = dict(result.get("synthesis", synthesis))
+        resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
+        result["synthesis"] = resolved_synthesis
         return result
 
     async def prepare_approval(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -168,23 +173,36 @@ class BlackboardMultiExpertServices:
             content={"approval_result": result}, author_id="human-approver",
             status=EntryStatus.ACCEPTED if result.get("approved") is True else EntryStatus.REJECTED,
         )
-        await self._propose_once(entry)
+        persisted = await self._propose_once(entry)
+        result["blackboard_entry_id"] = persisted.entry_id
         return result
 
     async def archive(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
         result = dict(await self.callbacks.archive(state=state))
         run_id = str(state["run_id"])
         scope, scope_id = self._scope(state)
-        refs = tuple(
+        refs = [
             str(item["blackboard_entry_id"])
             for item in state.get("contributions", [])
             if item.get("blackboard_entry_id")
+        ]
+        synthesis = state.get("synthesis", {})
+        if synthesis.get("blackboard_entry_id"):
+            refs.append(str(synthesis["blackboard_entry_id"]))
+        refs.extend(str(item) for item in synthesis.get("blackboard_decision_entry_ids", []))
+        refs.extend(
+            str(item["blackboard_entry_id"])
+            for item in state.get("conflicts", [])
+            if item.get("blackboard_entry_id")
         )
+        approval = state.get("approval_result", {})
+        if approval.get("blackboard_entry_id"):
+            refs.append(str(approval["blackboard_entry_id"]))
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_id, "final-artifact"), scope=scope,
             scope_id=scope_id, kind=EntryKind.ARTIFACT,
             content={"final_result": result}, author_id="workflow-archive",
-            source_refs=refs, status=EntryStatus.ACCEPTED,
+            source_refs=tuple(refs), status=EntryStatus.ACCEPTED,
         )
         persisted = await self._propose_once(entry)
         result["blackboard_entry_id"] = persisted.entry_id
