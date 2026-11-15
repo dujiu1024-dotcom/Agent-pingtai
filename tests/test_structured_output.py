@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 
+from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 from agent_platform.runtime.structured_output import (
     SchemaValidatedHarnessAdapter,
@@ -23,7 +23,13 @@ class FakeAdapter:
 
 class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.request = SimpleNamespace(
+        self.request = HarnessRequest(
+            context=RunContext(
+                tenant_id="tenant-a", run_id="run-1", agent_id="agent-a",
+                model_template=ModelTemplateRef("general", 1),
+            ),
+            instructions="Return a decision.",
+            input_text="Evaluate the evidence.",
             output_schema={
                 "type": "object",
                 "required": ["decision", "score"],
@@ -37,7 +43,6 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
                     },
                 },
             },
-            instructions="Return a decision.",
         )
 
     def test_schema_validation_reports_nested_paths(self):
@@ -51,18 +56,12 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("$.extra" in error for error in errors))
 
     async def test_invalid_output_is_repaired_once_and_validated(self):
-        from dataclasses import replace
-
-        request = replace(
-            HarnessRequest.__new__(HarnessRequest),
-            output_schema=self.request.output_schema,
-        ) if False else self.request
         adapter = FakeAdapter([
             "not json",
             '{"decision":"approve","score":0.8,"evidence":["source:1"]}',
         ])
         validated = SchemaValidatedHarnessAdapter(adapter, max_retries=1)
-        result = await validated.run(request)
+        result = await validated.run(self.request)
         self.assertTrue(result.metadata["structured_output_valid"])
         self.assertEqual(result.metadata["structured_output_attempts"], 2)
         self.assertIn("Validation errors", adapter.requests[1].instructions)
