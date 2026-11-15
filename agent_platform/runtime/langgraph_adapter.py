@@ -36,6 +36,10 @@ def build_state_graph(
     for source, target in edges:
         graph.add_edge(source, END if target == "__end__" else target)
     for source, router, destinations in conditional_edges:
-        graph.add_conditional_edges(source, router, dict(destinations))
+        normalized = {
+            key: END if value == "__end__" else value
+            for key, value in destinations.items()
+        }
+        graph.add_conditional_edges(source, router, normalized)
 
     return graph.compile(checkpointer=checkpointer)
