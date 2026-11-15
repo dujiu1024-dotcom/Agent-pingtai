@@ -161,5 +161,6 @@ python3 agency.py init && python3 agency.py doctor
 - 多专家 LangGraph 流程：`agent_platform/workflows/multi_expert.py`
 - PostgreSQL 核心结构：`agent_platform/storage/postgres/`
 - Redis Streams 事件传输、Pending Entries 恢复、PostgreSQL 消费回执与幂等消费者：`agent_platform/events/`
+- 事件可靠性：PostgreSQL 指数退避（2 秒起、最多 300 秒）、默认 5 次失败上限、Redis 死信 Stream；迁移脚本：`agent_platform/storage/postgres/003_event_retry_and_dlq.sql`
 
 旧 CLI 继续使用标准库。新平台可选依赖单独安装：`pip install -r requirements-platform.txt`。尚未完成的基础设施接入不会影响旧系统运行。
