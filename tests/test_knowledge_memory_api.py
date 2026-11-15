@@ -10,9 +10,11 @@ from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService
 from agent_platform.memory.service import (
     InMemoryMemoryRepository,
     MemoryPrincipal,
+    MemoryScope,
     MemoryService,
 )
 
@@ -40,15 +42,27 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
             async def generate(self, *, query, context):
                 return {"answer": "Evidence-backed response.", "citation_ids": [context[0]["citation_id"]]}
 
+        class Extractor:
+            async def extract(self, *, turn):
+                return [MemoryDraft(
+                    scope=MemoryScope.USER,
+                    scope_id=turn.user_id,
+                    content="prefers concise explanations",
+                    confidence=0.88,
+                )]
+
         self.knowledge = KnowledgeService(InMemoryKnowledgeRepository())
+        self.memory = MemoryService(InMemoryMemoryRepository())
+        extraction = MemoryExtractionService(memory=self.memory, extractor=Extractor())
         app = FastAPI()
         app.include_router(
             create_knowledge_memory_router(
                 knowledge=self.knowledge,
-                memory=MemoryService(InMemoryMemoryRepository()),
+                memory=self.memory,
                 resolve_knowledge_principal=resolve_knowledge,
                 resolve_memory_principal=resolve_memory,
                 rag=RAGService(knowledge=self.knowledge, generator=CitationGenerator()),
+                memory_extraction=extraction,
             )
         )
         self.client = TestClient(app)
@@ -122,6 +136,29 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
             headers={"x-roles": "project.read"},
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_extraction_creates_candidates_without_auto_activation(self):
+        response = self.client.post(
+            "/api/platform/v1/memories/extract",
+            json={
+                "source_ref": "conversation:turn-42",
+                "user_message": "I prefer concise explanations.",
+                "assistant_message": "I will keep responses concise.",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["items"][0]["status"], "candidate")
+        self.assertEqual(
+            self.client.get("/api/platform/v1/memories").json()["items"], []
+        )
+        memory_id = response.json()["items"][0]["memory_id"]
+        confirmed = self.client.post(
+            f"/api/platform/v1/memories/{memory_id}/confirm"
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(
+            len(self.client.get("/api/platform/v1/memories").json()["items"]), 1
+        )
 
     def test_memory_requires_confirmation_and_respects_user_scope(self):
         proposed = self.client.post(
