@@ -34,8 +34,8 @@ if(view==="models")$("modelList").innerHTML=capabilities.registry?unavailable("�
 if(view==="tools")$("toolList").innerHTML=capabilities.registry?unavailable("工具与 Skills 列表 API（注册中心列表查询待接入）"):unavailable("注册中心 API");
 }catch(e){msg("API 请求失败："+e.message)}}
 $("refresh").onclick=()=>load();
-$("submitTask").onclick=async()=>{try{const r=await api("/tasks",{method:"POST",body:JSON.stringify({agent_id:$("agentId").value,project_id:$("projectId").value||null,input:{text:$("taskInput").value}})});msg("任务已提交："+r.task_id);show("runs")}catch(e){msg(e.message)}};
-$("createAgent").onclick=async()=>{try{await api("/agents",{method:"POST",body:JSON.stringify({agent_id:$("newAgentId").value,name:$("newAgentName").value,role_definition:$("agentRole").value,model_template_ref:$("templateRef").value})});msg("Agent 已创建");load("agents")}catch(e){msg(e.message)}};
+$("submitTask").onclick=async()=>{if(!capabilities.task_execution){msg("任务执行 API 尚未接入；不会提交到占位接口。");return}try{const r=await api("/tasks",{method:"POST",body:JSON.stringify({agent_id:$("agentId").value,project_id:$("projectId").value||null,input:{text:$("taskInput").value}})});msg("任务已提交："+r.task_id);show("runs")}catch(e){msg(e.message)}};
+$("createAgent").onclick=async()=>{if(!capabilities.agent_management){msg("Agent 管理 API 尚未接入；当前请勿创建占位 Agent。");return}try{await api("/agents",{method:"POST",body:JSON.stringify({agent_id:$("newAgentId").value,name:$("newAgentName").value,role_definition:$("agentRole").value,model_template_ref:$("templateRef").value})});msg("Agent 已创建");load("agents")}catch(e){msg(e.message)}};
 $("ingestDoc").onclick=async()=>{try{await api("/knowledge/documents",{method:"POST",body:JSON.stringify({title:$("docTitle").value,scope:$("docScope").value,content:$("docText").value,media_type:"text/plain"})});msg("文档已提交入库");load("knowledge")}catch(e){msg(e.message)}};
 load("overview");
 </script></body></html>
