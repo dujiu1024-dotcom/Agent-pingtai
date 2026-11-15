@@ -15,7 +15,7 @@ class MemoryPrincipal:
     user_id: str
     project_ids: frozenset[str]=frozenset()
     agent_ids: frozenset[str]=frozenset()
-    roles: frozenset[str]=frozenset()
+    permissions: frozenset[str]=frozenset()
     manage_project_ids: frozenset[str]=frozenset()
     manage_agent_ids: frozenset[str]=frozenset()
 @dataclass(frozen=True)
@@ -68,7 +68,7 @@ class MemoryService:
     @staticmethod
     def _can_manage_scope(scope: MemoryScope, scope_id: str, principal: MemoryPrincipal) -> bool:
         if scope is MemoryScope.USER:
-            return scope_id == principal.user_id or "memory.manage" in principal.roles
+            return scope_id == principal.user_id or "memory.manage" in principal.permissions
         if scope is MemoryScope.PROJECT:
             return (
                 scope_id in principal.manage_project_ids
