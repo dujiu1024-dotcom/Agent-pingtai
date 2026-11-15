@@ -134,8 +134,15 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             state=state, decision={"approved": True}
         )
         self.assertTrue(approved["approved"])
+        state["approval_result"] = approved
         archived = await services.archive(state=state)
         self.assertIn("blackboard_entry_id", archived)
+        final_entry = await repository.get(archived["blackboard_entry_id"])
+        self.assertIn(first["blackboard_entry_id"], final_entry.source_refs)
+        self.assertIn(synthesis["blackboard_entry_id"], final_entry.source_refs)
+        self.assertIn(conflict_id, final_entry.source_refs)
+        self.assertIn(resolution["synthesis"]["blackboard_decision_entry_ids"][0], final_entry.source_refs)
+        self.assertIn(approved["blackboard_entry_id"], final_entry.source_refs)
         kinds = {entry.kind for entry in repository.entries.values()}
         self.assertTrue({EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT, EntryKind.DECISION, EntryKind.NOTE}.issubset(kinds))
 
