@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Callable
+from uuid import uuid4
 
 from agent_platform.identity.models import SessionRecord, UserRecord
 
@@ -109,3 +110,56 @@ class PostgresIdentityRepository:
             ))
             row = await cursor.fetchone()
             return bool(row["allowed"])
+
+    async def grant_role(
+        self, *, tenant_id: str, actor_id: str, subject_type: str,
+        subject_id: str, resource_type: str, resource_id: str, role_id: str,
+    ) -> str:
+        binding_id = str(uuid4())
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_role_bindings
+                       (binding_id, tenant_id, subject_type, subject_id,
+                        resource_type, resource_id, role_id, created_by)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (binding_id, tenant_id, subject_type, subject_id,
+                     resource_type, resource_id, role_id, actor_id),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id, actor_id, action, subject_id, outcome, detail)
+                       VALUES (%s, %s, 'role.granted', %s, 'succeeded',
+                         jsonb_build_object('binding_id', %s, 'role_id', %s,
+                           'subject_type', %s, 'resource_type', %s, 'resource_id', %s))""",
+                    (tenant_id, actor_id, subject_id, binding_id, role_id,
+                     subject_type, resource_type, resource_id),
+                )
+        return binding_id
+
+    async def revoke_role(
+        self, *, tenant_id: str, actor_id: str, binding_id: str,
+    ) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_role_bindings SET revoked_at=now()
+                       WHERE tenant_id=%s AND binding_id=%s AND revoked_at IS NULL
+                       RETURNING subject_id, role_id, resource_type, resource_id""",
+                    (tenant_id, binding_id),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    return False
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id, actor_id, action, subject_id, outcome, detail)
+                       VALUES (%s, %s, 'role.revoked', %s, 'succeeded',
+                         jsonb_build_object('binding_id', %s, 'role_id', %s,
+                           'resource_type', %s, 'resource_id', %s))""",
+                    (tenant_id, actor_id, row["subject_id"], binding_id,
+                     row["role_id"], row["resource_type"], row["resource_id"]),
+                )
+        return True
