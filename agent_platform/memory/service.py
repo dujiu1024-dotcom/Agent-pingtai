@@ -80,7 +80,7 @@ class MemoryService:
         owns_user=(c.scope is MemoryScope.USER and c.scope_id==principal.user_id)
         manages_shared=(c.scope is not MemoryScope.USER and "memory.manage" in principal.roles)
         if not (owns_user or manages_shared):raise PermissionError("memory correction is not authorized")
-        candidate=replace(c,content=content,source_ref=source_ref,confidence=c.confidence if confidence is None else confidence,created_by=principal.user_id)
+        candidate=replace(c,content=content,source_ref=source_ref,confidence=c.confidence if confidence is None else confidence )
         updated=replace(rec,candidate=candidate,version=rec.version+1,confirmed_by=principal.user_id,updated_at=utc_now())
         await self.repository.put(updated)
         return updated
