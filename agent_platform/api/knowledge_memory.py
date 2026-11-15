@@ -89,7 +89,7 @@ def create_knowledge_memory_router(
         try:scope=KnowledgeScope(body.get("scope","private"))
         except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
         project_id=body.get("project_id")
-        if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:raise HTTPException(403,"knowledge.manage role required")
+        if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.permissions:raise HTTPException(403,"knowledge.manage role required")
         if scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:raise HTTPException(403,"project knowledge.manage permission required")
         try:document_id=str(UUID(str(body["document_id"]))) if body.get("document_id") else str(uuid4())
         except ValueError as exc:raise HTTPException(400,"document_id must be a UUID") from exc
@@ -110,7 +110,7 @@ def create_knowledge_memory_router(
         principal=await resolve_knowledge_principal(request)
         try:document_scope=KnowledgeScope(scope)
         except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
-        if document_scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.roles:
+        if document_scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.permissions:
             raise HTTPException(403,"knowledge.manage role required")
         if document_scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:
             raise HTTPException(403,"project knowledge.manage permission required")
