@@ -1094,6 +1094,10 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.connection.commit()
 
+        async def connect():
+            return await AsyncConnection.connect(DSN, row_factory=dict_row)
+        self.connect = connect
+
     async def asyncTearDown(self):
         await self.connection.close()
 
