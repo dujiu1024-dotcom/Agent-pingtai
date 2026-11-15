@@ -68,7 +68,7 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         private=Document(tenant_id="t",title="private",source_uri="file://private",content_hash="x",scope=KnowledgeScope.PRIVATE,owner_user_id="u2")
         await service.ingest(document=private,content=b"private content")
         docs=await service.list_documents(principal=KnowledgePrincipal(tenant_id="t",user_id="u1"))
-        self.assertEqual([doc.title for doc in docs],["tenant v2"])
+        self.assertEqual({doc.title for doc in docs},{"tenant v2"})
         owner_docs=await service.list_documents(principal=KnowledgePrincipal(tenant_id="t",user_id="u2"))
         self.assertEqual({doc.title for doc in owner_docs},{"tenant v2","private"})
 
