@@ -7,3 +7,26 @@ __pycache__/
 data/backups/
 agency/outputs/
 .screenshots/
+
+# 运行数据与本地状态（不入库）
+agency/state/*.db
+agency/state/*.db-wal
+agency/state/*.db-shm
+agency/state/*.log
+agency/state/*.jsonl
+agency/state/backups/
+agency/state/backup-*/
+agency/state/gui/
+agency/state/tmp/
+agency/state/reply-jobs/
+agency/dev-state/
+agency/dev-outputs/
+logs/
+coverage.json
+
+# 飞书表导出（含业务记录与表标识）
+/tbl*.ndjson
+/tbl*.manifest.json
+
+# 本地工具产物
+.trae-html-share-packages/
