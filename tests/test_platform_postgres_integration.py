@@ -1077,7 +1077,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.tenant_id = f"bootstrap-it-{uuid4().hex}"
+        self.tenant_id = f"bootstrap-it-{uuid4().hex}"\n        self.owner_email = f"owner-{uuid4().hex}@example.com"
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
             migration_dir = Path("agent_platform/storage/postgres")
             for migration_path in sorted(migration_dir.glob("*.sql")):
@@ -1138,7 +1138,7 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         user_id = await bootstrap_tenant_owner(
             self.connection,
             tenant_id=self.tenant_id,
-            email="owner@example.com",
+            email=self.owner_email,
             display_name="Tenant Owner",
             password="correct horse battery staple",
         )
@@ -1151,7 +1151,7 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             (user_id, self.tenant_id, self.tenant_id),
         )
         row = await cursor.fetchone()
-        self.assertEqual(row["email_normalized"], "owner@example.com")
+        self.assertEqual(row["email_normalized"], self.owner_email)
         self.assertEqual(row["status"], "active")
         self.assertEqual(row["role_id"], "tenant_admin")
         cursor = await self.connection.execute(
