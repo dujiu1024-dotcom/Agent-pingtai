@@ -152,6 +152,6 @@ class OutboxRelay:
                     # downstream consumers must deduplicate on event_id.
                     result["failed"] += 1
             except Exception as exc:
-                await self.store.mark_failed(record, f"{type(exc).__name__}: {exc}")
+                await self.store.mark_failed(record, type(exc).__name__)
                 result["failed"] += 1
         return result
