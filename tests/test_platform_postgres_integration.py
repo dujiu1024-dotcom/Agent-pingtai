@@ -374,6 +374,36 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         ))
 
 
+    async def test_event_receipts_with_same_event_id_are_isolated_by_tenant(self):
+        other_tenant = f"receipt-other-{uuid4().hex}"
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (other_tenant, "Other Receipt Tenant"),
+            )
+            await conn.commit()
+        event_id = str(uuid4())
+        store = PostgresEventReceiptStore(self.connect)
+        tenant_a = await store.claim(
+            tenant_id=self.tenant_id, consumer_name="isolation-test",
+            event_id=event_id,
+        )
+        tenant_b = await store.claim(
+            tenant_id=other_tenant, consumer_name="isolation-test",
+            event_id=event_id,
+        )
+        self.assertIsNotNone(tenant_a)
+        self.assertIsNotNone(tenant_b)
+        self.assertTrue(await store.complete(tenant_a))
+        self.assertTrue(await store.is_completed(
+            tenant_id=self.tenant_id, consumer_name="isolation-test",
+            event_id=event_id,
+        ))
+        self.assertFalse(await store.is_completed(
+            tenant_id=other_tenant, consumer_name="isolation-test",
+            event_id=event_id,
+        ))
+
     async def test_event_receipt_can_be_terminally_dead_lettered(self):
         store = PostgresEventReceiptStore(self.connect, lease_seconds=5)
         event_id = str(uuid4())
