@@ -2,90 +2,9 @@ name: platform-ci
 
 on:
   push:
-    paths:
-      - "agent_platform/**"
-      - "tests/test_platform_api_app.py"
-      - "tests/test_legacy_identity_revoke.py"
-      - "tests/test_console.py"
-      - "console.py"
-      - "tests/test_platform_contracts.py"
-      - "tests/test_identity.py"
-      - "tests/test_identity_http.py"
-      - "tests/test_identity_api.py"
-      - "tests/test_platform_postgres_integration.py"
-      - "tests/test_identity_context.py"
-      - "tests/test_legacy_identity_audit.py"
-      - "tests/test_service_identity.py"
-      - "tests/test_knowledge_service.py"
-      - "tests/test_knowledge_memory_api.py"
-      - "tests/test_memory_service.py"
-      - "tests/test_knowledge_memory_postgres_integration.py"
-      - "tests/test_event_consumer.py"
-      - "tests/test_tool_gateway.py"
-      - "tests/test_sandbox_oci.py"
-      - "tests/test_sandbox_lifecycle.py"
-      - "tests/test_outbox.py"
-      - "tests/test_multi_expert_routing.py"
-      - "tests/test_blackboard_multi_expert_services.py"
-      - "tests/test_blackboard_api.py"
-      - "tests/test_mcp_adapter.py"
-      - "tests/test_gateway_mcp.py"
-      - "tests/test_model_templates.py"
-      - "tests/test_deepseek_harness_adapter.py"
-      - "tests/test_strands_agents_adapter.py"
-      - "tests/test_strands_mcp_provider.py"
-      - "tests/test_strands_gateway_mcp_http_integration.py"
-      - "tests/test_gateway_runtime_postgres_integration.py"
-      - "tests/test_langgraph_run_executor.py"
-      - "tests/test_run_token_service.py"
-      - "tests/test_run_lifecycle.py"
-      - "tests/test_gateway_service.py"
-      - "tests/test_harness_benchmark.py"
-      - "tests/test_multi_expert_workflow_integration.py"
-      - "requirements-platform.txt"
-      - "requirements-harness-dsh.txt"
-      - "requirements-harness-strands.txt"
-      - "pyproject.toml"
-      - ".github/workflows/platform-ci.yml"
+    branches: [main]
   pull_request:
-    paths:
-      - "agent_platform/**"
-      - "tests/test_platform_api_app.py"
-      - "tests/test_legacy_identity_revoke.py"
-      - "tests/test_console.py"
-      - "console.py"
-      - "tests/test_platform_contracts.py"
-      - "tests/test_identity.py"
-      - "tests/test_identity_http.py"
-      - "tests/test_platform_postgres_integration.py"
-      - "tests/test_identity_context.py"
-      - "tests/test_legacy_identity_audit.py"
-      - "tests/test_knowledge_service.py"
-      - "tests/test_knowledge_memory_api.py"
-      - "tests/test_memory_service.py"
-      - "tests/test_knowledge_memory_postgres_integration.py"
-      - "tests/test_event_consumer.py"
-      - "tests/test_tool_gateway.py"
-      - "tests/test_sandbox_oci.py"
-      - "tests/test_sandbox_lifecycle.py"
-      - "tests/test_outbox.py"
-      - "tests/test_multi_expert_routing.py"
-      - "tests/test_mcp_adapter.py"
-      - "tests/test_model_templates.py"
-      - "tests/test_gateway_runtime_postgres_integration.py"
-      - "tests/test_langgraph_run_executor.py"
-      - "tests/test_run_token_service.py"
-      - "tests/test_run_lifecycle.py"
-      - "tests/test_gateway_service.py"
-      - "tests/test_deepseek_harness_adapter.py"
-      - "tests/test_strands_agents_adapter.py"
-      - "tests/test_harness_benchmark.py"
-      - "tests/test_multi_expert_workflow_integration.py"
-      - "requirements-platform.txt"
-      - "requirements-harness-dsh.txt"
-      - "requirements-harness-strands.txt"
-      - "pyproject.toml"
-      - ".github/workflows/platform-ci.yml"
+    types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -94,6 +13,7 @@ concurrency:
 jobs:
   platform-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -113,6 +33,7 @@ jobs:
 
   strands-sdk-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -129,6 +50,7 @@ jobs:
 
   langgraph-workflow-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -141,6 +63,7 @@ jobs:
 
   gateway-mcp-sdk-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
