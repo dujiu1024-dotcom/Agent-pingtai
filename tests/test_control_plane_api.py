@@ -61,6 +61,12 @@ class ControlPlaneApiTests(unittest.TestCase):
         self.assertEqual(published.status_code, 200)
         active = self.client.get("/api/platform/v1/registry/agent/researcher/active")
         self.assertEqual(active.status_code, 200)
+        history = self.client.get("/api/platform/v1/registry/agent/researcher/versions")
+        self.assertEqual(len(history.json()["items"]), 2)
+        disabled = self.client.post("/api/platform/v1/registry/agent/researcher/disable")
+        self.assertEqual(disabled.status_code, 200)
+        missing_active = self.client.get("/api/platform/v1/registry/agent/researcher/active")
+        self.assertEqual(missing_active.status_code, 404)
         isolated = self.client.get(
             "/api/platform/v1/registry/agent/researcher/active",
             headers={"x-tenant": "tenant-b"},
