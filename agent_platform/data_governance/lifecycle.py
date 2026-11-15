@@ -5,7 +5,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 
 @dataclass(frozen=True)
@@ -91,6 +91,144 @@ class DeletionCoordinator:
             operation_id=operation_id, subject_id=subject_id,
             completed=tuple(completed), failed=failed, pending=pending,
         )
+
+
+
+
+@dataclass(frozen=True)
+class MigrationBatch:
+    tenant_id: str
+    batch_id: str
+    source_system: str
+    target_system: str
+    object_type: str
+    status: str
+    source_count: int = 0
+    target_count: int = 0
+    source_checksum: str | None = None
+    target_checksum: str | None = None
+
+
+@dataclass(frozen=True)
+class MigrationRow:
+    tenant_id: str
+    batch_id: str
+    source_key: str
+    target_key: str | None
+    payload_hash: str
+    status: str
+    error_code: str | None = None
+
+
+class PostgresMigrationRepository:
+    """Durable, tenant-scoped migration ledger with guarded state transitions."""
+
+    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+        self._connect = connection_factory
+
+    async def create_batch(self, batch: MigrationBatch) -> None:
+        if not all((batch.tenant_id, batch.batch_id, batch.source_system,
+                    batch.target_system, batch.object_type)):
+            raise ValueError("migration batch identity fields are required")
+        if batch.status != "planned":
+            raise ValueError("new migration batches must start in planned state")
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_data_migration_batches
+                   (tenant_id,batch_id,source_system,target_system,object_type,status)
+                   VALUES (%s,%s,%s,%s,%s,'planned')""",
+                (batch.tenant_id,batch.batch_id,batch.source_system,
+                 batch.target_system,batch.object_type),
+            )
+
+    async def start_batch(self, tenant_id: str, batch_id: str) -> bool:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_data_migration_batches
+                       SET status='running',started_at=COALESCE(started_at,now())
+                       WHERE tenant_id=%s AND batch_id=%s AND status IN ('planned','running')
+                       RETURNING batch_id""",
+                    (tenant_id,batch_id),
+                )
+                return await cursor.fetchone() is not None
+
+    async def record_row(self, row: MigrationRow) -> None:
+        if not all((row.tenant_id,row.batch_id,row.source_key,row.payload_hash)):
+            raise ValueError("migration row identity and payload hash are required")
+        if row.status not in {"pending","imported","validated","skipped","failed"}:
+            raise ValueError("invalid migration row status")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT payload_hash FROM platform_data_migration_rows
+                       WHERE tenant_id=%s AND batch_id=%s AND source_key=%s FOR UPDATE""",
+                    (row.tenant_id,row.batch_id,row.source_key),
+                )
+                old = await cursor.fetchone()
+                if old is not None and old["payload_hash"] != row.payload_hash:
+                    raise ValueError("source row payload changed; create a new migration revision")
+                await connection.execute(
+                    """INSERT INTO platform_data_migration_rows
+                       (tenant_id,batch_id,source_key,target_key,payload_hash,status,error_code)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (tenant_id,batch_id,source_key) DO UPDATE SET
+                         target_key=EXCLUDED.target_key,status=EXCLUDED.status,
+                         error_code=EXCLUDED.error_code,updated_at=now()""",
+                    (row.tenant_id,row.batch_id,row.source_key,row.target_key,
+                     row.payload_hash,row.status,row.error_code),
+                )
+
+    async def validate_batch(self, tenant_id: str, batch_id: str, *,
+                             source_count: int, target_count: int,
+                             source_checksum: str, target_checksum: str) -> bool:
+        if min(source_count,target_count) < 0 or not source_checksum or not target_checksum:
+            raise ValueError("counts and checksums are required")
+        valid = source_count == target_count and source_checksum == target_checksum
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_data_migration_batches
+                       SET source_count=%s,target_count=%s,source_checksum=%s,target_checksum=%s,
+                           status=%s,finished_at=CASE WHEN %s THEN now() ELSE NULL END
+                       WHERE tenant_id=%s AND batch_id=%s AND status='running'
+                       RETURNING batch_id""",
+                    (source_count,target_count,source_checksum,target_checksum,
+                     "validated" if valid else "failed",valid,tenant_id,batch_id),
+                )
+                return await cursor.fetchone() is not None and valid
+
+    async def switch_batch(self, tenant_id: str, batch_id: str) -> bool:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_data_migration_batches
+                       SET status='switched',finished_at=now()
+                       WHERE tenant_id=%s AND batch_id=%s AND status='validated'
+                       RETURNING batch_id""",
+                    (tenant_id,batch_id),
+                )
+                return await cursor.fetchone() is not None
+
+    async def rollback_batch(self, tenant_id: str, batch_id: str, *, reason: str) -> bool:
+        if not reason.strip():
+            raise ValueError("rollback reason is required")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_data_migration_batches
+                       SET status='rolled_back',finished_at=now()
+                       WHERE tenant_id=%s AND batch_id=%s AND status='switched'
+                       RETURNING batch_id""",
+                    (tenant_id,batch_id),
+                )
+                return await cursor.fetchone() is not None
 
 
 def migration_fingerprint(*, source_system: str, target_system: str,
