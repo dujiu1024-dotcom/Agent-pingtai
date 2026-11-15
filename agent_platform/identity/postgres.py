@@ -6,7 +6,9 @@ from datetime import datetime
 from typing import Any, Callable
 from uuid import uuid4
 
-from agent_platform.identity.models import ApiCredentialRecord, InvitationRecord, SessionRecord, UserRecord
+from agent_platform.identity.models import (
+    ApiCredentialRecord, AuthorizationContext, InvitationRecord, SessionRecord, UserRecord,
+)
 
 ConnectionFactory = Callable[[], Any]
 
@@ -27,6 +29,135 @@ class PostgresIdentityRepository:
                 raise RuntimeError("Install psycopg[binary,pool] for identity storage") from exc
             return await AsyncConnection.connect(dsn, row_factory=dict_row)
         return cls(connect)
+
+
+    async def get_authorization_context(
+        self, *, tenant_id: str, user_id: str,
+    ) -> AuthorizationContext | None:
+        """Resolve only active, tenant-bound roles and explicit resource grants."""
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT 1
+                   FROM platform_tenant_memberships m
+                   JOIN platform_tenants t ON t.tenant_id=m.tenant_id
+                     AND t.status='active'
+                   JOIN platform_users u ON u.user_id=m.user_id
+                     AND u.status='active'
+                   WHERE m.tenant_id=%s AND m.user_id=%s
+                     AND m.status='active'""",
+                (tenant_id, user_id),
+            )
+            if await cursor.fetchone() is None:
+                return None
+
+            cursor = await connection.execute(
+                """SELECT DISTINCT r.role_id
+                   FROM platform_role_bindings b
+                   JOIN platform_roles r
+                     ON r.tenant_id=b.tenant_id AND r.role_id=b.role_id
+                   WHERE b.tenant_id=%s AND b.resource_type='tenant'
+                     AND b.resource_id=%s AND b.revoked_at IS NULL
+                     AND (
+                       (b.subject_type='user' AND b.subject_id=%s)
+                       OR (b.subject_type='team' AND b.subject_id IN (
+                         SELECT tm.team_id
+                         FROM platform_team_memberships tm
+                         JOIN platform_teams team
+                           ON team.tenant_id=tm.tenant_id
+                          AND team.team_id=tm.team_id
+                          AND team.status='active'
+                         WHERE tm.tenant_id=%s AND tm.user_id=%s
+                           AND tm.status='active'
+                       ))
+                     )""",
+                (tenant_id, tenant_id, user_id, tenant_id, user_id),
+            )
+            tenant_roles = frozenset(row["role_id"] for row in await cursor.fetchall())
+
+            cursor = await connection.execute(
+                """SELECT DISTINCT p.project_id
+                   FROM platform_projects p
+                   WHERE p.tenant_id=%s AND p.status='active'
+                     AND (
+                       EXISTS (
+                         SELECT 1 FROM platform_project_members pm
+                         WHERE pm.tenant_id=p.tenant_id
+                           AND pm.project_id=p.project_id
+                           AND pm.user_id=%s AND pm.status='active'
+                       )
+                       OR EXISTS (
+                         SELECT 1
+                         FROM platform_role_bindings b
+                         JOIN platform_role_permissions rp
+                           ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
+                         WHERE b.tenant_id=p.tenant_id AND b.revoked_at IS NULL
+                           AND rp.permission_key IN (
+                             'project.read','knowledge.read','knowledge.manage',
+                             'memory.manage'
+                           )
+                           AND (
+                             (b.resource_type='project' AND b.resource_id=p.project_id)
+                             OR (b.resource_type='organization'
+                               AND b.resource_id=p.organization_id)
+                           )
+                           AND (
+                             (b.subject_type='user' AND b.subject_id=%s)
+                             OR (b.subject_type='team' AND b.subject_id IN (
+                               SELECT tm.team_id
+                               FROM platform_team_memberships tm
+                               JOIN platform_teams team
+                                 ON team.tenant_id=tm.tenant_id
+                                AND team.team_id=tm.team_id
+                                AND team.status='active'
+                               WHERE tm.tenant_id=p.tenant_id
+                                 AND tm.user_id=%s AND tm.status='active'
+                             ))
+                           )
+                       )
+                     )""",
+                (tenant_id, user_id, user_id, user_id),
+            )
+            project_ids = frozenset(row["project_id"] for row in await cursor.fetchall())
+
+            cursor = await connection.execute(
+                """SELECT DISTINCT a.agent_id
+                   FROM platform_agents a
+                   WHERE a.tenant_id=%s AND a.status='active'
+                     AND EXISTS (
+                       SELECT 1
+                       FROM platform_role_bindings b
+                       JOIN platform_role_permissions rp
+                         ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
+                       WHERE b.tenant_id=a.tenant_id
+                         AND b.resource_type='agent' AND b.resource_id=a.agent_id
+                         AND b.revoked_at IS NULL
+                         AND rp.permission_key IN ('agent.run','agent.manage','memory.manage')
+                         AND (
+                           (b.subject_type='user' AND b.subject_id=%s)
+                           OR (b.subject_type='team' AND b.subject_id IN (
+                             SELECT tm.team_id
+                             FROM platform_team_memberships tm
+                             JOIN platform_teams team
+                               ON team.tenant_id=tm.tenant_id
+                              AND team.team_id=tm.team_id
+                              AND team.status='active'
+                             WHERE tm.tenant_id=a.tenant_id
+                               AND tm.user_id=%s AND tm.status='active'
+                           ))
+                         )
+                     )""",
+                (tenant_id, user_id, user_id),
+            )
+            agent_ids = frozenset(row["agent_id"] for row in await cursor.fetchall())
+
+        return AuthorizationContext(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            tenant_roles=tenant_roles,
+            project_ids=project_ids,
+            agent_ids=agent_ids,
+        )
 
     async def get_user_by_email(self, normalized_email: str) -> UserRecord | None:
         connection = await self._connection_factory()
