@@ -226,3 +226,35 @@ class IdentityService:
         )
         if not allowed:
             raise AuthorizationDenied("permission denied")
+
+
+    async def rotate_api_credential(
+        self, *, principal: Principal, old_credential_id: str, name: str,
+        scopes: tuple[str, ...], ttl: timedelta | None = timedelta(days=90),
+    ) -> IssuedApiCredential:
+        clean_name = name.strip()
+        normalized_scopes = tuple(sorted(set(scope.strip() for scope in scopes if scope.strip())))
+        if not old_credential_id.strip() or not clean_name or len(clean_name) > 100:
+            raise ValueError("credential id and a valid name are required")
+        if not normalized_scopes or len(normalized_scopes) > 50:
+            raise ValueError("between 1 and 50 non-empty scopes are required")
+        if any(len(scope) > 128 for scope in normalized_scopes):
+            raise ValueError("scope is too long")
+        if ttl is not None and (ttl <= timedelta(0) or ttl > timedelta(days=365)):
+            raise ValueError("credential ttl must be at most 365 days")
+        token = issue_opaque_token("api")
+        credential_id = str(uuid4())
+        expires_at = datetime.now(timezone.utc) + ttl if ttl is not None else None
+        rotated = await self._repository.rotate_api_credential(
+            old_credential_id=old_credential_id, new_credential_id=credential_id,
+            tenant_id=principal.tenant_id, user_id=principal.user_id,
+            name=clean_name, token_hash=token_digest(token),
+            scopes=normalized_scopes, expires_at=expires_at,
+        )
+        if not rotated:
+            raise AuthenticationError("API credential is invalid, expired, or already revoked")
+        return IssuedApiCredential(
+            credential_id=credential_id, tenant_id=principal.tenant_id,
+            user_id=principal.user_id, name=clean_name, access_token=token,
+            scopes=normalized_scopes, expires_at=expires_at,
+        )
