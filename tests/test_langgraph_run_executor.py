@@ -81,4 +81,30 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(cancelled.is_set())
   self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.INTERRUPTED)
 
+ async def test_lost_worker_lease_marks_run_interrupted(self):
+  started=asyncio.Event();cancelled=asyncio.Event()
+  class LeaseExpiringStore(InMemoryRunStateStore):
+   async def acquire_lease(self,tenant_id,run_id,worker_id,*,lease_seconds):
+    return True
+   async def heartbeat(self,tenant_id,run_id,worker_id,*,lease_seconds):
+    return False
+   async def release_lease(self,tenant_id,run_id,worker_id):
+    return True
+  class BlockingGraph(FakeGraph):
+   async def ainvoke(self,payload,*,config):
+    started.set()
+    try: await asyncio.Event().wait()
+    except asyncio.CancelledError:
+     cancelled.set()
+     raise
+  store=LeaseExpiringStore();manager=RunLifecycleManager(store);graph=BlockingGraph()
+  executor=LangGraphRunExecutor(graph=graph,lifecycle=manager,timeout_seconds=10,lease_seconds=5)
+  await store.create("tenant","lease-lost")
+  from agent_platform.runtime.lifecycle import WorkerLeaseLost
+  with self.assertRaises(WorkerLeaseLost):
+   await executor.execute(tenant_id="tenant",run_id="lease-lost",input={})
+  self.assertTrue(started.is_set())
+  self.assertTrue(cancelled.is_set())
+  self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.INTERRUPTED)
+
 if __name__=="__main__":unittest.main()
