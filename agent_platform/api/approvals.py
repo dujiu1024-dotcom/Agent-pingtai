@@ -88,4 +88,21 @@ def create_approval_router(*, service: ApprovalService,
             raise HTTPException(409, "approval is expired, already decided, or unavailable")
         return {"approval_id": approval_id, "status": "approved" if approved else "rejected"}
 
+    @router.post("/{approval_id}/revoke")
+    async def revoke_approval(approval_id: str, request: Request):
+        actor = principal(request)
+        allow_admin = await can_approve(actor)
+        try:
+            changed = await service.revoke(
+                tenant_id=actor.tenant_id, approval_id=approval_id,
+                actor_id=actor.user_id, allow_admin=allow_admin,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if not changed:
+            raise HTTPException(409, "approval is expired, already decided, or unavailable")
+        return {"approval_id": approval_id, "status": "revoked"}
+
     return router
