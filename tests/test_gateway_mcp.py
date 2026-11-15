@@ -126,6 +126,8 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.audit.records[0]["tenant_id"], "tenant-a")
         self.assertEqual(self.audit.records[0]["actor_id"], "agent-researcher")
         self.assertEqual(self.audit.records[0]["resource"], "document:doc-17")
+        self.assertEqual(self.audit.records[0]["run_id"], "run-001")
+        self.assertEqual(self.audit.records[0]["agent_id"], "researcher")
 
     async def test_model_cannot_inject_identity_or_approval_fields(self):
         bridge = self.bridge()
