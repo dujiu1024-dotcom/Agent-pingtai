@@ -121,7 +121,7 @@ class RunLifecycleManager:
      if self.token_service is not None:
       await self.token_service.revoke_run(tenant_id=row.tenant_id,run_id=row.run_id)
     # Interrupted execution without a checkpoint cannot be resumed safely.
-    if row.status==RunStatus.INTERRUPTED and not row.checkpoint_ref:
+    if row.status==RunStatus.INTERRUPTED and not row.checkpoint_ref and row.last_error!="previous worker lease expired":
      await self.finish(row.tenant_id,row.run_id,RunStatus.FAILED,
       error="interrupted Run has no checkpoint; automatic recovery refused")
      continue
