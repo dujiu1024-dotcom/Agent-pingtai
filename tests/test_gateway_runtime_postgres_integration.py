@@ -56,6 +56,8 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual([row.run_id for row in first],[self.run])
   second=await self.states.claim_recoverable("worker-b",tenant_id=self.tenant,limit=10,lease_seconds=5)
   self.assertEqual(second,[])
+  queued=await self.states.get(self.tenant,self.run)
+  await self.states.transition(RunSnapshot(self.tenant,self.run,RunStatus.RUNNING,queued.version),expected_version=queued.version)
   self.assertTrue(await self.states.heartbeat(self.tenant,self.run,"worker-a",lease_seconds=5))
   async with await self.connect() as conn:
    await conn.execute("UPDATE platform_runs SET lease_expires_at=now()-interval '1 second' WHERE tenant_id=%s AND run_id=%s",(self.tenant,self.run))
