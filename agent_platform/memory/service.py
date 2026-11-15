@@ -16,6 +16,8 @@ class MemoryPrincipal:
     project_ids: frozenset[str]=frozenset()
     agent_ids: frozenset[str]=frozenset()
     roles: frozenset[str]=frozenset()
+    manage_project_ids: frozenset[str]=frozenset()
+    manage_agent_ids: frozenset[str]=frozenset()
 @dataclass(frozen=True)
 class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
@@ -64,6 +66,22 @@ class MemoryService:
         if rec is None or rec.status is not MemoryStatus.CANDIDATE:return False
         await self.repository.put(replace(rec,status=MemoryStatus.DELETED,deleted_at=utc_now(),updated_at=utc_now(),version=rec.version+1));return True
     @staticmethod
+    def _can_manage_scope(scope: MemoryScope, scope_id: str, principal: MemoryPrincipal) -> bool:
+        if scope is MemoryScope.USER:
+            return scope_id == principal.user_id
+        if scope is MemoryScope.PROJECT:
+            return (
+                scope_id in principal.manage_project_ids
+                or "memory.manage" in principal.roles
+            )
+        if scope is MemoryScope.AGENT:
+            return (
+                scope_id in principal.manage_agent_ids
+                or "memory.manage" in principal.roles
+            )
+        return "memory.manage" in principal.roles
+
+    @staticmethod
     def _visible(rec: MemoryRecord,p: MemoryPrincipal)->bool:
         c=rec.candidate
         if c.tenant_id!=p.tenant_id or rec.status is not MemoryStatus.ACTIVE or rec.deleted_at:return False
@@ -77,9 +95,8 @@ class MemoryService:
         rec=await self.repository.get(principal.tenant_id,memory_id)
         if rec is None or rec.status is not MemoryStatus.ACTIVE:raise ValueError("active memory not found")
         c=rec.candidate
-        owns_user=(c.scope is MemoryScope.USER and c.scope_id==principal.user_id)
-        manages_shared=(c.scope is not MemoryScope.USER and "memory.manage" in principal.roles)
-        if not (owns_user or manages_shared):raise PermissionError("memory correction is not authorized")
+        if not self._can_manage_scope(c.scope, c.scope_id, principal):
+            raise PermissionError("memory correction is not authorized")
         candidate=replace(c,content=content,source_ref=source_ref,confidence=c.confidence if confidence is None else confidence )
         updated=replace(rec,candidate=candidate,version=rec.version+1,confirmed_by=principal.user_id,updated_at=utc_now())
         await self.repository.put(updated)
@@ -106,9 +123,9 @@ class MemoryService:
         record=await self.repository.get(principal.tenant_id,memory_id)
         if record is None or record.status is not MemoryStatus.ACTIVE:
             return False
-        owns_user=record.candidate.scope is MemoryScope.USER and record.candidate.scope_id==principal.user_id
-        manages_shared=record.candidate.scope is not MemoryScope.USER and "memory.manage" in principal.roles
-        if not (owns_user or manages_shared):
+        if not self._can_manage_scope(
+            record.candidate.scope, record.candidate.scope_id, principal,
+        ):
             raise PermissionError("memory archive is not authorized")
         await self.repository.put(replace(record,status=MemoryStatus.ARCHIVED,updated_at=utc_now(),version=record.version+1))
         return True
@@ -125,9 +142,8 @@ class MemoryService:
         rec=await self.repository.get(principal.tenant_id,memory_id)
         if rec is None:return False
         c=rec.candidate
-        owns_user=(c.scope is MemoryScope.USER and c.scope_id==principal.user_id)
-        manages_shared=(c.scope is not MemoryScope.USER and "memory.manage" in principal.roles)
-        if not (owns_user or manages_shared):raise PermissionError("memory deletion is not authorized")
+        if not self._can_manage_scope(c.scope, c.scope_id, principal):
+            raise PermissionError("memory deletion is not authorized")
         deleted=await self.repository.delete(principal.tenant_id,memory_id,utc_now())
         if deleted and self.on_delete:await self.on_delete(principal.tenant_id,memory_id)
         return deleted
