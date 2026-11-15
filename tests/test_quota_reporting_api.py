@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.identity.models import Principal
-from agent_platform.quotas.service import UsageEvent
+from agent_platform.quotas.service import InMemoryQuotaStore, QuotaService, UsageEvent
 
 
 class FakeQuotaStore:
@@ -73,6 +73,66 @@ class QuotaReportingApiTests(unittest.TestCase):
         })
         self.assertEqual(too_wide.status_code, 400)
 
+
+
+    def test_budget_configuration_requires_authorization_and_tenant_scope(self):
+        service = QuotaService(InMemoryQuotaStore())
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, quota_service=service,
+            authorize_manage=lambda actor: actor.user_id == "user-a",
+        ))
+
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+
+        client = TestClient(app)
+        body = {
+            "scope_type": "tenant", "scope_id": "tenant-a",
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "hard_tokens": 10000, "hard_cost_usd": "25.00",
+            "hard_concurrency": 5, "soft_tokens": 8000,
+        }
+        response = client.post("/api/platform/v1/quotas/budgets", json=body)
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["configured"])
+        body["scope_id"] = "tenant-b"
+        denied = client.post("/api/platform/v1/quotas/budgets", json=body)
+        self.assertEqual(denied.status_code, 403)
+
+    def test_resource_budget_requires_explicit_scope_authorizer(self):
+        service = QuotaService(InMemoryQuotaStore())
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, quota_service=service,
+            authorize_manage=lambda actor: True,
+        ))
+
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+
+        response = TestClient(app).post("/api/platform/v1/quotas/budgets", json={
+            "scope_type": "project", "scope_id": "project-other",
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "hard_tokens": 1000,
+        })
+        self.assertEqual(response.status_code, 403)
 
 if __name__ == "__main__":
     unittest.main()
