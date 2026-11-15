@@ -1,5 +1,6 @@
 """Tenant-scoped server-enforced quotas and cost accounting."""
 
+from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
     Budget,
@@ -12,5 +13,5 @@ from agent_platform.quotas.service import (
 
 __all__ = [
     "Budget", "BudgetExceeded", "InMemoryQuotaStore",
-    "PostgresQuotaStore", "QuotaReservation", "QuotaService", "UsageEvent",
+    "PostgresQuotaStore", "QuotaEnforcedHarnessAdapter", "QuotaReservation", "QuotaService", "UsageEvent",
 ]
