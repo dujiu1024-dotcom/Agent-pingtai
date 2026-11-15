@@ -78,3 +78,24 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         text="[page:1] " + "a"*110 + "\n[page:2] second page text"
         chunks=chunk_document(doc,text,max_chars=100,overlap=0)
         self.assertEqual(chunks[-1].page_number,2)
+
+    async def test_search_excludes_superseded_document_versions(self):
+        from dataclasses import replace
+        service=KnowledgeService(InMemoryKnowledgeRepository())
+        original=Document(tenant_id="t",title="policy",source_uri="file://policy",content_hash="x")
+        await service.ingest(document=original,content=b"obsolete policy phrase")
+        revised=replace(original,version=2)
+        await service.ingest(document=revised,content=b"current policy phrase")
+        principal=KnowledgePrincipal(tenant_id="t",user_id="u")
+        self.assertEqual(await service.retrieve(principal=principal,query="obsolete"),[])
+        hits=await service.retrieve(principal=principal,query="current")
+        self.assertEqual(len(hits),1)
+        self.assertEqual(hits[0].document_version,2)
+
+    async def test_html_parser_extracts_text_without_script_and_with_newlines(self):
+        service=KnowledgeService(InMemoryKnowledgeRepository())
+        doc=Document(tenant_id="t",title="html",source_uri="file://html",content_hash="x",media_type="text/html")
+        await service.ingest(document=doc,content=b"<p>first</p><script>secret()</script><p>second</p>")
+        hits=await service.retrieve(principal=KnowledgePrincipal(tenant_id="t",user_id="u"),query="second")
+        self.assertIn("\\n",hits[0].text)
+        self.assertNotIn("secret",hits[0].text)
