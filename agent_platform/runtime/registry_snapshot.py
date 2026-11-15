@@ -5,7 +5,7 @@ import copy
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Mapping, Protocol, Sequence
 
 from agent_platform.control_plane.registry import RegistryNotFound, RegistryService
 
