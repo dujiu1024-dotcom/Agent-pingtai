@@ -130,7 +130,7 @@ def create_authenticated_mcp_asgi_app(
     from agent_platform.tools.gateway_mcp import create_mcp_server
 
     server = create_mcp_server(bridge=bridge)
-    return server.streamable_http_app(
+    app = server.streamable_http_app(
         auth=auth,
         token_verifier=verifier,
         host=host,
@@ -139,3 +139,7 @@ def create_authenticated_mcp_asgi_app(
         json_response=True,
         streamable_http_path=parsed_resource.path,
     )
+    # The hosting control plane can revoke the run token during shutdown or
+    # incident response without exposing token material to the MCP client.
+    app.state.gateway_token_verifier = verifier
+    return app
