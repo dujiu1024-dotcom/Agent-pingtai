@@ -146,7 +146,7 @@ def build_multi_expert_workflow(
                     "task_id": state["task_id"],
                     "run_id": state["run_id"],
                     "objective": state["objective"],
-                    "run_context": state["run_context"],
+                    "run_context": workflow_context(state),
                     "assignment": assignment,
                 },
             )
@@ -157,7 +157,7 @@ def build_multi_expert_workflow(
         contribution = await services.run_expert(
             assignment=state["assignment"],
             objective=state["objective"],
-            run_context=state["run_context"],
+            run_context=workflow_context(state),
         )
         return {"contributions": [dict(contribution)]}
 
@@ -165,7 +165,7 @@ def build_multi_expert_workflow(
         result = await services.synthesize(
             objective=state["objective"],
             contributions=state.get("contributions", []),
-            run_context=state["run_context"],
+            run_context=workflow_context(state),
         )
         return {"synthesis": dict(result)}
 
@@ -173,7 +173,7 @@ def build_multi_expert_workflow(
         result = await services.review(
             synthesis=state["synthesis"],
             contributions=state.get("contributions", []),
-            run_context=state["run_context"],
+            run_context=workflow_context(state),
         )
         return {
             "conflicts": [dict(item) for item in result.get("conflicts", [])],
@@ -184,7 +184,7 @@ def build_multi_expert_workflow(
         result = await services.resolve_conflicts(
             synthesis=state["synthesis"],
             conflicts=state.get("conflicts", []),
-            run_context=state["run_context"],
+            run_context=workflow_context(state),
         )
         return {
             "synthesis": dict(result.get("synthesis", state["synthesis"])),
