@@ -154,6 +154,25 @@ class PostgresWebhookStore:
         self._connect = connection_factory
         self.lease_seconds = lease_seconds
 
+    async def enqueue(self, payload: WebhookPayload) -> int:
+        """Fan out an outbox event to active subscriptions; unique keys deduplicate retries."""
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """INSERT INTO platform_webhook_deliveries
+                       (tenant_id,delivery_id,subscription_id,event_id,topic,payload,status)
+                       SELECT s.tenant_id,gen_random_uuid(),s.subscription_id,%s,%s,%s,'pending'
+                       FROM platform_webhook_subscriptions s
+                       WHERE s.tenant_id=%s AND s.status='active' AND %s=ANY(s.topics)
+                       ON CONFLICT (tenant_id,subscription_id,event_id) DO NOTHING
+                       RETURNING delivery_id""",
+                    (UUID(payload.event_id), payload.topic, dict(payload.body),
+                     payload.tenant_id, payload.topic),
+                )
+                rows = await cursor.fetchall()
+        return len(rows)
+
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]:
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
