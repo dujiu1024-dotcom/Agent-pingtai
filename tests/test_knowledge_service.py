@@ -56,3 +56,24 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         report=await evaluate_retrieval(service,[case],k=3)
         self.assertEqual(report[0].recall_at_k,1.0)
         self.assertEqual(report[0].citation_coverage,1.0)
+
+    async def test_list_documents_respects_scope_and_latest_version(self):
+        from dataclasses import replace
+        from agent_platform.knowledge.contracts import KnowledgeScope
+        service=KnowledgeService(InMemoryKnowledgeRepository())
+        tenant=Document(tenant_id="t",title="tenant v1",source_uri="file://tenant",content_hash="x")
+        await service.ingest(document=tenant,content=b"first version")
+        newer=replace(tenant,version=2,title="tenant v2")
+        await service.ingest(document=newer,content=b"second version")
+        private=Document(tenant_id="t",title="private",source_uri="file://private",content_hash="x",scope=KnowledgeScope.PRIVATE,owner_user_id="u2")
+        await service.ingest(document=private,content=b"private content")
+        docs=await service.list_documents(principal=KnowledgePrincipal(tenant_id="t",user_id="u1"))
+        self.assertEqual([doc.title for doc in docs],["tenant v2"])
+        owner_docs=await service.list_documents(principal=KnowledgePrincipal(tenant_id="t",user_id="u2"))
+        self.assertEqual({doc.title for doc in owner_docs},{"tenant v2","private"})
+
+    async def test_chunking_recovers_pdf_page_number(self):
+        from agent_platform.knowledge.chunking import chunk_document
+        doc=Document(tenant_id="t",title="pdf",source_uri="file://pdf",content_hash="x")
+        chunks=chunk_document(doc,"[page:1] first page text\n[page:2] second page text",max_chars=100,overlap=0)
+        self.assertEqual([chunk.page_number for chunk in chunks],[2])
