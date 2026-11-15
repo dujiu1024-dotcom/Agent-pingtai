@@ -473,7 +473,7 @@ class PostgresIdentityRepository:
                        (tenant_id, actor_id, action, subject_id, outcome, detail)
                        VALUES (%s, %s, 'role.granted', %s, 'succeeded',
                          jsonb_build_object('binding_id', %s::text, 'role_id', %s::text,
-                           'subject_type', %s, 'resource_type', %s, 'resource_id', %s))""",
+                           'subject_type', %s::text, 'resource_type', %s::text, 'resource_id', %s::text))""",
                     (tenant_id, actor_id, subject_id, binding_id, role_id,
                      subject_type, resource_type, resource_id),
                 )
@@ -502,7 +502,7 @@ class PostgresIdentityRepository:
                        (tenant_id, actor_id, action, subject_id, outcome, detail)
                        VALUES (%s, %s, 'role.revoked', %s, 'succeeded',
                          jsonb_build_object('binding_id', %s::text, 'role_id', %s::text,
-                           'resource_type', %s, 'resource_id', %s))""",
+                           'resource_type', %s::text, 'resource_id', %s::text))""",
                     (tenant_id, actor_id, row["subject_id"], binding_id,
                      row["role_id"], row["resource_type"], row["resource_id"]),
                 )
@@ -683,7 +683,7 @@ class PostgresIdentityRepository:
                        (tenant_id, actor_id, action, subject_id, outcome, detail)
                        VALUES (%s, %s, 'invitation.created', %s, 'succeeded',
                          jsonb_build_object('email', %s::text, 'role_id', %s::text,
-                           'invitation_id', %s))""",
+                           'invitation_id', %s::text))""",
                     (tenant_id, invited_by, email_normalized, email_normalized,
                      role_id, invitation_id),
                 )
