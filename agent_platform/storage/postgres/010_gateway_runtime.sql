@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS platform_gateway_endpoints (
  status text NOT NULL CHECK(status IN ('active','inactive')), created_at timestamptz NOT NULL DEFAULT now(),
  updated_at timestamptz NOT NULL DEFAULT now(), lease_expires_at timestamptz, PRIMARY KEY(tenant_id,run_id),
  FOREIGN KEY(tenant_id,run_id) REFERENCES platform_runs(tenant_id,run_id));
+ALTER TABLE platform_gateway_endpoints ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
 CREATE INDEX IF NOT EXISTS idx_platform_gateway_endpoint_instance ON platform_gateway_endpoints(instance_id,status);
 CREATE INDEX IF NOT EXISTS idx_platform_gateway_endpoint_lease ON platform_gateway_endpoints(lease_expires_at) WHERE status='active';
 ALTER TABLE platform_runs ADD COLUMN IF NOT EXISTS version bigint NOT NULL DEFAULT 1;
