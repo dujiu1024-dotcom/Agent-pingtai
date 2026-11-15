@@ -5,7 +5,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from agent_platform.quotas import Budget, BudgetExceeded, InMemoryQuotaStore, QuotaService
+from agent_platform.quotas import Budget, BudgetExceeded, InMemoryQuotaStore, QuotaService, UsageEvent
 
 
 class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -57,9 +57,10 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             estimated_tokens=90, estimated_cost_usd=Decimal("0.90"),
         )
         with self.assertRaises(PermissionError):
-            await self.store.settle(reservation.reservation_id, __import__(
-                "agent_platform.quotas.service", fromlist=["UsageEvent"]
-            ).UsageEvent("e1", "tenant-b", "run-1", "model-x", 1, 1, Decimal("0.1"), self.start))
+            await self.store.settle(
+                reservation.reservation_id,
+                UsageEvent("e1", "tenant-b", "run-1", "model-x", 1, 1, Decimal("0.1"), self.start),
+            )
         event = await self.service.settle_run(
             reservation, model_key="model-x", input_tokens=30, output_tokens=20,
             cost_usd=Decimal("0.25"), occurred_at=self.start,
