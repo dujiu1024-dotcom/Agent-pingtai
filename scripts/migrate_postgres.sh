@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "\${PG_DSN:?PG_DSN must be set}"
-MIGRATION_DIR="\${MIGRATION_DIR:-agent_platform/storage/postgres}"
+: "${PG_DSN:?PG_DSN must be set}"
+MIGRATION_DIR="${MIGRATION_DIR:-agent_platform/storage/postgres}"
 [[ -d "$MIGRATION_DIR" ]] || { echo "migration directory not found: $MIGRATION_DIR" >&2; exit 2; }
 command -v psql >/dev/null
 command -v sha256sum >/dev/null
@@ -22,8 +22,8 @@ SQL
 
 shopt -s nullglob
 files=("$MIGRATION_DIR"/*.sql)
-(("\${#files[@]}" > 0)) || { echo "no SQL migrations found" >&2; exit 2; }
-for file in "\${files[@]}"; do
+(("${#files[@]}" > 0)) || { echo "no SQL migrations found" >&2; exit 2; }
+for file in "${files[@]}"; do
   name="$(basename "$file")"
   checksum="$(sha256sum "$file" | awk '{print $1}')"
   cat >> "$RUNNER" <<SQL
