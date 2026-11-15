@@ -1,7 +1,6 @@
 """PostgreSQL repository for tenant-scoped external data connections."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any, Callable, Mapping
 
 from agent_platform.control_plane.data_connectors import DataConnection
