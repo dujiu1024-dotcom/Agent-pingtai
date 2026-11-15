@@ -33,6 +33,7 @@ on:
       - "tests/test_deepseek_harness_adapter.py"
       - "tests/test_strands_agents_adapter.py"
       - "tests/test_harness_benchmark.py"
+      - "tests/test_multi_expert_workflow_integration.py"
       - "requirements-platform.txt"
       - "requirements-harness-dsh.txt"
       - "requirements-harness-strands.txt"
