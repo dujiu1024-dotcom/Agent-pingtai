@@ -48,3 +48,39 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await service.retrieve(principal=admin),[selected])
         self.assertTrue(await service.archive(principal=admin,memory_id=second.memory_id))
         self.assertEqual(await service.retrieve(principal=admin),[])
+
+    async def test_extraction_is_single_turn_provenance_bound_and_candidate_only(self):
+        from agent_platform.memory.extraction import MemoryDraft,MemoryExtractionService,MemoryTurn
+        class Extractor:
+            async def extract(self,*,turn):
+                self.received=turn
+                return [MemoryDraft(scope=MemoryScope.USER,scope_id=turn.user_id,content="prefers concise answers",confidence=.91)]
+        repo=InMemoryMemoryRepository()
+        service=MemoryService(repo)
+        extractor=Extractor()
+        pipeline=MemoryExtractionService(memory=service,extractor=extractor)
+        principal=MemoryPrincipal(tenant_id="t",user_id="u")
+        turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="conversation:turn-9",user_message="Please keep it concise.")
+        records=await pipeline.propose_from_turn(principal=principal,turn=turn)
+        self.assertEqual(len(records),1)
+        self.assertEqual(records[0].status.value,"candidate")
+        self.assertEqual(records[0].candidate.source_ref,"conversation:turn-9")
+        self.assertEqual(extractor.received,turn)
+        self.assertEqual(await service.retrieve(principal=principal),[])
+        with self.assertRaises(PermissionError):
+            await pipeline.propose_from_turn(
+                principal=principal,
+                turn=MemoryTurn(tenant_id="other",user_id="u",source_ref="conversation:other",user_message="x"),
+            )
+
+    async def test_extraction_cannot_write_unapproved_tenant_scope(self):
+        from agent_platform.memory.extraction import MemoryDraft,MemoryExtractionService,MemoryTurn
+        class TenantExtractor:
+            async def extract(self,*,turn):
+                return [MemoryDraft(scope=MemoryScope.TENANT,scope_id=turn.tenant_id,content="shared policy",confidence=.9)]
+        pipeline=MemoryExtractionService(memory=MemoryService(InMemoryMemoryRepository()),extractor=TenantExtractor())
+        with self.assertRaises(PermissionError):
+            await pipeline.propose_from_turn(
+                principal=MemoryPrincipal(tenant_id="t",user_id="u"),
+                turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="conversation:1",user_message="policy"),
+            )
