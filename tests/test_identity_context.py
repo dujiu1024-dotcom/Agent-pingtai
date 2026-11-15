@@ -17,7 +17,6 @@ class FakeIdentityRepository:
             tenant_id=tenant_id,
             user_id=user_id,
             tenant_roles=frozenset({"tenant_admin"}),
-            effective_role_ids=frozenset({"tenant_admin", "project_knowledge_manager"}),
             tenant_permissions=frozenset({"project.read", "knowledge.manage"}),
             project_ids=frozenset({"project-a"}),
             knowledge_manage_project_ids=frozenset({"project-a"}),
@@ -57,10 +56,7 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.tenant_id, "tenant-a")
         self.assertEqual(resolved.user_id, "user-a")
         self.assertEqual(resolved.project_ids, frozenset({"project-a"}))
-        self.assertEqual(
-            resolved.roles,
-            frozenset({"tenant_admin", "project_knowledge_manager"}),
-        )
+        self.assertEqual(resolved.roles, frozenset({"tenant_admin"}))
         self.assertEqual(
             resolved.permissions,
             frozenset({"project.read", "knowledge.manage"}),
