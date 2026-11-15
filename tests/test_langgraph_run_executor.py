@@ -5,7 +5,7 @@ from agent_platform.runtime.execution import LangGraphRunExecutor
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager, RunStatus
 
 class FakeGraph:
- def __init__(self):self.calls=[];self.checkpoints={}
+ def __init__(self):self.calls=[];self.checkpoints={};self.checkpointer=object()
  async def ainvoke(self,payload,*,config):
   thread=config["configurable"]["thread_id"];self.calls.append((payload,thread))
   if payload=="explode":raise RuntimeError("node failed")
