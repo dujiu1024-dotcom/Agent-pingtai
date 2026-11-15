@@ -97,5 +97,5 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         doc=Document(tenant_id="t",title="html",source_uri="file://html",content_hash="x",media_type="text/html")
         await service.ingest(document=doc,content=b"<p>first</p><script>secret()</script><p>second</p>")
         hits=await service.retrieve(principal=KnowledgePrincipal(tenant_id="t",user_id="u"),query="second")
-        self.assertIn("\\n",hits[0].text)
+        self.assertIn("\n",hits[0].text)
         self.assertNotIn("secret",hits[0].text)
