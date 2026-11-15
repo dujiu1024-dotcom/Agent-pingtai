@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
+from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
@@ -52,6 +53,7 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_authorizer: Any | None = None,
+    quota_store: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -95,6 +97,8 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
+    if quota_store is not None:
+        app.include_router(create_quota_reporting_router(quota_store=quota_store))
     registry_configured = any(value is not None for value in (registry_service_resolver, registry_authorizer))
     sessions_configured = any(value is not None for value in (session_service_resolver, session_authorizer))
     if registry_configured:
