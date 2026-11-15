@@ -171,6 +171,7 @@ python3 agency.py init && python3 agency.py doctor
 
 ### Gateway-only MCP Profile
 - `agent_platform/tools/gateway_mcp.py`：按 Run 创建 MCP Server，只暴露可信白名单内的工具。
+- `agent_platform/tools/gateway_mcp_http.py`：按 Run 创建带短期 Bearer Token 校验的 Streamable HTTP ASGI App；Token 校验绑定 actor、资源 URL、过期时间和撤销状态。
 - 工具身份、租户、角色、审批 ID、资源解析均来自服务端上下文；参数使用 JSON Schema 校验。
 - MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
 - Strands 通过官方 `MCPClient` 连接当前 Run 的 HTTPS MCP endpoint；短期 Bearer Token 由可信控制面按 Run 签发，服务端将 Token 映射到不可变的 tenant/actor/role/run/agent/审批上下文。Provider 使用精确工具过滤，并校验发现集合与 Run 白名单完全一致；缺少 Provider 或 endpoint 时拒绝工具调用。L2 审批 ID 按动作摘要绑定，不按工具名宽泛复用。
