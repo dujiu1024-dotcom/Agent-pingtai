@@ -14,6 +14,8 @@ class FakeIdentityRepository:
         self.permissions = set()
         self.revoked = set()
         self.touched = []
+        self.grants = []
+        self.revokes = []
 
     async def get_user_by_email(self, normalized_email):
         return self.user if normalized_email == self.user.email.casefold() else None
@@ -52,6 +54,14 @@ class FakeIdentityRepository:
 
     async def has_permission(self, *, tenant_id, user_id, resource_type, resource_id, permission_key):
         return (tenant_id, user_id, resource_type, resource_id, permission_key) in self.permissions
+
+    async def grant_role(self, **kwargs):
+        self.grants.append(kwargs)
+        return "binding-1"
+
+    async def revoke_role(self, **kwargs):
+        self.revokes.append(kwargs)
+        return True
 
 
 class PasswordSecurityTests(unittest.TestCase):
@@ -164,6 +174,32 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
                 principal=principal_other, resource=other_tenant,
                 permission_key="project.read",
             )
+
+    async def test_role_changes_require_permission_and_use_audited_repository_port(self):
+        issued = await self.service.login(
+            email="admin@example.com", password="correct horse battery staple",
+            tenant_id="tenant-a",
+        )
+        principal = await self.service.authenticate(issued.access_token)
+        resource = ResourceRef("tenant", "tenant-a")
+        with self.assertRaises(AuthorizationDenied):
+            await self.service.grant_role(
+                principal=principal, subject_type="user", subject_id="user-2",
+                resource=resource, role_id="viewer",
+            )
+        self.repo.permissions.add(
+            ("tenant-a", "user-1", "tenant", "tenant-a", "identity.role.manage")
+        )
+        binding_id = await self.service.grant_role(
+            principal=principal, subject_type="user", subject_id="user-2",
+            resource=resource, role_id="viewer",
+        )
+        self.assertEqual(binding_id, "binding-1")
+        self.assertEqual(self.repo.grants[0]["actor_id"], "user-1")
+        self.assertTrue(await self.service.revoke_role(
+            principal=principal, binding_id=binding_id, resource=resource
+        ))
+        self.assertEqual(self.repo.revokes[0]["tenant_id"], "tenant-a")
 
 
 if __name__ == "__main__":
