@@ -36,6 +36,11 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
             consumer="crashed-consumer", count=10, block_ms=100,
         )
         self.assertEqual(len(first), 1)
+        health = await self.transport.pending_summary(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group
+        )
+        self.assertEqual(health["pending"], 1)
+        self.assertEqual(health["consumer_count"], 1)
 
         reclaimed = await self.transport.claim_pending(
             tenant_id=self.tenant_id, topic=self.topic, group=self.group,
@@ -77,6 +82,11 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(dlq_rows), 1)
         self.assertEqual(dlq_rows[0][1]["failure_reason"], "invalid payload")
         self.assertEqual(dlq_rows[0][1]["source_message_id"], message_id)
+        health = await self.transport.pending_summary(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group
+        )
+        self.assertEqual(health["pending"], 0)
+        self.assertEqual(health["dead_letter_count"], 1)
 
     async def test_publish_read_and_ack(self):
         event_id = str(uuid4())
