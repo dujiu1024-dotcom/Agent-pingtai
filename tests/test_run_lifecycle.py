@@ -1,5 +1,7 @@
 import asyncio
 import unittest
+
+from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore,RunLifecycleManager,RunStatus
 class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
@@ -58,6 +60,14 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   current=await self.store.get("t","r")
   self.assertEqual(current.status,RunStatus.FAILED)
   self.assertIn("checkpoint unavailable",current.last_error)
+ async def test_terminal_run_revokes_all_bound_tokens(self):
+  tokens=RunTokenService(InMemoryRunTokenStore())
+  issued=await tokens.issue(tenant_id="t",run_id="r",agent_id="agent",actor_id="actor",
+   endpoint_url="https://gateway.example/tenants/t/runs/r/mcp")
+  manager=RunLifecycleManager(self.store,token_service=tokens)
+  await manager.start("t","r")
+  await manager.finish("t","r",RunStatus.SUCCEEDED)
+  self.assertIsNone(await tokens.resolve(issued.token))
  async def test_illegal_transition_rejected(self):
   with self.assertRaises(ValueError):
    await self.store.transition(__import__("agent_platform.runtime.lifecycle",fromlist=["RunSnapshot"]).RunSnapshot("t","r",RunStatus.SUCCEEDED,1),expected_version=1)
