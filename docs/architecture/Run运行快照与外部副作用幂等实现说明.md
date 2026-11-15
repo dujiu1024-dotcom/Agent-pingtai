@@ -22,16 +22,16 @@
 - succeeded 重放返回缓存结果，不再次调用外部系统。
 - pending/failed 表示执行结果可能不确定，拒绝自动重试，必须先对账/人工恢复。
 - handler 成功后保存 JSON 结果；若结果落库失败，记录仍保持 pending，宁可阻止重复执行也不猜测外部副作用是否成功。
-- 审批校验仍由原有 SupervisedPolicy 和一次性 ApprovalVerifier 负责；幂等账本不替代审批。
+- 审批校验仍由原有 SupervisedPolicy 和一次性 ApprovalVerifier 负责；幂等账本不替代审批。\n- Tool Gateway 的 input_schema 使用 Draft 2020-12 JSON Schema 校验；Schema 在 Gateway 组装时校验，调用参数在 handler 执行前校验。\n- 工具风险等级和 Schema 可由已发布 Tool Registry 版本提供，但可执行 handler、资源解析和授权回调必须由宿主可信代码注入。
 
-## 3. Worker 租约
+## 3. Run API\n\n- `GET /api/platform/v1/runs/{run_id}` 查询租户内 Run 状态、版本、Checkpoint 引用和错误摘要。\n- `POST /api/platform/v1/runs/{run_id}/cancel` 通过 RunLifecycleManager 执行取消，身份与资源授权由宿主注入。\n- 任务创建、调度、运行步骤/产物详情和审批 UI 尚未交付。\n\n## 4. Worker 租约
 
 - PostgreSQL Run State Store 通过租约、SKIP LOCKED 和 heartbeat 管理 Worker 所有权。
 - 新 Run 在 QUEUED 状态允许先领取租约，再转为 RUNNING。
 - Worker 丢失租约后取消本地执行，不允许失去租约的 Worker继续写终态。
 - 真实进程崩溃、真实 PostgreSQL LangGraph Checkpoint 恢复和外部系统对账演练仍需 CI/部署环境验证。
 
-## 4. 迁移
+## 5. 迁移
 
 - `013_tool_effect_idempotency.sql`：工具副作用幂等账本。
 - `014_run_registry_snapshot.sql`：Run 注册版本快照。
