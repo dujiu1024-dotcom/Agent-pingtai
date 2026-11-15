@@ -67,6 +67,29 @@ class MemoryService:
         if limit<1 or limit>1000:raise ValueError("limit must be between 1 and 1000")
         records=await self.repository.list(principal.tenant_id,limit=1000); visible=[r for r in records if self._visible(r,principal) and (scope is None or r.candidate.scope is scope)]
         return sorted(visible,key=lambda r:(r.candidate.confidence,r.updated_at),reverse=True)[:limit]
+    async def correct(self,*,principal: MemoryPrincipal,memory_id: str,content: str,source_ref: str,confidence: float|None=None)->MemoryRecord:
+        rec=await self.repository.get(principal.tenant_id,memory_id)
+        if rec is None or rec.status is not MemoryStatus.ACTIVE:raise ValueError("active memory not found")
+        c=rec.candidate
+        owns_user=(c.scope is MemoryScope.USER and c.scope_id==principal.user_id)
+        manages_shared=(c.scope is not MemoryScope.USER and "memory.manage" in principal.roles)
+        if not (owns_user or manages_shared):raise PermissionError("memory correction is not authorized")
+        candidate=replace(c,content=content,source_ref=source_ref,confidence=c.confidence if confidence is None else confidence,created_by=principal.user_id)
+        updated=replace(rec,candidate=candidate,version=rec.version+1,confirmed_by=principal.user_id,updated_at=utc_now())
+        await self.repository.put(updated)
+        return updated
+    async def export(self,*,principal: MemoryPrincipal)->list[dict[str,object]]:
+        records=await self.retrieve(principal=principal,limit=1000)
+        return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"updated_at":r.updated_at.isoformat()} for r in records]
+    async def expire_due(self,*,tenant_id: str,now: datetime|None=None)->int:
+        at=now or utc_now()
+        records=await self.repository.list(tenant_id,limit=5000)
+        expired=0
+        for rec in records:
+            if rec.status is MemoryStatus.ACTIVE and rec.candidate.expires_at and rec.candidate.expires_at<=at:
+                await self.repository.put(replace(rec,status=MemoryStatus.EXPIRED,updated_at=at,version=rec.version+1))
+                expired+=1
+        return expired
     async def forget(self,*,principal: MemoryPrincipal,memory_id: str)->bool:
         rec=await self.repository.get(principal.tenant_id,memory_id)
         if rec is None:return False
