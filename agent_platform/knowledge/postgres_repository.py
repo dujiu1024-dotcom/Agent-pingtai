@@ -69,4 +69,8 @@ class PostgresKnowledgeRepository:
         conn=await self._connect()
         async with conn:
             async with conn.transaction():
-                cur=await conn.execute("UPDATE knowledge_documents SET deleted_at=now() WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",(tenant_id,document_id));return cur.rowcount>0
+                cur=await conn.execute("UPDATE knowledge_documents SET deleted_at=now() WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",(tenant_id,document_id))
+                if cur.rowcount!=1:return False
+                await conn.execute("DELETE FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s",(tenant_id,document_id))
+                await conn.execute("DELETE FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",(tenant_id,document_id))
+                return True
