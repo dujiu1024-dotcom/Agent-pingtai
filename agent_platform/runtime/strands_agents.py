@@ -7,8 +7,9 @@ constructs agents with no tools, no tool-directory loading, and no plugins.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import AsyncContextManager, Mapping, Sequence
+from contextlib import asynccontextmanager
+from typing import Any, Callable, Protocol
 
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
@@ -17,6 +18,20 @@ from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 ProviderConfigResolver = Callable[[ModelTemplate, RunContext], Mapping[str, Any]]
 ModelFactory = Callable[..., Any]
 AgentFactory = Callable[..., Any]
+
+
+class GatewayToolProvider(Protocol):
+    """Open a run-scoped MCP session whose tools all terminate at Tool Gateway."""
+
+    def open_session(
+        self, *, context: RunContext, allowed_tools: Sequence[str]
+    ) -> AsyncContextManager[Sequence[Any]]:
+        ...
+
+
+@asynccontextmanager
+async def _empty_async_tool_session():
+    yield ()
 
 
 def _value(source: Any, name: str, default: Any = None) -> Any:
@@ -52,16 +67,18 @@ class StrandsAgentsAdapter:
         provider_config_resolver: ProviderConfigResolver,
         agent_factory: AgentFactory | None = None,
         model_factory: ModelFactory | None = None,
+        gateway_tool_provider: GatewayToolProvider | None = None,
     ) -> None:
         self.templates = templates
         self.provider_config_resolver = provider_config_resolver
         self.agent_factory = agent_factory
         self.model_factory = model_factory
+        self.gateway_tool_provider = gateway_tool_provider
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
-        if request.allowed_tools:
+        if request.allowed_tools and self.gateway_tool_provider is None:
             raise RuntimeError(
-                "Strands platform tools are disabled until the MCP Tool Gateway adapter is verified"
+                "Strands tools require a run-scoped MCP Tool Gateway provider"
             )
         template = self.templates.get(request.context.model_template)
         provider = dict(self.provider_config_resolver(template, request.context))
@@ -112,30 +129,42 @@ class StrandsAgentsAdapter:
             client_args=client_args,
             params=model_params,
         )
-        agent = agent_factory(
-            model=model,
-            system_prompt=request.instructions,
-            tools=[],
-            load_tools_from_directory=False,
-            plugins=[],
-            callback_handler=None,
-            context_manager=False,
-            agent_id=f"{request.context.run_id}-{request.context.agent_id}",
-        )
-        prompt = request.input_text
-        timeout = parameters.get("timeout_seconds")
-        try:
-            invoke = agent.invoke_async(prompt, idempotency_token=request.context.run_id)
-            if timeout is None:
-                result = await invoke
-            else:
-                result = await asyncio.wait_for(invoke, timeout=float(timeout))
-        except asyncio.TimeoutError as exc:
-            raise TimeoutError("Strands agent invocation exceeded its template timeout") from exc
-        finally:
-            shutdown = getattr(agent, "shutdown_async", None)
-            if callable(shutdown):
-                await shutdown()
+        if request.allowed_tools:
+            assert self.gateway_tool_provider is not None
+            tool_session = self.gateway_tool_provider.open_session(
+                context=request.context,
+                allowed_tools=tuple(request.allowed_tools),
+            )
+        else:
+            tool_session = _empty_async_tool_session()
+
+        async with tool_session as gateway_tools:
+            agent = agent_factory(
+                model=model,
+                system_prompt=request.instructions,
+                tools=list(gateway_tools),
+                load_tools_from_directory=False,
+                plugins=[],
+                callback_handler=None,
+                context_manager=False,
+                agent_id=f"{request.context.run_id}-{request.context.agent_id}",
+            )
+            prompt = request.input_text
+            timeout = parameters.get("timeout_seconds")
+            try:
+                invoke = agent.invoke_async(prompt, idempotency_token=request.context.run_id)
+                if timeout is None:
+                    result = await invoke
+                else:
+                    result = await asyncio.wait_for(invoke, timeout=float(timeout))
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(
+                    "Strands agent invocation exceeded its template timeout"
+                ) from exc
+            finally:
+                shutdown = getattr(agent, "shutdown_async", None)
+                if callable(shutdown):
+                    await shutdown()
 
         message = _value(result, "message", {}) or {}
         content = _value(message, "content", []) or []
