@@ -60,6 +60,9 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.memory.propose(candidate)
         principal=MemoryPrincipal(tenant_id=self.tenant_id,user_id="user-1")
         self.assertEqual(await self.memory.retrieve(principal=principal),[])
+        async with await self.connect() as conn:
+            cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
+            self.assertEqual((await cur.fetchone())["n"],4)
         await self.memory.confirm(tenant_id=self.tenant_id,memory_id=candidate.memory_id,confirmer_id="user-1")
         updated=await self.memory.correct(principal=principal,memory_id=candidate.memory_id,content="corrected preference",source_ref="conversation:2")
         self.assertEqual(updated.version,3)
