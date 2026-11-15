@@ -21,7 +21,7 @@ class PostgresApprovalVerifier:
                 cursor = await connection.execute(
                     """
                     UPDATE platform_approvals
-                    SET status = 'consumed', decided_at = COALESCE(decided_at, now())
+                    SET status = 'consumed', consumed_at = now()
                     WHERE tenant_id = %s
                       AND approval_id = %s
                       AND action_hash = %s
