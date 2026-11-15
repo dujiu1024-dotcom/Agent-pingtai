@@ -82,7 +82,8 @@ class UsageEvent:
 
 class QuotaStore(Protocol):
     async def put_budget(self, budget: Budget) -> None: ...
-    async def reserve(self, reservation: QuotaReservation, budget: Budget) -> tuple[QuotaReservation, tuple[str, ...]]: ...
+    async def get_budget(self, tenant_id: str, scope_type: str, scope_id: str, now: datetime) -> Budget | None: ...
+    async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]: ...
     async def settle(self, reservation_id: str, event: UsageEvent) -> None: ...
     async def release(self, reservation_id: str) -> bool: ...
     async def usage(self, tenant_id: str, scope_type: str, scope_id: str, start: datetime, end: datetime) -> tuple[int, Decimal, int]: ...
@@ -102,6 +103,11 @@ class InMemoryQuotaStore:
         async with self._lock:
             self._budgets[(budget.tenant_id, budget.scope_type, budget.scope_id, budget.period_start)] = budget
 
+    async def get_budget(self, tenant_id: str, scope_type: str, scope_id: str, now: datetime) -> Budget | None:
+        async with self._lock:
+            candidates = [b for b in self._budgets.values() if b.tenant_id == tenant_id and b.scope_type == scope_type and b.scope_id == scope_id and b.period_start <= now < b.period_end]
+            return max(candidates, key=lambda b: b.period_start) if candidates else None
+
     def _totals(self, tenant_id: str, scope_type: str, scope_id: str, start: datetime, end: datetime) -> tuple[int, Decimal, int]:
         events = [e for e in self._events.values() if e.tenant_id == tenant_id and start <= e.occurred_at < end and self._matches(e, scope_type, scope_id)]
         reservations = [r for r in self._reservations.values() if r.tenant_id == tenant_id and r.scope_type == scope_type and r.scope_id == scope_id and r.period_start == start and r.period_end == end]
@@ -118,10 +124,13 @@ class InMemoryQuotaStore:
             or (scope_type == "agent" and event.agent_id == scope_id)
         )
 
-    async def reserve(self, reservation: QuotaReservation, budget: Budget) -> tuple[QuotaReservation, tuple[str, ...]]:
+    async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]:
         async with self._lock:
             if reservation.reservation_id in self._reservations or reservation.reservation_id in self._settled:
                 raise ValueError("reservation already exists")
+            budget = self._budgets.get((reservation.tenant_id, reservation.scope_type, reservation.scope_id, reservation.period_start))
+            if budget is None:
+                raise BudgetExceeded("quota budget not configured")
             tokens, cost, concurrency = self._totals(budget.tenant_id, budget.scope_type, budget.scope_id, budget.period_start, budget.period_end)
             if budget.hard_tokens is not None and tokens + reservation.reserved_tokens > budget.hard_tokens:
                 raise BudgetExceeded("hard token budget exceeded")
@@ -183,7 +192,7 @@ class QuotaService:
             created_at=datetime.now(timezone.utc),
             period_start=budget.period_start, period_end=budget.period_end,
         )
-        return await self.store.reserve(reservation, budget)
+        return await self.store.reserve(reservation)
 
     async def settle_run(
         self, reservation: QuotaReservation, *, model_key: str,
