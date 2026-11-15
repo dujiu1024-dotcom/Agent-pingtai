@@ -172,6 +172,13 @@ class OciSandboxRunner:
             await process.wait()
             feeder.cancel()
             await asyncio.gather(feeder, return_exceptions=True)
+        except asyncio.CancelledError:
+            process.kill()
+            await process.wait()
+            feeder.cancel()
+            await asyncio.gather(feeder, return_exceptions=True)
+            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+            raise
         stdout, out_truncated = await stdout_task
         stderr, err_truncated = await stderr_task
         return SandboxResult(
