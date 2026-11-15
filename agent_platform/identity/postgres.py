@@ -646,8 +646,8 @@ class PostgresIdentityRepository:
                     """INSERT INTO platform_identity_audit
                        (tenant_id, actor_id, action, subject_id, outcome, detail)
                        VALUES (%s, %s, 'api_credential.rotated', %s, 'succeeded',
-                         jsonb_build_object('old_credential_id', %s,
-                           'new_credential_id', %s))""",
+                         jsonb_build_object('old_credential_id', %s::text,
+                           'new_credential_id', %s::text))""",
                     (tenant_id, user_id, user_id, old_credential_id, new_credential_id),
                 )
         return True
