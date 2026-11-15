@@ -15,6 +15,7 @@ class FakeProvider:
             ConnectorPage(({"id": "doc-2", "text": "two"},), {"page": 3}, False),
         ]
         self.revoked = False
+        self.fail_revoke = False
 
     async def fetch_page(self, *, credential, scopes, cursor):
         self.assert_credential = credential
@@ -22,6 +23,8 @@ class FakeProvider:
         return self.pages.pop(0)
 
     async def revoke(self, *, credential):
+        if self.fail_revoke:
+            raise RuntimeError("remote revoke unavailable")
         self.revoked = True
 
 
@@ -104,6 +107,15 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
             await self.service.sync_once(
                 tenant_id="tenant-a", connection_id="drive-1",
             )
+
+    async def test_remote_revocation_failure_is_recorded_after_local_revoke(self):
+        self.provider.fail_revoke = True
+        self.assertTrue(await self.service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+        ))
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.status, "revoked")
+        self.assertIn("remote revoke", saved.last_error)
 
     async def test_tenant_isolation(self):
         with self.assertRaises(ConnectorError):
