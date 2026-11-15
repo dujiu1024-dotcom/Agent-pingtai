@@ -17,7 +17,6 @@ from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
-
 WorkspaceResolver = Callable[[RunContext], str | Path]
 HomeResolver = Callable[[RunContext], str | Path]
 ProviderEnvironmentResolver = Callable[[ModelTemplate, RunContext], Mapping[str, str]]
