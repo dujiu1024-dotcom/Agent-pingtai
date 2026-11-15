@@ -59,7 +59,7 @@ class GatewayService:
    raise ValueError("public Gateway URL must be a valid HTTPS URL without userinfo/query/fragment")
   self.instance_id=instance_id;self.base=public_base_url.rstrip("/");self.directory=directory
   self.app_factory=app_factory;self.token_service=token_service;self.lease_seconds=lease_seconds
-  self._apps={};self._heartbeat_tasks={};self._lock=asyncio.Lock()
+  self._apps={};self._heartbeat_tasks={};self._lease_expires={};self._lock=asyncio.Lock()
  @staticmethod
  def _valid_segment(value:str)->bool:return bool(re.fullmatch(r"[A-Za-z0-9_-]{1,128}",value))
  async def mount_run(self,*,tenant_id:str,run_id:str,bridge:Any)->str:
@@ -70,7 +70,7 @@ class GatewayService:
    url=f"{self.base}/tenants/{tenant_id}/runs/{run_id}/mcp"
    app=self.app_factory(bridge);now=datetime.now(timezone.utc)
    await self.directory.register(EndpointRecord(tenant_id,run_id,self.instance_id,url,"active",now,now+timedelta(seconds=self.lease_seconds)))
-   self._apps[key]=app
+   self._apps[key]=app;self._lease_expires[key]=now+timedelta(seconds=self.lease_seconds)
    self._heartbeat_tasks[key]=asyncio.create_task(self._heartbeat_loop(tenant_id,run_id))
   return url
  async def _heartbeat_loop(self,tenant_id:str,run_id:str)->None:
@@ -78,13 +78,14 @@ class GatewayService:
   try:
    while True:
     await asyncio.sleep(max(1,self.lease_seconds/3))
-    if not await self.directory.heartbeat(tenant_id,run_id,self.instance_id,lease_seconds=self.lease_seconds):
-     async with self._lock:
-      app=self._apps.pop(key,None);self._heartbeat_tasks.pop(key,None)
+    renewed=await self.directory.heartbeat(tenant_id,run_id,self.instance_id,lease_seconds=self.lease_seconds)
+    async with self._lock:
+     if renewed and key in self._apps:
+      self._lease_expires[key]=datetime.now(timezone.utc)+timedelta(seconds=self.lease_seconds)
+      continue
+     app=self._apps.pop(key,None);self._heartbeat_tasks.pop(key,None);self._lease_expires.pop(key,None)
      verifier=getattr(getattr(app,"state",None),"gateway_token_verifier",None)
      if verifier is not None and hasattr(verifier,"revoke"):verifier.revoke()
-     token_service=self.token_service or getattr(verifier,"token_service",None)
-     if token_service is not None:await token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
      return
   except asyncio.CancelledError:raise
  async def unmount_run(self,*,tenant_id:str,run_id:str)->bool:
@@ -99,7 +100,7 @@ class GatewayService:
    token_service=self.token_service or getattr(verifier,"token_service",None)
    if token_service is not None:await token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
    await self.directory.deactivate(tenant_id,run_id,self.instance_id)
-   self._apps.pop(key,None)
+   self._apps.pop(key,None);self._lease_expires.pop(key,None)
   if task is not None:await asyncio.gather(task,return_exceptions=True)
   return True
  async def __call__(self,scope:dict[str,Any],receive:Any,send:Any)->None:
@@ -108,8 +109,12 @@ class GatewayService:
   if len(p)!=5 or p[0]!="tenants" or p[2]!="runs" or p[4]!="mcp" or not self._valid_segment(p[1]) or not self._valid_segment(p[3]):
    await self._respond(send,404,b"unknown Gateway endpoint");return
   tenant,run=p[1],p[3]
-  async with self._lock:app=self._apps.get((tenant,run))
-  if app is not None:await app(scope,receive,send);return
+  async with self._lock:
+   key=(tenant,run);app=self._apps.get(key);lease_expires=self._lease_expires.get(key)
+  if app is not None:
+   if lease_expires is None or lease_expires<=datetime.now(timezone.utc):
+    await self._respond(send,503,b"local Gateway owner lease expired");return
+   await app(scope,receive,send);return
   row=await self.directory.get(tenant,run)
   if not row or row.status!="active":await self._respond(send,404,b"Run endpoint inactive");return
   if row.lease_expires_at is not None and row.lease_expires_at<=datetime.now(timezone.utc):
