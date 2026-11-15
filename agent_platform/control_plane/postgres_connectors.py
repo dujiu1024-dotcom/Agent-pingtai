@@ -90,7 +90,7 @@ class PostgresConnectorRepository:
         async with db:
             await db.execute(
                 """UPDATE platform_data_connections SET last_error=%s
-                   WHERE tenant_id=%s AND connection_id=%s AND status='active'""",
+                   WHERE tenant_id=%s AND connection_id=%s AND status IN ('active','revoked')""",
                 (error[:500], self.tenant_id, connection_id),
             )
 
