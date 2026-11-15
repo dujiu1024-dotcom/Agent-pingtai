@@ -4,12 +4,13 @@
 </style></head><body><div class="shell"><aside class="side"><div class="brand">智能体平台</div><nav class="nav" id="nav"><button class="active" data-view="overview">工作台</button><button data-view="agents">Agent 管理</button><button data-view="runs">任务与运行</button><button data-view="approvals">人工审批</button><button data-view="knowledge">知识库</button><button data-view="memory">记忆管理</button><button data-view="models">模型模板</button><button data-view="tools">工具与 Skills</button></nav></aside><main class="main"><header class="top"><div><h1 id="heading">工作台</h1><div class="muted">受监督的智能体执行与协作控制面</div></div><div class="row"><input id="apiBase" value="/api/platform/v1" aria-label="API 地址"><button class="btn" id="refresh">刷新</button></div></header><div id="message" role="status"></div>
 <section id="overview"><div class="grid"><div class="card"><div class="muted">Agent 数量</div><div class="stat" id="agentCount">—</div></div><div class="card"><div class="muted">运行中任务</div><div class="stat" id="runCount">—</div></div><div class="card"><div class="muted">待审批</div><div class="stat" id="approvalCount">—</div></div></div><div class="panel"><h2>快速发起任务</h2><div class="row"><input id="agentId" placeholder="Agent ID"><input id="projectId" placeholder="项目 ID（可选）"></div><p><textarea id="taskInput" placeholder="描述需要 Agent 完成的任务"></textarea></p><button class="btn primary" id="submitTask">提交任务</button></div><div class="panel"><h2>最近运行</h2><div id="recentRuns" class="muted">加载中…</div></div></section>
 <section id="agents" class="hidden"><div class="panel"><h2>Agent 管理</h2><div class="row"><input id="newAgentId" placeholder="Agent ID"><input id="newAgentName" placeholder="显示名称"><input id="templateRef" placeholder="模型模板 ID@版本"></div><p><textarea id="agentRole" placeholder="角色与职责定义"></textarea></p><button class="btn primary" id="createAgent">创建 Agent</button><div id="agentList"></div></div></section>
-<section id="runs" class="hidden"><div class="panel"><h2>任务与运行</h2><div id="runsList"></div></div></section><section id="approvals" class="hidden"><div class="panel"><h2>人工审批</h2><div id="approvalList"></div></div></section>
+<section id="runs" class="hidden"><div class="panel"><h2>任务与运行</h2><div id="runsList"></div></div></section><section id="approvals" class="hidden"><div class="panel"><h2>人工审批</h2><div id="approvalList"></div><div id="approvalDetail" class="panel hidden" aria-live="polite"></div></div></section>
 <section id="knowledge" class="hidden"><div class="panel"><h2>知识库</h2><div class="row"><input id="docTitle" placeholder="文档标题"><input id="docScope" value="tenant" placeholder="tenant/project/private"></div><textarea id="docText" placeholder="粘贴文本内容"></textarea><button class="btn primary" id="ingestDoc">入库</button><div id="knowledgeList"></div></div></section>
 <section id="memory" class="hidden"><div class="panel"><h2>记忆治理</h2><div id="memoryList"></div></div></section><section id="models" class="hidden"><div class="panel"><h2>模型模板</h2><div id="modelList"></div></div></section><section id="tools" class="hidden"><div class="panel"><h2>工具与 Skills</h2><div id="toolList"></div></div></section></main></div>
 <script>
 const $=id=>document.getElementById(id);let current="overview",capabilities={};
-function api(path,opts={}){return fetch($("apiBase").value.replace(/\/$/,"")+path,{...opts,headers:{"Content-Type":"application/json",...(opts.headers||{})}}).then(async r=>{if(!r.ok)throw new Error(String(r.status)+" "+await r.text());return r.status===204?null:r.json()})}
+function csrfToken(){const m=document.cookie.match(/(?:^|; )__Host-platform_csrf=([^;]*)/);return m?decodeURIComponent(m[1]):""}
+function api(path,opts={}){const method=(opts.method||"GET").toUpperCase(),csrf=csrfToken();return fetch($("apiBase").value.replace(/\/$/,"")+path,{...opts,headers:{"Content-Type":"application/json",...(method!=="GET"&&csrf?{"X-CSRF-Token":csrf}:{}),...(opts.headers||{})}}).then(async r=>{if(!r.ok)throw new Error(String(r.status)+" "+await r.text());return r.status===204?null:r.json()})}
 function msg(s){$("message").textContent=s}
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function table(rows){if(!rows||!rows.length)return "<p class='muted'>暂无数据</p>";return "<table><tbody>"+rows.map(r=>"<tr>"+r.map(v=>"<td>"+esc(v)+"</td>").join("")+"</tr>").join("")+"</tbody></table>"}
@@ -17,6 +18,30 @@ function unavailable(feature){return "<p class='muted'>当前服务未挂载："
 async function loadCapabilities(){const r=await api("/workbench/capabilities");capabilities=r.features||{}}
 function show(view){current=view;document.querySelectorAll("main section").forEach(s=>s.classList.toggle("hidden",s.id!==view));document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active",b.dataset.view===view));$("heading").textContent=document.querySelector('[data-view="'+view+'"]').textContent;load(view)}
 $("nav").addEventListener("click",e=>{const b=e.target.closest("button[data-view]");if(b)show(b.dataset.view)});
+
+function renderApprovals(items){
+ if(!items.length){$("approvalList").innerHTML="<p class='muted'>暂无待审批动作</p>";return}
+ $("approvalList").innerHTML="<table><thead><tr><th>审批编号</th><th>动作</th><th>资源</th><th>状态</th><th>操作</th></tr></thead><tbody>"+items.map(x=>"<tr><td>"+esc(x.approval_id)+"</td><td>"+esc(x.action)+"</td><td>"+esc(x.resource)+"</td><td>"+esc(x.status)+"</td><td><button class='btn' data-approval-action='detail' data-id='"+esc(x.approval_id)+"'>详情</button> <button class='btn primary' data-approval-action='approve' data-id='"+esc(x.approval_id)+"'>批准</button> <button class='btn' data-approval-action='reject' data-id='"+esc(x.approval_id)+"'>拒绝</button> <button class='btn' data-approval-action='revoke' data-id='"+esc(x.approval_id)+"'>撤销</button></td></tr>").join("")+"</tbody></table>";
+}
+$("approvalList").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-approval-action]");if(!b)return;
+ const id=b.dataset.id,action=b.dataset.approvalAction;
+ try{
+  if(action==="detail"){
+   const d=await api("/approvals/"+encodeURIComponent(id));
+   $("approvalDetail").classList.remove("hidden");
+   $("approvalDetail").innerHTML="<h3>审批详情</h3>"+table([["审批编号",d.approval_id],["运行",d.run_id||"—"],["动作",d.action],["资源",d.resource],["风险级别",d.risk_level],["参数摘要",d.action_hash],["申请人",d.requested_by],["审批人",d.decided_by||"—"],["状态",d.status],["过期时间",d.expires_at]]);
+   return;
+  }
+  if(action==="approve"||action==="reject"){
+   await api("/approvals/"+encodeURIComponent(id)+"/decision",{method:"POST",body:JSON.stringify({approved:action==="approve"})});
+  }else if(action==="revoke"){
+   await api("/approvals/"+encodeURIComponent(id)+"/revoke",{method:"POST",body:"{}"});
+  }
+  $("approvalDetail").classList.add("hidden");msg("审批操作已提交");await load("approvals");
+ }catch(err){msg("审批操作失败："+err.message)}
+});
+
 async function load(view=current){msg("");try{
 if(!Object.keys(capabilities).length)await loadCapabilities();
 if(view==="overview"||view==="agents"){
@@ -26,7 +51,7 @@ if(view==="overview"||view==="runs"){
 if(capabilities.task_execution){const r=await api("/runs");const items=r.items||r;if(view==="overview"){$("runCount").textContent=items.filter(x=>["running","queued"].includes(x.status)).length;$("recentRuns").innerHTML=table(items.slice(0,8).map(x=>[x.run_id,x.agent_id,x.status]));}else $("runsList").innerHTML=table(items.map(x=>[x.run_id,x.agent_id,x.status,x.created_at]));}
 else{$("runCount").textContent="未接入";$("recentRuns").innerHTML=unavailable("任务与运行 API（总控 #2 任务中心依赖）");$("runsList").innerHTML=unavailable("任务与运行 API");}}
 if(view==="overview"||view==="approvals"){
-if(capabilities.approvals){const a=await api("/approvals?status=pending");const items=a.items||a;if(view==="overview")$("approvalCount").textContent=items.length;else $("approvalList").innerHTML=table(items.map(x=>[x.approval_id,x.action,x.resource,x.status]));}
+if(capabilities.approvals){const a=await api("/approvals?status=pending");const items=a.items||a;if(view==="overview")$("approvalCount").textContent=items.length;else renderApprovals(items);}
 else{$("approvalCount").textContent="未接入";$("approvalList").innerHTML=unavailable("人工审批 API（总控 #2 任务协同依赖）");}}
 if(view==="knowledge"){if(capabilities.knowledge)$("knowledgeList").innerHTML=table(((await api("/knowledge/documents")).items||[]).map(x=>[x.title,x.version,x.scope,x.document_id]));else $("knowledgeList").innerHTML=unavailable("知识库 API");}
 if(view==="memory"){if(capabilities.memory)$("memoryList").innerHTML=table(((await api("/memories")).items||[]).map(x=>[x.memory_id,x.scope,x.status,x.confidence]));else $("memoryList").innerHTML=unavailable("记忆 API");}
