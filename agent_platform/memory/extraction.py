@@ -75,7 +75,7 @@ class MemoryExtractionService:
             elif draft.scope is MemoryScope.AGENT:
                 if (
                     draft.scope_id not in principal.manage_agent_ids
-                    and "memory.manage" not in principal.roles
+                    and "memory.manage" not in principal.permissions
                 ):
                     raise PermissionError("agent memory management is not authorized")
             elif draft.scope is MemoryScope.PROJECT:
