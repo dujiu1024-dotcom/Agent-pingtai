@@ -27,6 +27,12 @@ class FakeMetadata:
         row = self.rows[key]
         self.rows[key] = SecretVersion(secret_ref, version, "active", row.created_at)
 
+    async def revoke_version(self, secret_ref, version, revoked_at):
+        key = (secret_ref, version)
+        row = self.rows.get(key)
+        if row and row.status == "pending":
+            self.rows[key] = SecretVersion(secret_ref, version, "revoked", row.created_at)
+
     async def revoke_all(self, secret_ref, revoked_at):
         versions = []
         for key, row in list(self.rows.items()):
