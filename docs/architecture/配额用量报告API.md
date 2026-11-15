@@ -14,3 +14,8 @@
 现有 QuotaService、QuotaEnforcedHarnessAdapter、PostgreSQL 原子 reserve/settle/release 函数和成本账本仍需由生产执行入口统一接线。项目/Agent 多维度同时扣减、Worker 派发全路径强制配额、工具/存储实际用量采集、账单导入和差异对账仍未完成。此报告 API 不代表这些能力已经完成。
 
 部署/真机/并发演练跳过，标注「待用户真机验证」。
+
+
+## Harness 配额强制组合入口
+
+新增 agent_platform.runtime.harness_factory.compose_quota_enforced_harness 作为统一组合入口。平台 Worker/Run 装配 provider Harness 时必须先经过该工厂；预算服务、请求估算器和实际成本估算器均为必填，缺失时 fail closed。工厂返回的包装器在 provider 调用前预留配额，结束后按实际 Token/成本/工具调用结算，异常时释放预留。直接暴露 provider 原始 Harness 不符合生产装配约束。生产 worker 是否已全面改用该入口仍需部署配置验证。
