@@ -197,6 +197,14 @@ class PostgresServiceIdentityRepository:
                        AND c.service_account_id=%s AND c.revoked_at IS NULL
                        AND (c.expires_at IS NULL OR c.expires_at>now())
                        AND sa.status='active' AND t.status='active'
+                       AND c.agent_id IS NOT DISTINCT FROM %s
+                       AND %s = ANY(c.scopes)
+                       AND (c.agent_id IS NULL OR EXISTS (
+                         SELECT 1 FROM platform_agent_identities ai
+                         WHERE ai.tenant_id=c.tenant_id AND ai.agent_id=c.agent_id
+                           AND ai.service_account_id=c.service_account_id
+                           AND ai.status='active'
+                       ))
                    )
                 )""",
                 (principal.tenant_id, permission_key,
@@ -204,7 +212,7 @@ class PostgresServiceIdentityRepository:
                  resource.resource_type, resource.resource_id, principal.tenant_id,
                  resource.resource_type, principal.tenant_id, resource.resource_id,
                  principal.credential_id, principal.tenant_id,
-                 principal.service_account_id),
+                 principal.service_account_id, principal.agent_id, permission_key),
             )
             return bool((await cursor.fetchone())["exists"])
 
