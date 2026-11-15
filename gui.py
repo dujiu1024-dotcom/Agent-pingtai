@@ -1013,7 +1013,9 @@ def run_plan(app_id, plan, task="", base=GUI_DIR, apps_dir=APPS_DIR,
              run=run_cmd, goal="", night_window="", night_allow=None,
              now=None):
     """按计划执行动作，逐步截图，命中停手规则即停。返回会话摘要。"""
-    require_platform()
+    # Real execution is macOS-only; injected runners are deterministic test doubles.
+    if run is run_cmd:
+        require_platform()
     app = load_app(app_id, apps_dir)
     if not app["verified"]:
         raise GuiError("应用 %s 未验证（verified_at 为空），拒绝操作" % app_id)
