@@ -94,7 +94,7 @@ CREATE OR REPLACE FUNCTION platform_quota_reserve(
     p_scope_type text, p_scope_id text, p_period_start timestamptz,
     p_reserved_tokens bigint, p_reserved_cost_usd numeric
 ) RETURNS TABLE(reservation_id uuid, warning_soft_tokens boolean, warning_soft_cost boolean)
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $quota$
 DECLARE
     b platform_quota_budgets%ROWTYPE;
     used_tokens bigint;
@@ -147,10 +147,10 @@ BEGIN
         b.soft_tokens IS NOT NULL AND used_tokens + p_reserved_tokens > b.soft_tokens,
         b.soft_cost_usd IS NOT NULL AND used_cost + p_reserved_cost_usd > b.soft_cost_usd;
 END;
-$;
+$quota$;
 
 CREATE OR REPLACE FUNCTION platform_quota_release(p_reservation_id uuid) RETURNS boolean
-LANGUAGE plpgsql AS $
+LANGUAGE plpgsql AS $quota$
 DECLARE changed integer;
 BEGIN
     UPDATE platform_quota_reservations SET status='released', settled_at=now()
@@ -158,6 +158,6 @@ BEGIN
     GET DIAGNOSTICS changed = ROW_COUNT;
     RETURN changed = 1;
 END;
-$;
+$quota$;
 
 COMMIT;
