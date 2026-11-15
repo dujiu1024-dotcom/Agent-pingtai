@@ -5,9 +5,9 @@ from agent_platform.runtime.execution import LangGraphRunExecutor
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager, RunStatus
 
 class FakeGraph:
- def __init__(self):self.calls=[];self.checkpoints={};self.checkpointer=object()
+ def __init__(self):self.calls=[];self.configs=[];self.checkpoints={};self.checkpointer=object()
  async def ainvoke(self,payload,*,config):
-  thread=config["configurable"]["thread_id"];self.calls.append((payload,thread))
+  thread=config["configurable"]["thread_id"];self.calls.append((payload,thread));self.configs.append(config)
   if payload=="explode":raise RuntimeError("node failed")
   self.checkpoints[thread]="checkpoint-1"
   return {"result":payload}
@@ -27,6 +27,37 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(result,{"result":{"prompt":"hello"}})
   self.assertEqual(row.status,RunStatus.SUCCEEDED);self.assertEqual(row.checkpoint_ref,"checkpoint-1")
   self.assertEqual(self.graph.calls[0][1],"tenant:run")
+ async def test_pinned_registry_snapshot_is_passed_to_graph_config(self):
+  class SnapshotService:
+   async def get(self,*,tenant_id,run_id):
+    return SimpleNamespace(
+     entries=({"kind":"agent","item_id":"researcher","version":3},),
+     digest="d"*64,
+    )
+  await self.store.create("tenant","pinned")
+  executor=LangGraphRunExecutor(
+   graph=self.graph,lifecycle=self.manager,timeout_seconds=1,
+   registry_snapshot_service=SnapshotService(),
+  )
+  await executor.execute(tenant_id="tenant",run_id="pinned",input={"task":"go"})
+  configurable=self.graph.configs[0]["configurable"]
+  self.assertEqual(configurable["platform_registry_snapshot"][0]["version"],3)
+  self.assertEqual(configurable["platform_registry_snapshot_digest"],"d"*64)
+
+ async def test_missing_pinned_snapshot_does_not_start_run(self):
+  class MissingSnapshotService:
+   async def get(self,*,tenant_id,run_id):
+    raise LookupError("snapshot missing")
+  await self.store.create("tenant","missing-snapshot")
+  executor=LangGraphRunExecutor(
+   graph=self.graph,lifecycle=self.manager,timeout_seconds=1,
+   registry_snapshot_service=MissingSnapshotService(),
+  )
+  with self.assertRaisesRegex(LookupError,"snapshot missing"):
+   await executor.execute(tenant_id="tenant",run_id="missing-snapshot",input={})
+  self.assertEqual((await self.store.get("tenant","missing-snapshot")).status,RunStatus.QUEUED)
+  self.assertEqual(self.graph.calls,[])
+
  async def test_execute_failure_is_persisted(self):
   await self.store.create("tenant","run")
   with self.assertRaisesRegex(RuntimeError,"node failed"):
