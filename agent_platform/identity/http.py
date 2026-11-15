@@ -8,6 +8,7 @@ from __future__ import annotations
 import hmac
 import time
 from collections import defaultdict, deque
+from secrets import token_urlsafe
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -17,6 +18,75 @@ from agent_platform.identity.service import AuthenticationError, IdentityService
 
 class RateLimiter(Protocol):
     async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool: ...
+
+
+class RedisSlidingWindowRateLimiter:
+    """Shared Redis sliding-window limiter using one atomic Lua operation."""
+
+    _SCRIPT = """
+    local key = KEYS[1]
+    local now = tonumber(ARGV[1])
+    local window = tonumber(ARGV[2])
+    local limit = tonumber(ARGV[3])
+    redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+    local count = redis.call('ZCARD', key)
+    if count >= limit then
+      return 0
+    end
+    redis.call('ZADD', key, now, ARGV[4])
+    redis.call('EXPIRE', key, math.ceil(window / 1000))
+    return 1
+    """
+
+    def __init__(self, redis: Any, *, key_prefix: str = "platform:auth:rate:") -> None:
+        if not key_prefix:
+            raise ValueError("key_prefix is required")
+        self.redis = redis
+        self.key_prefix = key_prefix
+
+    async def allow(self, key: str, *, limit: int, window_seconds: int) -> bool:
+        if limit < 1 or window_seconds < 1:
+            raise ValueError("rate limit settings must be positive")
+        now_ms = int(time.time() * 1000)
+        allowed = await self.redis.eval(
+            self._SCRIPT, 1, self.key_prefix + key,
+            now_ms, window_seconds * 1000, limit, token_urlsafe(16),
+        )
+        return bool(allowed)
+
+
+def auth_cookie_headers(
+    *, session_token: str, csrf_token: str, max_age_seconds: int,
+    session_cookie: str = "__Host-platform_session",
+    csrf_cookie: str = "__Host-platform_csrf",
+) -> list[tuple[bytes, bytes]]:
+    """Build secure session and double-submit CSRF Set-Cookie headers."""
+    if not session_token or not csrf_token or max_age_seconds < 1:
+        raise ValueError("tokens and positive max_age_seconds are required")
+    if not session_cookie.startswith("__Host-") or not csrf_cookie.startswith("__Host-"):
+        raise ValueError("auth cookies must use __Host- prefix")
+    return [
+        (b"set-cookie", (
+            f"{session_cookie}={session_token}; Path=/; Max-Age={max_age_seconds}; "
+            "Secure; HttpOnly; SameSite=Strict"
+        ).encode("ascii")),
+        (b"set-cookie", (
+            f"{csrf_cookie}={csrf_token}; Path=/; Max-Age={max_age_seconds}; "
+            "Secure; SameSite=Strict"
+        ).encode("ascii")),
+    ]
+
+
+def clear_auth_cookie_headers(
+    *, session_cookie: str = "__Host-platform_session",
+    csrf_cookie: str = "__Host-platform_csrf",
+) -> list[tuple[bytes, bytes]]:
+    if not session_cookie.startswith("__Host-") or not csrf_cookie.startswith("__Host-"):
+        raise ValueError("auth cookies must use __Host- prefix")
+    return [
+        (b"set-cookie", f"{session_cookie}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict".encode("ascii")),
+        (b"set-cookie", f"{csrf_cookie}=; Path=/; Max-Age=0; Secure; SameSite=Strict".encode("ascii")),
+    ]
 
 
 class InMemorySlidingWindowRateLimiter:
