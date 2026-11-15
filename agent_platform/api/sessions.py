@@ -109,8 +109,11 @@ def create_sessions_router(
         media_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
         max_bytes = int(getattr(service, "max_upload_bytes", 25 * 1024 * 1024))
         declared_length = request.headers.get("content-length")
-        if declared_length and int(declared_length) > max_bytes:
-            raise HTTPException(413, "file exceeds upload size limit")
+        if declared_length:
+            if not declared_length.isdigit():
+                raise HTTPException(400, "invalid content-length")
+            if int(declared_length) > max_bytes:
+                raise HTTPException(413, "file exceeds upload size limit")
         chunks = bytearray()
         async for chunk in request.stream():
             chunks.extend(chunk)
