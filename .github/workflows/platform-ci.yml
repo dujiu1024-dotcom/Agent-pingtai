@@ -49,6 +49,10 @@ on:
       - "pyproject.toml"
       - ".github/workflows/platform-ci.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   platform-contracts:
     runs-on: ubuntu-latest
