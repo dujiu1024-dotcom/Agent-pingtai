@@ -30,8 +30,12 @@ class RunBoundTokenVerifier:
         if not actor_id.strip():
             raise ValueError("actor_id must not be empty")
         parsed = urlsplit(resource_server_url)
-        if parsed.scheme != "https" or not parsed.hostname:
-            raise ValueError("resource server URL must be HTTPS")
+        loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        secure_transport = parsed.scheme == "https" or (
+            parsed.scheme == "http" and loopback
+        )
+        if not secure_transport or not parsed.hostname:
+            raise ValueError("resource server URL must be HTTPS except for loopback development")
         if expires_at.tzinfo is None or expires_at.utcoffset() is None:
             raise ValueError("expires_at must be timezone-aware")
         self._token_digest = hashlib.sha256(bearer_token.encode("utf-8")).digest()
@@ -95,8 +99,12 @@ def create_authenticated_mcp_asgi_app(
         or parsed_issuer.fragment
     ):
         raise ValueError("issuer_url must be HTTPS without userinfo, query, or fragment")
+    resource_loopback = parsed_resource.hostname in {"127.0.0.1", "localhost", "::1"}
+    resource_transport_ok = parsed_resource.scheme == "https" or (
+        parsed_resource.scheme == "http" and resource_loopback
+    )
     if (
-        parsed_resource.scheme != "https"
+        not resource_transport_ok
         or not parsed_resource.hostname
         or parsed_resource.username is not None
         or parsed_resource.password is not None
