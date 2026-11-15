@@ -533,7 +533,45 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_authorization_context_resolves_only_active_tenant_resources(self):
         project_ids = [f"project-{uuid4().hex[:8]}" for _ in range(3)]
         agent_id = f"agent-{uuid4().hex[:8]}"
+        user_id = uuid4()
+        email = f"{user_id}@example.com"
         async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_users
+                   (user_id, email, email_normalized, display_name, password_hash, status)
+                   VALUES (%s, %s, %s, 'RBAC Integration User', 'integration-hash', 'active')""",
+                (user_id, email, email, ),
+            )
+            await conn.execute(
+                """INSERT INTO platform_tenant_memberships
+                   (tenant_id, user_id, status)
+                   VALUES (%s, %s, 'active')""",
+                (self.tenant_id, user_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'reader', 'Reader')""",
+                (self.tenant_id,),
+            )
+            for permission_key in ("project.read", "identity.role.manage", "user.manage"):
+                await conn.execute(
+                    """INSERT INTO platform_permissions (permission_key, description)
+                       VALUES (%s, %s) ON CONFLICT DO NOTHING""",
+                    (permission_key, permission_key),
+                )
+                await conn.execute(
+                    """INSERT INTO platform_role_permissions
+                       (tenant_id, role_id, permission_key)
+                       VALUES (%s, 'reader', %s)""",
+                    (self.tenant_id, permission_key),
+                )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'tenant', %s, 'reader', 'integration')""",
+                (uuid4(), self.tenant_id, str(user_id), self.tenant_id),
+            )
             for project_id in project_ids:
                 await conn.execute(
                     """INSERT INTO platform_projects
@@ -546,7 +584,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO platform_project_members
                    (tenant_id, project_id, user_id, status)
                    VALUES (%s, %s, %s, 'active')""",
-                (self.tenant_id, project_ids[0], self.user_id),
+                (self.tenant_id, project_ids[0], user_id),
             )
             # Project 1 is read-only.
             await conn.execute(
@@ -554,7 +592,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
                    VALUES (%s, %s, 'user', %s, 'project', %s, 'reader', 'integration')""",
-                (uuid4(), self.tenant_id, str(self.user_id), project_ids[1]),
+                (uuid4(), self.tenant_id, str(user_id), project_ids[1]),
             )
             # Project 2 grants knowledge management, independently of project 1.
             await conn.execute(
@@ -590,7 +628,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     resource_type, resource_id, role_id, created_by)
                    VALUES (%s, %s, 'user', %s, 'project', %s,
                            'knowledge-manager', 'integration')""",
-                (uuid4(), self.tenant_id, str(self.user_id), project_ids[2]),
+                (uuid4(), self.tenant_id, str(user_id), project_ids[2]),
             )
             await conn.execute(
                 """INSERT INTO platform_agents
@@ -613,7 +651,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
                    VALUES (%s, %s, 'user', %s, 'agent', %s, 'reader', 'integration')""",
-                (uuid4(), self.tenant_id, str(self.user_id), agent_id),
+                (uuid4(), self.tenant_id, str(user_id), agent_id),
             )
             await conn.execute(
                 """INSERT INTO platform_roles (tenant_id, role_id, name)
@@ -632,12 +670,13 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     resource_type, resource_id, role_id, created_by)
                    VALUES (%s, %s, 'user', %s, 'agent', %s,
                            'agent-memory-manager', 'integration')""",
-                (uuid4(), self.tenant_id, str(self.user_id), agent_id),
+                (uuid4(), self.tenant_id, str(user_id), agent_id),
             )
             await conn.commit()
 
-        context = await self.repository.get_authorization_context(
-            tenant_id=self.tenant_id, user_id=str(self.user_id),
+        repository = PostgresIdentityRepository(self.connect)
+        context = await repository.get_authorization_context(
+            tenant_id=self.tenant_id, user_id=str(user_id),
         )
         self.assertIsNotNone(context)
         self.assertEqual(context.tenant_roles, frozenset({"reader"}))
@@ -654,8 +693,8 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(context.agent_ids, frozenset({agent_id}))
         self.assertEqual(context.memory_manage_agent_ids, frozenset({agent_id}))
-        self.assertIsNone(await self.repository.get_authorization_context(
-            tenant_id=f"other-{uuid4().hex}", user_id=str(self.user_id),
+        self.assertIsNone(await repository.get_authorization_context(
+            tenant_id=f"other-{uuid4().hex}", user_id=str(user_id),
         ))
 
     async def test_service_identity_credentials_are_persisted_and_revoked_in_postgres(self):
