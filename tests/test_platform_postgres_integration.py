@@ -27,6 +27,7 @@ if DSN:
     from agent_platform.identity.models import ResourceRef
     from agent_platform.identity.postgres import PostgresIdentityRepository
     from agent_platform.identity.security import PasswordHasher
+    from agent_platform.identity.tenants import create_tenant_with_owner
     from agent_platform.identity.service_accounts import (
         PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
     )
@@ -719,6 +720,48 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.connection.close()
+
+
+    async def test_tenant_creation_and_owner_bootstrap_commit_atomically(self):
+        tenant_id = f"new-tenant-{uuid4().hex}"
+        user_id = await create_tenant_with_owner(
+            self.connection,
+            tenant_id=tenant_id,
+            display_name="New Tenant",
+            owner_email="new-owner@example.com",
+            owner_display_name="New Owner",
+            owner_password="correct horse battery staple",
+        )
+        cursor = await self.connection.execute(
+            """SELECT t.display_name, m.status, b.role_id
+               FROM platform_tenants t
+               JOIN platform_tenant_memberships m ON m.tenant_id=t.tenant_id
+               JOIN platform_role_bindings b ON b.tenant_id=t.tenant_id
+                 AND b.subject_id=m.user_id::text
+               WHERE t.tenant_id=%s AND m.user_id=%s""",
+            (tenant_id, user_id),
+        )
+        row = await cursor.fetchone()
+        self.assertEqual(row["display_name"], "New Tenant")
+        self.assertEqual(row["status"], "active")
+        self.assertEqual(row["role_id"], "tenant_admin")
+
+    async def test_tenant_creation_rolls_back_when_owner_bootstrap_fails(self):
+        tenant_id = f"rollback-tenant-{uuid4().hex}"
+        with self.assertRaises(ValueError):
+            await create_tenant_with_owner(
+                self.connection,
+                tenant_id=tenant_id,
+                display_name="Must Roll Back",
+                owner_email="bad-owner@example.com",
+                owner_display_name="Bad Owner",
+                owner_password="short",
+            )
+        cursor = await self.connection.execute(
+            "SELECT 1 FROM platform_tenants WHERE tenant_id=%s",
+            (tenant_id,),
+        )
+        self.assertIsNone(await cursor.fetchone())
 
     async def test_bootstrap_creates_first_owner_roles_and_audit_atomically(self):
         user_id = await bootstrap_tenant_owner(
