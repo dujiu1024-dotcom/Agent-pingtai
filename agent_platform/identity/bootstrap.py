@@ -119,7 +119,7 @@ async def bootstrap_tenant_owner(
             """INSERT INTO platform_identity_audit
                (tenant_id, actor_id, action, subject_id, outcome, detail)
                VALUES (%s, 'bootstrap', 'tenant.owner_bootstrapped', %s,
-                       'succeeded', jsonb_build_object('email', %s))""",
+                       'succeeded', jsonb_build_object('email', %s::text))""",
             (tenant_id, str(user_id), normalized_email),
         )
 
