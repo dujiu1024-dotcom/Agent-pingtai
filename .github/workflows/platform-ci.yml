@@ -56,6 +56,8 @@ on:
       - "console.py"
       - "tests/test_platform_contracts.py"
       - "tests/test_identity.py"
+      - "tests/test_service_identity.py"
+      - "tests/test_identity_api.py"
       - "tests/test_identity_http.py"
       - "tests/test_platform_postgres_integration.py"
       - "tests/test_identity_context.py"
