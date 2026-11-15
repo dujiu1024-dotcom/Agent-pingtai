@@ -51,5 +51,6 @@ class IdentityRepository(Protocol):
 
     async def revoke_role(
         self, *, tenant_id: str, actor_id: str, binding_id: str,
+        resource_type: str, resource_id: str,
     ) -> bool:
         ...
