@@ -102,6 +102,21 @@ class IdentityHttpMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(cleared), 2)
         self.assertTrue(all(b"Max-Age=0" in value for _, value in cleared))
 
+    async def test_cookie_helpers_reject_header_injection(self):
+        with self.assertRaises(ValueError):
+            auth_cookie_headers(
+                session_token="session; Secure=false",
+                csrf_token="csrf",
+                max_age_seconds=60,
+            )
+        with self.assertRaises(ValueError):
+            auth_cookie_headers(
+                session_token="session",
+                csrf_token="csrf",
+                max_age_seconds=60,
+                session_cookie="__Host-session\r\nSet-Cookie",
+            )
+
     async def test_login_rate_limit_returns_429(self):
         limiter = InMemorySlidingWindowRateLimiter()
         async def app(scope, receive, send):
