@@ -34,7 +34,9 @@ class OptionalParserAdapter:
         if media_type not in self.supported_media_types: raise ValueError(f"unsupported media type: {media_type}")
         return self.parser.parse(content,media_type)
 class ParserRegistry:
-    def __init__(self, parsers: tuple[DocumentParser,...]=()) -> None: self.parsers=(PlainTextParser(),HTMLParserAdapter(),*parsers)
+    def __init__(self, parsers: tuple[DocumentParser,...]=()) -> None:
+        from agent_platform.knowledge.office_parsers import DOCXParser,PDFParser,PPTXParser,XLSXParser
+        self.parsers=(PlainTextParser(),HTMLParserAdapter(),PDFParser(),DOCXParser(),XLSXParser(),PPTXParser(),*parsers)
     def parse(self, content: bytes, media_type: str) -> str:
         for parser in self.parsers:
             if media_type in parser.supported_media_types:
