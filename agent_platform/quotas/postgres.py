@@ -1,0 +1,137 @@
+"""PostgreSQL adapter for the quota service."""
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Callable
+from uuid import UUID
+
+from agent_platform.quotas.service import Budget, QuotaReservation, UsageEvent
+
+ConnectionFactory = Callable[[], Any]
+
+
+class PostgresQuotaStore:
+    """Shared multi-worker adapter; quota decisions execute in PostgreSQL transactions."""
+
+    def __init__(self, connection_factory: ConnectionFactory) -> None:
+        self._connection_factory = connection_factory
+
+    @classmethod
+    def from_dsn(cls, dsn: str) -> "PostgresQuotaStore":
+        if not dsn:
+            raise ValueError("PostgreSQL DSN is required")
+
+        async def connect() -> Any:
+            try:
+                from psycopg import AsyncConnection
+                from psycopg.rows import dict_row
+            except ImportError as exc:
+                raise RuntimeError("Install psycopg[binary] for quota storage") from exc
+            return await AsyncConnection.connect(dsn, row_factory=dict_row)
+
+        return cls(connect)
+
+    async def put_budget(self, budget: Budget) -> None:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_quota_budgets
+                    (tenant_id,scope_type,scope_id,period_start,period_end,hard_tokens,
+                     hard_cost_usd,hard_concurrency,soft_tokens,soft_cost_usd)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (tenant_id,scope_type,scope_id,period_start)
+                    DO UPDATE SET period_end=EXCLUDED.period_end,
+                    hard_tokens=EXCLUDED.hard_tokens,hard_cost_usd=EXCLUDED.hard_cost_usd,
+                    hard_concurrency=EXCLUDED.hard_concurrency,soft_tokens=EXCLUDED.soft_tokens,
+                    soft_cost_usd=EXCLUDED.soft_cost_usd,updated_at=now()""",
+                    (budget.tenant_id,budget.scope_type,budget.scope_id,budget.period_start,
+                     budget.period_end,budget.hard_tokens,budget.hard_cost_usd,
+                     budget.hard_concurrency,budget.soft_tokens,budget.soft_cost_usd),
+                )
+
+    async def get_budget(self, tenant_id: str, scope_type: str, scope_id: str, now: datetime) -> Budget | None:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT * FROM platform_quota_budgets
+                WHERE tenant_id=%s AND scope_type=%s AND scope_id=%s
+                AND period_start<=%s AND period_end>%s
+                ORDER BY period_start DESC LIMIT 1""",
+                (tenant_id,scope_type,scope_id,now,now),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return Budget(
+            tenant_id=row["tenant_id"],scope_type=row["scope_type"],scope_id=row["scope_id"],
+            period_start=row["period_start"],period_end=row["period_end"],
+            hard_tokens=row["hard_tokens"],
+            hard_cost_usd=Decimal(row["hard_cost_usd"]) if row["hard_cost_usd"] is not None else None,
+            hard_concurrency=row["hard_concurrency"],soft_tokens=row["soft_tokens"],
+            soft_cost_usd=Decimal(row["soft_cost_usd"]) if row["soft_cost_usd"] is not None else None,
+        )
+
+    async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT warning_soft_tokens,warning_soft_cost
+                    FROM platform_quota_reserve(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (UUID(reservation.reservation_id),reservation.tenant_id,UUID(reservation.run_id),
+                     reservation.scope_type,reservation.scope_id,reservation.period_start,
+                     reservation.reserved_tokens,reservation.reserved_cost_usd),
+                )
+                row = await cursor.fetchone()
+        warnings = []
+        if row["warning_soft_tokens"]:
+            warnings.append("soft token budget exceeded")
+        if row["warning_soft_cost"]:
+            warnings.append("soft cost budget exceeded")
+        return reservation, tuple(warnings)
+
+    async def settle(self, reservation_id: str, event: UsageEvent) -> None:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT platform_quota_settle(
+                    %s,%s,%s,%s,%s,%s,%s,%s,NULL,0,0,0,NULL,'estimated',%s) AS settled""",
+                    (UUID(reservation_id),UUID(event.event_id),event.model_key,event.input_tokens,
+                     event.output_tokens,event.cost_usd,event.project_id,event.agent_id,event.occurred_at),
+                )
+                row = await cursor.fetchone()
+                if not row["settled"]:
+                    raise KeyError("active quota reservation not found or already settled")
+
+    async def release(self, reservation_id: str) -> bool:
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_release(%s) AS released",(UUID(reservation_id),)
+                )
+                row = await cursor.fetchone()
+        return bool(row["released"])
+
+    async def usage(self, tenant_id: str, scope_type: str, scope_id: str,
+                    start: datetime, end: datetime) -> tuple[int, Decimal, int]:
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT COALESCE(SUM(u.input_tokens+u.output_tokens),0) AS tokens,
+                COALESCE(SUM(u.cost_usd),0) AS cost,
+                (SELECT COUNT(*) FROM platform_quota_reservations r
+                 WHERE r.tenant_id=%s AND r.scope_type=%s AND r.scope_id=%s
+                 AND r.period_start=%s AND r.status='active') AS concurrency
+                FROM platform_usage_ledger u
+                WHERE u.tenant_id=%s AND u.occurred_at>=%s AND u.occurred_at<%s
+                AND ((%s='tenant' AND u.tenant_id=%s) OR (%s='model' AND u.model_key=%s)
+                OR (%s='project' AND u.project_id=%s) OR (%s='agent' AND u.agent_id=%s))""",
+                (tenant_id,scope_type,scope_id,start,tenant_id,start,end,
+                 scope_type,scope_id,scope_type,scope_id,scope_type,scope_id,scope_type,scope_id),
+            )
+            row = await cursor.fetchone()
+        return int(row["tokens"]), Decimal(row["cost"]), int(row["concurrency"])
