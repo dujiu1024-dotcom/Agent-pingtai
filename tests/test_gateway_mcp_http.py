@@ -98,6 +98,17 @@ class GatewayMCPHttpTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(accepted.headers.get("mcp-session-id"))
             self.assertIn("result", accepted.json())
 
+            app.state.gateway_token_verifier.revoke()
+            revoked = client.post(
+                "/runs/run-a/mcp",
+                json=initialize,
+                headers={
+                    "Authorization": "Bearer run-secret",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+            self.assertEqual(revoked.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()
