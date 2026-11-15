@@ -16,3 +16,19 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t1",scope=MemoryScope.TENANT,scope_id="t1",content="policy",source_ref="doc:1",confidence=1,created_by="admin")
         await service.propose(c); await service.confirm(tenant_id="t1",memory_id=c.memory_id,confirmer_id="admin")
         self.assertEqual(await service.retrieve(principal=MemoryPrincipal(tenant_id="t2",user_id="u")),[])
+
+    async def test_correct_export_and_expiry(self):
+        from datetime import datetime, timedelta, timezone
+        service=MemoryService(InMemoryMemoryRepository())
+        expiry=datetime.now(timezone.utc)+timedelta(seconds=1)
+        candidate=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u",content="old",source_ref="chat:1",confidence=.7,created_by="extractor",expires_at=expiry)
+        await service.propose(candidate)
+        await service.confirm(tenant_id="t",memory_id=candidate.memory_id,confirmer_id="u")
+        principal=MemoryPrincipal(tenant_id="t",user_id="u")
+        corrected=await service.correct(principal=principal,memory_id=candidate.memory_id,content="new",source_ref="chat:2")
+        self.assertEqual(corrected.candidate.content,"new")
+        exported=await service.export(principal=principal)
+        self.assertEqual(exported[0]["source_ref"],"chat:2")
+        expired=await service.expire_due(tenant_id="t",now=expiry+timedelta(seconds=1))
+        self.assertEqual(expired,1)
+        self.assertEqual(await service.retrieve(principal=principal),[])
