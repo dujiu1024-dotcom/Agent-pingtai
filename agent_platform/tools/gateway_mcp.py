@@ -106,8 +106,11 @@ class GatewayMCPBridge:
                 f"tool arguments do not match the registered schema: {exc.message}"
             ) from exc
 
+        resolver = definition.resource_resolver
+        if resolver is None:
+            raise ToolExecutionDenied("tool has no trusted resource resolver")
         try:
-            resource = definition.resource_resolver(arguments)
+            resource = resolver(arguments)
         except Exception as exc:
             raise ToolExecutionDenied("tool resource could not be resolved") from exc
         if not isinstance(resource, str) or not resource.strip():
