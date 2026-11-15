@@ -85,8 +85,11 @@ class RunLifecycleManager:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
   if old.status in TERMINAL: return old
-  target=RunStatus.CANCELLED if old.status in {RunStatus.QUEUED,RunStatus.PAUSED,RunStatus.INTERRUPTED} else RunStatus.CANCELLING
-  updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
+  if old.status==RunStatus.CANCELLING:
+   updated=old
+  else:
+   target=RunStatus.CANCELLED if old.status in {RunStatus.QUEUED,RunStatus.PAUSED,RunStatus.INTERRUPTED} else RunStatus.CANCELLING
+   updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
   await self.tools.cancel_run(run_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
   if task is not None: task.cancel()
@@ -98,7 +101,9 @@ class RunLifecycleManager:
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  return await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500]),expected_version=old.version)
+  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500]),expected_version=old.version)
+  if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
+  return updated
  async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100)->list[str]:
   resumed=[]
   for row in await self.store.recoverable(limit):
