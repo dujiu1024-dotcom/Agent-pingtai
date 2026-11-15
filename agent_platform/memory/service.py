@@ -72,14 +72,14 @@ class MemoryService:
         if scope is MemoryScope.PROJECT:
             return (
                 scope_id in principal.manage_project_ids
-                or "memory.manage" in principal.roles
+                or "memory.manage" in principal.permissions
             )
         if scope is MemoryScope.AGENT:
             return (
                 scope_id in principal.manage_agent_ids
-                or "memory.manage" in principal.roles
+                or "memory.manage" in principal.permissions
             )
-        return "memory.manage" in principal.roles
+        return "memory.manage" in principal.permissions
 
     @staticmethod
     def _visible(rec: MemoryRecord,p: MemoryPrincipal)->bool:
