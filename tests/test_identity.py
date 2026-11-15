@@ -42,6 +42,7 @@ class FakeIdentityRepository:
         self.touched.append((session_id, tenant_id))
         return any(
             record.session_id == session_id and record.tenant_id == tenant_id
+            and (tenant_id, record.user_id) in self.memberships
             and record.revoked_at is None
             and record.expires_at > datetime.now(timezone.utc)
             for record in self.sessions.values()
@@ -88,6 +89,11 @@ class PasswordSecurityTests(unittest.TestCase):
         token = "aps_random-high-entropy-token"
         self.assertEqual(token_digest(token), token_digest(token))
         self.assertNotEqual(token_digest(token), token)
+
+    def test_verifier_rejects_untrusted_scrypt_cost_parameters(self):
+        encoded = PasswordHasher.hash("correct horse battery staple")
+        tampered = encoded.replace("32768", "2147483648", 1)
+        self.assertFalse(PasswordHasher.verify("correct horse battery staple", tampered))
 
 
 class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -137,6 +143,15 @@ class IdentityServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         principal = await self.service.authenticate(issued.access_token)
         self.assertTrue(await self.service.logout(principal))
+        with self.assertRaises(AuthenticationError):
+            await self.service.authenticate(issued.access_token)
+
+    async def test_revoked_membership_invalidates_existing_session(self):
+        issued = await self.service.login(
+            email="admin@example.com", password="correct horse battery staple",
+            tenant_id="tenant-a",
+        )
+        self.repo.memberships.remove(("tenant-a", "user-1"))
         with self.assertRaises(AuthenticationError):
             await self.service.authenticate(issued.access_token)
 
