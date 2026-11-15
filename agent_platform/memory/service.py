@@ -68,7 +68,7 @@ class MemoryService:
     @staticmethod
     def _can_manage_scope(scope: MemoryScope, scope_id: str, principal: MemoryPrincipal) -> bool:
         if scope is MemoryScope.USER:
-            return scope_id == principal.user_id
+            return scope_id == principal.user_id or "memory.manage" in principal.roles
         if scope is MemoryScope.PROJECT:
             return (
                 scope_id in principal.manage_project_ids
