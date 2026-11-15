@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
-from agent_platform.identity.models import AuthenticatedApiCredential, Principal
+from agent_platform.identity.models import Principal
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.memory.service import MemoryPrincipal
 
@@ -20,14 +20,12 @@ class IdentityContextResolver:
         authenticated = getattr(request.state, "identity.principal", None)
         if authenticated is None:
             raise HTTPException(status_code=401, detail="authentication required")
-        if not isinstance(authenticated, (Principal, AuthenticatedApiCredential)):
+        if not isinstance(authenticated, Principal):
             raise HTTPException(
                 status_code=403,
-                detail="Knowledge/Memory routes require a human session or user-bound API credential",
+                detail="Knowledge/Memory routes currently require a human session",
             )
 
-        # API credentials are bound to a human user. Resolve current RBAC from
-        # PostgreSQL on every request; never treat credential scopes as roles.
         context = await self.identity_repository.get_authorization_context(
             tenant_id=authenticated.tenant_id,
             user_id=authenticated.user_id,
