@@ -1,0 +1,114 @@
+import unittest
+from contextlib import contextmanager
+
+from agent_platform.contracts import ModelTemplateRef, RunContext
+from agent_platform.observability.evaluation import (
+    EvalCase, EvalDataset, EvalGatePolicy, build_report, evaluate_case, gate_report,
+)
+from agent_platform.observability.harness import ObservedHarnessAdapter
+from agent_platform.observability.metrics import InMemoryMetricsRecorder
+from agent_platform.observability.redaction import redact_payload, redact_text
+from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
+
+
+class FakeHarness:
+    async def run(self, request):
+        return HarnessResult(output_text="approved answer", usage={"input_tokens": 12, "output_tokens": 8})
+
+
+class FakeSpan:
+    def __init__(self):
+        self.updates = []
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
+
+
+class FakeObserver:
+    def __init__(self):
+        self.calls = []
+        self.span = FakeSpan()
+
+    @contextmanager
+    def observe(self, *, name, input, metadata):
+        self.calls.append((name, input, metadata))
+        yield self.span
+
+
+class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_harness_adapter_records_trace_and_low_cardinality_metrics(self):
+        observer = FakeObserver()
+        metrics = InMemoryMetricsRecorder()
+        request = HarnessRequest(
+            context=RunContext(
+                tenant_id="tenant-a", run_id="run-a", agent_id="agent-a",
+                model_template=ModelTemplateRef("general", 2),
+            ),
+            instructions="Do the task", input_text="hello Bearer abc.def.ghi",
+        )
+        adapter = ObservedHarnessAdapter(
+            FakeHarness(), observer=observer, metrics=metrics, capture_content=True,
+        )
+        result = await adapter.run(request)
+        self.assertEqual(result.output_text, "approved answer")
+        self.assertEqual(observer.calls[0][0], "agent.run")
+        self.assertIn("[REDACTED]", observer.calls[0][1]["input_text"])
+        self.assertEqual(observer.calls[0][2]["run_id"], "run-a")
+        self.assertEqual(len(observer.span.updates), 1)
+        snapshot = metrics.snapshot()
+        self.assertIn('agent_runs_total{component="harness",model_template="general@2",status="succeeded"}', snapshot["counters"])
+        self.assertIn('agent_run_duration_seconds{component="harness",model_template="general@2"}', snapshot["observation_counts"])
+
+    async def test_harness_failure_is_recorded_and_reraised(self):
+        class BrokenHarness:
+            async def run(self, request):
+                raise RuntimeError("provider unavailable")
+
+        metrics = InMemoryMetricsRecorder()
+        request = HarnessRequest(
+            context=RunContext("tenant-a", "run-b", "agent-a", ModelTemplateRef("general")),
+            instructions="", input_text="",
+        )
+        adapter = ObservedHarnessAdapter(BrokenHarness(), metrics=metrics)
+        with self.assertRaisesRegex(RuntimeError, "provider unavailable"):
+            await adapter.run(request)
+        self.assertTrue(any('status="failed"' in key for key in metrics.snapshot()["counters"]))
+
+    def test_redaction_recurses_and_truncates(self):
+        payload = {"api_key": "secret-value", "nested": ["Authorization: Bearer abc.def", "sk-12345678901234567890"]}
+        result = redact_payload(payload, max_text_chars=100)
+        self.assertEqual(result["api_key"], "[REDACTED]")
+        self.assertIn("Bearer [REDACTED]", result["nested"][0])
+        self.assertEqual(result["nested"][1], "[REDACTED]")
+        self.assertTrue(redact_text("x" * 20, max_chars=5).endswith("[TRUNCATED]"))
+
+    def test_metrics_reject_high_cardinality_labels_and_render_lines(self):
+        metrics = InMemoryMetricsRecorder()
+        with self.assertRaisesRegex(ValueError, "high-cardinality"):
+            metrics.increment("agent_runs_total", labels={"run_id": "run-1"})
+        metrics.increment("agent_runs_total", labels={"status": "ok"})
+        self.assertTrue(metrics.render_prometheus().endswith("\\n"))
+
+    def test_agent_and_rag_evaluation_gate(self):
+        dataset = EvalDataset("smoke", 1, (
+            EvalCase("case-1", expected_terms=("青岛",), expected_document_ids=("doc-1",)),
+            EvalCase("case-2", expected_terms=("库存",), forbidden_terms=("未验证",)),
+        ))
+        first = evaluate_case(dataset.cases[0], output_text="青岛库存分析", retrieved_document_ids=("doc-1", "doc-2"))
+        second = evaluate_case(dataset.cases[1], output_text="库存结果已核验")
+        report = build_report(dataset, (first, second))
+        allowed, reasons = gate_report(report, EvalGatePolicy(min_pass_rate=1.0, min_average_score=0.9))
+        self.assertTrue(allowed)
+        self.assertEqual(reasons, ())
+
+    def test_evaluation_gate_blocks_regression(self):
+        case = EvalCase("case-1", expected_terms=("expected",))
+        result = evaluate_case(case, output_text="wrong answer")
+        report = build_report(EvalDataset("regression", 1, (case,)), (result,))
+        allowed, reasons = gate_report(report, EvalGatePolicy())
+        self.assertFalse(allowed)
+        self.assertIn("pass_rate_below_threshold", reasons)
+
+
+if __name__ == "__main__":
+    unittest.main()
