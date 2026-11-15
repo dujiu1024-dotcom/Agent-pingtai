@@ -26,14 +26,12 @@ class RedisStreamsTransport:
             raise ValueError("tenant_id and topic are required")
         return f"{self.stream_prefix}:{tenant_id}:{topic}"
 
+    def _dead_letter_stream(self, tenant_id: str, topic: str) -> str:
+        return f"{self.stream_prefix}:{tenant_id}:{topic}:dead-letter"
+
     async def publish(
-        self,
-        *,
-        tenant_id: str,
-        topic: str,
-        event_id: str,
-        payload: Mapping[str, Any],
-        maxlen: int = 100_000,
+        self, *, tenant_id: str, topic: str, event_id: str,
+        payload: Mapping[str, Any], maxlen: int = 100_000,
     ) -> str:
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
@@ -58,28 +56,17 @@ class RedisStreamsTransport:
                 self._stream(tenant_id, topic), group, id=start_id, mkstream=True
             )
         except Exception as exc:
-            # BUSYGROUP is the only expected idempotent failure.
             if "BUSYGROUP" not in str(exc):
                 raise
 
     async def read_group(
-        self,
-        *,
-        tenant_id: str,
-        topic: str,
-        group: str,
-        consumer: str,
-        count: int = 20,
-        block_ms: int = 5_000,
+        self, *, tenant_id: str, topic: str, group: str, consumer: str,
+        count: int = 20, block_ms: int = 5_000,
     ) -> list[tuple[str, dict[str, str]]]:
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
         rows = await self._client.xreadgroup(
-            group,
-            consumer,
-            {self._stream(tenant_id, topic): ">"},
-            count=count,
-            block=block_ms,
+            group, consumer, {self._stream(tenant_id, topic): ">"}, count=count, block=block_ms,
         )
         return [
             (message_id, fields)
@@ -87,30 +74,17 @@ class RedisStreamsTransport:
             for message_id, fields in messages
         ]
 
-
     async def claim_pending(
-        self,
-        *,
-        tenant_id: str,
-        topic: str,
-        group: str,
-        consumer: str,
-        min_idle_ms: int = 30_000,
-        start_id: str = "0-0",
-        count: int = 20,
+        self, *, tenant_id: str, topic: str, group: str, consumer: str,
+        min_idle_ms: int = 30_000, start_id: str = "0-0", count: int = 20,
     ) -> list[tuple[str, dict[str, str]]]:
-        """Reassign idle pending messages after a consumer crash."""
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
         if min_idle_ms < 0 or count < 1 or count > 500:
             raise ValueError("min_idle_ms must be >= 0 and count must be between 1 and 500")
         result = await self._client.xautoclaim(
-            self._stream(tenant_id, topic),
-            group,
-            consumer,
-            min_idle_time=min_idle_ms,
-            start_id=start_id,
-            count=count,
+            self._stream(tenant_id, topic), group, consumer,
+            min_idle_time=min_idle_ms, start_id=start_id, count=count,
         )
         messages = result[1] if len(result) > 1 else []
         return [(message_id, fields) for message_id, fields in messages]
@@ -120,9 +94,27 @@ class RedisStreamsTransport:
     ) -> int:
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
-        return int(await self._client.xack(
-            self._stream(tenant_id, topic), group, message_id
-        ))
+        return int(await self._client.xack(self._stream(tenant_id, topic), group, message_id))
+
+    async def dead_letter(
+        self, *, tenant_id: str, topic: str, group: str, message_id: str,
+        fields: Mapping[str, str], event_id: str, reason: str, consumer_name: str,
+    ) -> str:
+        """Atomically copy the poison message to the DLQ and ACK the source entry."""
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        source = self._stream(tenant_id, topic)
+        destination = self._dead_letter_stream(tenant_id, topic)
+        dlq_fields = {
+            **dict(fields), "event_id": event_id, "failure_reason": reason,
+            "source_stream": source, "source_message_id": message_id,
+            "consumer_name": consumer_name,
+        }
+        async with self._client.pipeline(transaction=True) as pipe:
+            pipe.xadd(destination, dlq_fields, maxlen=100_000, approximate=True)
+            pipe.xack(source, group, message_id)
+            results = await pipe.execute()
+        return str(results[0])
 
     async def close(self) -> None:
         if self._client is not None:
