@@ -5,14 +5,13 @@ must configure protected_paths and exact CORS origins at composition time.
 """
 from __future__ import annotations
 
-import hashlib
 import hmac
 import time
 from collections import defaultdict, deque
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from agent_platform.identity.models import AuthenticatedApiCredential, Principal
+from agent_platform.identity.models import Principal
 from agent_platform.identity.service import AuthenticationError, IdentityService
 
 
