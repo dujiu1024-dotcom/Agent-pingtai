@@ -225,7 +225,7 @@ class SessionAssetService:
             session = await self.repository.get_session(tenant_id, session_id)
             if session is None:
                 raise SessionNotFound("session not found")
-        clean_name = _SAFE_FILENAME.sub("_", filename.replace("\\\\", "/").rsplit("/", 1)[-1])[:180]
+        clean_name = _SAFE_FILENAME.sub("_", filename.replace(chr(92), "/").rsplit("/", 1)[-1])[:180]
         if not clean_name or clean_name in {".", ".."}:
             raise SessionError("invalid filename")
         asset_id = str(uuid4())
@@ -237,7 +237,11 @@ class SessionAssetService:
             len(content), digest, AssetStatus.SCANNING if self.scanner else AssetStatus.AVAILABLE,
             project_id, session_id,
         )
-        await self.repository.create_asset(asset)
+        try:
+            await self.repository.create_asset(asset)
+        except Exception:
+            await self.storage.delete(object_key)
+            raise
         if self.scanner is not None:
             accepted = await self.scanner.scan(clean_name, media_type, content)
             status = AssetStatus.AVAILABLE if accepted else AssetStatus.REJECTED
