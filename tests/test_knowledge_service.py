@@ -36,3 +36,23 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         citation=citation_context(hits)[0]
         self.assertEqual(citation["document_version"],1)
         self.assertEqual(citation["source_uri"],"file://source.md")
+
+    async def test_connector_ingestion_and_rag_evaluation(self):
+        from agent_platform.knowledge.connectors import ConnectorDocument,ConnectorPage
+        from agent_platform.knowledge.evaluation import RAGEvalCase,evaluate_retrieval
+        class Connector:
+            connector_id="fixture"
+            async def list_changed(self,*,tenant_id,cursor,changed_since=None,limit=100):
+                doc=Document(tenant_id=tenant_id,title="connector source",source_uri="connector://item/1",content_hash="x")
+                return ConnectorPage(items=(ConnectorDocument(document=doc,content=b"evidence for retrieval",cursor="next"),),next_cursor="next",has_more=False)
+            async def revoke(self,*,tenant_id,credential_ref):
+                return None
+        service=KnowledgeService(InMemoryKnowledgeRepository())
+        results,cursor,more=await service.ingest_connector_page(connector=Connector(),tenant_id="t")
+        self.assertEqual(len(results),1)
+        self.assertEqual(cursor,"next")
+        self.assertFalse(more)
+        case=RAGEvalCase(case_id="case-1",query="evidence",expected_document_ids=frozenset({results[0].document.document_id}),principal=KnowledgePrincipal(tenant_id="t",user_id="u"))
+        report=await evaluate_retrieval(service,[case],k=3)
+        self.assertEqual(report[0].recall_at_k,1.0)
+        self.assertEqual(report[0].citation_coverage,1.0)
