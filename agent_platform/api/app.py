@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.registry import create_registry_router
+from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.workbench import create_workbench_router
 from agent_platform.identity.http import (
@@ -46,6 +47,8 @@ def create_platform_app(
     session_service_resolver: Any | None = None,
     registry_authorizer: Any | None = None,
     session_authorizer: Any | None = None,
+    connector_service_resolver: Any | None = None,
+    connector_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -117,4 +120,13 @@ def create_platform_app(
         "approvals": False,
         "blackboard": False,
     }))
+    connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
+    if connectors_configured:
+        if connector_service_resolver is None or connector_authorizer is None:
+            raise ValueError("connector service resolver and authorizer must be configured together")
+        app.include_router(create_connectors_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=connector_service_resolver,
+            authorize=connector_authorizer,
+        ))
     return app
