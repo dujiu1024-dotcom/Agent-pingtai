@@ -167,3 +167,10 @@ python3 agency.py init && python3 agency.py doctor
 - 事件可靠性：PostgreSQL 指数退避（2 秒起、最多 300 秒）、默认 5 次失败上限、Redis 死信 Stream；迁移脚本：`agent_platform/storage/postgres/003_event_retry_and_dlq.sql`
 
 旧 CLI 继续使用标准库。新平台可选依赖单独安装：`pip install -r requirements-platform.txt`。尚未完成的基础设施接入不会影响旧系统运行。
+
+
+### Gateway-only MCP Profile
+- `agent_platform/tools/gateway_mcp.py`：按 Run 创建 MCP Server，只暴露可信白名单内的工具。
+- 工具身份、租户、角色、审批 ID、资源解析均来自服务端上下文；参数使用 JSON Schema 校验。
+- MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
+- Harness 侧连接和传输层认证仍需单独完成端到端验证。
