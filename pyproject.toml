@@ -82,6 +82,8 @@ files = [
   "agent_platform/runtime/execution.py",
   "agent_platform/tools/mcp_adapter.py",
   "agent_platform/workflows/multi_expert.py",
+  "agent_platform/workflows/blackboard_services.py",
+  "agent_platform/workflows/expert_registry.py",
   "agent_platform/models/templates.py",
   "agent_platform/runtime/deepseek_harness.py",
   "agent_platform/runtime/strands_mcp_provider.py",
