@@ -49,6 +49,10 @@ def create_sessions_router(
             raise HTTPException(400, "JSON object is required") from exc
         if not isinstance(body, dict):
             raise HTTPException(400, "JSON object is required")
+        if body.get("project_id") and not await authorize(
+            principal, "project", str(body["project_id"]), "session.create",
+        ):
+            raise HTTPException(403, "project session creation denied")
         try:
             session = await service.create_session(
                 tenant_id=principal.tenant_id, owner_id=principal.user_id,
@@ -116,6 +120,8 @@ def create_sessions_router(
             raise HTTPException(403, "session repository tenant mismatch")
         if session_id and not await authorize(principal, "session", session_id, "write"):
             raise HTTPException(403, "session attachment denied")
+        if project_id and not await authorize(principal, "project", project_id, "file.create"):
+            raise HTTPException(403, "project file upload denied")
         filename = request.headers.get("x-filename", "upload.bin")
         media_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
         max_bytes = int(getattr(service, "max_upload_bytes", 25 * 1024 * 1024))
