@@ -30,6 +30,9 @@ include = [
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["agent_platform", "tests"]
+
 [tool.mypy]
 python_version = "3.11"
 files = [
