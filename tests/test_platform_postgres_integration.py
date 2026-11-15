@@ -463,7 +463,7 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
 class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tenant_id = f"identity-it-{uuid4().hex}"
-        self.user_id = uuid4()
+        self.user_id = uuid4()\n        self.email = f"identity-{uuid4().hex}@example.com"
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
             migration_dir = Path("agent_platform/storage/postgres")
             for migration_path in sorted(migration_dir.glob("*.sql")):
@@ -477,7 +477,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO platform_users
                    (user_id, email, email_normalized, display_name, password_hash)
                    VALUES (%s, %s, %s, %s, %s)""",
-                (self.user_id, "identity@example.com", "identity@example.com",
+                (self.user_id, self.email, self.email,
                  "Identity User", PasswordHasher.hash("correct horse battery staple")),
             )
             await conn.execute(
@@ -848,7 +848,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tenant_scoped_login_authorization_and_logout(self):
         issued = await self.service.login(
-            email="IDENTITY@example.com",
+            email=self.email.upper(),
             password="correct horse battery staple",
             tenant_id=self.tenant_id,
         )
