@@ -88,9 +88,9 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
             "templates": self.registry,
             "workspace_resolver": lambda _ctx: self.workspace,
             "home_resolver": lambda _ctx: self.home,
-            "credential_resolver": lambda _template, _ctx: {
+            "provider_environment_resolver": lambda _template, _ctx: {
                 "DEEPSEEK_API_KEY": "scoped-proxy-token",
-                "DEEPSEEK_BASE_URL": "http://model-proxy.internal/v1"
+                "DEEPSEEK_BASE_URL": "http://model-proxy.internal/v1",
             },
             "container_isolation_verified": True,
             "sdk_factory": self.factory,
