@@ -18,6 +18,37 @@ from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,Memory
 from agent_platform.memory.extraction import MemoryExtractionService,MemoryTurn
 KnowledgePrincipalResolver=Callable[[Request],Awaitable[KnowledgePrincipal]]
 MemoryPrincipalResolver=Callable[[Request],Awaitable[MemoryPrincipal]]
+async def _authorize_document_update(
+    knowledge: KnowledgeService,
+    principal: KnowledgePrincipal,
+    *,
+    document_id: str,
+    scope: KnowledgeScope,
+    project_id: str | None,
+) -> None:
+    existing = await knowledge.repository.get_document(
+        principal.tenant_id, document_id,
+    )
+    if existing is None:
+        return
+    if existing.scope is not scope or existing.project_id != project_id:
+        raise HTTPException(409, "document access scope cannot be changed in place")
+    if existing.scope is KnowledgeScope.PRIVATE:
+        allowed = (
+            existing.owner_user_id == principal.user_id
+            or "knowledge.manage" in principal.roles
+        )
+    elif existing.scope is KnowledgeScope.PROJECT:
+        allowed = (
+            "knowledge.manage" in principal.roles
+            or existing.project_id in principal.manage_project_ids
+        )
+    else:
+        allowed = "knowledge.manage" in principal.roles
+    if not allowed:
+        raise HTTPException(403, "document update permission denied")
+
+
 def _memory_visible_for_review(record: Any,principal: MemoryPrincipal)->bool:
     candidate=record.candidate
     if candidate.tenant_id!=principal.tenant_id:return False
@@ -59,6 +90,10 @@ def create_knowledge_memory_router(
         if scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:raise HTTPException(403,"project knowledge.manage permission required")
         try:document_id=str(UUID(str(body["document_id"]))) if body.get("document_id") else str(uuid4())
         except ValueError as exc:raise HTTPException(400,"document_id must be a UUID") from exc
+        await _authorize_document_update(
+            knowledge, principal, document_id=document_id,
+            scope=scope, project_id=project_id,
+        )
         source_uri=body.get("source_uri") or ("upload://"+document_id)
         content=body.get("content")
         if not isinstance(content,str) or not content.strip():raise HTTPException(400,"text content is required")
