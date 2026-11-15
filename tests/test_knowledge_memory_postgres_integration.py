@@ -57,12 +57,26 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, chunks=[chunk],
             vectors=[[1.0] + [0.0] * 1535],
         )
+        # A document can have multiple immutable versions. Deletion must
+        # tombstone every version and remove all derived chunks/vectors.
+        from dataclasses import replace
+        newer = replace(doc, version=2, title="delete source v2")
+        newer_chunk = DocumentChunk(
+            tenant_id=self.tenant_id, document_id=doc.document_id,
+            document_version=2, ordinal=0, text="gamma document revised",
+            content_hash="c2", start_offset=0, end_offset=23,
+        )
+        await self.knowledge.save_document(newer, [newer_chunk])
+        await self.knowledge.save_embeddings(
+            tenant_id=self.tenant_id, chunks=[newer_chunk],
+            vectors=[[0.0, 1.0] + [0.0] * 1534],
+        )
         self.assertTrue(await self.knowledge.delete_document(self.tenant_id,doc.document_id))
         self.assertEqual(await self.knowledge.search(principal=KnowledgePrincipal(tenant_id=self.tenant_id,user_id="u"),query="gamma",query_vector=None,limit=5),[])
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s",(self.tenant_id,doc.document_id))
             self.assertEqual((await cur.fetchone())["n"],0)
-            cur=await conn.execute("SELECT count(*) n FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id=%s",(self.tenant_id,chunk.chunk_id))
+            cur=await conn.execute("SELECT count(*) n FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id IN (%s,%s)",(self.tenant_id,chunk.chunk_id,newer_chunk.chunk_id))
             self.assertEqual((await cur.fetchone())["n"],0)
     async def test_memory_candidate_confirmation_correction_export_expiry_and_delete(self):
         candidate=MemoryCandidate(tenant_id=self.tenant_id,scope=MemoryScope.USER,scope_id="user-1",content="old preference",source_ref="conversation:1",confidence=.8,created_by="extractor")
