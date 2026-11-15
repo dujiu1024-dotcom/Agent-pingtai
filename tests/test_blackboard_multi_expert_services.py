@@ -182,8 +182,19 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         registry.register(ExpertProfile(
             expert_id="researcher",
             name="Researcher",
-            description="Disabled expert",
+            description="Insufficient expert",
             capabilities=frozenset({"market_research"}),
+        ))
+        with self.assertRaises(ValueError):
+            await services.plan_experts(
+                objective="analyze market",
+                run_context={"tenant_id": "tenant-a", "run_id": "run-capability"},
+            )
+        registry.register(ExpertProfile(
+            expert_id="researcher",
+            name="Researcher",
+            description="Disabled expert",
+            capabilities=frozenset({"market_research", "source_review"}),
             enabled=False,
         ))
         with self.assertRaises(PermissionError):
