@@ -29,7 +29,7 @@ class PostgresEndpointDirectory(EndpointDirectory):
     VALUES(%s,%s,%s,%s,'active',%s,now(),%s)
     ON CONFLICT(tenant_id,run_id) DO UPDATE SET instance_id=EXCLUDED.instance_id,endpoint_url=EXCLUDED.endpoint_url,
     status='active',created_at=EXCLUDED.created_at,updated_at=now(),lease_expires_at=EXCLUDED.lease_expires_at
-    WHERE platform_gateway_endpoints.status='inactive' OR platform_gateway_endpoints.lease_expires_at<=now()
+    WHERE platform_gateway_endpoints.status='inactive' OR platform_gateway_endpoints.lease_expires_at IS NULL OR platform_gateway_endpoints.lease_expires_at<=now()
     RETURNING run_id""",(r.tenant_id,r.run_id,r.instance_id,r.endpoint_url,r.created_at,lease))
    if await cur.fetchone() is None:raise ValueError("active endpoint lease already exists")
  async def get(self,tenant_id:str,run_id:str)->EndpointRecord|None:
@@ -43,7 +43,7 @@ class PostgresEndpointDirectory(EndpointDirectory):
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_gateway_endpoints SET lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
-    WHERE tenant_id=%s AND run_id=%s AND instance_id=%s AND status='active' AND lease_expires_at>now()
+    WHERE tenant_id=%s AND run_id=%s AND instance_id=%s AND status='active' AND (lease_expires_at IS NULL OR lease_expires_at>now())
     RETURNING run_id""",(lease_seconds,tenant_id,run_id,instance_id))
    return await cur.fetchone() is not None
  async def deactivate(self,tenant_id:str,run_id:str,instance_id:str|None=None)->bool:
