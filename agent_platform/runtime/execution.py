@@ -27,8 +27,7 @@ class LangGraphRunExecutor:
  async def _finish(self,tenant_id:str,run_id:str,status:RunStatus,*,checkpoint_ref:str|None=None,error:str|None=None)->RunSnapshot|None:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None or old.status!=RunStatus.RUNNING:return old
-  return await self.lifecycle.store.transition(RunSnapshot(tenant_id,run_id,status,old.version,
-   checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error),expected_version=old.version)
+  return await self.lifecycle.finish(tenant_id,run_id,status,checkpoint_ref=checkpoint_ref,error=error)
  async def execute(self,*,tenant_id:str,run_id:str,input:Any,timeout_seconds:float|None=None)->Any:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None:raise KeyError("Run not found")
