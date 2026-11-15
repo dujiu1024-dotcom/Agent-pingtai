@@ -24,17 +24,34 @@ class KnowledgeService:
     async def ingest(self,*,document: Document,content: bytes,max_chars: int=1200,overlap: int=160)->IngestResult:
         if len(content)>self.max_upload_bytes:
             raise ValueError("document exceeds configured upload size limit")
-        text=self.parsers.parse(content,document.media_type);digest=sha256_text(text)
-        if document.content_hash!=digest:
-            from dataclasses import replace
-            document=replace(document,content_hash=digest)
+        from dataclasses import replace
+        text=self.parsers.parse(content,document.media_type)
+        digest=sha256_text(text)
+        existing=await self.repository.get_document(document.tenant_id,document.document_id)
+        if existing is not None:
+            unchanged=(
+                existing.content_hash==digest
+                and existing.title==document.title
+                and existing.source_uri==document.source_uri
+                and existing.scope is document.scope
+                and existing.project_id==document.project_id
+                and existing.owner_user_id==document.owner_user_id
+                and existing.media_type==document.media_type
+                and existing.metadata==document.metadata
+            )
+            if unchanged:
+                document=existing
+            elif document.version<=existing.version:
+                document=replace(document,version=existing.version+1)
+        document=replace(document,content_hash=digest)
         chunks=chunk_document(document,text,max_chars=max_chars,overlap=overlap)
         created=await self.repository.save_document(document,chunks)
-        if created and chunks and self.embedder is not None:
+        # Deterministic chunk IDs let retries repair embeddings after a partial failure.
+        if chunks and self.embedder is not None:
             save_embeddings=getattr(self.repository,"save_embeddings",None)
             if save_embeddings is None:raise RuntimeError("repository does not support embedding persistence")
             vectors=await self.embedder.embed_documents([chunk.text for chunk in chunks])
-            if len(vectors)!=len(chunks):raise ValueError("embedding count must match chunk count")
+            if len(vectors)!=len(chunks):raise ValueError("embedding count must match chunks")
             await save_embeddings(tenant_id=document.tenant_id,chunks=chunks,vectors=vectors)
         return IngestResult(document=document,chunks=chunks,skipped_unchanged=not created)
     async def list_documents(self,*,principal: KnowledgePrincipal,limit: int=100):
