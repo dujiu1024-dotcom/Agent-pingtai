@@ -11,16 +11,16 @@ class PostgresMemoryRepository:
     def __init__(self,connection_factory: ConnectionFactory)->None:self._connect=connection_factory
     @staticmethod
     def _record(row: dict[str,Any])->MemoryRecord:
-        c=MemoryCandidate(tenant_id=row["tenant_id"],memory_id=str(row["memory_id"]),scope=MemoryScope(row["scope"]),scope_id=row["scope_id"],content=row["content"],source_ref=row["source_ref"],confidence=float(row["confidence"]),created_by=row["created_by"],expires_at=row["expires_at"],metadata=dict(row["metadata"] or {}))
+        c=MemoryCandidate(tenant_id=row["tenant_id"],memory_id=str(row["memory_id"]),scope=MemoryScope(row["scope"]),scope_id=row["scope_id"],content=row["content"],source_ref=row["source_ref"],confidence=float(row["confidence"]),created_by=row["created_by"],expires_at=row["expires_at"],metadata=dict(row["metadata"] or {}),conflict_key=row.get("conflict_key"))
         return MemoryRecord(candidate=c,status=MemoryStatus(row["status"]),version=row["version"],confirmed_by=row["confirmed_by"],created_at=row["created_at"],updated_at=row["updated_at"],deleted_at=row["deleted_at"])
     async def put(self,record: MemoryRecord)->None:
         c=record.candidate; conn=await self._connect()
         async with conn:
             async with conn.transaction():
                 if record.version==1:
-                    await conn.execute("""INSERT INTO platform_memories(tenant_id,memory_id,scope,scope_id,content,source_ref,confidence,status,version,created_by,confirmed_by,expires_at,metadata,created_at,updated_at,deleted_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)""",(c.tenant_id,c.memory_id,c.scope.value,c.scope_id,c.content,c.source_ref,c.confidence,record.status.value,c.created_by,record.confirmed_by,c.expires_at,_jsonb(c.metadata),record.created_at,record.updated_at,record.deleted_at))
+                    await conn.execute("""INSERT INTO platform_memories(tenant_id,memory_id,scope,scope_id,content,source_ref,confidence,status,version,created_by,confirmed_by,expires_at,metadata,conflict_key,created_at,updated_at,deleted_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s)""",(c.tenant_id,c.memory_id,c.scope.value,c.scope_id,c.content,c.source_ref,c.confidence,record.status.value,c.created_by,record.confirmed_by,c.expires_at,_jsonb(c.metadata),c.conflict_key,record.created_at,record.updated_at,record.deleted_at))
                 else:
-                    cur=await conn.execute("""UPDATE platform_memories SET content=%s,source_ref=%s,confidence=%s,status=%s,version=%s,confirmed_by=%s,updated_at=%s,deleted_at=%s WHERE tenant_id=%s AND memory_id=%s AND version=%s AND deleted_at IS NULL""",(c.content,c.source_ref,c.confidence,record.status.value,record.version,record.confirmed_by,record.updated_at,record.deleted_at,c.tenant_id,c.memory_id,record.version-1))
+                    cur=await conn.execute("""UPDATE platform_memories SET content=%s,source_ref=%s,confidence=%s,conflict_key=%s,status=%s,version=%s,confirmed_by=%s,updated_at=%s,deleted_at=%s WHERE tenant_id=%s AND memory_id=%s AND version=%s AND deleted_at IS NULL""",(c.content,c.source_ref,c.confidence,c.conflict_key,record.status.value,record.version,record.confirmed_by,record.updated_at,record.deleted_at,c.tenant_id,c.memory_id,record.version-1))
                     if cur.rowcount!=1:raise RuntimeError("memory version conflict")
     async def get(self,tenant_id: str,memory_id: str)->MemoryRecord|None:
         conn=await self._connect()
