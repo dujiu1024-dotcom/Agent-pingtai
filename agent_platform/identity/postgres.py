@@ -52,8 +52,10 @@ class PostgresIdentityRepository:
                 return None
 
             cursor = await connection.execute(
-                """SELECT DISTINCT rp.permission_key
+                """SELECT DISTINCT r.role_id, rp.permission_key
                    FROM platform_role_bindings b
+                   JOIN platform_roles r
+                     ON r.tenant_id=b.tenant_id AND r.role_id=b.role_id
                    JOIN platform_role_permissions rp
                      ON rp.tenant_id=b.tenant_id AND rp.role_id=b.role_id
                    WHERE b.tenant_id=%s AND b.resource_type='tenant'
@@ -73,7 +75,11 @@ class PostgresIdentityRepository:
                      )""",
                 (tenant_id, tenant_id, user_id, tenant_id, user_id),
             )
-            tenant_permissions = frozenset(row["permission_key"] for row in await cursor.fetchall())
+            tenant_role_rows = await cursor.fetchall()
+            tenant_roles = frozenset(row["role_id"] for row in tenant_role_rows)
+            tenant_permissions = frozenset(
+                row["permission_key"] for row in tenant_role_rows
+            )
 
             cursor = await connection.execute(
                 """SELECT DISTINCT p.project_id
@@ -182,6 +188,7 @@ class PostgresIdentityRepository:
         return AuthorizationContext(
             tenant_id=tenant_id,
             user_id=user_id,
+            tenant_roles=tenant_roles,
             tenant_permissions=tenant_permissions,
             project_ids=project_ids,
             knowledge_manage_project_ids=knowledge_manage_project_ids,
