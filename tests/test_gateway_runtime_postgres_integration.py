@@ -50,7 +50,16 @@ class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
   await self.directory.register(record)
   other=PostgresEndpointDirectory(self.connect); found=await other.get(self.tenant,self.run)
   self.assertEqual(found.instance_id,"gateway-a")
-  self.assertTrue(await other.deactivate(self.tenant,self.run))
+  self.assertTrue(await other.heartbeat(self.tenant,self.run,"gateway-a",lease_seconds=20))
+  async with await self.connect() as conn:
+   await conn.execute("UPDATE platform_gateway_endpoints SET lease_expires_at=now()-interval '1 second' WHERE tenant_id=%s AND run_id=%s",(self.tenant,self.run))
+   await conn.commit()
+  takeover=EndpointRecord(self.tenant,self.run,"gateway-b","https://gateway-b.example/mcp","active",datetime.now(timezone.utc))
+  await other.register(takeover)
+  self.assertEqual((await self.directory.get(self.tenant,self.run)).instance_id,"gateway-b")
+  self.assertFalse(await self.directory.deactivate(self.tenant,self.run,"gateway-a"))
+  self.assertTrue(await self.directory.heartbeat(self.tenant,self.run,"gateway-b",lease_seconds=20))
+  self.assertTrue(await self.directory.deactivate(self.tenant,self.run,"gateway-b"))
   self.assertEqual((await self.directory.get(self.tenant,self.run)).status,"inactive")
  async def test_worker_lease_is_exclusive_and_expired_lease_can_be_reclaimed(self):
   first=await self.states.claim_recoverable("worker-a",tenant_id=self.tenant,limit=10,lease_seconds=5)
