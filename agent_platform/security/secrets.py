@@ -25,6 +25,7 @@ class SecretMetadataRepository(Protocol):
     async def list_versions(self, secret_ref: str) -> list[SecretVersion]: ...
     async def create_version(self, secret_ref: str, version: int, created_at: datetime) -> None: ...
     async def activate_version(self, secret_ref: str, version: int) -> None: ...
+    async def revoke_version(self, secret_ref: str, version: int, revoked_at: datetime) -> None: ...
     async def revoke_all(self, secret_ref: str, revoked_at: datetime) -> list[int]: ...
 
 
@@ -57,12 +58,15 @@ class SecretManager:
         versions = await self.metadata.list_versions(secret_ref)
         version = max((item.version for item in versions), default=0) + 1
         now = datetime.now(timezone.utc)
-        await self.backend.put(secret_ref, version, value)
+        # Reserve the version in the metadata store before touching the vault.
+        # The unique (secret_ref, version) key serializes concurrent writers.
+        await self.metadata.create_version(secret_ref, version, now)
         try:
-            await self.metadata.create_version(secret_ref, version, now)
+            await self.backend.put(secret_ref, version, value)
             await self.metadata.activate_version(secret_ref, version)
         except Exception:
             await self.backend.revoke(secret_ref, version)
+            await self.metadata.revoke_version(secret_ref, version, datetime.now(timezone.utc))
             raise
         return SecretVersion(secret_ref, version, "active", now)
 
@@ -160,6 +164,17 @@ class PostgresSecretMetadataRepository:
                 )
                 if await cursor.fetchone() is None:
                     raise RuntimeError("secret version activation failed")
+
+    async def revoke_version(self, secret_ref: str, version: int,
+                             revoked_at: datetime) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """UPDATE platform_secret_versions SET status='revoked',
+                          revoked_at=%s
+                   WHERE secret_ref=%s AND version=%s AND status='pending'""",
+                (revoked_at, secret_ref, version),
+            )
 
     async def revoke_all(self, secret_ref: str, revoked_at: datetime) -> list[int]:
         connection = await self._connect()
