@@ -89,9 +89,10 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
             "workspace_resolver": lambda _ctx: self.workspace,
             "home_resolver": lambda _ctx: self.home,
             "credential_resolver": lambda _template, _ctx: {
-                "DEEPSEEK_API_KEY": "test-key"
+                "DEEPSEEK_API_KEY": "scoped-proxy-token",
+                "DEEPSEEK_BASE_URL": "http://model-proxy.internal/v1"
             },
-            "sandbox_verified": True,
+            "container_isolation_verified": True,
             "sdk_factory": self.factory,
         }
         options.update(overrides)
@@ -108,8 +109,8 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options["env"]["DSH_PERMISSION_MODE"], "read-only")
 
     async def test_requires_verified_sandbox(self):
-        with self.assertRaisesRegex(RuntimeError, "verified isolated sandbox"):
-            await self.adapter(sandbox_verified=False).run(self.request)
+        with self.assertRaisesRegex(RuntimeError, "verified container filesystem and network isolation"):
+            await self.adapter(container_isolation_verified=False).run(self.request)
 
     async def test_rejects_tool_calls_until_gateway_profile_is_ready(self):
         request = HarnessRequest(
