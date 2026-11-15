@@ -87,30 +87,26 @@ class LangGraphRunExecutor:
     raise WorkerLeaseLost("could not acquire Run worker lease")
   try:
    await self.lifecycle.start(tenant_id,run_id)
-  except Exception:
-   if acquired and release is not None:
-    await release(tenant_id,run_id,self.worker_id)
-   raise
-  config=self._config(tenant_id,run_id)
-  try:
-   result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
-    timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
-    already_claimed=acquired)
-  except asyncio.TimeoutError:raise
-  except WorkerLeaseLost:raise
-  except asyncio.CancelledError:
-   current=await self.lifecycle.store.get(tenant_id,run_id)
-   if current and current.status==RunStatus.RUNNING:
+   config=self._config(tenant_id,run_id)
+   try:
+    result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
+     timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
+     already_claimed=acquired)
+   except asyncio.TimeoutError:raise
+   except WorkerLeaseLost:raise
+   except asyncio.CancelledError:
+    current=await self.lifecycle.store.get(tenant_id,run_id)
+    if current and current.status==RunStatus.RUNNING:
+     ref=await self._checkpoint_ref(tenant_id,run_id)
+     await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
+    raise
+   except Exception as exc:
     ref=await self._checkpoint_ref(tenant_id,run_id)
-    await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
-   raise
-  except Exception as exc:
+    await self._finish(tenant_id,run_id,RunStatus.FAILED,checkpoint_ref=ref,error=str(exc)[:500])
+    raise
    ref=await self._checkpoint_ref(tenant_id,run_id)
-   await self._finish(tenant_id,run_id,RunStatus.FAILED,checkpoint_ref=ref,error=str(exc)[:500])
-   raise
-  ref=await self._checkpoint_ref(tenant_id,run_id)
-  await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
-  return result
+   await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
+   return result
   finally:
    if acquired and release is not None:
     await release(tenant_id,run_id,self.worker_id)
