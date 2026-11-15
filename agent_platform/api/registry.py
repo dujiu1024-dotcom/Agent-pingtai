@@ -83,6 +83,27 @@ def create_registry_router(
         except (RegistryError, RegistryConflict) as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    @router.get("/{kind}/{item_id}/versions")
+    async def list_versions(kind: str, item_id: str, request: Request):
+        principal, service = await context(request, kind, item_id, "read")
+        versions = await service.repository.list_versions(
+            principal.tenant_id, kind, item_id,
+        )
+        return {"items": [serialize(item) for item in versions]}
+
+    @router.post("/{kind}/{item_id}/disable")
+    async def disable(kind: str, item_id: str, request: Request):
+        principal, service = await context(request, kind, item_id, "publish")
+        try:
+            return serialize(await service.disable(
+                tenant_id=principal.tenant_id, kind=kind, item_id=item_id,
+                actor_id=principal.user_id,
+            ))
+        except RegistryNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except (RegistryError, RegistryConflict) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @router.get("/{kind}/{item_id}/active")
     async def get_active(kind: str, item_id: str, request: Request):
         principal, service = await context(request, kind, item_id, "read")
