@@ -51,14 +51,14 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
             await conn.commit()
 
-    def make_entry(self, *, content=None, status=EntryStatus.PROPOSED, entry_id=None, correlation_id=None):
+    def make_entry(self, *, content=None, status=None, entry_id=None, correlation_id=None):
         return BlackboardEntry(
             scope=Scope.RUN,
             scope_id="run-integration",
             kind=EntryKind.FACT,
             content=content or {"fact": "original"},
             author_id="expert-a",
-            status=status,
+            status=status or EntryStatus.PROPOSED,
             entry_id=entry_id or str(uuid4()),
             correlation_id=correlation_id or str(uuid4()),
         )
