@@ -234,5 +234,32 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "idempotency conflict"):
             await services._propose_once(changed)
 
+
+    async def test_entry_ids_are_tenant_scoped_and_require_run_identity(self):
+        first = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=WorkflowCallbacks(),
+        )
+        second = BlackboardMultiExpertServices(
+            tenant_id="tenant-b", repository=InMemoryBlackboard(),
+            callbacks=WorkflowCallbacks(),
+        )
+        context_a = {"tenant_id": "tenant-a", "run_id": "same-run"}
+        context_b = {"tenant_id": "tenant-b", "run_id": "same-run"}
+        entry_a = await first.run_expert(
+            assignment={"expert_id": "researcher"},
+            objective="analyze market", run_context=context_a,
+        )
+        entry_b = await second.run_expert(
+            assignment={"expert_id": "researcher"},
+            objective="analyze market", run_context=context_b,
+        )
+        self.assertNotEqual(entry_a["blackboard_entry_id"], entry_b["blackboard_entry_id"])
+        with self.assertRaisesRegex(ValueError, "requires run_id or thread_id"):
+            await first.plan_experts(
+                objective="analyze market", run_context={"tenant_id": "tenant-a"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
