@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 from agent_platform.identity.models import ResourceRef, SessionRecord, UserRecord
 from agent_platform.identity.security import CredentialError, PasswordHasher, token_digest
 from agent_platform.identity.service import AuthenticationError, AuthorizationDenied, IdentityService
@@ -40,7 +41,8 @@ class FakeIdentityRepository:
         self.touched.append((session_id, tenant_id))
         return any(
             record.session_id == session_id and record.tenant_id == tenant_id
-            and record.revoked_at is None and record.expires_at > __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            and record.revoked_at is None
+            and record.expires_at > datetime.now(timezone.utc)
             for record in self.sessions.values()
         )
 
