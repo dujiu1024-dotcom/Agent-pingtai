@@ -441,7 +441,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         binding_id = await self.service.grant_role(
             principal=principal,
             subject_type="user",
-            subject_id="user-target",
+            subject_id=str(self.user_id),
             resource=ResourceRef("tenant", self.tenant_id),
             role_id="viewer",
         )
@@ -453,9 +453,9 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
         async with await self.connect() as conn:
             cur = await conn.execute(
                 """SELECT action FROM platform_identity_audit
-                   WHERE tenant_id=%s AND subject_id='user-target'
+                   WHERE tenant_id=%s AND subject_id=%s
                    ORDER BY audit_id""",
-                (self.tenant_id,),
+                (self.tenant_id, str(self.user_id)),
             )
             self.assertEqual([row["action"] for row in await cur.fetchall()],
                              ["role.granted", "role.revoked"])
