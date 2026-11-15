@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import hmac
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -22,12 +23,21 @@ class WebhookSubscription:
 
     def __post_init__(self) -> None:
         parsed = urlsplit(self.url)
+        hostname = (parsed.hostname or "").lower()
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            address = None
         if (
-            parsed.scheme != "https" or not parsed.hostname
+            parsed.scheme != "https" or not hostname
             or parsed.username is not None or parsed.password is not None
-            or parsed.fragment or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+            or parsed.fragment or hostname.endswith((".localhost", ".local", ".internal"))
+            or (address is not None and (
+                address.is_private or address.is_loopback or address.is_link_local
+                or address.is_reserved or address.is_unspecified
+            ))
         ):
-            raise ValueError("webhook URL must be an absolute HTTPS URL without credentials or localhost")
+            raise ValueError("webhook URL must be public HTTPS without credentials or private targets")
         if not self.secret_ref or not self.topics:
             raise ValueError("secret_ref and at least one topic are required")
 
