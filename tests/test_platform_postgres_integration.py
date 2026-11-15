@@ -406,7 +406,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_authorization_context_resolves_only_active_tenant_resources(self):
-        project_ids = [f"project-{uuid4().hex[:8]}" for _ in range(2)]
+        project_ids = [f"project-{uuid4().hex[:8]}" for _ in range(3)]
         agent_id = f"agent-{uuid4().hex[:8]}"
         async with await self.connect() as conn:
             for project_id in project_ids:
@@ -416,18 +416,45 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                        VALUES (%s, %s, %s, %s)""",
                     (self.tenant_id, project_id, project_id, project_id),
                 )
+            # Membership without an RBAC binding is not an effective grant.
             await conn.execute(
                 """INSERT INTO platform_project_members
                    (tenant_id, project_id, user_id, status)
                    VALUES (%s, %s, %s, 'active')""",
                 (self.tenant_id, project_ids[0], self.user_id),
             )
+            # Project 1 is read-only.
             await conn.execute(
                 """INSERT INTO platform_role_bindings
                    (binding_id, tenant_id, subject_type, subject_id,
                     resource_type, resource_id, role_id, created_by)
                    VALUES (%s, %s, 'user', %s, 'project', %s, 'reader', 'integration')""",
                 (uuid4(), self.tenant_id, str(self.user_id), project_ids[1]),
+            )
+            # Project 2 grants knowledge management, independently of project 1.
+            await conn.execute(
+                """INSERT INTO platform_permissions (permission_key, description)
+                   VALUES ('knowledge.manage', 'Manage project knowledge')
+                   ON CONFLICT DO NOTHING"""
+            )
+            await conn.execute(
+                """INSERT INTO platform_roles (tenant_id, role_id, name)
+                   VALUES (%s, 'knowledge-manager', 'Knowledge Manager')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_permissions
+                   (tenant_id, role_id, permission_key)
+                   VALUES (%s, 'knowledge-manager', 'knowledge.manage')""",
+                (self.tenant_id,),
+            )
+            await conn.execute(
+                """INSERT INTO platform_role_bindings
+                   (binding_id, tenant_id, subject_type, subject_id,
+                    resource_type, resource_id, role_id, created_by)
+                   VALUES (%s, %s, 'user', %s, 'project', %s,
+                           'knowledge-manager', 'integration')""",
+                (uuid4(), self.tenant_id, str(self.user_id), project_ids[2]),
             )
             await conn.execute(
                 """INSERT INTO platform_agents
@@ -458,8 +485,14 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, user_id=str(self.user_id),
         )
         self.assertIsNotNone(context)
-        self.assertEqual(context.tenant_permissions, frozenset({"project.read", "identity.role.manage", "user.manage"}))
-        self.assertEqual(context.project_ids, frozenset({project_ids[1]}))
+        self.assertEqual(
+            context.tenant_permissions,
+            frozenset({"project.read", "identity.role.manage", "user.manage"}),
+        )
+        self.assertEqual(context.project_ids, frozenset(project_ids[1:]))
+        self.assertEqual(
+            context.knowledge_manage_project_ids, frozenset({project_ids[2]}),
+        )
         self.assertEqual(context.agent_ids, frozenset({agent_id}))
         self.assertIsNone(await self.repository.get_authorization_context(
             tenant_id=f"other-{uuid4().hex}", user_id=str(self.user_id),
