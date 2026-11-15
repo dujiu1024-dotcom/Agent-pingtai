@@ -48,11 +48,12 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
             async def revoke(self,*,tenant_id,credential_ref):
                 return None
         service=KnowledgeService(InMemoryKnowledgeRepository())
-        results,cursor,more=await service.ingest_connector_page(connector=Connector(),tenant_id="t")
-        self.assertEqual(len(results),1)
-        self.assertEqual(cursor,"next")
-        self.assertFalse(more)
-        case=RAGEvalCase(case_id="case-1",query="evidence",expected_document_ids=frozenset({results[0].document.document_id}),principal=KnowledgePrincipal(tenant_id="t",user_id="u"))
+        result=await service.sync_connector(connector=Connector(),tenant_id="t")
+        self.assertEqual(result["documents"],1)
+        self.assertEqual(result["cursor"],"next")
+        self.assertFalse(result["has_more"])
+        self.assertEqual(await service.repository.get_connector_cursor("t","fixture"),"next")
+        case=RAGEvalCase(case_id="case-1",query="evidence",expected_document_ids=frozenset({next(iter(service.repository.documents.values())).document_id}),principal=KnowledgePrincipal(tenant_id="t",user_id="u"))
         report=await evaluate_retrieval(service,[case],k=3)
         self.assertEqual(report[0].recall_at_k,1.0)
         self.assertEqual(report[0].citation_coverage,1.0)
