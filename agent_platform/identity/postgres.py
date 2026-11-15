@@ -124,6 +124,10 @@ class PostgresIdentityRepository:
                     SELECT 1 FROM platform_tenants t
                     WHERE t.tenant_id=%s AND t.status='active'
                   )
+                  AND EXISTS (
+                    SELECT 1 FROM platform_users u
+                    WHERE u.user_id=%s AND u.status='active'
+                  )
                   AND ((b.subject_type='user' AND b.subject_id=%s)
                     OR (b.subject_type='team' AND b.subject_id IN (
                       SELECT tm.team_id FROM platform_team_memberships tm
@@ -149,7 +153,7 @@ class PostgresIdentityRepository:
                   )
             ) AS allowed""", (
                 tenant_id, permission_key, tenant_id, user_id, tenant_id, user_id,
-                tenant_id, user_id, resource_type, resource_id, tenant_id, resource_type,
+                user_id, tenant_id, user_id, resource_type, resource_id, tenant_id, resource_type,
                 tenant_id, resource_id,
             ))
             row = await cursor.fetchone()
