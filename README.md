@@ -174,4 +174,4 @@ python3 agency.py init && python3 agency.py doctor
 - 工具身份、租户、角色、审批 ID、资源解析均来自服务端上下文；参数使用 JSON Schema 校验。
 - MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
 - Strands 仅通过 `GatewayToolProvider` 接收当前 Run 的 MCP 工具；缺少 Provider 时拒绝工具调用。L2 审批 ID 按动作摘要绑定，不按工具名宽泛复用。
-- MCP 传输连接和认证部署仍需完成端到端验证。
+- 已通过 MCP SDK 内存传输验证 ClientSession 工具发现和调用；生产传输连接和认证部署仍需完成端到端验证。
