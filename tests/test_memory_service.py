@@ -141,6 +141,43 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
                 turn=MemoryTurn(tenant_id="other",user_id="u",source_ref="conversation:other",user_message="x"),
             )
 
+    async def test_extraction_requires_scoped_manage_grant_for_shared_memory(self):
+        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+
+        class ProjectExtractor:
+            async def extract(self, *, turn):
+                return [MemoryDraft(
+                    scope=MemoryScope.PROJECT,
+                    scope_id="project-a",
+                    content="shared project decision",
+                    confidence=.9,
+                )]
+
+        pipeline = MemoryExtractionService(
+            memory=MemoryService(InMemoryMemoryRepository()),
+            extractor=ProjectExtractor(),
+        )
+        reader = MemoryPrincipal(
+            tenant_id="t", user_id="reader",
+            project_ids=frozenset({"project-a"}),
+        )
+        turn = MemoryTurn(
+            tenant_id="t", user_id="reader", source_ref="conversation:1",
+            user_message="Project decision",
+            project_id="project-a",
+        )
+        with self.assertRaises(PermissionError):
+            await pipeline.propose_from_turn(principal=reader, turn=turn)
+
+        manager = MemoryPrincipal(
+            tenant_id="t", user_id="manager",
+            project_ids=frozenset({"project-a"}),
+            manage_project_ids=frozenset({"project-a"}),
+        )
+        records = await pipeline.propose_from_turn(principal=manager, turn=turn)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].candidate.scope, MemoryScope.PROJECT)
+
     async def test_extraction_cannot_write_unapproved_tenant_scope(self):
         from agent_platform.memory.extraction import MemoryDraft,MemoryExtractionService,MemoryTurn
         class TenantExtractor:
