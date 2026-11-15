@@ -30,7 +30,7 @@ def create_blackboard_router(
     async def repository_for(principal: Principal):
         repository = await resolve_repository(principal)
         bound_tenant = getattr(repository, "tenant_id", None)
-        if bound_tenant is not None and bound_tenant != principal.tenant_id:
+        if bound_tenant != principal.tenant_id:
             raise HTTPException(403, "Blackboard repository tenant mismatch")
         return repository
 
