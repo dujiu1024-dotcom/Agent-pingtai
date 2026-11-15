@@ -152,9 +152,9 @@ class InMemoryQuotaStore:
                 raise BudgetExceeded("concurrency quota exceeded")
             self._reservations[reservation.reservation_id] = reservation
             warnings = []
-            if budget.soft_tokens is not None and tokens + reservation.reserved_tokens > budget.soft_tokens:
+            if budget.soft_tokens is not None and tokens + reservation.reserved_tokens >= budget.soft_tokens:
                 warnings.append("soft token budget exceeded")
-            if budget.soft_cost_usd is not None and cost + reservation.reserved_cost_usd > budget.soft_cost_usd:
+            if budget.soft_cost_usd is not None and cost + reservation.reserved_cost_usd >= budget.soft_cost_usd:
                 warnings.append("soft cost budget exceeded")
             return reservation, tuple(warnings)
 
