@@ -6,6 +6,7 @@ revocation wins over an in-flight sync and triggers the configured data disposit
 from __future__ import annotations
 
 import copy
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
@@ -138,14 +139,20 @@ class DataConnectorService:
         self, *, tenant_id: str, connection_id: str, provider: str,
         display_name: str, secret_ref: str, scopes: tuple[str, ...], actor_id: str,
     ) -> DataConnection:
-        if not tenant_id.strip() or not actor_id.strip() or not connection_id.strip():
-            raise ConnectorError("tenant, connection and actor identifiers are required")
+        if (
+            not tenant_id.strip() or not actor_id.strip()
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", connection_id)
+        ):
+            raise ConnectorError("tenant, actor and valid connection identifiers are required")
         if provider not in self.providers:
             raise ConnectorError("connector provider is not registered")
         if not display_name.strip() or len(display_name) > 120:
             raise ConnectorError("display name must contain 1 to 120 characters")
-        if not secret_ref.startswith("secret://") or len(secret_ref) > 512:
-            raise ConnectorError("credentials must be stored as a secret:// reference")
+        if (
+            not secret_ref.startswith("secret://") or len(secret_ref) > 512
+            or any(character.isspace() for character in secret_ref)
+        ):
+            raise ConnectorError("credentials must be stored as a valid secret:// reference")
         normalized_scopes = tuple(sorted(set(scope.strip() for scope in scopes if scope.strip())))
         if not normalized_scopes or any(len(scope) > 128 for scope in normalized_scopes):
             raise ConnectorError("one or more valid connector scopes are required")
