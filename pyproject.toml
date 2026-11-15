@@ -21,6 +21,8 @@ include = [
   "tests/test_sync.py",
   "tests/test_feishu_config.py",
   "tests/test_conversation.py",
+  "agent_platform/**/*.py",
+  "tests/test_platform_contracts.py",
 ]
 
 [tool.ruff.lint]
@@ -29,7 +31,14 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
-files = ["intent.py", "tools/schedule_wbs.py"]
+files = [
+  "intent.py",
+  "tools/schedule_wbs.py",
+  "agent_platform/contracts.py",
+  "agent_platform/approval/policy.py",
+  "agent_platform/runtime/protocols.py",
+  "agent_platform/blackboard/protocol.py",
+]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
 follow_imports = "silent"
