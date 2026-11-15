@@ -77,7 +77,7 @@ class PostgresServiceIdentityRepository:
                          WHERE sa.tenant_id=%s AND sa.service_account_id=%s
                            AND sa.status='active' AND t.status='active'
                        )
-                       AND (%s IS NULL OR EXISTS (
+                       AND (%s::text IS NULL OR EXISTS (
                          SELECT 1 FROM platform_agent_identities ai
                          WHERE ai.tenant_id=%s AND ai.agent_id=%s
                            AND ai.service_account_id=%s AND ai.status='active'
