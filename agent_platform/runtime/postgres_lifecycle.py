@@ -50,7 +50,7 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
-    WHERE status IN ('queued','interrupted')
+    WHERE (status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now()))
     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
     )
@@ -86,7 +86,8 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at FROM platform_runs
-    WHERE status IN ('queued','interrupted','paused')
+    WHERE status='paused'
+       OR (status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now()))
     ORDER BY created_at LIMIT %s""",(limit,))
    return [self._snapshot(row) for row in await cur.fetchall()]
