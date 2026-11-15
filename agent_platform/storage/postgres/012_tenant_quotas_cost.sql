@@ -41,6 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_platform_quota_reservations_active
     WHERE status = 'active';
 CREATE TABLE IF NOT EXISTS platform_usage_ledger (
     event_id uuid PRIMARY KEY,
+    reservation_id uuid NOT NULL UNIQUE REFERENCES platform_quota_reservations(reservation_id),
     tenant_id text NOT NULL,
     run_id uuid NOT NULL,
     model_key text NOT NULL,
@@ -169,13 +170,20 @@ BEGIN
     END IF;
     SELECT * INTO r FROM platform_quota_reservations
      WHERE reservation_id=p_reservation_id FOR UPDATE;
-    IF NOT FOUND OR r.status <> 'active' THEN RETURN false; END IF;
+    IF NOT FOUND THEN RETURN false; END IF;
+    IF r.status = 'settled' THEN
+        RETURN EXISTS (
+            SELECT 1 FROM platform_usage_ledger
+            WHERE reservation_id=p_reservation_id AND event_id=p_event_id
+        );
+    END IF;
+    IF r.status <> 'active' THEN RETURN false; END IF;
     INSERT INTO platform_usage_ledger(
-        event_id,tenant_id,run_id,model_key,project_id,agent_id,task_id,
+        event_id,reservation_id,tenant_id,run_id,model_key,project_id,agent_id,task_id,
         input_tokens,output_tokens,tool_calls,runtime_ms,storage_bytes,
         cost_usd,price_card_version,source,occurred_at
     ) VALUES (
-        p_event_id,r.tenant_id,r.run_id,p_model_key,p_project_id,p_agent_id,p_task_id,
+        p_event_id,p_reservation_id,r.tenant_id,r.run_id,p_model_key,p_project_id,p_agent_id,p_task_id,
         p_input_tokens,p_output_tokens,p_tool_calls,p_runtime_ms,p_storage_bytes,
         p_cost_usd,p_price_card_version,p_source,p_occurred_at
     );
