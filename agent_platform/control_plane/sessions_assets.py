@@ -243,7 +243,12 @@ class SessionAssetService:
             await self.storage.delete(object_key)
             raise
         if self.scanner is not None:
-            accepted = await self.scanner.scan(clean_name, media_type, content)
+            try:
+                accepted = await self.scanner.scan(clean_name, media_type, content)
+            except Exception as exc:
+                await self.repository.set_asset_status(tenant_id, asset_id, AssetStatus.REJECTED)
+                await self.storage.delete(object_key)
+                raise SessionError("file safety scan failed") from exc
             status = AssetStatus.AVAILABLE if accepted else AssetStatus.REJECTED
             await self.repository.set_asset_status(tenant_id, asset_id, status)
             if not accepted:
