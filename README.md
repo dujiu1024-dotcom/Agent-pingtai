@@ -156,6 +156,7 @@ python3 agency.py init && python3 agency.py doctor
 - Supervised 审批策略：`agent_platform/approval/`
 - LangGraph 与 Harness 适配端口：`agent_platform/runtime/`
 - DeepSeek Harness 实验适配器（需隔离环境）：`agent_platform/runtime/deepseek_harness.py`，可选依赖 `pip install -r requirements-harness-dsh.txt`
+- Strands Agents 对比适配器（无平台工具、受控模型代理）：`agent_platform/runtime/strands_agents.py`，可选依赖 `pip install -r requirements-harness-strands.txt`
 - PostgreSQL + pgvector / Redis Streams 服务级集成测试：`tests/test_platform_postgres_integration.py`、`tests/test_redis_streams_integration.py`，由 `platform-integration` 工作流自动运行
 - 模型模板注册与校验：`agent_platform/models/`
 - 多专家 LangGraph 流程：`agent_platform/workflows/multi_expert.py`
