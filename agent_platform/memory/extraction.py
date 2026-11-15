@@ -73,11 +73,17 @@ class MemoryExtractionService:
                 if draft.scope_id != principal.user_id:
                     raise PermissionError("user memory scope must match the principal")
             elif draft.scope is MemoryScope.AGENT:
-                if draft.scope_id not in principal.agent_ids:
-                    raise PermissionError("agent memory scope is not authorized")
+                if (
+                    draft.scope_id not in principal.manage_agent_ids
+                    and "memory.manage" not in principal.roles
+                ):
+                    raise PermissionError("agent memory management is not authorized")
             elif draft.scope is MemoryScope.PROJECT:
-                if draft.scope_id not in principal.project_ids:
-                    raise PermissionError("project memory scope is not authorized")
+                if (
+                    draft.scope_id not in principal.manage_project_ids
+                    and "memory.manage" not in principal.roles
+                ):
+                    raise PermissionError("project memory management is not authorized")
             elif draft.scope is MemoryScope.TENANT:
                 if "memory.manage" not in principal.roles:
                     raise PermissionError("tenant memory requires memory.manage")
