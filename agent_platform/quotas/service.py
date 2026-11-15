@@ -74,6 +74,11 @@ class UsageEvent:
     occurred_at: datetime
     project_id: str | None = None
     agent_id: str | None = None
+    tool_calls: int = 0
+    runtime_ms: int = 0
+    storage_bytes: int = 0
+    price_card_version: str | None = None
+    source: str = "estimated"
 
     @property
     def total_tokens(self) -> int:
@@ -211,15 +216,21 @@ class QuotaService:
         self, reservation: QuotaReservation, *, model_key: str,
         input_tokens: int, output_tokens: int, cost_usd: Decimal,
         occurred_at: datetime | None = None, project_id: str | None = None,
-        agent_id: str | None = None,
+        agent_id: str | None = None, tool_calls: int = 0, runtime_ms: int = 0,
+        storage_bytes: int = 0, price_card_version: str | None = None,
+        source: str = "estimated",
     ) -> UsageEvent:
-        if min(input_tokens, output_tokens) < 0 or cost_usd < 0:
+        if min(input_tokens, output_tokens, tool_calls, runtime_ms, storage_bytes) < 0 or cost_usd < 0:
             raise ValueError("actual usage must be non-negative")
+        if source not in {"estimated", "provider_reported", "reconciled"}:
+            raise ValueError("invalid usage source")
         event = UsageEvent(
             event_id=str(uuid4()), tenant_id=reservation.tenant_id, run_id=reservation.run_id,
             model_key=model_key, input_tokens=input_tokens, output_tokens=output_tokens,
             cost_usd=cost_usd, occurred_at=occurred_at or datetime.now(timezone.utc),
-            project_id=project_id, agent_id=agent_id,
+            project_id=project_id, agent_id=agent_id, tool_calls=tool_calls,
+            runtime_ms=runtime_ms, storage_bytes=storage_bytes,
+            price_card_version=price_card_version, source=source,
         )
         await self.store.settle(reservation.reservation_id, event)
         return event
