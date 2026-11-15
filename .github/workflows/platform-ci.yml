@@ -60,7 +60,7 @@ jobs:
       - name: 平台领域与审批策略测试
         run: python -m unittest tests.test_platform_contracts tests.test_identity tests.test_tool_gateway tests.test_outbox tests.test_multi_expert_routing tests.test_mcp_adapter tests.test_gateway_mcp tests.test_model_templates tests.test_deepseek_harness_adapter tests.test_strands_agents_adapter tests.test_strands_mcp_provider tests.test_harness_benchmark tests.test_event_consumer -v
       - name: 平台代码 Lint
-        run: ruff check agent_platform tests/test_platform_contracts.py tests/test_identity.py tests/test_tool_gateway.py tests/test_outbox.py tests/test_multi_expert_routing.py tests/test_mcp_adapter.py tests/test_gateway_mcp.py tests/test_model_templates.py tests/test_deepseek_harness_adapter.py tests/test_strands_agents_adapter.py tests/test_harness_benchmark.py tests/test_event_consumer.py tests/test_platform_postgres_integration.py tests/test_redis_streams_integration.py
+        run: ruff check agent_platform tests/test_platform_contracts.py tests/test_identity.py tests/test_tool_gateway.py tests/test_outbox.py tests/test_multi_expert_routing.py tests/test_mcp_adapter.py tests/test_gateway_mcp.py tests/test_model_templates.py tests/test_deepseek_harness_adapter.py tests/test_strands_agents_adapter.py tests/test_strands_mcp_provider.py tests/test_harness_benchmark.py tests/test_event_consumer.py tests/test_platform_postgres_integration.py tests/test_redis_streams_integration.py
       - name: 平台接口类型检查
         run: mypy
 
