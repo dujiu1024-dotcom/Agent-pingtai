@@ -173,4 +173,5 @@ python3 agency.py init && python3 agency.py doctor
 - `agent_platform/tools/gateway_mcp.py`：按 Run 创建 MCP Server，只暴露可信白名单内的工具。
 - 工具身份、租户、角色、审批 ID、资源解析均来自服务端上下文；参数使用 JSON Schema 校验。
 - MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
-- Harness 侧连接和传输层认证仍需单独完成端到端验证。
+- Strands 仅通过 `GatewayToolProvider` 接收当前 Run 的 MCP 工具；缺少 Provider 时拒绝工具调用。
+- MCP 传输连接和认证部署仍需完成端到端验证。
