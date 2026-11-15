@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from agent_platform.blackboard.protocol import BlackboardRepository
 from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
+from agent_platform.workflows.expert_registry import ExpertRegistry
 
 
 class MultiExpertCallbacks(Protocol):
@@ -27,12 +28,13 @@ class MultiExpertCallbacks(Protocol):
 
 
 class BlackboardMultiExpertServices:
-    def __init__(self, *, tenant_id: str, repository: BlackboardRepository, callbacks: MultiExpertCallbacks) -> None:
+    def __init__(self, *, tenant_id: str, repository: BlackboardRepository, callbacks: MultiExpertCallbacks, expert_registry: ExpertRegistry | None = None) -> None:
         if not tenant_id.strip():
             raise ValueError("tenant_id must not be empty")
         self.tenant_id = tenant_id
         self.repository = repository
         self.callbacks = callbacks
+        self.expert_registry = expert_registry
 
     @staticmethod
     def _entry_id(run_id: str, key: str) -> str:
@@ -69,7 +71,19 @@ class BlackboardMultiExpertServices:
 
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         self._scope(run_context)
-        return await self.callbacks.plan_experts(objective=objective, run_context=run_context)
+        assignments = [dict(item) for item in await self.callbacks.plan_experts(objective=objective, run_context=run_context)]
+        if self.expert_registry is None:
+            return assignments
+        for assignment in assignments:
+            expert_id = str(assignment.get("expert_id") or "")
+            profile = await self.expert_registry.get(expert_id)
+            if profile is None or not profile.enabled:
+                raise PermissionError(f"expert is not registered or enabled: {expert_id}")
+            required = {str(item) for item in assignment.get("required_capabilities", [])}
+            if not required.issubset(profile.capabilities):
+                missing = ", ".join(sorted(required - profile.capabilities))
+                raise ValueError(f"expert {expert_id} lacks required capabilities: {missing}")
+        return assignments
 
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]:
         scope, scope_id = self._scope(run_context)
