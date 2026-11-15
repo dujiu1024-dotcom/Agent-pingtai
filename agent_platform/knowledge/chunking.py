@@ -1,0 +1,29 @@
+"""Deterministic text chunking with source offsets and content hashes."""
+from __future__ import annotations
+import hashlib
+import re
+from agent_platform.knowledge.contracts import Document, DocumentChunk
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def chunk_document(document: Document, text: str, *, max_chars: int = 1200, overlap: int = 160) -> tuple[DocumentChunk, ...]:
+    if max_chars < 100 or overlap < 0 or overlap >= max_chars:
+        raise ValueError("max_chars must be >=100 and overlap must be in [0, max_chars)")
+    normalized = re.sub(r"\r\n?", "\n", text).strip()
+    chunks: list[DocumentChunk] = []
+    start = 0
+    while start < len(normalized):
+        hard_end = min(len(normalized), start + max_chars)
+        end = hard_end
+        if hard_end < len(normalized):
+            boundary = max(normalized.rfind("\n", start, hard_end), normalized.rfind("。", start, hard_end), normalized.rfind(". ", start, hard_end))
+            if boundary > start + max_chars // 2: end = boundary + 1
+        raw = normalized[start:end]
+        body = raw.strip()
+        if body:
+            offset = start + len(raw) - len(raw.lstrip())
+            chunks.append(DocumentChunk(tenant_id=document.tenant_id, document_id=document.document_id, document_version=document.version, ordinal=len(chunks), text=body, content_hash=sha256_text(body), start_offset=offset, end_offset=offset + len(body)))
+        if end >= len(normalized): break
+        start = max(start + 1, end - overlap)
+    return tuple(chunks)
