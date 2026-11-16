@@ -71,6 +71,10 @@ def create_platform_app(
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
+    alert_store: Any | None = None,
+    alert_manage_authorizer: Any | None = None,
+    evaluation_repository: Any | None = None,
+    evaluation_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
     audit_reader: Any | None = None,
     audit_authorizer: Any | None = None,
@@ -148,8 +152,26 @@ def create_platform_app(
     )
     app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
-    if metrics_exporter is not None:
-        app.include_router(create_observability_router(metrics=metrics_exporter))
+    evaluation_configured = any(value is not None for value in (
+        evaluation_repository, evaluation_manage_authorizer,
+    ))
+    if evaluation_configured and any(value is None for value in (
+        evaluation_repository, evaluation_manage_authorizer,
+    )):
+        raise ValueError(
+            "evaluation repository and evaluation manager authorizer must be configured together"
+        )
+    observability_api_configured = any(value is not None for value in (
+        metrics_exporter, alert_store, evaluation_repository,
+    ))
+    if observability_api_configured:
+        app.include_router(create_observability_router(
+            metrics=metrics_exporter,
+            alert_store=alert_store,
+            authorize_alert_manage=alert_manage_authorizer,
+            evaluation_repository=evaluation_repository,
+            authorize_eval_manage=evaluation_manage_authorizer,
+        ))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
         memory=memory,
