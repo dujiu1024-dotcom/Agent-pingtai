@@ -20,6 +20,7 @@ class TaskLease:
     session_id: str | None
     input: Mapping[str, Any]
     attempts: int
+    max_attempts: int
     lease_owner: str
 
 
@@ -162,15 +163,15 @@ class PostgresTaskCenterService:
             async with db.transaction():
                 cursor = await db.execute(
                     """SELECT * FROM platform_tasks
-                       WHERE status='queued'
+                       WHERE (status='queued' AND available_at<=now())
                           OR (status='running' AND lease_expires_at<=now())
-                       ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"""
+                       ORDER BY available_at,created_at LIMIT 1 FOR UPDATE SKIP LOCKED"""
                 )
                 row = await cursor.fetchone()
                 if row is None:
                     return None
                 updated = await db.execute(
-                    """UPDATE platform_tasks SET status='running',lease_owner=%s,
+                    """UPDATE platform_tasks SET status='running',attempts=attempts+1,lease_owner=%s,
                          lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
                        WHERE tenant_id=%s AND task_id=%s RETURNING *""",
                     (worker_id, lease_seconds, self.tenant_id, row["task_id"]),
@@ -181,7 +182,8 @@ class PostgresTaskCenterService:
             actor_id=claimed["actor_id"], agent_id=claimed["agent_id"],
             project_id=claimed["project_id"],
             session_id=str(claimed["session_id"]) if claimed["session_id"] else None,
-            input=dict(claimed["input"]), attempts=1, lease_owner=worker_id,
+            input=dict(claimed["input"]), attempts=claimed["attempts"],
+            max_attempts=claimed["max_attempts"], lease_owner=worker_id,
         )
 
     async def set_run_id(self, lease: TaskLease, run_id: str) -> None:
@@ -213,14 +215,34 @@ class PostgresTaskCenterService:
             if await cursor.fetchone() is None:
                 raise TaskCenterError("task lease was lost before completion")
 
+    async def heartbeat(self, lease: TaskLease, *, lease_seconds: int = 60) -> bool:
+        if lease_seconds < 5:
+            raise ValueError("lease_seconds must be at least 5")
+        db = await self._connect()
+        async with db:
+            cursor = await db.execute(
+                """UPDATE platform_tasks SET lease_expires_at=now()+(%s * interval '1 second')
+                   WHERE tenant_id=%s AND task_id=%s AND status='running'
+                     AND lease_owner=%s AND lease_expires_at>now()
+                   RETURNING task_id""",
+                (lease_seconds, self.tenant_id, UUID(lease.task_id), lease.lease_owner),
+            )
+            return await cursor.fetchone() is not None
+
     async def fail(self, lease: TaskLease, *, error: str) -> None:
+        dead = lease.attempts >= lease.max_attempts
+        delay = min(1800, 2 ** min(lease.attempts, 10))
         db = await self._connect()
         async with db:
             await db.execute(
-                """UPDATE platform_tasks SET status='failed',last_error=%s,
-                     lease_owner=NULL,lease_expires_at=NULL,finished_at=now(),updated_at=now()
+                """UPDATE platform_tasks SET status=%s,last_error=%s,
+                     available_at=now()+(%s * interval '1 second'),
+                     lease_owner=NULL,lease_expires_at=NULL,
+                     finished_at=CASE WHEN %s THEN now() ELSE finished_at END,
+                     updated_at=now()
                    WHERE tenant_id=%s AND task_id=%s AND status='running' AND lease_owner=%s""",
-                (error[:500], self.tenant_id, UUID(lease.task_id), lease.lease_owner),
+                ("failed" if dead else "queued", error[:500], delay, dead,
+                 self.tenant_id, UUID(lease.task_id), lease.lease_owner),
             )
 
     @staticmethod
@@ -245,23 +267,45 @@ class TaskQueueWorker:
     def __init__(
         self, *, service: PostgresTaskCenterService, worker_id: str,
         execute_task: Callable[[TaskLease], Awaitable[Mapping[str, Any]]],
+        lease_seconds: int = 60,
     ) -> None:
         self.service = service
         self.worker_id = worker_id
         self.execute_task = execute_task
+        if lease_seconds < 5:
+            raise ValueError("lease_seconds must be at least 5")
+        self.lease_seconds = lease_seconds
 
     async def run_once(self) -> bool:
-        lease = await self.service.claim_next(worker_id=self.worker_id)
+        lease = await self.service.claim_next(
+            worker_id=self.worker_id, lease_seconds=self.lease_seconds,
+        )
         if lease is None:
             return False
+        execution = asyncio.create_task(self.execute_task(lease))
+        async def heartbeat() -> None:
+            while True:
+                await asyncio.sleep(max(1, self.lease_seconds / 3))
+                if not await self.service.heartbeat(lease, lease_seconds=self.lease_seconds):
+                    execution.cancel()
+                    raise TaskCenterError("task worker lease was lost")
+        beat = asyncio.create_task(heartbeat())
         try:
-            result = dict(await self.execute_task(lease))
+            done, _ = await asyncio.wait({execution, beat}, return_when=asyncio.FIRST_COMPLETED)
+            if beat in done:
+                await beat
+            result = dict(await execution)
             run_id = result.pop("run_id", None)
             if run_id:
                 await self.service.set_run_id(lease, str(run_id))
             await self.service.complete(lease, output=result)
         except asyncio.CancelledError:
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
             raise
         except Exception as exc:
             await self.service.fail(lease, error=type(exc).__name__)
+        finally:
+            beat.cancel()
+            await asyncio.gather(beat, return_exceptions=True)
         return True
