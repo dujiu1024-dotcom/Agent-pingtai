@@ -240,8 +240,30 @@ class OpenAICompatibleModelRouter:
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
-        if self.audit_sink is None or not callable(getattr(self.audit_sink, "record", None)):
+        audit_sink = self.audit_sink
+        if audit_sink is None or not callable(getattr(audit_sink, "record", None)):
             raise ModelUsageRecordingError("model routing requires a durable audit sink")
+
+        async def record_preflight_failure(
+            *, candidate_id: str, reason: str, outcome: str = "denied",
+            error_type: str | None = None,
+        ) -> None:
+            detail: dict[str, Any] = {
+                "phase": "preflight", "run_id": run_id,
+                "template_id": candidate_id, "reason": reason,
+            }
+            if error_type is not None:
+                detail["error_type"] = error_type
+            try:
+                await audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.response", subject_id=request_id,
+                    outcome=outcome, detail=detail,
+                )
+            except Exception as exc:
+                raise ModelUsageRecordingError(
+                    "model preflight result could not be durably audited"
+                ) from exc
         parameters = request_parameters or {}
         reserved = {
             "model", "messages", "stream", "tools", "tool_choice",
@@ -254,15 +276,41 @@ class OpenAICompatibleModelRouter:
             raise ValueError("model route candidates must be unique")
         last_error: Exception | None = None
         for index, candidate in enumerate(candidates):
+            # Write-ahead audit before registry resolution and quota checks so
+            # rejected attempts are visible and no Provider can run unaudited.
+            try:
+                await audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.request", subject_id=request_id,
+                    outcome="started",
+                    detail={
+                        "phase": "started", "run_id": run_id,
+                        "template_id": candidate, "fallback_attempt": index > 0,
+                    },
+                )
+            except Exception as exc:
+                raise ModelUsageRecordingError(
+                    "model request was not dispatched because write-ahead audit failed"
+                ) from exc
             try:
                 config = await self.resolver.resolve(snapshot=snapshot, template_id=candidate)
             except ModelRegistryError as exc:
+                await record_preflight_failure(
+                    candidate_id=candidate, reason="pinned_model_configuration_invalid",
+                    outcome="failed", error_type=type(exc).__name__,
+                )
                 # A malformed or absent pinned definition is configuration failure,
                 # not a provider outage; never silently route around it.
                 raise ModelRoutingError("pinned model configuration is invalid") from exc
             if not set(required_capabilities).issubset(config.capabilities):
+                await record_preflight_failure(
+                    candidate_id=candidate, reason="required_capability_missing",
+                )
                 raise ModelRoutingError("pinned model lacks required capabilities")
             if data_level not in config.allowed_data_levels:
+                await record_preflight_failure(
+                    candidate_id=candidate, reason="data_level_not_allowed",
+                )
                 raise ModelRoutingError("model is not approved for the requested data level")
             started = monotonic()
             status = "failed"
@@ -345,27 +393,6 @@ class OpenAICompatibleModelRouter:
                     estimated_input_tokens=estimate.input_tokens,
                     estimated_output_tokens=estimate.output_tokens,
                 )
-            # Write-ahead model audit is mandatory. Never dispatch to a provider
-            # when the platform cannot durably record the attempt.
-            try:
-                await self.audit_sink.record(
-                    tenant_id=tenant_id, actor_id="system:model-router",
-                    action="model.request", subject_id=request_id,
-                    outcome="succeeded",
-                    detail={
-                        "phase": "started", "run_id": run_id,
-                        "provider_id": config.provider_id,
-                        "provider_version": config.provider_version,
-                        "model_id": config.model_id,
-                        "template_id": config.template_id,
-                        "template_version": config.template_version,
-                        "fallback_attempt": index > 0,
-                    },
-                )
-            except Exception as exc:
-                raise ModelUsageRecordingError(
-                    "model request was not dispatched because write-ahead audit failed"
-                ) from exc
             try:
                 with safe_observation(
                     self.observer, name="model.complete",

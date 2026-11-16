@@ -144,13 +144,34 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             [(event["action"], event["outcome"], event["detail"]["phase"] if "phase" in event["detail"] else "result")
              for event in audit.events],
             [
-                ("model.request", "succeeded", "started"),
+                ("model.request", "started", "started"),
                 ("model.response", "failed", "result"),
-                ("model.request", "succeeded", "started"),
+                ("model.request", "started", "started"),
                 ("model.response", "succeeded", "result"),
             ],
         )
         self.assertEqual(audit.events[-1]["detail"]["input_tokens"], 3)
+        self.assertNotIn("hello", str(audit.events))
+
+    async def test_preflight_rejection_is_audited_without_provider_dispatch(self):
+        audit = AuditRecorder()
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit,
+            resolver=RegistryModelResolver(Secrets()), transport=transport,
+        )
+        with self.assertRaisesRegex(ModelRoutingError, "required capabilities"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-a",
+                template_id="primary", required_capabilities=("vision",),
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-preflight",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(
+            [(event["action"], event["outcome"]) for event in audit.events],
+            [("model.request", "started"), ("model.response", "denied")],
+        )
         self.assertNotIn("hello", str(audit.events))
 
     async def test_data_level_mismatch_fails_before_provider_call(self):
