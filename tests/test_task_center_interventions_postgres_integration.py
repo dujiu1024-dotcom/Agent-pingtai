@@ -260,6 +260,7 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
     async def test_postgres_checkpoint_survives_worker_restart_and_resumes(self):
         try:
             from langgraph.graph import END, START, StateGraph
+            from typing import TypedDict
             from agent_platform.runtime.postgres_checkpointer import postgres_run_executor
             from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
             from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
@@ -282,8 +283,12 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         step_two_calls = 0
         fail_first_step_two = True
 
+        class RecoveryState(TypedDict, total=False):
+            value: int
+            done: bool
+
         def build_graph():
-            graph = StateGraph(dict)
+            graph = StateGraph(RecoveryState)
 
             async def step_one(state):
                 nonlocal step_one_calls
