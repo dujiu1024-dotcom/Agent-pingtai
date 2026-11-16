@@ -12,7 +12,6 @@ from agent_platform.runtime.protocols import (
     HarnessResult,
 )
 
-
 _SUPPORTED_SCHEMA_KEYWORDS = frozenset({
     "type", "enum", "properties", "required", "additionalProperties", "items",
     "minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum",
