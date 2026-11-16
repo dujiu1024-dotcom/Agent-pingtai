@@ -27,7 +27,8 @@ END $$;
 ALTER TABLE platform_runs
     ADD COLUMN IF NOT EXISTS created_by text NOT NULL DEFAULT 'platform-system',
     ADD COLUMN IF NOT EXISTS idempotency_key text,
-    ADD COLUMN IF NOT EXISTS request_digest char(64);
+    ADD COLUMN IF NOT EXISTS request_digest char(64),
+    ADD COLUMN IF NOT EXISTS session_id text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_runs_actor_idempotency
     ON platform_runs (tenant_id, created_by, idempotency_key)
