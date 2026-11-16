@@ -1,7 +1,8 @@
 """PostgreSQL Run state store with optimistic transitions and worker leases."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
+from uuid import UUID
 
 from agent_platform.runtime.lifecycle import _ALLOWED, RunSnapshot, RunStateStore, RunStatus
 
@@ -22,6 +23,90 @@ class PostgresRunStateStore(RunStateStore):
  def _snapshot(row:dict[str,Any]|None)->RunSnapshot|None:
   if row is None:return None
   return RunSnapshot(row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),row["checkpoint_ref"],row["last_error"],row["updated_at"])
+ async def create_task_run(self, *, tenant_id:str, run_id:str, actor_id:str,
+  agent_id:str, template_id:str, template_version:int, input:Mapping[str,Any],
+  project_id:str|None=None, workflow_id:str|None=None,
+  idempotency_key:str|None=None, request_digest:str|None=None)->bool:
+  if not tenant_id.strip() or not actor_id.strip() or not agent_id.strip() or not template_id.strip():
+   raise ValueError("tenant, actor, Agent and model template are required")
+  if template_version < 1:
+   raise ValueError("template_version must be positive")
+  run_uuid=UUID(run_id)
+  try:
+   from psycopg.types.json import Jsonb
+  except ImportError as exc:
+   raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+  c=await self._connect()
+  async with c:
+   async with c.transaction():
+    cur=await c.execute("""INSERT INTO platform_runs
+     (tenant_id,run_id,project_id,task_id,agent_id,template_id,template_version,
+      workflow_id,status,input,created_by,idempotency_key,request_digest)
+     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s)
+     ON CONFLICT (tenant_id,created_by,idempotency_key)
+       WHERE idempotency_key IS NOT NULL DO NOTHING
+     RETURNING run_id""",
+     (tenant_id,run_uuid,project_id,str(run_uuid),agent_id,template_id,
+      template_version,workflow_id,Jsonb(dict(input)),actor_id,idempotency_key,request_digest))
+    inserted=await cur.fetchone()
+    if inserted is not None:
+     return True
+    if idempotency_key is None:
+     raise RuntimeError("Run identifier collision")
+    cur=await c.execute("""SELECT request_digest FROM platform_runs
+     WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s FOR UPDATE""",
+     (tenant_id,actor_id,idempotency_key))
+    existing=await cur.fetchone()
+    if existing is None:
+     raise RuntimeError("idempotent task insertion conflict could not be resolved")
+    if existing["request_digest"] != request_digest:
+     raise ValueError("idempotency_key was already used with a different task request")
+    return False
+
+ async def get_task_record(self, tenant_id:str, task_id:str, *, actor_id:str|None=None)->dict[str,Any]|None:
+  c=await self._connect()
+  async with c:
+   query="""SELECT tenant_id,run_id,task_id,project_id,agent_id,template_id,
+    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
+    checkpoint_ref,last_error,registry_snapshot_digest
+    FROM platform_runs WHERE tenant_id=%s AND task_id=%s"""
+   params:list[Any]=[tenant_id,task_id]
+   if actor_id is not None:
+    query+=" AND created_by=%s";params.append(actor_id)
+   cur=await c.execute(query,tuple(params))
+   row=await cur.fetchone()
+  return dict(row) if row is not None else None
+
+ async def list_task_records(self, tenant_id:str, actor_id:str, *, limit:int=100)->list[dict[str,Any]]:
+  if not 1<=limit<=200:raise ValueError("limit must be between 1 and 200")
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,agent_id,template_id,
+    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
+    checkpoint_ref,last_error,registry_snapshot_digest
+    FROM platform_runs WHERE tenant_id=%s AND created_by=%s
+    ORDER BY created_at DESC LIMIT %s""",(tenant_id,actor_id,limit))
+   rows=await cur.fetchall()
+  return [dict(row) for row in rows]
+
+ async def save_output(self, tenant_id:str, run_id:str, output:Any, *,
+  usage:Mapping[str,Any]|None=None, trace_id:str|None=None)->None:
+  try:
+   from psycopg.types.json import Jsonb
+  except ImportError as exc:
+   raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""UPDATE platform_runs SET output=%s,usage=%s,
+    trace_id=COALESCE(%s,trace_id),updated_at=now()
+    WHERE tenant_id=%s AND run_id=%s AND status='succeeded' RETURNING run_id""",
+    (Jsonb(output) if isinstance(output,(dict,list)) else Jsonb({"text":str(output)}),
+     Jsonb(dict(usage or {})),trace_id,tenant_id,UUID(run_id)))
+   if await cur.fetchone() is None:
+    raise RuntimeError("cannot persist output for a Run that has not succeeded")
+
  async def get(self,tenant_id:str,run_id:str)->RunSnapshot|None:
   c=await self._connect()
   async with c:
@@ -53,7 +138,7 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
-    WHERE ((status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
+    WHERE ((status IN ('queued','interrupted','cancelling') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
       AND (%s::text IS NULL OR tenant_id=%s)
     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
@@ -76,7 +161,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_runs SET lease_expires_at=now()+(%s * interval '1 second')
-    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND lease_expires_at>now() AND status IN ('running','cancelling')
+    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND lease_expires_at>now() AND status='running'
     RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
  async def release_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
@@ -91,7 +176,7 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at FROM platform_runs
     WHERE status='paused'
-       OR (status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
+       OR (status IN ('queued','interrupted','cancelling') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now()))
     ORDER BY created_at LIMIT %s""",(limit,))
    return [self._snapshot(row) for row in await cur.fetchall()]
