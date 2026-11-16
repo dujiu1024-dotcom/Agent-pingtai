@@ -29,7 +29,7 @@ backup_config() {
   archive_tmp="$(mktemp "$BACKUP_DIR/.config-archive.XXXXXX")"
   manifest_tmp="$(mktemp "$BACKUP_DIR/.config-manifest.XXXXXX")"
   encrypted_tmp="$(mktemp "$BACKUP_DIR/.config-encrypted.XXXXXX")"
-  trap 'rm -f "$archive_tmp" "$manifest_tmp" "$encrypted_tmp"' RETURN
+  trap 'rm -f "$archive_tmp" "$manifest_tmp" "$encrypted_tmp"' EXIT
   tar -C "$ROOT" -czf "$archive_tmp" deploy/compose.yaml "$env_relative" deploy/backup-policy.json scripts/migrate_postgres.sh agent_platform/storage/postgres
   age --encrypt --recipient "$AGE_RECIPIENT" --output "$encrypted_tmp" "$archive_tmp"
   mv "$encrypted_tmp" "$base.tar.gz.age"
