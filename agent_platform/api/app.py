@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI
 
 from agent_platform.api.approvals import create_approval_router
+from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
@@ -64,6 +65,8 @@ def create_platform_app(
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
+    audit_reader: Any | None = None,
+    audit_authorizer: Any | None = None,
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
     quota_service: Any | None = None,
@@ -176,6 +179,7 @@ def create_platform_app(
             "blackboard": blackboard_configured,
             "quotas": quota_reporting_store is not None or quota_store is not None,
             "metrics": metrics_exporter is not None,
+            "audit": audit_reader is not None and audit_authorizer is not None,
         },
         resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,
@@ -194,6 +198,13 @@ def create_platform_app(
             raise ValueError("approval service and approver authorizer must be configured together")
         app.include_router(create_approval_router(
             service=approval_service, authorize_approver=approval_authorizer,
+        ))
+    audit_configured = any(value is not None for value in (audit_reader, audit_authorizer))
+    if audit_configured:
+        if audit_reader is None or audit_authorizer is None:
+            raise ValueError("audit reader and audit authorizer must be configured together")
+        app.include_router(create_audit_router(
+            reader=audit_reader, authorize_read=audit_authorizer,
         ))
     quota_configured = any(value is not None for value in (
         quota_reporting_store, quota_service, quota_manage_authorizer, quota_scope_authorizer,
