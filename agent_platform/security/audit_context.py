@@ -1,7 +1,7 @@
 """Request-scoped audit context and explicit action audit boundary."""
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
@@ -47,7 +47,7 @@ class AuditContext:
 
     def __init__(self, actor: AuditActor) -> None:
         self.actor = actor
-        self._token = None
+        self._token: Token[AuditActor | None] | None = None
 
     def __enter__(self) -> "AuditContext":
         self._token = _current_actor.set(self.actor)
