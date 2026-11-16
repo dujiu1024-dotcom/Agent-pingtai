@@ -6,7 +6,10 @@ import unittest
 from pathlib import Path
 
 from agent_platform.data_governance.migration_batches import (
-    MigrationError, TableMapping, migration_batch_status, migration_diff_report,
+    MigrationError,
+    TableMapping,
+    migration_batch_status,
+    migration_diff_report,
     run_migration_batch,
 )
 
