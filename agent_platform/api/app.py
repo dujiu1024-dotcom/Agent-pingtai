@@ -151,8 +151,8 @@ def create_platform_app(
             getattr(task_worker, "stop", None)
         ):
             raise ValueError("task_worker must expose async start() and stop() lifecycle methods")
-        app.add_event_handler("startup", task_worker.start)
-        app.add_event_handler("shutdown", task_worker.stop)
+        app.router.on_startup.append(task_worker.start)
+        app.router.on_shutdown.append(task_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
         blackboard_evidence_verifier,
