@@ -69,6 +69,26 @@ class QuotaReservation:
     reserved_input_tokens: int = 0
     reserved_output_tokens: int = 0
 
+    def __post_init__(self) -> None:
+        if not self.reservation_id or not self.tenant_id or not self.run_id:
+            raise ValueError("reservation, tenant and run ids are required")
+        if self.scope_type not in {"tenant", "project", "agent", "model"} or not self.scope_id:
+            raise ValueError("invalid reservation quota scope")
+        counters = (
+            self.reserved_tokens, self.reserved_input_tokens, self.reserved_output_tokens,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counters):
+            raise ValueError("reserved token counters must be non-negative integers")
+        if self.reserved_input_tokens + self.reserved_output_tokens != self.reserved_tokens:
+            raise ValueError("total reserved tokens must equal input plus output tokens")
+        if not isinstance(self.reserved_cost_usd, Decimal) or not self.reserved_cost_usd.is_finite() or self.reserved_cost_usd < 0:
+            raise ValueError("reserved cost must be a finite non-negative Decimal")
+        if (
+            self.created_at.tzinfo is None or self.period_start.tzinfo is None
+            or self.period_end.tzinfo is None or self.period_end <= self.period_start
+        ):
+            raise ValueError("reservation timestamps must be ordered and timezone-aware")
+
 
 @dataclass(frozen=True)
 class UsageEvent:
@@ -87,6 +107,22 @@ class UsageEvent:
     storage_bytes: int = 0
     price_card_version: str | None = None
     source: str = "estimated"
+
+    def __post_init__(self) -> None:
+        if not self.event_id or not self.tenant_id or not self.run_id or not self.model_key:
+            raise ValueError("usage event identifiers and model_key are required")
+        counters = (
+            self.input_tokens, self.output_tokens, self.tool_calls,
+            self.runtime_ms, self.storage_bytes,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counters):
+            raise ValueError("usage counters must be non-negative integers")
+        if not isinstance(self.cost_usd, Decimal) or not self.cost_usd.is_finite() or self.cost_usd < 0:
+            raise ValueError("usage cost must be a finite non-negative Decimal")
+        if self.occurred_at.tzinfo is None:
+            raise ValueError("usage timestamp must be timezone-aware")
+        if self.source not in {"estimated", "provider_reported", "reconciled"}:
+            raise ValueError("invalid usage source")
 
     @property
     def total_tokens(self) -> int:
