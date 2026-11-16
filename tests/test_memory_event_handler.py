@@ -7,7 +7,10 @@ from agent_platform.control_plane.sessions_assets import (
     ConversationMessage, ConversationSession, MessageRole,
 )
 from agent_platform.events.consumer import EventEnvelope
-from agent_platform.memory.event_handler import MemoryExtractionEventHandler
+from agent_platform.memory.event_handler import (
+    MemoryExtractionEventHandler,
+    create_memory_extraction_event_worker,
+)
 from agent_platform.memory.service import MemoryPrincipal
 
 
@@ -176,6 +179,25 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "output is not persisted"):
             await self.handler(repository=repository)(make_event())
         self.assertEqual(self.extraction.turns, [])
+
+    async def test_factory_composes_tenant_scoped_consumer(self):
+        transport = SimpleNamespace()
+        receipts = SimpleNamespace()
+        worker = create_memory_extraction_event_worker(
+            tenant_id=TENANT,
+            consumer_name="memory-worker-a",
+            transport=transport,
+            receipts=receipts,
+            run_store=FakeRunStore(),
+            session_service_resolver=lambda tenant: self.service,
+            memory_principal_resolver=lambda tenant, actor: self.principal,
+            extraction=self.extraction,
+            policy_enabled=lambda tenant, project, agent: True,
+        )
+        self.assertEqual(worker.consumer.tenant_id, TENANT)
+        self.assertEqual(worker.consumer.topic, "memory.extraction.requested")
+        self.assertIs(worker.consumer.transport, transport)
+        self.assertIs(worker.consumer.receipts, receipts)
 
 
 if __name__ == "__main__":
