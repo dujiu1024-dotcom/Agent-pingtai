@@ -197,6 +197,36 @@ class PostgresTaskCenterService:
                 (self.tenant_id, UUID(lease.task_id), lease.lease_owner),
             )
 
+    async def reconcile_cancellation(self, lease: TaskLease) -> None:
+        task = await self.get_task(tenant_id=self.tenant_id, task_id=lease.task_id)
+        if task is None:
+            return
+        run_id = task["run_id"]
+        if run_id is None:
+            await self.acknowledge_cancel(lease)
+            return
+        if self._cancel_run is None:
+            await self.release_cancellation_lease(lease)
+            return
+        cancellation = await self._cancel_run(self.tenant_id, run_id)
+        run_status = cancellation.get("status") if isinstance(cancellation, Mapping) else getattr(cancellation, "status", None)
+        run_status = getattr(run_status, "value", run_status)
+        if run_status == "cancelled":
+            await self.acknowledge_cancel(lease)
+        else:
+            # The Run may still be stopping in another process. Release this
+            # task lease so a later poll can reconcile against durable Run state.
+            await self.release_cancellation_lease(lease)
+
+    async def release_cancellation_lease(self, lease: TaskLease) -> None:
+        db = await self._connect()
+        async with db:
+            await db.execute(
+                """UPDATE platform_tasks SET lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
+                   WHERE tenant_id=%s AND task_id=%s AND status='cancelling' AND lease_owner=%s""",
+                (self.tenant_id, UUID(lease.task_id), lease.lease_owner),
+            )
+
     async def claim_next(self, *, worker_id: str, lease_seconds: int = 60) -> TaskLease | None:
         if not worker_id.strip() or lease_seconds < 5:
             raise ValueError("worker_id and lease_seconds >= 5 are required")
@@ -335,7 +365,7 @@ class TaskQueueWorker:
         if lease is None:
             return False
         if lease.status == "cancelling":
-            await self.service.acknowledge_cancel(lease)
+            await self.service.reconcile_cancellation(lease)
             return True
         execution = asyncio.create_task(self.execute_task(lease))
         async def heartbeat() -> None:
