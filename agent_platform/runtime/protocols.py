@@ -1,4 +1,4 @@
-""""Ports implemented by open-source Harness and model-provider adapters."""
+"""Ports implemented by open-source Harness and model-provider adapters."""
 
 from __future__ import annotations
 
