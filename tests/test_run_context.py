@@ -60,6 +60,7 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
         await service.capture(
             tenant_id="tenant-a", run_id="run-a",
             references=[
+                {"ref_id": "policy", "title": "refreshed without pin flag"},
                 {"ref_id": "doc", "title": "updated"},
                 {"ref_id": "recent"},
             ],
@@ -67,6 +68,7 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
         rebuilt = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
         assert len(rebuilt["references"]) == 3
         assert rebuilt["references"][0]["ref_id"] == "policy"
+        assert rebuilt["references"][0]["pinned"] is True
         assert rebuilt["references"][1]["title"] == "updated"
         with pytest.raises(ValueError, match="pinned context references"):
             await service.capture(
