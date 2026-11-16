@@ -183,6 +183,48 @@ class PlatformApiCompositionTests(unittest.TestCase):
             self.assertTrue(worker.started)
         self.assertTrue(worker.stopped)
 
+    def test_outbox_relay_worker_is_started_and_stopped_with_api(self):
+        class Worker:
+            def __init__(self):
+                self.started = False
+                self.stopped = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.stopped = True
+
+        worker = Worker()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            outbox_relay_worker=worker,
+        )
+        with TestClient(app, base_url="https://testserver"):
+            self.assertTrue(worker.started)
+        self.assertTrue(worker.stopped)
+
+    def test_factory_rejects_invalid_outbox_worker_lifecycle(self):
+        class InvalidWorker:
+            async def start(self):
+                pass
+
+        with self.assertRaisesRegex(ValueError, "outbox_relay_worker"):
+            create_platform_app(
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                outbox_relay_worker=InvalidWorker(),
+            )
+
     def test_factory_rejects_wildcard_and_non_https_origins(self):
         arguments = {
             "identity": self.identity,
