@@ -125,6 +125,66 @@ def create_runs_router(
                 raise HTTPException(409, str(exc)) from exc
             return dict(result)
 
+        @router.post("/{run_id}/interventions/{intervention_id}/decision")
+        async def decide_intervention(run_id: str, intervention_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "intervene")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "JSON object is required") from exc
+            if (
+                not isinstance(body, dict)
+                or not isinstance(body.get("decision"), str)
+                or not isinstance(body.get("rationale", ""), str)
+            ):
+                raise HTTPException(400, "decision and optional rationale are required")
+            service = await resolve_interventions(principal)
+            try:
+                result = await service.decide(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    intervention_id=intervention_id, actor_id=principal.user_id,
+                    decision=body["decision"], rationale=body.get("rationale", ""),
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "intervention not found") from exc
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return dict(result)
+
+        @router.post("/{run_id}/result/revisions")
+        async def revise_run_result(run_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "revise")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "JSON object is required") from exc
+            if (
+                not isinstance(body, dict)
+                or not isinstance(body.get("output"), dict)
+                or not isinstance(body.get("reason"), str)
+            ):
+                raise HTTPException(400, "output object and revision reason are required")
+            service = await resolve_interventions(principal)
+            try:
+                result = await service.revise_result(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    actor_id=principal.user_id, output=body["output"],
+                    reason=body["reason"],
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "Run not found") from exc
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return dict(result)
+
         @router.get("/{run_id}/interventions")
         async def list_interventions(run_id: str, request: Request):
             principal, lifecycle = await context(request, run_id, "read")
