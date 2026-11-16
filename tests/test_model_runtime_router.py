@@ -204,5 +204,50 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("model_output_tokens_total", " ".join(counters))
 
 
+    async def test_missing_provider_usage_is_not_treated_as_zero_or_fallback(self):
+        class MissingUsageTransport:
+            def __init__(self):
+                self.calls = 0
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+                self.calls += 1
+                return {"choices": [{"message": {"content": "billable response"}}]}
+
+        transport = MissingUsageTransport()
+        usage = UsageRecorder()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport, usage_recorder=usage,
+        )
+        with self.assertRaisesRegex(Exception, "without provider usage"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-no-usage",
+                template_id="primary", fallback_template_ids=("fallback",),
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-no-usage",
+            )
+        self.assertEqual(transport.calls, 1)
+        self.assertEqual(usage.records, [])
+
+    async def test_boolean_token_usage_is_rejected(self):
+        class BooleanUsageTransport:
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+                return {
+                    "choices": [{"message": {"content": "answer"}}],
+                    "usage": {"prompt_tokens": True, "completion_tokens": 2},
+                }
+
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=BooleanUsageTransport(),
+        )
+        with self.assertRaisesRegex(Exception, "invalid token usage counters"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-bool-usage",
+                template_id="primary",
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-bool-usage",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
