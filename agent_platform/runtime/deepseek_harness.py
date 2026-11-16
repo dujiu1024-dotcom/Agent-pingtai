@@ -16,10 +16,10 @@ from typing import Any, Callable, Mapping
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
 from agent_platform.runtime.protocols import (
+    RUNTIME_ADAPTER_CONTRACT_VERSION,
     HarnessCapabilities,
     HarnessRequest,
     HarnessResult,
-    RUNTIME_ADAPTER_CONTRACT_VERSION,
     RuntimeAdapterDescriptor,
 )
 
