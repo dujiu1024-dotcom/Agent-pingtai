@@ -60,6 +60,7 @@ def create_platform_app(
     run_authorizer: Any | None = None,
     run_intervention_resolver: Any | None = None,
     run_detail_resolver: Any | None = None,
+    run_executor_resolver: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
@@ -222,5 +223,6 @@ def create_platform_app(
             authorize=run_authorizer,
             resolve_interventions=run_intervention_resolver,
             resolve_details=run_detail_resolver,
+            resolve_executor=run_executor_resolver,
         ))
     return app
