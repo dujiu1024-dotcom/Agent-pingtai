@@ -186,7 +186,7 @@ $("memoryList").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-memory-action]");if(!b)return;
  const id=encodeURIComponent(b.dataset.id),action=b.dataset.memoryAction;
  try{
-  if(action==="history"){const r=await api("/memories/"+id+"/history");$("memoryHistory").innerHTML=table((r.items||[]).map(x=>[x.version,x.status,x.content,x.updated_at]));return}
+  if(action==="history"){const r=await api("/memories/"+id+"/history");$("memoryHistory").innerHTML=table((r.items||[]).map(x=>[x.version,x.status,x.content,x.recorded_at]));return}
   if(action==="archive")await api("/memories/"+id+"/archive",{method:"POST",body:"{}"});
   else if(action==="forget")await api("/memories/"+id,{method:"DELETE"});
   msg("记忆操作已提交");await load("memory");
