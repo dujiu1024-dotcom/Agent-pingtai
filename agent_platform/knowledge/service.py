@@ -1,6 +1,8 @@
 """Knowledge ingestion, connector sync and ACL-first hybrid retrieval."""
 from __future__ import annotations
 
+import asyncio
+
 from typing import Protocol, Sequence
 
 from agent_platform.knowledge.chunking import chunk_document, sha256_text
@@ -47,7 +49,7 @@ class KnowledgeService:
         if len(content)>self.max_upload_bytes:
             raise ValueError("document exceeds configured upload size limit")
         from dataclasses import replace
-        text=self.parsers.parse(content,document.media_type)
+        text=await asyncio.to_thread(self.parsers.parse,content,document.media_type)
         digest=sha256_text(text)
         existing=await self.repository.get_document(document.tenant_id,document.document_id)
         if existing is not None:
