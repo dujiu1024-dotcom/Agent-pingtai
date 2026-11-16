@@ -35,7 +35,7 @@ function renderTasks(items,target){
  $(target).innerHTML="<table><thead><tr><th>任务</th><th>Agent</th><th>状态</th><th>操作</th></tr></thead><tbody>"+items.map(x=>{
   const id=x.task_id||x.run_id;
   const canCancel=["queued","running","paused","interrupted"].includes(x.status);
-  return "<tr><td>"+esc(id)+"</td><td>"+esc(x.agent_id)+"</td><td>"+esc(x.status)+"</td><td><button class='btn' data-task-action='detail' data-id='"+esc(id)+"'>详情</button> "+(canCancel?"<button class='btn' data-task-action='cancel' data-id='"+esc(id)+"'>取消</button>":"")+"</td></tr>";
+  return "<tr><td>"+esc(id)+"</td><td>"+esc(x.agent_id)+"</td><td>"+esc(x.status)+(x.status==="queued"&&!x.dispatch_ready?"（准备中）":"")+"</td><td><button class='btn' data-task-action='detail' data-id='"+esc(id)+"'>详情</button> "+(canCancel?"<button class='btn' data-task-action='cancel' data-id='"+esc(id)+"'>取消</button>":"")+"</td></tr>";
  }).join("")+"</tbody></table>";
 }
 $("runsList").addEventListener("click",async e=>{
