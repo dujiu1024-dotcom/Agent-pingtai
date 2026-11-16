@@ -73,7 +73,7 @@ $("approvalList").addEventListener("click",async e=>{
 async function load(view=current){msg("");try{
 if(!Object.keys(capabilities).length)await loadCapabilities();
 if(view==="overview"||view==="agents"){
-if(capabilities.agent_management){const a=await api("/registry/agent?limit=100");const items=a.items||a;if(view==="overview")$("agentCount").textContent=items.length;$("agentList").innerHTML=table(items.map(x=>[x.name||x.agent_id,x.status,x.model_template_ref]));}
+if(capabilities.agent_management){const a=await api("/registry/agent?limit=100");const items=a.items||[];if(view==="overview")$("agentCount").textContent=items.length;if(view==="agents")await loadRegistryKinds([["agent","Agent"]],"agentList");}
 else{$("agentCount").textContent="未接入";$("agentList").innerHTML=unavailable("Agent 管理 API（总控 #2 注册中心依赖）");}}
 if(view==="overview"||view==="runs"){
 if(capabilities.task_execution){const r=await api("/workbench/tasks?limit=100");const items=r.items||r;if(view==="overview"){$("runCount").textContent=items.filter(x=>["running","queued"].includes(x.status)).length;$("recentRuns").innerHTML=table(items.slice(0,8).map(x=>[x.task_id||x.run_id,x.agent_id,x.status]));}else $("runsList").innerHTML=table(items.map(x=>[x.task_id||x.run_id,x.agent_id,x.status,x.created_at||x.updated_at]));}
