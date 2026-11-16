@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Callable
 from uuid import UUID
 
@@ -10,7 +11,10 @@ from agent_platform.control_plane.data_connectors import (
     DataConnectorService,
 )
 
+logger = logging.getLogger(__name__)
+
 ConnectionFactory = Callable[[], Any]
+TenantServiceResolver = Callable[[str], Any]
 
 
 class PostgresConnectorCleanupQueue:
@@ -143,15 +147,45 @@ class PostgresConnectorCleanupQueue:
 class ConnectorCleanupWorker:
     def __init__(
         self, *, queue: PostgresConnectorCleanupQueue,
-        service: DataConnectorService, worker_id: str,
+        worker_id: str, service: DataConnectorService | None = None,
+        resolve_service: TenantServiceResolver | None = None,
         lease_seconds: int = 120,
     ) -> None:
         if not worker_id.strip() or lease_seconds < 5:
             raise ValueError("worker_id and lease_seconds >= 5 are required")
+        if (service is None) == (resolve_service is None):
+            raise ValueError("provide exactly one of service or tenant service resolver")
         self.queue = queue
         self.service = service
+        self.resolve_service = resolve_service
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        self._stop_event = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        if self._task is not None and not self._task.done():
+            return
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._run(), name="connector-cleanup-worker")
+
+    async def stop(self) -> None:
+        self._stop_event.set()
+        if self._task is not None:
+            await self._task
+            self._task = None
+
+    async def _run(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                if await self.run_once():
+                    continue
+            except Exception:
+                logger.exception("connector cleanup worker iteration failed")
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=1.0)
+            except TimeoutError:
+                pass
 
     async def run_once(self) -> bool:
         job = await self.queue.claim(
@@ -159,7 +193,15 @@ class ConnectorCleanupWorker:
         )
         if job is None:
             return False
-        processing = asyncio.create_task(self.service.process_cleanup(job))
+        async def cleanup() -> None:
+            service = self.service
+            if self.resolve_service is not None:
+                service = await self.resolve_service(job.tenant_id)
+            if service is None:
+                raise RuntimeError("tenant connector service is unavailable")
+            await service.process_cleanup(job)
+
+        processing = asyncio.create_task(cleanup())
         async def heartbeat() -> None:
             while True:
                 await asyncio.sleep(max(1, self.lease_seconds / 3))
