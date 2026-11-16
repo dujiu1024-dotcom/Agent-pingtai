@@ -175,6 +175,15 @@ class SessionListingApiTests(unittest.TestCase):
             extractor.turns[0].assistant_message,
             "I will use concise technical summaries.",
         )
+        repeated = client.post(
+            f"/api/platform/v1/sessions/{session.session_id}/memory-extract",
+        )
+        self.assertEqual(repeated.status_code, 202, repeated.text)
+        self.assertEqual(
+            repeated.json()["items"][0]["memory_id"],
+            payload["items"][0]["memory_id"],
+        )
+        self.assertEqual(len(extractor.turns), 1)
 
 
 if __name__ == "__main__":
