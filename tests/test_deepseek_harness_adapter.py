@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.models.templates import ModelTemplateRegistry
 from agent_platform.runtime.deepseek_harness import DeepSeekHarnessAdapter
-from agent_platform.runtime.protocols import HarnessRequest
+from agent_platform.runtime.protocols import HarnessRequest, MediaInput
 
 
 class FakeHarness:
@@ -107,6 +107,21 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options["cwd"], str(self.workspace.resolve()))
         self.assertEqual(options["dsh_home"], str(self.home.resolve()))
         self.assertEqual(options["env"]["DSH_PERMISSION_MODE"], "read-only")
+
+    async def test_rejects_undeclared_media_inputs(self):
+        request = HarnessRequest(
+            context=self.context,
+            instructions="",
+            input_text="",
+            media_inputs=(
+                MediaInput(
+                    modality="image", resource_id="asset-image",
+                    mime_type="image/png", size_bytes=1024, sha256="a" * 64,
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "does not declare"):
+            await self.adapter().run(request)
 
     async def test_requires_verified_container_isolation(self):
         with self.assertRaisesRegex(RuntimeError, "verified container filesystem and network isolation"):
