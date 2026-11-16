@@ -94,7 +94,11 @@ class InMemoryKnowledgeRepository:
                 latest[key] = document
         visible = []
         for document in latest.values():
-            if document.scope.value == "private" and document.owner_user_id != principal.user_id:
+            if (
+                document.scope.value == "private"
+                and document.owner_user_id != principal.user_id
+                and (document.tenant_id, document.document_id) not in self.document_acl_enforced
+            ):
                 continue
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
                 continue
@@ -129,7 +133,11 @@ class InMemoryKnowledgeRepository:
                 continue
             if any(other.tenant_id == document.tenant_id and other.document_id == document.document_id and other.version > document.version and other.deleted_at is None for other in self.documents.values()):
                 continue
-            if document.scope.value == "private" and document.owner_user_id != principal.user_id:
+            if (
+                document.scope.value == "private"
+                and document.owner_user_id != principal.user_id
+                and (document.tenant_id, document.document_id) not in self.document_acl_enforced
+            ):
                 continue
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
                 continue

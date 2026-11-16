@@ -63,6 +63,55 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(denied,[])
         self.assertEqual(len(allowed),1)
         self.assertEqual(len(role_allowed),1)
+
+    async def test_acl_grant_and_revoke_is_enforced_in_postgres_search(self):
+        document = Document(
+            tenant_id=self.tenant_id, title="private ACL source",
+            source_uri="file://private-acl", content_hash="pending",
+            scope=KnowledgeScope.PRIVATE, owner_user_id="owner",
+        )
+        chunk = DocumentChunk(
+            tenant_id=self.tenant_id, document_id=document.document_id,
+            document_version=1, ordinal=0, text="private retention alpha evidence",
+            content_hash="chunk-acl", start_offset=0, end_offset=32,
+        )
+        await self.knowledge.save_document(document, [chunk])
+        owner = KnowledgePrincipal(tenant_id=self.tenant_id, user_id="owner")
+        reader = KnowledgePrincipal(tenant_id=self.tenant_id, user_id="reader")
+        outsider = KnowledgePrincipal(tenant_id=self.tenant_id, user_id="outsider")
+
+        self.assertEqual(
+            len(await self.knowledge.search(
+                principal=owner, query="retention", query_vector=None, limit=5,
+            )), 1,
+        )
+        await self.knowledge.grant_document_access(
+            self.tenant_id, document.document_id, "user", "reader", "read", "owner",
+        )
+        self.assertEqual(
+            len(await self.knowledge.search(
+                principal=reader, query="retention", query_vector=None, limit=5,
+            )), 1,
+        )
+        self.assertEqual(
+            await self.knowledge.search(
+                principal=outsider, query="retention", query_vector=None, limit=5,
+            ), [],
+        )
+        self.assertTrue(await self.knowledge.revoke_document_access(
+            self.tenant_id, document.document_id, "user", "reader", "read",
+        ))
+        self.assertEqual(
+            await self.knowledge.search(
+                principal=reader, query="retention", query_vector=None, limit=5,
+            ), [],
+        )
+        self.assertEqual(
+            len(await self.knowledge.search(
+                principal=owner, query="retention", query_vector=None, limit=5,
+            )), 1,
+        )
+
     async def test_document_deletion_removes_chunks_and_acl(self):
         doc=Document(tenant_id=self.tenant_id,title="delete source",source_uri="file://delete",content_hash="h")
         chunk=DocumentChunk(tenant_id=self.tenant_id,document_id=doc.document_id,document_version=1,ordinal=0,text="gamma document",content_hash="c",start_offset=0,end_offset=15)
