@@ -420,3 +420,42 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[slide:1]", pptx_text)
         self.assertIn("Metric | Value", pptx_text)
         self.assertIn("Revenue | 125", pptx_text)
+
+
+    async def test_retrieval_emits_redacted_trace_and_low_cardinality_metrics(self):
+        from contextlib import contextmanager
+
+        from agent_platform.observability.metrics import InMemoryMetricsRecorder
+
+        class Span:
+            def __init__(self):
+                self.updates = []
+            def update(self, **kwargs):
+                self.updates.append(kwargs)
+
+        class Observer:
+            def __init__(self):
+                self.calls = []
+                self.span = Span()
+            @contextmanager
+            def observe(self, **kwargs):
+                self.calls.append(kwargs)
+                yield self.span
+
+        observer = Observer()
+        metrics = InMemoryMetricsRecorder()
+        service = KnowledgeService(
+            InMemoryKnowledgeRepository(), observer=observer, metrics=metrics,
+        )
+        await service.retrieve(
+            principal=KnowledgePrincipal(tenant_id="tenant-trace", user_id="u1"),
+            query="private search phrase",
+        )
+        self.assertEqual(observer.calls[0]["name"], "knowledge.retrieve")
+        self.assertEqual(observer.calls[0]["input"], {"query_chars": 21, "limit": 8})
+        self.assertNotIn("private search phrase", str(observer.calls))
+        self.assertEqual(observer.calls[0]["metadata"]["tenant_id"], "tenant-trace")
+        self.assertTrue(any("result_count" in item.get("output", {}) for item in observer.span.updates))
+        snapshot = metrics.snapshot()
+        self.assertIn('knowledge_retrieval_total{component="knowledge",status="succeeded"}',
+                      snapshot["counters"])
