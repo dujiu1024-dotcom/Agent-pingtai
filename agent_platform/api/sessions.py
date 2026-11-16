@@ -40,6 +40,18 @@ def create_sessions_router(
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "session repository tenant mismatch")
+        # Session ACL alone is insufficient for project-bound sessions: a
+        # stale or overly broad session grant must not bypass project ACL.
+        if resource_type == "session":
+            session = await service.repository.get_session(
+                principal.tenant_id, resource_id,
+            )
+            if session is None:
+                raise HTTPException(404, "session not found")
+            if session.project_id and not await authorize(
+                principal, "project", session.project_id, action,
+            ):
+                raise HTTPException(403, "linked project session access denied")
         return principal, service
 
     @router.get("/sessions")
