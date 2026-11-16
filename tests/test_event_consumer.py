@@ -83,7 +83,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_processes_event_and_acknowledges_after_receipt_completion(self):
-        message = ("1-0", {"event_id": "event-1", "payload": '{"value": 7}'})
+        message = ("1-0", {"event_id": "00000000-0000-0000-0000-000000000001", "payload": '{"value": 7}'})
         transport, receipts, handled = FakeTransport([message]), FakeReceipts(), []
 
         async def handler(event: EventEnvelope):
@@ -101,10 +101,10 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
             handled.append(event.event_id)
 
         consumer = self.make_consumer(transport, receipts, handler)
-        claim = await receipts.claim(tenant_id="tenant-a", consumer_name="worker-a", event_id="event-2")
+        claim = await receipts.claim(tenant_id="tenant-a", consumer_name="worker-a", event_id="00000000-0000-0000-0000-000000000002")
         receipts.active.clear()
-        receipts.rows[("tenant-a", "worker-a", "event-2")]["status"] = "completed"
-        transport.fresh = [("2-0", {"event_id": "event-2", "payload": "{}"})]
+        receipts.rows[("tenant-a", "worker-a", "00000000-0000-0000-0000-000000000002")]["status"] = "completed"
+        transport.fresh = [("2-0", {"event_id": "00000000-0000-0000-0000-000000000002", "payload": "{}"})]
         result = await consumer.consume_batch()
         self.assertEqual(result["duplicates"], 1)
         self.assertEqual(handled, [])
@@ -112,7 +112,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(claim)
 
     async def test_failed_handler_releases_receipt_and_leaves_message_pending(self):
-        message = ("3-0", {"event_id": "event-3", "payload": "{}"})
+        message = ("3-0", {"event_id": "00000000-0000-0000-0000-000000000003", "payload": "{}"})
         transport, receipts, attempts = FakeTransport([message]), FakeReceipts(), []
 
         async def handler(event):
@@ -130,7 +130,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(attempts), 2)
 
     async def test_invalid_payload_is_sent_to_dlq_and_acknowledged(self):
-        transport = FakeTransport([("4-0", {"event_id": "event-4", "payload": "not-json"})])
+        transport = FakeTransport([("4-0", {"event_id": "00000000-0000-0000-0000-000000000004", "payload": "not-json"})])
         receipts = FakeReceipts()
 
         async def handler(event):
@@ -139,16 +139,30 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         result = await self.make_consumer(transport, receipts, handler).consume_batch()
         self.assertEqual(result["dead_lettered"], 1)
         self.assertEqual(transport.acked, ["4-0"])
-        self.assertEqual(transport.dead_letters[0]["fields"]["event_id"], "event-4")
+        self.assertEqual(transport.dead_letters[0]["fields"]["event_id"], "00000000-0000-0000-0000-000000000004")
+
+    async def test_invalid_event_id_is_dead_lettered_before_receipt_claim(self):
+        transport = FakeTransport([
+            ("poison-id", {"event_id": "not-a-uuid", "payload": "{}"})
+        ])
+        receipts = FakeReceipts()
+
+        async def handler(event):
+            self.fail("handler must not receive an invalid event ID")
+
+        result = await self.make_consumer(transport, receipts, handler).consume_batch()
+        self.assertEqual(result["dead_lettered"], 1)
+        self.assertEqual(transport.acked, ["poison-id"])
+        self.assertEqual(receipts.rows, {})
 
     async def test_repeated_worker_interruptions_cannot_exceed_max_attempts(self):
-        message = ("6-0", {"event_id": "event-6", "payload": "{}"})
+        message = ("6-0", {"event_id": "00000000-0000-0000-0000-000000000006", "payload": "{}"})
         transport, receipts, handled = FakeTransport([message]), FakeReceipts(), []
 
         async def handler(event):
             handled.append(event.event_id)
 
-        receipts.rows[("tenant-a", "worker-a", "event-6")] = {
+        receipts.rows[("tenant-a", "worker-a", "00000000-0000-0000-0000-000000000006")] = {
             "status": "processing", "attempts": 5
         }
         result = await self.make_consumer(
@@ -159,7 +173,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.acked, ["6-0"])
 
     async def test_handler_failure_moves_to_dlq_after_max_attempts(self):
-        message = ("5-0", {"event_id": "event-5", "payload": "{}"})
+        message = ("5-0", {"event_id": "00000000-0000-0000-0000-000000000005", "payload": "{}"})
         transport, receipts = FakeTransport([message]), FakeReceipts()
 
         async def handler(event):
@@ -171,7 +185,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         second = await consumer.consume_batch()
         self.assertEqual(second["dead_lettered"], 1)
         self.assertEqual(transport.acked, ["5-0"])
-        self.assertEqual(receipts.rows[("tenant-a", "worker-a", "event-5")]["status"], "dead_lettered")
+        self.assertEqual(receipts.rows[("tenant-a", "worker-a", "00000000-0000-0000-0000-000000000005")]["status"], "dead_lettered")
 
 
     async def test_event_handler_is_traced_without_capturing_payload(self):
@@ -194,7 +208,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
 
         observer = Observer()
         transport = FakeTransport([
-            ("trace-1", {"event_id": "event-trace", "payload": '{"api_key":"must-not-be-traced"}'})
+            ("trace-1", {"event_id": "00000000-0000-0000-0000-000000000007", "payload": '{"api_key":"must-not-be-traced"}'})
         ])
         receipts = FakeReceipts()
 
@@ -207,7 +221,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["processed"], 1)
         name, input_data, metadata = observer.calls[0]
         self.assertEqual(name, "event.consume")
-        self.assertEqual(input_data, {"topic": "topic-a", "event_id": "event-trace"})
+        self.assertEqual(input_data, {"topic": "topic-a", "event_id": "00000000-0000-0000-0000-000000000007"})
         self.assertNotIn("payload", input_data)
         self.assertEqual(metadata["consumer"], "worker-a")
         self.assertEqual(observer.span.updates[0]["output"]["status"], "succeeded")
@@ -230,7 +244,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
 
         observer = Observer()
         transport = FakeTransport([
-            ("trace-2", {"event_id": "event-failure", "payload": "{}"})
+            ("trace-2", {"event_id": "00000000-0000-0000-0000-000000000008", "payload": "{}"})
         ])
 
         async def handler(event):
