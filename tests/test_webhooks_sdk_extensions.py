@@ -46,6 +46,20 @@ class FakeWebhookStore:
         self.dead.append((tenant_id, delivery_id, response_code))
 
 
+class FakeAuditSink:
+    def __init__(self, fail=False, fail_on_call=None):
+        self.events = []
+        self.fail = fail
+        self.fail_on_call = fail_on_call
+        self.calls = 0
+
+    async def record(self, **event):
+        self.calls += 1
+        if self.fail or self.calls == self.fail_on_call:
+            raise RuntimeError("audit unavailable")
+        self.events.append(event)
+
+
 class FakeWebhookTransport:
     def __init__(self, code=204):
         self.code = code
@@ -94,8 +108,10 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
     async def test_dispatch_signs_and_deduplicates_with_event_id(self):
         store = FakeWebhookStore()
         transport = FakeWebhookTransport()
+        audit = FakeAuditSink()
         dispatcher = WebhookDispatcher(
             store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            audit_sink=audit,
             egress_policy=WebhookEgressPolicy(
                 resolver=lambda _host, _port: ("93.184.216.34",),
             ),
@@ -112,12 +128,53 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual(json.loads(body)["id"], "event-1")
         self.assertEqual(store.completed[0][0], "tenant-a")
+        self.assertEqual([event["action"] for event in audit.events], [
+            "webhook.delivery.attempt", "webhook.delivery",
+        ])
+        self.assertEqual(audit.events[0]["actor_id"], "system:webhook-dispatcher")
+        self.assertEqual(audit.events[1]["outcome"], "succeeded")
+
+    async def test_audit_write_ahead_failure_prevents_webhook_side_effect(self):
+        store = FakeWebhookStore()
+        transport = FakeWebhookTransport()
+        dispatcher = WebhookDispatcher(
+            store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+            audit_sink=FakeAuditSink(fail=True),
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await dispatcher.dispatch()
+        self.assertEqual(transport.requests, [])
+        self.assertEqual(store.completed, [])
+        self.assertEqual(store.retried, [])
+        self.assertEqual(store.dead, [])
+
+    async def test_post_delivery_audit_failure_does_not_schedule_duplicate_delivery(self):
+        store = FakeWebhookStore()
+        transport = FakeWebhookTransport()
+        dispatcher = WebhookDispatcher(
+            store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+            audit_sink=FakeAuditSink(fail_on_call=2),
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await dispatcher.dispatch()
+        self.assertEqual(len(transport.requests), 1)
+        self.assertEqual(len(store.completed), 1)
+        self.assertEqual(store.retried, [])
+        self.assertEqual(store.dead, [])
 
     async def test_dispatch_retries_then_dead_letters(self):
         store = FakeWebhookStore(attempt=8)
         transport = FakeWebhookTransport(code=503)
+        audit = FakeAuditSink()
         dispatcher = WebhookDispatcher(
             store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            audit_sink=audit,
             egress_policy=WebhookEgressPolicy(
                 resolver=lambda _host, _port: ("93.184.216.34",),
             ),
@@ -126,6 +183,8 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         result = await dispatcher.dispatch()
         self.assertEqual(result["dead_lettered"], 1)
         self.assertEqual(len(store.dead), 1)
+        self.assertEqual(audit.events[-1]["outcome"], "failed")
+        self.assertTrue(audit.events[-1]["detail"]["dead_lettered"])
 
 
 class FakeSdkTransport:
