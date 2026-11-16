@@ -70,11 +70,10 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row[0] for row in rows], message_ids[1:])
 
     async def test_stream_retention_uses_slowest_consumer_group_frontier(self):
-        fast_group = "fast-retention"
+        # Reuse the default group created by asyncSetUp so the test has
+        # exactly two configured groups, both of which must advance.
+        fast_group = self.group
         slow_group = "slow-retention"
-        await self.transport.ensure_group(
-            tenant_id=self.tenant_id, topic=self.topic, group=fast_group, start_id="0"
-        )
         await self.transport.ensure_group(
             tenant_id=self.tenant_id, topic=self.topic, group=slow_group, start_id="0"
         )
@@ -122,7 +121,6 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
         group_states = await self.transport._client.xinfo_groups(
             self.transport._stream(self.tenant_id, self.topic)
         )
-        slow_state = next(item for item in group_states if item["name"] == slow_group)
         fast_state = next(item for item in group_states if item["name"] == fast_group)
         slow_pending = await self.transport._client.xpending(
             self.transport._stream(self.tenant_id, self.topic), slow_group
