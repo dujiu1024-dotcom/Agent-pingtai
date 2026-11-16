@@ -105,6 +105,19 @@ class RunLifecycleManager:
    if latest and latest.status==RunStatus.CANCELLING:
     updated=await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
   return updated
+ async def pause(self,tenant_id:str,run_id:str,*,checkpoint_ref:str,reason:str="human intervention requested")->RunSnapshot:
+  if not checkpoint_ref.strip():raise ValueError("pause requires a durable checkpoint")
+  old=await self.store.get(tenant_id,run_id)
+  if old is None:raise KeyError("Run not found")
+  if old.status!=RunStatus.RUNNING:raise ValueError("only a running Run can be paused")
+  updated=await self.store.transition(RunSnapshot(
+   tenant_id,run_id,RunStatus.PAUSED,old.version,
+   checkpoint_ref=checkpoint_ref,last_error=reason[:500],
+  ),expected_version=old.version)
+  await self.tools.cancel_run(run_id,tenant_id=tenant_id)
+  async with self._lock: task=self._tasks.get((tenant_id,run_id))
+  if task is not None:task.cancel()
+  return updated
  async def request_resume(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None:raise KeyError("Run not found")
