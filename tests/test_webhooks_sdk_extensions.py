@@ -122,6 +122,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
 
         dispatcher = WebhookDispatcher(
             store=store, transport=transport, resolve_secret=resolve_secret,
+            egress_policy=WebhookEgressPolicy(resolver=lambda host, port: ("93.184.216.34",)),
             clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
         )
         result = await dispatcher.dispatch()
