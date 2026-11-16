@@ -76,6 +76,7 @@ jobs:
             tests.test_backup_recovery_scripts \
             tests.test_gateway_runtime_postgres_integration \
             tests.test_platform_postgres_integration \
+            tests.test_postgres_langgraph_checkpoint_integration \
             tests.test_tenant_creation_integration \
             tests.test_service_identity_authorization_integration \
             tests.test_redis_streams_integration \
