@@ -69,6 +69,15 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([row[0] for row in rows], message_ids[1:])
 
+    async def test_stream_retention_handles_missing_dead_letter_stream(self):
+        self.assertEqual(
+            await self.transport.trim_acknowledged(
+                tenant_id=self.tenant_id, topic="no-dead-letter-yet",
+                dead_letter=True,
+            ),
+            0,
+        )
+
     async def test_stream_retention_does_not_trim_without_consumer_groups(self):
         topic = "unconsumed.retention"
         await self.transport.publish(
