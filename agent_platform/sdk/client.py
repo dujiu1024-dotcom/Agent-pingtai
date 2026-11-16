@@ -165,7 +165,7 @@ class PlatformClient:
             request = Request(url, data=data, headers=headers, method=normalized_method)
             try:
                 response = self.transport.send(request, timeout=self.timeout)
-            except ConnectionError:
+            except (ConnectionError, TimeoutError):
                 if attempt >= attempts:
                     raise
                 delay = min(self.retry_backoff_seconds * (2 ** attempt), 30.0)
