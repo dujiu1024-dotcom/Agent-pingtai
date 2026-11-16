@@ -187,7 +187,8 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
 
     async def test_intervention_timeline_and_checkpoint_gated_resume(self):
         from agent_platform.runtime.interventions import (
-            PostgresRunDetailService, RunInterventionService,
+            PostgresRunDetailService,
+            RunInterventionService,
         )
         from agent_platform.runtime.lifecycle import RunLifecycleManager
         from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
