@@ -83,6 +83,40 @@ class ApprovalService:
             tenant_id, approval_id, actor_id=actor_id, now=self.clock(), allow_admin=allow_admin,
         )
 
+    async def approved_action_hash(
+        self, *, tenant_id: str, approval_id: str, request: ActionRequest,
+        run_id: str | None = None,
+    ) -> str | None:
+        """Return a digest only when the stored approval still matches execution.
+
+        The caller passes this value to SupervisedPolicy.evaluate. A missing,
+        expired, revoked, rejected, cross-run or parameter-mismatched approval
+        returns None and therefore fails closed at the policy boundary.
+        """
+        if (
+            not isinstance(tenant_id, str) or not tenant_id.strip()
+            or not isinstance(approval_id, str) or not approval_id.strip()
+        ):
+            raise ValueError("tenant and approval ids are required")
+        record = await self.repository.get(tenant_id, approval_id)
+        if record is None or record.status != "approved":
+            return None
+        if record.expires_at.tzinfo is None or record.expires_at.utcoffset() is None:
+            return None
+        if record.expires_at <= self.clock():
+            return None
+        if (
+            record.tenant_id != tenant_id
+            or record.approval_id != approval_id
+            or record.requested_by != request.actor_id
+            or record.action != request.action
+            or record.resource != request.resource
+            or record.run_id != run_id
+            or record.action_hash != request.digest()
+        ):
+            return None
+        return record.action_hash
+
     async def decide(self, *, tenant_id: str, approval_id: str,
                      approver_id: str, approved: bool) -> bool:
         if not approver_id:
