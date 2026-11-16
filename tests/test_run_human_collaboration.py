@@ -33,7 +33,7 @@ class HumanCollaborationApiTests(unittest.TestCase):
 
         async def authorize(_principal, resource_type, resource_id, action):
             return resource_type == "run" and resource_id == "run-1" and action in {
-                "read", "intervene", "resume", "revise",
+                "read", "intervene", "resume",
             }
 
         class Interventions:
