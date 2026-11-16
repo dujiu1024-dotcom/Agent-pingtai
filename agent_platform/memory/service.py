@@ -82,7 +82,6 @@ class MemoryService:
         except Exception:
             existing = await self.repository.get(candidate.tenant_id, candidate.memory_id)
             if (existing is not None
-                and existing.candidate.source_ref == candidate.source_ref
                 and existing.candidate.scope is candidate.scope
                 and existing.candidate.scope_id == candidate.scope_id
                 and existing.candidate.metadata.get('extraction') == 'single_turn'
