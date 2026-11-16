@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 
 from agent_platform.runtime.harness_benchmark import (
     HarnessBenchmarkCase,
+    HarnessBenchmarkObservation,
     HarnessBenchmarkReport,
     HarnessBenchmarkRunner,
 )
@@ -99,7 +100,7 @@ async def run_fixed_harness_benchmark(
 ) -> tuple[tuple[HarnessCandidateScorecard, ...], HarnessBenchmarkReport]:
     """Run the same fixed cases sequentially against each candidate."""
     scorecards = candidate_scorecards(adapters)
-    observations = []
+    observations: list[HarnessBenchmarkObservation] = []
     for name, adapter in sorted(adapters.items()):
         capabilities = getattr(adapter, "capabilities", None)
         cases = tuple(
