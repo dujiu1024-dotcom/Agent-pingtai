@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+from dataclasses import replace
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, AsyncContextManager, Awaitable, Callable, Protocol
@@ -23,6 +24,8 @@ from agent_platform.runtime.protocols import (
     HarnessStreamEvent,
     MediaInput,
     MediaOutput,
+    RUNTIME_ADAPTER_CONTRACT_VERSION,
+    RuntimeAdapterDescriptor,
     UnsupportedHarnessCapability,
 )
 
@@ -90,7 +93,19 @@ class StrandsAgentsAdapter:
         self.agent_factory = agent_factory
         self.model_factory = model_factory
         self.gateway_tool_provider = gateway_tool_provider
-        self.capabilities = capabilities or HarnessCapabilities()
+        self.capabilities = replace(
+            capabilities or HarnessCapabilities(),
+            # The SDK is cancellable by cancelling its task and shutting down
+            # the Agent, but it has no independent cancel(run_id) control surface.
+            cancellation=False,
+            tool_gateway=gateway_tool_provider is not None,
+        )
+        self.descriptor = RuntimeAdapterDescriptor(
+            adapter_id="strands_agents",
+            adapter_version="1.0.0",
+            contract_version=RUNTIME_ADAPTER_CONTRACT_VERSION,
+            capabilities=self.capabilities,
+        )
         self.media_resolver = media_resolver
         self.media_output_writer = media_output_writer
         media_inputs = self.capabilities.input_modalities - {"text"}
