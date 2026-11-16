@@ -32,9 +32,13 @@ class RegistryRuntimeAssemblyTests(unittest.IsolatedAsyncioTestCase):
         async def trusted_handler(arguments):
             return {"ok": True}
 
+        async def authorize(_context, _arguments):
+            return True
         trusted = ToolDefinition(
             name="search", risk=RiskLevel.READ_ONLY, handler=trusted_handler,
             description="Trusted search",
+            resource_resolver=lambda arguments: f"search:{arguments.get('query', 'tenant')}",
+            resource_authorizer=authorize,
         )
         snapshot = SimpleNamespace(
             tenant_id="tenant-a", run_id="run-a", digest="d" * 64,
