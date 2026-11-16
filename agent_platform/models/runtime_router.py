@@ -83,6 +83,9 @@ class OpenAICompatibleHTTPTransport:
     ) -> Mapping[str, Any]:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        reserved = {"model", "messages", "stream", "tools", "tool_choice", "api_key", "authorization", "base_url"}
+        if reserved.intersection(request_parameters):
+            raise ModelTransportError("request parameters cannot override model routing or credentials")
         return await asyncio.to_thread(
             self._complete_sync, config, messages, request_parameters, timeout_seconds,
         )
@@ -93,7 +96,7 @@ class OpenAICompatibleHTTPTransport:
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
     ) -> Mapping[str, Any]:
-        reserved = {"model", "messages", "stream", "tools", "tool_choice"}
+        reserved = {"model", "messages", "stream", "tools", "tool_choice", "api_key", "authorization", "base_url"}
         if reserved.intersection(config.parameters) or reserved.intersection(request_parameters):
             raise ModelTransportError("model parameters cannot override routing or tool controls")
         payload = {
