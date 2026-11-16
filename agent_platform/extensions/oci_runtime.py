@@ -82,7 +82,7 @@ with zipfile.ZipFile(io.BytesIO(archive), "r") as package:
         path = pathlib.PurePosixPath(name)
         mode = info.external_attr >> 16
         kind = stat.S_IFMT(mode)
-        if (not name or path.is_absolute() or "\" in name or
+        if (not name or path.is_absolute() or "\\" in name or
             any(part in ("", ".", "..") for part in name.rstrip("/").split("/")) or
             ":" in name.rstrip("/").split("/")[0] or
             (info.flag_bits & 0x1) or
