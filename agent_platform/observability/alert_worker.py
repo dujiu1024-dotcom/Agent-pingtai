@@ -1,8 +1,4 @@
-"""Polling worker for durable alert notification delivery.
-
-The worker is deliberately independent of the web process lifecycle. Deploy it
-as a dedicated process or attach it to an application lifespan explicitly.
-"""
+"""Lifecycle-managed polling worker for durable alert notification delivery."""
 from __future__ import annotations
 
 import asyncio
@@ -30,27 +26,47 @@ class AlertDispatchWorker:
         ):
             raise ValueError("poll interval must be between 0.1 and 3600 seconds")
         if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 1000:
-            raise ValueError("batch size must be between 1 and 1000")
+            raise ValueError("batch size must be an integer between 1 and 1000")
         self.dispatcher = dispatcher
         self.poll_interval_seconds = float(poll_interval_seconds)
         self.batch_size = batch_size
         self._stop = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
         self.cycles = 0
         self.last_result: dict[str, int] = {"claimed": 0, "sent": 0, "failed": 0}
         self.last_error_type: str | None = None
 
-    def stop(self) -> None:
-        """Request graceful shutdown; safe to call from the owning event loop."""
+    @property
+    def running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    async def start(self) -> None:
+        """Start one background polling task; repeated starts are idempotent."""
+        if self.running:
+            return
+        self._stop = asyncio.Event()
+        self._task = asyncio.create_task(self.run_forever(), name="platform-alert-dispatch")
+
+    async def stop(self) -> None:
+        """Stop the polling task and wait for its current cycle to finish."""
+        task = self._task
+        if task is None:
+            self._stop.set()
+            return
         self._stop.set()
+        try:
+            await task
+        finally:
+            self._task = None
 
     async def run_once(self) -> dict[str, int]:
         result = await self.dispatcher.retry_pending(limit=self.batch_size)
-        normalized = {
-            key: int(result.get(key, 0))
-            for key in ("claimed", "sent", "failed")
-        }
-        if any(value < 0 for value in normalized.values()):
-            raise ValueError("dispatcher counters must be non-negative")
+        normalized: dict[str, int] = {}
+        for key in ("claimed", "sent", "failed"):
+            value = result.get(key, 0)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError("dispatcher counters must be non-negative integers")
+            normalized[key] = value
         self.last_result = normalized
         self.last_error_type = None
         self.cycles += 1
@@ -65,13 +81,10 @@ class AlertDispatchWorker:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                # Keep diagnostics bounded and never retain provider exception text.
                 self.last_error_type = type(exc).__name__
                 self.last_result = {"claimed": 0, "sent": 0, "failed": 0}
                 self.cycles += 1
             try:
-                await asyncio.wait_for(
-                    stop.wait(), timeout=self.poll_interval_seconds,
-                )
-            except asyncio.TimeoutError:
+                await asyncio.wait_for(stop.wait(), timeout=self.poll_interval_seconds)
+            except TimeoutError:
                 continue
