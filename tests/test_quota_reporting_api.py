@@ -15,6 +15,18 @@ from agent_platform.quotas.service import InMemoryQuotaStore, QuotaService, Usag
 class FakeQuotaStore:
     def __init__(self):
         self.calls = []
+        self.reconciliation_calls = []
+
+
+    async def reconcile_cost(self, tenant_id, start, end, *, source, actual_cost_usd):
+        self.reconciliation_calls.append((tenant_id, start, end, source, actual_cost_usd))
+        return {
+            "reconciliation_id": "recon-1", "tenant_id": tenant_id,
+            "period_start": start.isoformat(), "period_end": end.isoformat(),
+            "source": source, "estimated_cost_usd": "1.25",
+            "actual_cost_usd": str(actual_cost_usd),
+            "variance_usd": str(actual_cost_usd - Decimal("1.25")),
+        }
 
     async def list_usage(self, tenant_id, start, end, *, run_id=None, model_key=None, limit=1000):
         self.calls.append((tenant_id, start, end, run_id, model_key, limit))
@@ -74,6 +86,71 @@ class QuotaReportingApiTests(unittest.TestCase):
         self.assertEqual(too_wide.status_code, 400)
 
 
+
+
+    def test_cost_reconciliation_is_tenant_bound_and_reports_variance(self):
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, authorize_manage=lambda actor: actor.user_id == "user-a",
+        ))
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+        client = TestClient(app)
+        response = client.post("/api/platform/v1/quotas/reconciliation", json={
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "source": "invoice-2026-11",
+            "actual_cost_usd": "1.50",
+        })
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["tenant_id"], "tenant-a")
+        self.assertEqual(response.json()["estimated_cost_usd"], "1.25")
+        self.assertEqual(response.json()["variance_usd"], "0.25")
+        self.assertEqual(self.store.reconciliation_calls[0][0], "tenant-a")
+
+    def test_cost_reconciliation_rejects_unauthorized_and_invalid_amount(self):
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, authorize_manage=lambda actor: False,
+        ))
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+        client = TestClient(app)
+        body = {
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "source": "invoice-2026-11", "actual_cost_usd": "1.50",
+        }
+        self.assertEqual(client.post("/api/platform/v1/quotas/reconciliation", json=body).status_code, 403)
+        app2 = FastAPI()
+        app2.include_router(create_quota_reporting_router(
+            quota_store=self.store, authorize_manage=lambda actor: True,
+        ))
+        @app2.middleware("http")
+        async def attach_principal2(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+        body["actual_cost_usd"] = "NaN"
+        self.assertEqual(TestClient(app2).post("/api/platform/v1/quotas/reconciliation", json=body).status_code, 400)
 
     def test_budget_configuration_requires_authorization_and_tenant_scope(self):
         service = QuotaService(InMemoryQuotaStore())
