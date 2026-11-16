@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -77,6 +78,27 @@ class QuotaReservationGroupTests(unittest.IsolatedAsyncioTestCase):
                 await self.store.usage("tenant-a", scope[0], scope[1], self.start, self.end),
                 (0, Decimal("0"), 0),
             )
+
+
+    async def test_concurrent_groups_cannot_overbook_shared_tenant_or_root_budget(self):
+        async def reserve(run_id):
+            try:
+                return await self.service.reserve_run(
+                    tenant_id="tenant-a", run_id=run_id, root_run_id="root-run",
+                    scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+                    estimated_tokens=60, estimated_cost_usd=Decimal("0.60"),
+                )
+            except BudgetExceeded:
+                return None
+
+        results = await asyncio.gather(reserve("child-a"), reserve("child-b"))
+        accepted = [item for item in results if item is not None]
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(
+            await self.store.usage("tenant-a", "tenant", "tenant-a", self.start, self.end),
+            (60, Decimal("0.60"), 1),
+        )
+        await self.service.release(accepted[0][0])
 
     async def test_duplicate_scopes_and_wrong_root_scope_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "unique"):
