@@ -62,12 +62,34 @@ class InMemoryMemoryRepository:
 class MemoryService:
     def __init__(self,repository: MemoryRepository,*,on_delete: Callable[[str,str],Awaitable[None]]|None=None)->None:self.repository=repository;self.on_delete=on_delete
     async def propose(self,candidate: MemoryCandidate)->MemoryRecord:
+        existing = await self.repository.get(candidate.tenant_id, candidate.memory_id)
+        if existing is not None:
+            if (existing.candidate.source_ref == candidate.source_ref
+                and existing.candidate.scope is candidate.scope
+                and existing.candidate.scope_id == candidate.scope_id
+                and existing.candidate.metadata.get('extraction') == 'single_turn'
+                and candidate.metadata.get('extraction') == 'single_turn'):
+                return existing
+            raise ValueError('memory ID already exists')
         status=MemoryStatus.CANDIDATE
         if candidate.conflict_key:
             existing=await self.repository.list(candidate.tenant_id,limit=5000)
             conflict=any(r.status is MemoryStatus.ACTIVE and r.candidate.scope is candidate.scope and r.candidate.scope_id==candidate.scope_id and r.candidate.conflict_key==candidate.conflict_key and r.candidate.content!=candidate.content for r in existing)
             if conflict:status=MemoryStatus.CONFLICT
-        rec=MemoryRecord(candidate=candidate,status=status);await self.repository.put(rec);return rec
+        rec=MemoryRecord(candidate=candidate,status=status)
+        try:
+            await self.repository.put(rec)
+        except Exception:
+            existing = await self.repository.get(candidate.tenant_id, candidate.memory_id)
+            if (existing is not None
+                and existing.candidate.source_ref == candidate.source_ref
+                and existing.candidate.scope is candidate.scope
+                and existing.candidate.scope_id == candidate.scope_id
+                and existing.candidate.metadata.get('extraction') == 'single_turn'
+                and candidate.metadata.get('extraction') == 'single_turn'):
+                return existing
+            raise
+        return rec
     async def confirm(self,*,tenant_id: str,memory_id: str,confirmer_id: str)->MemoryRecord:
         rec=await self.repository.get(tenant_id,memory_id)
         if rec is None or rec.status is not MemoryStatus.CANDIDATE:raise ValueError("candidate memory not found or already reviewed")
