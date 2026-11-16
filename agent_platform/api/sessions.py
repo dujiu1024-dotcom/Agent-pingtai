@@ -184,7 +184,7 @@ def create_sessions_router(
     if memory_extraction is not None and resolve_memory_principal is not None:
         @router.post("/sessions/{session_id}/memory-extract", status_code=202)
         async def extract_session_memory(session_id: str, request: Request):
-            principal, service = await context(request, "session", session_id, "read")
+            principal, service = await context(request, "session", session_id, "write")
             memory_principal = await resolve_memory_principal(request)
             if (
                 memory_principal.tenant_id != principal.tenant_id
@@ -197,6 +197,10 @@ def create_sessions_router(
                 )
                 if session is None:
                     raise HTTPException(404, "session not found")
+                if session.owner_id != principal.user_id:
+                    raise HTTPException(
+                        403, "memory extraction is restricted to the session owner",
+                    )
                 messages = await service.repository.list_messages(
                     principal.tenant_id, session_id, limit=50,
                 )
