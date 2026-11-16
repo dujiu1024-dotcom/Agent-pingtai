@@ -393,7 +393,7 @@ class SdkRetryContractTests(unittest.TestCase):
         self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
         self.assertEqual(len(sleeps), 1)
         self.assertGreaterEqual(sleeps[0], 18.0)
-        self.assertLessEqual(sleeps[0], 12.0)
+        self.assertLessEqual(sleeps[0], 22.0)
 
         for header in ("not-a-date", format_http_date(
             datetime.now(timezone.utc) - timedelta(seconds=30),
