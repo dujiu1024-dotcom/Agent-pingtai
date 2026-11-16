@@ -41,8 +41,8 @@ class PostgresRunStateStore(RunStateStore):
    async with c.transaction():
     cur=await c.execute("""INSERT INTO platform_runs
      (tenant_id,run_id,project_id,session_id,task_id,agent_id,template_id,template_version,
-      workflow_id,status,input,created_by,idempotency_key,request_digest)
-     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s)
+      workflow_id,status,input,created_by,idempotency_key,request_digest,dispatch_ready)
+     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,false)
      ON CONFLICT (tenant_id,created_by,idempotency_key)
        WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING run_id""",
@@ -69,7 +69,7 @@ class PostgresRunStateStore(RunStateStore):
    query="""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,template_id,
     template_version,workflow_id,status,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
-    checkpoint_ref,last_error,registry_snapshot_digest
+    checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND task_id=%s"""
    params:list[Any]=[tenant_id,task_id]
    if actor_id is not None:
@@ -102,6 +102,15 @@ class PostgresRunStateStore(RunStateStore):
     ORDER BY created_at DESC LIMIT %s""",(tenant_id,actor_id,limit))
    rows=await cur.fetchall()
   return [dict(row) for row in rows]
+
+ async def mark_task_ready(self,tenant_id:str,run_id:str)->bool:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""UPDATE platform_runs SET dispatch_ready=true,updated_at=now()
+    WHERE tenant_id=%s AND run_id=%s AND status='queued'
+      AND registry_snapshot IS NOT NULL AND registry_snapshot_digest IS NOT NULL
+    RETURNING run_id""",(tenant_id,UUID(run_id)))
+   return await cur.fetchone() is not None
 
  async def save_output(self, tenant_id:str, run_id:str, output:Any, *,
   usage:Mapping[str,Any]|None=None, trace_id:str|None=None)->None:
@@ -167,7 +176,7 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
-    WHERE task_id IS NOT NULL
+    WHERE task_id IS NOT NULL AND dispatch_ready=true
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
