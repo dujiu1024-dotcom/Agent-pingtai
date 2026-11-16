@@ -90,6 +90,17 @@ class WorkbenchTaskCenterTests(unittest.TestCase):
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(cancelled.json()["status"], "cancelled")
 
+    def test_task_submission_rejects_unauthorized_project_scope(self):
+        response = self.client.post(
+            "/api/platform/v1/workbench/tasks",
+            json={
+                "agent_id": "agent-a", "project_id": "project-secret",
+                "input": {"text": "analyze"},
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.service.items, {})
+
     def test_task_submission_rejects_missing_agent_and_input(self):
         response = self.client.post(
             "/api/platform/v1/workbench/tasks",
