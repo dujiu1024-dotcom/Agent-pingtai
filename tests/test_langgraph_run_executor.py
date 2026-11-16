@@ -45,6 +45,8 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   configurable=self.graph.configs[0]["configurable"]
   self.assertEqual(configurable["platform_registry_snapshot"][0]["version"],3)
   self.assertEqual(configurable["platform_registry_snapshot_digest"],"d"*64)
+  self.assertEqual(configurable["platform_tenant_id"],"tenant")
+  self.assertEqual(configurable["platform_run_id"],"pinned")
 
  async def test_missing_pinned_snapshot_does_not_start_run(self):
   class MissingSnapshotService:
