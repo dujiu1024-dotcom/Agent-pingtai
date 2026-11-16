@@ -157,7 +157,7 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
 
         class MustNotRunHarness:
             async def run(self, _request):
-                self.fail("invalid token estimates must be rejected before provider dispatch")
+                raise AssertionError("invalid token estimates must be rejected before provider dispatch")
 
         for estimate in (
             (0, -1, Decimal("0.01")),
