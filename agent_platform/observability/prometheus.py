@@ -7,7 +7,7 @@ import threading
 from collections.abc import Mapping
 from typing import Any
 
-_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\\Z")
+_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\Z")
 _ALLOWED_LABELS = frozenset({
     "component", "status", "model_template", "finish_reason", "operation",
 })
