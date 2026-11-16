@@ -50,7 +50,11 @@ class IdempotentEventEffectExecutor(Protocol):
 def event_idempotency_key(event: EventEnvelope) -> str:
     if not event.tenant_id.strip() or not event.event_id.strip():
         raise ValueError("tenant_id and event_id are required for idempotent effects")
-    return f"tenant:{event.tenant_id}:event:{event.event_id}"
+    try:
+        normalized_event_id = str(UUID(event.event_id))
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise ValueError("event_id must be a UUID for idempotent effects") from exc
+    return f"tenant:{event.tenant_id}:event:{normalized_event_id}"
 
 
 class IdempotentEventHandler:
