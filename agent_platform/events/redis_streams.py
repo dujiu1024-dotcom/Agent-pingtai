@@ -168,9 +168,21 @@ class RedisStreamsTransport:
             cutoffs.append(cutoff)
 
         safe_cutoff = min(cutoffs, key=self._stream_id_key)
-        return int(await self._client.xtrim(
-            stream, minid=safe_cutoff, approximate=False,
-        ))
+        # Use an exclusive XRANGE bound plus XDEL. This is exact across Redis
+        # versions and never deletes the safe cutoff itself (the earliest PEL
+        # entry or the slowest group's last-delivered frontier).
+        deleted = 0
+        while True:
+            rows = await self._client.xrange(
+                stream, min="-", max=f"({safe_cutoff}", count=1000,
+            )
+            if not rows:
+                break
+            message_ids = [message_id for message_id, _fields in rows]
+            deleted += int(await self._client.xdel(stream, *message_ids))
+            if len(rows) < 1000:
+                break
+        return deleted
 
     async def pending_summary(
         self, *, tenant_id: str, topic: str, group: str
