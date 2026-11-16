@@ -276,9 +276,23 @@ def create_sessions_router(
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "session repository tenant mismatch")
-        if session_id and not await authorize(principal, "session", session_id, "write"):
-            raise HTTPException(403, "session attachment denied")
-        if project_id and not await authorize(principal, "project", project_id, "file.create"):
+        linked_session = None
+        if session_id:
+            if not await authorize(principal, "session", session_id, "write"):
+                raise HTTPException(403, "session attachment denied")
+            linked_session = await service.repository.get_session(
+                principal.tenant_id, session_id,
+            )
+            if linked_session is None:
+                raise HTTPException(404, "session not found")
+        # A project inherited from the linked session is still a project-scoped
+        # write. Do not let session-write permission bypass project file.create.
+        effective_project_id = project_id or (
+            linked_session.project_id if linked_session is not None else None
+        )
+        if effective_project_id and not await authorize(
+            principal, "project", effective_project_id, "file.create",
+        ):
             raise HTTPException(403, "project file upload denied")
         filename = request.headers.get("x-filename", "upload.bin")
         media_type = request.headers.get("content-type", "application/octet-stream").split(";", 1)[0]
