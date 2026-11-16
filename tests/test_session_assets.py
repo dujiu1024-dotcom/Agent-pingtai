@@ -87,10 +87,28 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SessionNotFound):
             await scanned.download_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
 
-
-if __name__ == "__main__":
-    unittest.main()
-
+    async def test_message_rejects_asset_from_another_project_or_session(self):
+        project_a = await self.service.create_session(
+            tenant_id="tenant-a", owner_id="user-a", project_id="project-a",
+        )
+        project_b = await self.service.create_session(
+            tenant_id="tenant-a", owner_id="user-a", project_id="project-b",
+        )
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="private.txt",
+            media_type="text/plain", content=b"private", project_id="project-b",
+            session_id=project_b.session_id,
+        )
+        with self.assertRaisesRegex(SessionError, "same project"):
+            await self.service.append_message(
+                tenant_id="tenant-a", actor_id="user-a", session_id=project_a.session_id,
+                role=MessageRole.USER, content="attach cross-project file", asset_ids=(asset.asset_id,),
+            )
+        with self.assertRaisesRegex(SessionError, "another session"):
+            await self.service.append_message(
+                tenant_id="tenant-a", actor_id="user-a", session_id=project_b.session_id,
+                role=MessageRole.USER, content="reuse already linked file", asset_ids=(asset.asset_id,),
+            )
 
     async def test_list_sessions_and_assets_are_owner_scoped(self):
         first = await self.service.create_session(
@@ -108,3 +126,7 @@ if __name__ == "__main__":
         self.assertEqual([item.session_id for item in sessions], [first.session_id])
         self.assertEqual([item.asset_id for item in assets], [asset.asset_id])
         self.assertEqual(await self.repository.list_sessions("tenant-b", "user-a"), ())
+
+
+if __name__ == "__main__":
+    unittest.main()
