@@ -455,7 +455,7 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await worker.run_once()
         self.assertEqual(result["skipped"], 1)
-        self.assertEqual(graph.calls, [])
+        self.assertEqual(graph.checkpoints, {})
         self.assertEqual((await self.run_store.get("tenant-a", task["run_id"])).status, RunStatus.QUEUED)
 
     async def test_registry_executor_resolver_preserves_graph_context(self):
