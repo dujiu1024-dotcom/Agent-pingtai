@@ -264,9 +264,10 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
             if importlib.util.find_spec("langgraph.checkpoint.postgres.aio") is None:
                 self.skipTest("LangGraph PostgreSQL checkpointer extra is unavailable")
             from typing import TypedDict
+
+            from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
             from agent_platform.runtime.postgres_checkpointer import postgres_run_executor
             from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
-            from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
         except ImportError as exc:
             self.skipTest(f"LangGraph PostgreSQL runtime dependencies are unavailable: {exc}")
 
