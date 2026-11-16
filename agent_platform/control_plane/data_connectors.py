@@ -59,6 +59,30 @@ class ConnectorRepository(Protocol):
     async def revoke(self, *, tenant_id: str, connection_id: str) -> DataConnection | None: ...
 
 
+@dataclass(frozen=True)
+class ConnectorCleanupJob:
+    tenant_id: str
+    job_id: str
+    connection_id: str
+    disposition: str
+    remote_revoked: bool
+    sink_cleaned: bool
+    attempts: int
+    max_attempts: int
+    lease_owner: str
+
+
+class ConnectorCleanupQueue(Protocol):
+    async def enqueue(
+        self, *, tenant_id: str, connection_id: str, disposition: str,
+    ) -> None: ...
+    async def claim(self, *, worker_id: str, lease_seconds: int = 120) -> ConnectorCleanupJob | None: ...
+    async def mark_remote_revoked(self, job: ConnectorCleanupJob) -> None: ...
+    async def mark_sink_cleaned(self, job: ConnectorCleanupJob) -> None: ...
+    async def complete(self, job: ConnectorCleanupJob) -> None: ...
+    async def fail(self, job: ConnectorCleanupJob, *, error_code: str) -> bool: ...
+
+
 class ConnectorSink(Protocol):
     async def upsert_page(
         self, *, tenant_id: str, connection_id: str,
@@ -128,12 +152,13 @@ class DataConnectorService:
     def __init__(
         self, *, repository: ConnectorRepository,
         providers: Mapping[str, ConnectorProvider], secrets: SecretResolver,
-        sink: ConnectorSink,
+        sink: ConnectorSink, cleanup_queue: ConnectorCleanupQueue | None = None,
     ) -> None:
         self.repository = repository
         self.providers = dict(providers)
         self.secrets = secrets
         self.sink = sink
+        self.cleanup_queue = cleanup_queue
 
     async def create_connection(
         self, *, tenant_id: str, connection_id: str, provider: str,
@@ -225,13 +250,20 @@ class DataConnectorService:
             connection = await self.repository.get(tenant_id, connection_id)
             if connection is None or connection.status != "revoked":
                 return False
+        if self.cleanup_queue is not None:
+            # The local permission revocation is already durable. Remote OAuth
+            # revocation and downstream deletion are retried by the cleanup worker.
+            await self.cleanup_queue.enqueue(
+                tenant_id=tenant_id, connection_id=connection_id,
+                disposition=revocation_disposition,
+            )
+            return True
         provider = self.providers.get(connection.provider)
         if provider is not None:
             try:
                 credential = await self.secrets.resolve(connection.secret_ref)
                 await provider.revoke(credential=credential)
             except Exception as exc:
-                # Local revocation is authoritative; retain a retryable diagnostic.
                 await self.repository.mark_error(
                     tenant_id=tenant_id, connection_id=connection_id,
                     error=f"remote revoke: {type(exc).__name__}",
@@ -241,3 +273,27 @@ class DataConnectorService:
             disposition=revocation_disposition,
         )
         return True
+
+    async def process_cleanup(self, job: ConnectorCleanupJob) -> None:
+        queue = self.cleanup_queue
+        if queue is None:
+            raise ConnectorError("connector cleanup queue is not configured")
+        if job.tenant_id == "" or job.disposition not in {"retain", "delete"}:
+            raise ConnectorError("invalid connector cleanup job")
+        connection = await self.repository.get(job.tenant_id, job.connection_id)
+        if connection is None or connection.status != "revoked":
+            raise ConnectorError("cleanup requires a locally revoked connection")
+        if not job.remote_revoked:
+            provider = self.providers.get(connection.provider)
+            if provider is None:
+                raise ConnectorError("connector provider is not registered")
+            credential = await self.secrets.resolve(connection.secret_ref)
+            await provider.revoke(credential=credential)
+            await queue.mark_remote_revoked(job)
+        if not job.sink_cleaned:
+            await self.sink.revoke_connection(
+                tenant_id=job.tenant_id, connection_id=job.connection_id,
+                disposition=job.disposition,
+            )
+            await queue.mark_sink_cleaned(job)
+        await queue.complete(job)
