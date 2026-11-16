@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
+from agent_platform.knowledge.evaluation import RAGEvalCase, evaluate_retrieval
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 
 
 class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_retrieval_precision_counts_unique_documents_not_duplicate_chunks(self):
-        from types import SimpleNamespace
-        from agent_platform.knowledge.evaluation import RAGEvalCase, evaluate_retrieval
-
         class FixtureService:
             async def retrieve(self, *, principal, query, limit):
                 return [
