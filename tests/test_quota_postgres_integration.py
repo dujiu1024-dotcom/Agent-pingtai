@@ -41,7 +41,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             columns = await (
                 await conn.execute(
                     """SELECT column_name FROM information_schema.columns
-                       WHERE table_name='platform_usage_ledger' AND column_name='reservation_id'"""
+                       WHERE table_name='platform_quota_reservations' AND column_name IN ('heartbeat_at', 'expires_at')"""
                 )
             ).fetchall()
         self.assertEqual({row[0] for row in rows}, {
@@ -52,7 +52,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             "platform_quota_budgets", "platform_quota_reservations",
             "platform_usage_ledger", "platform_usage_reconciliation",
         })
-        self.assertEqual(len(columns), 1)
+        self.assertEqual({row[0] for row in columns}, {"heartbeat_at", "expires_at"})
 
     async def test_reserve_enforces_hard_limits_with_empty_ledger_and_reservations(self):
         from datetime import datetime, timedelta, timezone
@@ -291,3 +291,78 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             await store.reconcile_cost(
                 tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("3.00"),
             )
+
+    async def test_reservation_lease_renewal_and_expiration_are_terminal_and_idempotent(self):
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        tenant_id = f"quota-lease-it-{uuid4().hex}"
+        agent_id = f"agent-{uuid4().hex}"
+        template_id = f"template-{uuid4().hex}"
+        run_id = uuid4()
+        reservation_id = uuid4()
+        period_start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        period_end = period_start + timedelta(hours=1)
+
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            migration_dir = Path("agent_platform/storage/postgres")
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_id, "Quota Reservation Lease Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Lease Agent', 'integration')""",
+                (tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id, template_id, version, definition, status, created_by)
+                   VALUES (%s, %s, 1, '{}'::jsonb, 'active', 'integration')""",
+                (tenant_id, template_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id, run_id, agent_id, template_id, template_version, status)
+                   VALUES (%s, %s, %s, %s, 1, 'queued')""",
+                (tenant_id, run_id, agent_id, template_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_quota_budgets
+                   (tenant_id, scope_type, scope_id, period_start, period_end, hard_concurrency)
+                   VALUES (%s, 'tenant', %s, %s, %s, 1)""",
+                (tenant_id, tenant_id, period_start, period_end),
+            )
+            await conn.execute(
+                """SELECT * FROM platform_quota_reserve_split
+                   (%s, %s, %s, 'tenant', %s, %s, 0, 0, 0, 0)""",
+                (reservation_id, tenant_id, run_id, tenant_id, period_start),
+            )
+            await conn.execute(
+                """UPDATE platform_quota_reservations
+                   SET expires_at=now() - interval '1 second'
+                   WHERE reservation_id=%s""",
+                (reservation_id,),
+            )
+
+        async with await AsyncConnection.connect(DSN) as conn:
+            cursor = await conn.execute(
+                "SELECT platform_quota_renew(%s, 900)", (reservation_id,),
+            )
+            self.assertFalse((await cursor.fetchone())[0])
+            cursor = await conn.execute("SELECT platform_quota_expire(10)")
+            self.assertEqual((await cursor.fetchone())[0], 1)
+            await conn.commit()
+
+        async with await AsyncConnection.connect(DSN) as conn:
+            cursor = await conn.execute(
+                "SELECT status FROM platform_quota_reservations WHERE reservation_id=%s",
+                (reservation_id,),
+            )
+            self.assertEqual((await cursor.fetchone())[0], "expired")
+            cursor = await conn.execute("SELECT platform_quota_expire(10)")
+            self.assertEqual((await cursor.fetchone())[0], 0)
+            await conn.commit()
