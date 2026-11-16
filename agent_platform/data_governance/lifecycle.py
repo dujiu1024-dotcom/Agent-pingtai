@@ -155,6 +155,19 @@ class PostgresMigrationRepository:
                 )
                 return await cursor.fetchone() is not None
 
+    async def get_row(self, tenant_id: str, batch_id: str,
+                      source_key: str) -> Mapping[str, Any] | None:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT payload_hash,target_key,status
+                   FROM platform_data_migration_rows
+                   WHERE tenant_id=%s AND batch_id=%s AND source_key=%s""",
+                (tenant_id,batch_id,source_key),
+            )
+            row = await cursor.fetchone()
+        return dict(row) if row is not None else None
+
     async def record_row(self, row: MigrationRow) -> None:
         if not all((row.tenant_id,row.batch_id,row.source_key,row.payload_hash)):
             raise ValueError("migration row identity and payload hash are required")
