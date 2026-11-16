@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from psycopg import connect, sql
-from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg.conninfo import make_conninfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ ADMIN_DSN = os.environ.get("AGENT_PLATFORM_TEST_DSN")
 class PostgresEncryptedBackupRestoreIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-            cls.admin_dsn = ADMIN_DSN
+        cls.admin_dsn = ADMIN_DSN
         cls.source_db = f"backup_src_{uuid4().hex[:12]}"
         cls.target_db = f"backup_dst_{uuid4().hex[:12]}"
         with connect(cls.admin_dsn, autocommit=True) as conn:
@@ -56,7 +56,8 @@ class PostgresEncryptedBackupRestoreIntegrationTests(unittest.TestCase):
                 text=True,
             )
             public_key = re.search(r"public key: (age1[0-9a-z]+)", key.stderr, re.IGNORECASE)
-            self.assertIsNotNone(public_key, key.stderr)
+            if public_key is None:
+                self.fail(f"age-keygen did not report a public key: {key.stderr}")
             identity = key_path.read_text(encoding="utf-8")
             self.assertIn("AGE-SECRET-KEY-", identity)
             backup_dir = work / "backups"
