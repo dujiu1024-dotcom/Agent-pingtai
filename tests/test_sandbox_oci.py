@@ -5,7 +5,7 @@ from agent_platform.sandbox.oci import OciSandboxConfig, OciSandboxRunner
 IMAGE = "registry.example/agent-sandbox@sha256:" + "a" * 64
 
 
-class OciSandboxConfigTests(unittest.TestCase):
+class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
     def test_requires_digest_pinned_image(self):
         with self.assertRaisesRegex(ValueError, "sha256 digest"):
             OciSandboxConfig(image="registry.example/agent-sandbox:latest")
