@@ -22,11 +22,15 @@ python3 - "$BACKUP_FILE" "$MANIFEST" <<'PY'
 import hashlib, json, pathlib, sys
 artifact, manifest_path = map(pathlib.Path, sys.argv[1:])
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+digest = hashlib.sha256()
+with artifact.open("rb") as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
 if manifest.get("format") != "postgres-custom-age-v1":
     raise SystemExit("unsupported backup manifest format")
 if manifest.get("artifact") != artifact.name:
     raise SystemExit("manifest artifact name mismatch")
-if hashlib.sha256(artifact.read_bytes()).hexdigest() != manifest.get("sha256"):
+if digest.hexdigest() != manifest.get("sha256"):
     raise SystemExit("manifest checksum mismatch")
 PY
 
