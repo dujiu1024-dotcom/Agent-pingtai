@@ -245,7 +245,7 @@ class FileProcessingWorker:
             knowledge = self.knowledge_for_tenant(job.tenant_id)
             ingest_result = await knowledge.ingest(document=document, content=content)
             parser_names = [
-                type(parser).__name__ for parser in getattr(knowledge.parsers, "parsers", ())
+                type(parser).__name__ for parser in getattr(getattr(knowledge, "parsers", None), "parsers", ())
                 if asset.media_type in getattr(parser, "supported_media_types", ())
             ]
             record_result = getattr(self.queue, "record_result", None)
