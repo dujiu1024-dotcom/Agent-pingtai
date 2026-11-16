@@ -85,11 +85,12 @@ class PostgresQuotaStore:
                 try:
                     cursor = await connection.execute(
                         """SELECT warning_soft_tokens,warning_soft_cost
-                        FROM platform_quota_reserve_split(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        FROM platform_quota_reserve_split(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (UUID(reservation.reservation_id),reservation.tenant_id,UUID(reservation.run_id),
                          reservation.scope_type,reservation.scope_id,reservation.period_start,
                          reservation.reserved_tokens,reservation.reserved_cost_usd,
-                         reservation.reserved_input_tokens,reservation.reserved_output_tokens),
+                         reservation.reserved_input_tokens,reservation.reserved_output_tokens,
+                         UUID(reservation.root_run_id or reservation.run_id)),
                     )
                     row = await cursor.fetchone()
                 except Exception as exc:
@@ -242,7 +243,7 @@ class PostgresQuotaStore:
             cursor = await connection.execute(
                 """SELECT event_id,tenant_id,run_id,model_key,input_tokens,output_tokens,
                           cost_usd,occurred_at,project_id,agent_id,tool_calls,runtime_ms,
-                          storage_bytes,price_card_version,source
+                          storage_bytes,price_card_version,source,root_run_id
                    FROM platform_usage_ledger
                    WHERE tenant_id=%s AND occurred_at >= %s AND occurred_at < %s
                      AND (%s IS NULL OR run_id=%s)
@@ -260,7 +261,7 @@ class PostgresQuotaStore:
                 project_id=row["project_id"],agent_id=row["agent_id"],
                 tool_calls=row["tool_calls"],runtime_ms=row["runtime_ms"],
                 storage_bytes=row["storage_bytes"],price_card_version=row["price_card_version"],
-                source=row["source"],
+                source=row["source"],root_run_id=str(row["root_run_id"]) if row["root_run_id"] else str(row["run_id"]),
             )
             for row in rows
         ]
