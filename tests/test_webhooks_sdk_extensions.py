@@ -113,6 +113,21 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(body)["id"], "event-1")
         self.assertEqual(store.completed[0][0], "tenant-a")
 
+    async def test_dispatch_supports_async_secret_manager_resolver(self):
+        store = FakeWebhookStore()
+        transport = FakeWebhookTransport()
+
+        async def resolve_secret(_ref):
+            return SECRET
+
+        dispatcher = WebhookDispatcher(
+            store=store, transport=transport, resolve_secret=resolve_secret,
+            clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
+        )
+        result = await dispatcher.dispatch()
+        self.assertEqual(result["delivered"], 1)
+        self.assertEqual(len(store.completed), 1)
+
     async def test_dispatch_retries_then_dead_letters(self):
         store = FakeWebhookStore(attempt=8)
         transport = FakeWebhookTransport(code=503)
