@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.control_plane.data_connectors import (
-    ConnectorError, ConnectorPage, DataConnection, DataConnectorService,
-    InMemoryConnectorRepository,
+    ConnectorCleanupJob, ConnectorError, ConnectorPage, DataConnection,
+    DataConnectorService, InMemoryConnectorRepository,
 )
 
 
@@ -56,6 +56,39 @@ class FakeSink:
                 key: value for key, value in self.items.items()
                 if key[:2] != (tenant_id, connection_id)
             }
+
+
+
+class FakeCleanupQueue:
+    def __init__(self):
+        self.job = None
+        self.completed = []
+        self.failures = []
+    async def enqueue(self, *, tenant_id, connection_id, disposition):
+        self.job = ConnectorCleanupJob(
+            tenant_id, "cleanup-1", connection_id, disposition,
+            False, False, 0, 3, "worker-a",
+        )
+    async def claim(self, *, worker_id, lease_seconds=120):
+        if self.job is None:
+            return None
+        from dataclasses import replace
+        self.job = replace(self.job, attempts=self.job.attempts + 1, lease_owner=worker_id)
+        return self.job
+    async def mark_remote_revoked(self, job):
+        from dataclasses import replace
+        self.job = replace(self.job, remote_revoked=True)
+    async def mark_sink_cleaned(self, job):
+        from dataclasses import replace
+        self.job = replace(self.job, sink_cleaned=True)
+    async def complete(self, job):
+        self.completed.append(job.connection_id)
+        self.job = None
+    async def fail(self, job, *, error_code):
+        self.failures.append(error_code)
+        from dataclasses import replace
+        self.job = replace(self.job or job, lease_owner="worker-a")
+        return False
 
 
 class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
@@ -132,6 +165,49 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.service.revoke(
             tenant_id="tenant-a", connection_id="drive-1",
         ))
+        self.assertEqual(len(self.sink.revocations), 2)
+
+    async def test_revocation_queues_remote_and_sink_cleanup_for_worker(self):
+        from agent_platform.control_plane.connector_cleanup import ConnectorCleanupWorker
+        queue = FakeCleanupQueue()
+        service = DataConnectorService(
+            repository=self.repo, providers={"drive": self.provider},
+            secrets=FakeSecrets(), sink=self.sink, cleanup_queue=queue,
+        )
+        self.assertTrue(await service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+            revocation_disposition="delete",
+        ))
+        self.assertEqual((await self.repo.get("tenant-a", "drive-1")).status, "revoked")
+        self.assertFalse(self.provider.revoked)
+        worker = ConnectorCleanupWorker(
+            queue=queue, service=service, worker_id="cleanup-worker",
+        )
+        self.assertTrue(await worker.run_once())
+        self.assertTrue(self.provider.revoked)
+        self.assertEqual(self.sink.revocations, [("tenant-a", "drive-1", "delete")])
+        self.assertEqual(queue.completed, ["drive-1"])
+
+    async def test_cleanup_worker_retries_sink_failure_without_repeating_remote_revoke(self):
+        from agent_platform.control_plane.connector_cleanup import ConnectorCleanupWorker
+        queue = FakeCleanupQueue()
+        self.sink.fail_revoke_once = True
+        service = DataConnectorService(
+            repository=self.repo, providers={"drive": self.provider},
+            secrets=FakeSecrets(), sink=self.sink, cleanup_queue=queue,
+        )
+        await service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+            revocation_disposition="delete",
+        )
+        worker = ConnectorCleanupWorker(
+            queue=queue, service=service, worker_id="cleanup-worker",
+        )
+        await worker.run_once()
+        self.assertTrue(queue.job.remote_revoked)
+        self.assertFalse(queue.job.sink_cleaned)
+        await worker.run_once()
+        self.assertEqual(queue.completed, ["drive-1"])
         self.assertEqual(len(self.sink.revocations), 2)
 
     async def test_tenant_isolation(self):
