@@ -381,6 +381,48 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_registry_executor_resolver_preserves_graph_context(self):
+        task = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "context"},
+        )
+        record = await self.run_store.get_task_record(
+            "tenant-a", task["task_id"], actor_id="user-a",
+        )
+        graph = FakeGraph()
+        events = []
+
+        @asynccontextmanager
+        async def graph_factory(**_kwargs):
+            events.append("graph-open")
+            yield graph
+            events.append("graph-close")
+
+        async def lifecycle_resolver(_tenant_id):
+            return self.lifecycle
+
+        runtime_provider = SimpleNamespace(
+            prepare=lambda **kwargs: None,
+            release=lambda tenant_id, run_id: None,
+        )
+
+        async def runtime_provider_resolver(_tenant_id):
+            return runtime_provider
+
+        resolver = RegistryLangGraphExecutorResolver(
+            snapshots=self.snapshots,
+            lifecycle_resolver=lifecycle_resolver,
+            runtime_provider_resolver=runtime_provider_resolver,
+            graph_factory=graph_factory,
+        )
+        scoped = await resolver(record, "worker-context")
+        async with scoped as executor:
+            self.assertEqual(executor.worker_id, "worker-context")
+            self.assertEqual(events, ["graph-open"])
+        self.assertEqual(events, ["graph-open", "graph-close"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
 
