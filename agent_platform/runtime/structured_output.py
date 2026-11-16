@@ -6,7 +6,11 @@ import json
 from dataclasses import replace
 from typing import Any, Mapping
 
-from agent_platform.runtime.protocols import HarnessAdapter, HarnessRequest, HarnessResult
+from agent_platform.runtime.protocols import (
+    HarnessAdapter,
+    HarnessRequest,
+    HarnessResult,
+)
 
 
 _SUPPORTED_SCHEMA_KEYWORDS = frozenset({
