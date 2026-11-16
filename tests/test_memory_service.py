@@ -176,7 +176,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second[0].status.value, 'candidate')
 
     async def test_repeated_turn_extraction_preserves_reviewed_memory(self):
-        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
         class Extractor:
             async def extract(self, *, turn):
                 return [MemoryDraft(scope=MemoryScope.USER, scope_id=turn.user_id, content='original', confidence=0.9)]
