@@ -214,18 +214,18 @@ class SupervisedToolGateway:
         else:
             authorization_detail = "resource access denied"
         if not resource_allowed:
-                await self._audit_sink.record(
-                    tenant_id=tenant_id,
-                    actor_id=actor_id,
-                    action=tool_name,
-                    resource=resource,
-                    action_digest=request.digest(),
-                    outcome="denied",
-                    run_id=run_id,
-                    agent_id=agent_id,
-                    detail=authorization_detail,
-                )
-                raise ToolExecutionDenied("resource access is not authorized")
+            await self._audit_sink.record(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                action=tool_name,
+                resource=resource,
+                action_digest=request.digest(),
+                outcome="denied",
+                run_id=run_id,
+                agent_id=agent_id,
+                detail=authorization_detail,
+            )
+            raise ToolExecutionDenied("resource access is not authorized")
 
         requires_idempotency = definition.risk in {
             RiskLevel.EXTERNAL_OR_IRREVERSIBLE,
