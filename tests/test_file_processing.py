@@ -116,13 +116,13 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
             knowledge_for_tenant=lambda tenant: self.knowledge,
         )
         await worker.run_once()
-        self.assertIn(asset.asset_id, self.knowledge_repository.documents)
+        self.assertTrue(any(key[1] == asset.asset_id for key in self.knowledge_repository.documents))
 
         await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
 
         saved = await self.repository.get_asset("tenant-a", asset.asset_id)
         self.assertEqual(saved.status, AssetStatus.DELETED)
-        self.assertNotIn(asset.asset_id, self.knowledge_repository.documents)
+        self.assertFalse(any(key[1] == asset.asset_id for key in self.knowledge_repository.documents))
         with self.assertRaises(Exception):
             await self.storage.get(asset.object_key)
 
