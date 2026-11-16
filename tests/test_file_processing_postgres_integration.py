@@ -13,8 +13,12 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         from psycopg import AsyncConnection
         from psycopg.rows import dict_row
-        from agent_platform.control_plane.file_processing import PostgresFileProcessingQueue
+        from agent_platform.control_plane.file_processing import (
+            FileProcessingJob, PostgresFileProcessingQueue,
+        )
+        self.FileProcessingJob = FileProcessingJob
         self.tenant_id = "file-it-" + uuid4().hex
+        self.asset_id = uuid4()
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
             for path in sorted(Path("agent_platform/storage/postgres").glob("*.sql")):
                 await conn.execute(path.read_text(), prepare=False)
@@ -27,7 +31,7 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
                 """INSERT INTO platform_file_assets
                    (tenant_id,asset_id,owner_id,object_key,filename,media_type,size_bytes,sha256,status)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending')""",
-                (self.tenant_id, self.asset_id := uuid4(), "user-a",
+                (self.tenant_id, self.asset_id, "user-a",
                  f"tenant/{self.tenant_id}/assets/{uuid4()}/hash",
                  "notes.txt", "text/plain", 5, "a" * 64),
             )
@@ -37,7 +41,6 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
         self.queue = PostgresFileProcessingQueue(connection_factory=connect)
 
     async def test_enqueue_claim_and_complete_are_tenant_scoped(self):
-        from agent_platform.control_plane.file_processing import FileProcessingJob
         await self.queue.enqueue(tenant_id=self.tenant_id, asset_id=str(self.asset_id))
         job = await self.queue.claim(worker_id="worker-a", lease_seconds=30)
         self.assertIsNotNone(job)
@@ -64,7 +67,7 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
             )
         job = await self.queue.claim(worker_id="worker-b", lease_seconds=30)
         self.assertEqual(job.attempts, 2)
-        job = FileProcessingJob(
+        job = self.FileProcessingJob(
             job.tenant_id, job.job_id, job.asset_id, job.max_attempts,
             job.max_attempts, job.lease_owner,
         )
