@@ -223,7 +223,7 @@ class RedisStreamsConsumer:
 
 
 class RedisStreamsConsumerWorker:
-    """Lifecycle wrapper that connects, creates its group, and polls a consumer."""
+    """Poll one tenant-scoped consumer; deployments should create one worker per tenant."""
 
     def __init__(
         self,
