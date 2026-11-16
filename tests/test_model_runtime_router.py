@@ -599,5 +599,91 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                          "token_estimate_invalid_or_context_window_exceeded")
 
 
+    async def test_truncate_policy_preserves_run_anchors_before_provider_dispatch(self):
+        class LengthEstimator:
+            def estimate(self, *, model_id, messages, request_parameters, context_window_tokens):
+                input_tokens = sum(len(str(message.get("content", ""))) for message in messages)
+                output_tokens = request_parameters["max_tokens"]
+                total = input_tokens + output_tokens
+                if total > context_window_tokens:
+                    raise ValueError("estimated prompt plus planned output exceeds model context window")
+                return SimpleNamespace(
+                    input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total,
+                )
+
+        class CaptureTransport:
+            def __init__(self):
+                self.messages = None
+
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+                self.messages = tuple(messages)
+                return {
+                    "choices": [{"message": {"content": "done"}}],
+                    "usage": {"prompt_tokens": 20, "completion_tokens": 2},
+                }
+
+        audit = AuditRecorder()
+        transport = CaptureTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit, resolver=RegistryModelResolver(Secrets()),
+            transport=transport, token_estimator=LengthEstimator(),
+            context_overflow_policy="truncate",
+        )
+        await router.complete(
+            snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-overflow",
+            template_id="primary", request_id="request-overflow",
+            messages=(
+                {"role": "system", "content": "Keep platform rules."},
+                {"role": "user", "content": "old history " * 1000},
+                {"role": "assistant", "content": "old response " * 1000},
+                {"role": "user", "content": "Latest user request."},
+            ),
+            request_parameters={"max_tokens": 10},
+            protected_context={
+                "goal": "finish reconciliation", "constraints": ["read only"],
+                "decisions": ["use FIFO"], "evidence": ["approved source snapshot"],
+            },
+        )
+        dispatched = "\\n".join(str(message.get("content", "")) for message in transport.messages)
+        self.assertIn("Latest user request.", dispatched)
+        self.assertIn("finish reconciliation", dispatched)
+        self.assertIn("read only", dispatched)
+        self.assertIn("use FIFO", dispatched)
+        self.assertIn("approved source snapshot", dispatched)
+        self.assertNotIn("old history", dispatched)
+        self.assertTrue(any(
+            event["action"] == "model.context_overflow_resolved"
+            and event["detail"]["policy"] == "truncate"
+            for event in audit.events
+        ))
+
+    async def test_human_intervention_policy_without_operator_blocks_provider_dispatch(self):
+        from agent_platform.models.context_overflow import HumanInterventionRequired
+
+        class OversizedEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=9000, output_tokens=10, total_tokens=9010)
+
+        transport = FallbackTransport()
+        audit = AuditRecorder()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit, resolver=RegistryModelResolver(Secrets()),
+            transport=transport, token_estimator=OversizedEstimator(),
+            context_overflow_policy="human_intervention",
+        )
+        with self.assertRaisesRegex(ModelRoutingError, "requires human intervention"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-human",
+                template_id="primary", fallback_template_ids=("fallback",),
+                messages=({"role": "user", "content": "oversized"},),
+                request_id="request-human", request_parameters={"max_tokens": 10},
+                protected_context={
+                    "goal": "goal", "constraints": [], "decisions": [], "evidence": [],
+                },
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(audit.events[-1]["detail"]["reason"], "human_intervention_required")
+
+
 if __name__ == "__main__":
     unittest.main()
