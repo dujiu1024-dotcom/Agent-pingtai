@@ -56,6 +56,7 @@ class ConnectorRepository(Protocol):
         cursor: Mapping[str, Any] | None,
     ) -> bool: ...
     async def mark_error(self, *, tenant_id: str, connection_id: str, error: str) -> None: ...
+    async def clear_error(self, *, tenant_id: str, connection_id: str) -> None: ...
     async def revoke(self, *, tenant_id: str, connection_id: str) -> DataConnection | None: ...
 
 
@@ -113,6 +114,13 @@ class InMemoryConnectorRepository:
             from dataclasses import replace
             self.records[key] = replace(item, last_error=error[:500])
 
+    async def clear_error(self, *, tenant_id: str, connection_id: str) -> None:
+        key = (tenant_id, connection_id)
+        item = self.records.get(key)
+        if item is not None:
+            from dataclasses import replace
+            self.records[key] = replace(item, last_error=None)
+
     async def revoke(self, *, tenant_id: str, connection_id: str) -> DataConnection | None:
         key = (tenant_id, connection_id)
         item = self.records.get(key)
@@ -128,12 +136,13 @@ class DataConnectorService:
     def __init__(
         self, *, repository: ConnectorRepository,
         providers: Mapping[str, ConnectorProvider], secrets: SecretResolver,
-        sink: ConnectorSink,
+        sink: ConnectorSink, sync_queue: Any | None = None,
     ) -> None:
         self.repository = repository
         self.providers = dict(providers)
         self.secrets = secrets
         self.sink = sink
+        self.sync_queue = sync_queue
 
     async def create_connection(
         self, *, tenant_id: str, connection_id: str, provider: str,
@@ -167,6 +176,16 @@ class DataConnectorService:
         self, *, tenant_id: str, connection_id: str,
         revocation_disposition: str = "retain",
     ) -> int:
+        page = await self.sync_page(
+            tenant_id=tenant_id, connection_id=connection_id,
+            revocation_disposition=revocation_disposition,
+        )
+        return len(page.items)
+
+    async def sync_page(
+        self, *, tenant_id: str, connection_id: str,
+        revocation_disposition: str = "retain",
+    ) -> ConnectorPage:
         connection = await self.repository.get(tenant_id, connection_id)
         if connection is None or connection.status != "active":
             raise ConnectorError("connection is not active")
@@ -178,6 +197,10 @@ class DataConnectorService:
             page = await provider.fetch_page(
                 credential=credential, scopes=connection.scopes, cursor=connection.cursor,
             )
+            if page.has_more and (
+                page.next_cursor is None or page.next_cursor == connection.cursor
+            ):
+                raise ConnectorError("provider pagination did not advance its cursor")
             latest = await self.repository.get(tenant_id, connection_id)
             if latest is None or latest.status != "active" or latest.version != connection.version:
                 await self.sink.revoke_connection(
@@ -200,7 +223,7 @@ class DataConnectorService:
                         disposition=revocation_disposition,
                     )
                 raise ConnectorError("cursor compare-and-swap failed; page may be replayed")
-            return len(page.items)
+            return page
         except ConnectorError:
             raise
         except Exception as exc:
@@ -212,7 +235,7 @@ class DataConnectorService:
 
     async def revoke(
         self, *, tenant_id: str, connection_id: str,
-        revocation_disposition: str = "retain",
+        revocation_disposition: str = "retain", schedule_retry: bool = True,
     ) -> bool:
         if revocation_disposition not in {"retain", "delete"}:
             raise ValueError("revocation disposition must be retain or delete")
@@ -220,24 +243,44 @@ class DataConnectorService:
             tenant_id=tenant_id, connection_id=connection_id,
         )
         if connection is None:
-            # A prior attempt may have revoked locally but failed during remote
-            # credential revocation or sink cleanup. Repeat those idempotent steps.
             connection = await self.repository.get(tenant_id, connection_id)
             if connection is None or connection.status != "revoked":
                 return False
+        cleanup_error: str | None = None
         provider = self.providers.get(connection.provider)
         if provider is not None:
             try:
                 credential = await self.secrets.resolve(connection.secret_ref)
                 await provider.revoke(credential=credential)
             except Exception as exc:
-                # Local revocation is authoritative; retain a retryable diagnostic.
-                await self.repository.mark_error(
+                cleanup_error = f"remote_revoke:{type(exc).__name__}"
+        try:
+            await self.sink.revoke_connection(
+                tenant_id=tenant_id, connection_id=connection_id,
+                disposition=revocation_disposition,
+            )
+        except Exception as exc:
+            cleanup_error = cleanup_error or f"sink_cleanup:{type(exc).__name__}"
+            await self.repository.mark_error(
+                tenant_id=tenant_id, connection_id=connection_id, error=cleanup_error,
+            )
+            if schedule_retry and self.sync_queue is not None:
+                await self.sync_queue.enqueue(
                     tenant_id=tenant_id, connection_id=connection_id,
-                    error=f"remote revoke: {type(exc).__name__}",
+                    job_type="revoke_cleanup", disposition=revocation_disposition,
                 )
-        await self.sink.revoke_connection(
-            tenant_id=tenant_id, connection_id=connection_id,
-            disposition=revocation_disposition,
-        )
+            raise ConnectorError("connector is revoked locally; cleanup is pending") from exc
+        if cleanup_error is not None:
+            await self.repository.mark_error(
+                tenant_id=tenant_id, connection_id=connection_id, error=cleanup_error,
+            )
+            if schedule_retry and self.sync_queue is not None:
+                await self.sync_queue.enqueue(
+                    tenant_id=tenant_id, connection_id=connection_id,
+                    job_type="revoke_cleanup", disposition=revocation_disposition,
+                )
+        else:
+            await self.repository.clear_error(
+                tenant_id=tenant_id, connection_id=connection_id,
+            )
         return True
