@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Any
 
 _SENSITIVE_KEY = re.compile(
-    r"(?:password|passwd|secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|api[_-]?token|token[_-]?(?:value|secret)|api[_-]?key|cookie|credential|private[_-]?key)",
+    r"(?:password|passwd|secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|api[_-]?token|token[_-]?(?:value|secret)|api[_-]?key|authorization|cookie|credential|private[_-]?key)",
     re.IGNORECASE,
 )
 _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
