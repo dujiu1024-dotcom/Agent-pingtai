@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -74,6 +75,46 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].price_card_version, "harness-pricing-v1")
+
+
+    async def test_long_model_call_renews_run_budget_reservation(self):
+        class LeaseAwareStore(InMemoryQuotaStore):
+            def __init__(self):
+                super().__init__()
+                self.heartbeats = 0
+
+            async def heartbeat_reservation(self, reservation_id, *, lease_seconds=300):
+                self.heartbeats += 1
+                return True
+
+        class SlowHarness(FakeHarness):
+            async def run(self, request):
+                await asyncio.sleep(0.035)
+                return await super().run(request)
+
+        now = datetime.now(timezone.utc)
+        store = LeaseAwareStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"),
+        ))
+        adapter = QuotaEnforcedHarnessAdapter(
+            SlowHarness(), quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+            reservation_lease_seconds=15,
+            reservation_heartbeat_interval_seconds=0.01,
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-long-model-call",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        await adapter.run(request)
+        self.assertGreaterEqual(store.heartbeats, 2)
+
 
     async def test_context_window_limit_blocks_before_model_dispatch(self):
         inner = FakeHarness()
