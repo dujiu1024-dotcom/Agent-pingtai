@@ -42,7 +42,7 @@ class FakeRepository:
             ),
             ConversationMessage(
                 tenant_id=TENANT, message_id="run-user", session_id=SESSION,
-                actor_id=ACTOR, role=MessageRole.USER, content="remember this",
+                actor_id=ACTOR, role=MessageRole.USER, content="remember this", run_id=RUN,
             ),
             ConversationMessage(
                 tenant_id=TENANT, message_id="run-assistant", session_id=SESSION,
@@ -251,6 +251,18 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(principal.agent_ids, frozenset({"agent-a"}))
         with self.assertRaises(PermissionError):
             await resolver(TENANT, "not-a-member")
+
+    async def test_does_not_pair_run_output_with_previous_turn(self):
+        repository = FakeRepository()
+        repository.messages = repository.messages[:2]
+        run_store = FakeRunStore(
+            input={"text": "current Run question"},
+            output={"text": "current Run answer"},
+        )
+        await self.handler(run_store=run_store, repository=repository)(make_event())
+        _, turn = self.extraction.turns[0]
+        self.assertEqual(turn.user_message, "current Run question")
+        self.assertEqual(turn.assistant_message, "current Run answer")
 
 
 if __name__ == "__main__":
