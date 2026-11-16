@@ -681,12 +681,9 @@ class RunExecutionWorker:
                     f"worker lease lost while executing Run {run_id}"
                 )
 
-    async def _execute_with_heartbeat(
-        self, snapshot: Any, executor: Any, record: Mapping[str, Any],
-    ) -> str:
-        execution = asyncio.create_task(
-            self._execute_claimed(snapshot, executor, record)
-        )
+    async def _with_heartbeat(self, snapshot: Any, operation: Any) -> str:
+        """Keep the lease alive across the entire claimed operation, including slot waits."""
+        execution = asyncio.create_task(operation)
         heartbeat = asyncio.create_task(
             self._heartbeat_until_done(snapshot.tenant_id, snapshot.run_id)
         )
@@ -726,28 +723,31 @@ class RunExecutionWorker:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
                 return "skipped"
             try:
-                async with AsyncExitStack() as slots:
-                    if self.concurrency_limiter is not None:
-                        queue_id = self.queue_scope_resolver(record)
-                        if not isinstance(queue_id, str) or not queue_id.strip():
-                            raise ValueError("queue scope resolver must return a non-empty string")
-                        await slots.enter_async_context(self.concurrency_limiter.slot(
-                            tenant_id=tenant_id, run_id=run_id,
-                            scope_type="queue", scope_id=queue_id,
-                        ))
-                        await slots.enter_async_context(self.concurrency_limiter.slot(
-                            tenant_id=tenant_id, run_id=run_id,
-                            scope_type="worker_pool", scope_id=self.worker_pool_scope_id,
-                        ))
-                    resolved = await self._resolve(
-                        self.executor_resolver, record, self.worker_id,
-                    )
-                    if callable(getattr(resolved, "__aenter__", None)) and callable(
-                        getattr(resolved, "__aexit__", None)
-                    ):
-                        async with resolved as executor:
-                            return await self._execute_with_heartbeat(snapshot, executor, record)
-                    return await self._execute_with_heartbeat(snapshot, resolved, record)
+                async def execute_claimed() -> str:
+                    async with AsyncExitStack() as slots:
+                        if self.concurrency_limiter is not None:
+                            queue_id = self.queue_scope_resolver(record)
+                            if not isinstance(queue_id, str) or not queue_id.strip():
+                                raise ValueError("queue scope resolver must return a non-empty string")
+                            await slots.enter_async_context(self.concurrency_limiter.slot(
+                                tenant_id=tenant_id, run_id=run_id,
+                                scope_type="queue", scope_id=queue_id,
+                            ))
+                            await slots.enter_async_context(self.concurrency_limiter.slot(
+                                tenant_id=tenant_id, run_id=run_id,
+                                scope_type="worker_pool", scope_id=self.worker_pool_scope_id,
+                            ))
+                        resolved = await self._resolve(
+                            self.executor_resolver, record, self.worker_id,
+                        )
+                        if callable(getattr(resolved, "__aenter__", None)) and callable(
+                            getattr(resolved, "__aexit__", None)
+                        ):
+                            async with resolved as executor:
+                                return await self._execute_claimed(snapshot, executor, record)
+                        return await self._execute_claimed(snapshot, resolved, record)
+
+                return await self._with_heartbeat(snapshot, execute_claimed())
             except asyncio.CancelledError:
                 raise
             except BudgetExceeded:
