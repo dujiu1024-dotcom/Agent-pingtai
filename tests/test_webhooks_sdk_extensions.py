@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import datetime, timedelta, timezone
-from email.utils import format_datetime
+from email.utils import format_datetime as format_http_date
 from urllib.request import Request
 
 from agent_platform.events.webhooks import (
@@ -381,7 +381,7 @@ class SdkRetryContractTests(unittest.TestCase):
         self.assertEqual(sleeps, [30.0])
 
     def test_retry_after_http_date_is_honored_and_invalid_or_past_dates_fall_back(self):
-        future = format_datetime(
+        future = format_http_date(
             datetime.now(timezone.utc) + timedelta(seconds=12),
             usegmt=True,
         )
@@ -395,7 +395,7 @@ class SdkRetryContractTests(unittest.TestCase):
         self.assertGreaterEqual(sleeps[0], 10.0)
         self.assertLessEqual(sleeps[0], 12.0)
 
-        for header in ("not-a-date", format_datetime(
+        for header in ("not-a-date", format_http_date(
             datetime.now(timezone.utc) - timedelta(seconds=30),
             usegmt=True,
         )):
