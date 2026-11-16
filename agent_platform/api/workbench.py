@@ -21,6 +21,7 @@ class TaskCenterService(Protocol):
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
+        priority: int = 100,
     ) -> Mapping[str, Any]: ...
 
     async def get_task(
@@ -117,6 +118,7 @@ def create_workbench_router(
                         str(body["idempotency_key"])
                         if body.get("idempotency_key") else None
                     ),
+                    priority=int(body.get("priority", 100)),
                 )
             except PermissionError as exc:
                 raise HTTPException(403, str(exc)) from exc
