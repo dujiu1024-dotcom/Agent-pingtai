@@ -217,7 +217,6 @@ class FileProcessingWorker:
                     await self.knowledge_for_tenant(job.tenant_id).repository.delete_document(
                         job.tenant_id, job.asset_id,
                     )
-                    await self.queue.complete(job)
             else:
                 await repository.set_asset_status_if_not_deleted(
                     job.tenant_id, job.asset_id, AssetStatus.PENDING,
