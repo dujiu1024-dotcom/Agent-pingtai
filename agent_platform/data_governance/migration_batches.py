@@ -12,7 +12,6 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
-from datetime import date, datetime
 
 
 _STATES = {"pending", "running", "paused", "completed", "failed"}
@@ -38,6 +37,7 @@ class TableMapping:
     source_table: str
     target_table: str
     columns: Mapping[str, str]
+    transforms: Mapping[str, str] | None = None
 
     def __post_init__(self) -> None:
         _ident(self.source_table)
@@ -49,10 +49,15 @@ class TableMapping:
             _ident(target)
         if len(set(self.columns.values())) != len(self.columns):
             raise ValueError("target column mappings must be unique")
+        allowed = {"strip", "lower", "upper", "int", "float", "bool", "json"}
+        for target, operation in (self.transforms or {}).items():
+            if target not in self.columns.values() or operation not in allowed:
+                raise ValueError("transform must target a mapped column and use a supported operation")
 
     def as_dict(self) -> dict[str, Any]:
         return {"source_table": self.source_table, "target_table": self.target_table,
-                "columns": dict(sorted(self.columns.items()))}
+                "columns": dict(sorted(self.columns.items())),
+                "transforms": dict(sorted((self.transforms or {}).items()))}
 
 
 class MigrationError(RuntimeError):
@@ -113,7 +118,28 @@ def _row_digest(row: Mapping[str, Any]) -> str:
 
 
 def _transform(row: sqlite3.Row, mapping: TableMapping) -> dict[str, Any]:
-    return {target: row[source] for source, target in mapping.columns.items()}
+    result = {target: row[source] for source, target in mapping.columns.items()}
+    for column, operation in (mapping.transforms or {}).items():
+        value = result[column]
+        if value is None:
+            continue
+        if operation == "strip": result[column] = str(value).strip()
+        elif operation == "lower": result[column] = str(value).lower()
+        elif operation == "upper": result[column] = str(value).upper()
+        elif operation == "int": result[column] = int(value)
+        elif operation == "float": result[column] = float(value)
+        elif operation == "bool":
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized not in {"true", "false", "1", "0", "yes", "no"}:
+                    raise ValueError(f"{column}: cannot convert value to bool")
+                result[column] = int(normalized in {"true", "1", "yes"})
+            else:
+                result[column] = int(bool(value))
+        elif operation == "json":
+            parsed = json.loads(value) if isinstance(value, str) else value
+            result[column] = _canonical(parsed)
+    return result
 
 
 def _batch_snapshot(connection: sqlite3.Connection, batch_id: str) -> dict[str, Any]:
@@ -146,10 +172,16 @@ def run_migration_batch(
         raise ValueError("batch_size and max_chunks must be positive")
     if not mappings or len({m.source_table for m in mappings}) != len(mappings):
         raise ValueError("mappings must be non-empty with unique source tables")
+    source_file = Path(source_path).expanduser().resolve()
+    target_file = Path(target_path).expanduser()
+    if target_file.is_symlink() or source_file == target_file.resolve():
+        raise ValueError("target must not be a symlink or the source database")
     source = _open_source(source_path)
-    target = sqlite3.connect(str(Path(target_path).expanduser()))
+    target = sqlite3.connect(str(target_file))
     target.row_factory = sqlite3.Row
+    source_stat = Path(source_path).expanduser().stat()
     config = {"source": str(Path(source_path).expanduser().resolve()),
+              "source_signature": {"size": source_stat.st_size, "mtime_ns": source_stat.st_mtime_ns},
               "mappings": [item.as_dict() for item in mappings]}
     config_digest = _digest(config)
     chunks = 0
