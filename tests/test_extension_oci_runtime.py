@@ -110,7 +110,7 @@ class SandboxedExtensionRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_uninstalled_extension_cannot_execute(self):
         with self.assertRaises(LookupError):
             await self.runtime.invoke(
-                _manifest(), principal=object(), action="run", payload={},
+                _manifest(), principal=type("Principal", (), {"tenant_id": "tenant-a"})(), action="run", payload={},
             )
 
 
