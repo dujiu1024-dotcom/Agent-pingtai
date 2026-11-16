@@ -156,6 +156,8 @@ def create_knowledge_memory_router(
     @router.post("/knowledge/evaluate")
     async def evaluate_knowledge(request: Request):
         principal = await resolve_knowledge_principal(request)
+        if "knowledge.manage" not in principal.permissions:
+            raise HTTPException(403, "knowledge.manage permission required for evaluation")
         body = await request.json()
         if not isinstance(body, dict):
             raise HTTPException(400, "evaluation request must be an object")
