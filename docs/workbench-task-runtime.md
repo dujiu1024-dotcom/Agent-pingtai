@@ -31,16 +31,16 @@
 1. API 从认证 Principal 得到 tenant 和 actor；先执行 Agent、项目、会话授权。
 2. 服务解析当前已发布 Agent 和模型模板，检查模型供应商版本、工具、Skill、工作流引用。
 3. 计算请求摘要并按 `(tenant_id, actor_id, idempotency_key)` 实现幂等提交。
-4. 在 `platform_runs` 创建 queued Run；`task_id` 使用 Run UUID。
-5. 将 Agent、模型模板、模型供应商、工具、Skill、工作流的确切活动版本固定到不可变 Run 注册快照。
-6. 返回 queued 任务；后台 Worker 通过 `FOR UPDATE SKIP LOCKED` 和租约领取任务，调用 `LangGraphRunExecutor` 执行。
+4. 在 `platform_runs` 创建 queued Run；`task_id` 使用 Run UUID，但 `dispatch_ready=false`，Worker 不可领取。
+5. 将 Agent、模型模板、模型供应商、工具、Skill、工作流的确切活动版本固定到不可变 Run 注册快照；版本若在校验期间变更则拒绝提交。
+6. 仅在快照持久化且摘要匹配后设置 `dispatch_ready=true`，再返回 queued 任务；后台 Worker 通过 `FOR UPDATE SKIP LOCKED` 和租约领取任务，调用 `LangGraphRunExecutor` 执行。
 7. Worker 写入输出、Usage、Trace ID 和终态；工作台列表/详情读取同一份持久化 Run 记录。
 
 ## 宿主运行时的唯一扩展点
 
 平台不允许从用户提交的 JSON 动态导入 Python 代码，也不会从 Agent definition 执行任意函数。每个 Agent 的 LangGraph 节点和可信工具处理器必须由宿主代码注册。
 
-部署方提供 `executor_resolver(record, worker_id)`，该函数必须：
+部署方提供可信 `graph_factory(agent_definition, snapshot, task_record, runtime_provider)`。平台的 `RegistryLangGraphExecutorResolver` 会构建 `executor_resolver(record, worker_id)`，并强制执行以下规则：
 
 - 根据 `record.tenant_id` 解析租户级 Registry / 生命周期服务；
 - 从 `RunRegistrySnapshotService.get(tenant_id, run_id)` 读取固定版本，不能重新读取“最新活动版本”；
