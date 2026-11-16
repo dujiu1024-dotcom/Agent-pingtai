@@ -14,7 +14,7 @@ Set these values in the protected release env file (mode 0600):
   currently running releases supported during the compatibility window.
 - UPGRADE_SERVICES: comma-separated Compose services, upgraded one at a time.
 - PRE_UPGRADE_BACKUP_COMMAND: mandatory operator-approved backup command.
-- PG_DSN: when set, enables read-only migration ledger/checksum preflight.
+- PG_DSN: mandatory database connection for read-only migration ledger/checksum preflight.
 - MIGRATION_COMMAND: optional forward migration command, run after backup and
   before service rollout.
 
