@@ -9,7 +9,6 @@ from typing import Any, Protocol, Sequence
 from agent_platform.contracts import ModelTemplateRef, RunContext
 
 
-
 _SUPPORTED_MODALITIES = frozenset({"text", "image", "pdf", "audio", "video"})
 
 
