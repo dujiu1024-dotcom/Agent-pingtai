@@ -219,7 +219,7 @@ def create_platform_app(
             resolve_memory_principal=(
                 memory_context_resolver.memory if memory_extraction is not None else None
             ),
-            audit_writer=resource_audit_writer,
+            audit_writer=resource_audit_writer or audit_request_sink,
         ))
     task_center_configured = any(value is not None for value in (
         task_service_resolver, task_authorizer, task_worker,
