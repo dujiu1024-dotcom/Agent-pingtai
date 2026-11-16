@@ -90,14 +90,19 @@ def create_runs_router(
     @router.post("/{run_id}/resume")
     async def resume_run(run_id: str, request: Request):
         principal, lifecycle = await context(request, run_id, "resume")
+        service = await resolve_interventions(principal) if resolve_interventions is not None else None
         try:
+            ensure_resolved = getattr(service, "ensure_decisions_resolved", None)
+            if callable(ensure_resolved):
+                await ensure_resolved(tenant_id=principal.tenant_id, run_id=run_id)
             run = await lifecycle.request_resume(principal.tenant_id, run_id)
         except KeyError as exc:
             raise HTTPException(404, "Run not found") from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
-        if resolve_interventions is not None:
-            service = await resolve_interventions(principal)
+        if service is not None:
             record_action = getattr(service, "record_action", None)
             if callable(record_action):
                 await record_action(
