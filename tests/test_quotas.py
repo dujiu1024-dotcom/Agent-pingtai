@@ -270,3 +270,31 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         with self.assertRaisesRegex(ValueError, "tenant_id"):
             await postgres.list_usage(" ", self.start, self.end)
+
+    async def test_root_run_budget_aggregates_child_run_usage(self) -> None:
+        root_run_id = "root-run-1"
+        child_run_id = "child-run-1"
+        await self.service.configure(Budget(
+            tenant_id="tenant-a", scope_type="run", scope_id=root_run_id,
+            period_start=self.start, period_end=self.end, hard_tokens=100,
+        ))
+        reservation, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id=child_run_id, root_run_id=root_run_id,
+            scope_type="run", scope_id=root_run_id, estimated_tokens=80,
+            estimated_cost_usd=Decimal("0.20"),
+        )
+        event = await self.service.settle_run(
+            reservation, model_key="model-child", input_tokens=30, output_tokens=20,
+            cost_usd=Decimal("0.10"),
+        )
+        self.assertEqual(event.root_run_id, root_run_id)
+        tokens, cost, concurrency = await self.store.usage(
+            "tenant-a", "run", root_run_id, self.start, self.end,
+        )
+        self.assertEqual((tokens, cost, concurrency), (50, Decimal("0.10"), 0))
+        with self.assertRaises(BudgetExceeded):
+            await self.service.reserve_run(
+                tenant_id="tenant-a", run_id="child-run-2", root_run_id=root_run_id,
+                scope_type="run", scope_id=root_run_id, estimated_tokens=51,
+                estimated_cost_usd=Decimal("0.10"),
+            )
