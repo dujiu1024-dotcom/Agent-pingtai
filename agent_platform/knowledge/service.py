@@ -48,7 +48,7 @@ class KnowledgeService:
         if len(content)>self.max_upload_bytes:
             raise ValueError("document exceeds configured upload size limit")
         from dataclasses import replace
-        # OCR may poll remote services; offload all synchronous parser work from the event loop.
+        # Parser adapters are synchronous by contract; keep remote OCR polling off the event loop.
         text=await asyncio.to_thread(self.parsers.parse,content,document.media_type)
         digest=sha256_text(text)
         existing=await self.repository.get_document(document.tenant_id,document.document_id)
