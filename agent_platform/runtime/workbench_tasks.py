@@ -72,6 +72,7 @@ class RegistryBackedTaskCenterService:
             raise ValueError("registry repository tenant mismatch")
         self.tenant_id = tenant_id
         self.registry = registry
+        self.repository = registry.repository
         self.snapshots = snapshots
         self.run_store = run_store
         self.lifecycle = lifecycle
