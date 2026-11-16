@@ -260,6 +260,7 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
     async def test_postgres_checkpoint_survives_worker_restart_and_resumes(self):
         try:
             from langgraph.graph import END, START, StateGraph
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
             from typing import TypedDict
             from agent_platform.runtime.postgres_checkpointer import postgres_run_executor
             from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
