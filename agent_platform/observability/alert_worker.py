@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+from collections.abc import Mapping
 from typing import Protocol
 
 
@@ -134,9 +136,9 @@ class AlertRuleEvaluationWorker:
 
     async def run_once(self) -> dict[str, int]:
         metrics = self.metrics_provider()
-        if asyncio.iscoroutine(metrics):
+        if inspect.isawaitable(metrics):
             metrics = await metrics
-        if not isinstance(metrics, dict):
+        if not isinstance(metrics, Mapping):
             raise TypeError("metrics provider must return a metric dictionary")
         candidates = self.manager.evaluate_candidates(metrics)
         created = deduplicated = 0
