@@ -113,7 +113,7 @@ class ContextOverflowPolicyTests(unittest.IsolatedAsyncioTestCase):
                 estimator=self.estimator, model_id="model-a", messages=self.messages,
                 request_parameters={"max_tokens": 12}, context_window_tokens=650,
                 policy="truncate", protected_context={
-                    "goal": "goal", "constraints": [], "decisions": [],
+                    "goal": "goal", "constraints": ["read only"], "decisions": ["FIFO"],
                 },
             )
 
