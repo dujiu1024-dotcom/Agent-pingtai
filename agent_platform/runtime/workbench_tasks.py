@@ -178,22 +178,32 @@ class RegistryBackedTaskCenterService:
         ):
             raise WorkbenchTaskError("idempotency_key must contain 1 to 200 characters")
 
-        agent, template_id, template_version, workflow_id, tool_ids, skill_ids = (
-            await self._runtime_references(agent_id)
-        )
-        template = await self.registry.resolve_active(
-            tenant_id=tenant_id, kind="model_template", item_id=template_id,
-        )
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
-            "agent_version": agent.version, "project_id": project_id,
-            "session_id": session_id, "input": dict(input),
+            "project_id": project_id, "session_id": session_id, "input": dict(input),
         }
         canonical = json.dumps(
             request_body, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False,
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if idempotency_key is not None:
+            existing = await self.run_store.get_task_by_idempotency(
+                tenant_id, actor_id, idempotency_key,
+            )
+            if existing is not None:
+                if existing.get("request_digest") != digest:
+                    raise WorkbenchTaskError(
+                        "idempotency_key was already used with a different task request"
+                    )
+                return _task_view(existing)
+
+        agent, template_id, template_version, workflow_id, tool_ids, skill_ids = (
+            await self._runtime_references(agent_id)
+        )
+        template = await self.registry.resolve_active(
+            tenant_id=tenant_id, kind="model_template", item_id=template_id,
+        )
         run_id = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
@@ -354,8 +364,13 @@ class RunExecutionWorker:
                 if current is not None and current.status == RunStatus.SUCCEEDED and result is not None:
                     usage = result.get("usage", {}) if isinstance(result, Mapping) else {}
                     trace_id = result.get("trace_id") if isinstance(result, Mapping) else None
+                    safe_result = _json_value(result)
+                    try:
+                        json.dumps(safe_result, ensure_ascii=False, allow_nan=False)
+                    except (TypeError, ValueError):
+                        safe_result = {"text": str(result)}
                     await self.run_store.save_output(
-                        tenant_id, run_id, result,
+                        tenant_id, run_id, safe_result,
                         usage=usage if isinstance(usage, Mapping) else {},
                         trace_id=trace_id if isinstance(trace_id, str) else None,
                     )
