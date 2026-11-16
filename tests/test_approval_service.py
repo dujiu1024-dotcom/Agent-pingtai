@@ -167,5 +167,38 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         ))
 
 
+    def test_action_digest_rejects_non_finite_numbers(self):
+        from agent_platform.approval.policy import ActionRequest
+
+        for value in (float("nan"), float("inf"), float("-inf"), {"nested": [float("nan")]}):
+            request = ActionRequest(
+                action="external.write", resource="account:7",
+                parameters={"value": value}, actor_id="user-a",
+            )
+            with self.assertRaises(ValueError):
+                request.digest()
+
+    def test_action_digest_is_stable_and_binds_actor_target_and_parameters(self):
+        from agent_platform.approval.policy import ActionRequest
+
+        base = ActionRequest(
+            action="external.write", resource="account:7",
+            parameters={"amount": 10, "memo": "invoice"}, actor_id="user-a",
+        )
+        self.assertEqual(base.digest(), base.digest())
+        self.assertNotEqual(base.digest(), ActionRequest(
+            action="external.write", resource="account:8",
+            parameters={"amount": 10, "memo": "invoice"}, actor_id="user-a",
+        ).digest())
+        self.assertNotEqual(base.digest(), ActionRequest(
+            action="external.write", resource="account:7",
+            parameters={"amount": 11, "memo": "invoice"}, actor_id="user-a",
+        ).digest())
+        self.assertNotEqual(base.digest(), ActionRequest(
+            action="external.write", resource="account:7",
+            parameters={"amount": 10, "memo": "invoice"}, actor_id="user-b",
+        ).digest())
+
+
 if __name__ == "__main__":
     unittest.main()
