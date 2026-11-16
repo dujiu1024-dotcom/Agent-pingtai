@@ -10,6 +10,7 @@ from agent_platform.events.consumer import EventEnvelope
 from agent_platform.memory.event_handler import (
     MemoryExtractionEventHandler,
     create_memory_extraction_event_worker,
+    memory_principal_resolver_from_identity,
 )
 from agent_platform.memory.service import MemoryPrincipal
 
@@ -227,6 +228,29 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         _, turn = self.extraction.turns[0]
         self.assertEqual(turn.user_message, "normal Run question")
         self.assertEqual(turn.assistant_message, "normal Run answer")
+
+    async def test_identity_resolver_uses_persisted_tenant_authorization(self):
+        context = SimpleNamespace(
+            tenant_id=TENANT, user_id=ACTOR,
+            project_ids=frozenset({"project-a"}),
+            agent_ids=frozenset({"agent-a"}),
+            tenant_permissions=frozenset({"memory.read"}),
+            memory_manage_project_ids=frozenset({"project-a"}),
+            memory_manage_agent_ids=frozenset({"agent-a"}),
+        )
+
+        class IdentityRepository:
+            async def get_authorization_context(self, *, tenant_id, user_id):
+                return context if (tenant_id, user_id) == (TENANT, ACTOR) else None
+
+        resolver = memory_principal_resolver_from_identity(IdentityRepository())
+        principal = await resolver(TENANT, ACTOR)
+        self.assertEqual(principal.tenant_id, TENANT)
+        self.assertEqual(principal.user_id, ACTOR)
+        self.assertEqual(principal.project_ids, frozenset({"project-a"}))
+        self.assertEqual(principal.agent_ids, frozenset({"agent-a"}))
+        with self.assertRaises(PermissionError):
+            await resolver(TENANT, "not-a-member")
 
 
 if __name__ == "__main__":
