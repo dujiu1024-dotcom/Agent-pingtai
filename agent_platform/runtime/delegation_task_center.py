@@ -26,18 +26,26 @@ class TaskCenterChildRunExecutor:
         self,
         *,
         task_service: Any,
-        worker: Any,
+        worker: Any | None = None,
         actor_resolver: Callable[[Any], Any],
         poll_interval: float = 0.1,
     ) -> None:
         if poll_interval <= 0:
             raise ValueError("poll_interval must be positive")
-        if task_service.run_store is not worker.run_store:
+        if worker is not None and task_service.run_store is not worker.run_store:
             raise ValueError("child task service and worker must share the durable RunStateStore")
         self.task_service = task_service
         self.worker = worker
         self.actor_resolver = actor_resolver
         self.poll_interval = poll_interval
+
+    def bind_worker(self, worker: Any) -> None:
+        """Bind the worker after construction to break the graph/worker composition cycle."""
+        if self.task_service.run_store is not worker.run_store:
+            raise ValueError("child task service and worker must share the durable RunStateStore")
+        if not callable(getattr(worker, "run_once", None)):
+            raise TypeError("child worker must provide run_once()")
+        self.worker = worker
 
     async def _resolve_actor(self, parent_context: Any) -> str:
         actor = self.actor_resolver(parent_context)
@@ -170,6 +178,8 @@ class TaskCenterChildRunExecutor:
                         f"child Run {request.context.run_id} ended with status {status}: "
                         f"{task.get('last_error') or 'no error detail'}"
                     )
+                if self.worker is None:
+                    raise RuntimeError("durable child Run worker has not been bound")
                 await self.worker.run_once()
                 await asyncio.sleep(self.poll_interval)
         except asyncio.CancelledError:
