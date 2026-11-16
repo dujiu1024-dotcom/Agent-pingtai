@@ -67,5 +67,35 @@ class MemoryDeletionPropagationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [candidate.memory_id, candidate.memory_id])
 
 
+    async def test_concurrent_delete_tombstone_is_reported_as_success(self):
+        class ConcurrentDeleteRepository(InMemoryMemoryRepository):
+            async def delete(self, tenant_id, memory_id, at):
+                await super().delete(tenant_id, memory_id, at)
+                return False
+
+        calls = []
+
+        async def cleanup(tenant_id, memory_id):
+            calls.append(memory_id)
+
+        repository = ConcurrentDeleteRepository()
+        service = MemoryService(repository, on_delete=cleanup)
+        candidate = MemoryCandidate(
+            tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
+            content="concurrent forget", source_ref="turn:3", confidence=0.8,
+            created_by="user-a",
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id="tenant-a", memory_id=candidate.memory_id,
+            confirmer_id="user-a",
+        )
+        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+        self.assertTrue(
+            await service.forget(principal=principal, memory_id=candidate.memory_id)
+        )
+        self.assertEqual(calls, [candidate.memory_id])
+
+
 if __name__ == "__main__":
     unittest.main()
