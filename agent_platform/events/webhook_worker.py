@@ -12,6 +12,7 @@ def build_production_webhook_delivery_worker(
     *,
     store: Any,
     resolve_secret: Any,
+    audit_sink: Any,
     interval_seconds: float = 2.0,
     batch_limit: int = 50,
     max_attempts: int = 8,
@@ -19,8 +20,9 @@ def build_production_webhook_delivery_worker(
 ) -> "WebhookDeliveryWorker":
     """Build the production dispatcher with DNS policy and pinned HTTPS transport.
 
-    The caller must provide a durable tenant-scoped store and a Secret Manager
-    resolver. No generic HTTP client or environment-proxy transport is used.
+    The caller must provide a durable tenant-scoped store, Secret Manager
+    resolver, and durable audit sink. No generic HTTP client or environment-proxy
+    transport is used.
     """
     from agent_platform.events.webhook_http import PinnedWebhookHttpTransport
     from agent_platform.events.webhooks import WebhookDispatcher, WebhookEgressPolicy
@@ -30,6 +32,7 @@ def build_production_webhook_delivery_worker(
         transport=PinnedWebhookHttpTransport(),
         resolve_secret=resolve_secret,
         egress_policy=WebhookEgressPolicy(),
+        audit_sink=audit_sink,
         max_attempts=max_attempts,
         timeout_seconds=timeout_seconds,
     )
