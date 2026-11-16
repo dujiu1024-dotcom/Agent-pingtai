@@ -171,6 +171,16 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(latest.version, 2)
         self.assertEqual(latest_content, b"version two")
+        restored = await self.service.restore_asset_version(
+            tenant_id="tenant-a", asset_id=asset.asset_id, version=1,
+            expected_version=2,
+        )
+        self.assertEqual(restored.version, 3)
+        restored_asset, restored_content = await self.service.download_asset(
+            tenant_id="tenant-a", asset_id=asset.asset_id,
+        )
+        self.assertEqual(restored_asset.version, 3)
+        self.assertEqual(restored_content, b"version one")
 
     async def test_asset_version_update_rejects_stale_writer_and_cross_tenant_reads(self) -> None:
         asset = await self.service.upload_asset(
