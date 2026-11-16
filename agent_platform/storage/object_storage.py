@@ -10,6 +10,7 @@ class S3Client(Protocol):
     async def put_object(self, **kwargs: Any) -> Any: ...
     async def get_object(self, **kwargs: Any) -> Any: ...
     async def delete_object(self, **kwargs: Any) -> Any: ...
+    def generate_presigned_url(self, ClientMethod: str, *, Params: dict[str, Any], ExpiresIn: int) -> Any: ...
 
 
 class ObjectStorageError(RuntimeError):
@@ -88,3 +89,21 @@ class S3ObjectStorage:
     async def delete(self, object_key: str) -> None:
         key = self._validate_key(object_key)
         await self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    async def presign_get(self, object_key: str, *, expires_in: int = 300) -> str:
+        """Create a short-lived, read-only URL for one validated object key."""
+        key = self._validate_key(object_key)
+        if not 1 <= expires_in <= 900:
+            raise ValueError("presigned URL TTL must be between 1 and 900 seconds")
+        generator = getattr(self.client, "generate_presigned_url", None)
+        if not callable(generator):
+            raise ObjectStorageError("S3 client does not support presigned URLs")
+        result = generator(
+            "get_object", Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=expires_in,
+        )
+        if inspect.isawaitable(result):
+            result = await result
+        if not isinstance(result, str) or not result.startswith(("https://", "http://")):
+            raise ObjectStorageError("S3 client returned an invalid presigned URL")
+        return result
