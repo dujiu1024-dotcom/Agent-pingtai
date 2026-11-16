@@ -117,6 +117,13 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(connection.display_name, "Shared Drive")
         self.assertEqual(connection.scopes, ("files.read",))
+        with self.assertRaisesRegex(ConnectorError, "tenant-scoped"):
+            await self.service.create_connection(
+                tenant_id="tenant-a", connection_id="drive-cross-tenant",
+                provider="drive", display_name="Unsafe reference",
+                secret_ref="secret://tenant-b/drive", scopes=("files.read",),
+                actor_id="user-a",
+            )
         with self.assertRaises(ConnectorError):
             await self.service.create_connection(
                 tenant_id="tenant-a", connection_id="drive-3", provider="drive",
