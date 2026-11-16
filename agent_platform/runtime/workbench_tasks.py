@@ -265,6 +265,32 @@ class RegistryBackedTaskCenterService:
         return _task_view(updated) if updated is not None else None
 
 
+def create_registry_backed_task_service_resolver(
+    *, registry_resolver: Callable[[Any], Any],
+    snapshot_resolver: Callable[[Any], Any],
+    run_store: Any,
+    lifecycle_resolver: Callable[[Any], Any],
+) -> Callable[[Any], Awaitable[RegistryBackedTaskCenterService]]:
+    """Compose the concrete task service from the platform's tenant-bound ports."""
+    async def resolve(principal: Any) -> RegistryBackedTaskCenterService:
+        registry = registry_resolver(principal)
+        snapshots = snapshot_resolver(principal)
+        lifecycle = lifecycle_resolver(principal)
+        if inspect.isawaitable(registry):
+            registry = await registry
+        if inspect.isawaitable(snapshots):
+            snapshots = await snapshots
+        if inspect.isawaitable(lifecycle):
+            lifecycle = await lifecycle
+        if lifecycle.store is not run_store:
+            raise ValueError("task service lifecycle must share the durable RunStateStore")
+        return RegistryBackedTaskCenterService(
+            tenant_id=principal.tenant_id, registry=registry,
+            snapshots=snapshots, run_store=run_store, lifecycle=lifecycle,
+        )
+    return resolve
+
+
 class RunExecutionWorker:
     """Lease-claiming worker for queued, interrupted and remotely cancelled Runs."""
 
