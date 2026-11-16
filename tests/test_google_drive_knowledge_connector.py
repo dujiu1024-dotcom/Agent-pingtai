@@ -85,6 +85,9 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a", cursor=None, limit=50,
         )
         self.assertEqual(len(initial.items), 1)
+        file_fields = client.calls[1][2]["params"]["fields"]
+        self.assertIn("permissions(id,type,role,emailAddress,domain,allowFileDiscovery)", file_fields)
+        self.assertNotIn("('", file_fields)
         self.assertEqual(initial.items[0].document.document_id, "gdrive:file-doc")
         self.assertEqual(
             initial.items[0].document.media_type,
