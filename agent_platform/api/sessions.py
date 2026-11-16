@@ -78,8 +78,17 @@ def create_sessions_router(
             raise HTTPException(400, str(exc)) from exc
         visible = []
         for asset in items:
-            if await authorize(principal, "file", asset.asset_id, "read"):
-                visible.append({
+            if not await authorize(principal, "file", asset.asset_id, "read"):
+                continue
+            if asset.session_id and not await authorize(
+                principal, "session", asset.session_id, "read",
+            ):
+                continue
+            if asset.project_id and not await authorize(
+                principal, "project", asset.project_id, "read",
+            ):
+                continue
+            visible.append({
                     "asset_id": asset.asset_id, "filename": asset.filename,
                     "media_type": asset.media_type, "size_bytes": asset.size_bytes,
                     "status": asset.status.value, "session_id": asset.session_id,

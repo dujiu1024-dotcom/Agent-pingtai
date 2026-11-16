@@ -25,10 +25,17 @@ class SessionListingApiTests(unittest.TestCase):
         async def resolve_service(actor):
             return service
 
+        denied = {"session": set(), "project": set()}
+
         async def authorize(actor, resource_type, resource_id, action):
+            if resource_id in denied.get(resource_type, set()):
+                return False
             return resource_id == "*" or resource_id in {
                 row.session_id for row in repository.sessions.values()
                 if row.owner_id == actor.user_id
+            } or resource_id in {
+                row.project_id for row in repository.sessions.values()
+                if row.owner_id == actor.user_id and row.project_id is not None
             } or resource_id in {
                 row.asset_id for row in repository.assets.values()
                 if row.owner_id == actor.user_id
@@ -49,20 +56,39 @@ class SessionListingApiTests(unittest.TestCase):
             await service.create_session(
                 tenant_id="tenant-a", owner_id="user-b", title="Other session",
             )
+            project_session = await service.create_session(
+                tenant_id="tenant-a", owner_id="user-a", project_id="project-private",
+            )
             asset = await service.upload_asset(
                 tenant_id="tenant-a", owner_id="user-a", filename="notes.txt",
                 media_type="text/plain", content=b"notes", session_id=own.session_id,
             )
-            return own, asset
+            private_asset = await service.upload_asset(
+                tenant_id="tenant-a", owner_id="user-a", filename="private.txt",
+                media_type="text/plain", content=b"private", session_id=project_session.session_id,
+            )
+            return own, asset, project_session, private_asset
 
         import asyncio
-        own, asset = asyncio.run(seed())
+        own, asset, project_session, private_asset = asyncio.run(seed())
         sessions = client.get("/api/platform/v1/sessions")
         files = client.get("/api/platform/v1/files")
         self.assertEqual(sessions.status_code, 200)
-        self.assertEqual([x["session_id"] for x in sessions.json()["items"]], [own.session_id])
+        self.assertEqual(
+            {x["session_id"] for x in sessions.json()["items"]},
+            {own.session_id, project_session.session_id},
+        )
         self.assertEqual(files.status_code, 200)
-        self.assertEqual([x["asset_id"] for x in files.json()["items"]], [asset.asset_id])
+        self.assertEqual(
+            {x["asset_id"] for x in files.json()["items"]},
+            {asset.asset_id, private_asset.asset_id},
+        )
+        denied["project"].add("project-private")
+        hidden = client.get("/api/platform/v1/files")
+        self.assertEqual([x["asset_id"] for x in hidden.json()["items"]], [asset.asset_id])
+        denied["session"].update({own.session_id, project_session.session_id})
+        hidden_session = client.get("/api/platform/v1/files")
+        self.assertEqual(hidden_session.json()["items"], [])
 
 
 if __name__ == "__main__":
