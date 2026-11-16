@@ -69,6 +69,75 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([row[0] for row in rows], message_ids[1:])
 
+    async def test_stream_retention_uses_slowest_consumer_group_frontier(self):
+        # Reuse the default group created by asyncSetUp so the test has
+        # exactly two configured groups, both of which must advance.
+        fast_group = self.group
+        slow_group = "slow-retention"
+        await self.transport.ensure_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=slow_group, start_id="0"
+        )
+        message_ids = [
+            await self.transport.publish(
+                tenant_id=self.tenant_id,
+                topic=self.topic,
+                event_id=str(uuid4()),
+                payload={"index": index},
+            )
+            for index in range(3)
+        ]
+
+        fast_rows = await self.transport.read_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=fast_group,
+            consumer="fast-consumer", count=3, block_ms=100,
+        )
+        for message_id, _fields in fast_rows:
+            await self.transport.acknowledge(
+                tenant_id=self.tenant_id, topic=self.topic,
+                group=fast_group, message_id=message_id,
+            )
+
+        slow_rows = await self.transport.read_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=slow_group,
+            consumer="slow-consumer", count=1, block_ms=100,
+        )
+        self.assertEqual(slow_rows[0][0], message_ids[0])
+        self.assertEqual(
+            await self.transport.trim_acknowledged(
+                tenant_id=self.tenant_id, topic=self.topic,
+            ),
+            0,
+        )
+
+        await self.transport.acknowledge(
+            tenant_id=self.tenant_id, topic=self.topic,
+            group=slow_group, message_id=message_ids[0],
+        )
+        slow_next = await self.transport.read_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=slow_group,
+            consumer="slow-consumer", count=1, block_ms=100,
+        )
+        self.assertEqual(slow_next[0][0], message_ids[1])
+        group_states = await self.transport._client.xinfo_groups(
+            self.transport._stream(self.tenant_id, self.topic)
+        )
+        fast_state = next(item for item in group_states if item["name"] == fast_group)
+        slow_pending = await self.transport._client.xpending(
+            self.transport._stream(self.tenant_id, self.topic), slow_group
+        )
+        self.assertEqual(slow_pending["min"], message_ids[1])
+        self.assertEqual(fast_state["last-delivered-id"], message_ids[2])
+        self.assertEqual(
+            await self.transport.trim_acknowledged(
+                tenant_id=self.tenant_id, topic=self.topic,
+            ),
+            1,
+        )
+        remaining = await self.transport._client.xrange(
+            self.transport._stream(self.tenant_id, self.topic)
+        )
+        self.assertEqual([row[0] for row in remaining], message_ids[1:])
+
     async def test_stream_retention_handles_missing_dead_letter_stream(self):
         self.assertEqual(
             await self.transport.trim_acknowledged(
