@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from time import monotonic
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from agent_platform.quotas.service import QuotaService
 
@@ -87,7 +87,7 @@ class QuotaEnforcedHarnessAdapter:
                     raise ValueError(f"{label} must be a non-negative integer")
             assert isinstance(estimated_input_tokens, int) and not isinstance(estimated_input_tokens, bool)
             assert isinstance(estimated_output_tokens, int) and not isinstance(estimated_output_tokens, bool)
-            estimated_tokens = estimated_input_tokens + estimated_output_tokens
+            estimated_tokens = cast(int, estimated_input_tokens) + cast(int, estimated_output_tokens)
         else:
             estimated_tokens, estimated_cost = estimate
             estimated_input_tokens = None
