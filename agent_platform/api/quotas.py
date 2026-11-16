@@ -71,16 +71,30 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
                 raise ValueError("unsupported quota scope")
             def optional_decimal(name: str):
                 value = body.get(name)
-                return None if value is None else Decimal(str(value))
+                if value is None:
+                    return None
+                amount = Decimal(str(value))
+                if not amount.is_finite() or amount < 0:
+                    raise ValueError(f"{name} must be a finite non-negative amount")
+                return amount
+            def optional_integer(name: str):
+                value = body.get(name)
+                if value is None:
+                    return None
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise ValueError(f"{name} must be a non-negative integer")
+                return value
             budget = Budget(
                 tenant_id=principal.tenant_id, scope_type=scope_type, scope_id=scope_id,
                 period_start=datetime.fromisoformat(str(body["period_start"])),
                 period_end=datetime.fromisoformat(str(body["period_end"])),
-                hard_tokens=int(body["hard_tokens"]) if body.get("hard_tokens") is not None else None,
+                hard_tokens=optional_integer("hard_tokens"),
                 hard_cost_usd=optional_decimal("hard_cost_usd"),
-                hard_concurrency=int(body["hard_concurrency"]) if body.get("hard_concurrency") is not None else None,
-                soft_tokens=int(body["soft_tokens"]) if body.get("soft_tokens") is not None else None,
+                hard_concurrency=optional_integer("hard_concurrency"),
+                soft_tokens=optional_integer("soft_tokens"),
                 soft_cost_usd=optional_decimal("soft_cost_usd"),
+                hard_input_tokens=optional_integer("hard_input_tokens"),
+                hard_output_tokens=optional_integer("hard_output_tokens"),
             )
             await quota_service.configure(budget)
         except PermissionError as exc:
@@ -89,7 +103,9 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             raise HTTPException(400, str(exc)) from exc
         return {"tenant_id": budget.tenant_id, "scope_type": budget.scope_type,
                 "scope_id": budget.scope_id, "period_start": budget.period_start.isoformat(),
-                "period_end": budget.period_end.isoformat(), "configured": True}
+                "period_end": budget.period_end.isoformat(), "configured": True,
+                "hard_input_tokens": budget.hard_input_tokens,
+                "hard_output_tokens": budget.hard_output_tokens}
 
 
     @router.post("/reconciliation", status_code=201)
