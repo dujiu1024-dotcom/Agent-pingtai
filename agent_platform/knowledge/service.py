@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-
 from typing import Protocol, Sequence
 
 from agent_platform.knowledge.chunking import chunk_document, sha256_text
