@@ -21,7 +21,7 @@ def _safe_key(key: str) -> PurePosixPath:
     if not isinstance(key, str) or not key or "\\" in key or "\x00" in key:
         raise ValueError("invalid object key")
     path = PurePosixPath(key)
-    if path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
+    if not path.parts or path.is_absolute() or any(part in ("", ".", "..") for part in path.parts):
         raise ValueError("unsafe object key")
     return path
 
