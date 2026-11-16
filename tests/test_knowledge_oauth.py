@@ -100,7 +100,7 @@ class OAuthRefreshTokenResolverTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(await resolver.resolve("secret://tenant-a/google"), "access-a")
         self.assertEqual(await resolver.resolve("secret://tenant-b/google"), "access-b")
-        resolver.invalidate("secret://tenant-a/google")
+        await resolver.invalidate("secret://tenant-a/google")
         self.assertEqual(await resolver.resolve("secret://tenant-a/google"), "access-a-new")
         self.assertEqual(await resolver.resolve("secret://tenant-b/google"), "access-b")
         self.assertEqual(len(client.calls), 3)
