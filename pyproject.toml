@@ -1,5 +1,5 @@
 [project]
-name = "fde-agency"
+\n[project.optional-dependencies]\ntokenizer = ["tiktoken>=0.7,<1"]\nname = "fde-agency"
 version = "0.0.0"
 description = "FDE OPC Agent 平台（单文件 CLI 底座，纯标准库）"
 requires-python = ">=3.11"
