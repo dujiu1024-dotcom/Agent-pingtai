@@ -113,12 +113,12 @@ class BlackboardMultiExpertServices:
         """
         for ref in refs:
             try:
-                UUID(ref)
+                normalized_ref = str(UUID(ref))
             except (ValueError, TypeError, AttributeError):
                 # Connector/document IDs are owned by their resource service,
                 # not by the UUID-keyed Blackboard repository.
                 continue
-            source = await self.repository.get(ref)
+            source = await self.repository.get(normalized_ref)
             if source is not None and (
                 source.scope is not scope or source.scope_id != scope_id
             ):
