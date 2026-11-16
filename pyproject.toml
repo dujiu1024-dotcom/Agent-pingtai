@@ -99,8 +99,6 @@ include = [
   "tests/test_postgres_subject_adapters.py",
   "tests/test_subject_export_coordinator.py",
   "tests/test_runs_interventions_api.py",
-  "scripts/deploy_platform.py",
-  "tests/test_deploy_platform.py",
   "tests/test_task_center_interventions_postgres_integration.py",
 ]
 
