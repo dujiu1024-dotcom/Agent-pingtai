@@ -64,7 +64,7 @@ class PostgresIdentityAuditReader:
             raise ValueError("limit must be between 1 and 500")
         if actor_id is not None and (not actor_id.strip() or len(actor_id) > 256):
             raise ValueError("actor_id must be a non-empty value of at most 256 characters")
-        if action is not None and (not self._ACTION.fullmatch(action)):
+        if action is not None and (not PostgresAuditWriter._ACTION.fullmatch(action)):
             raise ValueError("invalid audit action")
         connection = await self._connect()
         async with connection:
