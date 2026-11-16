@@ -69,6 +69,14 @@ class _Secrets:
         return "runtime-token"
 
 
+class _AuditWriter:
+    def __init__(self):
+        self.events = []
+
+    async def record(self, **event):
+        self.events.append(event)
+
+
 class _Sink:
     def __init__(self):
         self.upserts = []
@@ -107,7 +115,7 @@ class SessionAndMessageContractTests(unittest.IsolatedAsyncioTestCase):
         repository.sessions[("tenant-a", session.session_id)] = replace(
             session, status="archived",
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(SessionError):
             await service.append_message(
                 tenant_id="tenant-a", actor_id="user-a",
                 session_id=session.session_id, role=MessageRole.USER, content="late write",
@@ -257,6 +265,7 @@ class ConnectorProjectApiContractTests(unittest.TestCase):
         provider = _ConnectorProvider()
         sink = _Sink()
         denied_projects = set()
+        audit = _AuditWriter()
 
         async def resolve_principal(_request):
             from agent_platform.identity.models import Principal
@@ -277,7 +286,7 @@ class ConnectorProjectApiContractTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(create_connectors_router(
             resolve_principal=resolve_principal, resolve_service=resolve_service,
-            authorize=authorize,
+            authorize=authorize, audit_writer=audit,
         ))
         client = TestClient(app)
         payload = {
@@ -298,12 +307,55 @@ class ConnectorProjectApiContractTests(unittest.TestCase):
         revoked = client.post("/api/platform/v1/connectors/drive-project/revoke")
         self.assertEqual(revoked.status_code, 403)
         self.assertEqual(asyncio_run(repository.get("tenant-a", "drive-project")).status, "active")
+        denied_projects.clear()
+        successful_revoke = client.post("/api/platform/v1/connectors/drive-project/revoke")
+        self.assertEqual(successful_revoke.status_code, 200)
+        self.assertEqual([event["action"] for event in audit.events], ["connector.created", "connector.revoked"])
+        self.assertNotIn("secret_ref", str(audit.events))
 
 
 def asyncio_run(awaitable):
     import asyncio
     return asyncio.run(awaitable)
 
+
+class ResourceAuditContractTests(unittest.TestCase):
+    def test_session_and_message_actions_emit_actor_tenant_and_safe_metadata(self):
+        repository = InMemorySessionRepository()
+        service = SessionAssetService(repository, InMemoryObjectStorage())
+        audit = _AuditWriter()
+
+        async def resolve_principal(_request):
+            return SimpleNamespace(tenant_id="tenant-a", user_id="user-a")
+
+        async def resolve_service(_principal):
+            return service
+
+        async def authorize(_principal, _resource_type, _resource_id, _action):
+            return True
+
+        app = FastAPI()
+        app.include_router(create_sessions_router(
+            resolve_principal=resolve_principal, resolve_service=resolve_service,
+            authorize=authorize, audit_writer=audit,
+        ))
+        client = TestClient(app)
+        created = client.post("/api/platform/v1/sessions", json={"title": "Audit me"})
+        self.assertEqual(created.status_code, 201, created.text)
+        session_id = created.json()["session_id"]
+        appended = client.post(
+            f"/api/platform/v1/sessions/{session_id}/messages",
+            json={"role": "user", "content": "hello"},
+        )
+        self.assertEqual(appended.status_code, 201, appended.text)
+        actions = [event["action"] for event in audit.events]
+        self.assertIn("session.created", actions)
+        self.assertIn("resource.access_granted", actions)
+        self.assertIn("message.appended", actions)
+        for event in audit.events:
+            self.assertEqual(event["tenant_id"], "tenant-a")
+            self.assertEqual(event["actor_id"], "user-a")
+        self.assertNotIn("hello", str(audit.events))
 
 class LegacyAdapterContractTests(unittest.TestCase):
     def test_legacy_mapping_requires_explicit_ownership_and_project_approval(self):
