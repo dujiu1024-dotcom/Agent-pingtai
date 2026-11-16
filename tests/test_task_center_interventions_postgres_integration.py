@@ -427,7 +427,8 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
 
     async def test_run_detail_timeline_records_steps_logs_artifacts_and_redacts_secrets(self):
         from agent_platform.runtime.interventions import (
-            PostgresRunDetailService, RunInterventionService,
+            PostgresRunDetailService,
+            RunInterventionService,
         )
         events = RunInterventionService(
             tenant_id=self.tenant_id, connection_factory=self.connect,
