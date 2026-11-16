@@ -158,6 +158,13 @@ class PostgresTaskCenterService:
             if row["run_id"] and self._cancel_run:
                 await self._cancel_run(self.tenant_id, str(row["run_id"]))
             elif row["run_id"] and self._cancel_run is None:
+                db = await self._connect()
+                async with db:
+                    await db.execute(
+                        """UPDATE platform_tasks SET status='running',updated_at=now()
+                           WHERE tenant_id=%s AND task_id=%s AND status='cancelling'""",
+                        (self.tenant_id, UUID(task_id)),
+                    )
                 raise TaskCenterError("running task cancellation requires a Run cancellation handler")
             await self.acknowledge_cancel_by_id(task_id=task_id)
             result = await self.get_task(tenant_id=self.tenant_id, task_id=task_id) or result
