@@ -314,6 +314,11 @@ class HarnessExecutionLifecycle(Protocol):
         error: Exception,
     ) -> None: ...
 
+    async def timed_out(
+        self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
+        error: TimeoutError,
+    ) -> None: ...
+
     async def cancelled(
         self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
     ) -> None: ...
@@ -345,6 +350,11 @@ class LifecycleManagedHarnessAdapter:
             result = await self.adapter.run(request)
         except asyncio.CancelledError:
             await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
+            raise
+        except TimeoutError as exc:
+            await self.lifecycle.timed_out(
+                request=request, adapter=self.descriptor, error=exc,
+            )
             raise
         except Exception as exc:
             await self.lifecycle.failed(
