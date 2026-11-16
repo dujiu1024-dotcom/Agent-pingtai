@@ -64,7 +64,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 "definition": {
                     "provider_type": "openai-compatible",
                     "base_url": "https://primary.example/v1",
-                    "secret_ref": "secret://tenant/primary",
+                    "secret_ref": "secret://tenant-a/primary",
                 },
             },
             {
@@ -72,7 +72,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 "definition": {
                     "provider_type": "openai-compatible",
                     "base_url": "https://fallback.example/v1",
-                    "secret_ref": "secret://tenant/fallback",
+                    "secret_ref": "secret://tenant-a/fallback",
                 },
             },
         ))
