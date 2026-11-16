@@ -5,6 +5,7 @@ from agent_platform.observability.gateway import MetricsAuditSink
 from agent_platform.observability.harness import ObservedHarnessAdapter
 from agent_platform.observability.langfuse import LangfuseObservationSink
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
+from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.observability.prompts import PromptRegistry
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "ModelPricing",
     "ObservedHarnessAdapter",
     "PromptRegistry",
+    "PrometheusClientMetricsRecorder",
 ]
