@@ -1,9 +1,9 @@
 """Resolve model runtime configuration from a Run-pinned registry snapshot."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 class ModelRegistryError(ValueError):
@@ -23,7 +23,7 @@ class ResolvedModelConfig:
     provider_type: str
     base_url: str
     model_id: str
-    api_key: str
+    api_key: str = field(repr=False, compare=False)
     parameters: Mapping[str, Any]
     capabilities: tuple[str, ...]
     allowed_data_levels: tuple[str, ...]
@@ -100,10 +100,13 @@ class RegistryModelResolver:
         if not isinstance(secret_ref, str):
             raise ModelRegistryError("model provider must reference a host-managed secret")
         secret = urlsplit(secret_ref)
+        secret_path = unquote(secret.path)
         if (
             secret.scheme != "secret" or secret.netloc != tenant_id
-            or not secret.path.strip("/") or secret.username is not None
-            or secret.password is not None or secret.query or secret.fragment
+            or not secret_path.strip("/")
+            or any(part in {".", ".."} for part in secret_path.split("/"))
+            or secret.username is not None or secret.password is not None
+            or secret.query or secret.fragment
         ):
             raise ModelRegistryError("model provider secret_ref must be scoped to the Run tenant")
         api_key = await self.secrets.resolve(secret_ref)
