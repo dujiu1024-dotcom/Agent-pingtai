@@ -40,6 +40,20 @@ class QuotaEnforcedHarnessAdapter:
         context = request.context
         return "tenant", context.tenant_id
 
+    @staticmethod
+    def _reported_usage(result: Any) -> tuple[int, int]:
+        """Require explicit provider usage; never turn missing accounting into zero."""
+        usage = getattr(result, "usage", None)
+        if not isinstance(usage, dict):
+            raise ValueError("provider response is missing a usage mapping")
+        counters: list[int] = []
+        for key in ("input_tokens", "output_tokens"):
+            value = usage.get(key)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"provider response has missing or invalid {key}")
+            counters.append(value)
+        return counters[0], counters[1]
+
     async def run(self, request: Any) -> Any:
         context = request.context
         scope_type, scope_id = self.scope_resolver(request)
@@ -71,17 +85,15 @@ class QuotaEnforcedHarnessAdapter:
             await self.quota_service.release_run(reservation)
             raise
 
-        # Once the provider has returned successfully, never release the
-        # reservation on accounting/settlement failure: the model may already
-        # have incurred billable usage. Keep it active for retry/reconciliation.
-        usage = getattr(result, "usage", {}) or {}
-        input_tokens = int(usage.get("input_tokens", 0))
-        output_tokens = int(usage.get("output_tokens", 0))
+        # The provider has returned successfully. Missing/invalid usage or a
+        # settlement failure must retain the reservation for reconciliation;
+        # defaulting absent counters to zero would silently underbill.
+        input_tokens, output_tokens = self._reported_usage(result)
         tool_calls = len(getattr(result, "tool_calls", ()) or ())
         actual_cost = self.estimate_actual_cost(request, result)
         if not isinstance(actual_cost, Decimal) or not actual_cost.is_finite() or actual_cost < 0:
             raise ValueError("actual cost must be a finite non-negative Decimal")
-        if min(input_tokens, output_tokens, tool_calls) < 0:
+        if tool_calls < 0:
             raise ValueError("actual usage counters must be non-negative")
         model_key = (
             f"{context.model_template.template_id}@{context.model_template.version}"
