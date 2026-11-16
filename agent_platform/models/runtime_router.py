@@ -10,6 +10,7 @@ import json
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any, Mapping, Protocol, Sequence
 
 from agent_platform.models.registry_resolver import (
@@ -17,6 +18,7 @@ from agent_platform.models.registry_resolver import (
     RegistryModelResolver,
     ResolvedModelConfig,
 )
+from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 
 
 class ModelRoutingError(RuntimeError):
@@ -190,6 +192,8 @@ class OpenAICompatibleModelRouter:
         transport: OpenAICompatibleTransport,
         usage_recorder: UsageRecorder | None = None,
         timeout_seconds: float = 60,
+        observer: Any | None = None,
+        metrics: Any | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -197,6 +201,8 @@ class OpenAICompatibleModelRouter:
         self.transport = transport
         self.usage_recorder = usage_recorder
         self.timeout_seconds = timeout_seconds
+        self.observer = observer
+        self.metrics = metrics
 
     async def complete(
         self, *, snapshot: Any, tenant_id: str, run_id: str,
@@ -230,15 +236,59 @@ class OpenAICompatibleModelRouter:
                 raise ModelRoutingError("pinned model lacks required capabilities")
             if data_level not in config.allowed_data_levels:
                 raise ModelRoutingError("model is not approved for the requested data level")
+            started = monotonic()
+            status = "failed"
+            labels = {
+                "component": "model",
+                "model_template": f"{config.template_id}@{config.template_version}",
+            }
+            trace_input = {
+                "message_count": len(messages),
+                "request_parameter_count": len(parameters),
+                "model_template": config.template_id,
+                "model_template_version": config.template_version,
+                "fallback_attempt": index > 0,
+            }
+            metadata = {
+                "tenant_id": tenant_id,
+                "run_id": run_id,
+                "request_id": request_id,
+                "provider_id": config.provider_id,
+                "provider_version": config.provider_version,
+                "model_id": config.model_id,
+                "model_template": config.template_id,
+                "model_template_version": config.template_version,
+            }
             try:
-                raw = await self.transport.complete(
-                    config=config, messages=messages,
-                    request_parameters=parameters,
-                    timeout_seconds=self.timeout_seconds,
-                )
+                with safe_observation(
+                    self.observer, name="model.complete",
+                    input=trace_input, metadata=metadata,
+                ) as span:
+                    try:
+                        raw = await self.transport.complete(
+                            config=config, messages=messages,
+                            request_parameters=parameters,
+                            timeout_seconds=self.timeout_seconds,
+                        )
+                    except ModelTransportError as exc:
+                        safe_update(span, output={
+                            "status": "failed", "error_type": type(exc).__name__,
+                        })
+                        raise
+                    status = "response_received"
+                    safe_update(span, output={"status": status})
             except ModelTransportError as exc:
                 last_error = exc
                 continue
+            finally:
+                safe_metric(
+                    self.metrics, "increment", "model_requests_total",
+                    labels={**labels, "status": status},
+                )
+                safe_metric(
+                    self.metrics, "observe", "model_request_duration_seconds",
+                    monotonic() - started, labels=labels,
+                )
             choices = raw.get("choices")
             if not isinstance(choices, list) or not choices or not isinstance(choices[0], Mapping):
                 raise ModelRoutingError("model provider returned no completion choice")
@@ -249,6 +299,18 @@ class OpenAICompatibleModelRouter:
             usage = raw.get("usage", {})
             if not isinstance(usage, Mapping):
                 raise ModelRoutingError("model provider returned invalid usage metadata")
+            input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+            output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
+            if isinstance(input_tokens, int) and not isinstance(input_tokens, bool) and input_tokens > 0:
+                safe_metric(
+                    self.metrics, "increment", "model_input_tokens_total", input_tokens,
+                    labels=labels,
+                )
+            if isinstance(output_tokens, int) and not isinstance(output_tokens, bool) and output_tokens > 0:
+                safe_metric(
+                    self.metrics, "increment", "model_output_tokens_total", output_tokens,
+                    labels=labels,
+                )
             if self.usage_recorder is not None:
                 try:
                     await self.usage_recorder.record(
@@ -264,6 +326,11 @@ class OpenAICompatibleModelRouter:
                     raise ModelUsageRecordingError(
                         "model response succeeded but usage recording failed"
                     ) from exc
+            if index > 0:
+                safe_metric(
+                    self.metrics, "increment", "model_fallbacks_total",
+                    labels={**labels, "operation": "fallback"},
+                )
             return RoutedModelResponse(
                 content=content, model_id=config.model_id,
                 template_id=config.template_id, template_version=config.template_version,

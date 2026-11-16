@@ -1,6 +1,8 @@
 import unittest
+from contextlib import contextmanager
 
 from agent_platform.approval.policy import RiskLevel
+from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolDefinition,
@@ -30,6 +32,26 @@ class FakeAuditSink:
         self.records.append(kwargs)
 
 
+
+class FakeSpan:
+    def __init__(self):
+        self.updates = []
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
+
+
+class FakeObserver:
+    def __init__(self):
+        self.calls = []
+        self.spans = []
+    @contextmanager
+    def observe(self, *, name, input, metadata):
+        span = FakeSpan()
+        self.calls.append((name, input, metadata))
+        self.spans.append(span)
+        yield span
+
+
 class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.executed = []
@@ -37,6 +59,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.audit = FakeAuditSink()
         self.effects = InMemoryToolEffectStore()
         self.call_sequence = 0
+        self.observer = FakeObserver()
+        self.metrics = InMemoryMetricsRecorder()
 
         async def handler(arguments):
             self.executed.append(dict(arguments))
@@ -67,6 +91,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             approval_verifier=self.approvals,
             audit_sink=self.audit,
             idempotency_store=self.effects,
+            observer=self.observer,
+            metrics=self.metrics,
         )
 
     async def call(self, tool, **kwargs):
@@ -151,6 +177,18 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
             await self.call("read")
         self.assertEqual(self.executed, [])
+
+
+    async def test_tool_call_emits_child_trace_without_argument_capture(self):
+        result = await self.call("read", arguments={"secret_value": "must-not-enter-trace"})
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.observer.calls[0][0], "tool.call")
+        self.assertEqual(self.observer.calls[0][1]["tool_name"], "read")
+        self.assertNotIn("must-not-enter-trace", str(self.observer.calls[0][1]))
+        self.assertEqual(self.observer.calls[0][2]["run_id"], "00000000-0000-0000-0000-000000000001")
+        counters = self.metrics.snapshot()["counters"]
+        self.assertIn('tool_calls_total{component="tool",operation="read",status="succeeded"}', counters)
+        self.assertIn("tool_call_duration_seconds", " ".join(self.metrics.snapshot()["observation_counts"]))
 
 
 if __name__ == "__main__":

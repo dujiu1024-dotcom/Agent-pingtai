@@ -7,6 +7,7 @@ cannot choose a tool's risk level or provide proof of their own approval.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
 from agent_platform.approval.policy import (
@@ -14,6 +15,7 @@ from agent_platform.approval.policy import (
     RiskLevel,
     SupervisedPolicy,
 )
+from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 from agent_platform.tools.idempotency import ToolEffectStore
 
 
@@ -91,6 +93,8 @@ class SupervisedToolGateway:
         approval_verifier: ApprovalVerifier,
         audit_sink: AuditSink,
         idempotency_store: ToolEffectStore | None = None,
+        observer: Any | None = None,
+        metrics: Any | None = None,
     ) -> None:
         names = [tool.name for tool in tools]
         if len(names) != len(set(names)):
@@ -100,6 +104,8 @@ class SupervisedToolGateway:
         self._approval_verifier = approval_verifier
         self._audit_sink = audit_sink
         self._idempotency_store = idempotency_store
+        self._observer = observer
+        self._metrics = metrics
         self._input_validators: dict[str, Any] = {}
         for tool in tools:
             if tool.input_schema is not None:
@@ -266,29 +272,65 @@ class SupervisedToolGateway:
                 return claimed.result
             if claimed.state != "pending" or not claimed.created:
                 raise ToolExecutionDenied("side effect is already claimed or requires reconciliation")
+        started = monotonic()
+        status = "failed"
+        trace_metadata = {
+            "tenant_id": tenant_id,
+            "actor_id": actor_id,
+            "run_id": run_id or "",
+            "agent_id": agent_id or "",
+            "tool_name": tool_name,
+        }
         try:
-            if definition.contextual_handler is not None:
-                result = await definition.contextual_handler(arguments, execution_context)
-            else:
-                result = await definition.handler(arguments)
-        except Exception as exc:
-            if effects is not None:
-                await effects.fail(
-                    tenant_id=tenant_id, run_id=run_key, call_id=call_key,
-                    error=type(exc).__name__,
+            try:
+                with safe_observation(
+                    self._observer,
+                    name="tool.call",
+                    input={"tool_name": tool_name, "argument_count": len(arguments)},
+                    metadata=trace_metadata,
+                ) as span:
+                    try:
+                        if definition.contextual_handler is not None:
+                            result = await definition.contextual_handler(arguments, execution_context)
+                        else:
+                            result = await definition.handler(arguments)
+                    except Exception as exc:
+                        safe_update(span, output={
+                            "status": "failed", "error_type": type(exc).__name__,
+                        })
+                        raise
+                    status = "succeeded"
+                    safe_update(span, output={
+                        "status": status, "result_type": type(result).__name__,
+                    })
+            except Exception as exc:
+                if effects is not None:
+                    await effects.fail(
+                        tenant_id=tenant_id, run_id=run_key, call_id=call_key,
+                        error=type(exc).__name__,
+                    )
+                await self._audit_sink.record(
+                    tenant_id=tenant_id,
+                    actor_id=actor_id,
+                    action=tool_name,
+                    resource=resource,
+                    action_digest=request.digest(),
+                    outcome="failed",
+                    run_id=run_id,
+                    agent_id=agent_id,
+                    detail=type(exc).__name__,
                 )
-            await self._audit_sink.record(
-                tenant_id=tenant_id,
-                actor_id=actor_id,
-                action=tool_name,
-                resource=resource,
-                action_digest=request.digest(),
-                outcome="failed",
-                run_id=run_id,
-                agent_id=agent_id,
-                detail=type(exc).__name__,
+                raise
+        finally:
+            labels = {"component": "tool", "operation": tool_name}
+            safe_metric(
+                self._metrics, "increment", "tool_calls_total",
+                labels={**labels, "status": status},
             )
-            raise
+            safe_metric(
+                self._metrics, "observe", "tool_call_duration_seconds",
+                monotonic() - started, labels=labels,
+            )
 
         if effects is not None:
             await effects.complete(
