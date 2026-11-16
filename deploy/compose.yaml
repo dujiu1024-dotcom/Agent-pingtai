@@ -4,6 +4,8 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-2g}
+    cpus: ${POSTGRES_CPU_LIMIT:-2.0}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in deploy/.env}
       POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in deploy/.env}
@@ -23,6 +25,8 @@ services:
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
     restart: unless-stopped
+    mem_limit: ${REDIS_MEMORY_LIMIT:-512m}
+    cpus: ${REDIS_CPU_LIMIT:-1.0}
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/.env}
@@ -40,6 +44,8 @@ services:
   minio:
     image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
     restart: unless-stopped
+    mem_limit: ${MINIO_MEMORY_LIMIT:-2g}
+    cpus: ${MINIO_CPU_LIMIT:-2.0}
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in deploy/.env}
