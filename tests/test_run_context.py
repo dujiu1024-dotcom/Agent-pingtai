@@ -39,7 +39,7 @@ def test_context_snapshot_rebuilds_latest_revision_and_is_defensive() -> None:
         rebuilt["decisions"].append("mutated outside store")
         again = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
         assert again["decisions"] == ["use source A"]
-        assert again["snapshot_revision"] == 2
+        assert again["snapshot_revision"] == 3
 
     asyncio.run(scenario())
 
@@ -48,7 +48,7 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
     async def scenario() -> None:
         service = RunContextSnapshotService(
             tenant_id="tenant-a", store=InMemoryRunContextSnapshotStore(),
-            reference_window_size=2,
+            reference_window_size=3,
         )
         await service.capture(
             tenant_id="tenant-a", run_id="run-a",
@@ -65,7 +65,7 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
             ],
         )
         rebuilt = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
-        assert len(rebuilt["references"]) == 2
+        assert len(rebuilt["references"]) == 3
         assert rebuilt["references"][0]["ref_id"] == "policy"
         assert rebuilt["references"][1]["title"] == "updated"
         with pytest.raises(ValueError, match="pinned context references"):
@@ -74,6 +74,7 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
                 references=[
                     {"ref_id": "p2", "pinned": True},
                     {"ref_id": "p3", "pinned": True},
+                    {"ref_id": "p4", "pinned": True},
                 ],
             )
 
