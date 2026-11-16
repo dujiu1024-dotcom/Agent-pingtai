@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import unittest
 from types import SimpleNamespace
 
@@ -90,6 +91,30 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         service=KnowledgeService(InMemoryKnowledgeRepository())
         await service.ingest(document=Document(tenant_id="t2",title="secret",source_uri="x",content_hash="x"),content=b"confidential")
         self.assertEqual(await service.retrieve(principal=KnowledgePrincipal(tenant_id="t1",user_id="u1"),query="confidential"),[])
+    async def test_sync_document_parser_runs_off_the_event_loop_thread(self):
+        event_loop_thread = threading.get_ident()
+
+        class ThreadCheckingParser:
+            supported_media_types = ("application/x-thread-test",)
+
+            def parse(self, content, media_type):
+                self.parser_thread = threading.get_ident()
+                return content.decode("utf-8")
+
+        from agent_platform.knowledge.ingestion import ParserRegistry
+
+        parser = ThreadCheckingParser()
+        registry = ParserRegistry(parsers=(parser,))
+        service = KnowledgeService(InMemoryKnowledgeRepository(), parsers=registry)
+        document = Document(
+            tenant_id="tenant-thread", title="threaded parse",
+            source_uri="file://threaded", content_hash="pending",
+            media_type="application/x-thread-test",
+        )
+        result = await service.ingest(document=document, content=b"threaded parser result")
+        self.assertEqual(result.chunks[0].text, "threaded parser result")
+        self.assertNotEqual(parser.parser_thread, event_loop_thread)
+
     async def test_parser_rejects_unknown_binary_type(self):
         service=KnowledgeService(InMemoryKnowledgeRepository()); doc=Document(tenant_id="t",title="pdf",source_uri="x",content_hash="x",media_type="image/png")
         with self.assertRaises(ValueError): await service.ingest(document=doc,content=b"\\x89PNG")
