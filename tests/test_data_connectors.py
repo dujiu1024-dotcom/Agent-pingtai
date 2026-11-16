@@ -3,8 +3,12 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.control_plane.data_connectors import (
-    ConnectorCleanupJob, ConnectorError, ConnectorPage, DataConnection,
-    DataConnectorService, InMemoryConnectorRepository,
+    ConnectorCleanupJob,
+    ConnectorError,
+    ConnectorPage,
+    DataConnection,
+    DataConnectorService,
+    InMemoryConnectorRepository,
 )
 
 
