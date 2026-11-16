@@ -58,6 +58,27 @@ class DeletionAdapter(Protocol):
                              operation_id: str) -> None: ...
 
 
+class DeletionLedger(Protocol):
+    async def begin_operation(
+        self, *, tenant_id: str, operation_id: str, subject_id: str,
+    ) -> None: ...
+    async def completed_systems(
+        self, *, tenant_id: str, operation_id: str,
+    ) -> Sequence[str]: ...
+    async def mark_system_started(
+        self, *, tenant_id: str, operation_id: str, system: str,
+    ) -> None: ...
+    async def mark_system_completed(
+        self, *, tenant_id: str, operation_id: str, system: str,
+    ) -> None: ...
+    async def mark_system_failed(
+        self, *, tenant_id: str, operation_id: str, system: str, error_code: str,
+    ) -> None: ...
+    async def finish_operation(
+        self, *, tenant_id: str, operation_id: str, complete: bool,
+    ) -> None: ...
+
+
 class DeletionCoordinator:
     """Run a deletion across all configured stores; failures remain explicit and retryable."""
 
@@ -67,26 +88,56 @@ class DeletionCoordinator:
         self.adapters = dict(adapters)
 
     async def delete(self, *, tenant_id: str, subject_id: str,
-                     operation_id: str, completed_systems: Sequence[str] = ()) -> DeletionResult:
+                     operation_id: str, completed_systems: Sequence[str] = (),
+                     ledger: DeletionLedger | None = None) -> DeletionResult:
         if not tenant_id or not subject_id or not operation_id:
             raise ValueError("tenant, subject and operation ids are required")
-        unknown = set(completed_systems) - self.adapters.keys()
+        if ledger is not None:
+            if completed_systems:
+                raise ValueError("completed_systems must be loaded from the durable ledger")
+            await ledger.begin_operation(
+                tenant_id=tenant_id, operation_id=operation_id, subject_id=subject_id,
+            )
+            completed_set = set(await ledger.completed_systems(
+                tenant_id=tenant_id, operation_id=operation_id,
+            ))
+        else:
+            completed_set = set(completed_systems)
+        unknown = completed_set - self.adapters.keys()
         if unknown:
             raise ValueError("completed systems include unknown adapters")
-        completed = list(dict.fromkeys(completed_systems))
+        completed = [name for name in self.adapters if name in completed_set]
         failed: dict[str, str] = {}
         for name, adapter in self.adapters.items():
             if name in completed:
                 continue
             try:
+                if ledger is not None:
+                    await ledger.mark_system_started(
+                        tenant_id=tenant_id, operation_id=operation_id, system=name,
+                    )
                 await adapter.delete_subject(
                     tenant_id=tenant_id, subject_id=subject_id,
                     operation_id=operation_id,
                 )
+                if ledger is not None:
+                    await ledger.mark_system_completed(
+                        tenant_id=tenant_id, operation_id=operation_id, system=name,
+                    )
                 completed.append(name)
             except Exception as exc:
                 failed[name] = type(exc).__name__
+                if ledger is not None:
+                    await ledger.mark_system_failed(
+                        tenant_id=tenant_id, operation_id=operation_id, system=name,
+                        error_code=type(exc).__name__,
+                    )
         pending = tuple(name for name in self.adapters if name not in completed and name not in failed)
+        if ledger is not None:
+            await ledger.finish_operation(
+                tenant_id=tenant_id, operation_id=operation_id,
+                complete=not failed and not pending and len(completed) == len(self.adapters),
+            )
         return DeletionResult(
             operation_id=operation_id, subject_id=subject_id,
             completed=tuple(completed), failed=failed, pending=pending,
