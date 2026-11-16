@@ -22,7 +22,7 @@ class DelegationSpec:
     agent_id: str
     task: str
     allowed_tools: tuple[str, ...] = ()
-    timeout_seconds: float = 90.0
+    timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
         if not self.delegation_key.strip() or not self.agent_id.strip() or not self.task.strip():
