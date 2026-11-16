@@ -152,7 +152,7 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
             tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
             project_id=None, session_id=None, input={"goal": "cancel after crash"},
         )
-        lease = await service.claim_next(worker_id="worker-before-crash")
+        await service.claim_next(worker_id="worker-before-crash")
         async with await self.connect() as conn:
             await conn.execute(
                 """UPDATE platform_tasks SET status='cancelling',
