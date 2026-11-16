@@ -1,7 +1,7 @@
 import sys
 import types
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from agent_platform.runtime.postgres_checkpointer import (
     compiled_postgres_graph,
