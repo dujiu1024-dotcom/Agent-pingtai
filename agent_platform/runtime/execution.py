@@ -133,9 +133,8 @@ class LangGraphRunExecutor:
     current=await self.lifecycle.store.get(tenant_id,run_id)
     if current and current.status==RunStatus.CANCELLING:
      await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
-    elif current and current.status==RunStatus.RUNNING:
-     ref=await self._checkpoint_ref(tenant_id,run_id)
-     await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="worker lease lost")
+    # If the lease moved, do not mutate a Run that may now belong to another
+    # worker. The next lease owner will recover the expired RUNNING state.
     raise
    except asyncio.CancelledError:
     current=await self.lifecycle.store.get(tenant_id,run_id)
@@ -233,10 +232,8 @@ class LangGraphRunExecutor:
    latest=await self.lifecycle.store.get(tenant_id,run_id)
    if latest and latest.status==RunStatus.CANCELLING:
     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
-   elif latest and latest.status==RunStatus.RUNNING:
-    ref=await self._checkpoint_ref(tenant_id,run_id)
-    await self.lifecycle.mark_interrupted(
-     tenant_id,run_id,checkpoint_ref=ref,reason="worker lease lost during recovery")
+   # A lease transfer is not an execution failure. Leave RUNNING untouched
+   # so the worker that owns the new lease can recover it safely.
    raise
   except asyncio.CancelledError:
    latest=await self.lifecycle.store.get(tenant_id,run_id)
@@ -284,10 +281,8 @@ class LangGraphRunExecutor:
     except asyncio.TimeoutError:raise
     except WorkerLeaseLost:
      current=await self.lifecycle.store.get(row.tenant_id,row.run_id)
-     if current and current.status==RunStatus.RUNNING:
-      ref=await self._checkpoint_ref(row.tenant_id,row.run_id)
-      await self.lifecycle.mark_interrupted(
-       row.tenant_id,row.run_id,checkpoint_ref=ref,reason="worker lease lost during recovery")
+     if current and current.status==RunStatus.CANCELLING:
+      await self.lifecycle.finish(row.tenant_id,row.run_id,RunStatus.CANCELLED)
      raise
     ref=await self._checkpoint_ref(row.tenant_id,row.run_id)
     await self._finish(row.tenant_id,row.run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
