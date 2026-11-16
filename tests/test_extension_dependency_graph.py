@@ -29,4 +29,4 @@ class ExtensionDependencyGraphTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             resolve_install_order([manifest("app", ("missing",))])
         with self.assertRaises(ValueError):
-            resolve_install_order([manifest("a", ("b",)), manifest("b", ("a",))])
+            resolve_install_order([manifest("aa", ("bb",)), manifest("bb", ("aa",))])
