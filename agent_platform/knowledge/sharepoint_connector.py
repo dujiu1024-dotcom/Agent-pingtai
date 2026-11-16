@@ -59,7 +59,7 @@ class SharePointKnowledgeConnector:
             raise ValueError("SharePoint credentials must use a secret:// reference")
         if not isinstance(drive_id, str) or not drive_id.strip():
             raise ValueError("SharePoint drive_id is required")
-        if isinstance(max_file_bytes, bool) or max_file_bytes < 1024:
+        if isinstance(max_file_bytes, bool) or not isinstance(max_file_bytes, int) or max_file_bytes < 1024:
             raise ValueError("invalid SharePoint file size limit")
         if isinstance(page_size, bool) or not 1 <= page_size <= 999:
             raise ValueError("invalid SharePoint page limit")
