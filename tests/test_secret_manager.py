@@ -117,12 +117,13 @@ class FakeVaultHttp:
             self.values.pop(url.replace("/destroy/", "/data/"), None)
             return 204, b""
         if "/metadata/" in url and method == "DELETE":
+            self.values.pop(url.replace("/metadata/", "/data/"), None)
             return 204, b""
         return 400, b"{}"
 
 
 class VaultKvV2SecretBackendTests(unittest.IsolatedAsyncioTestCase):
-    async def test_round_trip_and_versioned_destroy(self):
+    async def test_round_trip_and_permanent_metadata_revocation(self):
         http = FakeVaultHttp()
         backend = VaultKvV2SecretBackend(
             address="https://vault.example",
@@ -137,7 +138,16 @@ class VaultKvV2SecretBackendTests(unittest.IsolatedAsyncioTestCase):
         await backend.revoke(ref, 3)
         self.assertIsNone(await backend.get(ref, 3))
         self.assertIn("/v1/platform-secrets/data/tenant-a/webhooks/provider/versions/3", http.calls[0][1])
-        self.assertIn("/v1/platform-secrets/destroy/tenant-a/webhooks/provider/versions/3", http.calls[2][1])
+        self.assertEqual(http.calls[2][0], "DELETE")
+        self.assertEqual(
+            http.calls[2][1],
+            "https://vault.example/v1/platform-secrets/metadata/tenant-a/webhooks/provider/versions/3",
+        )
+        self.assertNotIn("/destroy/", http.calls[2][1])
+        self.assertNotIn(
+            "https://vault.example/v1/platform-secrets/data/tenant-a/webhooks/provider/versions/3",
+            http.values,
+        )
         self.assertEqual(http.calls[0][2]["X-Vault-Token"], "vault-test-token")
         self.assertEqual(http.calls[0][2]["X-Vault-Namespace"], "team/platform")
 
