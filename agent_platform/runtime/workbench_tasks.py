@@ -479,7 +479,7 @@ class RegistryLangGraphExecutorResolver:
 
     async def __call__(
         self, record: Mapping[str, Any], worker_id: str,
-    ) -> LangGraphRunExecutor:
+    ) -> Any:
         tenant_id = str(record.get("tenant_id") or "")
         run_id = str(record.get("run_id") or "")
         agent_id = str(record.get("agent_id") or "")
