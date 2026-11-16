@@ -171,7 +171,7 @@ def create_runs_router(
 
         @router.post("/{run_id}/result/revisions")
         async def revise_run_result(run_id: str, request: Request):
-            principal, lifecycle = await context(request, run_id, "revise")
+            principal, lifecycle = await context(request, run_id, "intervene")
             if await lifecycle.store.get(principal.tenant_id, run_id) is None:
                 raise HTTPException(404, "Run not found")
             try:
