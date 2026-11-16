@@ -319,3 +319,47 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    async def test_preparation_retry_never_rebinds_to_new_active_agent_version(self):
+        from agent_platform.runtime.workbench_tasks import WorkbenchTaskError
+
+        task = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "pinned"},
+            idempotency_key="replay-pinned",
+        )
+        row = self.run_store.records[task["run_id"]]
+        pinned_version = row["agent_version"]
+        self.assertEqual(
+            next(ref["version"] for ref in row["registry_snapshot"]
+                 if ref["kind"] == "agent"), pinned_version,
+        )
+        # Simulate a process crash after Run creation but before snapshot readiness.
+        row["dispatch_ready"] = False
+        row["registry_snapshot_digest"] = None
+        self.snapshots.store._rows.pop(("tenant-a", task["run_id"]), None)
+
+        draft = await self.registry.create_draft(
+            tenant_id="tenant-a", kind="agent", item_id="researcher",
+            definition={
+                "instructions": "A newer definition must not replace the queued Run.",
+                "model_template_id": "general",
+                "tool_ids": ["search"], "skill_ids": ["summarize"],
+            }, actor_id="admin",
+        )
+        await self.registry.publish(
+            tenant_id="tenant-a", kind="agent", item_id="researcher",
+            version=draft.version,
+        )
+        with self.assertRaises(WorkbenchTaskError):
+            await self.service.submit_task(
+                tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+                project_id=None, session_id=None, input={"text": "pinned"},
+                idempotency_key="replay-pinned",
+            )
+        failed = await self.service.get_task(
+            tenant_id="tenant-a", task_id=task["task_id"], actor_id="user-a",
+        )
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(row["agent_version"], pinned_version)
