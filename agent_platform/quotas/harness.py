@@ -85,6 +85,8 @@ class QuotaEnforcedHarnessAdapter:
             ):
                 if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                     raise ValueError(f"{label} must be a non-negative integer")
+            assert isinstance(estimated_input_tokens, int) and not isinstance(estimated_input_tokens, bool)
+            assert isinstance(estimated_output_tokens, int) and not isinstance(estimated_output_tokens, bool)
             estimated_tokens = estimated_input_tokens + estimated_output_tokens
         else:
             estimated_tokens, estimated_cost = estimate
