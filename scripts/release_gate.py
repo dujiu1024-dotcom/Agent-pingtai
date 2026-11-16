@@ -41,6 +41,22 @@ def _parse_utc(value: Any, field: str, errors: list[str]) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def _validate_timestamp_freshness(
+    timestamp: datetime | None,
+    field: str,
+    *,
+    current: datetime,
+    max_age_hours: int,
+    errors: list[str],
+) -> None:
+    if timestamp is None:
+        return
+    if timestamp > current + timedelta(minutes=5):
+        errors.append(f"{field}: timestamp is in the future")
+    if current - timestamp > timedelta(hours=max_age_hours):
+        errors.append(f"{field}: evidence is stale")
+
+
 def validate_evidence(
     document: Any,
     *,
@@ -57,18 +73,23 @@ def validate_evidence(
     for field in ("release_id", "environment"):
         if not isinstance(document.get(field), str) or not document[field].strip():
             errors.append(f"{field}: required non-empty string")
+    if document.get("environment") != "production":
+        errors.append("environment: must equal production")
     commit_sha = document.get("commit_sha")
     if not isinstance(commit_sha, str) or not SHA_RE.fullmatch(commit_sha):
         errors.append("commit_sha: must be a full 40-character lowercase Git SHA")
     elif expected_commit_sha and commit_sha != expected_commit_sha:
         errors.append("commit_sha: evidence does not match the release candidate")
-    generated = _parse_utc(document.get("generated_at_utc"), "generated_at_utc", errors)
+
     current = now or datetime.now(timezone.utc)
-    if generated is not None:
-        if generated > current + timedelta(minutes=5):
-            errors.append("generated_at_utc: timestamp is in the future")
-        if current - generated > timedelta(hours=max_age_hours):
-            errors.append("generated_at_utc: evidence document is stale")
+    generated = _parse_utc(document.get("generated_at_utc"), "generated_at_utc", errors)
+    _validate_timestamp_freshness(
+        generated,
+        "generated_at_utc",
+        current=current,
+        max_age_hours=max_age_hours,
+        errors=errors,
+    )
 
     checks = document.get("checks")
     if not isinstance(checks, dict):
@@ -84,7 +105,18 @@ def validate_evidence(
         for field in ("owner", "evidence_ref"):
             if not isinstance(result.get(field), str) or not result[field].strip():
                 errors.append(f"checks.{name}.{field}: required non-empty string")
-        _parse_utc(result.get("verified_at_utc"), f"checks.{name}.verified_at_utc", errors)
+        verified = _parse_utc(
+            result.get("verified_at_utc"),
+            f"checks.{name}.verified_at_utc",
+            errors,
+        )
+        _validate_timestamp_freshness(
+            verified,
+            f"checks.{name}.verified_at_utc",
+            current=current,
+            max_age_hours=max_age_hours,
+            errors=errors,
+        )
     return errors
 
 
