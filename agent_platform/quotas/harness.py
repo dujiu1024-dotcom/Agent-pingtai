@@ -75,26 +75,26 @@ class QuotaEnforcedHarnessAdapter:
         # reservation on accounting/settlement failure: the model may already
         # have incurred billable usage. Keep it active for retry/reconciliation.
         usage = getattr(result, "usage", {}) or {}
-            input_tokens = int(usage.get("input_tokens", 0))
-            output_tokens = int(usage.get("output_tokens", 0))
-            tool_calls = len(getattr(result, "tool_calls", ()) or ())
-            actual_cost = self.estimate_actual_cost(request, result)
-            if not isinstance(actual_cost, Decimal) or not actual_cost.is_finite() or actual_cost < 0:
-                raise ValueError("actual cost must be a finite non-negative Decimal")
-            if min(input_tokens, output_tokens, tool_calls) < 0:
-                raise ValueError("actual usage counters must be non-negative")
-            model_key = (
-                f"{context.model_template.template_id}@{context.model_template.version}"
-            )
-            await self.quota_service.settle_run(
-                reservation,
-                model_key=model_key,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cost_usd=actual_cost,
-                project_id=context.project_id,
-                agent_id=context.agent_id,
-                tool_calls=tool_calls,
-                runtime_ms=int((monotonic() - started) * 1000),
-            )
+        input_tokens = int(usage.get("input_tokens", 0))
+        output_tokens = int(usage.get("output_tokens", 0))
+        tool_calls = len(getattr(result, "tool_calls", ()) or ())
+        actual_cost = self.estimate_actual_cost(request, result)
+        if not isinstance(actual_cost, Decimal) or not actual_cost.is_finite() or actual_cost < 0:
+            raise ValueError("actual cost must be a finite non-negative Decimal")
+        if min(input_tokens, output_tokens, tool_calls) < 0:
+            raise ValueError("actual usage counters must be non-negative")
+        model_key = (
+            f"{context.model_template.template_id}@{context.model_template.version}"
+        )
+        await self.quota_service.settle_run(
+            reservation,
+            model_key=model_key,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=actual_cost,
+            project_id=context.project_id,
+            agent_id=context.agent_id,
+            tool_calls=tool_calls,
+            runtime_ms=int((monotonic() - started) * 1000),
+        )
         return result
