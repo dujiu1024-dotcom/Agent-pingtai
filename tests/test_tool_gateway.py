@@ -129,12 +129,14 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             "actor_id": "agent-a",
             "actor_roles": ("agent",),
             "tool_name": tool,
-            "resource": "resource:x",
             "arguments": {"value": "x"},
             "run_id": "00000000-0000-0000-0000-000000000001",
             "call_id": f"call-{self.call_sequence}",
         }
         defaults.update(kwargs)
+        defaults.setdefault(
+            "resource", f"resource:{defaults["arguments"].get('value', 'global')}",
+        )
         return await self.gateway.call(**defaults)
 
     async def test_correlation_id_is_propagated_into_tool_observation(self):
