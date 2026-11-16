@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Mapping
 from uuid import UUID
 
+from agent_platform.observability.redaction import redact_payload
+
 ConnectionFactory = Callable[[], Any]
 InterventionApplier = Callable[[Mapping[str, Any]], Awaitable[None]]
 
@@ -21,7 +23,7 @@ class RunInterventionService:
     ) -> Mapping[str, Any]:
         if tenant_id != self.tenant_id:
             raise PermissionError("Run intervention tenant mismatch")
-        if kind not in {"context", "decision", "takeover"}:
+        if kind not in {"context", "decision", "approval", "takeover"}:
             raise ValueError("unsupported intervention kind")
         if not actor_id.strip() or not payload or len(repr(payload)) > 32_000:
             raise ValueError("actor and bounded non-empty intervention payload are required")
@@ -53,15 +55,120 @@ class RunInterventionService:
                 await db.execute(
                     """INSERT INTO platform_run_events
                        (tenant_id,run_id,event_type,actor_id,payload)
-                       VALUES (%s,%s,'human.intervention_submitted',%s,%s)""",
-                    (self.tenant_id, UUID(run_id), actor_id,
-                     Jsonb({"intervention_id": str(item["intervention_id"]), "kind": kind})),
+                       VALUES (%s,%s,%s,%s,%s)""",
+                    (self.tenant_id, UUID(run_id),
+                     "human.takeover_requested" if kind == "takeover" else "human.intervention_submitted",
+                     actor_id, Jsonb({"intervention_id": str(item["intervention_id"]), "kind": kind})),
                 )
         return {
             "intervention_id": str(item["intervention_id"]),
             "run_id": run_id, "kind": kind, "status": item["status"],
             "created_at": item["created_at"].isoformat(),
         }
+
+
+    async def decide(
+        self, *, tenant_id: str, run_id: str, intervention_id: str,
+        actor_id: str, decision: str, rationale: str = "",
+    ) -> Mapping[str, Any]:
+        """Record an explicit human decision against a pending decision/approval."""
+        if tenant_id != self.tenant_id:
+            raise PermissionError("Run intervention tenant mismatch")
+        if decision not in {"approved", "rejected", "needs_changes"}:
+            raise ValueError("decision must be approved, rejected or needs_changes")
+        if not actor_id.strip() or len(rationale) > 4000:
+            raise ValueError("actor_id and bounded rationale are required")
+        from psycopg.types.json import Jsonb
+        db = await self._connect()
+        async with db:
+            async with db.transaction():
+                cursor = await db.execute(
+                    """SELECT kind,status FROM platform_run_interventions
+                       WHERE tenant_id=%s AND run_id=%s AND intervention_id=%s FOR UPDATE""",
+                    (self.tenant_id, UUID(run_id), UUID(intervention_id)),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    raise KeyError("intervention not found")
+                if row["kind"] not in {"decision", "approval"}:
+                    raise ValueError("only decision or approval interventions can be decided")
+                if row["status"] != "pending":
+                    raise ValueError("intervention has already been resolved")
+                await db.execute(
+                    """UPDATE platform_run_interventions
+                       SET status='applied',applied_at=now(),applied_by=%s
+                       WHERE tenant_id=%s AND run_id=%s AND intervention_id=%s AND status='pending'""",
+                    (actor_id, self.tenant_id, UUID(run_id), UUID(intervention_id)),
+                )
+                await db.execute(
+                    """INSERT INTO platform_run_events
+                       (tenant_id,run_id,event_type,actor_id,payload)
+                       VALUES (%s,%s,'human.intervention_decided',%s,%s)""",
+                    (self.tenant_id, UUID(run_id), actor_id, Jsonb({
+                        "intervention_id": intervention_id,
+                        "decision": decision,
+                        "rationale": redact_payload({"rationale": rationale}).get("rationale", ""),
+                    })),
+                )
+        return {
+            "intervention_id": intervention_id, "run_id": run_id,
+            "decision": decision, "status": "applied", "decided_by": actor_id,
+        }
+
+    async def revise_result(
+        self, *, tenant_id: str, run_id: str, actor_id: str,
+        output: Mapping[str, Any], reason: str,
+    ) -> Mapping[str, Any]:
+        """Replace a completed Run result with an audited, bounded human revision."""
+        if tenant_id != self.tenant_id:
+            raise PermissionError("Run result tenant mismatch")
+        if not actor_id.strip() or not isinstance(output, Mapping) or not output:
+            raise ValueError("actor and non-empty output object are required")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 4000:
+            raise ValueError("revision reason must contain 1 to 4000 characters")
+        safe_output = redact_payload(dict(output), max_text_chars=4000)
+        import json
+        try:
+            encoded = json.dumps(safe_output, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("revised output must be JSON serializable") from exc
+        if len(encoded) > 32_000:
+            raise ValueError("revised output exceeds 32 KB")
+        from psycopg.types.json import Jsonb
+        db = await self._connect()
+        async with db:
+            async with db.transaction():
+                cursor = await db.execute(
+                    """SELECT status,output FROM platform_runs
+                       WHERE tenant_id=%s AND run_id=%s FOR UPDATE""",
+                    (self.tenant_id, UUID(run_id)),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    raise KeyError("Run not found")
+                if row["status"] != "succeeded":
+                    raise ValueError("only a succeeded Run result can be revised")
+                previous = row["output"]
+                await db.execute(
+                    """UPDATE platform_runs SET output=%s,updated_at=now()
+                       WHERE tenant_id=%s AND run_id=%s""",
+                    (Jsonb(safe_output), self.tenant_id, UUID(run_id)),
+                )
+                await db.execute(
+                    """INSERT INTO platform_run_events
+                       (tenant_id,run_id,event_type,actor_id,payload)
+                       VALUES (%s,%s,'human.result_revised',%s,%s)""",
+                    (self.tenant_id, UUID(run_id), actor_id, Jsonb({
+                        "reason": redact_payload({"reason": reason}).get("reason", ""),
+                        "previous_output": redact_payload(previous or {}, max_text_chars=4000),
+                        "revised_output": safe_output,
+                    })),
+                )
+        return {
+            "run_id": run_id, "status": "succeeded", "output": safe_output,
+            "revised_by": actor_id,
+        }
+
 
     async def list_interventions(self, *, tenant_id: str, run_id: str) -> list[Mapping[str, Any]]:
         if tenant_id != self.tenant_id:
