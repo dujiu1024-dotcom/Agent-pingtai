@@ -55,6 +55,7 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "checkpoint_ref": row.get("checkpoint_ref"),
         "last_error": row.get("last_error"),
         "registry_snapshot_digest": row.get("registry_snapshot_digest"),
+        "dispatch_ready": bool(row.get("dispatch_ready", False)),
     }
 
 
@@ -163,6 +164,37 @@ class RegistryBackedTaskCenterService:
 
         return agent, template, provider, tools, skills, workflow
 
+    async def _ensure_task_ready(
+        self, *, tenant_id: str, run_id: str, agent_id: str,
+        existing_digest: str | None = None,
+    ) -> None:
+        if existing_digest:
+            snapshot = await self.snapshots.get(
+                tenant_id=tenant_id, run_id=run_id,
+            )
+            if snapshot.digest != existing_digest:
+                raise WorkbenchTaskError("stored Run registry snapshot digest does not match")
+        else:
+            agent, template, provider, tools, skills, workflow = (
+                await self._runtime_references(agent_id)
+            )
+            pinned_items = [agent, template, provider, *tools, *skills]
+            if workflow is not None:
+                pinned_items.append(workflow)
+            references = [
+                (item.kind, item.item_id, item.version) for item in pinned_items
+            ]
+            snapshot = await self.snapshots.pin_versions(
+                tenant_id=tenant_id, run_id=run_id, references=references,
+            )
+        ready = await self.run_store.mark_task_ready(
+            tenant_id, run_id, snapshot.digest,
+        )
+        if not ready:
+            current = await self.run_store.get_task_record(tenant_id, run_id)
+            if current is None or not current.get("dispatch_ready"):
+                raise RuntimeError("Run could not be marked ready after snapshot pinning")
+
     async def list_tasks(
         self, *, tenant_id: str, actor_id: str, limit: int = 100,
     ) -> list[Mapping[str, Any]]:
@@ -208,6 +240,15 @@ class RegistryBackedTaskCenterService:
                     raise WorkbenchTaskError(
                         "idempotency_key was already used with a different task request"
                     )
+                if existing.get("status") == "queued" and not existing.get("dispatch_ready"):
+                    await self._ensure_task_ready(
+                        tenant_id=tenant_id, run_id=str(existing["run_id"]),
+                        agent_id=agent_id,
+                        existing_digest=existing.get("registry_snapshot_digest"),
+                    )
+                    existing = await self.run_store.get_task_record(
+                        tenant_id, str(existing["task_id"]), actor_id=actor_id,
+                    )
                 return _task_view(existing)
 
         agent, template, provider, tools, skills, workflow = (
@@ -234,15 +275,9 @@ class RegistryBackedTaskCenterService:
                 raise RuntimeError("idempotent task record disappeared")
             return _task_view(existing)
 
-        pinned_items = [agent, template, provider, *tools, *skills]
-        if workflow is not None:
-            pinned_items.append(workflow)
-        references = [
-            (item.kind, item.item_id, item.version) for item in pinned_items
-        ]
         try:
-            await self.snapshots.pin_versions(
-                tenant_id=tenant_id, run_id=run_id, references=references,
+            await self._ensure_task_ready(
+                tenant_id=tenant_id, run_id=run_id, agent_id=agent_id,
             )
         except Exception as exc:
             current = await self.run_store.get(tenant_id, run_id)
