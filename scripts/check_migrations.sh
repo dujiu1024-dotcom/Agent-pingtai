@@ -11,9 +11,10 @@ files=("$MIGRATION_DIR"/*.sql)
 table_exists="$(psql "$PG_DSN" -XAtq -v ON_ERROR_STOP=1 -c "SELECT to_regclass('public.platform_schema_migrations') IS NOT NULL")"
 declare -A applied=()
 if [[ "$table_exists" == "t" ]]; then
+  applied_rows="$(psql "$PG_DSN" -XAtq -F '|' -v ON_ERROR_STOP=1 -c "SELECT migration_name, checksum FROM public.platform_schema_migrations ORDER BY migration_name")"
   while IFS='|' read -r name checksum; do
     [[ -n "$name" ]] && applied["$name"]="$checksum"
-  done < <(psql "$PG_DSN" -XAtq -F '|' -v ON_ERROR_STOP=1 -c "SELECT migration_name, checksum FROM public.platform_schema_migrations ORDER BY migration_name")
+  done <<< "$applied_rows"
 fi
 pending=0
 for file in "${files[@]}"; do
