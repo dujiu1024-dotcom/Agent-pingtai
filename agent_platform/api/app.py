@@ -69,6 +69,7 @@ def create_platform_app(
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
+    alert_dispatch_worker: Any | None = None,
     audit_reader: Any | None = None,
     audit_authorizer: Any | None = None,
     quota_store: Any | None = None,
@@ -180,6 +181,13 @@ def create_platform_app(
             raise ValueError("memory_expiry_worker must expose async start() and stop()")
         app.router.on_startup.append(memory_expiry_worker.start)
         app.router.on_shutdown.append(memory_expiry_worker.stop)
+    if alert_dispatch_worker is not None:
+        if not callable(getattr(alert_dispatch_worker, "start", None)) or not callable(
+            getattr(alert_dispatch_worker, "stop", None)
+        ):
+            raise ValueError("alert_dispatch_worker must expose async start() and stop()")
+        app.router.on_startup.append(alert_dispatch_worker.start)
+        app.router.on_shutdown.append(alert_dispatch_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
         blackboard_evidence_verifier,
