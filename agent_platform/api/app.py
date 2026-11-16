@@ -19,6 +19,7 @@ from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhooks import create_webhook_admin_router
+from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.workbench import create_workbench_router
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.identity.http import (
@@ -76,6 +77,9 @@ def create_platform_app(
     quota_scope_authorizer: Any | None = None,
     webhook_admin_service: WebhookSubscriptionService | None = None,
     webhook_admin_authorizer: Any | None = None,
+    webhook_delivery_store: Any | None = None,
+    webhook_delivery_authorizer: Any | None = None,
+    webhook_delivery_worker: Any | None = None,
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
     task_worker: Any | None = None,
@@ -242,6 +246,23 @@ def create_platform_app(
             service=webhook_admin_service,
             authorize_manage=webhook_admin_authorizer,
         ))
+    webhook_delivery_admin_configured = any(value is not None for value in (
+        webhook_delivery_store, webhook_delivery_authorizer,
+    ))
+    if webhook_delivery_admin_configured:
+        if webhook_delivery_store is None or webhook_delivery_authorizer is None:
+            raise ValueError("webhook delivery store and authorizer must be configured together")
+        app.include_router(create_webhook_delivery_admin_router(
+            store=webhook_delivery_store,
+            authorize_manage=webhook_delivery_authorizer,
+        ))
+    if webhook_delivery_worker is not None:
+        if not callable(getattr(webhook_delivery_worker, "start", None)) or not callable(
+            getattr(webhook_delivery_worker, "stop", None)
+        ):
+            raise ValueError("webhook_delivery_worker must expose async start() and stop()")
+        app.router.on_startup.append(webhook_delivery_worker.start)
+        app.router.on_shutdown.append(webhook_delivery_worker.stop)
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
