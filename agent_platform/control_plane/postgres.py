@@ -269,15 +269,17 @@ class PostgresSessionRepository:
             raise SessionNotFound("session not found")
         if limit < 1 or limit > 500:
             raise ValueError("limit must be between 1 and 500")
+        query = """SELECT * FROM platform_conversation_sessions
+                   WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'"""
+        params: tuple[object, ...] = (self.tenant_id, owner_id)
+        if project_id is not None:
+            query += " AND project_id=%s"
+            params += (project_id,)
+        query += " ORDER BY updated_at DESC,session_id LIMIT %s"
+        params += (limit,)
         connection = await self._connection_factory()
         async with connection:
-            cursor = await connection.execute(
-                """SELECT * FROM platform_conversation_sessions
-                   WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'
-                     AND (%s IS NULL OR project_id=%s)
-                   ORDER BY updated_at DESC,session_id LIMIT %s""",
-                (self.tenant_id, owner_id, project_id, project_id, limit),
-            )
+            cursor = await connection.execute(query, params)
             rows = await cursor.fetchall()
         return tuple(ConversationSession(
             tenant_id=row["tenant_id"], session_id=str(row["session_id"]),
@@ -317,24 +319,20 @@ class PostgresSessionRepository:
             raise SessionNotFound("file not found")
         if limit < 1 or limit > 500:
             raise ValueError("limit must be between 1 and 500")
+        query = """SELECT * FROM platform_file_assets
+                   WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'"""
+        params: tuple[object, ...] = (self.tenant_id, owner_id)
+        if session_id:
+            query += " AND session_id=%s"
+            params += (_uuid(session_id),)
+        if project_id is not None:
+            query += " AND project_id=%s"
+            params += (project_id,)
+        query += " ORDER BY created_at DESC,asset_id LIMIT %s"
+        params += (limit,)
         connection = await self._connection_factory()
         async with connection:
-            if session_id:
-                cursor = await connection.execute(
-                    """SELECT * FROM platform_file_assets
-                       WHERE tenant_id=%s AND owner_id=%s AND session_id=%s AND status <> 'deleted'
-                         AND (%s IS NULL OR project_id=%s)
-                       ORDER BY created_at DESC,asset_id LIMIT %s""",
-                    (self.tenant_id, owner_id, _uuid(session_id), project_id, project_id, limit),
-                )
-            else:
-                cursor = await connection.execute(
-                    """SELECT * FROM platform_file_assets
-                       WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'
-                         AND (%s IS NULL OR project_id=%s)
-                       ORDER BY created_at DESC,asset_id LIMIT %s""",
-                    (self.tenant_id, owner_id, project_id, project_id, limit),
-                )
+            cursor = await connection.execute(query, params)
             rows = await cursor.fetchall()
         return tuple(self._to_asset(row) for row in rows)
 
