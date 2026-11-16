@@ -131,7 +131,8 @@ class QuotaEnforcedHarnessAdapter:
         )
         started = monotonic()
         try:
-            result = await self.inner.run(request)
+            async with self.quota_service.reservation_lease(reservation):
+                result = await self.inner.run(request)
         except BaseException as exc:
             # A Harness may fail after the provider accepted a billable request.
             # Retain the reservation unless a trusted host classifier can prove
