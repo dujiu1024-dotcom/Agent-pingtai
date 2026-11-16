@@ -6,7 +6,6 @@ test adapters while provider-backed execution remains an explicit operator actio
 """
 from __future__ import annotations
 
-import math
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping, Sequence
 
@@ -100,14 +99,22 @@ async def run_fixed_harness_benchmark(
 ) -> tuple[tuple[HarnessCandidateScorecard, ...], HarnessBenchmarkReport]:
     """Run the same fixed cases sequentially against each candidate."""
     scorecards = candidate_scorecards(adapters)
-    report = await HarnessBenchmarkRunner(
-        adapters=adapters,
-        request_factory=request_factory,
-        pricing=pricing,
-        gateway_tool_verifier=gateway_tool_verifier,
-        recovery_attempts=recovery_attempts,
-    ).run(FIXED_HARNESS_CASES)
-    return scorecards, report
+    observations = []
+    for name, adapter in sorted(adapters.items()):
+        capabilities = getattr(adapter, "capabilities", None)
+        cases = tuple(
+            case for case in FIXED_HARNESS_CASES
+            if not case.streaming or bool(getattr(capabilities, "streaming", False))
+        )
+        candidate_report = await HarnessBenchmarkRunner(
+            adapters={name: adapter},
+            request_factory=request_factory,
+            pricing={name: pricing[name]} if pricing and name in pricing else None,
+            gateway_tool_verifier=gateway_tool_verifier,
+            recovery_attempts=recovery_attempts,
+        ).run(cases)
+        observations.extend(candidate_report.observations)
+    return scorecards, HarnessBenchmarkReport(tuple(observations))
 
 
 def benchmark_evidence_payload(
