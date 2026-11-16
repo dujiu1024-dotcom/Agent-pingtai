@@ -67,7 +67,11 @@ class GoogleDriveKnowledgeConnector:
     ) -> None:
         if not credential_ref.startswith("secret://"):
             raise ValueError("Google Drive credentials must use a secret:// reference")
-        if max_file_bytes < 1024 or not 1 <= page_size <= 1000:
+        if (
+            isinstance(max_file_bytes, bool) or not isinstance(max_file_bytes, int)
+            or max_file_bytes < 1024 or isinstance(page_size, bool)
+            or not isinstance(page_size, int) or not 1 <= page_size <= 1000
+        ):
             raise ValueError("invalid Google Drive size or page limit")
         self.client = client
         self.credentials = credentials
