@@ -54,13 +54,44 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
             "commit_sha: evidence does not match the release candidate", errors
         )
 
-    def test_stale_and_non_utc_timestamps_are_rejected(self):
+    def test_stale_document_and_non_utc_check_timestamp_are_rejected(self):
         old = self.now - timedelta(days=8)
         self.document["generated_at_utc"] = old.isoformat().replace("+00:00", "Z")
         self.document["checks"]["e2e"]["verified_at_utc"] = "2026-11-16T08:00:00+02:00"
         errors = validate_evidence(self.document, now=self.now)
-        self.assertTrue(any("evidence document is stale" in error for error in errors))
+        self.assertTrue(any("evidence is stale" in error for error in errors))
         self.assertTrue(any("must be UTC" in error for error in errors))
+
+    def test_stale_individual_check_is_rejected_even_when_document_is_fresh(self):
+        old = self.now - timedelta(days=8)
+        self.document["checks"]["fault_injection"]["verified_at_utc"] = (
+            old.isoformat().replace("+00:00", "Z")
+        )
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertTrue(
+            any(
+                "checks.fault_injection.verified_at_utc: evidence is stale" in error
+                for error in errors
+            )
+        )
+
+    def test_future_individual_check_timestamp_is_rejected(self):
+        future = self.now + timedelta(minutes=6)
+        self.document["checks"]["security"]["verified_at_utc"] = (
+            future.isoformat().replace("+00:00", "Z")
+        )
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertTrue(
+            any(
+                "checks.security.verified_at_utc: timestamp is in the future" in error
+                for error in errors
+            )
+        )
+
+    def test_non_production_environment_is_rejected(self):
+        self.document["environment"] = "staging"
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("environment: must equal production", errors)
 
     def test_invalid_document_shape_is_rejected(self):
         self.assertEqual(
