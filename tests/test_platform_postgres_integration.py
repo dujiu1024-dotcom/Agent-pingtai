@@ -1560,6 +1560,32 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memory_events[0]["payload"]["actor_id"], "actor-a")
 
 
+
+    async def test_failed_and_non_session_runs_do_not_queue_memory_events(self):
+        store = PostgresRunStateStore(self.connect)
+        lifecycle = RunLifecycleManager(store)
+        for run_id, session_id, terminal_status in (
+            (str(uuid4()), "failed-session", RunStatus.FAILED),
+            (str(uuid4()), None, RunStatus.SUCCEEDED),
+        ):
+            await store.create_task_run(
+                tenant_id=self.tenant_id, run_id=run_id, actor_id="actor-a",
+                agent_id="agent-a", agent_version=1, template_id="template-a",
+                template_version=1, input={"text": "question"},
+                preparation_owner="prep-a", registry_snapshot=[],
+                project_id=None, session_id=session_id,
+            )
+            await lifecycle.start(self.tenant_id, run_id)
+            await lifecycle.finish(self.tenant_id, run_id, terminal_status)
+
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT count(*) AS n FROM platform_outbox
+                   WHERE tenant_id=%s AND topic='memory.extraction.requested'""",
+                (self.tenant_id,),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 0)
+
     async def test_postgres_session_repository_lists_only_owner_sessions_and_assets(self):
         repository = PostgresSessionRepository(
             tenant_id=self.tenant_id, connection_factory=self.connect,
