@@ -159,14 +159,16 @@ async def prepare_context(
         )
         if kept_counts[2] > context_window_tokens:
             raise ContextOverflowError("protected instructions and latest message exceed model context window")
+        retained_older: list[Mapping[str, Any]] = []
         for message in reversed(other_messages[:-1]):
-            candidate = [*system_messages, anchor, message, *kept[len(system_messages) + 2:]]
+            candidate = [*system_messages, anchor, message, *reversed(retained_older), latest]
             candidate_counts = await _estimate(
                 estimator, model_id=model_id, messages=candidate,
                 request_parameters=request_parameters,
                 context_window_tokens=context_window_tokens,
             )
             if candidate_counts[2] <= context_window_tokens:
+                retained_older.insert(0, message)
                 kept = candidate
                 kept_counts = candidate_counts
             else:
