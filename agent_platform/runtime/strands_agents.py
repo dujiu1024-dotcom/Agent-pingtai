@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any, AsyncContextManager, Awaitable, Callable, Protocol
 
@@ -20,8 +20,10 @@ from agent_platform.runtime.protocols import (
     HarnessCapabilities,
     HarnessRequest,
     HarnessResult,
+    HarnessStreamEvent,
     MediaInput,
     MediaOutput,
+    UnsupportedHarnessCapability,
 )
 
 ProviderConfigResolver = Callable[[ModelTemplate, RunContext], Mapping[str, Any]]
@@ -323,3 +325,193 @@ class StrandsAgentsAdapter:
             metadata=metadata,
             media_outputs=media_outputs,
         )
+
+
+    async def stream(self, request: HarnessRequest) -> AsyncIterator[HarnessStreamEvent]:
+        """Stream text/tool lifecycle events from Strands without exposing raw provider events."""
+        if not self.capabilities.streaming:
+            raise UnsupportedHarnessCapability("Strands Harness does not declare streaming support")
+        if request.allowed_tools and self.gateway_tool_provider is None:
+            raise RuntimeError(
+                "Strands tools require a run-scoped MCP Tool Gateway provider"
+            )
+        template = self.templates.get(request.context.model_template)
+        provider = dict(self.provider_config_resolver(template, request.context))
+        unknown = set(provider) - {"api_key", "base_url", "timeout"}
+        if unknown:
+            raise ValueError(
+                "Strands provider config contains unsupported keys: "
+                + ", ".join(sorted(unknown))
+            )
+        if not provider.get("api_key") or not provider.get("base_url"):
+            raise RuntimeError("Strands requires a scoped model proxy api_key and base_url")
+
+        model_factory = self.model_factory
+        if model_factory is None:
+            try:
+                from strands.models.openai import OpenAIModel
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Install strands-agents[openai] to use this adapter"
+                ) from exc
+            model_factory = OpenAIModel
+        agent_factory = self.agent_factory
+        if agent_factory is None:
+            try:
+                from strands import Agent
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Install strands-agents to use this adapter"
+                ) from exc
+            agent_factory = Agent
+
+        parameters = template.parameters
+        model_params = {
+            key: parameters[key]
+            for key in ("max_tokens", "temperature", "top_p")
+            if key in parameters
+        }
+        client_args: dict[str, Any] = {
+            "api_key": str(provider["api_key"]),
+            "base_url": str(provider["base_url"]),
+        }
+        if provider.get("timeout") is not None:
+            client_args["timeout"] = float(provider["timeout"])
+        prompt = await self._build_prompt(request)
+        model = model_factory(
+            model_id=template.model,
+            client_args=client_args,
+            params=model_params,
+        )
+        if request.allowed_tools:
+            assert self.gateway_tool_provider is not None
+            tool_session = self.gateway_tool_provider.open_session(
+                context=request.context,
+                allowed_tools=tuple(request.allowed_tools),
+            )
+        else:
+            tool_session = _empty_async_tool_session()
+
+        async with tool_session as gateway_tools:
+            agent = agent_factory(
+                model=model,
+                system_prompt=request.instructions,
+                tools=list(gateway_tools),
+                load_tools_from_directory=False,
+                plugins=[],
+                callback_handler=None,
+                context_manager=False,
+                agent_id=f"{request.context.run_id}-{request.context.agent_id}",
+            )
+            stream_method = getattr(agent, "stream_async", None)
+            if not callable(stream_method):
+                raise UnsupportedHarnessCapability(
+                    "configured Strands Agent does not implement stream_async"
+                )
+            text_parts: list[str] = []
+            completed_result: HarnessResult | None = None
+
+            async def consume_events() -> AsyncIterator[HarnessStreamEvent]:
+                nonlocal completed_result
+                async for event in stream_method(
+                    prompt, idempotency_token=request.context.run_id
+                ):
+                    if not isinstance(event, Mapping):
+                        continue
+                    delta = event.get("data")
+                    if isinstance(delta, str) and delta:
+                        text_parts.append(delta)
+                        yield HarnessStreamEvent(
+                            event_type="text_delta", text_delta=delta
+                        )
+                    tool_use = event.get("current_tool_use")
+                    if isinstance(tool_use, Mapping) and isinstance(tool_use.get("name"), str):
+                        yield HarnessStreamEvent(
+                            event_type="tool_call",
+                            tool_name=tool_use["name"],
+                        )
+                    lifecycle = {
+                        key: event[key]
+                        for key in (
+                            "init_event_loop", "start_event_loop",
+                            "event_loop_throttled_delay", "force_stop",
+                            "force_stop_reason",
+                        )
+                        if key in event
+                    }
+                    if lifecycle:
+                        yield HarnessStreamEvent(
+                            event_type="lifecycle", metadata=lifecycle
+                        )
+                    raw_result = event.get("result")
+                    if raw_result is not None:
+                        message = _value(raw_result, "message", {}) or {}
+                        content = _value(message, "content", []) or []
+                        output = "\n".join(
+                            str(_value(block, "text", ""))
+                            for block in content
+                            if _value(block, "text")
+                        ) or "".join(text_parts)
+                        if output and "text" not in self.capabilities.output_modalities:
+                            raise UnsupportedHarnessCapability(
+                                "Strands Harness does not declare text output support"
+                            )
+                        media_outputs = await self._persist_media_outputs(request, content)
+                        metrics = _value(raw_result, "metrics")
+                        accumulated = _value(metrics, "accumulated_metrics", {}) or {}
+                        metadata: dict[str, Any] = {
+                            "provider": template.provider,
+                            "model": template.model,
+                            "runtime": "strands-agents",
+                        }
+                        latency = _value(accumulated, "latency_ms")
+                        if isinstance(latency, (int, float)):
+                            metadata["latency_ms"] = int(latency)
+                        completed_result = HarnessResult(
+                            output_text=output,
+                            usage=_usage(metrics),
+                            finish_reason=str(_value(raw_result, "stop_reason", "unknown")),
+                            trace_id=request.context.correlation_id,
+                            metadata=metadata,
+                            media_outputs=media_outputs,
+                        )
+                        yield HarnessStreamEvent(
+                            event_type="completed", result=completed_result
+                        )
+
+            timeout = parameters.get("timeout_seconds")
+            try:
+                if timeout is None:
+                    async for stream_event in consume_events():
+                        yield stream_event
+                else:
+                    async with asyncio.timeout(float(timeout)):
+                        async for stream_event in consume_events():
+                            yield stream_event
+                if completed_result is None:
+                    output = "".join(text_parts)
+                    if output and "text" not in self.capabilities.output_modalities:
+                        raise UnsupportedHarnessCapability(
+                            "Strands Harness does not declare text output support"
+                        )
+                    completed_result = HarnessResult(
+                        output_text=output,
+                        trace_id=request.context.correlation_id,
+                        metadata={
+                            "provider": template.provider,
+                            "model": template.model,
+                            "runtime": "strands-agents",
+                            "stream_result_missing": True,
+                        },
+                    )
+                    yield HarnessStreamEvent(
+                        event_type="completed", result=completed_result
+                    )
+            except TimeoutError as exc:
+                raise TimeoutError(
+                    "Strands streaming invocation exceeded its template timeout"
+                ) from exc
+            finally:
+                shutdown = getattr(agent, "shutdown_async", None)
+                if callable(shutdown):
+                    await shutdown()
