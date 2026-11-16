@@ -156,6 +156,27 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await self.handler(run_store=FakeRunStore(status="failed"))(make_event())
 
+    async def test_uses_run_scoped_input_and_output_when_session_transcript_is_absent(self):
+        repository = FakeRepository()
+        repository.messages = ()
+        run_store = FakeRunStore(
+            input={"text": "task-specific question"},
+            output={"text": "task-specific answer"},
+        )
+        await self.handler(run_store=run_store, repository=repository)(make_event())
+        self.assertEqual(len(self.extraction.turns), 1)
+        _, turn = self.extraction.turns[0]
+        self.assertEqual(turn.user_message, "task-specific question")
+        self.assertEqual(turn.assistant_message, "task-specific answer")
+        self.assertIn(":task-output", turn.source_ref)
+
+    async def test_waits_for_successful_run_output_to_be_persisted(self):
+        repository = FakeRepository()
+        repository.messages = ()
+        with self.assertRaisesRegex(RuntimeError, "output is not persisted"):
+            await self.handler(repository=repository)(make_event())
+        self.assertEqual(self.extraction.turns, [])
+
 
 if __name__ == "__main__":
     unittest.main()
