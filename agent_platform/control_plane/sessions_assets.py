@@ -142,6 +142,8 @@ class InMemorySessionRepository:
         self.messages.setdefault(key, []).append(message)
 
     async def list_messages(self, tenant_id: str, session_id: str, limit: int = 100) -> tuple[ConversationMessage, ...]:
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
         if (tenant_id, session_id) not in self.sessions:
             raise SessionNotFound("session not found")
         return tuple(self.messages.get((tenant_id, session_id), [])[-limit:])
