@@ -73,12 +73,13 @@ class BlackboardReplayTests(unittest.IsolatedAsyncioTestCase):
             **context, "contributions": [contribution],
             "synthesis": resolution["synthesis"], "conflicts": review["conflicts"],
         }
+        before_approval_replay = len(repository.entries)
         approval = await services.prepare_approval(state=state)
+        after_first_approval = len(repository.entries)
         replayed_approval = await services.prepare_approval(state=state)
-        self.assertEqual(
-            approval["blackboard_entry_id"],
-            replayed_approval["blackboard_entry_id"],
-        )
+        self.assertEqual(approval, replayed_approval)
+        self.assertEqual(after_first_approval, before_approval_replay + 1)
+        self.assertEqual(len(repository.entries), after_first_approval)
         state["approval_result"] = await services.apply_approval(
             state=state, decision={"approved": True},
         )
