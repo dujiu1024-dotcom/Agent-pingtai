@@ -10,21 +10,21 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-from dataclasses import replace
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from typing import Any, AsyncContextManager, Awaitable, Callable, Protocol
 
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
 from agent_platform.runtime.protocols import (
+    RUNTIME_ADAPTER_CONTRACT_VERSION,
     HarnessCapabilities,
     HarnessRequest,
     HarnessResult,
     HarnessStreamEvent,
     MediaInput,
     MediaOutput,
-    RUNTIME_ADAPTER_CONTRACT_VERSION,
     RuntimeAdapterDescriptor,
     UnsupportedHarnessCapability,
 )
@@ -98,6 +98,7 @@ class StrandsAgentsAdapter:
             # The SDK is cancellable by cancelling its task and shutting down
             # the Agent, but it has no independent cancel(run_id) control surface.
             cancellation=False,
+            timeout=True,
             tool_gateway=gateway_tool_provider is not None,
         )
         self.descriptor = RuntimeAdapterDescriptor(
