@@ -77,6 +77,11 @@ include = [
   "tests/test_quota_reporting_api.py",
   "tests/test_quota_harness_enforcement.py",
   "tests/test_quota_postgres_integration.py",
+  "tests/test_file_processing.py",
+  "tests/test_file_processing_postgres_integration.py",
+  "tests/test_http_connector.py",
+  "tests/test_connector_cleanup_postgres_integration.py",
+  "tests/test_data_connectors.py",
 ]
 
 [tool.ruff.lint]
