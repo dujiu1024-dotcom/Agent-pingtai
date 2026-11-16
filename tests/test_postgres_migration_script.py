@@ -59,8 +59,8 @@ class PostgresMigrationScriptTests(unittest.TestCase):
             )
             prepared_sql = prepared_file.read_text(encoding="utf-8")
 
-            self.assertTrue(prepared_sql.startswith("-- migration comment\\nCREATE TABLE"))
-            self.assertNotIn("\\nCOMMIT;\\n", prepared_sql)
+            self.assertTrue(prepared_sql.startswith("-- migration comment\nCREATE TABLE"))
+            self.assertNotIn("\nCOMMIT;\n", prepared_sql)
             self.assertIn("CREATE FUNCTION atomicity_probe_fn()", prepared_sql)
             self.assertIn("\nBEGIN;\nPERFORM 1;", prepared_sql)
             begin = runner_sql.index("  BEGIN;")
