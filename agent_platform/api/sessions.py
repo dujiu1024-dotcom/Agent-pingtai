@@ -362,6 +362,13 @@ def create_sessions_router(
             )
         except (SessionError, SessionNotFound) as exc:
             raise HTTPException(422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.uploaded", subject_id=asset.asset_id,
+                detail={"project_id": asset.project_id, "session_id": asset.session_id,
+                        "size_bytes": asset.size_bytes, "sha256": asset.sha256},
+            )
         return {
             "asset_id": asset.asset_id, "filename": asset.filename,
             "media_type": asset.media_type, "size_bytes": asset.size_bytes,
@@ -391,6 +398,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(503, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.deleted", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "session_id": asset.session_id},
+            )
         return Response(status_code=204)
 
     @router.get("/files/{asset_id}/metadata")
@@ -441,6 +454,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.download_url_issued", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "expires_in": expires_in},
+            )
         return JSONResponse(
             {"asset_id": asset.asset_id, "url": url, "expires_in": expires_in},
             headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
@@ -468,6 +487,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.downloaded", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "size_bytes": len(content)},
+            )
         headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(asset.filename)}"}
         return Response(content=content, media_type=asset.media_type, headers=headers)
 
