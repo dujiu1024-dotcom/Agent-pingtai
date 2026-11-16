@@ -107,6 +107,40 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
                 context_window_tokens=0,
             )
 
+    async def test_settlement_failure_keeps_reservation_for_reconciliation(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"), hard_concurrency=1,
+        ))
+        original_settle = store.settle
+        async def broken_settle(reservation_id, event):
+            raise RuntimeError("usage ledger temporarily unavailable")
+        store.settle = broken_settle
+        inner = FakeHarness()
+        adapter = QuotaEnforcedHarnessAdapter(
+            inner, quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-accounting-failure",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        with self.assertRaisesRegex(RuntimeError, "ledger temporarily unavailable"):
+            await adapter.run(request)
+        self.assertEqual(inner.calls, 1)
+        tokens, cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (100, Decimal("0.10"), 1))
+        store.settle = original_settle
+
     async def test_tenant_scope_cannot_be_overridden_by_untrusted_resolver(self):
         inner = FakeHarness()
         adapter = QuotaEnforcedHarnessAdapter(
