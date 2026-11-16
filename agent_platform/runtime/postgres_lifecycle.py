@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from agent_platform.runtime.lifecycle import _ALLOWED, RunSnapshot, RunStateStore, RunStatus
 
@@ -168,7 +168,7 @@ class PostgresRunStateStore(RunStateStore):
  async def transition(self,snapshot:RunSnapshot,*,expected_version:int)->RunSnapshot:
   c=await self._connect()
   async with c:
-   cur=await c.execute("SELECT status,version FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR UPDATE",(snapshot.tenant_id,snapshot.run_id))
+   cur=await c.execute("SELECT status,version,session_id,created_by,project_id,agent_id FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR UPDATE",(snapshot.tenant_id,snapshot.run_id))
    current=await cur.fetchone()
    if current is None or int(current["version"])!=expected_version:raise RuntimeError("Run state version conflict or Run not found")
    old_status=RunStatus(current["status"])
@@ -200,6 +200,25 @@ class PostgresRunStateStore(RunStateStore):
      "version":int(row["version"]),
     })),
    )
+   # Queue memory extraction in the same transaction as the terminal state
+   # transition. The event contains identifiers only; the consumer must reload
+   # the owned session turn and enforce the memory feature/policy before use.
+   if snapshot.status == RunStatus.SUCCEEDED and current.get("session_id"):
+    event_id = uuid4()
+    payload = {
+     "run_id": snapshot.run_id,
+     "session_id": current["session_id"],
+     "actor_id": current["created_by"],
+     "project_id": current.get("project_id"),
+     "agent_id": current.get("agent_id"),
+    }
+    await c.execute(
+     """INSERT INTO platform_outbox
+        (tenant_id,event_id,topic,payload)
+        VALUES (%s,%s,'memory.extraction.requested',%s)
+        ON CONFLICT (tenant_id,event_id) DO NOTHING""",
+     (snapshot.tenant_id,event_id,Jsonb(payload)),
+    )
    return self._snapshot(row)
  async def claim_recoverable(self,worker_id:str,*,tenant_id:str|None=None,limit:int=100,lease_seconds:int=60)->list[RunSnapshot]:
   if not worker_id.strip() or limit<1 or lease_seconds<5:raise ValueError("invalid worker lease parameters")
