@@ -122,7 +122,14 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         saved = await self.repository.get_asset("tenant-a", asset.asset_id)
         self.assertEqual(saved.status, AssetStatus.DELETED)
-        self.assertFalse(any(key[1] == asset.asset_id for key in self.knowledge_repository.documents))
+        self.assertTrue(all(
+            document.deleted_at is not None
+            for key, document in self.knowledge_repository.documents.items()
+            if key[1] == asset.asset_id
+        ))
+        self.assertFalse(any(
+            key[1] == asset.asset_id for key in self.knowledge_repository.chunks
+        ))
         with self.assertRaises(Exception):
             await self.storage.get(asset.object_key)
 
@@ -150,7 +157,14 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         saved = await self.repository.get_asset("tenant-a", asset.asset_id)
         self.assertEqual(saved.status, AssetStatus.DELETED)
-        self.assertNotIn(asset.asset_id, self.knowledge_repository.documents)
+        self.assertTrue(all(
+            document.deleted_at is not None
+            for key, document in self.knowledge_repository.documents.items()
+            if key[1] == asset.asset_id
+        ))
+        self.assertFalse(any(
+            key[1] == asset.asset_id for key in self.knowledge_repository.chunks
+        ))
         self.assertEqual(self.queue.completed, [asset.asset_id])
 
     async def test_worker_removes_index_if_delete_races_with_ingestion(self):
@@ -180,7 +194,14 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         saved = await self.repository.get_asset("tenant-a", asset.asset_id)
         self.assertEqual(saved.status, AssetStatus.DELETED)
-        self.assertNotIn(asset.asset_id, self.knowledge_repository.documents)
+        self.assertTrue(all(
+            document.deleted_at is not None
+            for key, document in self.knowledge_repository.documents.items()
+            if key[1] == asset.asset_id
+        ))
+        self.assertFalse(any(
+            key[1] == asset.asset_id for key in self.knowledge_repository.chunks
+        ))
 
     async def test_delete_retries_index_cleanup_after_transient_failure(self):
         asset = await self.service.upload_asset(
