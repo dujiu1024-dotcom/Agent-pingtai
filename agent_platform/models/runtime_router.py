@@ -15,15 +15,15 @@ from time import monotonic
 from types import SimpleNamespace
 from typing import Any, Mapping, Protocol, Sequence
 
-from agent_platform.models.registry_resolver import (
-    ModelRegistryError,
-    RegistryModelResolver,
-    ResolvedModelConfig,
-)
 from agent_platform.models.context_overflow import (
     ContextOverflowError,
     HumanInterventionRequired,
     prepare_context,
+)
+from agent_platform.models.registry_resolver import (
+    ModelRegistryError,
+    RegistryModelResolver,
+    ResolvedModelConfig,
 )
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 from agent_platform.observability.trace_context import current_trace_context
