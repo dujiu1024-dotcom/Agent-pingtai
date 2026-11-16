@@ -1,7 +1,5 @@
 """Tests for durable Run context snapshot assembly and recovery reconstruction."""
-import asyncio
-
-import pytest
+import unittest
 
 from agent_platform.runtime.run_context import (
     InMemoryRunContextSnapshotStore,
@@ -9,8 +7,8 @@ from agent_platform.runtime.run_context import (
 )
 
 
-def test_context_snapshot_rebuilds_latest_revision_and_is_defensive() -> None:
-    async def scenario() -> None:
+class RunContextSnapshotTests(unittest.IsolatedAsyncioTestCase):
+    async def test_context_snapshot_rebuilds_latest_revision_and_is_defensive(self) -> None:
         store = InMemoryRunContextSnapshotStore()
         service = RunContextSnapshotService(
             tenant_id="tenant-a", store=store, reference_window_size=3,
@@ -19,7 +17,7 @@ def test_context_snapshot_rebuilds_latest_revision_and_is_defensive() -> None:
             tenant_id="tenant-a", run_id="run-a",
             initial_context={"prompt": "summarize", "objective": "summary"},
         )
-        assert first.revision == 1
+        self.assertEqual(first.revision, 1)
         await service.capture(
             tenant_id="tenant-a", run_id="run-a",
             updates={"decisions": ["use source A"]},
@@ -30,22 +28,19 @@ def test_context_snapshot_rebuilds_latest_revision_and_is_defensive() -> None:
             ],
         )
         rebuilt = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
-        assert rebuilt["prompt"] == "summarize"
-        assert rebuilt["objective"] == "summary"
-        assert rebuilt["decisions"] == ["use source A"]
-        assert [ref["ref_id"] for ref in rebuilt["references"]] == [
-            "pinned", "new-1", "new-2",
-        ]
+        self.assertEqual(rebuilt["prompt"], "summarize")
+        self.assertEqual(rebuilt["objective"], "summary")
+        self.assertEqual(rebuilt["decisions"], ["use source A"])
+        self.assertEqual(
+            [ref["ref_id"] for ref in rebuilt["references"]],
+            ["pinned", "new-1", "new-2"],
+        )
         rebuilt["decisions"].append("mutated outside store")
         again = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
-        assert again["decisions"] == ["use source A"]
-        assert again["snapshot_revision"] == 2
+        self.assertEqual(again["decisions"], ["use source A"])
+        self.assertEqual(again["snapshot_revision"], 2)
 
-    asyncio.run(scenario())
-
-
-def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> None:
-    async def scenario() -> None:
+    async def test_reference_window_pins_and_deduplicates_latest(self) -> None:
         service = RunContextSnapshotService(
             tenant_id="tenant-a", store=InMemoryRunContextSnapshotStore(),
             reference_window_size=3,
@@ -66,11 +61,11 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
             ],
         )
         rebuilt = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
-        assert len(rebuilt["references"]) == 3
-        assert rebuilt["references"][0]["ref_id"] == "policy"
-        assert rebuilt["references"][0]["pinned"] is True
-        assert rebuilt["references"][1]["title"] == "updated"
-        with pytest.raises(ValueError, match="pinned context references"):
+        self.assertEqual(len(rebuilt["references"]), 3)
+        self.assertEqual(rebuilt["references"][0]["ref_id"], "policy")
+        self.assertIs(rebuilt["references"][0]["pinned"], True)
+        self.assertEqual(rebuilt["references"][1]["title"], "updated")
+        with self.assertRaisesRegex(ValueError, "pinned context references"):
             await service.capture(
                 tenant_id="tenant-a", run_id="run-a",
                 references=[
@@ -80,19 +75,17 @@ def test_context_snapshot_keeps_pinned_references_and_deduplicates_latest() -> N
                 ],
             )
 
-    asyncio.run(scenario())
-
-
-def test_context_snapshot_rejects_cross_tenant_and_missing_recovery() -> None:
-    async def scenario() -> None:
+    async def test_context_snapshot_rejects_cross_tenant_and_missing_recovery(self) -> None:
         service = RunContextSnapshotService(
             tenant_id="tenant-a", store=InMemoryRunContextSnapshotStore(),
         )
-        with pytest.raises(PermissionError):
+        with self.assertRaises(PermissionError):
             await service.capture(
                 tenant_id="tenant-b", run_id="run-a", initial_context={"prompt": "x"},
             )
-        with pytest.raises(KeyError, match="snapshot is missing"):
+        with self.assertRaisesRegex(KeyError, "snapshot is missing"):
             await service.rebuild(tenant_id="tenant-a", run_id="missing")
 
-    asyncio.run(scenario())
+
+if __name__ == "__main__":
+    unittest.main()
