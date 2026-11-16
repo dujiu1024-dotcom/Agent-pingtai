@@ -100,7 +100,10 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         return StrandsAgentsAdapter(**options)
 
     async def test_runs_with_scoped_proxy_and_no_tools(self):
-        result = await self.adapter().run(self.request)
+        adapter = self.adapter()
+        self.assertEqual(adapter.capabilities.input_modalities, frozenset({"text"}))
+        self.assertEqual(adapter.capabilities.output_modalities, frozenset({"text"}))
+        result = await adapter.run(self.request)
         self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(result.finish_reason, "end_turn")
         self.assertEqual(result.usage, {
