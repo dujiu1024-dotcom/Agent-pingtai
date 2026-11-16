@@ -153,10 +153,12 @@ class PostgresQuotaStore:
                 FROM platform_usage_ledger u
                 WHERE u.tenant_id=%s AND u.occurred_at>=%s AND u.occurred_at<%s
                 AND ((%s='tenant' AND u.tenant_id=%s) OR (%s='model' AND u.model_key=%s)
-                OR (%s='project' AND u.project_id=%s) OR (%s='agent' AND u.agent_id=%s))""",
+                OR (%s='project' AND u.project_id=%s) OR (%s='agent' AND u.agent_id=%s)
+                OR (%s='run' AND u.root_run_id=%s::uuid))""",
                 (tenant_id,scope_type,scope_id,start,tenant_id,scope_type,scope_id,start,
                  tenant_id,scope_type,scope_id,start,tenant_id,start,end,
-                 scope_type,scope_id,scope_type,scope_id,scope_type,scope_id,scope_type,scope_id),
+                 scope_type,scope_id,scope_type,scope_id,scope_type,scope_id,scope_type,scope_id,
+                 scope_type,scope_id),
             )
             row = await cursor.fetchone()
         return int(row["tokens"]), Decimal(row["cost"]), int(row["concurrency"])
