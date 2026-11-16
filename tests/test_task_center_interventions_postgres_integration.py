@@ -331,26 +331,6 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         manager = RunLifecycleManager(PostgresRunStateStore(self.connect))
         resumed = await manager.request_resume(self.tenant_id, str(self.run_id))
         self.assertEqual(resumed.status.value, "interrupted")
-        await events.record_event(
-            tenant_id=self.tenant_id, run_id=str(self.run_id),
-            event_type="run.step.failed", actor_id="worker-a",
-            payload={"step_id": "publish", "error": "upstream unavailable"},
-        )
-        approval_id = uuid4()
-        async with await self.connect() as conn:
-            await conn.execute(
-                """INSERT INTO platform_approvals
-                   (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
-                    requested_by,status,expires_at)
-                   VALUES (%s,%s,%s,'publish','report.pdf',3,'digest-1',
-                           'requester-a','approved',now()+interval '10 minutes')""",
-                (self.tenant_id, approval_id, self.run_id),
-            )
-            await conn.execute(
-                "UPDATE platform_runs SET last_error='step publish failed' WHERE tenant_id=%s AND run_id=%s",
-                (self.tenant_id, self.run_id),
-            )
-            await conn.commit()
         details = PostgresRunDetailService(
             tenant_id=self.tenant_id, connection_factory=self.connect,
         )
@@ -467,6 +447,26 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
             event_type="run.artifact.created", actor_id="worker-a",
             payload={"artifact_id": "artifact-1", "name": "report.pdf"},
         )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.step.failed", actor_id="worker-a",
+            payload={"step_id": "publish", "error": "upstream unavailable"},
+        )
+        approval_id = uuid4()
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_approvals
+                   (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
+                    requested_by,status,expires_at)
+                   VALUES (%s,%s,%s,'publish','report.pdf',3,'digest-1',
+                           'requester-a','approved',now()+interval '10 minutes')""",
+                (self.tenant_id, approval_id, self.run_id),
+            )
+            await conn.execute(
+                "UPDATE platform_runs SET last_error='step publish failed' WHERE tenant_id=%s AND run_id=%s",
+                (self.tenant_id, self.run_id),
+            )
+            await conn.commit()
         details = PostgresRunDetailService(
             tenant_id=self.tenant_id, connection_factory=self.connect,
         )
