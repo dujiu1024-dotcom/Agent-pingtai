@@ -155,6 +155,47 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
                 turn=MemoryTurn(tenant_id="other",user_id="u",source_ref="conversation:other",user_message="x"),
             )
 
+    async def test_repeated_turn_extraction_reuses_same_candidate_ids(self):
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
+        class Extractor:
+            async def extract(self, *, turn):
+                return [MemoryDraft(scope=MemoryScope.USER, scope_id=turn.user_id, content='keep concise', confidence=0.9)]
+        repository = InMemoryMemoryRepository()
+        memory = MemoryService(repository)
+        pipeline = MemoryExtractionService(memory=memory, extractor=Extractor())
+        principal = MemoryPrincipal(tenant_id='t', user_id='u')
+        turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session:s:user:m1:assistant:m2', user_message='Remember this', assistant_message='Okay')
+        first = await pipeline.propose_from_turn(principal=principal, turn=turn)
+        second = await pipeline.propose_from_turn(principal=principal, turn=turn)
+        self.assertEqual(first[0].candidate.memory_id, second[0].candidate.memory_id)
+        self.assertEqual(len(await repository.list('t')), 1)
+        self.assertEqual(second[0].status.value, 'candidate')
+
+    async def test_repeated_turn_extraction_preserves_reviewed_memory(self):
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
+        class Extractor:
+            async def extract(self, *, turn):
+                return [MemoryDraft(scope=MemoryScope.USER, scope_id=turn.user_id, content='original', confidence=0.9)]
+        memory = MemoryService(InMemoryMemoryRepository())
+        pipeline = MemoryExtractionService(memory=memory, extractor=Extractor())
+        principal = MemoryPrincipal(tenant_id='t', user_id='u')
+        turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session:s:user:m3:assistant:m4', user_message='Fact', assistant_message='Acknowledged')
+        first = (await pipeline.propose_from_turn(principal=principal, turn=turn))[0]
+        await memory.confirm(tenant_id='t', memory_id=first.candidate.memory_id, confirmer_id='u')
+        corrected = await memory.correct(principal=principal, memory_id=first.candidate.memory_id, content='user corrected', source_ref='manual:1')
+        repeated = (await pipeline.propose_from_turn(principal=principal, turn=turn))[0]
+        self.assertEqual(repeated.candidate.content, 'user corrected')
+        self.assertEqual(repeated.version, corrected.version)
+        self.assertEqual(repeated.status.value, 'active')
+
     async def test_extraction_requires_scoped_manage_grant_for_shared_memory(self):
         from agent_platform.memory.extraction import (
             MemoryDraft,
