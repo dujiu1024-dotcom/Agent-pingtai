@@ -360,6 +360,32 @@ def create_sessions_router(
             raise HTTPException(503, str(exc)) from exc
         return Response(status_code=204)
 
+    @router.get("/files/{asset_id}/metadata")
+    async def get_file_metadata(asset_id: str, request: Request):
+        principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
+        return {
+            "asset_id": asset.asset_id,
+            "filename": asset.filename,
+            "media_type": asset.media_type,
+            "size_bytes": asset.size_bytes,
+            "sha256": asset.sha256,
+            "status": asset.status.value,
+            "session_id": asset.session_id,
+            "project_id": asset.project_id,
+            "created_at": asset.created_at.isoformat(),
+        }
+
     @router.get("/files/{asset_id}/download-url")
     async def create_download_url(asset_id: str, request: Request, expires_in: int = 300):
         principal, service = await context(request, "file", asset_id, "read")
