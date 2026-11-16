@@ -117,6 +117,15 @@ class SharePointKnowledgeConnector:
             raise MicrosoftGraphConnectorError("SharePoint delta URL is outside Microsoft Graph")
         return value
 
+    def _delta_url(self, value: str) -> str:
+        safe = self._graph_url(value)
+        expected_path = (
+            f"/v1.0/drives/{quote(self.drive_id, safe='')}/root/delta"
+        )
+        if urlsplit(safe).path != expected_path:
+            raise MicrosoftGraphConnectorError("SharePoint cursor is not scoped to the configured drive delta feed")
+        return safe
+
     @classmethod
     def _download_url(cls, value: str) -> str:
         parsed = urlsplit(value)
@@ -257,7 +266,7 @@ class SharePointKnowledgeConnector:
                 f"&$top={min(limit, self.page_size)}"
             )
         else:
-            url = self._decode_cursor(cursor)
+            url = self._delta_url(self._decode_cursor(cursor))
         payload = self._json(await self._api_get(url, token))
         rows = payload.get("value")
         if not isinstance(rows, list):
@@ -279,10 +288,10 @@ class SharePointKnowledgeConnector:
         next_link = payload.get("@odata.nextLink")
         delta_link = payload.get("@odata.deltaLink")
         if isinstance(next_link, str) and next_link:
-            next_cursor = self._encode_cursor(self._graph_url(next_link))
+            next_cursor = self._encode_cursor(self._delta_url(next_link))
             has_more = True
         elif isinstance(delta_link, str) and delta_link:
-            next_cursor = self._encode_cursor(self._graph_url(delta_link))
+            next_cursor = self._encode_cursor(self._delta_url(delta_link))
             has_more = False
         else:
             raise MicrosoftGraphConnectorError("SharePoint delta response has no resumable link")
