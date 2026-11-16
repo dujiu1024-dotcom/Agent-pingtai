@@ -8,8 +8,8 @@ from agent_platform.models.runtime_router import (
     ModelRoutingError,
     ModelTransportError,
     OpenAICompatibleHTTPTransport,
-    PostgresModelUsageRecorder,
     OpenAICompatibleModelRouter,
+    PostgresModelUsageRecorder,
 )
 
 
