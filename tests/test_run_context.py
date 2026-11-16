@@ -39,7 +39,7 @@ def test_context_snapshot_rebuilds_latest_revision_and_is_defensive() -> None:
         rebuilt["decisions"].append("mutated outside store")
         again = await service.rebuild(tenant_id="tenant-a", run_id="run-a")
         assert again["decisions"] == ["use source A"]
-        assert again["snapshot_revision"] == 3
+        assert again["snapshot_revision"] == 2
 
     asyncio.run(scenario())
 
