@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from agent_platform.data_governance.migration_batches import (
-    TableMapping, migration_batch_status, migration_diff_report, run_migration_batch,
+    TableMapping,
+    migration_batch_status,
+    migration_diff_report,
+    run_migration_batch,
 )
 
 
