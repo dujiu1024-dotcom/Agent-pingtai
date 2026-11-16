@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -249,8 +250,15 @@ class HarnessRequest:
     checkpoint_ref: str | None = None
 
     def __post_init__(self) -> None:
-        if self.timeout_seconds is not None and self.timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        if self.timeout_seconds is not None and (
+            isinstance(self.timeout_seconds, bool)
+            or not isinstance(self.timeout_seconds, (int, float))
+            or not math.isfinite(self.timeout_seconds)
+            or self.timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
+        if self.resume and not self.checkpoint_ref:
+            raise ValueError("resume requires a durable checkpoint_ref")
         if self.checkpoint_ref is not None and not self.resume:
             raise ValueError("checkpoint_ref requires resume=True")
 
