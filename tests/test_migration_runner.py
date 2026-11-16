@@ -59,8 +59,6 @@ class FakeTarget:
         return [self.rows[key] for key in source_keys if key in self.rows]
 
 
-
-
 class CorruptTarget(FakeTarget):
     async def upsert(self, *, source_key, payload):
         target_key = await super().upsert(source_key=source_key, payload=payload)
@@ -124,6 +122,18 @@ class MigrationRunnerTests(unittest.IsolatedAsyncioTestCase):
                 target=target, transform=lambda row: row,
                 normalize_target=lambda row: row,
             )
+        self.assertEqual(target.rows, {})
+        self.assertFalse(ledger.started)
+
+    async def test_missing_keys_are_rejected_before_batch_start(self):
+        ledger, target = FakeLedger(), FakeTarget()
+        with self.assertRaisesRegex(ValueError, "missing key field"):
+            await MigrationRunner(ledger=ledger).execute(
+                batch=make_batch(), source_rows=[{"value": "missing-id"}],
+                key_field="id", target=target, transform=lambda row: row,
+                normalize_target=lambda row: row,
+            )
+        self.assertFalse(ledger.started)
         self.assertEqual(target.rows, {})
 
     async def test_mismatched_target_snapshot_does_not_validate_batch(self):
