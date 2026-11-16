@@ -110,16 +110,18 @@ def create_workbench_router(
             if session_id and not await authorize_task(principal, session_id, "use_session"):
                 raise HTTPException(403, "session access denied")
             try:
-                result = await service.submit_task(
-                    tenant_id=principal.tenant_id, actor_id=principal.user_id,
-                    agent_id=agent_id, project_id=project_id,
-                    session_id=session_id, input=task_input,
-                    idempotency_key=(
+                submit_kwargs = {
+                    "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
+                    "agent_id": agent_id, "project_id": project_id,
+                    "session_id": session_id, "input": task_input,
+                    "idempotency_key": (
                         str(body["idempotency_key"])
                         if body.get("idempotency_key") else None
                     ),
-                    priority=int(body.get("priority", 100)),
-                )
+                }
+                if "priority" in body:
+                    submit_kwargs["priority"] = int(body["priority"])
+                result = await service.submit_task(**submit_kwargs)
             except PermissionError as exc:
                 raise HTTPException(403, str(exc)) from exc
             except ValueError as exc:
