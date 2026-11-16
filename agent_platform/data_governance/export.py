@@ -1,10 +1,14 @@
 """Resumable, tenant-scoped orchestration for cross-domain subject exports."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import AsyncIterable, Mapping, Protocol, Sequence
+from uuid import UUID
 
 
 class SubjectExportAdapter(Protocol):
@@ -41,6 +45,19 @@ class SubjectExportResult:
     @property
     def complete(self) -> bool:
         return not self.failed
+
+
+def _json_default(value: object) -> object:
+    """Encode common PostgreSQL scalar types without lossy implicit repr()."""
+    if isinstance(value, (date, datetime, time)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, bytes):
+        return {"$binary_base64": base64.b64encode(value).decode("ascii")}
+    raise TypeError(f"unsupported export value type: {type(value).__name__}")
 
 
 class SubjectExportCoordinator:
@@ -91,6 +108,7 @@ class SubjectExportCoordinator:
                     encoded = json.dumps(
                         dict(item), ensure_ascii=False, sort_keys=True,
                         separators=(",", ":"), allow_nan=False,
+                        default=_json_default,
                     ).encode("utf-8")
                     digest.update(encoded)
                     digest.update(b"\n")
