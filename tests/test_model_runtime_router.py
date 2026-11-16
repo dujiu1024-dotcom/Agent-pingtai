@@ -262,6 +262,9 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             async def estimate_micros(self, *, model_id, usage):
                 return 1000
 
+            def price_card_version(self, model_id):
+                return "test-pricing-v1"
+
         class SuccessTransport:
             async def complete(self, **kwargs):
                 return {
@@ -294,6 +297,9 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             now - timedelta(hours=1), now + timedelta(hours=1),
         )
         self.assertEqual((tokens, cost, concurrency), (5, Decimal("0.001"), 0))
+        self.assertEqual(
+            next(iter(store._events.values())).price_card_version, "test-pricing-v1",
+        )
 
     async def test_ambiguous_provider_failure_retains_quota_and_disables_fallback(self):
         class TokenEstimator:

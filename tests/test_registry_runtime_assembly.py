@@ -10,7 +10,7 @@ from agent_platform.control_plane.skill_dependency_review import (
     InMemorySkillDependencyReviewStore,
     SkillDependencyReviewer,
 )
-from agent_platform.runtime.registry_runtime import RegistryRuntimeAssembler
+from agent_platform.runtime.registry_runtime import RegistryRuntimeAssembler, RegistryRuntimeError
 from agent_platform.tools.gateway import ToolDefinition
 
 
@@ -23,6 +23,10 @@ class SnapshotService:
 
 
 class ModelRouter:
+    token_estimator = object()
+    quota_service = object()
+    quota_cost_estimator = object()
+
     async def complete(self, **kwargs):
         return kwargs
 
@@ -84,6 +88,22 @@ class RegistryRuntimeAssemblyTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(routed["template_id"], "general")
         self.assertEqual(routed["run_id"], "run-a")
+
+
+    def test_runtime_assembly_rejects_model_router_without_budget_enforcement(self):
+        class UnbudgetedModelRouter:
+            async def complete(self, **kwargs):
+                return kwargs
+
+        with self.assertRaisesRegex(RegistryRuntimeError, "budget enforcement"):
+            RegistryRuntimeAssembler(
+                snapshots=SnapshotService(SimpleNamespace()),
+                model_router=UnbudgetedModelRouter(),
+                skill_reviewer=SkillDependencyReviewer(
+                    store=InMemorySkillDependencyReviewStore(), approved_pins={},
+                ),
+                trusted_tool_handlers={},
+            )
 
     async def test_unreviewed_skill_blocks_runtime_assembly(self):
         snapshot = SimpleNamespace(
