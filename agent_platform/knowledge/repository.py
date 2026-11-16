@@ -131,7 +131,7 @@ class InMemoryKnowledgeRepository:
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
                 continue
             grants = self.document_acl.get((document.tenant_id, document.document_id), set())
-            if grants and not any(
+            if (document.tenant_id, document.document_id) in self.document_acl_enforced and not any(
                 permission == "read" and (
                     (kind == "user" and identifier == principal.user_id)
                     or (kind == "role" and identifier in principal.roles)
