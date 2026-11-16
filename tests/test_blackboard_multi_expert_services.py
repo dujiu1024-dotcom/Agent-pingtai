@@ -266,5 +266,60 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_expert_planning_bounds_fanout_and_rejects_duplicate_ids(self):
+        class Planner(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": f"expert-{i}"} for i in range(3)]
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=Planner(),
+            max_experts=2,
+        )
+        with self.assertRaisesRegex(ValueError, "fan-out"):
+            await services.plan_experts(
+                objective="bounded", run_context={"tenant_id": "tenant-a", "run_id": "run"}
+            )
+
+        class DuplicatePlanner(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher"}, {"expert_id": "researcher"}]
+
+        duplicate_services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=DuplicatePlanner(),
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate expert"):
+            await duplicate_services.plan_experts(
+                objective="deduplicate", run_context={"tenant_id": "tenant-a", "run_id": "run"}
+            )
+
+    async def test_expert_planning_rejects_malformed_assignments_and_capabilities(self):
+        class InvalidPlanner(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher", "required_capabilities": "admin"}]
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=InvalidPlanner(),
+        )
+        with self.assertRaisesRegex(ValueError, "required_capabilities must be an array"):
+            await services.plan_experts(
+                objective="validate", run_context={"tenant_id": "tenant-a", "run_id": "run"}
+            )
+
+    async def test_max_experts_configuration_is_bounded(self):
+        with self.assertRaisesRegex(ValueError, "between 1 and 32"):
+            BlackboardMultiExpertServices(
+                tenant_id="tenant-a",
+                repository=InMemoryBlackboard(),
+                callbacks=WorkflowCallbacks(),
+                max_experts=33,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
