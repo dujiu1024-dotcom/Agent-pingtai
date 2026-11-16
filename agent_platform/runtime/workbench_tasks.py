@@ -15,9 +15,9 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from agent_platform.control_plane.registry import RegistryNotFound, RegistryService
+from agent_platform.control_plane.registry import RegistryService
 from agent_platform.runtime.execution import LangGraphRunExecutor
-from agent_platform.runtime.lifecycle import RunLifecycleManager, RunSnapshot, RunStatus
+from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
 
 
 class WorkbenchTaskError(ValueError):
@@ -411,31 +411,29 @@ class RunExecutionWorker:
             self.worker_id, limit=self.batch_size,
             lease_seconds=self.lease_seconds,
         )
-        counts = {"claimed": len(claimed), "succeeded": 0, "failed": 0, "cancelled": 0, "skipped": 0}
-        for snapshot in claimed:
+
+        async def process(snapshot: Any) -> str:
             tenant_id, run_id = snapshot.tenant_id, snapshot.run_id
             record = await self.run_store.get_task_record(tenant_id, run_id)
             if record is None:
-                counts["skipped"] += 1
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
-                continue
-            executor = None
+                return "skipped"
             try:
-                executor = await self._resolve(
+                resolved = await self._resolve(
                     self.executor_resolver, record, self.worker_id,
                 )
-                if not isinstance(executor, LangGraphRunExecutor):
+                if not isinstance(resolved, LangGraphRunExecutor):
                     raise TypeError("executor_resolver must return LangGraphRunExecutor")
-                if executor.worker_id != self.worker_id:
+                if resolved.worker_id != self.worker_id:
                     raise ValueError("resolved executor must use the claiming worker_id")
-                if executor.lifecycle.store is not self.run_store:
+                if resolved.lifecycle.store is not self.run_store:
                     raise ValueError("resolved executor must share the worker RunStateStore")
                 if snapshot.status == RunStatus.QUEUED:
-                    result = await executor.execute(
+                    result = await resolved.execute(
                         tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
                     )
                 else:
-                    result = await executor.resume_claimed(
+                    result = await resolved.resume_claimed(
                         snapshot=snapshot, input=record.get("input") or {},
                     )
                 current = await self.run_store.get(tenant_id, run_id)
@@ -454,17 +452,15 @@ class RunExecutionWorker:
                     )
                 current = await self.run_store.get(tenant_id, run_id)
                 if current and current.status == RunStatus.SUCCEEDED:
-                    counts["succeeded"] += 1
-                elif current and current.status == RunStatus.CANCELLED:
-                    counts["cancelled"] += 1
-                elif current and current.status in {RunStatus.FAILED, RunStatus.TIMED_OUT}:
-                    counts["failed"] += 1
-                else:
-                    counts["skipped"] += 1
+                    return "succeeded"
+                if current and current.status == RunStatus.CANCELLED:
+                    return "cancelled"
+                if current and current.status in {RunStatus.FAILED, RunStatus.TIMED_OUT}:
+                    return "failed"
+                return "skipped"
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                counts["failed"] += 1
                 lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
                 current = await self.run_store.get(tenant_id, run_id)
                 if current and current.status == RunStatus.CANCELLING:
@@ -476,9 +472,17 @@ class RunExecutionWorker:
                         tenant_id, run_id, RunStatus.FAILED,
                         error=f"workbench worker failed: {str(exc)[:400]}",
                     )
+                return "failed"
             finally:
-                if executor is None:
-                    await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
+                await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
+
+        outcomes = await asyncio.gather(*(process(snapshot) for snapshot in claimed))
+        counts = {
+            "claimed": len(claimed), "succeeded": 0, "failed": 0,
+            "cancelled": 0, "skipped": 0,
+        }
+        for outcome in outcomes:
+            counts[outcome] += 1
         return counts
 
     async def run_forever(self) -> None:
