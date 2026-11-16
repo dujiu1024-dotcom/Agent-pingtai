@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 from uuid import UUID
 
-
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus,
     ObjectStorage,
@@ -22,6 +21,7 @@ def _jsonb(value: Any) -> Any:
     except ImportError as exc:
         raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
     return Jsonb(value)
+
 
 @dataclass(frozen=True)
 class FileProcessingJob:
