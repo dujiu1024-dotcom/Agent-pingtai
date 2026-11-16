@@ -11,7 +11,7 @@ if DSN:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
 
-    from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditSink
+    from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditReader, PostgresAuditSink
     from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
     from agent_platform.blackboard.protocol import VersionConflict
     from agent_platform.contracts import (
@@ -1465,6 +1465,26 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         assets = await repository.list_assets(self.tenant_id, "owner-a")
         self.assertEqual([row.session_id for row in sessions], [own.session_id])
         self.assertEqual([row.asset_id for row in assets], [asset.asset_id])
+
+
+
+    async def test_postgres_audit_reader_is_tenant_scoped_and_read_only(self):
+        sink = PostgresAuditSink(self.connect)
+        reader = PostgresAuditReader(self.connect)
+        await sink.record(
+            tenant_id=self.tenant_id, actor_id="audit-user", action="tool.invoke",
+            resource="tool:search", action_digest="a" * 64,
+            outcome="succeeded", run_id="audit-run", agent_id="researcher",
+            detail="search completed",
+        )
+        items = await reader.list_events(
+            tenant_id=self.tenant_id, actor_id="audit-user", run_id="audit-run",
+        )
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["action"], "tool.invoke")
+        self.assertEqual(
+            await reader.list_events(tenant_id="another-tenant", actor_id="audit-user"), (),
+        )
 
 
 if __name__ == "__main__":
