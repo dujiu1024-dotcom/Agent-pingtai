@@ -50,7 +50,9 @@ if DSN:
         ServiceIdentityService,
     )
     from agent_platform.identity.tenants import create_tenant_with_owner
+    from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
     from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
+    from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
     from agent_platform.runtime.registry_snapshot import RunRegistrySnapshotService
     from agent_platform.tools.idempotency import PostgresToolEffectStore
     from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
@@ -1337,6 +1339,77 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved_asset.sha256, asset.sha256)
         self.assertEqual(saved_content, b"durable metadata test")
 
+
+    async def test_workbench_task_run_is_idempotent_actor_scoped_and_dispatch_gated(self):
+        store = PostgresRunStateStore(self.connect)
+        run_id = str(uuid4())
+        digest = "b" * 64
+        created = await store.create_task_run(
+            tenant_id=self.tenant_id, run_id=run_id, actor_id="actor-a",
+            agent_id="agent-registry-only", template_id="template-registry-only",
+            template_version=7, input={"prompt": "persisted"},
+            project_id="project-a", session_id="session-a",
+            idempotency_key="workbench-request-1", request_digest=digest,
+        )
+        self.assertTrue(created)
+        self.assertFalse(await store.create_task_run(
+            tenant_id=self.tenant_id, run_id=str(uuid4()), actor_id="actor-a",
+            agent_id="agent-registry-only", template_id="template-registry-only",
+            template_version=7, input={"prompt": "persisted"},
+            project_id="project-a", session_id="session-a",
+            idempotency_key="workbench-request-1", request_digest=digest,
+        ))
+        with self.assertRaisesRegex(ValueError, "different task request"):
+            await store.create_task_run(
+                tenant_id=self.tenant_id, run_id=str(uuid4()), actor_id="actor-a",
+                agent_id="agent-registry-only", template_id="template-registry-only",
+                template_version=7, input={"prompt": "changed"},
+                idempotency_key="workbench-request-1", request_digest="c" * 64,
+            )
+
+        before_pin = await store.get_task_record(
+            self.tenant_id, run_id, actor_id="actor-a",
+        )
+        self.assertFalse(before_pin["dispatch_ready"])
+        self.assertIsNone(await store.get_task_record(
+            self.tenant_id, run_id, actor_id="actor-b",
+        ))
+        self.assertFalse(await store.mark_task_ready(
+            self.tenant_id, run_id, "d" * 64,
+        ))
+
+        async with await self.connect() as conn:
+            from psycopg.types.json import Jsonb
+            await conn.execute(
+                """UPDATE platform_runs SET registry_snapshot=%s,
+                   registry_snapshot_digest=%s WHERE tenant_id=%s AND run_id=%s""",
+                (Jsonb([]), "d" * 64, self.tenant_id, run_id),
+            )
+            await conn.commit()
+        self.assertTrue(await store.mark_task_ready(
+            self.tenant_id, run_id, "d" * 64,
+        ))
+        self.assertEqual(len(await store.list_task_records(
+            self.tenant_id, "actor-a",
+        )), 1)
+        claimed = await store.claim_workbench_tasks(
+            "worker-integration", limit=10, lease_seconds=30,
+        )
+        self.assertEqual([row.run_id for row in claimed], [run_id])
+
+        lifecycle = RunLifecycleManager(store)
+        await lifecycle.start(self.tenant_id, run_id)
+        await lifecycle.finish(self.tenant_id, run_id, RunStatus.SUCCEEDED)
+        await store.save_output(
+            self.tenant_id, run_id, {"answer": "complete"},
+            usage={"total_tokens": 12}, trace_id="trace-task",
+        )
+        completed = await store.get_task_record(
+            self.tenant_id, run_id, actor_id="actor-a",
+        )
+        self.assertEqual(completed["status"], "succeeded")
+        self.assertEqual(completed["output"], {"answer": "complete"})
+        self.assertEqual(completed["trace_id"], "trace-task")
 
 if __name__ == "__main__":
     unittest.main()
