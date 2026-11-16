@@ -422,11 +422,11 @@ class PostgresSessionRepository:
             cur = await c.execute(
                 """SELECT tenant_id,message_id,session_id,role,content,actor_id,task_id,run_id,asset_ids,metadata,created_at
                    FROM platform_messages WHERE tenant_id=%s AND session_id=%s
-                   ORDER BY created_at,message_id LIMIT %s""",
+                   ORDER BY created_at DESC,message_id DESC LIMIT %s""",
                 (tenant_id, session_id, limit),
             )
             rows = await cur.fetchall()
-        return tuple(self._message(row) for row in rows)
+        return tuple(self._message(row) for row in reversed(rows))
 
     async def create_asset(self, asset: FileAsset) -> None:
         c = await self._connect()
