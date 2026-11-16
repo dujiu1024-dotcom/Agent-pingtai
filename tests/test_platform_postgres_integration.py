@@ -1588,6 +1588,9 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "worker-a", limit=1, lease_seconds=30,
         )
         self.assertEqual([row.run_id for row in first_claim], [run_id])
+        self.assertEqual(await store.claim_workbench_tasks(
+            "worker-b", limit=1, lease_seconds=30,
+        ), [])
         lifecycle = RunLifecycleManager(store)
         await lifecycle.start(self.tenant_id, run_id)
         self.assertTrue(await store.heartbeat(
