@@ -247,7 +247,7 @@ class RedisStreamsConsumerWorker:
         self.pending_idle_ms = pending_idle_ms
         self._asyncio = asyncio
         self._stop = asyncio.Event()
-        self._task = None
+        self._task: asyncio.Task[None] | None = None
         self._connected = False
 
     @property
