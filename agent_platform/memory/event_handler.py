@@ -168,3 +168,49 @@ class MemoryExtractionEventHandler:
             project_id=project_id,
         )
         await self.extraction.propose_from_turn(principal=principal, turn=turn)
+
+
+def create_memory_extraction_event_worker(
+    *,
+    tenant_id: str,
+    consumer_name: str,
+    transport: Any,
+    receipts: Any,
+    run_store: Any,
+    session_service_resolver: Resolver,
+    memory_principal_resolver: Callable[[str, str], Awaitable[MemoryPrincipal] | MemoryPrincipal],
+    extraction: MemoryExtractionService,
+    policy_enabled: Callable[[str, str | None, str | None], Awaitable[bool] | bool] | None = None,
+    group: str = "memory-extraction",
+    max_attempts: int = 5,
+    interval_seconds: float = 1.0,
+    batch_size: int = 20,
+) -> Any:
+    """Compose the tenant-scoped handler, durable consumer, and lifecycle worker."""
+    from agent_platform.events.consumer import (
+        RedisStreamsConsumer,
+        RedisStreamsConsumerWorker,
+    )
+
+    handler = MemoryExtractionEventHandler(
+        run_store=run_store,
+        session_service_resolver=session_service_resolver,
+        memory_principal_resolver=memory_principal_resolver,
+        extraction=extraction,
+        policy_enabled=policy_enabled,
+    )
+    consumer = RedisStreamsConsumer(
+        transport=transport,
+        receipts=receipts,
+        tenant_id=tenant_id,
+        topic="memory.extraction.requested",
+        group=group,
+        consumer_name=consumer_name,
+        handler=handler,
+        max_attempts=max_attempts,
+    )
+    return RedisStreamsConsumerWorker(
+        consumer=consumer,
+        interval_seconds=interval_seconds,
+        batch_size=batch_size,
+    )
