@@ -447,8 +447,6 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
 
     def test_quota_reservation_worker_is_started_and_stopped(self):
-        import asyncio
-
         class Worker:
             def __init__(self):
                 self.started = False
@@ -470,9 +468,8 @@ class PlatformApiCompositionTests(unittest.TestCase):
             allowed_origins=("https://console.example.com",),
             quota_reservation_worker=worker,
         )
-        asyncio.run(app.router.startup())
-        self.assertTrue(worker.started)
-        asyncio.run(app.router.shutdown())
+        with TestClient(app, base_url="https://testserver"):
+            self.assertTrue(worker.started)
         self.assertTrue(worker.stopped)
 
 
