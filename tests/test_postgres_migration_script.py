@@ -18,7 +18,11 @@ class PostgresMigrationScriptTests(unittest.TestCase):
             migrations = base / "migrations"
             migrations.mkdir()
             (migrations / "001_atomicity_probe.sql").write_text(
-                "BEGIN;\nCREATE TABLE atomicity_probe (id integer);\nCOMMIT;\n",
+                "-- migration comment\nBEGIN;\n"
+                "CREATE TABLE atomicity_probe (id integer);\n"
+                "CREATE FUNCTION atomicity_probe_fn() RETURNS void AS $fn$\n"
+                "BEGIN;\nPERFORM 1;\nEND;\n$fn$ LANGUAGE plpgsql;\n"
+                "COMMIT;\n",
                 encoding="utf-8",
             )
             fake_bin = base / "bin"
@@ -55,8 +59,10 @@ class PostgresMigrationScriptTests(unittest.TestCase):
             )
             prepared_sql = prepared_file.read_text(encoding="utf-8")
 
-            self.assertNotIn("BEGIN;", prepared_sql)
-            self.assertNotIn("COMMIT;", prepared_sql)
+            self.assertNotIn("\nBEGIN;\n", prepared_sql)
+            self.assertNotIn("\nCOMMIT;\n", prepared_sql)
+            self.assertIn("CREATE FUNCTION atomicity_probe_fn()", prepared_sql)
+            self.assertIn("\nBEGIN;\nPERFORM 1;", prepared_sql)
             begin = runner_sql.index("  BEGIN;")
             include = runner_sql.index("  \\i '", begin)
             ledger = runner_sql.index("INSERT INTO platform_schema_migrations", include)
