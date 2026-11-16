@@ -26,8 +26,8 @@ from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
 )
-from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 from agent_platform.identity.service import IdentityService
+from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
