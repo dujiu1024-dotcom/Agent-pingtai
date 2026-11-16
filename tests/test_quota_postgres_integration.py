@@ -133,6 +133,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
         from datetime import datetime, timedelta, timezone
         from decimal import Decimal
         from uuid import uuid4
+
         from agent_platform.quotas.postgres import PostgresQuotaStore
 
         tenant_id = f"quota-recon-it-{uuid4().hex}"
@@ -146,7 +147,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("2.50"),
         )
         self.assertEqual(first["reconciliation_id"], second["reconciliation_id"])
-        self.assertEqual(first["variance_usd"], "2.50")
+        self.assertEqual(Decimal(first["variance_usd"]), Decimal("2.50"))
         with self.assertRaises(ValueError):
             await store.reconcile_cost(
                 tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("3.00"),
