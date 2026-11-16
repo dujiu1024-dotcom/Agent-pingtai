@@ -110,7 +110,7 @@ def create_workbench_router(
             if session_id and not await authorize_task(principal, session_id, "use_session"):
                 raise HTTPException(403, "session access denied")
             try:
-                submit_kwargs = {
+                submit_kwargs: dict[str, Any] = {
                     "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
                     "agent_id": agent_id, "project_id": project_id,
                     "session_id": session_id, "input": task_input,
