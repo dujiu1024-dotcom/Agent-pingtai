@@ -41,7 +41,7 @@ class UsageRecorder:
 
 class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
     def snapshot(self):
-        return SimpleNamespace(entries=(
+        return SimpleNamespace(tenant_id="tenant-a", entries=(
             {
                 "kind": "model_template", "item_id": "primary", "version": 1,
                 "definition": {
