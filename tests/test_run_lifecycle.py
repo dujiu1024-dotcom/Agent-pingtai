@@ -19,7 +19,7 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   task=asyncio.create_task(self.manager.tools.run("r","call-1",tool(),tenant_id="t"))
   await entered.wait()
   result=await self.manager.cancel("t","r")
-  self.assertEqual(result.status,RunStatus.CANCELLED)
+  self.assertEqual(result.status,RunStatus.CANCELLING)
   with self.assertRaises(asyncio.CancelledError): await task
  async def test_tool_cancellation_is_tenant_scoped(self):
   entered_a=asyncio.Event(); entered_b=asyncio.Event()
@@ -42,7 +42,7 @@ class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
   await self.manager.start("t","r"); await self.manager.on_client_disconnect("t","r")
   self.assertEqual((await self.store.get("t","r")).status,RunStatus.RUNNING)
   await self.manager.on_client_disconnect("t","r",policy="cancel")
-  self.assertEqual((await self.store.get("t","r")).status,RunStatus.CANCELLED)
+  self.assertEqual((await self.store.get("t","r")).status,RunStatus.CANCELLING)
  async def test_checkpoint_recovery_skips_human_pause(self):
   await self.manager.start("t","r"); await self.manager.mark_interrupted("t","r",checkpoint_ref="cp-1",reason="worker lost")
   seen=[]
