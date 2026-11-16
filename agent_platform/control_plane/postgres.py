@@ -358,8 +358,8 @@ class PostgresSessionRepository:
                     (self.tenant_id, _uuid(version.asset_id)),
                 )
                 row = await cursor.fetchone()
-                if row is None or row["status"] == AssetStatus.DELETED.value:
-                    raise SessionNotFound("asset not found")
+                if row is None or row["status"] != AssetStatus.AVAILABLE.value:
+                    raise SessionNotFound("asset not found or unavailable")
                 if row["current_version"] != expected_version or version.version != expected_version + 1:
                     raise SessionError("file asset version changed; retry from the latest version")
                 await connection.execute(
