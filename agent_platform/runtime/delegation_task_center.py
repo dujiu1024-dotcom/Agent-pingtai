@@ -209,9 +209,11 @@ class TaskCenterChildRunExecutor:
                         f"child Run {request.context.run_id} ended with status {status}: "
                         f"{task.get('last_error') or 'no error detail'}"
                     )
-                if self.worker is None:
-                    raise RuntimeError("durable child Run worker has not been bound")
-                await self.worker.run_once()
+                # A worker may be deployed independently from the parent
+                # process. In that topology, keep observing the durable Run
+                # instead of treating the absent local worker as a failure.
+                if self.worker is not None:
+                    await self.worker.run_once()
                 await asyncio.sleep(self.poll_interval)
         except asyncio.CancelledError:
             # SupervisedDelegationService applies the parent deadline with
