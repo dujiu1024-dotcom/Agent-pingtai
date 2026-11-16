@@ -60,6 +60,7 @@ class SkillDependencyReviewTests(unittest.IsolatedAsyncioTestCase):
         store = InMemorySkillDependencyReviewStore()
         reviewer = SkillDependencyReviewer(
             store=store, approved_pins={"safe-parser": ("==1.2.3",)},
+            scanner=Scanner(),
         )
         original = skill({"safe-parser": "==1.2.3"})
         await reviewer.review(item=original, actor_id="security-admin")
