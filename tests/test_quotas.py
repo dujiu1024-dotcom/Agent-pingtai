@@ -147,6 +147,31 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((tokens, cost, concurrency), (0, Decimal("0"), 0))
 
+    async def test_harness_rejects_invalid_split_token_estimates_before_dispatch(self) -> None:
+        context = SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-invalid-split", agent_id="agent-a",
+            project_id=None,
+            model_template=SimpleNamespace(template_id="general", version=1),
+        )
+        request = SimpleNamespace(context=context)
+
+        class MustNotRunHarness:
+            async def run(self, _request):
+                raise AssertionError("invalid token estimates must be rejected before provider dispatch")
+
+        for estimate in (
+            (0, -1, Decimal("0.01")),
+            (0, True, Decimal("0.01")),
+            (1, "1", Decimal("0.01")),
+        ):
+            adapter = QuotaEnforcedHarnessAdapter(
+                MustNotRunHarness(), quota_service=self.service,
+                estimate_request=lambda _request, value=estimate: value,
+                estimate_actual_cost=lambda _request, _result: Decimal("0.01"),
+            )
+            with self.subTest(estimate=estimate), self.assertRaises(ValueError):
+                await adapter.run(request)
+
     async def test_negative_usage_rejected(self) -> None:
         reservation, _ = await self.reserve("run-1", 10, "0.10")
         with self.assertRaises(ValueError):

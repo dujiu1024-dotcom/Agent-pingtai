@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from time import monotonic
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from agent_platform.quotas.service import QuotaService
 
@@ -79,13 +79,26 @@ class QuotaEnforcedHarnessAdapter:
             )
         if len(estimate) == 3:
             estimated_input_tokens, estimated_output_tokens, estimated_cost = estimate
-            estimated_tokens = estimated_input_tokens + estimated_output_tokens
+            for label, value in (
+                ("estimated input tokens", estimated_input_tokens),
+                ("estimated output tokens", estimated_output_tokens),
+            ):
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise ValueError(f"{label} must be a non-negative integer")
+            assert isinstance(estimated_input_tokens, int) and not isinstance(estimated_input_tokens, bool)
+            assert isinstance(estimated_output_tokens, int) and not isinstance(estimated_output_tokens, bool)
+            estimated_tokens = cast(int, estimated_input_tokens) + cast(int, estimated_output_tokens)
         else:
             estimated_tokens, estimated_cost = estimate
             estimated_input_tokens = None
             estimated_output_tokens = None
         if not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool) or estimated_tokens < 0:
             raise ValueError("estimated tokens must be a non-negative integer")
+        if len(estimate) == 3:
+            input_tokens = cast(int, estimated_input_tokens)
+            output_tokens = cast(int, estimated_output_tokens)
+            if input_tokens + output_tokens != estimated_tokens:
+                raise ValueError("estimated total tokens must equal input plus output tokens")
         if not isinstance(estimated_cost, Decimal) or not estimated_cost.is_finite() or estimated_cost < 0:
             raise ValueError("estimated cost must be a finite non-negative Decimal")
         # The estimator must include the complete prompt plus the planned output
