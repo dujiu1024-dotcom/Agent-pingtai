@@ -69,9 +69,19 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.executed.append(dict(arguments))
             return {"ok": True}
 
+        async def resolve_resource(arguments):
+            return f"resource:{arguments.get('value', 'global')}"
+
+        async def authorize_resource(_context, _arguments):
+            return True
+
         self.gateway = SupervisedToolGateway(
             tools=(
-                ToolDefinition("read", RiskLevel.READ_ONLY, handler),
+                ToolDefinition(
+                    "read", RiskLevel.READ_ONLY, handler,
+                    resource_resolver=resolve_resource,
+                    resource_authorizer=authorize_resource,
+                ),
                 ToolDefinition(
                     "validated_read", RiskLevel.READ_ONLY, handler,
                     input_schema={
@@ -80,15 +90,29 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
                         "required": ["value"],
                         "additionalProperties": False,
                     },
+                    resource_resolver=resolve_resource,
+                    resource_authorizer=authorize_resource,
                 ),
-                ToolDefinition("draft", RiskLevel.INTERNAL_REVERSIBLE, handler),
-                ToolDefinition("send", RiskLevel.EXTERNAL_OR_IRREVERSIBLE, handler),
                 ToolDefinition(
-                    "pay", RiskLevel.FINANCIAL_OR_SECURITY, handler
+                    "draft", RiskLevel.INTERNAL_REVERSIBLE, handler,
+                    resource_resolver=resolve_resource,
+                    resource_authorizer=authorize_resource,
+                ),
+                ToolDefinition(
+                    "send", RiskLevel.EXTERNAL_OR_IRREVERSIBLE, handler,
+                    resource_resolver=resolve_resource,
+                    resource_authorizer=authorize_resource,
+                ),
+                ToolDefinition(
+                    "pay", RiskLevel.FINANCIAL_OR_SECURITY, handler,
+                    resource_resolver=resolve_resource,
+                    resource_authorizer=authorize_resource,
                 ),
                 ToolDefinition(
                     "admin_only", RiskLevel.READ_ONLY, handler,
                     allowed_roles=("admin",),
+                    resource_resolver=resolve_resource,
+                    resource_authorizer=authorize_resource,
                 ),
             ),
             approval_verifier=self.approvals,
@@ -105,7 +129,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             "actor_id": "agent-a",
             "actor_roles": ("agent",),
             "tool_name": tool,
-            "resource": "resource:1",
+            "resource": "resource:x",
             "arguments": {"value": "x"},
             "run_id": "00000000-0000-0000-0000-000000000001",
             "call_id": f"call-{self.call_sequence}",
@@ -129,6 +153,25 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("validated_read", arguments={"value": "ok"})
         self.assertTrue(result["ok"])
         self.assertEqual(len(self.executed), 1)
+
+
+    async def test_gateway_rejects_tool_without_resource_acl_at_composition(self):
+        async def handler(_arguments):
+            return {"ok": True}
+
+        with self.assertRaisesRegex(ValueError, "resource_resolver and resource_authorizer"):
+            SupervisedToolGateway(
+                tools=(ToolDefinition("unscoped", RiskLevel.READ_ONLY, handler),),
+                approval_verifier=self.approvals,
+                audit_sink=self.audit,
+            )
+
+    async def test_gateway_rejects_caller_supplied_resource_mismatch(self):
+        with self.assertRaisesRegex(ToolExecutionDenied, "does not match trusted"):
+            await self.call("read", resource="resource:another-tenant")
+        self.assertEqual(self.executed, [])
+        self.assertEqual(self.audit.records[-1]["outcome"], "denied")
+        self.assertEqual(self.audit.records[-1]["detail"], "resource_resolution_mismatch")
 
     async def test_unknown_tool_is_denied(self):
         with self.assertRaises(ToolExecutionDenied):
