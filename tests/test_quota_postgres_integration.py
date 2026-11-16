@@ -367,7 +367,8 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
 
         from agent_platform.quotas.pricing import PricingCard, PricingFeed
         from agent_platform.quotas.pricing_store import (
-            PostgresPricingCardRepository, PricingCardConflict,
+            PostgresPricingCardRepository,
+            PricingCardConflict,
         )
 
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
