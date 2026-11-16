@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -18,6 +19,7 @@ class HarnessBenchmarkCase:
     input_text: str
     expected_contains: tuple[str, ...] = ()
     timeout_seconds: float = 120.0
+    quality_threshold: float = 1.0
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
@@ -26,6 +28,41 @@ class HarnessBenchmarkCase:
             raise ValueError("input_text must not be empty")
         if not 0 < self.timeout_seconds <= 1800:
             raise ValueError("timeout_seconds must be greater than 0 and at most 1800")
+        if not math.isfinite(self.quality_threshold) or not 0 <= self.quality_threshold <= 1:
+            raise ValueError("quality_threshold must be between 0 and 1")
+
+
+
+@dataclass(frozen=True)
+class HarnessTokenPricing:
+    input_usd_per_million: float
+    output_usd_per_million: float
+
+    def __post_init__(self) -> None:
+        if (
+            not math.isfinite(self.input_usd_per_million)
+            or not math.isfinite(self.output_usd_per_million)
+            or self.input_usd_per_million < 0
+            or self.output_usd_per_million < 0
+        ):
+            raise ValueError("token pricing must be finite and non-negative")
+
+    def estimate(self, usage: Mapping[str, int]) -> float:
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        if (
+            isinstance(input_tokens, bool) or not isinstance(input_tokens, int)
+            or isinstance(output_tokens, bool) or not isinstance(output_tokens, int)
+            or input_tokens < 0 or output_tokens < 0
+        ):
+            raise ValueError("token usage must contain non-negative integers")
+        return round(
+            (
+                input_tokens * self.input_usd_per_million
+                + output_tokens * self.output_usd_per_million
+            ) / 1_000_000,
+            8,
+        )
 
 
 @dataclass(frozen=True)
@@ -39,6 +76,10 @@ class HarnessBenchmarkObservation:
     matched_expectations: tuple[str, ...]
     missing_expectations: tuple[str, ...]
     output_text: str
+    quality_score: float = 0.0
+    estimated_cost_usd: float | None = None
+    attempts: int = 1
+    recovered: bool = False
     error_type: str | None = None
 
 
@@ -65,7 +106,15 @@ class HarnessBenchmarkReport:
                 "total_output_tokens": sum(
                     row.usage.get("output_tokens", 0) for row in rows
                 ),
+                "average_quality_score": round(
+                    sum(row.quality_score for row in rows) / len(rows), 4
+                ),
+                "recovered_cases": sum(row.recovered for row in rows),
             }
+            if any(row.estimated_cost_usd is not None for row in rows):
+                result[runtime]["estimated_cost_usd"] = round(
+                    sum(row.estimated_cost_usd or 0 for row in rows), 8
+                )
         return result
 
     def to_dict(self) -> dict[str, Any]:
@@ -76,19 +125,22 @@ class HarnessBenchmarkReport:
 
     def to_markdown(self) -> str:
         lines = [
-            "| Runtime | Pass rate | Avg latency (ms) | Input tokens | Output tokens |",
-            "|---|---:|---:|---:|---:|",
+            "| Runtime | Pass rate | Quality | Avg latency (ms) | Input tokens | Output tokens | Est. cost (USD) |",
+            "|---|---:|---:|---:|---:|---:|---:|",
         ]
         for runtime, stats in sorted(self.summary().items()):
             lines.append(
                 f"| {runtime} | {stats['passed']}/{stats['cases']} "
-                f"({stats['pass_rate']:.0%}) | {stats['average_duration_ms']} "
-                f"| {stats['total_input_tokens']} | {stats['total_output_tokens']} |"
+                f"({stats['pass_rate']:.0%}) | {stats['average_quality_score']:.2f} "
+                f"| {stats['average_duration_ms']} | {stats['total_input_tokens']} "
+                f"| {stats['total_output_tokens']} | "
+                f"{stats.get('estimated_cost_usd', 'n/a')} |"
             )
         return "\n".join(lines)
 
 
 RequestFactory = Callable[[str, HarnessBenchmarkCase], HarnessRequest]
+GatewayToolVerifier = Callable[[str, HarnessRequest], bool]
 
 
 class HarnessBenchmarkRunner:
@@ -99,13 +151,21 @@ class HarnessBenchmarkRunner:
         *,
         adapters: Mapping[str, HarnessAdapter],
         request_factory: RequestFactory,
+        pricing: Mapping[str, HarnessTokenPricing] | None = None,
+        gateway_tool_verifier: GatewayToolVerifier | None = None,
+        recovery_attempts: int = 0,
     ) -> None:
         if not adapters:
             raise ValueError("at least one Harness adapter is required")
         if any(not name.strip() for name in adapters):
             raise ValueError("runtime names must not be empty")
+        if isinstance(recovery_attempts, bool) or not 0 <= recovery_attempts <= 5:
+            raise ValueError("recovery_attempts must be between 0 and 5")
         self.adapters = dict(adapters)
         self.request_factory = request_factory
+        self.pricing = dict(pricing or {})
+        self.gateway_tool_verifier = gateway_tool_verifier
+        self.recovery_attempts = recovery_attempts
 
     async def run(
         self, cases: Sequence[HarnessBenchmarkCase]
@@ -117,39 +177,31 @@ class HarnessBenchmarkRunner:
             for runtime, adapter in self.adapters.items():
                 request = self.request_factory(runtime, case)
                 if request.allowed_tools:
-                    raise ValueError(
-                        "benchmark requests must not expose platform tools before Gateway-only validation"
-                    )
-                started = time.perf_counter()
-                try:
-                    result = await asyncio.wait_for(adapter.run(request), timeout=case.timeout_seconds)
-                    duration_ms = round((time.perf_counter() - started) * 1000)
-                    normalized = result.output_text.casefold()
-                    matched = tuple(
-                        expected
-                        for expected in case.expected_contains
-                        if expected.casefold() in normalized
-                    )
-                    missing = tuple(
-                        expected
-                        for expected in case.expected_contains
-                        if expected.casefold() not in normalized
-                    )
-                    observations.append(
-                        HarnessBenchmarkObservation(
-                            runtime=runtime,
-                            case_id=case.case_id,
-                            passed=bool(result.output_text.strip()) and not missing,
-                            duration_ms=duration_ms,
-                            finish_reason=result.finish_reason,
-                            usage=dict(result.usage),
-                            matched_expectations=matched,
-                            missing_expectations=missing,
-                            output_text=result.output_text,
+                    if self.gateway_tool_verifier is None:
+                        raise ValueError(
+                            "benchmark must not expose platform tools without a Gateway-only verifier"
                         )
-                    )
-                except Exception as exc:
-                    duration_ms = round((time.perf_counter() - started) * 1000)
+                    if not self.gateway_tool_verifier(runtime, request):
+                        raise ValueError("benchmark request tools are not verified as Gateway-only")
+                started = time.perf_counter()
+                result = None
+                last_error: Exception | None = None
+                attempts = 0
+                while attempts <= self.recovery_attempts:
+                    attempts += 1
+                    try:
+                        result = await asyncio.wait_for(
+                            adapter.run(request), timeout=case.timeout_seconds
+                        )
+                        last_error = None
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        if attempts > self.recovery_attempts:
+                            break
+                duration_ms = round((time.perf_counter() - started) * 1000)
+                if result is None:
+                    assert last_error is not None
                     observations.append(
                         HarnessBenchmarkObservation(
                             runtime=runtime,
@@ -161,7 +213,49 @@ class HarnessBenchmarkRunner:
                             matched_expectations=(),
                             missing_expectations=case.expected_contains,
                             output_text="",
-                            error_type=type(exc).__name__,
+                            attempts=attempts,
+                            error_type=type(last_error).__name__,
                         )
                     )
+                    continue
+
+                normalized = result.output_text.casefold()
+                matched = tuple(
+                    expected
+                    for expected in case.expected_contains
+                    if expected.casefold() in normalized
+                )
+                missing = tuple(
+                    expected
+                    for expected in case.expected_contains
+                    if expected.casefold() not in normalized
+                )
+                quality_score = (
+                    len(matched) / len(case.expected_contains)
+                    if case.expected_contains else (1.0 if result.output_text.strip() else 0.0)
+                )
+                usage = dict(result.usage)
+                pricing = self.pricing.get(runtime)
+                estimated_cost = pricing.estimate(usage) if pricing is not None else None
+                observations.append(
+                    HarnessBenchmarkObservation(
+                        runtime=runtime,
+                        case_id=case.case_id,
+                        passed=(
+                            bool(result.output_text.strip())
+                            and not missing
+                            and quality_score >= case.quality_threshold
+                        ),
+                        duration_ms=duration_ms,
+                        finish_reason=result.finish_reason,
+                        usage=usage,
+                        matched_expectations=matched,
+                        missing_expectations=missing,
+                        output_text=result.output_text,
+                        quality_score=quality_score,
+                        estimated_cost_usd=estimated_cost,
+                        attempts=attempts,
+                        recovered=attempts > 1,
+                    )
+                )
         return HarnessBenchmarkReport(tuple(observations))
