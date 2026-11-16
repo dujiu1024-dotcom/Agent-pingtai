@@ -55,6 +55,21 @@ CREATE TRIGGER trg_platform_quota_reservation_root_run_id
     FOR EACH ROW EXECUTE FUNCTION platform_quota_default_root_run_id();
 ALTER TABLE platform_quota_reservations ALTER COLUMN root_run_id SET NOT NULL;
 
+CREATE OR REPLACE FUNCTION platform_quota_default_root_run_id()
+RETURNS trigger LANGUAGE plpgsql AS $
+BEGIN
+    IF NEW.root_run_id IS NULL THEN
+        NEW.root_run_id := CASE WHEN NEW.scope_type='run' THEN NEW.scope_id::uuid ELSE NEW.run_id END;
+    END IF;
+    RETURN NEW;
+END;
+$;
+DROP TRIGGER IF EXISTS trg_platform_quota_reservation_root_run_id ON platform_quota_reservations;
+CREATE TRIGGER trg_platform_quota_reservation_root_run_id
+    BEFORE INSERT ON platform_quota_reservations
+    FOR EACH ROW EXECUTE FUNCTION platform_quota_default_root_run_id();
+ALTER TABLE platform_quota_reservations ALTER COLUMN root_run_id SET NOT NULL;
+
 CREATE OR REPLACE FUNCTION platform_quota_set_root_run_id()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE reservation_root uuid;
