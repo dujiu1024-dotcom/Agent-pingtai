@@ -78,6 +78,18 @@ class PostgresRunStateStore(RunStateStore):
    row=await cur.fetchone()
   return dict(row) if row is not None else None
 
+ async def get_task_by_idempotency(self,tenant_id:str,actor_id:str,idempotency_key:str)->dict[str,Any]|None:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,template_id,
+    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
+    checkpoint_ref,last_error,registry_snapshot_digest
+    FROM platform_runs WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s""",
+    (tenant_id,actor_id,idempotency_key))
+   row=await cur.fetchone()
+  return dict(row) if row is not None else None
+
  async def list_task_records(self, tenant_id:str, actor_id:str, *, limit:int=100)->list[dict[str,Any]]:
   if not 1<=limit<=200:raise ValueError("limit must be between 1 and 200")
   c=await self._connect()
