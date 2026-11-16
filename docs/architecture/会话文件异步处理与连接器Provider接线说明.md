@@ -25,4 +25,6 @@
 - Worker scheduler、每租户仓储/对象存储/知识服务工厂。
 - HTTP connector AsyncClient、允许的 host、列表路径、撤销路径和 SecretResolver。
 
+Worker scheduler 应按固定轮询周期调用 run_once；队列本身负责可用时间、租约过期接管和指数退避，不应由 scheduler 对失败任务做无条件立即重放。
+
 真实对象存储、病毒扫描、第三方连接器 OAuth、外部 API、Worker 多进程崩溃恢复及部署权限仍需在目标环境由用户验证。
