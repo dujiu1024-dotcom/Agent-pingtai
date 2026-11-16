@@ -69,7 +69,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
             self.executed.append(dict(arguments))
             return {"ok": True}
 
-        async def resolve_resource(arguments):
+        def resolve_resource(arguments):
             return f"resource:{arguments.get('value', 'global')}"
 
         async def authorize_resource(_context, _arguments):
