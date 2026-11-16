@@ -278,3 +278,20 @@ class BlackboardMultiExpertServices:
         )
         await self._propose_once(entry)
         return result
+
+
+def build_control_plane_backed_blackboard_services(
+    *, tenant_id: str, repository: BlackboardRepository,
+    callbacks: MultiExpertCallbacks, registry_service: Any,
+) -> BlackboardMultiExpertServices:
+    """Production composition: expert planning always resolves tenant registry metadata."""
+    from agent_platform.workflows.expert_registry import ControlPlaneExpertRegistry
+
+    return BlackboardMultiExpertServices(
+        tenant_id=tenant_id,
+        repository=repository,
+        callbacks=callbacks,
+        expert_registry=ControlPlaneExpertRegistry(
+            registry_service=registry_service, tenant_id=tenant_id,
+        ),
+    )
