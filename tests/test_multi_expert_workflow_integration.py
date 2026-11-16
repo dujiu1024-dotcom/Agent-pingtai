@@ -35,6 +35,15 @@ class FakeMultiExpertServices:
     async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
         return {
             "synthesis": {"summary": "reconciled synthesis", "conflicts_resolved": len(conflicts)},
+            "decisions": [
+                {
+                    "conflict_instance_id": conflict["conflict_instance_id"],
+                    "outcome": "accept reconciled synthesis",
+                    "rationale": "the persisted evidence was reconciled by the expert review",
+                    "evidence_refs": list(conflict.get("evidence_refs", [])),
+                }
+                for conflict in conflicts
+            ],
             "requires_approval": self.require_approval,
         }
 
