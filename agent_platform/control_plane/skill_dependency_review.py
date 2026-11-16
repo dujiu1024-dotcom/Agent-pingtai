@@ -145,7 +145,9 @@ class SkillDependencyReviewer:
                 findings.append("dependency_not_allowlisted:" + package[:100])
                 continue
             dependencies[package] = pin
-            if self.scanner is not None:
+            if self.scanner is None:
+                findings.append("dependency_scanner_not_configured:" + package[:100])
+            else:
                 try:
                     advisories = await self.scanner.scan(package, pin)
                 except Exception:
