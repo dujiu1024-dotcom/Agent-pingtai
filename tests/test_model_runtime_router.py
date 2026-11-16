@@ -383,5 +383,66 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls, 0)
 
 
+    async def test_token_estimator_receives_pinned_model_context_window(self):
+        class RecordingEstimator:
+            def __init__(self):
+                self.arguments = None
+
+            def estimate(self, **kwargs):
+                self.arguments = kwargs
+                return SimpleNamespace(input_tokens=12, output_tokens=10, total_tokens=22)
+
+        class SuccessTransport:
+            def __init__(self):
+                self.calls = []
+
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+                self.calls.append((config.provider_id, config.model_id))
+                return {
+                    "choices": [{"message": {"content": "budget answer"}}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 10},
+                }
+
+        estimator = RecordingEstimator()
+        transport = SuccessTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport,
+            token_estimator=estimator,
+        )
+        await router.complete(
+            snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-budget",
+            template_id="primary",
+            messages=({"role": "user", "content": "hello"},),
+            request_id="request-budget",
+            request_parameters={"max_tokens": 10},
+        )
+        self.assertEqual(estimator.arguments["model_id"], "model-a")
+        self.assertEqual(estimator.arguments["context_window_tokens"], 8192)
+        self.assertEqual(transport.calls, [("primary", "model-a")])
+    async def test_token_estimation_failure_blocks_provider_dispatch(self):
+        from agent_platform.quotas.token_estimator import TokenEstimationError
+
+        class RejectingEstimator:
+            def estimate(self, **_kwargs):
+                raise TokenEstimationError("no tokenizer mapping is available")
+
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport,
+            token_estimator=RejectingEstimator(),
+        )
+        with self.assertRaisesRegex(TokenEstimationError, "no tokenizer mapping"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-unknown-tokenizer",
+                template_id="primary",
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-unknown-tokenizer",
+                request_parameters={"max_tokens": 10},
+            )
+        self.assertEqual(transport.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()
