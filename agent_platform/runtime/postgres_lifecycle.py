@@ -159,7 +159,8 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
-    WHERE ((status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
+    WHERE task_id IS NULL
+      AND ((status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
       AND (%s::text IS NULL OR tenant_id=%s)
     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
@@ -224,7 +225,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at FROM platform_runs
-    WHERE status='paused'
+    WHERE task_id IS NULL AND (status='paused'
        OR (status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now()))
     ORDER BY created_at LIMIT %s""",(limit,))
