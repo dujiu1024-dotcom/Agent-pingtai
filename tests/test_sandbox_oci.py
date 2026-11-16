@@ -22,6 +22,14 @@ class OciSandboxConfigTests(unittest.TestCase):
         command = runner.build_command(("python", "-I", "-c", "print('ok')"))
         self.assertIn("--network=none", command)
         self.assertIn("--read-only", command)
+        self.assertIn("--userns=private", command)
+        self.assertIn("--pid=private", command)
+        self.assertIn("--ipc=private", command)
+        self.assertIn("--memory-swap", command)
+        self.assertIn("512m", command)
+        self.assertIn("nofile=1024:1024", command)
+        self.assertIn("fsize=16777216:16777216", command)
+        self.assertIn("core=0:0", command)
         self.assertIn("--cap-drop=ALL", command)
         self.assertIn("--security-opt=no-new-privileges:true", command)
         self.assertIn("--pids-limit", command)
@@ -39,6 +47,32 @@ class OciSandboxConfigTests(unittest.TestCase):
             runner.build_command(("python",), environment={"HOME": "/root"})
         with self.assertRaisesRegex(ValueError, "NUL-free"):
             runner.build_command(("python", "bad\x00arg"))
+
+
+    def test_rejects_boolean_and_unbounded_resource_configuration(self):
+        for kwargs in (
+            {"pids_limit": True},
+            {"max_timeout_seconds": True},
+            {"max_output_bytes": True},
+            {"max_stdin_bytes": True},
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    OciSandboxConfig(image=IMAGE, **kwargs)
+
+    async def test_rejects_oversized_stdin_and_boolean_timeout(self):
+        runner = OciSandboxRunner(OciSandboxConfig(
+            image=IMAGE, max_stdin_bytes=4,
+        ))
+        with self.assertRaisesRegex(ValueError, "input limit"):
+            await runner.run(("python", "-I", "-c", "pass"), stdin=b"12345")
+        with self.assertRaisesRegex(ValueError, "timeout_seconds"):
+            await runner.run(("python", "-I", "-c", "pass"), timeout_seconds=True)
+
+    def test_rejects_string_instead_of_argv_sequence(self):
+        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE))
+        with self.assertRaisesRegex(ValueError, "argv sequence"):
+            runner.build_command("python")
 
     def test_only_explicit_non_secret_environment_is_passed(self):
         runner = OciSandboxRunner(
