@@ -184,6 +184,12 @@ class CapabilityAwareHarnessAdapter:
             )
         if request.output_schema is not None and not self.capabilities.structured_output:
             raise UnsupportedHarnessCapability("Harness does not declare structured output support")
+        if request.allowed_tools and not self.capabilities.tool_gateway:
+            raise UnsupportedHarnessCapability("Harness does not declare Tool Gateway integration")
+        if request.timeout_seconds is not None and not self.capabilities.timeout:
+            raise UnsupportedHarnessCapability("Harness does not declare timeout enforcement")
+        if request.resume and not self.capabilities.resume:
+            raise UnsupportedHarnessCapability("Harness does not declare checkpoint resume support")
 
     def _validate_result(self, result: "HarnessResult") -> None:
         produced_outputs = {"text"} if result.output_text else set()
@@ -238,6 +244,15 @@ class HarnessRequest:
     output_schema: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     media_inputs: Sequence[MediaInput] = ()
+    timeout_seconds: float | None = None
+    resume: bool = False
+    checkpoint_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds is not None and self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        if self.checkpoint_ref is not None and not self.resume:
+            raise ValueError("checkpoint_ref requires resume=True")
 
 
 @dataclass(frozen=True)
