@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-from decimal import Decimal
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from decimal import Decimal
 from time import monotonic
 from typing import Any, Mapping, Protocol, Sequence
 
