@@ -13,7 +13,7 @@ import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from agent_platform.control_plane.registry import RegistryService
 from agent_platform.runtime.execution import LangGraphRunExecutor
@@ -283,6 +283,7 @@ class RegistryBackedTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
+        run_id: str | None = None,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
@@ -336,7 +337,13 @@ class RegistryBackedTaskCenterService:
         )
         template_id = template.item_id
         template_version = template.version
-        run_id = str(uuid4())
+        if run_id is None:
+            run_id = str(uuid4())
+        else:
+            try:
+                run_id = str(UUID(run_id))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise WorkbenchTaskError("run_id must be a UUID") from exc
         preparation_owner = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
