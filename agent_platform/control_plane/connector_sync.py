@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from agent_platform.control_plane.data_connectors import DataConnectorService
+
+logger = logging.getLogger(__name__)
 
 ConnectionFactory = Callable[[], Any]
 TenantServiceResolver = Callable[[str], Awaitable[DataConnectorService]]
@@ -165,7 +168,7 @@ class ConnectorSyncWorker:
                     continue
             except Exception:
                 # A transient database outage must not permanently stop the worker.
-                pass
+                logger.exception("connector sync worker iteration failed")
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=1.0)
             except TimeoutError:
