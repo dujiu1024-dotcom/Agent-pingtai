@@ -127,3 +127,27 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                 )
             self.assertIn("hard token budget exceeded", str(raised.exception))
             await conn.rollback()
+
+
+    async def test_cost_reconciliation_is_idempotent_and_rejects_invoice_drift(self):
+        from datetime import datetime, timedelta, timezone
+        from decimal import Decimal
+        from uuid import uuid4
+        from agent_platform.quotas.postgres import PostgresQuotaStore
+
+        tenant_id = f"quota-recon-it-{uuid4().hex}"
+        start = datetime.now(timezone.utc) - timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        store = PostgresQuotaStore.from_dsn(DSN)
+        first = await store.reconcile_cost(
+            tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("2.50"),
+        )
+        second = await store.reconcile_cost(
+            tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("2.50"),
+        )
+        self.assertEqual(first["reconciliation_id"], second["reconciliation_id"])
+        self.assertEqual(first["variance_usd"], "2.50")
+        with self.assertRaises(ValueError):
+            await store.reconcile_cost(
+                tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("3.00"),
+            )
