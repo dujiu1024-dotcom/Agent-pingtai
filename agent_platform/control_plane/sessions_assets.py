@@ -187,8 +187,8 @@ class InMemorySessionRepository:
     async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None:
         key = (version.tenant_id, version.asset_id)
         current = self.assets.get(key)
-        if current is None or current.status is AssetStatus.DELETED:
-            raise SessionNotFound("asset not found")
+        if current is None or current.status is not AssetStatus.AVAILABLE:
+            raise SessionNotFound("asset not found or unavailable")
         if current.version != expected_version or version.version != expected_version + 1:
             raise SessionError("file asset version changed; retry from the latest version")
         from dataclasses import replace
