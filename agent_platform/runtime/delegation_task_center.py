@@ -6,8 +6,8 @@ and returns only after the durable Run reaches a terminal state.
 from __future__ import annotations
 
 import asyncio
-import inspect
 import hashlib
+import inspect
 import json
 from collections.abc import Callable, Mapping
 from typing import Any
