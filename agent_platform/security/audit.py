@@ -46,3 +46,41 @@ class PostgresAuditWriter:
                    VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
                 (tenant_id, actor_id, action, subject_id, outcome, payload),
             )
+
+
+class PostgresIdentityAuditReader:
+    """Tenant-scoped, read-only query adapter for the append-only identity ledger."""
+
+    def __init__(self, connection_factory: Any) -> None:
+        self._connect = connection_factory
+
+    async def list_events(
+        self, *, tenant_id: str, limit: int = 100,
+        actor_id: str | None = None, action: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        if actor_id is not None and (not actor_id.strip() or len(actor_id) > 256):
+            raise ValueError("actor_id must be a non-empty value of at most 256 characters")
+        if action is not None and (not PostgresAuditWriter._ACTION.fullmatch(action)):
+            raise ValueError("invalid audit action")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT audit_id,tenant_id,actor_id,action,subject_id,
+                          outcome,detail,created_at
+                   FROM platform_identity_audit
+                   WHERE tenant_id=%s
+                     AND (%s IS NULL OR actor_id=%s)
+                     AND (%s IS NULL OR action=%s)
+                   ORDER BY created_at DESC,audit_id DESC
+                   LIMIT %s""",
+                (tenant_id, actor_id, actor_id, action, action, limit),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {**dict(row), "detail": redact_payload(dict(row.get("detail") or {}))}
+            for row in rows
+        ]
