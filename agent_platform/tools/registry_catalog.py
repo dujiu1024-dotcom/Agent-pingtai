@@ -36,6 +36,15 @@ def build_tool_definitions(
         trusted = trusted_handlers.get(item.item_id)
         if trusted is None:
             raise RegistryError(f"no trusted handler is registered for tool {item.item_id}")
+        if (
+            not callable(trusted.resource_resolver)
+            or not callable(trusted.resource_authorizer)
+        ):
+            raise RegistryError(
+                f"tool {item.item_id} must provide a trusted resource_resolver "
+                "and resource_authorizer; global tools must declare an explicit "
+                "allow-all authorization policy"
+            )
         definition = dict(item.definition)
         risk_name = definition.get("risk_level")
         risk = _RISK_LEVELS.get(risk_name) if isinstance(risk_name, str) else None
