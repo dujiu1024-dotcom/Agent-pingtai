@@ -189,6 +189,14 @@ class PostgresRunStateStore(RunStateStore):
       AND (worker_id IS NULL OR worker_id=%s OR lease_expires_at<=now()) RETURNING run_id""",
     (worker_id,lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
+ async def owns_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT 1 FROM platform_runs
+    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s
+      AND lease_expires_at>now()""",(tenant_id,run_id,worker_id))
+   return await cur.fetchone() is not None
+
  async def heartbeat(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60)->bool:
   c=await self._connect()
   async with c:
