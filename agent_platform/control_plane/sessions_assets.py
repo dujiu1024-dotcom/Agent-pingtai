@@ -196,6 +196,7 @@ class SessionAssetService:
         allowed_media_types: frozenset[str] | None = None,
         scanner: AssetScanner | None = None,
         processing_queue: AssetProcessingQueue | None = None,
+        knowledge_for_tenant: Any | None = None,
     ) -> None:
         if max_upload_bytes < 1:
             raise ValueError("max_upload_bytes must be positive")
@@ -205,6 +206,7 @@ class SessionAssetService:
         self.allowed_media_types = allowed_media_types
         self.scanner = scanner
         self.processing_queue = processing_queue
+        self.knowledge_for_tenant = knowledge_for_tenant
 
     async def create_session(self, *, tenant_id: str, owner_id: str, title: str = "", project_id: str | None = None) -> ConversationSession:
         if not tenant_id.strip() or not owner_id.strip():
@@ -343,6 +345,16 @@ class SessionAssetService:
             await self.repository.set_asset_status(
                 tenant_id, asset_id, AssetStatus.DELETED,
             )
+        # The tombstone blocks downloads immediately. Retryable index cleanup
+        # is performed before object cleanup so stale chunks cannot remain searchable.
+        if self.knowledge_for_tenant is not None:
+            try:
+                knowledge = self.knowledge_for_tenant(tenant_id)
+                await knowledge.repository.delete_document(tenant_id, asset_id)
+            except Exception as exc:
+                raise SessionError(
+                    "file is tombstoned but knowledge index cleanup failed; retry deletion"
+                ) from exc
         try:
             await self.storage.delete(asset.object_key)
         except Exception as exc:
