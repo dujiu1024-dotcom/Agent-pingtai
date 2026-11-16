@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS platform_tasks (
     output jsonb,
     last_error text,
     idempotency_key text,
+    attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    max_attempts integer NOT NULL DEFAULT 3 CHECK (max_attempts BETWEEN 1 AND 10),
+    available_at timestamptz NOT NULL DEFAULT now(),
     lease_owner text,
     lease_expires_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -29,7 +32,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_tasks_idempotency
     ON platform_tasks (tenant_id, actor_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_platform_tasks_queue
-    ON platform_tasks (status, lease_expires_at, created_at);
+    ON platform_tasks (status, available_at, lease_expires_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_platform_tasks_actor
     ON platform_tasks (tenant_id, actor_id, updated_at DESC);
 
