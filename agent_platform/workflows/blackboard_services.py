@@ -17,23 +17,6 @@ from agent_platform.workflows.expert_registry import ExpertRegistry
 
 
 class MultiExpertCallbacks(Protocol):
-    async def _validate_source_refs(
-        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
-    ) -> None:
-        """Reject references to Blackboard entries outside the active workflow scope.
-
-        Non-Blackboard references (for example connector evidence IDs) remain
-        opaque and are resolved by their owning resource service.
-        """
-        for ref in refs:
-            source = await self.repository.get(ref)
-            if source is not None and (
-                source.scope is not scope or source.scope_id != scope_id
-            ):
-                raise PermissionError(
-                    "Blackboard source reference crosses the active workflow scope"
-                )
-
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]: ...
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]: ...
     async def synthesize(self, *, objective: str, contributions: Sequence[Mapping[str, Any]], run_context: Mapping[str, Any]) -> Mapping[str, Any]: ...
@@ -119,6 +102,23 @@ class BlackboardMultiExpertServices:
         if not isinstance(refs, (list, tuple)):
             return ()
         return tuple(str(ref) for ref in refs if str(ref).strip())
+
+    async def _validate_source_refs(
+        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
+    ) -> None:
+        """Reject references to Blackboard entries outside the active workflow scope.
+
+        Non-Blackboard references (for example connector evidence IDs) remain
+        opaque and are resolved by their owning resource service.
+        """
+        for ref in refs:
+            source = await self.repository.get(ref)
+            if source is not None and (
+                source.scope is not scope or source.scope_id != scope_id
+            ):
+                raise PermissionError(
+                    "Blackboard source reference crosses the active workflow scope"
+                )
 
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         self._scope(run_context)
