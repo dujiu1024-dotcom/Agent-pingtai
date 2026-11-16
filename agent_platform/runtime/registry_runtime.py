@@ -78,14 +78,14 @@ class RegistryRuntimeAssembler:
         skill_reviewer: SkillDependencyReviewer,
         trusted_tool_handlers: Mapping[str, ToolDefinition],
     ) -> None:
-        required_budget_components = ("token_estimator", "quota_service", "quota_cost_estimator")
+        required_budget_components = ("token_estimator", "quota_service", "quota_cost_estimator", "audit_sink")
         missing_budget_components = [
             name for name in required_budget_components
             if getattr(model_router, name, None) is None
         ]
         if missing_budget_components:
             raise RegistryRuntimeError(
-                "production Run model router must configure budget enforcement: "
+                "production Run model router must configure budget enforcement and model audit: "
                 + ", ".join(missing_budget_components)
             )
         self.snapshots = snapshots
