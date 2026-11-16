@@ -91,6 +91,9 @@ class SessionRepository(Protocol):
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None: ...
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]: ...
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None: ...
+    async def set_asset_status_if_not_deleted(
+        self, tenant_id: str, asset_id: str, status: AssetStatus
+    ) -> bool: ...
 
 
 
@@ -167,6 +170,17 @@ class InMemorySessionRepository:
             raise SessionNotFound("asset not found")
         from dataclasses import replace
         self.assets[key] = replace(asset, status=status)
+
+    async def set_asset_status_if_not_deleted(
+        self, tenant_id: str, asset_id: str, status: AssetStatus
+    ) -> bool:
+        key = (tenant_id, asset_id)
+        asset = self.assets.get(key)
+        if asset is None or asset.status is AssetStatus.DELETED:
+            return False
+        from dataclasses import replace
+        self.assets[key] = replace(asset, status=status)
+        return True
 
 
 class InMemoryObjectStorage:
