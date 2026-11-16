@@ -409,14 +409,16 @@ class SdkRetryContractTests(unittest.TestCase):
                 self.assertEqual(delays, [0.5])
 
     def test_connection_errors_retry_but_client_errors_do_not(self):
-        transport = RetrySequenceTransport([
-            ConnectionError("temporary"),
-            ApiResponse(200, {}, {"ok": True}),
-        ])
-        sleeps = []
-        self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
-        self.assertEqual(len(transport.requests), 2)
-        self.assertEqual(sleeps, [0.5])
+        for network_error in (ConnectionError("temporary"), TimeoutError("temporary timeout")):
+            with self.subTest(network_error=type(network_error).__name__):
+                transport = RetrySequenceTransport([
+                    network_error,
+                    ApiResponse(200, {}, {"ok": True}),
+                ])
+                sleeps = []
+                self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
+                self.assertEqual(len(transport.requests), 2)
+                self.assertEqual(sleeps, [0.5])
 
         bad_request = RetrySequenceTransport([ApiResponse(400, {}, {"error": "bad"})])
         with self.assertRaises(PlatformApiError):
