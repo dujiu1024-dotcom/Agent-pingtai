@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from agent_platform.blackboard.protocol import BlackboardRepository
 from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
@@ -112,6 +112,12 @@ class BlackboardMultiExpertServices:
         opaque and are resolved by their owning resource service.
         """
         for ref in refs:
+            try:
+                UUID(ref)
+            except (ValueError, TypeError, AttributeError):
+                # Connector/document IDs are owned by their resource service,
+                # not by the UUID-keyed Blackboard repository.
+                continue
             source = await self.repository.get(ref)
             if source is not None and (
                 source.scope is not scope or source.scope_id != scope_id
