@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import threading
 import unittest
 from types import SimpleNamespace
 
 from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
+from agent_platform.knowledge.ingestion import ParserRegistry
 from agent_platform.knowledge.service import KnowledgeService
 
 
@@ -498,3 +500,29 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         snapshot = metrics.snapshot()
         self.assertIn('knowledge_retrieval_total{component="knowledge",status="succeeded"}',
                       snapshot["counters"])
+
+
+    async def test_sync_parser_runs_off_the_async_worker_thread(self):
+        class ThreadRecordingParser:
+            supported_media_types = ("application/x-thread-test",)
+
+            def __init__(self):
+                self.thread_id = None
+
+            def parse(self, content, media_type):
+                self.thread_id = threading.get_ident()
+                return content.decode("utf-8")
+
+        parser = ThreadRecordingParser()
+        service = KnowledgeService(
+            InMemoryKnowledgeRepository(),
+            parsers=ParserRegistry(parsers=(parser,)),
+        )
+        main_thread = threading.get_ident()
+        document = Document(
+            tenant_id="thread-test", title="threaded",
+            source_uri="memory://threaded", content_hash="pending",
+            media_type="application/x-thread-test",
+        )
+        await service.ingest(document=document, content=b"threaded parser")
+        self.assertNotEqual(parser.thread_id, main_thread)
