@@ -2,6 +2,7 @@ import unittest
 
 from agent_platform.contracts import EntryKind
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
+from agent_platform.workflows.expert_registry import ExpertProfile, InMemoryExpertRegistry
 
 class FakeMultiExpertServices:
     def __init__(self, *, conflict=True, require_approval=True):
@@ -140,6 +141,10 @@ class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a",
             repository=repository,
             callbacks=callbacks,
+            expert_registry=InMemoryExpertRegistry((
+                ExpertProfile("researcher", "Researcher", "Evidence", frozenset()),
+                ExpertProfile("critic", "Critic", "Counter-evidence", frozenset()),
+            )),
         )
         graph = self.build_multi_expert_workflow(
             services=services, checkpointer=self.InMemorySaver()
