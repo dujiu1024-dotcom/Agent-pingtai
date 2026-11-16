@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 
