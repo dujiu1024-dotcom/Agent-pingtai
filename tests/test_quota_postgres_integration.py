@@ -44,6 +44,13 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                        WHERE table_name='platform_usage_ledger' AND column_name='reservation_id'"""
                 )
             ).fetchall()
+            context_columns = await (
+                await conn.execute(
+                    """SELECT column_name FROM information_schema.columns
+                       WHERE table_name='platform_quota_budgets'
+                         AND column_name='hard_context_window_tokens'"""
+                )
+            ).fetchall()
         self.assertEqual({row[0] for row in rows}, {
             "platform_quota_reserve", "platform_quota_reserve_split",
             "platform_quota_settle", "platform_quota_release",
@@ -53,6 +60,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             "platform_usage_ledger", "platform_usage_reconciliation",
         })
         self.assertEqual(len(columns), 1)
+        self.assertEqual(len(context_columns), 1)
 
     async def test_reserve_enforces_hard_limits_with_empty_ledger_and_reservations(self):
         from datetime import datetime, timedelta, timezone
