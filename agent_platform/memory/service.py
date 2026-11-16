@@ -1,9 +1,11 @@
 """Governed cross-session memory; candidate confirmation is required before retrieval."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
+from math import isfinite
 from typing import Awaitable, Callable, Protocol, Sequence
 from uuid import uuid4
 
@@ -25,9 +27,33 @@ class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
     expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict); conflict_key: str|None=None
     def __post_init__(self)->None:
-        if not all(x.strip() for x in (self.tenant_id,self.scope_id,self.content,self.source_ref,self.created_by)):raise ValueError("memory fields must not be empty")
-        if not 0<=self.confidence<=1:raise ValueError("confidence must be between 0 and 1")
-        if self.expires_at is not None and self.expires_at.tzinfo is None:raise ValueError("expires_at must be timezone-aware")
+        required = (self.tenant_id, self.scope_id, self.content, self.source_ref, self.created_by, self.memory_id)
+        if any(not isinstance(value, str) or not value.strip() for value in required):
+            raise ValueError("memory identity and content fields must be non-empty strings")
+        if not isinstance(self.scope, MemoryScope):
+            raise ValueError("scope must be a MemoryScope")
+        if (
+            isinstance(self.confidence, bool)
+            or not isinstance(self.confidence, (int, float))
+            or not 0 <= self.confidence <= 1
+            or not isfinite(self.confidence)
+        ):
+            raise ValueError("confidence must be a finite number between 0 and 1")
+        if self.expires_at is not None and (
+            not isinstance(self.expires_at, datetime)
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+        ):
+            raise ValueError("expires_at must be timezone-aware")
+        if self.conflict_key is not None and (
+            not isinstance(self.conflict_key, str) or not self.conflict_key.strip()
+        ):
+            raise ValueError("conflict_key must be a non-empty string when provided")
+        if not isinstance(self.metadata, Mapping) or any(
+            not isinstance(key, str) or not key.strip() or not isinstance(value, str)
+            for key, value in self.metadata.items()
+        ):
+            raise ValueError("metadata must map non-empty string keys to string values")
 @dataclass(frozen=True)
 class MemoryRecord:
     candidate: MemoryCandidate; status: MemoryStatus; version: int=1; confirmed_by: str|None=None
