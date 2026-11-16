@@ -15,8 +15,8 @@ from agent_platform.observability.evaluation import (
 from agent_platform.observability.harness import ObservedHarnessAdapter
 from agent_platform.observability.langfuse import LangfuseObservationSink
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
-from agent_platform.observability.prompts import PromptRegistry
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
+from agent_platform.observability.prompts import PromptRegistry
 from agent_platform.observability.redaction import redact_payload, redact_text
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
