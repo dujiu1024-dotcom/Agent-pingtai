@@ -60,3 +60,45 @@ class ModelPricingCatalog:
             Decimal(input_tokens) * card.input_usd_per_million / million
             + Decimal(output_tokens) * card.output_usd_per_million / million
         )
+
+
+class CatalogModelCostEstimator:
+    """Adapt the trusted pricing catalog to model-router/usage-recorder micros.
+
+    Unknown model prices return None so callers can fail closed for quota
+    reservations while still recording provider usage without invented cost.
+    """
+
+    def __init__(self, catalog: ModelPricingCatalog) -> None:
+        if not isinstance(catalog, ModelPricingCatalog):
+            raise TypeError("catalog must be a ModelPricingCatalog")
+        self.catalog = catalog
+
+    @staticmethod
+    def _usage_counter(usage: Mapping[str, object], primary: str, alternate: str) -> int:
+        value = usage.get(primary, usage.get(alternate))
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"provider usage requires a non-negative integer {primary}")
+        other = usage.get(alternate)
+        if other is not None and other != value:
+            raise ValueError(f"provider usage counters {primary} and {alternate} conflict")
+        return value
+
+    async def estimate_micros(self, *, model_id: str, usage: Mapping[str, object]) -> int | None:
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise ValueError("model_id is required")
+        if not isinstance(usage, Mapping):
+            raise ValueError("provider usage must be a mapping")
+        input_tokens = self._usage_counter(usage, "prompt_tokens", "input_tokens")
+        output_tokens = self._usage_counter(usage, "completion_tokens", "output_tokens")
+        estimate = self.catalog.estimate(
+            model_id, input_tokens=input_tokens, output_tokens=output_tokens,
+        )
+        if estimate is None:
+            return None
+        # Round upward to avoid under-reserving due to sub-micro-dollar fractions.
+        return int((estimate * Decimal(1_000_000)).to_integral_value(rounding="ROUND_CEILING"))
+
+    def price_card_version(self, model_id: str) -> str | None:
+        card = self.catalog.get(model_id)
+        return card.version if card is not None else None
