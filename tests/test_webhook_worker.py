@@ -68,8 +68,6 @@ class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
                 WebhookDeliveryWorker(dispatcher=FakeDispatcher(), batch_limit=limit)
 
     async def test_worker_does_not_log_provider_exception_text(self):
-        import logging
-
         class SecretFailureDispatcher:
             async def dispatch(self, *, limit):
                 raise RuntimeError("destination=https://private.example/token=secret")
