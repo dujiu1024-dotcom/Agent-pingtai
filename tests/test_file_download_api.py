@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.control_plane.sessions_assets import (
+    AssetStatus,
     InMemoryObjectStorage,
     InMemorySessionRepository,
     SessionAssetService,
@@ -117,7 +118,7 @@ class FileDownloadApiAuthorizationTests(unittest.TestCase):
         _session, asset = self._seed(service)
         asyncio.run(repository.set_asset_status(
             "tenant-a", asset.asset_id,
-            __import__("agent_platform.control_plane.sessions_assets", fromlist=["AssetStatus"]).AssetStatus.REJECTED,
+            AssetStatus.REJECTED,
         ))
         response = client.get(f"/api/platform/v1/files/{asset.asset_id}")
         self.assertEqual(response.status_code, 404)
