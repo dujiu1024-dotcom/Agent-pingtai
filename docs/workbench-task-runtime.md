@@ -121,3 +121,18 @@ task_worker = RunExecutionWorker(
 - 真实 UI 的提交、轮询、结果展示和跨进程取消。
 
 这些依赖宿主部署配置或真实凭据，不以 FakeGraph 单元测试替代。
+
+
+## 受监督委派的持久化 Child Run
+
+`TaskCenterChildRunExecutor`（`agent_platform/runtime/delegation_task_center.py`）将 `ChildRunExecutor` 契约接入现有 Registry-backed Task Center，而不是直接在父 Run 内调用模型：
+
+- 子 Run 使用委派契约生成的稳定 UUID；`submit_task(run_id=...)` 在 PostgreSQL 中创建 queued Run，任务输入、租户、Agent/模型模板版本快照、幂等键均持久化。
+- 幂等键先做 SHA-256 摘要，避免用户可控 delegation key 触及 Task Center 的长度上限；同一父 Run 重试解析到同一 child Run。
+- 创建前检查子 Agent 的活动模型模板 ID/版本与父 Run 固定模板一致，并确保委派工具是 Agent 已发布工具白名单的子集。
+- 通过共享 `RunExecutionWorker` 的 `run_once()` 驱动持久化队列，等待子 Run 成功/失败/取消终态；输出、Usage 和 Trace ID 由现有 Worker 写回 PostgreSQL。
+- 父 Run 超时或取消会取消等待协程，并向子 Run 提交持久化取消请求；Worker 确认执行停止后才进入 cancelled。
+- 生产装配必须注入同一 PostgreSQL `RunStateStore` 的 Task Center 与 Worker，并提供从父 Run 可信元数据解析 actor 的 `actor_resolver`。不要从用户输入接受 actor ID。
+- 宿主 Agent Graph Factory 必须将委派输入中的 `allowed_tools` 继续约束到 Gateway 调用；平台在提交前校验它是已发布 Agent 工具集合的子集，但不会替宿主动态生成任意工具执行代码。
+
+该适配器提供可复用的持久化接线，不替代真实 PostgreSQL Checkpointer、Worker 多实例、模型代理和 Gateway 安全边界的部署演练。
