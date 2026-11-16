@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS platform_run_context_snapshots (
     revision        integer NOT NULL CHECK (revision > 0),
     snapshot_id     uuid NOT NULL,
     context         jsonb NOT NULL,
-    references      jsonb NOT NULL DEFAULT '[]'::jsonb,
+    reference_window      jsonb NOT NULL DEFAULT '[]'::jsonb,
     digest          text NOT NULL CHECK (length(digest) = 64),
     created_at      timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, run_id, revision),
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS platform_run_context_snapshots (
     FOREIGN KEY (tenant_id, run_id)
         REFERENCES platform_runs (tenant_id, run_id) ON DELETE CASCADE,
     CHECK (jsonb_typeof(context) = 'object'),
-    CHECK (jsonb_typeof(references) = 'array')
+    CHECK (jsonb_typeof(reference_window) = 'array')
 );
 
 CREATE INDEX IF NOT EXISTS idx_platform_run_context_latest
