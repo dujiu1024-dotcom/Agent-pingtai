@@ -26,7 +26,7 @@ def _resolve(
     mapped = resolver(provider, subject_type, email or subject_id)
     if (
         not isinstance(mapped, tuple) or len(mapped) != 2
-        or mapped[0] not in {"user", "role", "project"}
+        or not isinstance(mapped[0], str) or mapped[0] not in {"user", "role", "project"}
         or not isinstance(mapped[1], str) or not mapped[1].strip()
     ):
         raise ACLMappingError(
@@ -78,7 +78,7 @@ def map_google_drive_permissions(
         if item.get("deleted") is True:
             continue
         subject_type = item.get("type")
-        if subject_type not in {"user", "group"}:
+        if not isinstance(subject_type, str) or subject_type not in {"user", "group"}:
             raise ACLMappingError(
                 "Google Drive domain or anyone sharing cannot be mapped safely"
             )
