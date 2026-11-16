@@ -317,7 +317,7 @@ class SessionAssetService:
                 url = await url
         except Exception as exc:
             raise SessionError("could not create file download URL") from exc
-        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+        if not isinstance(url, str) or not url.startswith("https://"):
             raise SessionError("object storage returned an invalid download URL")
         return asset, url
 
