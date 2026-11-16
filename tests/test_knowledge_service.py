@@ -165,3 +165,63 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[0].answer_term_coverage,1.0)
         self.assertEqual(results[0].citation_precision,1.0)
         self.assertEqual(results[0].citation_recall,1.0)
+
+
+    async def test_rag_answer_emits_nested_retrieval_and_generation_traces(self):
+        from contextlib import contextmanager
+
+        from agent_platform.knowledge.rag import RAGService
+        from agent_platform.observability.metrics import InMemoryMetricsRecorder
+
+        class Span:
+            def __init__(self):
+                self.updates = []
+            def update(self, **kwargs):
+                self.updates.append(kwargs)
+
+        class Observer:
+            def __init__(self):
+                self.calls = []
+                self.spans = []
+            @contextmanager
+            def observe(self, *, name, input, metadata):
+                span = Span()
+                self.calls.append((name, input, metadata))
+                self.spans.append(span)
+                yield span
+
+        class Generator:
+            async def generate(self, *, query, context):
+                return {
+                    "answer": "The policy evidence is current.",
+                    "citation_ids": [context[0]["citation_id"]],
+                }
+
+        service = KnowledgeService(InMemoryKnowledgeRepository())
+        document = Document(
+            tenant_id="tenant-trace", title="policy", source_uri="file://policy",
+            content_hash="pending",
+        )
+        await service.ingest(document=document, content=b"current policy evidence")
+        observer = Observer()
+        metrics = InMemoryMetricsRecorder()
+        rag = RAGService(
+            knowledge=service, generator=Generator(),
+            observer=observer, metrics=metrics,
+        )
+        answer = await rag.answer(
+            principal=KnowledgePrincipal(tenant_id="tenant-trace", user_id="user-a"),
+            query="where is the policy evidence",
+            trace_context={"run_id": "run-rag", "request_id": "request-rag"},
+        )
+        self.assertFalse(answer.abstained)
+        self.assertEqual(
+            [call[0] for call in observer.calls],
+            ["rag.answer", "rag.retrieve", "rag.generate"],
+        )
+        self.assertEqual(observer.calls[0][2]["run_id"], "run-rag")
+        self.assertNotIn("where is the policy evidence", str(observer.calls[0][1]))
+        self.assertEqual(observer.spans[0].updates[-1]["output"]["status"], "grounded")
+        counters = metrics.snapshot()["counters"]
+        self.assertIn('rag_requests_total{component="rag",status="grounded"}', counters)
+        self.assertIn("rag_retrieval_hits", " ".join(metrics.snapshot()["observation_counts"]))

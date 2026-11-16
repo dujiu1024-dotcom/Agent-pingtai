@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 from agent_platform.models.registry_resolver import RegistryModelResolver
@@ -11,6 +12,7 @@ from agent_platform.models.runtime_router import (
     OpenAICompatibleModelRouter,
     PostgresModelUsageRecorder,
 )
+from agent_platform.observability.metrics import InMemoryMetricsRecorder
 
 
 class Secrets:
@@ -153,6 +155,53 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertEqual(connection.arguments[-1], 1250)
 
+
+
+    async def test_model_attempts_emit_nested_traces_and_low_cardinality_metrics(self):
+        class Span:
+            def __init__(self):
+                self.updates = []
+            def update(self, **kwargs):
+                self.updates.append(kwargs)
+
+        class Observer:
+            def __init__(self):
+                self.calls = []
+                self.spans = []
+            @contextmanager
+            def observe(self, *, name, input, metadata):
+                span = Span()
+                self.calls.append((name, input, metadata))
+                self.spans.append(span)
+                yield span
+
+        observer = Observer()
+        metrics = InMemoryMetricsRecorder()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=FallbackTransport(),
+            observer=observer,
+            metrics=metrics,
+        )
+        result = await router.complete(
+            snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-traced",
+            template_id="primary", fallback_template_ids=("fallback",),
+            messages=({"role": "user", "content": "do not capture this prompt"},),
+            request_id="request-traced", required_capabilities=("text",),
+        )
+        self.assertTrue(result.fallback_used)
+        self.assertEqual(len(observer.calls), 2)
+        self.assertEqual([call[0] for call in observer.calls], ["model.complete", "model.complete"])
+        self.assertEqual(observer.calls[0][2]["run_id"], "run-traced")
+        self.assertNotIn("do not capture", str(observer.calls[0][1]))
+        self.assertEqual(observer.spans[0].updates[0]["output"]["status"], "failed")
+        self.assertEqual(observer.spans[1].updates[0]["output"]["status"], "response_received")
+        counters = metrics.snapshot()["counters"]
+        self.assertIn('model_requests_total{component="model",model_template="primary@1",status="failed"}', counters)
+        self.assertIn('model_requests_total{component="model",model_template="fallback@2",status="response_received"}', counters)
+        self.assertIn("model_fallbacks_total", " ".join(counters))
+        self.assertIn("model_input_tokens_total", " ".join(counters))
+        self.assertIn("model_output_tokens_total", " ".join(counters))
 
 
 if __name__ == "__main__":
