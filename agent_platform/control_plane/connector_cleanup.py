@@ -6,7 +6,8 @@ from typing import Any, Callable
 from uuid import UUID
 
 from agent_platform.control_plane.data_connectors import (
-    ConnectorCleanupJob, DataConnectorService,
+    ConnectorCleanupJob,
+    DataConnectorService,
 )
 
 
