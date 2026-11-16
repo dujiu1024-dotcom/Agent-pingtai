@@ -86,7 +86,9 @@ class GoogleDriveKnowledgeConnector:
     def _json(response: Any) -> dict[str, Any]:
         response.raise_for_status()
         if callable(invalidate):
-            invalidate(self.credential_ref)
+            result = invalidate(self.credential_ref)
+            if hasattr(result, "__await__"):
+                await result
         payload = response.json()
         if not isinstance(payload, dict):
             raise GoogleDriveConnectorError("Google Drive response must be a JSON object")
