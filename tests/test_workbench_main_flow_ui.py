@@ -22,6 +22,10 @@ class WorkbenchMainFlowUiContractTests(unittest.TestCase):
         self.assertIn('x.status==="published"?"disable"', self.html)
         self.assertIn('action==="publish"', self.html)
         self.assertIn('action==="disable"', self.html)
+        self.assertIn('instructions:$("agentRole").value', self.html)
+        self.assertIn('model_template_id:$("templateRef").value.trim()', self.html)
+        self.assertIn('tool_ids:splitIds("agentToolIds")', self.html)
+        self.assertIn('skill_ids:splitIds("agentSkillIds")', self.html)
 
     def test_task_center_uses_authenticated_workbench_routes(self):
         self.assertIn("/workbench/tasks?limit=100", self.html)
