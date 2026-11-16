@@ -38,8 +38,8 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""UPDATE platform_runs SET status=%s,version=version+1,checkpoint_ref=%s,last_error=%s,updated_at=now(),
     started_at=CASE WHEN %s='running' AND started_at IS NULL THEN now() ELSE started_at END,
     finished_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN now() ELSE finished_at END,
-    worker_id=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN NULL ELSE worker_id END,
-    lease_expires_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN NULL ELSE lease_expires_at END
+    worker_id=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out','interrupted','paused') THEN NULL ELSE worker_id END,
+    lease_expires_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out','interrupted','paused') THEN NULL ELSE lease_expires_at END
     WHERE tenant_id=%s AND run_id=%s AND version=%s
     RETURNING tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at""",
     (snapshot.status.value,snapshot.checkpoint_ref,snapshot.last_error,snapshot.status.value,snapshot.status.value,
