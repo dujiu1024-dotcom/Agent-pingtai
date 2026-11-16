@@ -425,3 +425,18 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[slide:1]", pptx_text)
         self.assertIn("Metric | Value", pptx_text)
         self.assertIn("Revenue | 125", pptx_text)
+
+
+    async def test_chunk_page_citation_uses_chunk_start_when_overlapping_page_boundary(self):
+        from agent_platform.knowledge.chunking import chunk_document
+
+        document = Document(
+            tenant_id="tenant-pages", title="multi-page", source_uri="file://pages.pdf",
+            content_hash="pending",
+        )
+        text = "[page:1]\\n" + "a" * 110 + "\\n[page:2]\\n" + "b" * 110
+        chunks = chunk_document(document, text, max_chars=120, overlap=20)
+        self.assertGreaterEqual(len(chunks), 3)
+        self.assertEqual(chunks[0].page_number, 1)
+        self.assertEqual(chunks[1].page_number, 1)
+        self.assertEqual(chunks[2].page_number, 2)
