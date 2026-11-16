@@ -300,3 +300,6 @@ class SharePointKnowledgeConnector:
         result = self.credential_revoker(self.credential_ref)
         if hasattr(result, "__await__"):
             await result
+        invalidate = getattr(self.credentials, "invalidate", None)
+        if callable(invalidate):
+            invalidate(self.credential_ref)
