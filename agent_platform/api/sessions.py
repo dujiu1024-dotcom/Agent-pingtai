@@ -230,9 +230,18 @@ def create_sessions_router(
                 project_id=session.project_id,
             )
             try:
-                records = await memory_extraction.propose_from_turn(
-                    principal=memory_principal, turn=turn,
+                existing_records = await memory_extraction.memory.repository.list(
+                    principal.tenant_id, limit=5000,
                 )
+                records = [
+                    record for record in existing_records
+                    if record.candidate.source_ref == turn.source_ref
+                    and record.status.value != "deleted"
+                ]
+                if not records:
+                    records = await memory_extraction.propose_from_turn(
+                        principal=memory_principal, turn=turn,
+                    )
             except PermissionError as exc:
                 raise HTTPException(403, str(exc)) from exc
             except ValueError as exc:
