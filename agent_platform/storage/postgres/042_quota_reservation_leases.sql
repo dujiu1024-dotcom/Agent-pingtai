@@ -8,8 +8,8 @@ ALTER TABLE platform_quota_reservations
     ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
 
 UPDATE platform_quota_reservations
-   SET heartbeat_at = COALESCE(heartbeat_at, created_at),
-       lease_expires_at = COALESCE(lease_expires_at, created_at + interval '5 minutes')
+   SET heartbeat_at = COALESCE(heartbeat_at, now()),
+       lease_expires_at = COALESCE(lease_expires_at, now() + interval '5 minutes')
  WHERE status = 'active';
 
 ALTER TABLE platform_quota_reservations
