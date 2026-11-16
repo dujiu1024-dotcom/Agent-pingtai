@@ -174,6 +174,8 @@ def create_platform_app(
             "task_execution": task_center_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
             "blackboard": blackboard_configured,
+            "quotas": quota_reporting_store is not None or quota_store is not None,
+            "metrics": metrics_exporter is not None,
         },
         resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,

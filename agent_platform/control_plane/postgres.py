@@ -264,6 +264,26 @@ class PostgresSessionRepository:
             metadata=dict(row["metadata"] or {}), created_at=row["created_at"],
         ) for row in rows)
 
+    async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100) -> tuple[ConversationSession, ...]:
+        if tenant_id != self.tenant_id:
+            raise SessionNotFound("session not found")
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT * FROM platform_conversation_sessions
+                   WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'
+                   ORDER BY updated_at DESC,session_id LIMIT %s""",
+                (self.tenant_id, owner_id, limit),
+            )
+            rows = await cursor.fetchall()
+        return tuple(ConversationSession(
+            tenant_id=row["tenant_id"], session_id=str(row["session_id"]),
+            owner_id=row["owner_id"], title=row["title"], project_id=row["project_id"],
+            status=row["status"], created_at=row["created_at"], updated_at=row["updated_at"],
+        ) for row in rows)
+
     async def create_asset(self, asset: FileAsset) -> None:
         self._check_tenant(asset.tenant_id)
         connection = await self._connection_factory()
@@ -290,6 +310,30 @@ class PostgresSessionRepository:
             )
             row = await cursor.fetchone()
         return self._to_asset(row) if row else None
+
+    async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]:
+        if tenant_id != self.tenant_id:
+            raise SessionNotFound("file not found")
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        connection = await self._connection_factory()
+        async with connection:
+            if session_id:
+                cursor = await connection.execute(
+                    """SELECT * FROM platform_file_assets
+                       WHERE tenant_id=%s AND owner_id=%s AND session_id=%s AND status <> 'deleted'
+                       ORDER BY created_at DESC,asset_id LIMIT %s""",
+                    (self.tenant_id, owner_id, _uuid(session_id), limit),
+                )
+            else:
+                cursor = await connection.execute(
+                    """SELECT * FROM platform_file_assets
+                       WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'
+                       ORDER BY created_at DESC,asset_id LIMIT %s""",
+                    (self.tenant_id, owner_id, limit),
+                )
+            rows = await cursor.fetchall()
+        return tuple(self._to_asset(row) for row in rows)
 
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None:
         if tenant_id != self.tenant_id:
