@@ -8,6 +8,7 @@ from agent_platform.runtime.delegation import (
     DelegationPolicy, DelegationSpec, SupervisedDelegationService,
 )
 from agent_platform.runtime.protocols import HarnessResult
+from agent_platform.workflows.expert_registry import ExpertProfile, InMemoryExpertRegistry
 
 
 class FakeChildExecutor:
@@ -28,10 +29,16 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
             project_id="project-a", correlation_id="trace-a",
         )
         self.executor = FakeChildExecutor()
+        self.registry = InMemoryExpertRegistry((
+            ExpertProfile("researcher", "Researcher", "Research", frozenset({"research"})),
+            ExpertProfile("critic", "Critic", "Review", frozenset({"review"})),
+            ExpertProfile("disabled", "Disabled", "Disabled", frozenset({"research"}), enabled=False),
+        ))
         self.service = SupervisedDelegationService(
             executor=self.executor,
+            expert_registry=self.registry,
             policy=DelegationPolicy(
-                allowed_agent_ids=frozenset({"researcher", "critic"}),
+                allowed_agent_ids=frozenset({"researcher", "critic", "draft", "disabled"}),
                 allowed_tool_ids=frozenset({"knowledge.search"}),
                 max_depth=2, max_children=2, max_timeout_seconds=30,
                 max_output_chars=100,
@@ -69,6 +76,19 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
             ))
         with self.assertRaises(PermissionError):
             await self.service.delegate(parent=self.parent, requests=(
+                DelegationSpec("draft-agent", "draft", "Do work"),
+            ))
+        with self.assertRaises(PermissionError):
+            await self.service.delegate(parent=self.parent, requests=(
+                DelegationSpec("disabled-agent", "disabled", "Do work"),
+            ))
+        with self.assertRaises(PermissionError):
+            await self.service.delegate(parent=self.parent, requests=(
+                DelegationSpec("missing-capability", "researcher", "Do work",
+                               required_capabilities=("legal_review",)),
+            ))
+        with self.assertRaises(PermissionError):
+            await self.service.delegate(parent=self.parent, requests=(
                 DelegationSpec("bad-tool", "researcher", "Do work",
                                allowed_tools=("admin.delete",)),
             ))
@@ -84,6 +104,18 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await self.service.delegate(parent=deep_parent, requests=(
                 DelegationSpec("too-deep", "researcher", "Do work"),
+            ))
+
+    async def test_rejects_registry_bound_to_another_tenant(self):
+        class WrongTenantRegistry:
+            tenant_id = "tenant-b"
+            async def get(self, expert_id):
+                return ExpertProfile(expert_id, expert_id, "", frozenset())
+
+        self.service.expert_registry = WrongTenantRegistry()
+        with self.assertRaises(PermissionError):
+            await self.service.delegate(parent=self.parent, requests=(
+                DelegationSpec("wrong-tenant", "researcher", "Do work"),
             ))
 
     async def test_rejects_excess_fanout_and_duplicate_keys(self):
