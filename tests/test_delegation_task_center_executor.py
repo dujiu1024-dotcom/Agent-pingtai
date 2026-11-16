@@ -267,6 +267,38 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsNone(self.service.submitted)
 
+    async def test_child_run_can_complete_on_a_separately_deployed_worker(self):
+        class RemoteWorkerTaskService(FakeTaskService):
+            def __init__(self):
+                super().__init__()
+                self.polls = 0
+
+            async def get_task(self, **kwargs):
+                self.polls += 1
+                if self.polls >= 2 and self.row is not None:
+                    self.row.update({
+                        "status": "succeeded",
+                        "output": {"text": "completed by remote worker"},
+                        "usage": {"total_tokens": 9},
+                    })
+                return self.row
+
+        remote_service = RemoteWorkerTaskService()
+        executor = TaskCenterChildRunExecutor(
+            task_service=remote_service,
+            worker=None,
+            actor_resolver=lambda context: "user-a",
+            poll_interval=0.001,
+        )
+        result = await executor.execute_child(
+            request=self.request,
+            parent_context=self.parent,
+            idempotency_key="tenant-a:parent-run:remote-worker",
+        )
+        self.assertEqual(result.output_text, "completed by remote worker")
+        self.assertFalse(remote_service.cancelled)
+        self.assertGreaterEqual(remote_service.polls, 2)
+
     async def test_worker_failure_cancels_orphaned_child_run(self):
         class FailingWorker(FakeWorker):
             async def run_once(self):
