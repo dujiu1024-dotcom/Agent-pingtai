@@ -177,8 +177,23 @@ class KnowledgeService:
             grants.add((kind, identifier, permission))
         return tuple(sorted(grants))
 
-    async def _apply_connector_acl(self, *, tenant_id: str, document: Document) -> None:
-        grants = self._connector_acl_grants(document)
+    async def _validated_connector_acl(
+        self, *, connector: KnowledgeConnector, tenant_id: str, document: Document,
+    ) -> tuple[tuple[str, str, str], ...]:
+        try:
+            return self._connector_acl_grants(document)
+        except (PermissionError, ValueError):
+            # A source ACL that can no longer be represented must not leave a
+            # previously synchronized copy searchable under stale permissions.
+            existing = await self.repository.get_document(tenant_id, document.document_id)
+            if existing is not None and existing.metadata.get("_knowledge_connector_id") == connector.connector_id:
+                await self.repository.delete_document(tenant_id, document.document_id)
+            raise
+
+    async def _apply_connector_acl(
+        self, *, tenant_id: str, document: Document,
+        grants: Sequence[tuple[str, str, str]],
+    ) -> None:
         replace_access = getattr(self.repository, "replace_document_access", None)
         if not callable(replace_access):
             raise RuntimeError("knowledge repository does not support atomic connector ACL replacement")
@@ -208,8 +223,13 @@ class KnowledgeService:
         results=[]
         for item in page.items:
             document=self._connector_document(connector,tenant_id,item.document)
+            grants = await self._validated_connector_acl(
+                connector=connector, tenant_id=tenant_id, document=document,
+            )
             result = await self.ingest(document=document,content=item.content)
-            await self._apply_connector_acl(tenant_id=tenant_id, document=document)
+            await self._apply_connector_acl(
+                tenant_id=tenant_id, document=document, grants=grants,
+            )
             results.append(result)
         await self._apply_connector_deletions(
             connector=connector, tenant_id=tenant_id,
@@ -229,8 +249,13 @@ class KnowledgeService:
             page=await connector.list_changed(tenant_id=tenant_id,cursor=cursor,limit=limit)
             for item in page.items:
                 document=self._connector_document(connector,tenant_id,item.document)
+                grants = await self._validated_connector_acl(
+                    connector=connector, tenant_id=tenant_id, document=document,
+                )
                 await self.ingest(document=document,content=item.content)
-                await self._apply_connector_acl(tenant_id=tenant_id, document=document)
+                await self._apply_connector_acl(
+                    tenant_id=tenant_id, document=document, grants=grants,
+                )
                 document_count+=1
             deleted_count+=await self._apply_connector_deletions(
                 connector=connector, tenant_id=tenant_id,
