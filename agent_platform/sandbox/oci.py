@@ -22,6 +22,7 @@ class SandboxExecutionError(RuntimeError):
 class OciSandboxConfig:
     image: str
     runtime: str = "docker"
+    docker_userns_remap_verified: bool = False
     memory_limit: str = "512m"
     cpu_limit: str = "1.0"
     pids_limit: int = 64
@@ -36,6 +37,10 @@ class OciSandboxConfig:
             raise ValueError("sandbox image must be pinned by sha256 digest")
         if self.runtime not in {"docker", "podman"}:
             raise ValueError("runtime must be docker or podman")
+        if self.runtime == "docker" and not self.docker_userns_remap_verified:
+            raise ValueError(
+                "Docker sandbox requires verified rootless mode or daemon userns-remap"
+            )
         if not re.fullmatch(r"[1-9][0-9]*(?:m|g)", self.memory_limit.lower()):
             raise ValueError("memory_limit must be a positive value such as 512m or 1g")
         if not re.fullmatch(r"(?:[0-9]+)(?:\.[0-9]+)?", self.cpu_limit):
@@ -94,7 +99,7 @@ class OciSandboxRunner:
         args: list[str] = [
             self.config.runtime, "run", "--rm", "--pull=never", "--network=none",
             "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges:true",
-            "--userns=private", "--pid=private", "--ipc=private",
+            "--ipc=private",
             "--pids-limit", str(self.config.pids_limit),
             "--memory", self.config.memory_limit, "--memory-swap", self.config.memory_limit,
             "--cpus", self.config.cpu_limit,
@@ -104,6 +109,8 @@ class OciSandboxRunner:
             f"/tmp:rw,noexec,nosuid,nodev,size={self.config.tmpfs_size}",
             "--tmpfs", f"/workspace:rw,noexec,nosuid,nodev,size={self.config.tmpfs_size}",
         ]
+        if self.config.runtime == "podman":
+            args.extend(("--userns=private", "--pid=private"))
         for key, value in sorted(env.items()):
             if not isinstance(value, str) or "\x00" in value or len(value) > 4096:
                 raise ValueError("environment values must be short NUL-free strings")
