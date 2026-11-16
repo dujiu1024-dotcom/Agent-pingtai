@@ -364,13 +364,14 @@ class RegistryLangGraphExecutorResolver:
         )
         if lifecycle.store is None or runtime_provider is None:
             raise RuntimeError("durable Run lifecycle and registry runtime provider are required")
-        graph = await self._resolve(
-            self.graph_factory,
+        graph = self.graph_factory(
             agent_definition=agent_definition,
             snapshot=snapshot,
             task_record=record,
             runtime_provider=runtime_provider,
         )
+        if inspect.isawaitable(graph):
+            graph = await graph
         return LangGraphRunExecutor(
             graph=graph, lifecycle=lifecycle, worker_id=worker_id,
             registry_snapshot_service=self.snapshots,
