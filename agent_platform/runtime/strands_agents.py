@@ -108,6 +108,8 @@ class StrandsAgentsAdapter:
         if not request.media_inputs:
             return request.input_text
         requested = {item.modality for item in request.media_inputs}
+        if request.input_text and "text" not in self.capabilities.input_modalities:
+            raise RuntimeError("Strands Harness does not declare text input support")
         if not requested.issubset(self.capabilities.input_modalities):
             raise RuntimeError(
                 "Strands Harness does not declare input modalities: "
@@ -157,9 +159,10 @@ class StrandsAgentsAdapter:
                 value = block.get(modality)
                 if not isinstance(value, Mapping):
                     continue
-                if modality not in self.capabilities.output_modalities:
+                output_modality = "pdf" if modality == "document" else modality
+                if output_modality not in self.capabilities.output_modalities:
                     raise RuntimeError(
-                        f"Strands produced undeclared {modality} output"
+                        f"Strands produced undeclared {output_modality} output"
                     )
                 if self.media_output_writer is None:
                     raise RuntimeError("Strands media output requires a trusted artifact writer")
@@ -174,17 +177,24 @@ class StrandsAgentsAdapter:
                     raise ValueError("Strands media output must contain raw bytes")
                 media_format = str(value.get("format") or "")
                 if modality == "document":
-                    output_modality = "pdf" if media_format == "pdf" else "pdf"
                     mime_type = "application/pdf"
                 else:
-                    output_modality = modality
                     mime_type = f"{modality}/{media_format}"
                 filename = value.get("name") if isinstance(value.get("name"), str) else None
                 saved = await self.media_output_writer(
                     request.context, output_modality, mime_type, raw, filename
                 )
-                if not isinstance(saved, MediaOutput) or saved.modality != output_modality:
-                    raise TypeError("media_output_writer must return a matching MediaOutput")
+                expected_digest = hashlib.sha256(raw).hexdigest()
+                if (
+                    not isinstance(saved, MediaOutput)
+                    or saved.modality != output_modality
+                    or saved.mime_type != mime_type
+                    or saved.size_bytes != len(raw)
+                    or saved.sha256.lower() != expected_digest
+                ):
+                    raise TypeError(
+                        "media_output_writer must return a matching, verified MediaOutput"
+                    )
                 outputs.append(saved)
         return tuple(outputs)
 
@@ -287,6 +297,8 @@ class StrandsAgentsAdapter:
             if _value(block, "text")
         )
         media_outputs = await self._persist_media_outputs(request, content)
+        if output and "text" not in self.capabilities.output_modalities:
+            raise RuntimeError("Strands Harness does not declare text output support")
         metrics = _value(result, "metrics")
         accumulated = _value(metrics, "accumulated_metrics", {}) or {}
         latency = _value(accumulated, "latency_ms")
