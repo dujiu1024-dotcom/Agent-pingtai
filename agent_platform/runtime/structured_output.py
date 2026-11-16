@@ -50,8 +50,9 @@ def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> N
     if "required" in schema and (
         not isinstance(schema["required"], list)
         or any(not isinstance(item, str) or not item for item in schema["required"])
+        or len(set(schema["required"])) != len(schema["required"])
     ):
-        raise ValueError(f"{path}.required must be an array of non-empty strings")
+        raise ValueError(f"{path}.required must contain unique non-empty strings")
     if "properties" in schema:
         properties = schema["properties"]
         if not isinstance(properties, Mapping):
