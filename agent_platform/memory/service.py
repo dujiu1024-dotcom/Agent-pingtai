@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from math import isfinite
 from datetime import datetime, timezone
 from enum import Enum
+from math import isfinite
 from typing import Awaitable, Callable, Protocol, Sequence
 from uuid import uuid4
 
