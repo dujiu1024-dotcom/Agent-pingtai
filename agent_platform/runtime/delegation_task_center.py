@@ -12,7 +12,7 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
+from agent_platform.runtime.protocols import HarnessRequest, HarnessResult, MediaOutput
 
 
 class TaskCenterChildRunExecutor:
@@ -168,18 +168,38 @@ class TaskCenterChildRunExecutor:
                 status = task.get("status")
                 if status == "succeeded":
                     output = task.get("output")
-                    if isinstance(output, Mapping) and isinstance(output.get("text"), str):
-                        output_text = output["text"]
+                    if isinstance(output, Mapping):
+                        output_text = output.get("text", "")
+                        if not isinstance(output_text, str):
+                            raise ValueError("child Run output text must be a string")
+                        raw_media_outputs = output.get("media_outputs", ())
+                        if not isinstance(raw_media_outputs, (list, tuple)):
+                            raise ValueError("child Run media_outputs must be an array")
+                        media_outputs = []
+                        for item in raw_media_outputs:
+                            if not isinstance(item, Mapping):
+                                raise ValueError("child Run media output must be an object")
+                            media_outputs.append(MediaOutput(
+                                modality=item.get("modality"),
+                                resource_id=item.get("resource_id"),
+                                mime_type=item.get("mime_type"),
+                                size_bytes=item.get("size_bytes"),
+                                sha256=item.get("sha256"),
+                                filename=item.get("filename"),
+                            ))
                     elif isinstance(output, str):
                         output_text = output
+                        media_outputs = []
                     else:
                         output_text = json.dumps(
                             output if output is not None else {},
                             ensure_ascii=False, sort_keys=True, default=str,
                         )
+                        media_outputs = []
                     usage = task.get("usage") or {}
                     return HarnessResult(
                         output_text=output_text,
+                        media_outputs=tuple(media_outputs),
                         usage=dict(usage) if isinstance(usage, Mapping) else {},
                         trace_id=task.get("trace_id") if isinstance(task.get("trace_id"), str) else None,
                         metadata={"child_run_id": request.context.run_id},

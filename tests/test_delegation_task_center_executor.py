@@ -74,12 +74,13 @@ class FakeWorker:
         self.run_store = task_service.run_store
         self.task_service = task_service
         self.calls = 0
+        self.output = {"text": "delegated answer"}
 
     async def run_once(self):
         self.calls += 1
         self.task_service.row.update({
             "status": "succeeded",
-            "output": {"text": "delegated answer"},
+            "output": self.output,
             "usage": {"total_tokens": 17},
             "trace_id": "child-trace",
         })
@@ -179,6 +180,46 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
             "filename": "evidence.png",
         }])
         self.assertNotIn("bytes", persisted[0])
+
+    async def test_child_media_outputs_are_returned_as_validated_artifact_references(self):
+        self.worker.output = {
+            "text": "generated chart",
+            "media_outputs": [{
+                "modality": "image",
+                "resource_id": "chart-artifact",
+                "mime_type": "image/png",
+                "size_bytes": 64,
+                "sha256": "b" * 64,
+                "filename": "chart.png",
+            }],
+        }
+        result = await self.executor.execute_child(
+            request=self.request,
+            parent_context=self.parent,
+            idempotency_key="tenant-a:parent-run:media-output",
+        )
+        self.assertEqual(result.output_text, "generated chart")
+        self.assertEqual(len(result.media_outputs), 1)
+        self.assertEqual(result.media_outputs[0].resource_id, "chart-artifact")
+        self.assertEqual(result.media_outputs[0].modality, "image")
+
+    async def test_child_rejects_malformed_media_output_metadata(self):
+        self.worker.output = {
+            "text": "generated",
+            "media_outputs": [{
+                "modality": "image",
+                "resource_id": "../outside",
+                "mime_type": "image/png",
+                "size_bytes": 64,
+                "sha256": "b" * 64,
+            }],
+        }
+        with self.assertRaises(ValueError):
+            await self.executor.execute_child(
+                request=self.request,
+                parent_context=self.parent,
+                idempotency_key="tenant-a:parent-run:bad-media-output",
+            )
 
     async def test_child_worker_can_be_bound_after_runtime_composition(self):
         executor = TaskCenterChildRunExecutor(
