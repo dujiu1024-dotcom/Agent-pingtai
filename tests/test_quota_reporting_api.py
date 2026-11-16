@@ -185,6 +185,68 @@ class QuotaReportingApiTests(unittest.TestCase):
         denied = client.post("/api/platform/v1/quotas/budgets", json=body)
         self.assertEqual(denied.status_code, 403)
 
+
+    def test_budget_configuration_supports_split_token_caps(self):
+        service = QuotaService(InMemoryQuotaStore())
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, quota_service=service,
+            authorize_manage=lambda actor: True,
+        ))
+
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+
+        client = TestClient(app)
+        body = {
+            "scope_type": "tenant", "scope_id": "tenant-a",
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "hard_tokens": 1000, "hard_input_tokens": 700,
+            "hard_output_tokens": 300, "hard_concurrency": 4,
+        }
+        response = client.post("/api/platform/v1/quotas/budgets", json=body)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["hard_input_tokens"], 700)
+        self.assertEqual(response.json()["hard_output_tokens"], 300)
+        stored = awaitable = None
+
+    def test_budget_configuration_rejects_bool_string_and_infinite_limits(self):
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, quota_service=QuotaService(InMemoryQuotaStore()),
+            authorize_manage=lambda actor: True,
+        ))
+
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+
+        client = TestClient(app)
+        base = {
+            "scope_type": "tenant", "scope_id": "tenant-a",
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+        }
+        for field, value in (("hard_input_tokens", True), ("hard_output_tokens", "20"),
+                             ("hard_concurrency", 1.5), ("hard_cost_usd", "Infinity")):
+            body = {**base, field: value}
+            response = client.post("/api/platform/v1/quotas/budgets", json=body)
+            self.assertEqual(response.status_code, 400, (field, response.text))
+
     def test_resource_budget_requires_explicit_scope_authorizer(self):
         service = QuotaService(InMemoryQuotaStore())
         app = FastAPI()
