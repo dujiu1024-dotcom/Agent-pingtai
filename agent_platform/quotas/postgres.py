@@ -264,3 +264,36 @@ class PostgresQuotaStore:
             )
             for row in rows
         ]
+
+
+    async def renew_reservation(self, reservation_id: str, *, lease_seconds: int = 900) -> bool:
+        """Extend an active reservation lease; expired reservations cannot be revived."""
+        if not isinstance(lease_seconds, int) or isinstance(lease_seconds, bool):
+            raise ValueError("lease_seconds must be an integer")
+        if lease_seconds < 30 or lease_seconds > 3600:
+            raise ValueError("lease_seconds must be between 30 and 3600")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_renew(%s, %s) AS renewed",
+                    (UUID(reservation_id), lease_seconds),
+                )
+                row = await cursor.fetchone()
+        return bool(row["renewed"])
+
+    async def expire_reservations(self, *, batch_size: int = 500) -> int:
+        """Mark a bounded batch of expired reservations; safe across concurrent workers."""
+        if not isinstance(batch_size, int) or isinstance(batch_size, bool):
+            raise ValueError("batch_size must be an integer")
+        if batch_size < 1 or batch_size > 10000:
+            raise ValueError("batch_size must be between 1 and 10000")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_expire(%s) AS expired",
+                    (batch_size,),
+                )
+                row = await cursor.fetchone()
+        return int(row["expired"])
