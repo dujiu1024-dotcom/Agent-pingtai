@@ -138,7 +138,7 @@ async def prepare_context(
     if counts[2] <= context_window_tokens:
         return ContextPreparation(original, *counts, policy, False)
     if policy == "reject":
-        raise ContextOverflowError("request exceeds model context window; policy=reject")
+        raise ContextOverflowError("model token estimate is invalid or exceeds the pinned context window; policy=reject")
     if protected_context is None:
         raise ContextOverflowError("non-reject overflow policies require protected goal, constraints, decisions, and evidence")
     anchor = _protected_message(protected_context)
