@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
-from agent_platform.knowledge.contracts import Document, KnowledgePrincipal
+from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 
@@ -17,6 +17,9 @@ class ConnectorDeletionSyncTests(unittest.IsolatedAsyncioTestCase):
             title="source document",
             source_uri="connector://source/1",
             content_hash="pending",
+            scope=KnowledgeScope.PRIVATE,
+            owner_user_id="user-a",
+            metadata={"_knowledge_acl": []},
         )
 
         class Connector:
