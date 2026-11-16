@@ -66,6 +66,7 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
                 "files": [{
                     "id": "file-doc", "name": "Design doc",
                     "mimeType": "application/vnd.google-apps.document",
+                    "permissions": [],
                     "modifiedTime": "2026-11-16T10:00:00Z",
                     "webViewLink": "https://drive.google.com/open?id=file-doc",
                 }],
@@ -112,14 +113,14 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
             Response({"startPageToken": "watermark"}),
             Response({
                 "files": [{
-                    "id": "first", "name": "First", "mimeType": "text/plain",
+                    "id": "first", "name": "First", "mimeType": "text/plain", "permissions": [],
                 }],
                 "nextPageToken": "files-page-2",
             }),
             Response(content=b"first"),
             Response({
                 "files": [{
-                    "id": "second", "name": "Second", "mimeType": "text/plain",
+                    "id": "second", "name": "Second", "mimeType": "text/plain", "permissions": [],
                 }],
             }),
             Response(content=b"second"),
@@ -171,7 +172,7 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
         client = Client([
             Response({"startPageToken": "start"}),
             Response({"files": [{
-                "id": "binary-file", "name": "notes.txt", "mimeType": "text/plain",
+                "id": "binary-file", "name": "notes.txt", "mimeType": "text/plain", "permissions": [],
             }]}),
             Response(
                 headers={"location": "https://download.googleusercontent.com/signed"},
@@ -195,7 +196,7 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
         client = Client([
             Response({"startPageToken": "start"}),
             Response({"files": [{
-                "id": "binary-file", "name": "notes.txt", "mimeType": "text/plain",
+                "id": "binary-file", "name": "notes.txt", "mimeType": "text/plain", "permissions": [],
             }]}),
             Response(
                 headers={"location": "https://attacker.example/collect"},
@@ -216,7 +217,7 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
         client = Client([
             Response({"startPageToken": "start"}),
             Response({"files": [{
-                "id": "file-doc", "name": "Design doc", "mimeType": "text/plain",
+                "id": "file-doc", "name": "Design doc", "mimeType": "text/plain", "permissions": [],
             }]}),
             Response(content=b"plain text"),
         ])
