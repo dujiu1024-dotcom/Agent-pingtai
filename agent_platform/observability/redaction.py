@@ -13,7 +13,7 @@ _SENSITIVE_KEY = re.compile(
 _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
 _API_KEY = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{20,})\b")
 _SECRET_ASSIGNMENT = re.compile(
-    r"""(?i)(?<![A-Za-z0-9_])(["']?)([A-Za-z0-9_-]*(?:password|passwd|secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|api[_-]?token|api[_-]?key|authorization|cookie|credential|private[_-]?key)[A-Za-z0-9_-]*)\1\s*([:=])\s*("[^"]*"|'[^']*'|[^\s,;}\]]+)"""
+    r"""(?i)(?<![A-Za-z0-9_])(["']?)([A-Za-z0-9_-]*(?:password|passwd|secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|api[_-]?token|api[_-]?key|cookie|credential|private[_-]?key)[A-Za-z0-9_-]*)\1\s*([:=])\s*("[^"]*"|'[^']*'|[^\s,;}\]]+)"""
 )
 
 
