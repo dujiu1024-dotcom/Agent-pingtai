@@ -35,19 +35,28 @@ class MemoryRepository(Protocol):
     async def get(self,tenant_id: str,memory_id: str)->MemoryRecord|None:...
     async def list(self,tenant_id: str,limit: int=1000)->Sequence[MemoryRecord]:...
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:...
+    async def list_versions(self,tenant_id: str,memory_id: str)->Sequence[MemoryRecord]:...
 class InMemoryMemoryRepository:
-    def __init__(self)->None:self.records:dict[tuple[str,str],MemoryRecord]={}
+    def __init__(self)->None:
+        self.records:dict[tuple[str,str],MemoryRecord]={}
+        self.versions:dict[tuple[str,str],list[MemoryRecord]]={}
     async def put(self,record: MemoryRecord)->None:
         key=(record.candidate.tenant_id,record.candidate.memory_id); current=self.records.get(key)
         if current is not None and record.version!=current.version+1:raise RuntimeError("memory version conflict")
         if current is None and record.version!=1:raise RuntimeError("memory version conflict")
         self.records[key]=record
+        self.versions.setdefault(key,[]).append(record)
     async def get(self,tenant_id: str,memory_id: str)->MemoryRecord|None:return self.records.get((tenant_id,memory_id))
+    async def list_versions(self,tenant_id: str,memory_id: str)->Sequence[MemoryRecord]:
+        return tuple(self.versions.get((tenant_id,memory_id),()))
     async def list(self,tenant_id: str,limit: int=1000)->Sequence[MemoryRecord]:return [r for (t,_),r in self.records.items() if t==tenant_id][:limit]
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:
         key=(tenant_id,memory_id); rec=self.records.get(key)
         if rec is None or rec.status is MemoryStatus.DELETED:return False
-        self.records[key]=replace(rec,status=MemoryStatus.DELETED,deleted_at=at,updated_at=at,version=rec.version+1);return True
+        updated=replace(rec,status=MemoryStatus.DELETED,deleted_at=at,updated_at=at,version=rec.version+1)
+        self.records[key]=updated
+        self.versions.setdefault(key,[]).append(updated)
+        return True
 class MemoryService:
     def __init__(self,repository: MemoryRepository,*,on_delete: Callable[[str,str],Awaitable[None]]|None=None)->None:self.repository=repository;self.on_delete=on_delete
     async def propose(self,candidate: MemoryCandidate)->MemoryRecord:
@@ -104,6 +113,17 @@ class MemoryService:
     async def export(self,*,principal: MemoryPrincipal)->list[dict[str,object]]:
         records=await self.retrieve(principal=principal,limit=1000)
         return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"updated_at":r.updated_at.isoformat()} for r in records]
+    async def history(self,*,principal: MemoryPrincipal,memory_id: str)->list[MemoryRecord]:
+        record=await self.repository.get(principal.tenant_id,memory_id)
+        if record is None:
+            raise ValueError("memory not found")
+        if not self._can_manage_scope(record.candidate.scope,record.candidate.scope_id,principal):
+            raise PermissionError("memory history access is not authorized")
+        list_versions=getattr(self.repository,"list_versions",None)
+        if list_versions is None:
+            raise RuntimeError("memory repository does not support version history")
+        return list(await list_versions(principal.tenant_id,memory_id))
+
     async def resolve_conflict(self,*,principal: MemoryPrincipal,conflict_key: str,selected_memory_id: str)->MemoryRecord:
         records=await self.repository.list(principal.tenant_id,limit=5000)
         candidates=[r for r in records if r.candidate.conflict_key==conflict_key and r.status in {MemoryStatus.CONFLICT,MemoryStatus.ACTIVE}]

@@ -164,6 +164,16 @@ def create_knowledge_memory_router(
         except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"memory_id":record.candidate.memory_id,"status":record.status.value,"version":record.version}
+    @router.get("/memories/{memory_id}/history")
+    async def memory_history(memory_id: str,request: Request):
+        principal=await resolve_memory_principal(request)
+        try:
+            records=await memory.history(principal=principal,memory_id=memory_id)
+        except PermissionError as exc:
+            raise HTTPException(403,str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404,str(exc)) from exc
+        return {"items":[{"memory_id":r.candidate.memory_id,"version":r.version,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"status":r.status.value,"confirmed_by":r.confirmed_by,"recorded_at":r.updated_at.isoformat()} for r in records]}
     @router.post("/memories/{memory_id}/archive")
     async def archive_memory(memory_id: str,request: Request):
         principal=await resolve_memory_principal(request)
