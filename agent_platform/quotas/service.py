@@ -260,8 +260,22 @@ class InMemoryQuotaStore:
         self, tenant_id: str, start: datetime, end: datetime, *,
         run_id: str | None = None, model_key: str | None = None, limit: int = 1000,
     ) -> list[UsageEvent]:
-        if limit < 1 or limit > 10000 or end <= start:
-            raise ValueError("invalid usage export range or limit")
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if (
+            isinstance(limit, bool) or not isinstance(limit, int)
+            or limit < 1 or limit > 10000
+        ):
+            raise ValueError("usage export limit must be an integer between 1 and 10000")
+        if (
+            not isinstance(start, datetime) or not isinstance(end, datetime)
+            or start.tzinfo is None or end.tzinfo is None or end <= start
+        ):
+            raise ValueError("usage export range must be ordered and timezone-aware")
+        if run_id is not None and (not isinstance(run_id, str) or not run_id.strip()):
+            raise ValueError("run_id filter must be a non-empty string")
+        if model_key is not None and (not isinstance(model_key, str) or not model_key.strip()):
+            raise ValueError("model_key filter must be a non-empty string")
         async with self._lock:
             rows = [
                 event for event in self._events.values()
