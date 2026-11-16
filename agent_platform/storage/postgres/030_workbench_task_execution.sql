@@ -34,7 +34,7 @@ ALTER TABLE platform_runs
     ADD COLUMN IF NOT EXISTS preparation_owner text,
     ADD COLUMN IF NOT EXISTS preparation_lease_expires_at timestamptz;
 
-DO $
+DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
@@ -45,7 +45,7 @@ BEGIN
             ADD CONSTRAINT ck_platform_runs_agent_version_positive
             CHECK (agent_version IS NULL OR agent_version >= 1);
     END IF;
-END $;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_runs_actor_idempotency
     ON platform_runs (tenant_id, created_by, idempotency_key)
