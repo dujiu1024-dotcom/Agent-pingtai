@@ -9,8 +9,9 @@ closed when it cannot represent the source policy safely.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import quote, urlsplit
 
 from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
@@ -21,9 +22,8 @@ class GoogleDriveConnectorError(RuntimeError):
     """Google Drive returned an unsafe or unusable response."""
 
 
-class GoogleDriveCredentialResolver:
-    async def resolve(self, secret_ref: str) -> str:  # pragma: no cover - protocol shape
-        raise NotImplementedError
+class GoogleDriveCredentialResolver(Protocol):
+    async def resolve(self, secret_ref: str) -> str: ...
 
 
 DocumentFactory = Callable[[str, Mapping[str, Any], str], Document]
@@ -99,7 +99,7 @@ class GoogleDriveKnowledgeConnector:
         try:
             padded = cursor + "=" * (-len(cursor) % 4)
             value = json.loads(base64.urlsafe_b64decode(padded.encode()))
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        except (ValueError, TypeError, json.JSONDecodeError, binascii.Error) as exc:
             raise GoogleDriveConnectorError("invalid Google Drive sync cursor") from exc
         if not isinstance(value, dict) or value.get("mode") not in {"initial", "changes"}:
             raise GoogleDriveConnectorError("invalid Google Drive sync cursor")
@@ -160,9 +160,6 @@ class GoogleDriveKnowledgeConnector:
             if 300 <= response.status_code < 400:
                 raise GoogleDriveConnectorError("nested Google Drive download redirects are not allowed")
         response.raise_for_status()
-        raw = response.content
-        if not isinstance(raw, bytes) or not raw or len(raw) > self.max_file_bytes:
-            raise GoogleDriveConnectorError("Google Drive file is empty or exceeds the size limit")
         declared = response.headers.get("content-length")
         if declared is not None:
             try:
@@ -170,6 +167,9 @@ class GoogleDriveKnowledgeConnector:
                     raise GoogleDriveConnectorError("Google Drive file exceeds the size limit")
             except ValueError as exc:
                 raise GoogleDriveConnectorError("invalid Google Drive content length") from exc
+        raw = response.content
+        if not isinstance(raw, bytes) or not raw or len(raw) > self.max_file_bytes:
+            raise GoogleDriveConnectorError("Google Drive file is empty or exceeds the size limit")
         return raw
 
     async def _document(
@@ -187,6 +187,13 @@ class GoogleDriveKnowledgeConnector:
             "application/vnd.google-apps.shortcut",
         }:
             return None
+        declared_size = file_meta.get("size")
+        if declared_size is not None:
+            try:
+                if int(declared_size) > self.max_file_bytes:
+                    raise GoogleDriveConnectorError("Google Drive file exceeds the size limit")
+            except (TypeError, ValueError) as exc:
+                raise GoogleDriveConnectorError("invalid Google Drive file size") from exc
         export = self._EXPORTS.get(mime_type)
         if mime_type.startswith("application/vnd.google-apps.") and export is None:
             raise GoogleDriveConnectorError("unsupported native Google Workspace document type")
@@ -235,6 +242,9 @@ class GoogleDriveKnowledgeConnector:
         deleted: list[str] = []
         page_size = min(limit, self.page_size)
         if state["mode"] == "initial":
+            watermark = state.get("change_token")
+            if not isinstance(watermark, str) or not watermark:
+                raise GoogleDriveConnectorError("Google Drive initial cursor is missing its watermark")
             params: dict[str, Any] = {
                 "q": "trashed = false",
                 "pageSize": page_size,
@@ -263,11 +273,11 @@ class GoogleDriveKnowledgeConnector:
             if next_page:
                 next_cursor = self._encode_cursor({
                     "mode": "initial", "page_token": next_page,
-                    "change_token": state["change_token"],
+                    "change_token": watermark,
                 })
             else:
                 next_cursor = self._encode_cursor({
-                    "mode": "changes", "token": state["change_token"],
+                    "mode": "changes", "token": watermark,
                 })
             return ConnectorPage(
                 items=tuple(items), next_cursor=next_cursor,
