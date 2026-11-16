@@ -85,6 +85,60 @@ class ConnectorDeletionSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(
             await repository.get_document("tenant-a", document.document_id)
         )
+        self.assertIsNone(
+            await repository.get_connector_cursor("tenant-a", "source-b")
+        )
+
+    async def test_failed_cleanup_keeps_cursor_for_retry(self):
+        class FlakyRepository(InMemoryKnowledgeRepository):
+            def __init__(self):
+                super().__init__()
+                self.fail_once = True
+
+            async def delete_document(self, tenant_id, document_id):
+                if self.fail_once:
+                    self.fail_once = False
+                    raise RuntimeError("index cleanup unavailable")
+                return await super().delete_document(tenant_id, document_id)
+
+        repository = FlakyRepository()
+        service = KnowledgeService(repository)
+        document = Document(
+            tenant_id="tenant-a", title="owned source",
+            source_uri="connector://source-a/retry",
+            content_hash="pending",
+            metadata={"_knowledge_connector_id": "source-a"},
+        )
+        await service.ingest(document=document, content=b"retryable source evidence")
+
+        class Connector:
+            connector_id = "source-a"
+
+            async def list_changed(self, *, tenant_id, cursor, changed_since=None, limit=100):
+                return ConnectorPage(
+                    items=(), next_cursor="cursor-2", has_more=False,
+                    deleted_document_ids=(document.document_id,),
+                )
+
+            async def revoke(self, *, tenant_id, credential_ref):
+                return None
+
+        connector = Connector()
+        with self.assertRaisesRegex(RuntimeError, "cleanup unavailable"):
+            await service.sync_connector(connector=connector, tenant_id="tenant-a")
+        self.assertIsNone(
+            await repository.get_connector_cursor("tenant-a", "source-a")
+        )
+
+        result = await service.sync_connector(connector=connector, tenant_id="tenant-a")
+        self.assertEqual(result["deleted_documents"], 1)
+        self.assertEqual(
+            await repository.get_connector_cursor("tenant-a", "source-a"),
+            "cursor-2",
+        )
+        self.assertIsNone(
+            await repository.get_document("tenant-a", document.document_id)
+        )
 
     async def test_replayed_deletion_tombstone_is_idempotent(self):
         service = KnowledgeService(InMemoryKnowledgeRepository())
