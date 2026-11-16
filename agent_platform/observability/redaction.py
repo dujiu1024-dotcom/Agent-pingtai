@@ -27,8 +27,8 @@ def redact_text(value: str, *, max_chars: int = 2000) -> str:
     if max_chars < 1:
         raise ValueError("max_chars must be positive")
     redacted = _BEARER.sub("Bearer [REDACTED]", value)
-    redacted = _API_KEY.sub("[REDACTED]", redacted)
     redacted = _SECRET_ASSIGNMENT.sub(_redact_assignment, redacted)
+    redacted = _API_KEY.sub("[REDACTED]", redacted)
     if len(redacted) > max_chars:
         return redacted[:max_chars] + "…[TRUNCATED]"
     return redacted
