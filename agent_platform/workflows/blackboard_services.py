@@ -29,13 +29,24 @@ class MultiExpertCallbacks(Protocol):
 
 
 class BlackboardMultiExpertServices:
-    def __init__(self, *, tenant_id: str, repository: BlackboardRepository, callbacks: MultiExpertCallbacks, expert_registry: ExpertRegistry | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tenant_id: str,
+        repository: BlackboardRepository,
+        callbacks: MultiExpertCallbacks,
+        expert_registry: ExpertRegistry | None = None,
+        max_experts: int = 8,
+    ) -> None:
         if not tenant_id.strip():
             raise ValueError("tenant_id must not be empty")
+        if isinstance(max_experts, bool) or not 1 <= max_experts <= 32:
+            raise ValueError("max_experts must be between 1 and 32")
         self.tenant_id = tenant_id
         self.repository = repository
         self.callbacks = callbacks
         self.expert_registry = expert_registry
+        self.max_experts = max_experts
 
     def _entry_id(self, state: Mapping[str, Any], key: str) -> str:
         run_id = str(state.get("run_id") or state.get("thread_id") or "").strip()
@@ -94,18 +105,51 @@ class BlackboardMultiExpertServices:
 
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         self._scope(run_context)
-        assignments = [dict(item) for item in await self.callbacks.plan_experts(objective=objective, run_context=run_context)]
-        if self.expert_registry is None:
-            return assignments
-        for assignment in assignments:
-            expert_id = str(assignment.get("expert_id") or "")
-            profile = await self.expert_registry.get(expert_id)
-            if profile is None or not profile.enabled:
-                raise PermissionError(f"expert is not registered or enabled: {expert_id}")
-            required = {str(item) for item in assignment.get("required_capabilities", [])}
-            if not required.issubset(profile.capabilities):
-                missing = ", ".join(sorted(required - profile.capabilities))
-                raise ValueError(f"expert {expert_id} lacks required capabilities: {missing}")
+        raw_assignments = await self.callbacks.plan_experts(
+            objective=objective, run_context=run_context
+        )
+        if not isinstance(raw_assignments, Sequence) or isinstance(
+            raw_assignments, (str, bytes)
+        ):
+            raise ValueError("expert planner must return a sequence of assignments")
+        if len(raw_assignments) > self.max_experts:
+            raise ValueError("expert fan-out exceeds the configured limit")
+
+        assignments: list[dict[str, Any]] = []
+        seen_expert_ids: set[str] = set()
+        for raw_assignment in raw_assignments:
+            if not isinstance(raw_assignment, Mapping):
+                raise ValueError("each expert assignment must be an object")
+            assignment = dict(raw_assignment)
+            expert_id = assignment.get("expert_id")
+            if not isinstance(expert_id, str) or not expert_id.strip():
+                raise ValueError("each expert assignment requires a non-empty expert_id")
+            if expert_id in seen_expert_ids:
+                raise ValueError(f"duplicate expert assignment: {expert_id}")
+            seen_expert_ids.add(expert_id)
+
+            raw_required = assignment.get("required_capabilities", ())
+            if not isinstance(raw_required, (list, tuple, set, frozenset)):
+                raise ValueError("required_capabilities must be an array")
+            if any(not isinstance(item, str) or not item.strip() for item in raw_required):
+                raise ValueError("required_capabilities must contain non-empty strings")
+            required = set(raw_required)
+            if len(required) != len(raw_required):
+                raise ValueError("required_capabilities must not contain duplicates")
+            assignment["required_capabilities"] = sorted(required)
+
+            if self.expert_registry is not None:
+                profile = await self.expert_registry.get(expert_id)
+                if profile is None or not profile.enabled:
+                    raise PermissionError(
+                        f"expert is not registered or enabled: {expert_id}"
+                    )
+                if not required.issubset(profile.capabilities):
+                    missing = ", ".join(sorted(required - profile.capabilities))
+                    raise ValueError(
+                        f"expert {expert_id} lacks required capabilities: {missing}"
+                    )
+            assignments.append(assignment)
         return assignments
 
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]:
