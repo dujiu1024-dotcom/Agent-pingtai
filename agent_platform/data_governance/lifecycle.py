@@ -36,7 +36,14 @@ class RetentionPolicy:
     soft_delete_days: int = 30
 
     def __post_init__(self) -> None:
-        if not self.object_type or self.retain_for <= timedelta(0) or self.soft_delete_days < 0:
+        if (
+            not isinstance(self.object_type, str) or not self.object_type.strip()
+            or not isinstance(self.retain_for, timedelta)
+            or self.retain_for <= timedelta(0)
+            or isinstance(self.soft_delete_days, bool)
+            or not isinstance(self.soft_delete_days, int)
+            or self.soft_delete_days < 0
+        ):
             raise ValueError("invalid retention policy")
 
 
@@ -259,7 +266,20 @@ class PostgresMigrationRepository:
     async def validate_batch(self, tenant_id: str, batch_id: str, *,
                              source_count: int, target_count: int,
                              source_checksum: str, target_checksum: str) -> bool:
-        if min(source_count,target_count) < 0 or not source_checksum or not target_checksum:
+        if (
+            not isinstance(tenant_id, str) or not tenant_id.strip()
+            or not isinstance(batch_id, str) or not batch_id.strip()
+        ):
+            raise ValueError("tenant_id and batch_id are required")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (source_count, target_count)
+        ):
+            raise ValueError("migration counts must be non-negative integers")
+        if (
+            not isinstance(source_checksum, str) or not source_checksum.strip()
+            or not isinstance(target_checksum, str) or not target_checksum.strip()
+        ):
             raise ValueError("counts and checksums are required")
         valid = source_count == target_count and source_checksum == target_checksum
         connection = await self._connect()
