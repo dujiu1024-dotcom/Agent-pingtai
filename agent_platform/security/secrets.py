@@ -68,9 +68,12 @@ class SecretManager:
             await self.backend.put(secret_ref, version, value)
             await self.metadata.activate_version(secret_ref, version)
         except Exception:
-            # Mark metadata revoked first, then attempt cleanup. If Vault is
-            # unavailable, the unconfirmed cleanup remains discoverable/retryable.
-            await self.metadata.revoke_version(secret_ref, version, datetime.now(timezone.utc))
+            # Best-effort mark revoked and cleanup. If either dependency is
+            # unavailable, pending metadata remains eligible for retry.
+            try:
+                await self.metadata.revoke_version(secret_ref, version, datetime.now(timezone.utc))
+            except Exception:
+                pass
             try:
                 await self.backend.revoke(secret_ref, version)
                 await self.metadata.mark_backend_revoked(secret_ref, version, datetime.now(timezone.utc))
@@ -225,7 +228,7 @@ class PostgresSecretMetadataRepository:
         async with connection:
             cursor = await connection.execute(
                 """SELECT version FROM platform_secret_versions
-                   WHERE secret_ref=%s AND status='revoked'
+                   WHERE secret_ref=%s AND status IN ('pending','revoked')
                      AND backend_revoked_at IS NULL ORDER BY version""",
                 (secret_ref,),
             )
@@ -239,7 +242,8 @@ class PostgresSecretMetadataRepository:
         async with connection:
             await connection.execute(
                 """UPDATE platform_secret_versions
-                   SET backend_revoked_at=%s
-                   WHERE secret_ref=%s AND version=%s AND status='revoked'""",
-                (revoked_at,secret_ref,version),
+                   SET status='revoked',revoked_at=COALESCE(revoked_at,%s),
+                       backend_revoked_at=%s
+                   WHERE secret_ref=%s AND version=%s AND status IN ('pending','revoked')""",
+                (revoked_at,revoked_at,secret_ref,version),
             )
