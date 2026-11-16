@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -16,12 +17,15 @@ class HarnessBenchmarkCase:
     instructions: str
     input_text: str
     expected_contains: tuple[str, ...] = ()
+    timeout_seconds: float = 120.0
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
             raise ValueError("case_id must not be empty")
         if not self.input_text.strip():
             raise ValueError("input_text must not be empty")
+        if not 0 < self.timeout_seconds <= 1800:
+            raise ValueError("timeout_seconds must be greater than 0 and at most 1800")
 
 
 @dataclass(frozen=True)
@@ -118,7 +122,7 @@ class HarnessBenchmarkRunner:
                     )
                 started = time.perf_counter()
                 try:
-                    result = await adapter.run(request)
+                    result = await asyncio.wait_for(adapter.run(request), timeout=case.timeout_seconds)
                     duration_ms = round((time.perf_counter() - started) * 1000)
                     normalized = result.output_text.casefold()
                     matched = tuple(
