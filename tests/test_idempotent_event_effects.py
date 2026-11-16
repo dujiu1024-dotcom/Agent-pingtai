@@ -50,6 +50,13 @@ class IdempotentEventEffectTests(unittest.IsolatedAsyncioTestCase):
         await handler(self.event(tenant_id="tenant-b"))
         self.assertEqual(executor.side_effect_count, 2)
 
+    async def test_non_uuid_event_id_is_rejected_before_effect(self):
+        executor = IdempotentEffectExecutor()
+        handler = IdempotentEventHandler(executor)
+        with self.assertRaisesRegex(ValueError, "event_id must be a UUID"):
+            await handler(self.event(event_id="not-a-uuid"))
+        self.assertEqual(executor.side_effect_count, 0)
+
     async def test_invalid_event_identity_is_rejected_before_effect(self):
         executor = IdempotentEffectExecutor()
         handler = IdempotentEventHandler(executor)
