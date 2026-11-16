@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.models.templates import ModelTemplateRegistry
-from agent_platform.runtime.protocols import HarnessRequest
+from agent_platform.runtime.protocols import HarnessRequest, MediaInput
 from agent_platform.runtime.strands_agents import StrandsAgentsAdapter
 
 
@@ -100,7 +100,10 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         return StrandsAgentsAdapter(**options)
 
     async def test_runs_with_scoped_proxy_and_no_tools(self):
-        result = await self.adapter().run(self.request)
+        adapter = self.adapter()
+        self.assertEqual(adapter.capabilities.input_modalities, frozenset({"text"}))
+        self.assertEqual(adapter.capabilities.output_modalities, frozenset({"text"}))
+        result = await adapter.run(self.request)
         self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(result.finish_reason, "end_turn")
         self.assertEqual(result.usage, {
@@ -111,6 +114,21 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.agents[0].options["tools"], [])
         self.assertFalse(self.agents[0].options["load_tools_from_directory"])
         self.assertTrue(self.agents[0].closed)
+
+    async def test_rejects_undeclared_media_inputs(self):
+        request = HarnessRequest(
+            context=self.context,
+            instructions="",
+            input_text="",
+            media_inputs=(
+                MediaInput(
+                    modality="pdf", resource_id="asset-pdf",
+                    mime_type="application/pdf", size_bytes=2048, sha256="b" * 64,
+                ),
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "does not declare"):
+            await self.adapter().run(request)
 
     async def test_rejects_platform_tools_until_gateway_adapter_exists(self):
         request = HarnessRequest(

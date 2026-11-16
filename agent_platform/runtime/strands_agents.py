@@ -14,7 +14,7 @@ from typing import Any, AsyncContextManager, Callable, Protocol
 
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
-from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
+from agent_platform.runtime.protocols import HarnessCapabilities, HarnessRequest, HarnessResult
 
 ProviderConfigResolver = Callable[[ModelTemplate, RunContext], Mapping[str, Any]]
 ModelFactory = Callable[..., Any]
@@ -75,8 +75,19 @@ class StrandsAgentsAdapter:
         self.agent_factory = agent_factory
         self.model_factory = model_factory
         self.gateway_tool_provider = gateway_tool_provider
+        self.capabilities = HarnessCapabilities(
+            input_modalities=frozenset({"text"}),
+            output_modalities=frozenset({"text"}),
+            streaming=False,
+            cancellation=True,
+            structured_output=False,
+        )
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
+        if request.media_inputs:
+            raise RuntimeError(
+                "Strands adapter does not declare image, PDF, audio or video input support"
+            )
         if request.allowed_tools and self.gateway_tool_provider is None:
             raise RuntimeError(
                 "Strands tools require a run-scoped MCP Tool Gateway provider"
