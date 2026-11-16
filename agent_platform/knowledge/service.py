@@ -149,6 +149,43 @@ class KnowledgeService:
         metadata["_knowledge_connector_id"] = connector.connector_id
         return replace(document, metadata=metadata)
 
+    @staticmethod
+    def _connector_acl_grants(document: Document) -> tuple[tuple[str, str, str], ...]:
+        """Read the host-mapped ACL contract emitted by a connector document factory.
+
+        External identities must already be resolved to platform user/role/project
+        IDs by the host. Missing mappings are rejected rather than widening access.
+        """
+        if document.scope.value != "private" or not document.owner_user_id:
+            raise PermissionError("connector documents must use a mapped private owner scope")
+        raw = document.metadata.get("_knowledge_acl")
+        if not isinstance(raw, list):
+            raise PermissionError("connector document is missing its host-mapped _knowledge_acl")
+        grants: set[tuple[str, str, str]] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                raise ValueError("connector ACL entries must be objects")
+            kind = item.get("principal_type")
+            identifier = item.get("principal_id")
+            permission = item.get("permission")
+            if (
+                kind not in {"user", "role", "project"}
+                or not isinstance(identifier, str) or not identifier.strip()
+                or permission not in {"read", "manage"}
+            ):
+                raise ValueError("connector ACL contains an unmapped or invalid principal")
+            grants.add((kind, identifier, permission))
+        return tuple(sorted(grants))
+
+    async def _apply_connector_acl(self, *, tenant_id: str, document: Document) -> None:
+        grants = self._connector_acl_grants(document)
+        replace_access = getattr(self.repository, "replace_document_access", None)
+        if not callable(replace_access):
+            raise RuntimeError("knowledge repository does not support atomic connector ACL replacement")
+        await replace_access(
+            tenant_id, document.document_id, grants, "connector-sync",
+        )
+
     async def _apply_connector_deletions(
         self, *, connector: KnowledgeConnector, tenant_id: str, document_ids: Sequence[str]
     ) -> int:
@@ -171,7 +208,9 @@ class KnowledgeService:
         results=[]
         for item in page.items:
             document=self._connector_document(connector,tenant_id,item.document)
-            results.append(await self.ingest(document=document,content=item.content))
+            await self.ingest(document=document,content=item.content)
+            await self._apply_connector_acl(tenant_id=tenant_id, document=document)
+            results.append(await self.repository.get_document(tenant_id, document.document_id))
         await self._apply_connector_deletions(
             connector=connector, tenant_id=tenant_id,
             document_ids=page.deleted_document_ids,
@@ -191,6 +230,7 @@ class KnowledgeService:
             for item in page.items:
                 document=self._connector_document(connector,tenant_id,item.document)
                 await self.ingest(document=document,content=item.content)
+                await self._apply_connector_acl(tenant_id=tenant_id, document=document)
                 document_count+=1
             deleted_count+=await self._apply_connector_deletions(
                 connector=connector, tenant_id=tenant_id,
