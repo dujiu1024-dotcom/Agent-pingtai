@@ -51,8 +51,11 @@ class PostgresSubjectTableAdapterTests(unittest.IsolatedAsyncioTestCase):
             ("tenant-a", "user-1", "r1", "one"),
             ("tenant-a", "user-1", "r2", "two"),
         ])
+        async def connect():
+            return connection
+
         adapter = PostgresSubjectTableAdapter(
-            connection_factory=lambda: connection,
+            connection_factory=connect,
             table=SubjectTable(
                 table="public.user_records", tenant_column="tenant_id",
                 subject_column="user_id",
