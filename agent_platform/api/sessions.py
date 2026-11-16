@@ -436,6 +436,39 @@ def create_sessions_router(
             },
         )
 
+    @router.post("/files/{asset_id}/versions/{version}/restore", status_code=201)
+    async def restore_file_version(
+        asset_id: str, version: int, request: Request, expected_version: int | None = None,
+    ):
+        principal, service = await context(request, "file", asset_id, "write")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "write",
+        ):
+            raise HTTPException(403, "linked session modification denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "file.update",
+        ):
+            raise HTTPException(403, "linked project file update denied")
+        try:
+            restored = await service.restore_asset_version(
+                tenant_id=principal.tenant_id, asset_id=asset_id,
+                version=version, expected_version=expected_version,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "asset_id": restored.asset_id, "version": restored.version,
+            "restored_from_version": version, "filename": restored.filename,
+            "media_type": restored.media_type, "size_bytes": restored.size_bytes,
+            "sha256": restored.sha256, "status": restored.status.value,
+            "created_at": restored.created_at.isoformat(),
+        }
+
     @router.delete("/files/{asset_id}", status_code=204)
     async def delete_file(asset_id: str, request: Request):
         principal, service = await context(request, "file", asset_id, "delete")
