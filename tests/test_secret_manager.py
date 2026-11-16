@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.security.secrets import SecretManager, SecretVersion
+from agent_platform.security.vault_kv_v2 import VaultKvV2SecretBackend
 
 
 class FakeMetadata:
@@ -95,7 +96,6 @@ class SecretManagerTests(unittest.IsolatedAsyncioTestCase):
 if __name__ == "__main__":
     unittest.main()
 
-from agent_platform.security.vault_kv_v2 import VaultKvV2SecretBackend
 
 
 class FakeVaultHttp:
