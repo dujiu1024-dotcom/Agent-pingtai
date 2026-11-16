@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import replace
 
 from agent_platform.control_plane.connector_sync import ConnectorSyncWorker
 from agent_platform.control_plane.data_connectors import (
