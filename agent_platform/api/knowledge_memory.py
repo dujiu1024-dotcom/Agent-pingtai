@@ -6,6 +6,7 @@ tenant/user identifiers from request bodies.
 from __future__ import annotations
 
 import hashlib
+from dataclasses import asdict
 from datetime import datetime
 from typing import Any, Awaitable, Callable
 from uuid import UUID, uuid4
@@ -152,6 +153,76 @@ def create_knowledge_memory_router(
         try:hits=await knowledge.retrieve(principal=principal,query=q,limit=limit)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"items":[{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":h.retrieval_trace} for h in hits]}
+    @router.post("/knowledge/evaluate")
+    async def evaluate_knowledge(request: Request):
+        principal = await resolve_knowledge_principal(request)
+        body = await request.json()
+        raw_cases = body.get("cases")
+        if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= 100:
+            raise HTTPException(400, "cases must contain between 1 and 100 evaluation cases")
+        try:
+            k = int(body.get("k", 5))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "k must be an integer") from exc
+        if not 1 <= k <= 20:
+            raise HTTPException(400, "k must be between 1 and 20")
+        from agent_platform.knowledge.evaluation import (
+            RAGEvalCase, RAGAnswerEvalCase, evaluate_answers, evaluate_retrieval,
+        )
+        retrieval_cases = []
+        answer_cases = []
+        seen = set()
+        for raw in raw_cases:
+            if not isinstance(raw, dict):
+                raise HTTPException(400, "each evaluation case must be an object")
+            case_id = str(raw.get("case_id") or "").strip()
+            query = str(raw.get("query") or "").strip()
+            if not case_id or not query or case_id in seen:
+                raise HTTPException(400, "each case needs a unique case_id and non-empty query")
+            seen.add(case_id)
+            expected_docs = raw.get("expected_document_ids", [])
+            expected_terms = raw.get("expected_answer_terms", [])
+            expected_citations = raw.get("expected_citation_document_ids", [])
+            if not all(isinstance(value, list) and all(isinstance(item, str) for item in value)
+                       for value in (expected_docs, expected_terms, expected_citations)):
+                raise HTTPException(400, "expected document IDs and answer terms must be string arrays")
+            retrieval_cases.append(RAGEvalCase(
+                case_id=case_id, query=query,
+                expected_document_ids=frozenset(expected_docs), principal=principal,
+            ))
+            answer_cases.append(RAGAnswerEvalCase(
+                case_id=case_id, query=query, principal=principal,
+                expected_answer_terms=frozenset(expected_terms),
+                expected_citation_document_ids=frozenset(expected_citations),
+                expect_abstain=bool(raw.get("expect_abstain", False)),
+            ))
+        try:
+            retrieval = await evaluate_retrieval(knowledge, retrieval_cases, k=k)
+            answers = await evaluate_answers(rag, answer_cases, k=k) if rag is not None else None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        retrieval_summary = {
+            "case_count": len(retrieval),
+            "mean_recall_at_k": sum(item.recall_at_k for item in retrieval) / len(retrieval),
+            "mean_citation_coverage": sum(item.citation_coverage for item in retrieval) / len(retrieval),
+        }
+        answer_summary = None
+        if answers is not None:
+            answer_summary = {
+                "case_count": len(answers),
+                "grounded_cases": sum(1 for item in answers if item.grounded),
+                "mean_answer_term_coverage": sum(item.answer_term_coverage for item in answers) / len(answers),
+                "mean_citation_precision": sum(item.citation_precision for item in answers) / len(answers),
+                "mean_citation_recall": sum(item.citation_recall for item in answers) / len(answers),
+            }
+        return {
+            "k": k, "retrieval_summary": retrieval_summary,
+            "retrieval_results": [asdict(item) for item in retrieval],
+            "answer_summary": answer_summary,
+            "answer_results": [asdict(item) for item in answers] if answers is not None else None,
+            "answer_evaluation_available": rag is not None,
+        }
+
     @router.get("/memories")
     async def list_memories(request: Request,limit: int=100):
         principal=await resolve_memory_principal(request)
