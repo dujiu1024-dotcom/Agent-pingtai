@@ -324,7 +324,6 @@ class RegistryBackedTaskCenterService:
                             tenant_id=tenant_id, run_id=str(existing["run_id"]),
                             agent_id=agent_id, preparation_owner=owner,
                             existing_digest=existing.get("registry_snapshot_digest"),
-                        pinned_items=await self._resolve_pinned_items(existing),
                             pinned_items=await self._resolve_pinned_items(existing),
                         )
                     existing = await self.run_store.get_task_record(
@@ -368,6 +367,7 @@ class RegistryBackedTaskCenterService:
                         tenant_id=tenant_id, run_id=str(existing["run_id"]),
                         agent_id=agent_id, preparation_owner=owner,
                         existing_digest=existing.get("registry_snapshot_digest"),
+                        pinned_items=await self._resolve_pinned_items(existing),
                     )
                 existing = await self.run_store.get_task_record(
                     tenant_id, str(existing["task_id"]), actor_id=actor_id,
