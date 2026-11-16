@@ -82,7 +82,9 @@ class AlertRuleEvaluationWorkerTests(unittest.IsolatedAsyncioTestCase):
             FakeNotifier(), clock=lambda: now,
         )
         store = FakeAlertEventStore()
-        store.events[("tenant-a", "latency:98000")] = "existing-event"
+        candidate = manager.evaluate_candidates({"latency": 3.0})[0]
+        bucket = int(candidate.fired_at.timestamp()) // 300
+        store.events[("tenant-a", f"latency:{bucket}")] = "existing-event"
         worker = AlertRuleEvaluationWorker(
             manager=manager, metrics_provider=lambda: {"latency": 3.0},
             event_store=store, scope_key="tenant-a",
