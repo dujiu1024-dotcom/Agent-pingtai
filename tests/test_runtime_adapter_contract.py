@@ -158,7 +158,8 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
             adapter=adapter, descriptor=descriptor(), lifecycle=lifecycle,
         )
         with self.assertRaises(UnsupportedHarnessCapability):
-            _ = [event async for event in managed.adapter.stream(request())]
+            _ = [event async for event in managed.stream(request())]
+        self.assertEqual([event[0] for event in lifecycle.events], ["started", "failed"])
 
     async def test_streaming_passes_normalized_completion_when_declared(self):
         class StreamingAdapter(FakeAdapter):
@@ -173,8 +174,9 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
             descriptor=descriptor(capabilities=capabilities),
             lifecycle=Lifecycle(),
         )
-        events = [event async for event in managed.adapter.stream(request())]
+        events = [event async for event in managed.stream(request())]
         self.assertEqual(events[-1].result.output_text, "streamed")
+        self.assertEqual([event[0] for event in managed.lifecycle.events], ["started", "succeeded"])
 
     async def test_cancellation_requires_declared_capability(self):
         adapter = FakeAdapter()
@@ -184,14 +186,14 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
             lifecycle=Lifecycle(),
         )
         with self.assertRaises(UnsupportedHarnessCapability):
-            await managed.adapter.cancel(run_id="run-1")
+            await managed.cancel(run_id="run-1")
 
     async def test_declared_cancellation_delegates_to_adapter(self):
         adapter = FakeAdapter()
         managed = LifecycleManagedHarnessAdapter(
             adapter=adapter, descriptor=descriptor(), lifecycle=Lifecycle(),
         )
-        await managed.adapter.cancel(run_id="run-1")
+        await managed.cancel(run_id="run-1")
         self.assertEqual(adapter.cancelled, ["run-1"])
 
 
