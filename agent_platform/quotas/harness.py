@@ -24,10 +24,14 @@ class QuotaEnforcedHarnessAdapter:
         estimate_request: Callable[[Any], tuple[int, Decimal]],
         estimate_actual_cost: Callable[[Any, Any], Decimal],
         scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
-        context_window_tokens: int = 8192,
+        context_window_tokens: int | Callable[[Any], int] = 8192,
     ) -> None:
-        if not isinstance(context_window_tokens, int) or isinstance(context_window_tokens, bool) or context_window_tokens < 1:
-            raise ValueError("context_window_tokens must be a positive integer")
+        if not callable(context_window_tokens) and (
+            not isinstance(context_window_tokens, int)
+            or isinstance(context_window_tokens, bool)
+            or context_window_tokens < 1
+        ):
+            raise ValueError("context_window_tokens must be a positive integer or resolver")
         self.context_window_tokens = context_window_tokens
         self.inner = inner
         self.quota_service = quota_service
@@ -66,7 +70,18 @@ class QuotaEnforcedHarnessAdapter:
             raise ValueError("estimated cost must be a finite non-negative Decimal")
         # The estimator must include the complete prompt plus the planned output
         # allowance. Reject rather than silently truncate instructions or evidence.
-        if estimated_tokens > self.context_window_tokens:
+        context_window_tokens = (
+            self.context_window_tokens(request)
+            if callable(self.context_window_tokens)
+            else self.context_window_tokens
+        )
+        if (
+            not isinstance(context_window_tokens, int)
+            or isinstance(context_window_tokens, bool)
+            or context_window_tokens < 1
+        ):
+            raise ValueError("resolved model context window must be a positive integer")
+        if estimated_tokens > context_window_tokens:
             from agent_platform.quotas.service import BudgetExceeded
             raise BudgetExceeded("estimated Run context exceeds the configured model context window")
         reservation, _warnings = await self.quota_service.reserve_run(

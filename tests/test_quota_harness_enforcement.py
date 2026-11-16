@@ -98,6 +98,31 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((tokens, cost, concurrency), (0, Decimal("0"), 0))
 
+    async def test_context_window_can_be_resolved_per_model_request(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=10000, hard_cost_usd=Decimal("1.00"),
+        ))
+        inner = FakeHarness()
+        adapter = QuotaEnforcedHarnessAdapter(
+            inner, quota_service=service,
+            estimate_request=lambda _request: (9000, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+            context_window_tokens=lambda request: request.context.model_context_window_tokens,
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-model-window",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            model_context_window_tokens=16384,
+            project_id=None, agent_id="agent-a",
+        ))
+        await adapter.run(request)
+        self.assertEqual(inner.calls, 1)
+
     async def test_invalid_context_window_is_rejected_at_composition(self):
         with self.assertRaises(ValueError):
             QuotaEnforcedHarnessAdapter(

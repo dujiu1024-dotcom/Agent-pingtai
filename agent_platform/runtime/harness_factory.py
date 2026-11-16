@@ -13,7 +13,7 @@ def compose_quota_enforced_harness(
     estimate_request: Callable[[Any], tuple[int, Decimal]],
     estimate_actual_cost: Callable[[Any, Any], Decimal],
     scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
-    context_window_tokens: int = 8192,
+    context_window_tokens: int | Callable[[Any], int] = 8192,
 ) -> QuotaEnforcedHarnessAdapter:
     """Wrap a provider Harness before exposing it to the Run execution path."""
     if quota_service is None:
