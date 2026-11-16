@@ -5,12 +5,12 @@ import unittest
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.runtime.protocols import (
+    RUNTIME_ADAPTER_CONTRACT_VERSION,
     HarnessCapabilities,
     HarnessRequest,
     HarnessResult,
     HarnessStreamEvent,
     LifecycleManagedHarnessAdapter,
-    RUNTIME_ADAPTER_CONTRACT_VERSION,
     RuntimeAdapterCompatibilityError,
     RuntimeAdapterDescriptor,
     UnsupportedHarnessCapability,
