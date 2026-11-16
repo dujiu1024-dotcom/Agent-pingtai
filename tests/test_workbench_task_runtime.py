@@ -17,6 +17,14 @@ from agent_platform.runtime.workbench_tasks import (
 )
 
 
+class TestConcurrencyLimiter:
+    """No-op shared-slot test double; production uses the Redis-backed limiter."""
+
+    @asynccontextmanager
+    async def slot(self, **_kwargs):
+        yield object()
+
+
 class TaskRunStore(InMemoryRunStateStore):
     def __init__(self):
         super().__init__()
@@ -309,6 +317,8 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         worker = RunExecutionWorker(
             run_store=self.run_store, executor_resolver=executor_resolver,
             lifecycle_resolver=lifecycle_resolver, worker_id="worker-a",
+            concurrency_limiter=TestConcurrencyLimiter(), worker_pool_scope_id="test",
+            queue_scope_resolver=lambda record: "interactive",
         )
         result = await worker.run_once()
         self.assertEqual(result["succeeded"], 1)
@@ -370,6 +380,8 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         worker = RunExecutionWorker(
             run_store=self.run_store, executor_resolver=executor_resolver,
             lifecycle_resolver=lifecycle_resolver, worker_id="worker-scoped",
+            concurrency_limiter=TestConcurrencyLimiter(), worker_pool_scope_id="test",
+            queue_scope_resolver=lambda record: "interactive",
         )
         result = await worker.run_once()
         self.assertEqual(result["succeeded"], 1)
@@ -452,6 +464,7 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
             run_store=self.run_store, executor_resolver=executor_resolver,
             lifecycle_resolver=lifecycle_resolver, worker_id="worker-full",
             concurrency_limiter=FullLimiter(), worker_pool_scope_id="gpu",
+            queue_scope_resolver=lambda record: "interactive",
         )
         result = await worker.run_once()
         self.assertEqual(result["skipped"], 1)

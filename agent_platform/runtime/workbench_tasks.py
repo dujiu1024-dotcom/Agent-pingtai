@@ -593,25 +593,29 @@ class RunExecutionWorker:
         self, *, run_store: Any, executor_resolver: Callable[..., Any],
         lifecycle_resolver: Callable[[str], Any], worker_id: str,
         poll_interval: float = 1.0, batch_size: int = 10, lease_seconds: int = 60,
-        concurrency_limiter: Any | None = None,
-        worker_pool_scope_id: str | None = None,
-        queue_scope_resolver: Callable[[Mapping[str, Any]], str] | None = None,
+        concurrency_limiter: Any,
+        worker_pool_scope_id: str,
+        queue_scope_resolver: Callable[[Mapping[str, Any]], str],
     ) -> None:
         if not worker_id.strip() or poll_interval <= 0:
             raise ValueError("worker_id and positive poll_interval are required")
         if not 1 <= batch_size <= 200 or lease_seconds < 5:
             raise ValueError("invalid worker batch or lease configuration")
+        if not callable(getattr(concurrency_limiter, "slot", None)):
+            raise ValueError("a shared concurrency limiter with slot() is required")
+        if not isinstance(worker_pool_scope_id, str) or not worker_pool_scope_id.strip():
+            raise ValueError("worker_pool_scope_id is required")
+        if not callable(queue_scope_resolver):
+            raise ValueError("queue_scope_resolver is required for tenant queue quota enforcement")
         self.run_store = run_store
         self.executor_resolver = executor_resolver
         self.lifecycle_resolver = lifecycle_resolver
         self.worker_id = worker_id
         self.poll_interval = poll_interval
         self.batch_size = batch_size
-        if concurrency_limiter is not None and not (worker_pool_scope_id or "").strip():
-            raise ValueError("worker_pool_scope_id is required with concurrency_limiter")
         self.concurrency_limiter = concurrency_limiter
         self.worker_pool_scope_id = worker_pool_scope_id
-        self.queue_scope_resolver = queue_scope_resolver or (lambda _record: "default")
+        self.queue_scope_resolver = queue_scope_resolver
         self.lease_seconds = lease_seconds
         self._stop = asyncio.Event()
         self._task: asyncio.Task[Any] | None = None
