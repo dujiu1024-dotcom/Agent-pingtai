@@ -113,6 +113,10 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         defaults.update(kwargs)
         return await self.gateway.call(**defaults)
 
+    async def test_correlation_id_is_propagated_into_tool_observation(self):
+        await self.call("read", correlation_id="corr-123")
+        self.assertEqual(self.observer.calls[-1][2]["correlation_id"], "corr-123")
+
     async def test_read_and_internal_write_are_allowed(self):
         self.assertEqual((await self.call("read"))["ok"], True)
         self.assertEqual((await self.call("draft"))["ok"], True)
