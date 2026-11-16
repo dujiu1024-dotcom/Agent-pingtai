@@ -251,9 +251,7 @@ class RegistryBackedTaskCenterService:
                     )
                 return _task_view(existing)
 
-        agent, template, provider, tools, skills, workflow = (
-            await self._runtime_references(agent_id)
-        )
+        _, template, _, _, _, workflow = await self._runtime_references(agent_id)
         template_id = template.item_id
         template_version = template.version
         run_id = str(uuid4())
