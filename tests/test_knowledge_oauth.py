@@ -78,6 +78,33 @@ class OAuthRefreshTokenResolverTests(unittest.IsolatedAsyncioTestCase):
             client.calls[0][1]["data"]["grant_type"], "refresh_token",
         )
 
+    async def test_invalidate_drops_only_the_selected_secret_cache(self):
+        secrets = SecretManager({
+            "secret://tenant-a/google": json.dumps({
+                "client_id": "client-a", "client_secret": "secret-a",
+                "refresh_token": "refresh-a",
+            }),
+            "secret://tenant-b/google": json.dumps({
+                "client_id": "client-b", "client_secret": "secret-b",
+                "refresh_token": "refresh-b",
+            }),
+        })
+        client = Client([
+            Response({"access_token": "access-a", "expires_in": 3600}),
+            Response({"access_token": "access-b", "expires_in": 3600}),
+            Response({"access_token": "access-a-new", "expires_in": 3600}),
+        ])
+        resolver = OAuthRefreshTokenResolver(
+            client=client, secret_manager=secrets,
+            token_url="https://oauth2.googleapis.com/token",
+        )
+        self.assertEqual(await resolver.resolve("secret://tenant-a/google"), "access-a")
+        self.assertEqual(await resolver.resolve("secret://tenant-b/google"), "access-b")
+        resolver.invalidate("secret://tenant-a/google")
+        self.assertEqual(await resolver.resolve("secret://tenant-a/google"), "access-a-new")
+        self.assertEqual(await resolver.resolve("secret://tenant-b/google"), "access-b")
+        self.assertEqual(len(client.calls), 3)
+
     async def test_rejects_unapproved_token_endpoint(self):
         with self.assertRaises(ValueError):
             OAuthRefreshTokenResolver(
