@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from agent_platform.contracts import RunContext
