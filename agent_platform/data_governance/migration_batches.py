@@ -219,13 +219,13 @@ def run_migration_batch(
             # Per-table cursor is encoded as a JSON object because a batch may map multiple tables.
             cursor_map = json.loads(cursor) if cursor else {}
             last_pk = cursor_map.get(mapping.source_table)
-            query = f"SELECT * FROM {_ident(mapping.source_table)}"
-            params: tuple[Any, ...] = ()
-            if last_pk is not None:
-                query += f" WHERE {_ident(source_pk)} > ?"
-                params = (last_pk,)
-            query += f" ORDER BY {_ident(source_pk)} LIMIT ?"
             while True:
+                query = f"SELECT * FROM {_ident(mapping.source_table)}"
+                params: tuple[Any, ...] = ()
+                if last_pk is not None:
+                    query += f" WHERE {_ident(source_pk)} > ?"
+                    params = (last_pk,)
+                query += f" ORDER BY {_ident(source_pk)} LIMIT ?"
                 rows = source.execute(query, (*params, batch_size)).fetchall()
                 if not rows:
                     break
@@ -273,7 +273,6 @@ def run_migration_batch(
                         )
                     return _batch_snapshot(target, batch_id)
                 last_pk = rows[-1][source_pk]
-                params = (last_pk,)
         with target:
             target.execute(
                 "UPDATE migration_batches SET state='completed',updated_at=CURRENT_TIMESTAMP "
