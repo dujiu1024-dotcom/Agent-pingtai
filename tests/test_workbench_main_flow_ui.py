@@ -33,6 +33,15 @@ class WorkbenchMainFlowUiContractTests(unittest.TestCase):
         self.assertIn("/workbench/tasks/"+'"+id', self.html)
         self.assertIn("data-task-action='detail'", self.html)
         self.assertIn("data-task-action='cancel'", self.html)
+        self.assertIn("session_id:activeSessionId", self.html)
+        self.assertIn("请填写 Agent ID 和任务描述", self.html)
+
+    def test_destructive_actions_require_explicit_confirmation(self):
+        self.assertIn("确认取消该任务", self.html)
+        self.assertIn("确认删除该知识文档", self.html)
+        self.assertIn("确认永久遗忘该记忆", self.html)
+        self.assertIn("确认批准这项操作", self.html)
+        self.assertIn("确认撤销该审批", self.html)
 
     def test_blackboard_and_approval_views_remain_capability_gated(self):
         self.assertIn("capabilities.blackboard", self.html)
