@@ -4,6 +4,7 @@ The source is always opened read-only. Target rows and the migration journal are
 committed in the same transaction so a crash cannot advance a cursor without
 committing its corresponding data.
 """
+# isort: skip_file
 from __future__ import annotations
 
 import hashlib
