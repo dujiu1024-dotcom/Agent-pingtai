@@ -529,5 +529,33 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_archive_rejects_cross_task_blackboard_sources(self):
+        repository = InMemoryBlackboard()
+        foreign_entry = BlackboardEntry(
+            entry_id="00000000-0000-0000-0000-000000000091",
+            scope=Scope.TASK,
+            scope_id="another-task",
+            kind=EntryKind.CLAIM,
+            content={"claim": "private evidence"},
+            author_id="researcher",
+            source_refs=(),
+        )
+        repository.entries[foreign_entry.entry_id] = foreign_entry
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=repository,
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {
+            "tenant_id": "tenant-a",
+            "task_id": "task-current",
+            "run_id": "archive-source-scope",
+            "contributions": [{"blackboard_entry_id": foreign_entry.entry_id}],
+        }
+        with self.assertRaisesRegex(PermissionError, "crosses the active workflow scope"):
+            await services.archive(state=context)
+        self.assertEqual(len(repository.entries), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
