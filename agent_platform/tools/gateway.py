@@ -100,6 +100,16 @@ class SupervisedToolGateway:
         names = [tool.name for tool in tools]
         if len(names) != len(set(names)):
             raise ValueError("tool names must be unique")
+        for tool in tools:
+            if (
+                not callable(tool.resource_resolver)
+                or not callable(tool.resource_authorizer)
+            ):
+                raise ValueError(
+                    f"tool {tool.name!r} must declare a trusted resource_resolver "
+                    "and resource_authorizer; global tools must use an explicit "
+                    "allow-all authorization policy"
+                )
         self._tools = {tool.name: tool for tool in tools}
         self._policy = SupervisedPolicy({tool.name: tool.risk for tool in tools})
         self._approval_verifier = approval_verifier
@@ -146,6 +156,25 @@ class SupervisedToolGateway:
         ):
             raise ToolExecutionDenied("actor role is not allowed to call this tool")
 
+        # The resource identifier is derived from trusted server-side policy,
+        # never accepted from an untrusted caller as the ACL authority.
+        try:
+            resolved_resource = definition.resource_resolver(arguments)
+        except Exception as exc:
+            raise ToolExecutionDenied("tool resource could not be resolved") from exc
+        if (
+            not isinstance(resolved_resource, str)
+            or not resolved_resource.strip()
+            or resource != resolved_resource
+        ):
+            await self._audit_sink.record(
+                tenant_id=tenant_id, actor_id=actor_id, action=tool_name,
+                resource=str(resource)[:256], action_digest="",
+                outcome="denied", run_id=run_id, agent_id=agent_id,
+                detail="resource_resolution_mismatch",
+            )
+            raise ToolExecutionDenied("caller resource does not match trusted resource resolution")
+        resource = resolved_resource
         request = ActionRequest(
             action=tool_name,
             resource=resource,
@@ -175,17 +204,16 @@ class SupervisedToolGateway:
             resource=resource,
             correlation_id=correlation_id,
         )
-        if definition.resource_authorizer is not None:
-            try:
-                resource_allowed = await definition.resource_authorizer(
-                    execution_context, arguments
-                )
-            except Exception as exc:
-                resource_allowed = False
-                authorization_detail = type(exc).__name__
-            else:
-                authorization_detail = "resource access denied"
-            if not resource_allowed:
+        try:
+            resource_allowed = await definition.resource_authorizer(
+                execution_context, arguments
+            )
+        except Exception as exc:
+            resource_allowed = False
+            authorization_detail = type(exc).__name__
+        else:
+            authorization_detail = "resource access denied"
+        if not resource_allowed:
                 await self._audit_sink.record(
                     tenant_id=tenant_id,
                     actor_id=actor_id,
