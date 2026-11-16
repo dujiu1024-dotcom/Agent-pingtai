@@ -111,7 +111,7 @@ task_worker = RunExecutionWorker(
 
 ## 数据库迁移
 
-部署前应用 `agent_platform/storage/postgres/030_workbench_task_execution.sql`。该迁移保留旧 Run 的 Agent/模型字段作为兼容元数据，但新 Run 的权威依赖由不可变注册快照提供，因此移除新旧 Run 对旧 `platform_agents` / `platform_model_templates` 表的外键依赖；不复制或双写两套 Agent/模型定义。
+部署前应用 `agent_platform/storage/postgres/031_workbench_task_execution.sql`。该迁移保留旧 Run 的 Agent/模型字段作为兼容元数据，但新 Run 的权威依赖由不可变注册快照提供，因此移除新旧 Run 对旧 `platform_agents` / `platform_model_templates` 表的外键依赖；不复制或双写两套 Agent/模型定义。
 
 ## 尚不能由仓库自动完成的验证
 
