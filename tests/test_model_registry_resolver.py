@@ -43,6 +43,20 @@ class ModelRegistryResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.api_key, "runtime-only-api-key")
         self.assertNotIn("runtime-only-api-key", repr(resolved))
         self.assertEqual(resolved.allowed_data_levels, ("internal",))
+        self.assertEqual(resolved.context_window_tokens, 8192)
+
+    async def test_model_template_context_window_is_resolved_and_validated(self):
+        snapshot = self.snapshot()
+        snapshot.entries[0]["definition"]["context_window_tokens"] = 32768
+        resolved = await RegistryModelResolver(Secrets()).resolve(
+            snapshot=snapshot, template_id="general",
+        )
+        self.assertEqual(resolved.context_window_tokens, 32768)
+        snapshot.entries[0]["definition"]["context_window_tokens"] = True
+        with self.assertRaises(ModelRegistryError):
+            await RegistryModelResolver(Secrets()).resolve(
+                snapshot=snapshot, template_id="general",
+            )
 
     async def test_provider_version_mismatch_is_rejected(self):
         with self.assertRaises(ModelRegistryError):
