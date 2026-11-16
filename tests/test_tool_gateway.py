@@ -8,7 +8,10 @@ from agent_platform.tools.gateway import (
     ToolDefinition,
     ToolExecutionDenied,
 )
-from agent_platform.tools.idempotency import InMemoryToolEffectStore
+from agent_platform.tools.idempotency import (
+    InMemoryToolEffectStore,
+    ToolEffectReconciliationService,
+)
 
 
 class FakeApprovalVerifier:
@@ -189,6 +192,77 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         counters = self.metrics.snapshot()["counters"]
         self.assertIn('tool_calls_total{component="tool",operation="read",status="succeeded"}', counters)
         self.assertIn("tool_call_duration_seconds", " ".join(self.metrics.snapshot()["observation_counts"]))
+
+
+    async def test_manual_reconciliation_allows_retry_only_after_confirming_no_effect(self):
+        run_id = "00000000-0000-0000-0000-000000000001"
+        claimed = await self.effects.claim(
+            tenant_id="tenant-a", run_id=run_id, call_id="call-reconcile",
+            action_digest="a" * 64, actor_id="agent-a",
+        )
+        self.assertEqual(claimed.state, "pending")
+        await self.effects.fail(
+            tenant_id="tenant-a", run_id=run_id, call_id="call-reconcile",
+            error="provider_timeout",
+        )
+        service = ToolEffectReconciliationService(
+            store=self.effects,
+            authorize_operator=lambda operator, tenant, run, call: operator == "operator-a",
+            audit_sink=self.audit,
+        )
+        with self.assertRaises(PermissionError):
+            await service.reconcile(
+                tenant_id="tenant-a", run_id=run_id, call_id="call-reconcile",
+                operator_id="agent-a", resolution="confirmed_not_applied",
+                note="not authorized",
+            )
+        effect = await service.reconcile(
+            tenant_id="tenant-a", run_id=run_id, call_id="call-reconcile",
+            operator_id="operator-a", resolution="confirmed_not_applied",
+            note="Provider request ID checked; no side effect was created.",
+        )
+        self.assertEqual(effect.state, "retryable")
+        retried = await self.effects.claim(
+            tenant_id="tenant-a", run_id=run_id, call_id="call-reconcile",
+            action_digest="a" * 64, actor_id="agent-a",
+        )
+        self.assertTrue(retried.created)
+        self.assertEqual(retried.state, "pending")
+        self.assertEqual(effect.reconciled_by, "operator-a")
+        self.assertEqual(
+            [record["outcome"] for record in self.audit.records[-2:]],
+            ["reconciliation_started", "reconciliation_completed"],
+        )
+
+    async def test_manual_reconciliation_can_confirm_success_or_compensation(self):
+        run_id = "00000000-0000-0000-0000-000000000001"
+        service = ToolEffectReconciliationService(
+            store=self.effects, authorize_operator=lambda *_: True, audit_sink=self.audit,
+        )
+        for call_id, resolution, result, expected in (
+            ("call-confirmed", "confirmed_succeeded", {"receipt": "r-1"}, "succeeded"),
+            ("call-compensated", "compensated", None, "compensated"),
+        ):
+            await self.effects.claim(
+                tenant_id="tenant-a", run_id=run_id, call_id=call_id,
+                action_digest=(call_id[0] * 64), actor_id="agent-a",
+            )
+            await self.effects.fail(
+                tenant_id="tenant-a", run_id=run_id, call_id=call_id,
+                error="ambiguous_provider_result",
+            )
+            effect = await service.reconcile(
+                tenant_id="tenant-a", run_id=run_id, call_id=call_id,
+                operator_id="operator-a", resolution=resolution,
+                note="Checked external provider and recorded resolution.",
+                result=result,
+            )
+            self.assertEqual(effect.state, expected)
+        confirmed = await self.effects.get(
+            tenant_id="tenant-a", run_id=run_id, call_id="call-confirmed",
+        )
+        self.assertEqual(confirmed.result, {"receipt": "r-1"})
+
 
 
 if __name__ == "__main__":
