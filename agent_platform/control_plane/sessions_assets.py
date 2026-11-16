@@ -299,6 +299,28 @@ class SessionAssetService:
             )
         return asset
 
+    async def create_download_url(
+        self, *, tenant_id: str, asset_id: str, expires_in: int = 300,
+    ) -> tuple[FileAsset, str]:
+        """Return a short-lived URL only for an available tenant-owned asset."""
+        if not 1 <= expires_in <= 900:
+            raise SessionError("download URL TTL must be between 1 and 900 seconds")
+        asset = await self.repository.get_asset(tenant_id, asset_id)
+        if asset is None or asset.status is not AssetStatus.AVAILABLE:
+            raise SessionNotFound("file asset not found or unavailable")
+        presign = getattr(self.storage, "presign_get", None)
+        if not callable(presign):
+            raise SessionError("object storage does not support presigned downloads")
+        try:
+            url = presign(asset.object_key, expires_in=expires_in)
+            if hasattr(url, "__await__"):
+                url = await url
+        except Exception as exc:
+            raise SessionError("could not create file download URL") from exc
+        if not isinstance(url, str) or not url.startswith(("https://", "http://")):
+            raise SessionError("object storage returned an invalid download URL")
+        return asset, url
+
     async def download_asset(self, *, tenant_id: str, asset_id: str) -> tuple[FileAsset, bytes]:
         asset = await self.repository.get_asset(tenant_id, asset_id)
         if asset is None or asset.status != AssetStatus.AVAILABLE:
