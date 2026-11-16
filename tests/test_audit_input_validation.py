@@ -44,7 +44,10 @@ class AuditInputValidationTests(unittest.IsolatedAsyncioTestCase):
                 await reader.list_events(tenant_id="tenant-a", **kwargs)
 
     async def test_valid_reader_query_uses_connection(self):
-        reader = PostgresIdentityAuditReader(lambda: FakeConnection())
+        async def connect():
+            return FakeConnection()
+
+        reader = PostgresIdentityAuditReader(connect)
         self.assertEqual(await reader.list_events(tenant_id="tenant-a"), [])
 
 
