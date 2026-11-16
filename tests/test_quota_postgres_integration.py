@@ -115,7 +115,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                    (%s, %s, %s, 'tenant', %s, %s, 5, 0.10)""",
                 (reservation_a, tenant_id, run_a, tenant_id, period_start),
             )
-            self.assertEqual((await cursor.fetchone())["reservation_id"], reservation_a)
+            self.assertEqual((await cursor.fetchone())[0], reservation_a)
             await conn.commit()
 
         async with await AsyncConnection.connect(DSN) as conn:
