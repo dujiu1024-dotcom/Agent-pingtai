@@ -104,6 +104,6 @@ class S3ObjectStorage:
         )
         if inspect.isawaitable(result):
             result = await result
-        if not isinstance(result, str) or not result.startswith(("https://", "http://")):
+        if not isinstance(result, str) or not result.startswith("https://"):
             raise ObjectStorageError("S3 client returned an invalid presigned URL")
         return result
