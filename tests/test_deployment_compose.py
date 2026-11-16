@@ -50,6 +50,15 @@ class DeploymentComposeTests(unittest.TestCase):
                 self.assertIn("${" + variable + ":-", compose_text)
                 self.assertIn(variable + "=", env_text)
 
+
+    def test_stateful_services_have_configurable_resource_limits(self):
+        for name, service in self.compose["services"].items():
+            with self.subTest(service=name):
+                self.assertIn("mem_limit", service)
+                self.assertIn("cpus", service)
+                self.assertTrue(str(service["mem_limit"]).strip())
+                self.assertTrue(str(service["cpus"]).strip())
+
     def test_example_env_contains_placeholders_not_live_credentials(self):
         env_text = (ROOT / "deploy" / ".env.example").read_text()
         self.assertIn("REPLACE_WITH_RANDOM_POSTGRES_PASSWORD", env_text)
