@@ -11,7 +11,11 @@ if DSN:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
 
-    from agent_platform.approval.postgres import PostgresApprovalVerifier, PostgresAuditReader, PostgresAuditSink
+    from agent_platform.approval.postgres import (
+        PostgresApprovalVerifier,
+        PostgresAuditReader,
+        PostgresAuditSink,
+    )
     from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
     from agent_platform.blackboard.protocol import VersionConflict
     from agent_platform.contracts import (
