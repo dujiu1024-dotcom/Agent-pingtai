@@ -36,7 +36,11 @@ class LangGraphRunExecutor:
    raise ValueError("intervention_applier is required with intervention_store")
  @staticmethod
  def _config(tenant_id:str,run_id:str)->dict[str,Any]:
-  return {"configurable":{"thread_id":f"{tenant_id}:{run_id}"}}
+  return {"configurable":{
+   "thread_id":f"{tenant_id}:{run_id}",
+   "platform_tenant_id":tenant_id,
+   "platform_run_id":run_id,
+  }}
  async def _run_config(self,tenant_id:str,run_id:str)->dict[str,Any]:
   config=self._config(tenant_id,run_id)
   if self.registry_snapshot_service is not None:
