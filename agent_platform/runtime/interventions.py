@@ -78,6 +78,7 @@ class RunInterventionService:
             raise ValueError("decision must be approved, rejected or needs_changes")
         if not actor_id.strip() or len(rationale) > 4000:
             raise ValueError("actor_id and bounded rationale are required")
+        safe_rationale = redact_payload({"rationale": rationale}).get("rationale", "")
         from psycopg.types.json import Jsonb
         db = await self._connect()
         async with db:
@@ -101,7 +102,7 @@ class RunInterventionService:
                            applied_by=CASE WHEN %s='rejected' THEN %s ELSE NULL END
                        WHERE tenant_id=%s AND run_id=%s AND intervention_id=%s AND status='pending'""",
                     ("rejected" if decision == "rejected" else "pending",
-                     Jsonb({"decision": decision, "rationale": rationale}),
+                     Jsonb({"decision": decision, "rationale": safe_rationale}),
                      decision, decision, actor_id, self.tenant_id,
                      UUID(run_id), UUID(intervention_id)),
                 )
@@ -112,7 +113,7 @@ class RunInterventionService:
                     (self.tenant_id, UUID(run_id), actor_id, Jsonb({
                         "intervention_id": intervention_id,
                         "decision": decision,
-                        "rationale": redact_payload({"rationale": rationale}).get("rationale", ""),
+                        "rationale": safe_rationale,
                     })),
                 )
         return {
