@@ -80,6 +80,7 @@ def create_platform_app(
     webhook_delivery_store: Any | None = None,
     webhook_delivery_authorizer: Any | None = None,
     webhook_delivery_worker: Any | None = None,
+    outbox_relay_worker: Any | None = None,
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
     task_worker: Any | None = None,
@@ -263,6 +264,13 @@ def create_platform_app(
             raise ValueError("webhook_delivery_worker must expose async start() and stop()")
         app.router.on_startup.append(webhook_delivery_worker.start)
         app.router.on_shutdown.append(webhook_delivery_worker.stop)
+    if outbox_relay_worker is not None:
+        if not callable(getattr(outbox_relay_worker, "start", None)) or not callable(
+            getattr(outbox_relay_worker, "stop", None)
+        ):
+            raise ValueError("outbox_relay_worker must expose async start() and stop()")
+        app.router.on_startup.append(outbox_relay_worker.start)
+        app.router.on_shutdown.append(outbox_relay_worker.stop)
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
