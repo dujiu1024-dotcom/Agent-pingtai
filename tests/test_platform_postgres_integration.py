@@ -1573,6 +1573,13 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             idempotency_key="worker-reliability-" + run_id,
             request_digest="e" * 64,
         )
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs SET registry_snapshot_digest=%s
+                   WHERE tenant_id=%s AND run_id=%s""",
+                ("f" * 64, self.tenant_id, run_id),
+            )
+            await conn.commit()
         self.assertTrue(await store.mark_task_ready(
             self.tenant_id, run_id, "f" * 64, "prep-worker",
         ))
