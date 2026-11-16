@@ -23,15 +23,6 @@ class QuotaConcurrencyLimiter:
         self.lease_seconds = lease_seconds
         self.heartbeat_interval_seconds = float(heartbeat_interval_seconds)
 
-    async def _maintain_lease(self, reservation: QuotaReservation) -> None:
-        while True:
-            await asyncio.sleep(self.heartbeat_interval_seconds)
-            renewed = await self.quota_service.heartbeat_reservation(
-                reservation, lease_seconds=self.lease_seconds,
-            )
-            if not renewed:
-                raise RuntimeError("quota concurrency reservation lease could not be renewed")
-
     async def acquire(
         self, *, tenant_id: str, run_id: str,
         scope_type: str, scope_id: str,
@@ -54,22 +45,10 @@ class QuotaConcurrencyLimiter:
             scope_type=scope_type, scope_id=scope_id,
         )
         try:
-            heartbeat_supported = callable(
-                getattr(self.quota_service.store, "heartbeat_reservation", None)
-            )
-            if heartbeat_supported:
-                # TaskGroup propagates heartbeat failures into the execution task,
-                # preventing work from continuing after its shared slot lease is lost.
-                async with asyncio.TaskGroup() as group:
-                    heartbeat = group.create_task(
-                        self._maintain_lease(reservation),
-                        name=f"quota-reservation-heartbeat-{reservation.reservation_id}",
-                    )
-                    try:
-                        yield reservation
-                    finally:
-                        heartbeat.cancel()
-            else:
+            async with self.quota_service.reservation_lease(
+                reservation, lease_seconds=self.lease_seconds,
+                heartbeat_interval_seconds=self.heartbeat_interval_seconds,
+            ):
                 yield reservation
         finally:
             await self.release(reservation)
