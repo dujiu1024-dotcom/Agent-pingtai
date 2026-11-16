@@ -94,7 +94,7 @@ class PostgresRunStateStore(RunStateStore):
   if not 1<=limit<=200:raise ValueError("limit must be between 1 and 200")
   c=await self._connect()
   async with c:
-   cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,agent_id,template_id,
+   cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,template_id,
     template_version,workflow_id,status,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest
