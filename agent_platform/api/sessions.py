@@ -235,6 +235,17 @@ def create_sessions_router(
     @router.get("/files/{asset_id}")
     async def download_file(asset_id: str, request: Request):
         principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
         try:
             asset, content = await service.download_asset(
                 tenant_id=principal.tenant_id, asset_id=asset_id,
