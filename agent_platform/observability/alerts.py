@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import math
 from typing import Callable, Mapping, Protocol
 
 
@@ -19,6 +20,8 @@ class AlertRule:
     def __post_init__(self) -> None:
         if not self.rule_id.strip() or not self.metric_name.strip():
             raise ValueError("rule_id and metric_name are required")
+        if not math.isfinite(self.threshold):
+            raise ValueError("alert threshold must be finite")
         if self.comparison not in {"gte", "gt", "lte", "lt"}:
             raise ValueError("unsupported alert comparison")
         if self.severity not in {"info", "warning", "critical"}:
@@ -71,6 +74,8 @@ class AlertManager:
             if rule.metric_name not in metrics:
                 continue
             value = float(metrics[rule.metric_name])
+            if not math.isfinite(value):
+                continue
             if not self._matches(value, rule):
                 continue
             last = self._last_fired.get(rule.rule_id)
