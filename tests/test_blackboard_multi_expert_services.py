@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from agent_platform.contracts import EntryKind
+from agent_platform.contracts import BlackboardEntry, EntryKind, Scope
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 from agent_platform.workflows.expert_registry import ExpertProfile, InMemoryExpertRegistry
 
@@ -287,6 +287,40 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             await services.plan_experts(
                 objective="analyze market",
                 run_context={"tenant_id": "tenant-a", "run_id": "run-capability"},
+            )
+
+    async def test_rejects_blackboard_source_refs_from_another_workflow_scope(self):
+        repository = InMemoryBlackboard()
+        foreign = BlackboardEntry(
+            scope=Scope.TASK,
+            scope_id="another-task",
+            kind=EntryKind.EVIDENCE,
+            content={"evidence": "private source"},
+            author_id="researcher",
+        )
+        repository.entries[foreign.entry_id] = foreign
+
+        class CrossScopeCallbacks(WorkflowCallbacks):
+            async def run_expert(self, *, assignment, objective, run_context):
+                return {
+                    "claim": "supported claim",
+                    "source_refs": [foreign.entry_id],
+                }
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=repository,
+            callbacks=CrossScopeCallbacks(),
+        )
+        with self.assertRaisesRegex(PermissionError, "crosses the active workflow scope"):
+            await services.run_expert(
+                assignment={"expert_id": "researcher"},
+                objective="check scope",
+                run_context={
+                    "tenant_id": "tenant-a",
+                    "task_id": "current-task",
+                    "run_id": "current-run",
+                },
             )
 
     async def test_rejects_cross_tenant_workflow_context(self):
