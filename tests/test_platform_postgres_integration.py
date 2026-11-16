@@ -50,9 +50,9 @@ if DSN:
         ServiceIdentityService,
     )
     from agent_platform.identity.tenants import create_tenant_with_owner
+    from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
     from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
     from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
-    from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
     from agent_platform.runtime.registry_snapshot import RunRegistrySnapshotService
     from agent_platform.tools.idempotency import PostgresToolEffectStore
     from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
