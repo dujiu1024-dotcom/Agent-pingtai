@@ -132,6 +132,40 @@ class SupervisedToolGateway:
         """Return immutable tool definitions for trusted composition code."""
         return tuple(self._tools.values())
 
+    async def call_resolved(
+        self,
+        *,
+        tenant_id: str,
+        actor_id: str,
+        actor_roles: tuple[str, ...],
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        approval_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        call_id: str | None = None,
+        correlation_id: str | None = None,
+    ) -> Any:
+        """Resolve the resource inside the trusted Gateway before authorization."""
+        definition = self._tools.get(tool_name)
+        if definition is None:
+            raise ToolExecutionDenied("tool is not registered")
+        resolver = definition.resource_resolver
+        if resolver is None:
+            raise ToolExecutionDenied("tool has no trusted resource ACL policy")
+        try:
+            resource = resolver(arguments)
+        except Exception as exc:
+            raise ToolExecutionDenied("tool resource could not be resolved") from exc
+        if not isinstance(resource, str) or not resource.strip():
+            raise ToolExecutionDenied("tool resource could not be resolved")
+        return await self.call(
+            tenant_id=tenant_id, actor_id=actor_id, actor_roles=actor_roles,
+            tool_name=tool_name, resource=resource, arguments=arguments,
+            approval_id=approval_id, run_id=run_id, agent_id=agent_id,
+            call_id=call_id, correlation_id=correlation_id,
+        )
+
     async def call(
         self,
         *,
