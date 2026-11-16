@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import inspect
 import ipaddress
 import json
 import socket
@@ -140,7 +141,7 @@ class WebhookDispatcher:
     SYSTEM_ACTOR_ID = "system:webhook-dispatcher"
 
     def __init__(self, *, store: WebhookStore, transport: WebhookTransport,
-                 resolve_secret: Callable[[str], bytes], egress_policy: WebhookEgressPolicy,
+                 resolve_secret: Callable[[str], Any], egress_policy: WebhookEgressPolicy,
                  audit_sink: Any,
                  max_attempts: int = 8, timeout_seconds: float = 10.0,
                  clock: Callable[[], datetime] | None = None) -> None:
@@ -187,6 +188,8 @@ class WebhookDispatcher:
             failure_type: str | None = None
             try:
                 secret = self.resolve_secret(subscription.secret_ref)
+                if inspect.isawaitable(secret):
+                    secret = await secret
                 if not isinstance(secret, bytes) or len(secret) < 32:
                     raise ValueError("webhook signing secret must contain at least 32 bytes")
                 resolved_addresses = await self.egress_policy.resolve_public_addresses(
