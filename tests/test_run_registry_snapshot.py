@@ -4,7 +4,7 @@ import unittest
 
 from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
 from agent_platform.runtime.registry_snapshot import (
-    InMemoryRunSnapshotStore, RunRegistrySnapshotService,
+    InMemoryRunSnapshotStore, RunRegistrySnapshot, RunRegistrySnapshotService,
 )
 
 
@@ -44,6 +44,22 @@ class RunRegistrySnapshotTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="tenant-a", run_id="run-1",
                 references=(("agent", "researcher"),),
             )
+
+    async def test_snapshot_read_rejects_modified_persisted_content(self):
+        await self.publish("agent", "researcher", {"prompt": "original"})
+        snapshot = await self.snapshots.pin(
+            tenant_id="tenant-a", run_id="tampered",
+            references=(("agent", "researcher"),),
+        )
+        self.store._rows[("tenant-a", "tampered")] = RunRegistrySnapshot(
+            tenant_id="tenant-a", run_id="tampered",
+            entries=({"kind": "agent", "item_id": "researcher",
+                      "version": snapshot.entries[0]["version"],
+                      "definition": {"prompt": "tampered"}},),
+            digest=snapshot.digest,
+        )
+        with self.assertRaisesRegex(ValueError, "integrity check failed"):
+            await self.snapshots.get(tenant_id="tenant-a", run_id="tampered")
 
     async def test_snapshot_tenant_isolation(self):
         await self.publish("agent", "researcher", {"prompt": "v1"})
