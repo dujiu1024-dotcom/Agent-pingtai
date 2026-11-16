@@ -107,6 +107,8 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
                 name="unconfigured",
                 risk=RiskLevel.READ_ONLY,
                 handler=read_document,
+                resource_resolver=lambda _args: "global:unconfigured",
+                resource_authorizer=authorize_document,
             ),
         )
         self.gateway = SupervisedToolGateway(
