@@ -194,10 +194,13 @@ class QuotaReservationGroupService:
                          occurred_at: datetime | None = None, source: str = "provider_reported") -> UsageEvent:
         primary = next((r for r in group.reservations if r.scope_type == "tenant"),
                        group.reservations[0])
+        event_time = occurred_at or datetime.now(timezone.utc)
+        if any(not r.period_start <= event_time < r.period_end for r in group.reservations):
+            raise ValueError("usage event is outside one or more reserved budget periods")
         event = UsageEvent(
             event_id=str(uuid4()), tenant_id=group.tenant_id, run_id=group.run_id,
             model_key=model_key, input_tokens=input_tokens, output_tokens=output_tokens,
-            cost_usd=cost_usd, occurred_at=occurred_at or datetime.now(timezone.utc),
+            cost_usd=cost_usd, occurred_at=event_time,
             project_id=project_id, agent_id=agent_id, source=source,
             root_run_id=group.root_run_id,
         )
@@ -221,6 +224,14 @@ class QuotaReservationGroupService:
             async with connection:
                 async with connection.transaction():
                     cursor = await connection.execute(
+                        """SELECT COUNT(*) AS active_count
+                           FROM platform_quota_reservations
+                           WHERE tenant_id=%s AND reservation_group_id=%s AND status='active'""",
+                        (group.tenant_id, UUID(group.group_id)),
+                    )
+                    if (await cursor.fetchone())["active_count"] != len(group.reservations):
+                        raise KeyError("reservation group is incomplete or no longer active")
+                    cursor = await connection.execute(
                         """SELECT platform_quota_settle(%s,%s,%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s,%s,%s,%s) AS settled""",
                         (UUID(primary.reservation_id), UUID(event.event_id), event.model_key,
                          event.input_tokens, event.output_tokens, event.cost_usd, event.project_id,
@@ -232,7 +243,11 @@ class QuotaReservationGroupService:
                     for r in group.reservations:
                         if r.reservation_id == primary.reservation_id:
                             continue
-                        await connection.execute("SELECT platform_quota_release(%s)", (UUID(r.reservation_id),))
+                        cursor = await connection.execute(
+                            "SELECT platform_quota_release(%s) AS released", (UUID(r.reservation_id),)
+                        )
+                        if not (await cursor.fetchone())["released"]:
+                            raise KeyError("sibling reservation is not active")
         else:
             raise TypeError("quota store does not implement atomic group settlement")
         return event
