@@ -48,7 +48,7 @@ class PresignedDownloadTests(unittest.IsolatedAsyncioTestCase):
             status=AssetStatus.SCANNING,
         )
         await repository.create_asset(pending)
-        with self.assertRaises(Exception):
+        with self.assertRaises(SessionNotFound):
             await service.create_download_url(tenant_id="tenant-a", asset_id="asset-pending")
 
     async def test_api_requires_file_and_linked_project_authorization(self):
