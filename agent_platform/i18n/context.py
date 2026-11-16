@@ -96,5 +96,5 @@ def format_currency(
         raise ValueError("currency must be an uppercase ISO 4217 code")
     amount = format_number(value, context, decimals=decimals)
     if context.language in {"de-DE", "fr-FR"}:
-        return f"{amount}\\u00a0{currency}"
-    return f"{currency}\\u00a0{amount}"
+        return f"{amount}\u00a0{currency}"
+    return f"{currency}\u00a0{amount}"
