@@ -306,7 +306,7 @@ class SessionAssetService:
         if not 1 <= expires_in <= 900:
             raise SessionError("download URL TTL must be between 1 and 900 seconds")
         asset = await self.repository.get_asset(tenant_id, asset_id)
-        if asset is None or asset.status is not AssetStatus.AVAILABLE:
+        if asset is None or asset.status != AssetStatus.AVAILABLE:
             raise SessionNotFound("file asset not found or unavailable")
         presign = getattr(self.storage, "presign_get", None)
         if not callable(presign):
