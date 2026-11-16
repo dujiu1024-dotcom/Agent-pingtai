@@ -241,6 +241,9 @@ class PreflightTest(unittest.TestCase):
 
 class ObserveTest(unittest.TestCase):
     def setUp(self):
+        self.platform_guard = patch("gui.require_platform")
+        self.platform_guard.start()
+        self.addCleanup(self.platform_guard.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.apps = self.root / "apps"
