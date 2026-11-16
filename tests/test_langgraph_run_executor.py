@@ -141,6 +141,33 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.INTERRUPTED)
 
 
+ async def test_claimed_stale_run_restarts_from_persisted_initial_input(self):
+  await self.store.create("tenant","stale")
+  await self.manager.start("tenant","stale")
+  snapshot=await self.store.get("tenant","stale")
+  result=await self.executor.resume_claimed(
+   snapshot=snapshot,input={"prompt":"resume after worker loss"},
+  )
+  self.assertEqual(result,{"result":{"prompt":"resume after worker loss"}})
+  self.assertEqual((await self.store.get("tenant","stale")).status,RunStatus.SUCCEEDED)
+
+ async def test_claimed_cancellation_is_confirmed_without_restarting_graph(self):
+  await self.store.create("tenant","remote-cancel")
+  await self.manager.start("tenant","remote-cancel")
+  current=await self.store.get("tenant","remote-cancel")
+  from agent_platform.runtime.lifecycle import RunSnapshot
+  await self.store.transition(
+   RunSnapshot("tenant","remote-cancel",RunStatus.CANCELLING,current.version),
+   expected_version=current.version,
+  )
+  claimed=await self.store.get("tenant","remote-cancel")
+  result=await self.executor.resume_claimed(
+   snapshot=claimed,input={"prompt":"must not execute"},
+  )
+  self.assertIsNone(result)
+  self.assertEqual((await self.store.get("tenant","remote-cancel")).status,RunStatus.CANCELLED)
+  self.assertEqual(self.graph.calls,[])
+
  async def test_recovery_lease_loss_keeps_run_interrupted(self):
   started=asyncio.Event();cancelled=asyncio.Event()
   class LeaseExpiringStore(InMemoryRunStateStore):
