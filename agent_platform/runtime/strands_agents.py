@@ -249,6 +249,7 @@ class StrandsAgentsAdapter:
         if provider.get("timeout") is not None:
             client_args["timeout"] = float(provider["timeout"])
 
+        prompt = await self._build_prompt(request)
         model = model_factory(
             model_id=template.model,
             client_args=client_args,
@@ -274,7 +275,6 @@ class StrandsAgentsAdapter:
                 context_manager=False,
                 agent_id=f"{request.context.run_id}-{request.context.agent_id}",
             )
-            prompt = await self._build_prompt(request)
             timeout = parameters.get("timeout_seconds")
             try:
                 invoke = agent.invoke_async(prompt, idempotency_token=request.context.run_id)
