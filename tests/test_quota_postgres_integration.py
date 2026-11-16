@@ -357,3 +357,49 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                 scope_type="run", scope_id=str(root_run_id), estimated_tokens=51,
                 estimated_cost_usd=Decimal("0.10"),
             )
+
+
+    async def test_versioned_pricing_cards_persist_and_remain_immutable(self):
+        from datetime import datetime, timedelta, timezone
+        from decimal import Decimal
+
+        from psycopg.rows import dict_row
+
+        from agent_platform.quotas.pricing import PricingCard, PricingFeed
+        from agent_platform.quotas.pricing_store import (
+            PostgresPricingCardRepository, PricingCardConflict,
+        )
+
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            for migration_path in sorted(Path("agent_platform/storage/postgres").glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+
+        async def connect():
+            return await AsyncConnection.connect(DSN, row_factory=dict_row)
+
+        repository = PostgresPricingCardRepository(connect)
+        now = datetime.now(timezone.utc)
+        feed = PricingFeed(
+            source="integration-provider", revision=f"revision-{now.isoformat()}",
+            fetched_at=now,
+            cards=(PricingCard(
+                "integration-model", f"version-{now.timestamp()}",
+                Decimal("1.25"), Decimal("4.50"), effective_at=now,
+            ),),
+        )
+        self.assertEqual(await repository.save_feed(feed, created_by="integration"), 1)
+        self.assertEqual(await repository.save_feed(feed, created_by="integration"), 1)
+        cards = await repository.list_current(as_of=now, source=feed.source)
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0].input_usd_per_million, Decimal("1.25"))
+
+        changed = PricingFeed(
+            source=feed.source, revision=f"revision-next-{now.isoformat()}",
+            fetched_at=now + timedelta(seconds=1),
+            cards=(PricingCard(
+                feed.cards[0].model_key, feed.cards[0].version,
+                Decimal("9.99"), Decimal("9.99"), effective_at=now,
+            ),),
+        )
+        with self.assertRaises(PricingCardConflict):
+            await repository.save_feed(changed, created_by="integration")
