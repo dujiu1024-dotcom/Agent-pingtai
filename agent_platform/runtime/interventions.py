@@ -83,7 +83,7 @@ class RunInterventionService:
         async with db:
             async with db.transaction():
                 cursor = await db.execute(
-                    """SELECT kind,status FROM platform_run_interventions
+                    """SELECT kind,status,payload FROM platform_run_interventions
                        WHERE tenant_id=%s AND run_id=%s AND intervention_id=%s FOR UPDATE""",
                     (self.tenant_id, UUID(run_id), UUID(intervention_id)),
                 )
@@ -92,14 +92,18 @@ class RunInterventionService:
                     raise KeyError("intervention not found")
                 if row["kind"] not in {"decision", "approval"}:
                     raise ValueError("only decision or approval interventions can be decided")
-                if row["status"] != "pending":
+                if row["status"] != "pending" or "decision" in dict(row["payload"]):
                     raise ValueError("intervention has already been resolved")
                 await db.execute(
                     """UPDATE platform_run_interventions
-                       SET status=%s,applied_at=now(),applied_by=%s
+                       SET status=%s,payload=payload || %s,
+                           applied_at=CASE WHEN %s='rejected' THEN now() ELSE NULL END,
+                           applied_by=CASE WHEN %s='rejected' THEN %s ELSE NULL END
                        WHERE tenant_id=%s AND run_id=%s AND intervention_id=%s AND status='pending'""",
-                    ("rejected" if decision == "rejected" else "applied", actor_id,
-                     self.tenant_id, UUID(run_id), UUID(intervention_id)),
+                    ("rejected" if decision == "rejected" else "pending",
+                     Jsonb({"decision": decision, "rationale": rationale}),
+                     decision, decision, actor_id, self.tenant_id,
+                     UUID(run_id), UUID(intervention_id)),
                 )
                 await db.execute(
                     """INSERT INTO platform_run_events
@@ -113,7 +117,7 @@ class RunInterventionService:
                 )
         return {
             "intervention_id": intervention_id, "run_id": run_id,
-            "decision": decision, "status": "rejected" if decision == "rejected" else "applied", "decided_by": actor_id,
+            "decision": decision, "status": "rejected" if decision == "rejected" else "pending", "decided_by": actor_id,
         }
 
     async def revise_result(
@@ -267,6 +271,7 @@ class RunInterventionService:
                         """SELECT intervention_id,actor_id,kind,payload
                            FROM platform_run_interventions
                            WHERE tenant_id=%s AND run_id=%s AND status='pending'
+                             AND (kind NOT IN ('decision','approval') OR payload ? 'decision')
                            ORDER BY created_at,intervention_id
                            LIMIT 1 FOR UPDATE SKIP LOCKED""",
                         (self.tenant_id, UUID(run_id)),
