@@ -187,8 +187,11 @@ class LangGraphRunExecutor:
     if hasattr(payload,"__await__"):payload=await payload
     recovery_config=await self._run_config(row.tenant_id,row.run_id)
     if self.intervention_store is not None:
+     applier=self.intervention_applier
+     if applier is None:
+      raise RuntimeError("human intervention applier is not configured")
      async def apply_intervention(item:Any)->None:
-      await self.intervention_applier(
+      await applier(
        graph=self.graph,config=recovery_config,intervention=item,
       )
      await self.intervention_store.apply_pending(
