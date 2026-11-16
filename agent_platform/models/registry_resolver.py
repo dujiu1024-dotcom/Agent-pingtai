@@ -27,6 +27,7 @@ class ResolvedModelConfig:
     parameters: Mapping[str, Any]
     capabilities: tuple[str, ...]
     allowed_data_levels: tuple[str, ...]
+    context_window_tokens: int = 8192
 
 
 class RegistryModelResolver:
@@ -112,6 +113,13 @@ class RegistryModelResolver:
         api_key = await self.secrets.resolve(secret_ref)
         if not isinstance(api_key, str) or not api_key.strip():
             raise ModelRegistryError("model provider secret could not be resolved")
+        context_window_tokens = template.get("context_window_tokens", 8192)
+        if (
+            not isinstance(context_window_tokens, int)
+            or isinstance(context_window_tokens, bool)
+            or context_window_tokens < 1
+        ):
+            raise ModelRegistryError("model template context_window_tokens must be a positive integer")
         capabilities = template.get("capabilities", [])
         data_levels = template.get("allowed_data_levels", [])
         if (
@@ -125,4 +133,5 @@ class RegistryModelResolver:
             provider_type=provider_type, base_url=base_url, model_id=model_id,
             api_key=api_key, parameters=dict(parameters),
             capabilities=tuple(capabilities), allowed_data_levels=tuple(data_levels),
+            context_window_tokens=context_window_tokens,
         )
