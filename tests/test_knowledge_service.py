@@ -15,6 +15,38 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         await service.ingest(document=public,content=b"alpha beta source"); await service.ingest(document=private,content=b"alpha secret source")
         hits=await service.retrieve(principal=KnowledgePrincipal(tenant_id="t1",user_id="u1"),query="alpha",limit=10)
         self.assertEqual({h.title for h in hits},{"public"})
+    async def test_document_acl_grant_and_revoke_filter_before_search(self):
+        service = KnowledgeService(InMemoryKnowledgeRepository())
+        document = Document(
+            tenant_id="t1", title="restricted", source_uri="file://restricted",
+            content_hash="pending",
+        )
+        await service.ingest(document=document, content=b"restricted evidence")
+        owner = KnowledgePrincipal(
+            tenant_id="t1", user_id="owner",
+            permissions=frozenset({"knowledge.manage"}),
+        )
+        reader = KnowledgePrincipal(tenant_id="t1", user_id="reader")
+        await service.grant_document_access(
+            principal=owner, document_id=document.document_id,
+            principal_type="user", principal_id="reader", permission="read",
+        )
+        self.assertEqual(
+            len(await service.retrieve(principal=reader, query="restricted")), 1,
+        )
+        with self.assertRaises(PermissionError):
+            await service.revoke_document_access(
+                principal=reader, document_id=document.document_id,
+                principal_type="user", principal_id="reader",
+            )
+        self.assertTrue(await service.revoke_document_access(
+            principal=owner, document_id=document.document_id,
+            principal_type="user", principal_id="reader",
+        ))
+        self.assertEqual(
+            await service.retrieve(principal=reader, query="restricted"), [],
+        )
+
     async def test_tenant_isolation(self):
         service=KnowledgeService(InMemoryKnowledgeRepository())
         await service.ingest(document=Document(tenant_id="t2",title="secret",source_uri="x",content_hash="x"),content=b"confidential")

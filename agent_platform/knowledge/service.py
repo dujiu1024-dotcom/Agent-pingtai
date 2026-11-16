@@ -65,14 +65,56 @@ class KnowledgeService:
         return IngestResult(document=document,chunks=chunks,skipped_unchanged=not created)
     async def list_documents(self,*,principal: KnowledgePrincipal,limit: int=100):
         return await self.repository.list_documents(principal,limit=limit)
+    @staticmethod
+    def _can_manage_document(document: Document, principal: KnowledgePrincipal) -> bool:
+        if document.scope.value == "private":
+            return document.owner_user_id == principal.user_id or "knowledge.manage" in principal.permissions
+        if document.scope.value == "project":
+            return "knowledge.manage" in principal.permissions or document.project_id in principal.manage_project_ids
+        return "knowledge.manage" in principal.permissions
+
+    async def grant_document_access(
+        self, *, principal: KnowledgePrincipal, document_id: str,
+        principal_type: str, principal_id: str, permission: str = "read",
+    ) -> None:
+        if principal_type not in {"user", "role", "project"}:
+            raise ValueError("principal_type must be user, role or project")
+        if permission not in {"read", "manage"}:
+            raise ValueError("permission must be read or manage")
+        if not principal_id.strip():
+            raise ValueError("principal_id must not be empty")
+        document = await self.repository.get_document(principal.tenant_id, document_id)
+        if document is None:
+            raise ValueError("document not found")
+        if not self._can_manage_document(document, principal):
+            raise PermissionError("document ACL management is not authorized")
+        await self.repository.grant_document_access(
+            principal.tenant_id, document_id, principal_type, principal_id,
+            permission, principal.user_id,
+        )
+
+    async def revoke_document_access(
+        self, *, principal: KnowledgePrincipal, document_id: str,
+        principal_type: str, principal_id: str, permission: str = "read",
+    ) -> bool:
+        if principal_type not in {"user", "role", "project"}:
+            raise ValueError("principal_type must be user, role or project")
+        if permission not in {"read", "manage"}:
+            raise ValueError("permission must be read or manage")
+        document = await self.repository.get_document(principal.tenant_id, document_id)
+        if document is None:
+            raise ValueError("document not found")
+        if not self._can_manage_document(document, principal):
+            raise PermissionError("document ACL management is not authorized")
+        return await self.repository.revoke_document_access(
+            principal.tenant_id, document_id, principal_type, principal_id, permission,
+        )
+
     async def delete_document(self,*,principal: KnowledgePrincipal,document_id: str)->bool:
         document=await self.repository.get_document(principal.tenant_id,document_id)
         if document is None:
             return False
-        owns_private=document.scope.value=="private" and document.owner_user_id==principal.user_id
-        manages_shared="knowledge.manage" in principal.permissions
-        manages_project=(document.scope.value=="project" and document.project_id in principal.manage_project_ids)
-        if not (owns_private or manages_shared or manages_project):
+        if not self._can_manage_document(document, principal):
             raise PermissionError("document deletion is not authorized")
         return await self.repository.delete_document(principal.tenant_id,document_id)
     @staticmethod
