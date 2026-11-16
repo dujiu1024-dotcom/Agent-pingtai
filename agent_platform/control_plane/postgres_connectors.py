@@ -26,12 +26,12 @@ class PostgresConnectorRepository:
         async with db:
             await db.execute(
                 """INSERT INTO platform_data_connections
-                   (tenant_id,connection_id,provider,display_name,secret_ref,scopes,
+                   (tenant_id,connection_id,provider,display_name,secret_ref,scopes,project_id,
                     status,cursor,created_by,version)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (self.tenant_id, connection.connection_id, connection.provider,
                  connection.display_name or connection.connection_id, connection.secret_ref, Jsonb(list(connection.scopes)),
-                 connection.status, Jsonb(dict(connection.cursor)) if connection.cursor is not None else None,
+                 connection.project_id, connection.status, Jsonb(dict(connection.cursor)) if connection.cursor is not None else None,
                  created_by, connection.version),
             )
 
@@ -42,7 +42,7 @@ class PostgresConnectorRepository:
         async with db:
             cursor = await db.execute(
                 """SELECT tenant_id,connection_id,provider,display_name,secret_ref,scopes,status,
-                          cursor,version,last_synced_at,revoked_at,last_error
+                          cursor,version,last_synced_at,revoked_at,last_error,project_id
                    FROM platform_data_connections
                    WHERE tenant_id=%s AND connection_id=%s""",
                 (self.tenant_id, connection_id),
@@ -56,7 +56,7 @@ class PostgresConnectorRepository:
             scopes=tuple(row["scopes"] or ()), display_name=row["display_name"], status=row["status"],
             cursor=dict(row["cursor"]) if row["cursor"] is not None else None,
             version=row["version"], last_synced_at=row["last_synced_at"],
-            revoked_at=row["revoked_at"], last_error=row["last_error"],
+            revoked_at=row["revoked_at"], last_error=row["last_error"], project_id=row["project_id"],
         )
 
     async def save_cursor(
@@ -104,7 +104,7 @@ class PostgresConnectorRepository:
                        SET status='revoked',revoked_at=now(),version=version+1
                        WHERE tenant_id=%s AND connection_id=%s AND status='active'
                        RETURNING tenant_id,connection_id,provider,display_name,secret_ref,scopes,
-                                 status,cursor,version,last_synced_at,revoked_at,last_error""",
+                                 status,cursor,version,last_synced_at,revoked_at,last_error,project_id""",
                     (self.tenant_id, connection_id),
                 )
                 row = await result.fetchone()
