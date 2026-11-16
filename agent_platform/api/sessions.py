@@ -14,16 +14,21 @@ from agent_platform.control_plane.sessions_assets import (
     SessionNotFound,
 )
 from agent_platform.identity.models import Principal
+from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
+from agent_platform.memory.service import MemoryPrincipal
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 ServiceResolver = Callable[[Principal], Awaitable[SessionAssetService]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
+MemoryPrincipalResolver = Callable[[Request], Awaitable[MemoryPrincipal]]
 
 
 def create_sessions_router(
     *, resolve_principal: PrincipalResolver,
     resolve_service: ServiceResolver,
     authorize: Authorizer,
+    memory_extraction: MemoryExtractionService | None = None,
+    resolve_memory_principal: MemoryPrincipalResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1", tags=["sessions"])
 
@@ -170,6 +175,79 @@ def create_sessions_router(
         except (SessionError, ValueError) as exc:
             raise HTTPException(404 if isinstance(exc, SessionNotFound) else 422, str(exc)) from exc
         return {"message_id": message.message_id, "session_id": message.session_id}
+
+    if memory_extraction is not None and resolve_memory_principal is not None:
+        @router.post("/sessions/{session_id}/memory-extract", status_code=202)
+        async def extract_session_memory(session_id: str, request: Request):
+            principal, service = await context(request, "session", session_id, "read")
+            memory_principal = await resolve_memory_principal(request)
+            if (
+                memory_principal.tenant_id != principal.tenant_id
+                or memory_principal.user_id != principal.user_id
+            ):
+                raise HTTPException(403, "memory principal does not match session principal")
+            try:
+                session = await service.repository.get_session(
+                    principal.tenant_id, session_id,
+                )
+                if session is None:
+                    raise HTTPException(404, "session not found")
+                messages = await service.repository.list_messages(
+                    principal.tenant_id, session_id, limit=50,
+                )
+            except (SessionError, SessionNotFound) as exc:
+                raise HTTPException(404, str(exc)) from exc
+
+            assistant_index = next(
+                (index for index in range(len(messages) - 1, -1, -1)
+                 if messages[index].role is MessageRole.ASSISTANT),
+                None,
+            )
+            if assistant_index is None:
+                raise HTTPException(409, "session has no completed assistant turn")
+            user_message = next(
+                (messages[index] for index in range(assistant_index - 1, -1, -1)
+                 if messages[index].role is MessageRole.USER),
+                None,
+            )
+            if user_message is None:
+                raise HTTPException(409, "assistant turn has no preceding user message")
+            assistant_message = messages[assistant_index]
+            metadata = dict(assistant_message.metadata or {})
+            agent_id = metadata.get("agent_id")
+            if agent_id is not None and not isinstance(agent_id, str):
+                raise HTTPException(400, "assistant agent_id metadata must be a string")
+            turn = MemoryTurn(
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+                source_ref=(
+                    f"session:{session_id}:user:{user_message.message_id}:"
+                    f"assistant:{assistant_message.message_id}"
+                ),
+                user_message=user_message.content,
+                assistant_message=assistant_message.content,
+                agent_id=agent_id,
+                project_id=session.project_id,
+            )
+            try:
+                records = await memory_extraction.propose_from_turn(
+                    principal=memory_principal, turn=turn,
+                )
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            return {
+                "source_ref": turn.source_ref,
+                "items": [{
+                    "memory_id": record.candidate.memory_id,
+                    "scope": record.candidate.scope.value,
+                    "scope_id": record.candidate.scope_id,
+                    "content": record.candidate.content,
+                    "confidence": record.candidate.confidence,
+                    "status": record.status.value,
+                } for record in records],
+            }
 
     @router.post("/files", status_code=201)
     async def upload_file(request: Request, session_id: str | None = None, project_id: str | None = None):
