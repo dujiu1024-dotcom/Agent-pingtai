@@ -83,6 +83,27 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await self.store.get("tenant","interrupted")).status,RunStatus.SUCCEEDED)
   self.assertEqual((await self.store.get("tenant","queued")).status,RunStatus.SUCCEEDED)
   self.assertEqual(self.graph.calls[-1][0],{"initial":"queued"})
+ async def test_recovery_applies_human_interventions_before_graph_resume(self):
+  await self.store.create("tenant","human-resume")
+  await self.manager.start("tenant","human-resume")
+  await self.manager.mark_interrupted(
+   "tenant","human-resume",checkpoint_ref="checkpoint-1",reason="human resume requested",
+  )
+  self.graph.checkpoints["tenant:human-resume"]="checkpoint-1"
+  class InterventionStore:
+   async def apply_pending(self,*,tenant_id,run_id,worker_id,applier):
+    await applier({"kind":"context","payload":{"guidance":"use verified evidence"}})
+    return 1
+  async def apply(graph,config,intervention):
+   graph.applied_intervention=intervention
+  executor=LangGraphRunExecutor(
+   graph=self.graph,lifecycle=self.manager,timeout_seconds=1,
+   intervention_store=InterventionStore(),intervention_applier=apply,
+  )
+  recovered=await executor.recover(load_initial_input=lambda row:{})
+  self.assertEqual(recovered,["human-resume"])
+  self.assertEqual(self.graph.applied_intervention["payload"]["guidance"],"use verified evidence")
+
  async def test_failed_worker_lease_does_not_start_run(self):
   class LeaseRejectingStore(InMemoryRunStateStore):
    async def acquire_lease(self,tenant_id,run_id,worker_id,*,lease_seconds):
