@@ -199,6 +199,19 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(worker.consumer.transport, transport)
         self.assertIs(worker.consumer.receipts, receipts)
 
+    async def test_rejects_run_record_from_another_tenant(self):
+        with self.assertRaises(PermissionError):
+            await self.handler(run_store=FakeRunStore(tenant_id="tenant-b"))(make_event())
+
+    async def test_rejects_inactive_session(self):
+        repository = FakeRepository()
+        repository.session = ConversationSession(
+            tenant_id=TENANT, session_id=SESSION, owner_id=ACTOR,
+            title="test", project_id="project-a", status="deleted",
+        )
+        with self.assertRaises(PermissionError):
+            await self.handler(repository=repository)(make_event())
+
 
 if __name__ == "__main__":
     unittest.main()
