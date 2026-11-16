@@ -5,17 +5,19 @@ external replicas, or special retention rules must provide dedicated adapters.
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Mapping
 
 
-_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+def _valid_identifier(value: str) -> bool:
+    return bool(value) and (value[0].isascii() and (value[0].isalpha() or value[0] == "_")) and all(
+        char.isascii() and (char.isalnum() or char == "_") for char in value
+    )
 
 
 def _qualified_identifier(value: str) -> str:
     parts = value.split(".")
-    if not parts or any(not _IDENTIFIER.fullmatch(part) for part in parts):
+    if not parts or any(not _valid_identifier(part) for part in parts):
         raise ValueError("SQL identifiers must be simple, pre-approved identifiers")
     return ".".join(f'"{part}"' for part in parts)
 
