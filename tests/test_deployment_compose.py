@@ -40,7 +40,7 @@ class DeploymentComposeTests(unittest.TestCase):
             "MINIO_ROOT_USER", "MINIO_ROOT_PASSWORD",
         ):
             with self.subTest(variable=variable):
-                self.assertIn("${" + variable + ":-", compose_text)
+                self.assertIn("${" + variable + ":?", compose_text)
 
     def test_image_tags_are_configurable_for_upgrade_and_rollback(self):
         compose_text = (ROOT / "deploy" / "compose.yaml").read_text()
