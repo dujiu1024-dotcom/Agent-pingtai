@@ -42,6 +42,8 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "run_id": str(row["run_id"]),
         "agent_id": row["agent_id"],
         "agent_version": row.get("agent_version"),
+        "template_id": row.get("template_id"),
+        "template_version": row.get("template_version"),
         "project_id": row.get("project_id"),
         "session_id": row.get("session_id"),
         "status": row["status"],
