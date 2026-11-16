@@ -245,6 +245,45 @@ class QuotaReportingApiTests(unittest.TestCase):
             response = client.post("/api/platform/v1/quotas/budgets", json={**base, field: value})
             self.assertEqual(response.status_code, 400, (field, response.text))
 
+
+    def test_queue_and_worker_pool_budgets_require_resource_authorization(self):
+        service = QuotaService(InMemoryQuotaStore())
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=self.store, quota_service=service,
+            authorize_manage=lambda actor: True,
+            authorize_scope=lambda actor, scope_type, scope_id: scope_id in {"priority", "gpu"},
+        ))
+
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="a@example.test", display_name="A",
+                )
+            })()
+            return await call_next(request)
+
+        client = TestClient(app)
+        base = {
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "hard_concurrency": 3,
+        }
+        queue = client.post("/api/platform/v1/quotas/budgets", json={
+            **base, "scope_type": "queue", "scope_id": "priority",
+        })
+        self.assertEqual(queue.status_code, 201, queue.text)
+        worker_pool = client.post("/api/platform/v1/quotas/budgets", json={
+            **base, "scope_type": "worker_pool", "scope_id": "gpu",
+        })
+        self.assertEqual(worker_pool.status_code, 201, worker_pool.text)
+        denied = client.post("/api/platform/v1/quotas/budgets", json={
+            **base, "scope_type": "queue", "scope_id": "other",
+        })
+        self.assertEqual(denied.status_code, 403)
+
     def test_resource_budget_requires_explicit_scope_authorizer(self):
         service = QuotaService(InMemoryQuotaStore())
         app = FastAPI()
