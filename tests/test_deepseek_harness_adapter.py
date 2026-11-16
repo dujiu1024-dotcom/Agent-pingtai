@@ -115,6 +115,16 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options["dsh_home"], str(self.home.resolve()))
         self.assertEqual(options["env"]["DSH_PERMISSION_MODE"], "read-only")
 
+    async def test_per_request_timeout_overrides_template_timeout(self):
+        request = HarnessRequest(
+            context=self.context,
+            instructions="Be precise.",
+            input_text="Analyze the issue.",
+            timeout_seconds=3.5,
+        )
+        await self.adapter().run(request)
+        self.assertEqual(self.instances[0].options["request_timeout_seconds"], 3.5)
+
     async def test_rejects_undeclared_media_inputs(self):
         request = HarnessRequest(
             context=self.context,
