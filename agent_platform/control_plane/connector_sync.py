@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from agent_platform.control_plane.data_connectors import DataConnectorService
 
 ConnectionFactory = Callable[[], Any]
+TenantServiceResolver = Callable[[str], Awaitable[DataConnectorService]]
 
 
 @dataclass(frozen=True)
@@ -129,13 +130,17 @@ class PostgresConnectorSyncQueue:
 class ConnectorSyncWorker:
     def __init__(
         self, *, queue: PostgresConnectorSyncQueue,
-        service: DataConnectorService, worker_id: str,
+        worker_id: str, service: DataConnectorService | None = None,
+        resolve_service: TenantServiceResolver | None = None,
         lease_seconds: int = 120,
     ) -> None:
         if not worker_id.strip() or lease_seconds < 5:
             raise ValueError("worker_id and lease_seconds >= 5 are required")
+        if (service is None) == (resolve_service is None):
+            raise ValueError("provide exactly one of service or tenant service resolver")
         self.queue = queue
         self.service = service
+        self.resolve_service = resolve_service
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self._stop_event = asyncio.Event()
@@ -170,11 +175,16 @@ class ConnectorSyncWorker:
             return False
 
         async def synchronize() -> None:
-            connection = await self.service.repository.get(job.tenant_id, job.connection_id)
+            service = self.service
+            if self.resolve_service is not None:
+                service = await self.resolve_service(job.tenant_id)
+            if service is None:
+                raise RuntimeError("tenant connector service is unavailable")
+            connection = await service.repository.get(job.tenant_id, job.connection_id)
             # Revocation is terminal for pending sync work; never revive credentials.
             if connection is None or connection.status != "active":
                 return
-            await self.service.sync_once(
+            await service.sync_once(
                 tenant_id=job.tenant_id, connection_id=job.connection_id,
             )
 
