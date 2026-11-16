@@ -75,14 +75,16 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         document_id = response.json()["document_id"]
+        payload = {"k": 3, "cases": [{
+            "case_id": "alpha-case", "query": "alpha evidence",
+            "expected_document_ids": [document_id],
+            "expected_answer_terms": ["Evidence-backed"],
+            "expected_citation_document_ids": [document_id],
+        }]}
+        denied = self.client.post("/api/platform/v1/knowledge/evaluate", json=payload)
+        self.assertEqual(denied.status_code, 403)
         result = self.client.post(
-            "/api/platform/v1/knowledge/evaluate",
-            json={"k": 3, "cases": [{
-                "case_id": "alpha-case", "query": "alpha evidence",
-                "expected_document_ids": [document_id],
-                "expected_answer_terms": ["Evidence-backed"],
-                "expected_citation_document_ids": [document_id],
-            }]},
+            "/api/platform/v1/knowledge/evaluate", json=payload,
             headers={"x-roles": "knowledge.manage"},
         )
         self.assertEqual(result.status_code, 200)
