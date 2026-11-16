@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from dataclasses import replace
 from typing import Any, Mapping
 
@@ -70,7 +71,7 @@ def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> N
         if key in schema and (
             isinstance(schema[key], bool)
             or not isinstance(schema[key], (int, float))
-            or not __import__("math").isfinite(schema[key])
+            or not math.isfinite(schema[key])
         ):
             raise ValueError(f"{path}.{key} must be numeric")
     if "minItems" in schema and "maxItems" in schema and schema["minItems"] > schema["maxItems"]:
