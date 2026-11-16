@@ -314,6 +314,8 @@ class QuotaService:
         if root_run_id is not None and (not isinstance(root_run_id, str) or not root_run_id.strip()):
             raise ValueError("root_run_id must be a non-empty string")
         root_run_id = root_run_id or run_id
+        if scope_type == "run" and scope_id != root_run_id:
+            raise ValueError("Run budget scope_id must equal root_run_id")
         budget = await self.store.get_budget(tenant_id, scope_type, scope_id, datetime.now(timezone.utc))
         if budget is None:
             raise BudgetExceeded("quota budget not configured")
