@@ -121,7 +121,7 @@ class LangGraphRunExecutor:
     if self.registry_runtime_provider is not None:
      await self.registry_runtime_provider.prepare(
       tenant_id=tenant_id,run_id=run_id,
-      model_template_id=self.model_template_id,
+      model_template_id=self.model_template_id or "",
       required_tools=self.required_tools,
      )
      runtime_prepared=True
@@ -165,7 +165,7 @@ class LangGraphRunExecutor:
    if self.registry_runtime_provider is not None:
     await self.registry_runtime_provider.prepare(
      tenant_id=row.tenant_id,run_id=row.run_id,
-     model_template_id=self.model_template_id,
+     model_template_id=self.model_template_id or "",
      required_tools=self.required_tools,
     )
     runtime_prepared=True
