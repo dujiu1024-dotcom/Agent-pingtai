@@ -23,7 +23,7 @@ class TaskRunStore(InMemoryRunStateStore):
 
     async def create_task_run(
         self, *, tenant_id, run_id, actor_id, agent_id, agent_version, template_id,
-        template_version, input, project_id=None, session_id=None,
+        template_version, input, preparation_owner, project_id=None, session_id=None,
         workflow_id=None, idempotency_key=None, request_digest=None,
     ):
         key = (tenant_id, actor_id, idempotency_key) if idempotency_key else None
@@ -40,7 +40,8 @@ class TaskRunStore(InMemoryRunStateStore):
             "agent_version": agent_version, "template_id": template_id, "template_version": template_version,
             "workflow_id": workflow_id, "status": "queued", "input": dict(input),
             "output": None, "usage": {}, "trace_id": None, "created_by": actor_id,
-            "request_digest": request_digest, "created_at": now, "updated_at": now,
+            "request_digest": request_digest, "preparation_owner": preparation_owner,
+            "created_at": now, "updated_at": now,
             "started_at": None, "finished_at": None, "checkpoint_ref": None,
             "last_error": None, "registry_snapshot_digest": None, "dispatch_ready": False,
         }
@@ -69,12 +70,27 @@ class TaskRunStore(InMemoryRunStateStore):
                 rows.append(await self.get_task_record(tenant_id, run_id, actor_id=actor_id))
         return rows[:limit]
 
-    async def mark_task_ready(self, tenant_id, run_id, digest):
+    async def claim_task_preparation(self, tenant_id, run_id, owner, *, lease_seconds=60):
         row = self.records.get(run_id)
-        if row is None or row["tenant_id"] != tenant_id:
+        if row is None or row["tenant_id"] != tenant_id or row["dispatch_ready"]:
+            return False
+        if row.get("preparation_owner"):
+            return False
+        row["preparation_owner"] = owner
+        return True
+
+    async def owns_task_preparation(self, tenant_id, run_id, owner):
+        row = self.records.get(run_id)
+        return bool(row and row["tenant_id"] == tenant_id
+                    and row.get("preparation_owner") == owner and not row["dispatch_ready"])
+
+    async def mark_task_ready(self, tenant_id, run_id, digest, owner):
+        row = self.records.get(run_id)
+        if row is None or row["tenant_id"] != tenant_id or row.get("preparation_owner") != owner:
             return False
         row["registry_snapshot_digest"] = digest
         row["dispatch_ready"] = True
+        row["preparation_owner"] = None
         return True
 
     async def save_output(self, tenant_id, run_id, output, *, usage=None, trace_id=None):
