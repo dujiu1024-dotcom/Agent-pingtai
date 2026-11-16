@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -13,6 +12,7 @@ from agent_platform.control_plane.sessions_assets import (
     InMemoryObjectStorage,
     InMemorySessionRepository,
     SessionAssetService,
+    SessionNotFound,
 )
 from agent_platform.identity.models import Principal
 
@@ -39,7 +39,7 @@ class PresignedDownloadTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(found.asset_id, "asset-a")
         self.assertIn("ttl=120", url)
-        with self.assertRaises(Exception):
+        with self.assertRaises(SessionNotFound):
             await service.create_download_url(tenant_id="tenant-b", asset_id="asset-a")
         pending = FileAsset(
             tenant_id="tenant-a", asset_id="asset-pending", owner_id="user-a",
@@ -93,3 +93,4 @@ class PresignedDownloadTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(allowed.status_code, 200)
         self.assertEqual(allowed.json()["expires_in"], 60)
         self.assertNotIn("object_key", allowed.json())
+        self.assertEqual(allowed.headers["cache-control"], "no-store")
