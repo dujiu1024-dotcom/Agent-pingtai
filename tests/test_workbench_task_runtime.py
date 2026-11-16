@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -345,6 +346,39 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 input={"input_text": "invalid"},
                 run_id="not-a-uuid",
             )
+
+    async def test_worker_keeps_async_executor_context_open_through_run(self):
+        task = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "scoped"},
+        )
+        graph = FakeGraph()
+        events = []
+
+        @asynccontextmanager
+        async def executor_resolver(_record, worker_id):
+            events.append("enter")
+            yield LangGraphRunExecutor(
+                graph=graph, lifecycle=self.lifecycle, worker_id=worker_id,
+                timeout_seconds=2,
+            )
+            events.append("exit")
+
+        async def lifecycle_resolver(_tenant_id):
+            return self.lifecycle
+
+        worker = RunExecutionWorker(
+            run_store=self.run_store, executor_resolver=executor_resolver,
+            lifecycle_resolver=lifecycle_resolver, worker_id="worker-scoped",
+        )
+        result = await worker.run_once()
+        self.assertEqual(result["succeeded"], 1)
+        self.assertEqual(events, ["enter", "exit"])
+        updated = await self.service.get_task(
+            tenant_id="tenant-a", task_id=task["task_id"], actor_id="user-a",
+        )
+        self.assertEqual(updated["status"], "succeeded")
+
 
 
 if __name__ == "__main__":
