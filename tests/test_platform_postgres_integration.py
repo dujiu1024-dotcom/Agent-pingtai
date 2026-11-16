@@ -606,6 +606,16 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             [row.run_id for row in claimed],
             [high_priority_run, low_priority_run],
         )
+        # Do not leave claimed rows in the global worker queue for other integration tests.
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='failed', finished_at=now(),
+                       worker_id=NULL, lease_expires_at=NULL
+                   WHERE tenant_id=%s AND run_id IN (%s,%s)""",
+                (self.tenant_id, high_priority_run, low_priority_run),
+            )
+            await conn.commit()
 
 
     async def test_failed_workbench_task_retry_preserves_registry_snapshot_and_priority(self):
@@ -648,6 +658,17 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+
+
+        # Keep the globally polled workbench queue isolated from subsequent tests.
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='cancelled', finished_at=now(), dispatch_ready=false
+                   WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, retried_run_id),
+            )
+            await conn.commit()
 
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
