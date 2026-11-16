@@ -102,6 +102,10 @@ class AssetScanner(Protocol):
     async def scan(self, filename: str, media_type: str, content: bytes) -> bool: ...
 
 
+class AssetProcessingQueue(Protocol):
+    async def enqueue(self, *, tenant_id: str, asset_id: str) -> None: ...
+
+
 class InMemorySessionRepository:
     """Test adapter only; production must use tenant-bound PostgreSQL storage."""
     def __init__(self) -> None:
@@ -173,6 +177,7 @@ class SessionAssetService:
         max_upload_bytes: int = 25 * 1024 * 1024,
         allowed_media_types: frozenset[str] | None = None,
         scanner: AssetScanner | None = None,
+        processing_queue: AssetProcessingQueue | None = None,
     ) -> None:
         if max_upload_bytes < 1:
             raise ValueError("max_upload_bytes must be positive")
@@ -181,6 +186,7 @@ class SessionAssetService:
         self.max_upload_bytes = max_upload_bytes
         self.allowed_media_types = allowed_media_types
         self.scanner = scanner
+        self.processing_queue = processing_queue
 
     async def create_session(self, *, tenant_id: str, owner_id: str, title: str = "", project_id: str | None = None) -> ConversationSession:
         if not tenant_id.strip() or not owner_id.strip():
@@ -239,7 +245,10 @@ class SessionAssetService:
         await self.storage.put(object_key, content, media_type=media_type)
         asset = FileAsset(
             tenant_id, asset_id, owner_id, object_key, clean_name, media_type,
-            len(content), digest, AssetStatus.SCANNING if self.scanner else AssetStatus.AVAILABLE,
+            len(content), digest,
+            AssetStatus.PENDING if self.processing_queue else (
+                AssetStatus.SCANNING if self.scanner else AssetStatus.AVAILABLE
+            ),
             project_id, session_id,
         )
         try:
@@ -247,7 +256,14 @@ class SessionAssetService:
         except Exception:
             await self.storage.delete(object_key)
             raise
-        if self.scanner is not None:
+        if self.processing_queue is not None:
+            try:
+                await self.processing_queue.enqueue(tenant_id=tenant_id, asset_id=asset_id)
+            except Exception as exc:
+                await self.repository.set_asset_status(tenant_id, asset_id, AssetStatus.REJECTED)
+                await self.storage.delete(object_key)
+                raise SessionError("file processing could not be scheduled") from exc
+        elif self.scanner is not None:
             try:
                 accepted = await self.scanner.scan(clean_name, media_type, content)
             except Exception as exc:
