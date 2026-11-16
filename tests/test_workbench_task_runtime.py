@@ -332,7 +332,7 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(task["run_id"], child_run_id)
         self.assertEqual(task["task_id"], child_run_id)
         self.assertEqual(task["template_id"], "general")
-        self.assertEqual(task["template_version"], 1)
+        self.assertEqual(task["template_version"], 2)
 
         with self.assertRaisesRegex(WorkbenchTaskError, "run_id must be a UUID"):
             await self.service.submit_task(
