@@ -133,5 +133,77 @@ class ServiceIdentityAuthorizationIntegrationTests(unittest.IsolatedAsyncioTestC
             )
 
 
+    async def test_cross_tenant_service_credentials_and_resource_bindings_are_denied(self):
+        tenant_b = f"machine-auth-{uuid4().hex}"
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_b, "Second Tenant"),
+            )
+            # Deliberately reuse the same local identifiers across tenants. All
+            # authorization joins must still be scoped by the principal tenant.
+            await conn.execute(
+                """INSERT INTO platform_service_accounts
+                   (tenant_id, service_account_id, name)
+                   VALUES (%s, %s, 'Second Tenant Worker')""",
+                (tenant_b, self.service_account_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Second Tenant Agent', 'isolated agent')""",
+                (tenant_b, self.agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agent_identities
+                   (tenant_id, agent_id, service_account_id)
+                   VALUES (%s, %s, %s)""",
+                (tenant_b, self.agent_id, self.service_account_id),
+            )
+            await conn.commit()
+
+        # A tenant-A credential cannot be replayed with a forged tenant-B
+        # principal, even when local service-account and Agent IDs collide.
+        forged_tenant = ServicePrincipal(
+            tenant_id=tenant_b,
+            service_account_id=self.service_account_id,
+            agent_id=self.agent_id,
+            credential_id=self.principal.credential_id,
+            scopes=self.principal.scopes,
+        )
+        with self.assertRaises(ServiceIdentityError):
+            await self.service.authorize(
+                principal=forged_tenant,
+                resource=ResourceRef("agent", self.agent_id),
+                permission_key="agent.run",
+            )
+
+        # A valid tenant-B credential still cannot inherit tenant-A's role
+        # binding merely because the resource identifier is the same.
+        issued_b = await self.service.issue_credential(
+            tenant_id=tenant_b,
+            service_account_id=self.service_account_id,
+            agent_id=self.agent_id,
+            name="tenant B credential",
+            scopes=("agent.run",),
+        )
+        principal_b = await self.service.authenticate(issued_b.token)
+        with self.assertRaises(ServiceIdentityError):
+            await self.service.authorize(
+                principal=principal_b,
+                resource=ResourceRef("agent", self.agent_id),
+                permission_key="agent.run",
+            )
+
+        # Tenant-A's credential also cannot address tenant B's tenant resource.
+        with self.assertRaises(ServiceIdentityError):
+            await self.service.authorize(
+                principal=self.principal,
+                resource=ResourceRef("tenant", tenant_b),
+                permission_key="agent.run",
+            )
+
+
+
 if __name__ == "__main__":
     unittest.main()
