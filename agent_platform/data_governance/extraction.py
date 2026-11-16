@@ -98,3 +98,78 @@ class MigrationExtractor:
                     resumed_from_cursor=resumed_from, completed=True,
                 )
             seen_cursors.add(cursor)
+
+class PostgresMigrationStaging:
+    """PostgreSQL-backed page staging and cursor checkpoint store."""
+
+    def __init__(self, *, connection_factory: Any, key_field: str = "id") -> None:
+        if not key_field.strip():
+            raise ValueError("key_field is required")
+        self._connect = connection_factory
+        self.key_field = key_field
+
+    async def get_checkpoint(self, *, tenant_id: str, batch_id: str) -> str | None:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT next_cursor FROM platform_data_migration_checkpoints
+                   WHERE tenant_id=%s AND batch_id=%s""",
+                (tenant_id, batch_id),
+            )
+            row = await cursor.fetchone()
+        return row["next_cursor"] if row is not None else None
+
+    async def append_page(
+        self, *, tenant_id: str, batch_id: str,
+        rows: Sequence[Mapping[str, Any]], next_cursor: str | None,
+    ) -> int:
+        import json
+
+        keys: set[str] = set()
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                for row in rows:
+                    if self.key_field not in row or row[self.key_field] is None:
+                        raise ValueError(f"staged row is missing key field: {self.key_field}")
+                    source_key = str(row[self.key_field])
+                    if not source_key or source_key in keys:
+                        raise ValueError("staged page contains an empty or duplicate source key")
+                    keys.add(source_key)
+                    payload = json.dumps(
+                        dict(row), ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                    )
+                    cursor = await connection.execute(
+                        """INSERT INTO platform_data_migration_staging
+                           (tenant_id,batch_id,source_key,source_payload)
+                           VALUES (%s,%s,%s,%s::jsonb)
+                           ON CONFLICT (tenant_id,batch_id,source_key) DO UPDATE
+                             SET source_payload=EXCLUDED.source_payload
+                             WHERE platform_data_migration_staging.source_payload=EXCLUDED.source_payload
+                           RETURNING source_key""",
+                        (tenant_id, batch_id, source_key, payload),
+                    )
+                    if await cursor.fetchone() is None:
+                        raise ValueError("staged source row changed during extraction")
+                await connection.execute(
+                    """INSERT INTO platform_data_migration_checkpoints
+                       (tenant_id,batch_id,next_cursor)
+                       VALUES (%s,%s,%s)
+                       ON CONFLICT (tenant_id,batch_id) DO UPDATE SET
+                         next_cursor=EXCLUDED.next_cursor,updated_at=now()""",
+                    (tenant_id, batch_id, next_cursor),
+                )
+        return len(rows)
+
+    async def iter_rows(
+        self, *, tenant_id: str, batch_id: str,
+    ) -> Sequence[Mapping[str, Any]]:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT source_payload FROM platform_data_migration_staging
+                   WHERE tenant_id=%s AND batch_id=%s ORDER BY source_key""",
+                (tenant_id, batch_id),
+            )
+            rows = await cursor.fetchall()
+        return tuple(dict(row["source_payload"]) for row in rows)
