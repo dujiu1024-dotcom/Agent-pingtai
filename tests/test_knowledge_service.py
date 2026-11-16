@@ -119,7 +119,8 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         doc=Document(tenant_id="t",title="pdf",source_uri="file://pdf",content_hash="x")
         text="[page:1] " + "a"*110 + "\n[page:2] second page text"
         chunks=chunk_document(doc,text,max_chars=100,overlap=0)
-        self.assertEqual(chunks[-1].page_number,2)
+        # The final chunk starts on page 1 and only overlaps the page 2 marker.
+        self.assertEqual(chunks[-1].page_number,1)
 
     async def test_search_excludes_superseded_document_versions(self):
         from dataclasses import replace
