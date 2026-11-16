@@ -26,8 +26,7 @@ ADMIN_DSN = os.environ.get("AGENT_PLATFORM_TEST_DSN")
 class PostgresEncryptedBackupRestoreIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        params = conninfo_to_dict(ADMIN_DSN)
-        cls.admin_dsn = ADMIN_DSN
+            cls.admin_dsn = ADMIN_DSN
         cls.source_db = f"backup_src_{uuid4().hex[:12]}"
         cls.target_db = f"backup_dst_{uuid4().hex[:12]}"
         with connect(cls.admin_dsn, autocommit=True) as conn:
