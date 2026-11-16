@@ -165,6 +165,42 @@ class RegistryBackedTaskCenterService:
 
         return agent, template, provider, tools, skills, workflow
 
+    async def _resolve_pinned_items(self, record: Mapping[str, Any]) -> list[Any]:
+        """Rebuild the original published references after a preparation crash.
+
+        Never silently bind an idempotent retry to newer Agent/tool/Skill versions.
+        """
+        references = record.get("registry_snapshot")
+        if not isinstance(references, (list, tuple)) or not references:
+            raise WorkbenchTaskError("queued task is missing its persisted registry version references")
+        items = []
+        for reference in references:
+            if not isinstance(reference, Mapping):
+                raise WorkbenchTaskError("persisted registry reference is invalid")
+            kind = reference.get("kind")
+            item_id = reference.get("item_id")
+            version = reference.get("version")
+            if (
+                not isinstance(kind, str) or not kind
+                or not isinstance(item_id, str) or not item_id
+                or isinstance(version, bool) or not isinstance(version, int) or version < 1
+            ):
+                raise WorkbenchTaskError("persisted registry reference is incomplete")
+            item = await self.repository.get(self.tenant_id, kind, item_id, version)
+            if item is None or item.status != "published":
+                raise WorkbenchTaskError(
+                    f"pinned registry version is unavailable: {kind}:{item_id}@{version}"
+                )
+            active = await self.registry.resolve_active(
+                tenant_id=self.tenant_id, kind=kind, item_id=item_id,
+            )
+            if active.version != version:
+                raise WorkbenchTaskError(
+                    f"active registry version changed for pinned task dependency: {kind}:{item_id}"
+                )
+            items.append(item)
+        return items
+
     async def _ensure_task_ready(
         self, *, tenant_id: str, run_id: str, agent_id: str,
         preparation_owner: str, existing_digest: str | None = None,
@@ -288,6 +324,8 @@ class RegistryBackedTaskCenterService:
                             tenant_id=tenant_id, run_id=str(existing["run_id"]),
                             agent_id=agent_id, preparation_owner=owner,
                             existing_digest=existing.get("registry_snapshot_digest"),
+                        pinned_items=await self._resolve_pinned_items(existing),
+                            pinned_items=await self._resolve_pinned_items(existing),
                         )
                     existing = await self.run_store.get_task_record(
                         tenant_id, str(existing["task_id"]), actor_id=actor_id,
@@ -309,6 +347,10 @@ class RegistryBackedTaskCenterService:
             project_id=project_id, session_id=session_id,
             workflow_id=workflow.item_id if workflow is not None else None,
             idempotency_key=idempotency_key, request_digest=digest,
+            registry_snapshot=[
+                {"kind": item.kind, "item_id": item.item_id, "version": item.version}
+                for item in [agent, template, provider, *tools, *skills, *([workflow] if workflow is not None else [])]
+            ],
         )
         if not created:
             existing = await self.run_store.get_task_by_idempotency(
