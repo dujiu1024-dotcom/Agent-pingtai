@@ -28,8 +28,22 @@ ALTER TABLE platform_runs
     ADD COLUMN IF NOT EXISTS created_by text NOT NULL DEFAULT 'platform-system',
     ADD COLUMN IF NOT EXISTS idempotency_key text,
     ADD COLUMN IF NOT EXISTS request_digest char(64),
+    ADD COLUMN IF NOT EXISTS agent_version integer,
     ADD COLUMN IF NOT EXISTS session_id text,
     ADD COLUMN IF NOT EXISTS dispatch_ready boolean NOT NULL DEFAULT false;
+
+DO $
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'platform_runs'::regclass
+          AND conname = 'ck_platform_runs_agent_version_positive'
+    ) THEN
+        ALTER TABLE platform_runs
+            ADD CONSTRAINT ck_platform_runs_agent_version_positive
+            CHECK (agent_version IS NULL OR agent_version >= 1);
+    END IF;
+END $;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_runs_actor_idempotency
     ON platform_runs (tenant_id, created_by, idempotency_key)
