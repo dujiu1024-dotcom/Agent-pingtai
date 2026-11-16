@@ -139,7 +139,13 @@ class HumanCollaborationPostgresTests(unittest.IsolatedAsyncioTestCase):
             intervention_id=request["intervention_id"], actor_id="approver",
             decision="approved", rationale="Evidence reviewed",
         )
-        self.assertEqual(decision["status"], "applied")
+        self.assertEqual(decision["status"], "pending")
+        applied = []
+        self.assertEqual(await service.apply_pending(
+            tenant_id=self.tenant_id, run_id=str(self.run_id), worker_id="worker-a",
+            applier=lambda payload: _capture(applied, payload),
+        ), 1)
+        self.assertEqual(applied[0]["payload"]["decision"], "approved")
 
         from psycopg.types.json import Jsonb
         async with await self.connect() as conn:
@@ -161,8 +167,12 @@ class HumanCollaborationPostgresTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event["event_type"] for event in events],
             ["human.intervention_submitted", "human.intervention_decided",
-             "human.result_revised"],
+             "human.intervention_applied", "human.result_revised"],
         )
+
+
+async def _capture(items, payload):
+    items.append(payload)
 
 
 if __name__ == "__main__":
