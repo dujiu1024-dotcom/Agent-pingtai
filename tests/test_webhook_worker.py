@@ -52,8 +52,10 @@ class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
         calls = dispatcher.calls
         await asyncio.sleep(0.02)
         self.assertEqual(dispatcher.calls, calls)
+        restarted = asyncio.Event()
+        dispatcher.started = restarted
         await worker.start()
-        await asyncio.wait_for(started.wait(), timeout=1)
+        await asyncio.wait_for(restarted.wait(), timeout=1)
         await worker.stop()
         self.assertGreater(dispatcher.calls, calls)
 
