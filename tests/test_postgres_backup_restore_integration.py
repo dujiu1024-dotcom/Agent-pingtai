@@ -55,7 +55,7 @@ class PostgresEncryptedBackupRestoreIntegrationTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            public_key = re.search(r"public key: (age1[0-9a-z]+)", key.stderr)
+            public_key = re.search(r"public key: (age1[0-9a-z]+)", key.stderr, re.IGNORECASE)
             self.assertIsNotNone(public_key, key.stderr)
             identity = key_path.read_text(encoding="utf-8")
             self.assertIn("AGE-SECRET-KEY-", identity)
