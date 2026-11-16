@@ -22,6 +22,46 @@ class FakeAdapter:
             yield record
 
 
+
+class FakeLedger:
+    def __init__(self):
+        self.subjects = {}
+        self.sources = {}
+        self.status = {}
+
+    async def begin_operation(self, *, tenant_id, operation_id, subject_id):
+        key = (tenant_id, operation_id)
+        existing = self.subjects.setdefault(key, subject_id)
+        if existing != subject_id:
+            raise ValueError("operation id is already bound to another subject")
+        self.status[key] = "running"
+
+    async def completed_sources(self, *, tenant_id, operation_id):
+        return tuple(
+            source for (tenant, operation, source), result in self.sources.items()
+            if tenant == tenant_id and operation == operation_id
+            and result["status"] == "completed"
+        )
+
+    async def mark_source_started(self, *, tenant_id, operation_id, source):
+        self.sources[(tenant_id, operation_id, source)] = {"status": "running"}
+
+    async def mark_source_completed(
+        self, *, tenant_id, operation_id, source, record_count, sha256,
+    ):
+        self.sources[(tenant_id, operation_id, source)] = {
+            "status": "completed", "record_count": record_count, "sha256": sha256,
+        }
+
+    async def mark_source_failed(self, *, tenant_id, operation_id, source, error_code):
+        self.sources[(tenant_id, operation_id, source)] = {
+            "status": "failed", "error_code": error_code,
+        }
+
+    async def finish_operation(self, *, tenant_id, operation_id, complete):
+        self.status[(tenant_id, operation_id)] = "completed" if complete else "partial"
+
+
 class FakeSink:
     def __init__(self):
         self.records = {}
@@ -111,6 +151,47 @@ class SubjectExportCoordinatorTests(unittest.IsolatedAsyncioTestCase):
             operation_id="export-unsupported", sink=sink,
         )
         self.assertEqual(unsupported.failed, {"postgres": "TypeError"})
+
+
+    async def test_durable_ledger_resumes_only_incomplete_sources(self):
+        good = FakeAdapter([{"id": "1"}])
+        broken = FakeAdapter([{"id": "2"}, {"id": "3"}], fail_after=1)
+        coordinator = SubjectExportCoordinator({"postgres": good, "objects": broken})
+        ledger, sink = FakeLedger(), FakeSink()
+
+        first = await coordinator.export(
+            tenant_id="tenant-a", subject_id="user-1",
+            operation_id="export-durable", sink=sink, ledger=ledger,
+        )
+        self.assertFalse(first.complete)
+        self.assertEqual(ledger.status[("tenant-a", "export-durable")], "partial")
+        self.assertEqual(
+            ledger.sources[("tenant-a", "export-durable", "postgres")]["status"],
+            "completed",
+        )
+
+        broken.fail_after = None
+        second = await coordinator.export(
+            tenant_id="tenant-a", subject_id="user-1",
+            operation_id="export-durable", sink=sink, ledger=ledger,
+        )
+        self.assertTrue(second.complete)
+        self.assertEqual(ledger.status[("tenant-a", "export-durable")], "completed")
+        self.assertEqual(len(good.calls), 1)
+        self.assertEqual(len(broken.calls), 2)
+
+    async def test_durable_ledger_binds_operation_to_one_subject(self):
+        ledger = FakeLedger()
+        coordinator = SubjectExportCoordinator({"postgres": FakeAdapter([])})
+        await coordinator.export(
+            tenant_id="tenant-a", subject_id="user-1",
+            operation_id="export-bound", sink=FakeSink(), ledger=ledger,
+        )
+        with self.assertRaisesRegex(ValueError, "another subject"):
+            await coordinator.export(
+                tenant_id="tenant-a", subject_id="user-2",
+                operation_id="export-bound", sink=FakeSink(), ledger=ledger,
+            )
 
     async def test_rejects_unknown_completed_sources_and_non_mapping_records(self):
         with self.assertRaises(ValueError):
