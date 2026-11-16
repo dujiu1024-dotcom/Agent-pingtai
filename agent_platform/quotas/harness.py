@@ -93,6 +93,10 @@ class QuotaEnforcedHarnessAdapter:
             ):
                 if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                     raise ValueError(f"{label} must be a non-negative integer")
+            if not isinstance(estimated_input_tokens, int) or isinstance(estimated_input_tokens, bool):
+                raise ValueError("estimated input tokens must be a non-negative integer")
+            if not isinstance(estimated_output_tokens, int) or isinstance(estimated_output_tokens, bool):
+                raise ValueError("estimated output tokens must be a non-negative integer")
             if estimated_input_tokens + estimated_output_tokens != estimated_tokens:
                 raise ValueError("estimated total tokens must equal input plus output tokens")
         if not isinstance(estimated_cost, Decimal) or not estimated_cost.is_finite() or estimated_cost < 0:
