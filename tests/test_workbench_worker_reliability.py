@@ -66,10 +66,6 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
         async def immediate_sleep(_seconds):
             await asyncio.sleep(0)
 
-        # Use a controlled sleep that yields once, allowing both tasks to start.
-        async def yielding_sleep(_seconds):
-            await asyncio.get_running_loop().create_future()
-
         with patch("agent_platform.runtime.workbench_tasks.asyncio.sleep", immediate_sleep):
             with self.assertRaises(WorkerLeaseLost):
                 await worker._execute_with_heartbeat(
