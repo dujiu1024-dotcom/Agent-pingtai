@@ -4,7 +4,7 @@
 </style></head><body><div class="shell"><aside class="side"><div class="brand">智能体平台</div><nav class="nav" id="nav"><button class="active" data-view="overview">工作台</button><button data-view="agents">Agent 管理</button><button data-view="runs">任务与运行</button><button data-view="approvals">人工审批</button><button data-view="knowledge">知识库</button><button data-view="memory">记忆管理</button><button data-view="blackboard">Blackboard</button><button data-view="models">模型模板</button><button data-view="tools">工具与 Skills</button></nav></aside><main class="main"><header class="top"><div><h1 id="heading">工作台</h1><div class="muted">受监督的智能体执行与协作控制面</div></div><div class="row"><input id="apiBase" value="/api/platform/v1" aria-label="API 地址"><button class="btn" id="refresh">刷新</button></div></header><div id="message" role="status"></div>
 <section id="overview"><div class="grid"><div class="card"><div class="muted">Agent 数量</div><div class="stat" id="agentCount">—</div></div><div class="card"><div class="muted">运行中任务</div><div class="stat" id="runCount">—</div></div><div class="card"><div class="muted">待审批</div><div class="stat" id="approvalCount">—</div></div></div><div class="panel"><h2>快速发起任务</h2><div class="row"><input id="agentId" placeholder="Agent ID"><input id="projectId" placeholder="项目 ID（可选）"></div><p><textarea id="taskInput" placeholder="描述需要 Agent 完成的任务"></textarea></p><button class="btn primary" id="submitTask">提交任务</button></div><div class="panel"><h2>最近运行</h2><div id="recentRuns" class="muted">加载中…</div></div></section>
 <section id="agents" class="hidden"><div class="panel"><h2>Agent 管理</h2><div class="row"><input id="newAgentId" placeholder="Agent ID"><input id="newAgentName" placeholder="显示名称"><input id="templateRef" placeholder="模型模板 ID@版本"></div><p><textarea id="agentRole" placeholder="角色与职责定义"></textarea></p><button class="btn primary" id="createAgent">创建 Agent</button><div id="agentList"></div></div></section>
-<section id="runs" class="hidden"><div class="panel"><h2>任务与运行</h2><div id="runsList"></div></div></section><section id="approvals" class="hidden"><div class="panel"><h2>人工审批</h2><div id="approvalList"></div><div id="approvalDetail" class="panel hidden" aria-live="polite"></div></div></section>
+<section id="runs" class="hidden"><div class="panel"><h2>任务与运行</h2><div id="runsList"></div><div id="taskDetail" class="panel hidden"></div></div></section><section id="approvals" class="hidden"><div class="panel"><h2>人工审批</h2><div id="approvalList"></div><div id="approvalDetail" class="panel hidden" aria-live="polite"></div></div></section>
 <section id="knowledge" class="hidden"><div class="panel"><h2>知识库</h2><div class="row"><input id="docTitle" placeholder="文档标题"><input id="docScope" value="tenant" placeholder="tenant/project/private"></div><textarea id="docText" placeholder="粘贴文本内容"></textarea><button class="btn primary" id="ingestDoc">入库</button><div id="knowledgeList"></div></div></section>
 <section id="memory" class="hidden"><div class="panel"><h2>记忆治理</h2><div id="memoryList"></div></div></section><section id="blackboard" class="hidden"><div class="panel"><h2>协作黑板</h2><p class="muted">按任务、运行或项目范围查看专家提案、证据与决策记录。</p><div class="row"><select id="blackboardScope"><option value="task">任务</option><option value="run">运行</option><option value="project">项目</option><option value="tenant">租户</option></select><input id="blackboardScopeId" placeholder="范围 ID"><button class="btn primary" id="loadBlackboard">查询条目</button></div><div id="blackboardList"></div><h3>条目版本历史</h3><div id="blackboardHistory" class="muted">选择条目后查看历史版本。</div></div></section><section id="models" class="hidden"><div class="panel"><h2>模型模板与供应商</h2><div class="row"><input id="newModelId" placeholder="模型模板 ID"><input id="newModelName" placeholder="显示名称"><input id="newModelProvider" placeholder="供应商标识"></div><textarea id="newModelDefinition" placeholder='模型定义 JSON，例如 {"provider":"deepseek-official","model":"...","parameters":{}}'></textarea><button class="btn primary" id="createModel">保存模型模板草稿</button><div id="modelList"></div></div></section><section id="tools" class="hidden"><div class="panel"><h2>工具与 Skills</h2><div class="row"><input id="newToolId" placeholder="工具或 Skill ID"><input id="newToolName" placeholder="名称"></div><textarea id="newToolDefinition" placeholder='定义 JSON，例如 {"description":"...","input_schema":{}}'></textarea><div class="row"><button class="btn primary" id="createTool">保存工具草稿</button><button class="btn" id="createSkill">保存 Skill 草稿</button></div><div id="toolList"></div></div></section></main></div>
 <script>
@@ -30,6 +30,28 @@ async function loadRegistryKinds(kinds,target){
  }
  $(target).innerHTML=sections.join("");
 }
+function renderTasks(items,target){
+ if(!items.length){$(target).innerHTML="<p class='muted'>暂无任务</p>";return}
+ $(target).innerHTML="<table><thead><tr><th>任务</th><th>Agent</th><th>状态</th><th>操作</th></tr></thead><tbody>"+items.map(x=>{
+  const id=x.task_id||x.run_id;
+  const canCancel=["queued","running","paused","interrupted"].includes(x.status);
+  return "<tr><td>"+esc(id)+"</td><td>"+esc(x.agent_id)+"</td><td>"+esc(x.status)+"</td><td><button class='btn' data-task-action='detail' data-id='"+esc(id)+"'>详情</button> "+(canCancel?"<button class='btn' data-task-action='cancel' data-id='"+esc(id)+"'>取消</button>":"")+"</td></tr>";
+ }).join("")+"</tbody></table>";
+}
+$("runsList").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-task-action]");if(!b)return;
+ const id=encodeURIComponent(b.dataset.id),action=b.dataset.taskAction;
+ try{
+  if(action==="detail"){
+   const d=await api("/workbench/tasks/"+id);
+   $("taskDetail").classList.remove("hidden");
+   $("taskDetail").innerHTML="<h3>任务详情</h3><pre style='white-space:pre-wrap;overflow-wrap:anywhere'>"+esc(JSON.stringify(d,null,2))+"</pre>";
+  }else{
+   await api("/workbench/tasks/"+id+"/cancel",{method:"POST",body:"{}"});
+   msg("取消请求已提交");await load("runs");
+  }
+ }catch(err){msg("任务操作失败："+err.message)}
+});
 async function createRegistryDraft(kind,id,definition){
  if(!id.trim())throw new Error("请输入资源 ID");
  await api("/registry/"+encodeURIComponent(kind)+"/"+encodeURIComponent(id.trim())+"/versions",{method:"POST",body:JSON.stringify({definition})});
@@ -76,7 +98,7 @@ if(view==="overview"||view==="agents"){
 if(capabilities.agent_management){const a=await api("/registry/agent?limit=100");const items=a.items||[];if(view==="overview")$("agentCount").textContent=items.length;if(view==="agents")await loadRegistryKinds([["agent","Agent"]],"agentList");}
 else{$("agentCount").textContent="未接入";$("agentList").innerHTML=unavailable("Agent 管理 API（总控 #2 注册中心依赖）");}}
 if(view==="overview"||view==="runs"){
-if(capabilities.task_execution){const r=await api("/workbench/tasks?limit=100");const items=r.items||r;if(view==="overview"){$("runCount").textContent=items.filter(x=>["running","queued"].includes(x.status)).length;$("recentRuns").innerHTML=table(items.slice(0,8).map(x=>[x.task_id||x.run_id,x.agent_id,x.status]));}else $("runsList").innerHTML=table(items.map(x=>[x.task_id||x.run_id,x.agent_id,x.status,x.created_at||x.updated_at]));}
+if(capabilities.task_execution){const r=await api("/workbench/tasks?limit=100");const items=r.items||r;if(view==="overview"){$("runCount").textContent=items.filter(x=>["running","queued"].includes(x.status)).length;$("recentRuns").innerHTML=table(items.slice(0,8).map(x=>[x.task_id||x.run_id,x.agent_id,x.status]));}else renderTasks(items,"runsList");}
 else{$("runCount").textContent="未接入";$("recentRuns").innerHTML=unavailable("任务与运行 API（总控 #2 任务中心依赖）");$("runsList").innerHTML=unavailable("任务与运行 API");}}
 if(view==="overview"||view==="approvals"){
 if(capabilities.approvals){const a=await api("/approvals?status=pending");const items=a.items||a;if(view==="overview")$("approvalCount").textContent=items.length;else renderApprovals(items);}
