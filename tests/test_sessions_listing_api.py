@@ -99,7 +99,11 @@ class SessionListingApiTests(unittest.TestCase):
         repository = InMemorySessionRepository()
         service = SessionAssetService(repository, InMemoryObjectStorage())
         principal = SimpleNamespace(tenant_id="tenant-a", user_id="user-a")
-        memory_principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+        memory_principal = MemoryPrincipal(
+            tenant_id="tenant-a", user_id="user-a",
+            project_ids=frozenset({"project-a"}),
+            agent_ids=frozenset({"agent-a"}),
+        )
         memory = MemoryService(InMemoryMemoryRepository())
 
         class Extractor:
