@@ -7,8 +7,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent_platform.events.webhook_worker import (
-    WebhookDeliveryWorker,
     build_production_webhook_delivery_worker,
+    WebhookDeliveryWorker,
 )
 from agent_platform.events.webhook_operations import create_webhook_delivery_admin_router
 from agent_platform.events.webhook_replay import WebhookDeadLetterReplayService
