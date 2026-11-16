@@ -25,13 +25,15 @@ class PostgresRunStateStore(RunStateStore):
   return RunSnapshot(row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),row["checkpoint_ref"],row["last_error"],row["updated_at"])
  async def create_task_run(self, *, tenant_id:str, run_id:str, actor_id:str,
   agent_id:str, agent_version:int, template_id:str, template_version:int, input:Mapping[str,Any],
-  preparation_owner:str, registry_snapshot:Sequence[Mapping[str,Any]],
+  preparation_owner:str, registry_snapshot:Sequence[Mapping[str,Any]], priority:int=100,
   project_id:str|None=None, session_id:str|None=None, workflow_id:str|None=None,
   idempotency_key:str|None=None, request_digest:str|None=None)->bool:
   if not tenant_id.strip() or not actor_id.strip() or not agent_id.strip() or not template_id.strip():
    raise ValueError("tenant, actor, Agent and model template are required")
   if not preparation_owner.strip():
    raise ValueError("preparation_owner is required")
+  if type(priority) is not int or not 0 <= priority <= 1000:
+   raise ValueError("priority must be an integer between 0 and 1000")
   if agent_version < 1 or template_version < 1:
    raise ValueError("Agent and model template versions must be positive")
   run_uuid=UUID(run_id)
@@ -44,14 +46,14 @@ class PostgresRunStateStore(RunStateStore):
    async with c.transaction():
     cur=await c.execute("""INSERT INTO platform_runs
      (tenant_id,run_id,project_id,session_id,task_id,agent_id,agent_version,template_id,template_version,
-      workflow_id,status,input,created_by,idempotency_key,request_digest,registry_snapshot,dispatch_ready,
+      workflow_id,status,priority,input,created_by,idempotency_key,request_digest,registry_snapshot,dispatch_ready,
       preparation_owner,preparation_lease_expires_at)
-     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,false,%s,now()+(60 * interval '1 second'))
+     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s,false,%s,now()+(60 * interval '1 second'))
      ON CONFLICT (tenant_id,created_by,idempotency_key)
        WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING run_id""",
      (tenant_id,run_uuid,project_id,session_id,str(run_uuid),agent_id,agent_version,template_id,
-      template_version,workflow_id,Jsonb(dict(input)),actor_id,idempotency_key,request_digest,
+      template_version,workflow_id,priority,Jsonb(dict(input)),actor_id,idempotency_key,request_digest,
       Jsonb([dict(item) for item in registry_snapshot]),preparation_owner))
     inserted=await cur.fetchone()
     if inserted is not None:
@@ -72,7 +74,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    query="""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,registry_snapshot,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND task_id=%s"""
@@ -97,7 +99,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s""",
@@ -110,7 +112,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s
@@ -257,7 +259,7 @@ class PostgresRunStateStore(RunStateStore):
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
-    ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
+    ORDER BY priority DESC,created_at ASC FOR UPDATE SKIP LOCKED LIMIT %s
     )
     UPDATE platform_runs r SET worker_id=%s,
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()

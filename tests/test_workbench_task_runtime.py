@@ -35,6 +35,7 @@ class TaskRunStore(InMemoryRunStateStore):
         self, *, tenant_id, run_id, actor_id, agent_id, agent_version, template_id,
         template_version, input, preparation_owner, project_id=None, session_id=None,
         workflow_id=None, idempotency_key=None, request_digest=None, registry_snapshot=None,
+        priority=100,
     ):
         key = (tenant_id, actor_id, idempotency_key) if idempotency_key else None
         if key and key in self.idempotency:
@@ -48,7 +49,8 @@ class TaskRunStore(InMemoryRunStateStore):
             "tenant_id": tenant_id, "run_id": run_id, "task_id": run_id,
             "project_id": project_id, "session_id": session_id, "agent_id": agent_id,
             "agent_version": agent_version, "template_id": template_id, "template_version": template_version,
-            "workflow_id": workflow_id, "status": "queued", "input": dict(input),
+            "workflow_id": workflow_id, "status": "queued", "priority": priority,
+            "input": dict(input),
             "output": None, "usage": {}, "trace_id": None, "created_by": actor_id,
             "request_digest": request_digest, "registry_snapshot": list(registry_snapshot or []),
             "preparation_owner": preparation_owner,
@@ -111,7 +113,11 @@ class TaskRunStore(InMemoryRunStateStore):
 
     async def claim_workbench_tasks(self, worker_id, *, limit=20, lease_seconds=60):
         rows = []
-        for run_id, row in list(self.records.items()):
+        ordered = sorted(
+            self.records.items(),
+            key=lambda item: (-item[1].get("priority", 100), item[1]["created_at"]),
+        )
+        for run_id, row in ordered:
             current = await self.get(row["tenant_id"], run_id)
             if row.get("dispatch_ready") and current and current.status in {
                 RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELLING,
@@ -224,6 +230,28 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
             ("model_provider", "provider-a"), ("tool", "search"),
             ("skill", "summarize"),
         })
+
+    async def test_task_priority_is_persisted_and_bound_to_idempotency(self):
+        normal = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "normal"},
+            idempotency_key="priority-normal",
+        )
+        urgent = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "urgent"},
+            idempotency_key="priority-urgent", priority=900,
+        )
+        self.assertEqual(normal["priority"], 100)
+        self.assertEqual(urgent["priority"], 900)
+        with self.assertRaisesRegex(WorkbenchTaskError, "different task request"):
+            await self.service.submit_task(
+                tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+                project_id=None, session_id=None, input={"text": "urgent"},
+                idempotency_key="priority-urgent", priority=100,
+            )
+        claimed = await self.run_store.claim_workbench_tasks("worker-priority", limit=2)
+        self.assertEqual([row.run_id for row in claimed], [urgent["run_id"], normal["run_id"]])
 
     async def test_idempotency_returns_original_task_and_rejects_payload_reuse(self):
         first = await self.service.submit_task(

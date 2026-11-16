@@ -573,6 +573,40 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(row["agent_id"], "expert-a")
 
 
+    async def test_workbench_worker_claims_highest_priority_first(self):
+        store = PostgresRunStateStore(self.connect)
+        low_priority_run = str(uuid4())
+        high_priority_run = str(uuid4())
+        for run_id, priority in (
+            (low_priority_run, 100),
+            (high_priority_run, 900),
+        ):
+            self.assertTrue(await store.create_task_run(
+                tenant_id=self.tenant_id, run_id=run_id, actor_id="priority-user",
+                agent_id="priority-agent", agent_version=1,
+                template_id="priority-template", template_version=1,
+                input={"prompt": run_id}, preparation_owner=f"prep-{run_id}",
+                registry_snapshot=[], priority=priority,
+            ))
+            async with await self.connect() as conn:
+                await conn.execute(
+                    """UPDATE platform_runs
+                       SET dispatch_ready=true, registry_snapshot_digest=%s,
+                           preparation_owner=NULL, preparation_lease_expires_at=NULL
+                       WHERE tenant_id=%s AND run_id=%s""",
+                    ("a" * 64, self.tenant_id, run_id),
+                )
+                await conn.commit()
+
+        claimed = await store.claim_workbench_tasks(
+            "worker-priority-integration", limit=2, lease_seconds=30,
+        )
+        self.assertEqual(
+            [row.run_id for row in claimed],
+            [high_priority_run, low_priority_run],
+        )
+
+
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
