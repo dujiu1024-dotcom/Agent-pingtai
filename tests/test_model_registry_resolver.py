@@ -41,6 +41,7 @@ class ModelRegistryResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.provider_version, 4)
         self.assertEqual(resolved.model_id, "reasoning-model")
         self.assertEqual(resolved.api_key, "runtime-only-api-key")
+        self.assertNotIn("runtime-only-api-key", repr(resolved))
         self.assertEqual(resolved.allowed_data_levels, ("internal",))
 
     async def test_provider_version_mismatch_is_rejected(self):
@@ -66,6 +67,14 @@ class ModelRegistryResolverTests(unittest.IsolatedAsyncioTestCase):
     async def test_secret_reference_must_be_scoped_to_snapshot_tenant(self):
         snapshot = self.snapshot()
         snapshot.entries[1]["definition"]["secret_ref"] = "secret://tenant-b/provider"
+        with self.assertRaises(ModelRegistryError):
+            await RegistryModelResolver(Secrets()).resolve(
+                snapshot=snapshot, template_id="general",
+            )
+
+    async def test_secret_reference_path_traversal_is_rejected(self):
+        snapshot = self.snapshot()
+        snapshot.entries[1]["definition"]["secret_ref"] = "secret://tenant-a/../other"
         with self.assertRaises(ModelRegistryError):
             await RegistryModelResolver(Secrets()).resolve(
                 snapshot=snapshot, template_id="general",
