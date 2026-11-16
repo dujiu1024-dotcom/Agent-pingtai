@@ -31,8 +31,13 @@ async def evaluate_retrieval(service: KnowledgeService,cases: Sequence[RAGEvalCa
     for case in cases:
         hits=await service.retrieve(principal=case.principal,query=case.query,limit=k)
         expected = case.expected_document_ids
-        ranked_relevant = [1 if hit.document_id in expected else 0 for hit in hits]
-        found = {hit.document_id for hit in hits}
+        # Rank documents, not chunks: multiple chunks from one source must not
+        # inflate precision, reciprocal rank, or nDCG.
+        ranked_document_ids = list(dict.fromkeys(hit.document_id for hit in hits))
+        ranked_relevant = [
+            1 if document_id in expected else 0 for document_id in ranked_document_ids
+        ]
+        found = set(ranked_document_ids)
         recall = len(found & expected) / len(expected) if expected else 1.0
         precision = sum(ranked_relevant) / k if expected else (1.0 if not hits else 0.0)
         reciprocal_rank = next(
@@ -48,7 +53,7 @@ async def evaluate_retrieval(service: KnowledgeService,cases: Sequence[RAGEvalCa
             ndcg = 1.0 if not hits else 0.0
         cited = sum(bool(h.source_uri and h.document_version and h.chunk_id) for h in hits) / len(hits) if hits else 0.0
         results.append(RAGEvalResult(
-            case_id=case.case_id, retrieved_document_ids=tuple(h.document_id for h in hits),
+            case_id=case.case_id, retrieved_document_ids=tuple(ranked_document_ids),
             recall_at_k=recall, citation_coverage=cited, precision_at_k=precision,
             reciprocal_rank=reciprocal_rank, ndcg_at_k=ndcg,
         ))
