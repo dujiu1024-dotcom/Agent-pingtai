@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 
@@ -163,11 +164,26 @@ class HarnessResult:
     media_outputs: tuple[MediaOutput, ...] = ()
 
 
+@dataclass(frozen=True)
+class HarnessStreamEvent:
+    event_type: str
+    text_delta: str | None = None
+    tool_name: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    result: HarnessResult | None = None
+
+
 class HarnessAdapter(Protocol):
     """Adapter around an existing agent execution engine; no custom loop here."""
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
         """Execute one supervised agent turn and return a normalized result."""
+        ...
+
+
+class HarnessStreamingAdapter(Protocol):
+    def stream(self, request: HarnessRequest) -> AsyncIterator[HarnessStreamEvent]:
+        """Stream normalized text, Gateway tool and completion events."""
         ...
 
 
