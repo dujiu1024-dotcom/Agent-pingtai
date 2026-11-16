@@ -135,6 +135,25 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(cancelled.is_set())
   self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.INTERRUPTED)
 
+ async def test_executor_pause_preserves_checkpoint_and_paused_status(self):
+  started=asyncio.Event()
+  class PausableGraph(FakeGraph):
+   async def ainvoke(self,payload,*,config):
+    self.checkpoints[config["configurable"]["thread_id"]]="checkpoint-pause"
+    started.set()
+    await asyncio.Event().wait()
+  graph=PausableGraph()
+  await self.store.create("tenant","pause")
+  executor=LangGraphRunExecutor(graph=graph,lifecycle=self.manager,timeout_seconds=10)
+  task=asyncio.create_task(executor.execute(tenant_id="tenant",run_id="pause",input={"task":"wait"}))
+  await started.wait()
+  paused=await executor.pause(tenant_id="tenant",run_id="pause")
+  self.assertEqual(paused.status,RunStatus.PAUSED)
+  self.assertEqual(paused.checkpoint_ref,"checkpoint-pause")
+  with self.assertRaises(asyncio.CancelledError):
+   await task
+  self.assertEqual((await self.store.get("tenant","pause")).status,RunStatus.PAUSED)
+
  async def test_lost_worker_lease_marks_run_interrupted(self):
   started=asyncio.Event();cancelled=asyncio.Event()
   class LeaseExpiringStore(InMemoryRunStateStore):
