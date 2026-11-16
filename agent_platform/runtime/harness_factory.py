@@ -10,7 +10,7 @@ from agent_platform.quotas.service import QuotaService
 
 def compose_quota_enforced_harness(
     inner: Any, *, quota_service: QuotaService,
-    estimate_request: Callable[[Any], tuple[int, Decimal]],
+    estimate_request: Callable[[Any], tuple[int, Decimal] | tuple[int, int, Decimal]],
     estimate_actual_cost: Callable[[Any, Any], Decimal],
     scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
     context_window_tokens: int | Callable[[Any], int] = 8192,
