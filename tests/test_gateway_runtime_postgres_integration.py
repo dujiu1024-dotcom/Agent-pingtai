@@ -20,7 +20,10 @@ if DSN:
 class PostgresGatewayRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   versions=[p.name.split("_",1)[0] for p in Path("agent_platform/storage/postgres").glob("*.sql")]
-  self.assertEqual(len(versions),len(set(versions)),"database migration sequence numbers must be unique")
+  self.assertEqual(
+   len(versions), len(set(versions)),
+   f"database migration sequence numbers must be unique: {versions}",
+  )
   self.tenant=f"gateway-it-{uuid4().hex}"; self.agent=f"agent-{uuid4().hex}"
   self.template=f"template-{uuid4().hex}"; self.run=str(uuid4())
   async with await AsyncConnection.connect(DSN,autocommit=True) as conn:
