@@ -19,8 +19,8 @@ class FakeAuditReader:
 class AuditApiTests(unittest.TestCase):
     def setUp(self):
         self.principal = Principal(
-            tenant_id="tenant-a", user_id="user-a", roles=frozenset({"admin"}),
-            permissions=frozenset({"audit.read"}),
+            tenant_id="tenant-a", user_id="user-a", session_id="session-a",
+            email="user@example.test", display_name="Audit User",
         )
 
     def client(self, allowed):
