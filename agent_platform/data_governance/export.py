@@ -7,8 +7,8 @@ import json
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-from uuid import UUID
 from typing import AsyncIterable, Mapping, Protocol, Sequence
+from uuid import UUID
 
 
 class SubjectExportAdapter(Protocol):
