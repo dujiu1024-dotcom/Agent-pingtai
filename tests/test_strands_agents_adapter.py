@@ -11,6 +11,7 @@ from agent_platform.runtime.protocols import (
     HarnessStreamEvent,
     MediaInput,
     MediaOutput,
+    UnsupportedHarnessCapability,
 )
 from agent_platform.runtime.strands_agents import StrandsAgentsAdapter
 
