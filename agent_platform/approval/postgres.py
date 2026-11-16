@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any, Callable
 from uuid import UUID
 
+from agent_platform.observability.redaction import redact_text
+
 ConnectionFactory = Callable[[], Any]
 
 
@@ -63,6 +65,6 @@ class PostgresAuditSink:
                     """,
                     (
                         tenant_id, actor_id, action, resource,
-                        action_digest, outcome, run_id, agent_id, detail,
+                        action_digest, outcome, run_id, agent_id, redact_text(detail),
                     ),
                 )
