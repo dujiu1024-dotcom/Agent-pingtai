@@ -1346,7 +1346,7 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         digest = "b" * 64
         created = await store.create_task_run(
             tenant_id=self.tenant_id, run_id=run_id, actor_id="actor-a",
-            agent_id="agent-registry-only", template_id="template-registry-only",
+            agent_id="agent-registry-only", agent_version=3, template_id="template-registry-only",
             template_version=7, input={"prompt": "persisted"},
             project_id="project-a", session_id="session-a",
             idempotency_key="workbench-request-1", request_digest=digest,
