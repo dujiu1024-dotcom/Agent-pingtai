@@ -107,7 +107,7 @@ class HarnessCapabilities:
     streaming: bool = False
     cancellation: bool = True
     structured_output: bool = False
-    timeout: bool = True
+    timeout: bool = False
     resume: bool = False
     tool_gateway: bool = False
 
