@@ -56,6 +56,11 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await cursor.fetchone())["status"], "succeeded")
 
     async def test_failed_job_is_requeued_then_dead_lettered(self):
+        async with await self.queue._connect() as conn:
+            await conn.execute(
+                "UPDATE platform_file_processing_jobs SET max_attempts=2 WHERE tenant_id=%s AND asset_id=%s",
+                (self.tenant_id, self.asset_id),
+            )
         await self.queue.enqueue(tenant_id=self.tenant_id, asset_id=str(self.asset_id))
         job = await self.queue.claim(worker_id="worker-a", lease_seconds=30)
         self.assertFalse(await self.queue.fail(job, error_code="parsererror"))
@@ -67,10 +72,7 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
             )
         job = await self.queue.claim(worker_id="worker-b", lease_seconds=30)
         self.assertEqual(job.attempts, 2)
-        job = self.FileProcessingJob(
-            job.tenant_id, job.job_id, job.asset_id, job.max_attempts,
-            job.max_attempts, job.lease_owner,
-        )
+        self.assertEqual(job.attempts, job.max_attempts)
         self.assertTrue(await self.queue.fail(job, error_code="parsererror"))
         async with await self.queue._connect() as conn:
             cursor = await conn.execute(
