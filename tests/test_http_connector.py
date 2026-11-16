@@ -4,7 +4,8 @@ import json
 import unittest
 
 from agent_platform.control_plane.http_connector import (
-    HTTPConnectorError, HTTPJSONConnectorProvider,
+    HTTPConnectorError,
+    HTTPJSONConnectorProvider,
 )
 
 
