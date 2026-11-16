@@ -12,8 +12,10 @@ from agent_platform.quotas.service import QuotaService
 class QuotaEnforcedHarnessAdapter:
     """Enforce server-side quota around every call made through this Harness adapter.
 
-    Both estimators are mandatory: silently defaulting to zero would undermine
-    hard budgets. Register this decorator in the trusted Harness composition root.
+    Request and model/provider cost estimators are mandatory: silently defaulting
+    to zero would undermine hard budgets. Optional tool-cost and storage-byte
+    callbacks extend the ledger to those dimensions. The model cost callback must
+    exclude tool cost when the separate tool-cost callback is configured.
     """
 
     def __init__(
