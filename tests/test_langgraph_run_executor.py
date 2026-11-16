@@ -114,7 +114,7 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertTrue(cancelled.is_set())
   self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.INTERRUPTED)
 
- async def test_lost_worker_lease_marks_run_interrupted(self):
+ async def test_lost_worker_lease_leaves_recovery_to_new_owner(self):
   started=asyncio.Event();cancelled=asyncio.Event()
   class LeaseExpiringStore(InMemoryRunStateStore):
    async def acquire_lease(self,tenant_id,run_id,worker_id,*,lease_seconds):
@@ -138,7 +138,7 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
    await executor.execute(tenant_id="tenant",run_id="lease-lost",input={})
   self.assertTrue(started.is_set())
   self.assertTrue(cancelled.is_set())
-  self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.INTERRUPTED)
+  self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.RUNNING)
 
 
  async def test_claimed_stale_run_restarts_from_persisted_initial_input(self):
