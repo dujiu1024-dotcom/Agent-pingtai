@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from agent_platform.control_plane.registry import RegistryService
 from agent_platform.runtime.execution import LangGraphRunExecutor
-from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
+from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus, WorkerLeaseLost
 
 
 class WorkbenchTaskError(ValueError):
@@ -460,6 +460,9 @@ class RunExecutionWorker:
                 return "skipped"
             except asyncio.CancelledError:
                 raise
+            except WorkerLeaseLost:
+                # Another worker owns the lease now; never mark its Run failed.
+                return "skipped"
             except Exception as exc:
                 lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
                 current = await self.run_store.get(tenant_id, run_id)
