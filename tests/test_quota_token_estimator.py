@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.quotas.token_estimator import (
-    TokenEstimationError,
     TiktokenChatEstimator,
+    TokenEstimationError,
 )
 
 
