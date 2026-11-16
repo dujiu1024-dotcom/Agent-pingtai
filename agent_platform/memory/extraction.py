@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, Sequence
+from uuid import NAMESPACE_URL, uuid5
 
 from agent_platform.memory.service import (
     MemoryCandidate,
@@ -68,7 +69,7 @@ class MemoryExtractionService:
         if len(drafts) > 50:
             raise ValueError("extractor returned too many memory candidates")
         records = []
-        for draft in drafts:
+        for index, draft in enumerate(drafts):
             if draft.scope is MemoryScope.USER:
                 if draft.scope_id != principal.user_id:
                     raise PermissionError("user memory scope must match the principal")
@@ -89,6 +90,7 @@ class MemoryExtractionService:
                     raise PermissionError("tenant memory requires memory.manage")
             candidate = MemoryCandidate(
                 tenant_id=principal.tenant_id,
+                memory_id=str(uuid5(NAMESPACE_URL, principal.tenant_id + ':' + turn.source_ref + ':single-turn:' + str(index))),
                 scope=draft.scope,
                 scope_id=draft.scope_id,
                 content=draft.content,
@@ -99,6 +101,7 @@ class MemoryExtractionService:
                 conflict_key=draft.conflict_key,
                 metadata={
                     "extraction": "single_turn",
+                    "extraction_index": str(index),
                     "agent_id": turn.agent_id or "",
                     "project_id": turn.project_id or "",
                 },
