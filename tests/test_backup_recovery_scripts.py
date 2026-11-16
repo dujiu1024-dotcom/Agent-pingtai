@@ -76,6 +76,7 @@ class BackupRecoveryScriptTests(unittest.TestCase):
             "backup_object_storage.sh",
             "restore_object_storage.sh",
             "migrate_postgres.sh",
+            "deploy_infrastructure.sh",
         ):
             with self.subTest(script=name):
                 result = subprocess.run(
@@ -90,6 +91,17 @@ class BackupRecoveryScriptTests(unittest.TestCase):
         self.assertIn("previous successful deployment snapshot", script)
         self.assertIn("automatic rollback", script)
         self.assertIn('printf \'%s\\n\' "$SNAPSHOT" > "$SNAPSHOT.success"', script)
+
+
+    def test_infrastructure_deploy_has_safe_preflight_and_check_mode(self):
+        script = (ROOT / "scripts" / "deploy_infrastructure.sh").read_text()
+        self.assertIn("--check", script)
+        self.assertIn("--no-pull", script)
+        self.assertIn("placeholder secrets", script)
+        self.assertIn('[[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]]', script)
+        self.assertLess(script.index('"${COMPOSE[@]}" config --quiet'), script.index('SNAPSHOT="$RELEASE_DIR'))
+        self.assertIn('if ((!NO_PULL)); then', script)
+        self.assertIn('"--wait" --remove-orphans', script.replace('"${COMPOSE[@]}" up -d ', '"--wait" '))
 
     def test_migration_runner_expands_required_environment_and_file_list(self):
         script = (ROOT / "scripts" / "migrate_postgres.sh").read_text()
