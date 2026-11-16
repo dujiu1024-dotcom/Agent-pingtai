@@ -84,15 +84,13 @@ class BlackboardReplayTests(unittest.IsolatedAsyncioTestCase):
             state=state, decision={"approved": True},
         )
         archived = await services.archive(state=state)
+        after_first_archive = len(repository.entries)
         replayed_archive = await services.archive(state=state)
         self.assertEqual(
             archived["blackboard_entry_id"],
             replayed_archive["blackboard_entry_id"],
         )
-        self.assertEqual(
-            len(repository.entries),
-            len({entry.entry_id for entry in repository.entries.values()}),
-        )
+        self.assertEqual(len(repository.entries), after_first_archive)
 
 
 if __name__ == "__main__":
