@@ -185,7 +185,7 @@ class LangGraphRunExecutor:
   if current.checkpoint_ref:
    actual=await self._checkpoint_ref(tenant_id,run_id)
    if actual!=current.checkpoint_ref:
-    failed=await self.lifecycle.store.transition(
+    await self.lifecycle.store.transition(
      RunSnapshot(tenant_id,run_id,RunStatus.FAILED,current.version,
       current.checkpoint_ref,"LangGraph checkpoint is missing or does not match the Run reference"),
      expected_version=current.version,
