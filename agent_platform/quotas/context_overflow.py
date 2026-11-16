@@ -5,6 +5,7 @@ Only optional working context may be reduced. A host supplies token counting and
 for summarize mode, a trusted summarizer; no implicit model call is made here.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Sequence
