@@ -336,8 +336,13 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
                     )
                 }
 
+        def streaming_agent_factory(**kwargs):
+            agent = StreamingAgent(**kwargs)
+            self.agents.append(agent)
+            return agent
+
         adapter = self.adapter(
-            agent_factory=lambda **kwargs: StreamingAgent(**kwargs),
+            agent_factory=streaming_agent_factory,
             capabilities=HarnessCapabilities(
                 input_modalities=frozenset({"text"}),
                 output_modalities=frozenset({"text"}),
