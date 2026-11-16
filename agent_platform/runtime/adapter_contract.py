@@ -1,10 +1,10 @@
 """Versioned, capability-aware Runtime Adapter contract shared by model and Agent runtimes."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-import re
 from typing import Any, Mapping, Protocol
 
 
