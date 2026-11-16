@@ -321,3 +321,73 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         history = await service.history(principal=principal, memory_id=candidate.memory_id)
         self.assertEqual(history[-1].status.value, "deleted")
         self.assertEqual(history[-1].version, 3)
+
+
+    async def test_archive_propagates_and_retries_index_cleanup(self):
+        from agent_platform.memory.service import MemoryStatus
+
+        calls = []
+
+        async def cleanup(tenant_id, memory_id):
+            calls.append((tenant_id, memory_id))
+            if len(calls) == 1:
+                raise RuntimeError("vector index unavailable")
+
+        repository = InMemoryMemoryRepository()
+        service = MemoryService(repository, on_delete=cleanup)
+        candidate = MemoryCandidate(
+            tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
+            content="archive this", source_ref="turn:archive", confidence=0.9,
+            created_by="user-a",
+        )
+        await service.propose(candidate)
+        await service.confirm(
+            tenant_id="tenant-a", memory_id=candidate.memory_id,
+            confirmer_id="user-a",
+        )
+        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+
+        with self.assertRaisesRegex(RuntimeError, "vector index unavailable"):
+            await service.archive(principal=principal, memory_id=candidate.memory_id)
+        self.assertEqual(
+            (await repository.get("tenant-a", candidate.memory_id)).status,
+            MemoryStatus.ARCHIVED,
+        )
+        self.assertTrue(await service.archive(principal=principal, memory_id=candidate.memory_id))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(await service.retrieve(principal=principal), [])
+
+    async def test_conflict_superseding_propagates_hidden_memory_cleanup(self):
+        calls = []
+
+        async def cleanup(tenant_id, memory_id):
+            calls.append(memory_id)
+
+        repository = InMemoryMemoryRepository()
+        service = MemoryService(repository, on_delete=cleanup)
+        principal = MemoryPrincipal(
+            tenant_id="tenant-a", user_id="admin",
+            permissions=frozenset({"memory.manage"}),
+        )
+        first = MemoryCandidate(
+            tenant_id="tenant-a", scope=MemoryScope.TENANT, scope_id="tenant-a",
+            content="old policy", source_ref="policy:old", confidence=0.8,
+            created_by="admin", conflict_key="policy",
+        )
+        await service.propose(first)
+        await service.confirm(
+            tenant_id="tenant-a", memory_id=first.memory_id, confirmer_id="admin",
+        )
+        second = MemoryCandidate(
+            tenant_id="tenant-a", scope=MemoryScope.TENANT, scope_id="tenant-a",
+            content="new policy", source_ref="policy:new", confidence=0.9,
+            created_by="admin", conflict_key="policy",
+        )
+        await service.propose(second)
+        await service.resolve_conflict(
+            principal=principal, conflict_key="policy", selected_memory_id=second.memory_id,
+        )
+        self.assertIn(first.memory_id, calls)
+        self.assertEqual(await service.retrieve(principal=principal), [
+            await repository.get("tenant-a", second.memory_id)
+        ])
