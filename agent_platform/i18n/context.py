@@ -1,10 +1,10 @@
 """Tenant-scoped locale and timezone formatting without process-global locale state."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
-import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
