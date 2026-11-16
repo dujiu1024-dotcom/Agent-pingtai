@@ -122,6 +122,16 @@ class PostgresRunStateStore(RunStateStore):
     RETURNING run_id""",(owner,lease_seconds,tenant_id,UUID(run_id)))
    return await cur.fetchone() is not None
 
+ async def owns_task_preparation(self,tenant_id:str,run_id:str,owner:str)->bool:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT 1 FROM platform_runs
+    WHERE tenant_id=%s AND run_id=%s AND status='queued'
+      AND dispatch_ready=false AND preparation_owner=%s
+      AND preparation_lease_expires_at>now()""",
+    (tenant_id,UUID(run_id),owner))
+   return await cur.fetchone() is not None
+
  async def mark_task_ready(self,tenant_id:str,run_id:str,digest:str,owner:str)->bool:
   c=await self._connect()
   async with c:
