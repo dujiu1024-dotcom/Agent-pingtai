@@ -35,6 +35,14 @@ class ModelUsageRecordingError(RuntimeError):
     """The model ran but its usage could not be durably recorded."""
 
 
+class ModelAuditSink(Protocol):
+    async def record(
+        self, *, tenant_id: str, actor_id: str, action: str,
+        subject_id: str, outcome: str = "succeeded",
+        detail: Mapping[str, Any] | None = None,
+    ) -> None: ...
+
+
 class OpenAICompatibleTransport(Protocol):
     async def complete(
         self, *, config: ResolvedModelConfig,
@@ -193,6 +201,7 @@ class OpenAICompatibleModelRouter:
         self, *, resolver: RegistryModelResolver,
         transport: OpenAICompatibleTransport,
         usage_recorder: UsageRecorder | None = None,
+        audit_sink: ModelAuditSink | None = None,
         timeout_seconds: float = 60,
         observer: Any | None = None,
         metrics: Any | None = None,
@@ -206,6 +215,7 @@ class OpenAICompatibleModelRouter:
         self.resolver = resolver
         self.transport = transport
         self.usage_recorder = usage_recorder
+        self.audit_sink = audit_sink
         self.timeout_seconds = timeout_seconds
         self.observer = observer
         self.metrics = metrics
@@ -230,6 +240,8 @@ class OpenAICompatibleModelRouter:
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
+        if self.audit_sink is None or not callable(getattr(self.audit_sink, "record", None)):
+            raise ModelUsageRecordingError("model routing requires a durable audit sink")
         parameters = request_parameters or {}
         reserved = {
             "model", "messages", "stream", "tools", "tool_choice",
@@ -333,6 +345,27 @@ class OpenAICompatibleModelRouter:
                     estimated_input_tokens=estimate.input_tokens,
                     estimated_output_tokens=estimate.output_tokens,
                 )
+            # Write-ahead model audit is mandatory. Never dispatch to a provider
+            # when the platform cannot durably record the attempt.
+            try:
+                await self.audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.request", subject_id=request_id,
+                    outcome="succeeded",
+                    detail={
+                        "phase": "started", "run_id": run_id,
+                        "provider_id": config.provider_id,
+                        "provider_version": config.provider_version,
+                        "model_id": config.model_id,
+                        "template_id": config.template_id,
+                        "template_version": config.template_version,
+                        "fallback_attempt": index > 0,
+                    },
+                )
+            except Exception as exc:
+                raise ModelUsageRecordingError(
+                    "model request was not dispatched because write-ahead audit failed"
+                ) from exc
             try:
                 with safe_observation(
                     self.observer, name="model.complete",
@@ -348,6 +381,21 @@ class OpenAICompatibleModelRouter:
                         safe_update(span, output={
                             "status": "failed", "error_type": type(exc).__name__,
                         })
+                        try:
+                            await self.audit_sink.record(
+                                tenant_id=tenant_id, actor_id="system:model-router",
+                                action="model.response", subject_id=request_id,
+                                outcome="failed",
+                                detail={
+                                    "run_id": run_id, "provider_id": config.provider_id,
+                                    "model_id": config.model_id,
+                                    "error_type": type(exc).__name__,
+                                },
+                            )
+                        except Exception as audit_exc:
+                            raise ModelUsageRecordingError(
+                                "model transport failed and failure audit could not be persisted"
+                            ) from audit_exc
                         raise
                     status = "response_received"
                     safe_update(span, output={"status": status})
@@ -460,6 +508,26 @@ class OpenAICompatibleModelRouter:
                     raise ModelUsageRecordingError(
                         "model response succeeded but usage recording failed"
                     ) from exc
+            try:
+                await self.audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.response", subject_id=request_id,
+                    outcome="succeeded",
+                    detail={
+                        "run_id": run_id, "provider_id": config.provider_id,
+                        "provider_version": config.provider_version,
+                        "model_id": config.model_id,
+                        "template_id": config.template_id,
+                        "template_version": config.template_version,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    },
+                )
+            except Exception as exc:
+                # Provider work may already be billable. Do not fallback or retry.
+                raise ModelUsageRecordingError(
+                    "model response succeeded but result audit could not be persisted"
+                ) from exc
             if index > 0:
                 safe_metric(
                     self.metrics, "increment", "model_fallbacks_total",

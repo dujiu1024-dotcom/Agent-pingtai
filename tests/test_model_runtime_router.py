@@ -46,6 +46,17 @@ class UsageRecorder:
         self.records.append(kwargs)
 
 
+class AuditRecorder:
+    def __init__(self, *, fail: bool = False):
+        self.fail = fail
+        self.events = []
+
+    async def record(self, **event):
+        if self.fail:
+            raise RuntimeError("audit database unavailable")
+        self.events.append(event)
+
+
 class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
     def snapshot(self):
         return SimpleNamespace(tenant_id="tenant-a", entries=(
@@ -87,6 +98,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         transport = FallbackTransport()
         usage = UsageRecorder()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=transport, usage_recorder=usage,
         )
@@ -102,9 +114,49 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage.records[0]["provider_id"], "fallback")
         self.assertEqual(usage.records[0]["run_id"], "run-a")
 
+    async def test_missing_or_unavailable_audit_sink_blocks_provider_dispatch(self):
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()), transport=transport,
+            audit_sink=AuditRecorder(fail=True),
+        )
+        with self.assertRaisesRegex(ModelUsageRecordingError, "write-ahead audit failed"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-a",
+                template_id="primary", messages=({"role": "user", "content": "hello"},),
+                request_id="request-a",
+            )
+        self.assertEqual(transport.calls, [])
+
+    async def test_model_request_and_result_are_audited(self):
+        audit = AuditRecorder()
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()), transport=transport,
+            audit_sink=audit,
+        )
+        await router.complete(
+            snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-a",
+            template_id="primary", fallback_template_ids=("fallback",),
+            messages=({"role": "user", "content": "hello"},), request_id="request-a",
+        )
+        self.assertEqual(
+            [(event["action"], event["outcome"], event["detail"]["phase"] if "phase" in event["detail"] else "result")
+             for event in audit.events],
+            [
+                ("model.request", "succeeded", "started"),
+                ("model.response", "failed", "result"),
+                ("model.request", "succeeded", "started"),
+                ("model.response", "succeeded", "result"),
+            ],
+        )
+        self.assertEqual(audit.events[-1]["detail"]["input_tokens"], 3)
+        self.assertNotIn("hello", str(audit.events))
+
     async def test_data_level_mismatch_fails_before_provider_call(self):
         transport = FallbackTransport()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()), transport=transport,
         )
         with self.assertRaises(ModelRoutingError):
@@ -182,6 +234,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         observer = Observer()
         metrics = InMemoryMetricsRecorder()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=FallbackTransport(),
             observer=observer,
@@ -219,6 +272,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         transport = MissingUsageTransport()
         usage = UsageRecorder()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=transport, usage_recorder=usage,
         )
@@ -241,6 +295,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 }
 
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=BooleanUsageTransport(),
         )
@@ -282,6 +337,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             hard_cost_usd=Decimal("0.01"), hard_concurrency=1,
         ))
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()), transport=SuccessTransport(),
             quota_service=quotas, token_estimator=TokenEstimator(),
             quota_cost_estimator=CostEstimator(),
@@ -329,6 +385,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         ))
         transport = AmbiguousTransport()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()), transport=transport,
             quota_service=quotas, token_estimator=TokenEstimator(),
             quota_cost_estimator=CostEstimator(),
@@ -372,6 +429,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         estimator = RejectingEstimator()
         transport = NeverDispatchTransport()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=transport,
             token_estimator=estimator,
@@ -412,6 +470,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         estimator = RecordingEstimator()
         transport = SuccessTransport()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=transport,
             token_estimator=estimator,
@@ -435,6 +494,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
 
         transport = FallbackTransport()
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=transport,
             token_estimator=RejectingEstimator(),

@@ -40,6 +40,11 @@ class ModelTransport:
         }
 
 
+class AuditRecorder:
+    async def record(self, **event):
+        return None
+
+
 class TraceSpanCorrelationTests(unittest.IsolatedAsyncioTestCase):
     async def test_harness_observation_inherits_request_trace_context(self):
         observer = Observer()
@@ -86,6 +91,7 @@ class TraceSpanCorrelationTests(unittest.IsolatedAsyncioTestCase):
             },
         ))
         router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()),
             transport=ModelTransport(),
             observer=observer,
