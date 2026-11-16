@@ -74,6 +74,7 @@ def create_platform_app(
     alert_store: Any | None = None,
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
+    evaluation_run_service: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
     alert_evaluation_worker: Any | None = None,
@@ -163,7 +164,7 @@ def create_platform_app(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, alert_store, evaluation_repository,
+        metrics_exporter, alert_store, evaluation_repository, evaluation_run_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
@@ -171,6 +172,7 @@ def create_platform_app(
             alert_store=alert_store,
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
+            evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
         ))
     app.include_router(create_knowledge_memory_router(
