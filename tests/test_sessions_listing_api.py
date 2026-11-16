@@ -77,7 +77,7 @@ class SessionListingApiTests(unittest.TestCase):
         denied["project"].add("project-private")
         hidden = client.get("/api/platform/v1/files")
         self.assertEqual([x["asset_id"] for x in hidden.json()["items"]], [asset.asset_id])
-        denied["session"].add(own.session_id)
+        denied["session"].update({own.session_id, project_session.session_id})
         hidden_session = client.get("/api/platform/v1/files")
         self.assertEqual(hidden_session.json()["items"], [])
 
