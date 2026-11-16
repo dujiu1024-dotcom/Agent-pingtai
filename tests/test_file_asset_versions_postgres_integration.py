@@ -16,7 +16,10 @@ class FileAssetVersionPostgresTests(unittest.IsolatedAsyncioTestCase):
         from psycopg.rows import dict_row
 
         from agent_platform.control_plane.postgres import PostgresSessionRepository
-        from agent_platform.control_plane.sessions_assets import InMemoryObjectStorage, SessionAssetService
+        from agent_platform.control_plane.sessions_assets import (
+            InMemoryObjectStorage,
+            SessionAssetService,
+        )
 
         self.tenant_id = "asset-version-it-" + uuid4().hex
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
