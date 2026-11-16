@@ -47,13 +47,12 @@ def _protected_message(anchors: Mapping[str, Any]) -> Mapping[str, str]:
             raise ContextOverflowError(f"protected context is missing {field}")
         value = anchors[field]
         if value is None or value == "" or value == [] or value == {}:
-            normalized[field] = []
-        else:
-            try:
-                json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
-            except (TypeError, ValueError) as exc:
-                raise ContextOverflowError(f"protected {field} are not safely serializable") from exc
-            normalized[field] = value
+            raise ContextOverflowError(f"protected {field} must contain an explicit value")
+        try:
+            json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ContextOverflowError(f"protected {field} are not safely serializable") from exc
+        normalized[field] = value
     serialized = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(serialized) > 24_000:
         raise ContextOverflowError("protected context anchors exceed the safe size limit")
