@@ -183,6 +183,48 @@ class PlatformApiCompositionTests(unittest.TestCase):
             self.assertTrue(worker.started)
         self.assertTrue(worker.stopped)
 
+    def test_memory_expiry_worker_is_started_and_stopped_by_app_lifecycle(self):
+        class Worker:
+            def __init__(self):
+                self.started = False
+                self.stopped = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.stopped = True
+
+        worker = Worker()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            memory_expiry_worker=worker,
+        )
+        with TestClient(app, base_url="https://testserver"):
+            self.assertTrue(worker.started)
+        self.assertTrue(worker.stopped)
+
+    def test_memory_expiry_worker_must_expose_lifecycle_methods(self):
+        class InvalidWorker:
+            async def start(self):
+                pass
+
+        with self.assertRaisesRegex(ValueError, "memory_expiry_worker"):
+            create_platform_app(
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                memory_expiry_worker=InvalidWorker(),
+            )
+
     def test_factory_rejects_wildcard_and_non_https_origins(self):
         arguments = {
             "identity": self.identity,
