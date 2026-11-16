@@ -9,7 +9,7 @@ import asyncio
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncContextManager, Callable, Mapping, Protocol
+from typing import Any, AsyncContextManager, Callable, Protocol
 
 
 class MCPHealthError(RuntimeError):
