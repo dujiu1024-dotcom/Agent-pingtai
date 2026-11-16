@@ -153,12 +153,22 @@ class DataConnectorService:
         self, *, repository: ConnectorRepository,
         providers: Mapping[str, ConnectorProvider], secrets: SecretResolver,
         sink: ConnectorSink, cleanup_queue: ConnectorCleanupQueue | None = None,
+        sync_queue: Any | None = None,
     ) -> None:
         self.repository = repository
         self.providers = dict(providers)
         self.secrets = secrets
         self.sink = sink
         self.cleanup_queue = cleanup_queue
+        self.sync_queue = sync_queue
+
+    async def request_sync(self, *, tenant_id: str, connection_id: str) -> None:
+        connection = await self.repository.get(tenant_id, connection_id)
+        if connection is None or connection.status != "active":
+            raise ConnectorError("connection is not active")
+        if self.sync_queue is None:
+            raise ConnectorError("durable connector sync queue is not configured")
+        await self.sync_queue.enqueue(tenant_id=tenant_id, connection_id=connection_id)
 
     async def create_connection(
         self, *, tenant_id: str, connection_id: str, provider: str,
