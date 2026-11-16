@@ -658,8 +658,6 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         ))
 
     async def test_human_intervention_policy_without_operator_blocks_provider_dispatch(self):
-        from agent_platform.models.context_overflow import HumanInterventionRequired
-
         class OversizedEstimator:
             def estimate(self, **kwargs):
                 return SimpleNamespace(input_tokens=9000, output_tokens=10, total_tokens=9010)
