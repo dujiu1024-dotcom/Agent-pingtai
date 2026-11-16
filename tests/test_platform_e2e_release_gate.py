@@ -171,7 +171,7 @@ class PlatformE2EReleaseGateTests(unittest.TestCase):
         self.assertEqual(safe["authorization"], "[REDACTED]")
         self.assertEqual(safe["nested"]["api_key"], "[REDACTED]")
         image = "registry.example/sandbox@sha256:" + "a" * 64
-        command = OciSandboxRunner(OciSandboxConfig(image=image)).build_command(
+        command = OciSandboxRunner(OciSandboxConfig(image=image, runtime="podman")).build_command(
             ("python", "-I", "-c", "print('safe')"),
         )
         self.assertIn("--network=none", command)
