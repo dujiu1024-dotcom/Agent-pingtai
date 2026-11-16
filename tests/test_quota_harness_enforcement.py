@@ -347,5 +347,71 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((tokens, concurrency), (40, 0))
 
 
+
+    async def test_ambiguous_harness_failure_retains_quota_reservation(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"), hard_concurrency=1,
+        ))
+
+        class AmbiguousHarness:
+            async def run(self, _request):
+                raise TimeoutError("connection lost after provider request write")
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            AmbiguousHarness(), quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-ambiguous-harness",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        with self.assertRaisesRegex(TimeoutError, "after provider request write"):
+            await adapter.run(request)
+        tokens, cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (100, Decimal("0.10"), 1))
+
+    async def test_host_can_release_only_when_dispatch_is_proven_not_started(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"), hard_concurrency=1,
+        ))
+
+        class PreDispatchFailure:
+            async def run(self, _request):
+                raise ValueError("request rejected before provider dispatch")
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            PreDispatchFailure(), quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+            release_reservation_on_error=lambda error: isinstance(error, ValueError),
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-pre-dispatch",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        with self.assertRaisesRegex(ValueError, "before provider dispatch"):
+            await adapter.run(request)
+        tokens, cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (0, Decimal("0"), 0))
+
 if __name__ == "__main__":
     unittest.main()

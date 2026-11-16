@@ -16,6 +16,7 @@ def compose_quota_enforced_harness(
     context_window_tokens: int | Callable[[Any], int] = 8192,
     estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
     measure_storage_bytes: Callable[[Any, Any], int] | None = None,
+    release_reservation_on_error: Callable[[BaseException], bool] | None = None,
 ) -> QuotaEnforcedHarnessAdapter:
     """Wrap a provider Harness before exposing it to the Run execution path."""
     if quota_service is None:
@@ -28,4 +29,5 @@ def compose_quota_enforced_harness(
         context_window_tokens=context_window_tokens,
         estimate_tool_cost_usd=estimate_tool_cost_usd,
         measure_storage_bytes=measure_storage_bytes,
+        release_reservation_on_error=release_reservation_on_error,
     )

@@ -29,6 +29,7 @@ class QuotaEnforcedHarnessAdapter:
         context_window_tokens: int | Callable[[Any], int] = 8192,
         estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
         measure_storage_bytes: Callable[[Any, Any], int] | None = None,
+        release_reservation_on_error: Callable[[BaseException], bool] | None = None,
     ) -> None:
         if not callable(context_window_tokens) and (
             not isinstance(context_window_tokens, int)
@@ -44,6 +45,7 @@ class QuotaEnforcedHarnessAdapter:
         self.scope_resolver = scope_resolver or self._tenant_scope
         self.estimate_tool_cost_usd = estimate_tool_cost_usd
         self.measure_storage_bytes = measure_storage_bytes
+        self.release_reservation_on_error = release_reservation_on_error
 
     @staticmethod
     def _tenant_scope(request: Any) -> tuple[str, str]:
@@ -115,9 +117,18 @@ class QuotaEnforcedHarnessAdapter:
         started = monotonic()
         try:
             result = await self.inner.run(request)
-        except BaseException:
-            # No provider result exists, so releasing the reservation is safe.
-            await self.quota_service.release_run(reservation)
+        except BaseException as exc:
+            # A Harness may fail after the provider accepted a billable request.
+            # Retain the reservation unless a trusted host classifier can prove
+            # that dispatch did not occur; unknown outcomes fail closed.
+            release_is_safe = False
+            if self.release_reservation_on_error is not None:
+                try:
+                    release_is_safe = self.release_reservation_on_error(exc) is True
+                except Exception:
+                    release_is_safe = False
+            if release_is_safe:
+                await self.quota_service.release_run(reservation)
             raise
 
         # The provider has returned successfully. Missing/invalid usage or a
