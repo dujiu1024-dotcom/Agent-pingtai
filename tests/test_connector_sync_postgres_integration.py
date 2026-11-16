@@ -66,6 +66,22 @@ class ConnectorSyncPostgresTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["last_error_code"], "providerunavailable")
         self.assertTrue(row["completed"])
 
+    async def test_expired_worker_lease_is_reclaimed(self):
+        from agent_platform.control_plane.connector_sync import PostgresConnectorSyncQueue
+        queue = PostgresConnectorSyncQueue(connection_factory=self.connect)
+        await queue.enqueue(tenant_id=self.tenant_id, connection_id=self.connection_id)
+        first = await queue.claim(worker_id="sync-crashed", lease_seconds=30)
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_connector_sync_jobs
+                   SET lease_expires_at=now()-interval '1 second'
+                   WHERE tenant_id=%s AND job_id=%s""",
+                (self.tenant_id, first.job_id),
+            )
+        recovered = await queue.claim(worker_id="sync-recovery", lease_seconds=30)
+        self.assertEqual(recovered.attempts, 2)
+        self.assertEqual(recovered.lease_owner, "sync-recovery")
+
     async def test_exhausted_sync_attempts_move_to_dead_letter(self):
         from agent_platform.control_plane.connector_sync import PostgresConnectorSyncQueue
         queue = PostgresConnectorSyncQueue(connection_factory=self.connect)
