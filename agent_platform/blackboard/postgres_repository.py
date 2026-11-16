@@ -56,12 +56,14 @@ class PostgresBlackboardRepository(BlackboardRepository):
         return cls(tenant_id=tenant_id, connection_factory=connect)
 
     async def _persist_event(self, connection: Any, event: BlackboardEvent) -> None:
-        await connection.execute(
+        cursor = await connection.execute(
             """
             INSERT INTO blackboard_events (
                 tenant_id, event_id, event_type, scope, scope_id,
                 entry_id, entry_version, actor_id, payload, correlation_id, occurred_at
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+            RETURNING event_id
             """,
             (
                 self.tenant_id, UUID(event.event_id), event.event_type, event.scope.value,
@@ -69,6 +71,33 @@ class PostgresBlackboardRepository(BlackboardRepository):
                 _jsonb(event.payload), UUID(event.correlation_id), event.occurred_at,
             ),
         )
+        inserted = await cursor.fetchone()
+        if inserted is None:
+            existing_cursor = await connection.execute(
+                """
+                SELECT event_type, scope, scope_id, entry_id, entry_version,
+                       actor_id, payload, correlation_id, occurred_at
+                FROM blackboard_events
+                WHERE tenant_id = %s AND event_id = %s
+                """,
+                (self.tenant_id, UUID(event.event_id)),
+            )
+            existing = await existing_cursor.fetchone()
+            if existing is None:
+                raise RuntimeError("Blackboard event conflict has no matching durable event")
+            expected = (
+                event.event_type, event.scope.value, event.scope_id, UUID(event.entry_id),
+                event.entry_version, event.actor_id, event.payload, UUID(event.correlation_id),
+                event.occurred_at,
+            )
+            actual = (
+                existing["event_type"], existing["scope"], existing["scope_id"],
+                existing["entry_id"], existing["entry_version"], existing["actor_id"],
+                existing["payload"], existing["correlation_id"], existing["occurred_at"],
+            )
+            if actual != expected:
+                raise ValueError("Blackboard event_id was reused with a different payload")
+            return
         await connection.execute(
             """
             INSERT INTO platform_outbox (tenant_id, event_id, topic, payload)
