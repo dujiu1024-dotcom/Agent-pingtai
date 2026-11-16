@@ -49,6 +49,7 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "project_id": row.get("project_id"),
         "session_id": row.get("session_id"),
         "status": row["status"],
+        "priority": row.get("priority", 100),
         "input": _json_value(row.get("input") or {}),
         "output": _json_value(row.get("output")),
         "usage": _json_value(row.get("usage") or {}),
@@ -287,13 +288,15 @@ class RegistryBackedTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
-        run_id: str | None = None,
+        run_id: str | None = None, priority: int = 100,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
             raise PermissionError("authenticated actor is required")
         if not isinstance(input, Mapping) or not input:
             raise WorkbenchTaskError("task input must be a non-empty object")
+        if type(priority) is not int or not 0 <= priority <= 1000:
+            raise WorkbenchTaskError("priority must be an integer between 0 and 1000")
         if idempotency_key is not None and (
             not isinstance(idempotency_key, str)
             or not idempotency_key.strip() or len(idempotency_key) > 200
@@ -309,6 +312,7 @@ class RegistryBackedTaskCenterService:
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
+            "priority": priority,
         }
         # Preserve the pre-existing idempotency digest for ordinary submissions;
         # deterministic child Run IDs are included only when explicitly supplied.
@@ -358,7 +362,7 @@ class RegistryBackedTaskCenterService:
             agent_id=agent_id, agent_version=agent.version,
             template_id=template_id, template_version=template_version,
             input=dict(input), preparation_owner=preparation_owner,
-            project_id=project_id, session_id=session_id,
+            priority=priority, project_id=project_id, session_id=session_id,
             workflow_id=workflow.item_id if workflow is not None else None,
             idempotency_key=idempotency_key, request_digest=digest,
             registry_snapshot=[

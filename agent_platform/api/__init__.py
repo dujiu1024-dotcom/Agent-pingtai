@@ -1,1 +1,0 @@
-"""Platform HTTP API adapters."""

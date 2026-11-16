@@ -1,2 +1,0 @@
-# Optional experimental runtime only. Pin the exact SDK release after the PoC.
-deepseek-harness-sdk

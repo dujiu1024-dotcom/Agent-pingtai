@@ -1,9 +1,0 @@
-{
-  "goal": "在白名单应用内完成一次输入并逐步校验",
-  "steps": [
-    {"action": "observe"},
-    {"action": "set", "selector": {"role": "AXTextField", "index": 0}, "value": "agency-gui-test"},
-    {"action": "assert", "expect": {"kind": "text_contains", "selector": {"role": "AXTextField", "index": 0}, "text": "agency-gui-test"}},
-    {"action": "screenshot"}
-  ]
-}
