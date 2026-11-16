@@ -59,6 +59,17 @@ class FileAssetVersionPostgresTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(old.sha256, asset.sha256)
         self.assertEqual(old_bytes, b"version one")
 
+        restored = await self.service.restore_asset_version(
+            tenant_id=self.tenant_id, asset_id=asset.asset_id, version=1,
+            expected_version=2,
+        )
+        self.assertEqual(restored.version, 3)
+        latest, latest_bytes = await self.service.download_asset(
+            tenant_id=self.tenant_id, asset_id=asset.asset_id,
+        )
+        self.assertEqual(latest.version, 3)
+        self.assertEqual(latest_bytes, b"version one")
+
     async def test_concurrent_updates_use_compare_and_swap(self):
         asset = await self.service.upload_asset(
             tenant_id=self.tenant_id, owner_id="user-a", filename="race.txt",
