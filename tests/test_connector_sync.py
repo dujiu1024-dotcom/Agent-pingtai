@@ -107,7 +107,7 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(await worker.run_once())
         self.assertIsNotNone(queue.job)
-        self.assertEqual(queue.last_error, "timeouterror")
+        self.assertEqual(queue.last_error, "connectorerror")
         self.assertTrue(await worker.run_once())
         self.assertIsNone(queue.job)
         saved = await repo.get("tenant-a", "drive-a")
