@@ -110,7 +110,7 @@ class QuotaReservationGroupTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "root_run_id"):
             await self.service.reserve_run(
                 tenant_id="tenant-a", run_id="child-run", root_run_id="root-run",
-                scopes=(QuotaScope("run", "other-root"),),
+                scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "other-root")),
                 estimated_tokens=1, estimated_cost_usd=Decimal("0.01"),
             )
 
