@@ -17,6 +17,7 @@ class HarnessCompositionTests(unittest.TestCase):
         self.assertIs(adapter.inner, inner)
         self.assertIs(adapter.quota_service, quota_service)
         self.assertEqual(adapter.context_window_tokens, 8192)
+        self.assertIsNone(adapter.release_reservation_on_error)
 
     def test_missing_estimators_or_quota_service_are_rejected(self):
         with self.assertRaises(ValueError):
@@ -39,6 +40,7 @@ class HarnessCompositionTests(unittest.TestCase):
             context_window_tokens=16384,
             estimate_tool_cost_usd=lambda request, result: Decimal("0.03"),
             measure_storage_bytes=lambda request, result: 4096,
+            release_reservation_on_error=lambda error: isinstance(error, ValueError),
         )
         self.assertEqual(adapter.context_window_tokens, 16384)
         self.assertEqual(adapter.estimate_tool_cost_usd(None, None), Decimal("0.03"))
