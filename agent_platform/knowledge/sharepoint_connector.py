@@ -311,4 +311,6 @@ class SharePointKnowledgeConnector:
             await result
         invalidate = getattr(self.credentials, "invalidate", None)
         if callable(invalidate):
-            invalidate(self.credential_ref)
+            result = invalidate(self.credential_ref)
+            if hasattr(result, "__await__"):
+                await result
