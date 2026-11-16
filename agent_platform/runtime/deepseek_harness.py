@@ -52,6 +52,10 @@ class DeepSeekHarnessAdapter:
         self.sdk_factory = sdk_factory
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
+        if request.media_inputs:
+            raise RuntimeError(
+                "DeepSeek Harness does not declare image, PDF, audio or video input support"
+            )
         if not self.container_isolation_verified:
             raise RuntimeError(
                 "DeepSeek Harness requires verified container filesystem and network isolation"
