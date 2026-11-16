@@ -100,13 +100,9 @@ class VaultKvV2SecretBackend:
         return value
 
     async def revoke(self, secret_ref: str, version: int) -> None:
+        # Platform versions are distinct KV keys; Vault's internal version
+        # number is independent. Deleting metadata permanently removes this key.
         path = self._path(secret_ref, version)
-        status, _ = await self._call("POST", f"{self._mount}/destroy/{path}",
-                                     {"versions": [version]})
-        if status == 404:
-            return
-        if status not in (200, 204):
-            raise RuntimeError(f"Vault secret destruction failed (HTTP {status})")
         status, _ = await self._call("DELETE", f"{self._mount}/metadata/{path}")
         if status not in (200, 204, 404):
             raise RuntimeError(f"Vault secret metadata cleanup failed (HTTP {status})")
