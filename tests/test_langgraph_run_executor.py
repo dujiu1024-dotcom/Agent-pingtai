@@ -151,6 +151,23 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(result,{"result":{"prompt":"resume after worker loss"}})
   self.assertEqual((await self.store.get("tenant","stale")).status,RunStatus.SUCCEEDED)
 
+ async def test_resume_refuses_a_lease_already_transferred_to_another_worker(self):
+  class LeaseTransferredStore(InMemoryRunStateStore):
+   async def owns_lease(self,tenant_id,run_id,worker_id):
+    return False
+  store=LeaseTransferredStore();manager=RunLifecycleManager(store);graph=FakeGraph()
+  await store.create("tenant","lease-transferred")
+  await manager.start("tenant","lease-transferred")
+  snapshot=await store.get("tenant","lease-transferred")
+  executor=LangGraphRunExecutor(
+   graph=graph,lifecycle=manager,worker_id="old-worker",timeout_seconds=1,
+  )
+  from agent_platform.runtime.lifecycle import WorkerLeaseLost
+  with self.assertRaises(WorkerLeaseLost):
+   await executor.resume_claimed(snapshot=snapshot,input={"prompt":"do not duplicate"})
+  self.assertEqual((await store.get("tenant","lease-transferred")).status,RunStatus.RUNNING)
+  self.assertEqual(graph.calls,[])
+
  async def test_claimed_cancellation_is_confirmed_without_restarting_graph(self):
   await self.store.create("tenant","remote-cancel")
   await self.manager.start("tenant","remote-cancel")
