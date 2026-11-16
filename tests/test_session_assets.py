@@ -104,9 +104,12 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="tenant-a", actor_id="user-a", session_id=project_a.session_id,
                 role=MessageRole.USER, content="attach cross-project file", asset_ids=(asset.asset_id,),
             )
+        other_session = await self.service.create_session(
+            tenant_id="tenant-a", owner_id="user-a", project_id="project-b",
+        )
         with self.assertRaisesRegex(SessionError, "another session"):
             await self.service.append_message(
-                tenant_id="tenant-a", actor_id="user-a", session_id=project_b.session_id,
+                tenant_id="tenant-a", actor_id="user-a", session_id=other_session.session_id,
                 role=MessageRole.USER, content="reuse already linked file", asset_ids=(asset.asset_id,),
             )
 
