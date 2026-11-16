@@ -217,12 +217,16 @@ class DataConnectorService:
                 credential=credential, scopes=connection.scopes, cursor=connection.cursor,
             )
             latest = await self.repository.get(tenant_id, connection_id)
-            if latest is None or latest.status != "active" or latest.version != connection.version:
+            if latest is None or latest.status != "active":
                 await self.sink.revoke_connection(
                     tenant_id=tenant_id, connection_id=connection_id,
                     disposition=revocation_disposition,
                 )
-                raise ConnectorError("connection changed during synchronization")
+                raise ConnectorError("connection was revoked during synchronization")
+            if latest.version != connection.version:
+                # Another active sync won the cursor CAS; replay is safe because
+                # downstream writes are required to be idempotent.
+                raise ConnectorError("connection cursor changed during synchronization")
             await self.sink.upsert_page(
                 tenant_id=tenant_id, connection_id=connection_id, items=page.items,
             )
