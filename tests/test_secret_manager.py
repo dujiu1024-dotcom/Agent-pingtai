@@ -9,6 +9,8 @@ from agent_platform.security.vault_kv_v2 import VaultKvV2SecretBackend
 class FakeMetadata:
     def __init__(self):
         self.rows = {}
+        self.fail_activate = False
+        self.fail_revoke_version = False
 
     async def list_versions(self, secret_ref):
         return [self.rows[k] for k in sorted(self.rows) if k[0] == secret_ref]
@@ -20,6 +22,8 @@ class FakeMetadata:
         self.rows[key] = SecretVersion(secret_ref, version, "pending", created_at)
 
     async def activate_version(self, secret_ref, version):
+        if self.fail_activate:
+            raise RuntimeError("metadata activation unavailable")
         for key, row in list(self.rows.items()):
             if key[0] == secret_ref and row.status == "active":
                 self.rows[key] = SecretVersion(secret_ref, row.version, "revoked", row.created_at, row.backend_revoked_at)
@@ -28,6 +32,8 @@ class FakeMetadata:
         self.rows[key] = SecretVersion(secret_ref, version, "active", row.created_at, row.backend_revoked_at)
 
     async def revoke_version(self, secret_ref, version, revoked_at):
+        if self.fail_revoke_version:
+            raise RuntimeError("metadata revocation unavailable")
         key = (secret_ref, version)
         row = self.rows.get(key)
         if row and row.status == "pending":
@@ -41,14 +47,14 @@ class FakeMetadata:
                 versions.append(row.version)
         return [
             row.version for key, row in self.rows.items()
-            if key[0] == secret_ref and row.status == "revoked"
+            if key[0] == secret_ref and row.status in {"pending", "revoked"}
             and row.backend_revoked_at is None
         ]
 
     async def list_pending_revocations(self, secret_ref=None):
         return [
             row.version for key, row in self.rows.items()
-            if key[0] == secret_ref and row.status == "revoked"
+            if key[0] == secret_ref and row.status in {"pending", "revoked"}
             and row.backend_revoked_at is None
         ]
 
@@ -56,7 +62,7 @@ class FakeMetadata:
         key = (secret_ref, version)
         row = self.rows[key]
         self.rows[key] = SecretVersion(
-            secret_ref, version, row.status, row.created_at, revoked_at,
+            secret_ref, version, "revoked", row.created_at, revoked_at,
         )
 
 
@@ -122,6 +128,27 @@ class SecretManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn((self.ref, 1), self.vault.values)
         self.assertIsNotNone(self.metadata.rows[(self.ref, 1)].backend_revoked_at)
         self.assertEqual(await self.manager.retry_revocations(secret_ref=self.ref), 0)
+
+
+    async def test_pending_version_is_retried_when_metadata_and_vault_cleanup_both_fail(self):
+        self.metadata.fail_activate = True
+        self.metadata.fail_revoke_version = True
+        self.vault.fail_versions.add(1)
+        with self.assertRaisesRegex(RuntimeError, "metadata activation"):
+            await self.manager.create(secret_ref=self.ref, value="orphan-secret")
+        row = self.metadata.rows[(self.ref, 1)]
+        self.assertEqual(row.status, "pending")
+        self.assertIsNone(row.backend_revoked_at)
+        self.assertIn((self.ref, 1), self.vault.values)
+
+        self.metadata.fail_activate = False
+        self.metadata.fail_revoke_version = False
+        self.vault.fail_versions.clear()
+        self.assertEqual(await self.manager.retry_revocations(secret_ref=self.ref), 1)
+        row = self.metadata.rows[(self.ref, 1)]
+        self.assertEqual(row.status, "revoked")
+        self.assertIsNotNone(row.backend_revoked_at)
+        self.assertNotIn((self.ref, 1), self.vault.values)
 
     async def test_invalid_refs_and_duplicate_create_are_rejected(self):
         with self.assertRaises(ValueError):
