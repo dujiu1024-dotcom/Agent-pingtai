@@ -1,0 +1,168 @@
+from __future__ import annotations
+
+import os
+import unittest
+from pathlib import Path
+from uuid import uuid4
+
+DSN = os.environ.get("AGENT_PLATFORM_TEST_DSN")
+
+
+@unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
+class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from psycopg import AsyncConnection
+        from psycopg.rows import dict_row
+        self.tenant_id = "task-it-" + uuid4().hex
+        self.agent_id = "agent-" + uuid4().hex
+        self.template_id = "model-" + uuid4().hex
+        self.run_id = uuid4()
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            for path in sorted(Path("agent_platform/storage/postgres").glob("*.sql")):
+                await conn.execute(path.read_text(), prepare=False)
+        async with await AsyncConnection.connect(DSN) as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id,display_name) VALUES (%s,%s)",
+                (self.tenant_id, "Task Center Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id,agent_id,display_name,role_definition,status)
+                   VALUES (%s,%s,%s,%s,'active')""",
+                (self.tenant_id, self.agent_id, "Test Agent", "integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id,template_id,version,definition,status,created_by)
+                   VALUES (%s,%s,1,'{}'::jsonb,'active','integration')""",
+                (self.tenant_id, self.template_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id,run_id,agent_id,template_id,template_version,status,input)
+                   VALUES (%s,%s,%s,%s,1,'paused','{}'::jsonb)""",
+                (self.tenant_id, self.run_id, self.agent_id, self.template_id),
+            )
+            await conn.execute(
+                """UPDATE platform_runs SET checkpoint_ref='checkpoint-1'
+                   WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, self.run_id),
+            )
+            await conn.commit()
+        async def connect():
+            return await AsyncConnection.connect(DSN, row_factory=dict_row)
+        self.connect = connect
+
+    async def test_task_submit_idempotency_queue_and_completion(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskQueueWorker
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        first = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "analyze"},
+            idempotency_key="request-1",
+        )
+        repeated = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "analyze"},
+            idempotency_key="request-1",
+        )
+        self.assertEqual(first["task_id"], repeated["task_id"])
+        worker = TaskQueueWorker(
+            service=service, worker_id="worker-a",
+            execute_task=lambda lease: _task_result(str(self.run_id)),
+        )
+        self.assertTrue(await worker.run_once())
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=first["task_id"])
+        self.assertEqual(saved["status"], "succeeded")
+        self.assertEqual(saved["run_id"], str(self.run_id))
+        self.assertEqual(saved["output"], {"answer": "done"})
+        listed = await service.list_tasks(
+            tenant_id=self.tenant_id, actor_id="user-a",
+        )
+        self.assertEqual(len(listed), 1)
+
+    async def test_idempotency_key_cannot_be_reused_for_different_input(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskCenterError
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "one"},
+            idempotency_key="same-key",
+        )
+        with self.assertRaises(TaskCenterError):
+            await service.submit_task(
+                tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+                project_id=None, session_id=None, input={"goal": "different"},
+                idempotency_key="same-key",
+            )
+
+    async def test_intervention_timeline_and_checkpoint_gated_resume(self):
+        from agent_platform.runtime.interventions import (
+            PostgresRunDetailService, RunInterventionService,
+        )
+        from agent_platform.runtime.lifecycle import RunLifecycleManager
+        from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+        interventions = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        item = await interventions.submit(
+            tenant_id=self.tenant_id, run_id=str(self.run_id), actor_id="user-a",
+            kind="context", payload={"additional_context": "Use the latest approved data"},
+        )
+        self.assertEqual(item["status"], "pending")
+        applied_payloads = []
+        async def apply(payload):
+            applied_payloads.append(payload)
+        self.assertEqual(await interventions.apply_pending(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            worker_id="worker-a", applier=apply,
+        ), 1)
+        self.assertEqual(applied_payloads[0]["payload"]["additional_context"],
+                         "Use the latest approved data")
+        rows = await interventions.list_interventions(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+        )
+        self.assertEqual(rows[0]["status"], "applied")
+        events = await interventions.list_events(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+        )
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["human.intervention_submitted", "human.intervention_applied"],
+        )
+        manager = RunLifecycleManager(PostgresRunStateStore(self.connect))
+        resumed = await manager.request_resume(self.tenant_id, str(self.run_id))
+        self.assertEqual(resumed.status.value, "interrupted")
+        details = PostgresRunDetailService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        detail = await details.get(tenant_id=self.tenant_id, run_id=str(self.run_id))
+        self.assertEqual(detail["checkpoint_ref"], "checkpoint-1")
+
+    async def test_intervention_is_rejected_for_non_paused_run(self):
+        from agent_platform.runtime.interventions import RunInterventionService
+        service = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        async with await self.connect() as conn:
+            await conn.execute(
+                "UPDATE platform_runs SET status='running' WHERE tenant_id=%s AND run_id=%s",
+                (self.tenant_id, self.run_id),
+            )
+        with self.assertRaises(ValueError):
+            await service.submit(
+                tenant_id=self.tenant_id, run_id=str(self.run_id), actor_id="user-a",
+                kind="takeover", payload={"reason": "operator takeover"},
+            )
+
+
+async def _task_result(run_id):
+    return {"run_id": run_id, "answer": "done"}
+
+
+if __name__ == "__main__":
+    unittest.main()
