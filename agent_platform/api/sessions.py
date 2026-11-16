@@ -57,13 +57,18 @@ def create_sessions_router(
             raise HTTPException(400, str(exc)) from exc
         visible = []
         for session in items:
-            if await authorize(principal, "session", session.session_id, "read"):
-                visible.append({
-                    "session_id": session.session_id, "title": session.title,
-                    "project_id": session.project_id, "status": session.status,
-                    "created_at": session.created_at.isoformat(),
-                    "updated_at": session.updated_at.isoformat(),
-                })
+            if not await authorize(principal, "session", session.session_id, "read"):
+                continue
+            if session.project_id and not await authorize(
+                principal, "project", session.project_id, "read",
+            ):
+                continue
+            visible.append({
+                "session_id": session.session_id, "title": session.title,
+                "project_id": session.project_id, "status": session.status,
+                "created_at": session.created_at.isoformat(),
+                "updated_at": session.updated_at.isoformat(),
+            })
         return {"items": visible}
 
     @router.get("/files")
