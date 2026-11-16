@@ -256,6 +256,57 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.output_text, "image generated")
         self.assertEqual(result.media_outputs[0].resource_id, "artifact-image")
 
+    async def test_media_capabilities_require_authorized_resolver_and_artifact_writer(self):
+        with self.assertRaisesRegex(ValueError, "media_resolver"):
+            self.adapter(
+                capabilities=HarnessCapabilities(
+                    input_modalities=frozenset({"text", "image"}),
+                    output_modalities=frozenset({"text"}),
+                )
+            )
+        with self.assertRaisesRegex(ValueError, "artifact writer"):
+            self.adapter(
+                capabilities=HarnessCapabilities(
+                    input_modalities=frozenset({"text"}),
+                    output_modalities=frozenset({"text", "image"}),
+                )
+            )
+
+    async def test_rejects_non_pdf_document_output(self):
+        class DocumentAgent(FakeAgent):
+            async def invoke_async(self, prompt, *, idempotency_token):
+                self.prompt = (prompt, idempotency_token)
+                return SimpleNamespace(
+                    message={"content": [{
+                        "document": {
+                            "format": "txt",
+                            "source": {"bytes": b"not-pdf"},
+                        }
+                    }]},
+                    stop_reason="end_turn",
+                    metrics=SimpleNamespace(accumulated_usage={}, accumulated_metrics={}),
+                )
+
+        async def writer(context, modality, mime_type, data, filename):
+            return MediaOutput(
+                modality=modality,
+                resource_id="artifact-doc",
+                mime_type=mime_type,
+                size_bytes=len(data),
+                sha256="c" * 64,
+            )
+
+        adapter = self.adapter(
+            agent_factory=lambda **kwargs: DocumentAgent(**kwargs),
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text", "pdf"}),
+            ),
+            media_output_writer=writer,
+        )
+        with self.assertRaisesRegex(ValueError, "PDF only"):
+            await adapter.run(self.request)
+
     async def test_rejects_platform_tools_until_gateway_adapter_exists(self):
         request = HarnessRequest(
             context=self.context, instructions="", input_text="",
