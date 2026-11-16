@@ -130,6 +130,132 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "does not declare"):
             await self.adapter().run(request)
 
+    async def test_resolves_and_passes_all_declared_media_modalities(self):
+        import hashlib
+
+        resources = {
+            "image-1": b"image-bytes",
+            "pdf-1": b"pdf-bytes",
+            "audio-1": b"audio-bytes",
+            "video-1": b"video-bytes",
+        }
+        media = tuple(
+            MediaInput(
+                modality=modality,
+                resource_id=resource_id,
+                mime_type=mime_type,
+                size_bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                filename=filename,
+            )
+            for modality, resource_id, mime_type, filename, data in (
+                ("image", "image-1", "image/png", "photo.png", resources["image-1"]),
+                ("pdf", "pdf-1", "application/pdf", "report.pdf", resources["pdf-1"]),
+                ("audio", "audio-1", "audio/wav", "recording.wav", resources["audio-1"]),
+                ("video", "video-1", "video/mp4", "clip.mp4", resources["video-1"]),
+            )
+        )
+        resolved = []
+
+        async def media_resolver(context, reference):
+            resolved.append((context, reference.resource_id))
+            return resources[reference.resource_id]
+
+        request = HarnessRequest(
+            context=self.context,
+            instructions="Inspect the attached evidence",
+            input_text="Summarize all media",
+            media_inputs=media,
+        )
+        capabilities = HarnessCapabilities(
+            input_modalities=frozenset({"text", "image", "pdf", "audio", "video"}),
+            output_modalities=frozenset({"text"}),
+        )
+        result = await self.adapter(
+            capabilities=capabilities, media_resolver=media_resolver
+        ).run(request)
+        prompt, _ = self.agents[0].prompt
+        self.assertEqual(prompt[0], {"text": "Summarize all media"})
+        self.assertEqual(
+            [next(iter(block)) for block in prompt[1:]],
+            ["image", "document", "audio", "video"],
+        )
+        self.assertEqual(prompt[1]["image"]["source"]["bytes"], resources["image-1"])
+        self.assertEqual(prompt[2]["document"]["source"]["bytes"], resources["pdf-1"])
+        self.assertEqual(prompt[3]["audio"]["source"]["bytes"], resources["audio-1"])
+        self.assertEqual(prompt[4]["video"]["source"]["bytes"], resources["video-1"])
+        self.assertEqual(len(resolved), 4)
+        self.assertEqual(result.output_text, "Strands response\n ready")
+
+    async def test_rejects_media_when_resolved_bytes_do_not_match_reference(self):
+        import hashlib
+
+        data = b"authorized-image"
+        media = MediaInput(
+            modality="image",
+            resource_id="asset-image",
+            mime_type="image/png",
+            size_bytes=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+        )
+
+        async def tampered_resolver(context, reference):
+            return b"tampered-image"
+
+        request = HarnessRequest(
+            context=self.context, instructions="", input_text="inspect",
+            media_inputs=(media,),
+        )
+        adapter = self.adapter(
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text", "image"}),
+                output_modalities=frozenset({"text"}),
+            ),
+            media_resolver=tampered_resolver,
+        )
+        with self.assertRaisesRegex(ValueError, "size does not match|checksum"):
+            await adapter.run(request)
+        self.assertEqual(self.agents, [])
+
+    async def test_persists_declared_media_outputs_as_verified_artifacts(self):
+        import hashlib
+
+        output_bytes = b"generated-image"
+
+        class ImageAgent(FakeAgent):
+            async def invoke_async(self, prompt, *, idempotency_token):
+                self.prompt = (prompt, idempotency_token)
+                return SimpleNamespace(
+                    message={"content": [
+                        {"text": "image generated"},
+                        {"image": {"format": "png", "source": {"bytes": output_bytes}}},
+                    ]},
+                    stop_reason="end_turn",
+                    metrics=SimpleNamespace(accumulated_usage={}, accumulated_metrics={}),
+                )
+
+        async def writer(context, modality, mime_type, data, filename):
+            return MediaOutput(
+                modality=modality,
+                resource_id="artifact-image",
+                mime_type=mime_type,
+                size_bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                filename="generated.png",
+            )
+
+        adapter = self.adapter(
+            agent_factory=lambda **kwargs: ImageAgent(**kwargs),
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text", "image"}),
+            ),
+            media_output_writer=writer,
+        )
+        result = await adapter.run(self.request)
+        self.assertEqual(result.output_text, "image generated")
+        self.assertEqual(result.media_outputs[0].resource_id, "artifact-image")
+
     async def test_rejects_platform_tools_until_gateway_adapter_exists(self):
         request = HarnessRequest(
             context=self.context, instructions="", input_text="",
