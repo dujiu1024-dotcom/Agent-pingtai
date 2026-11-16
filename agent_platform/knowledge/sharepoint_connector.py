@@ -185,6 +185,24 @@ class SharePointKnowledgeConnector:
             raise MicrosoftGraphConnectorError("SharePoint file is empty or exceeds the size limit")
         return raw
 
+    async def _permissions(self, *, token: str, item_id: str) -> list[Mapping[str, Any]]:
+        url = (
+            f"{self._GRAPH}/drives/{quote(self.drive_id, safe='')}"
+            f"/items/{quote(item_id, safe='')}/permissions"
+        )
+        permissions: list[Mapping[str, Any]] = []
+        for _ in range(100):
+            payload = self._json(await self._api_get(url, token))
+            rows = payload.get("value")
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise MicrosoftGraphConnectorError("SharePoint permissions response is invalid")
+            permissions.extend(rows)
+            next_link = payload.get("@odata.nextLink")
+            if not isinstance(next_link, str) or not next_link:
+                return permissions
+            url = self._graph_url(next_link)
+        raise MicrosoftGraphConnectorError("SharePoint permissions pagination limit exceeded")
+
     async def _document(
         self, *, tenant_id: str, token: str, item: Mapping[str, Any],
     ) -> ConnectorDocument | None:
@@ -206,13 +224,11 @@ class SharePointKnowledgeConnector:
                     raise MicrosoftGraphConnectorError("SharePoint file exceeds the size limit")
             except (TypeError, ValueError) as exc:
                 raise MicrosoftGraphConnectorError("invalid SharePoint file size") from exc
-        permissions = item.get("permissions")
-        if not isinstance(permissions, list):
-            raise MicrosoftGraphConnectorError(
-                "SharePoint permissions were not returned; ACL mapping must fail closed"
-            )
+        permissions = await self._permissions(token=token, item_id=item_id)
+        metadata = dict(item)
+        metadata["permissions"] = permissions
         content = await self._download(token=token, item=item)
-        document = self.document_factory(tenant_id, self.drive_id, item, media_type)
+        document = self.document_factory(tenant_id, self.drive_id, metadata, media_type)
         stable_id = f"sharepoint:{self.drive_id}:{item_id}"
         if (
             not isinstance(document, Document)
