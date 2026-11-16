@@ -6,7 +6,6 @@ one usage event and consumes every reservation in the group.
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -37,6 +36,9 @@ class QuotaReservationGroup:
             raise ValueError("reservation group cannot be empty")
         if len({(r.scope_type, r.scope_id) for r in self.reservations}) != len(self.reservations):
             raise ValueError("reservation group contains duplicate scopes")
+        if any((r.tenant_id, r.run_id, r.root_run_id or r.run_id) !=
+               (self.tenant_id, self.run_id, self.root_run_id) for r in self.reservations):
+            raise ValueError("reservation group identity does not match its reservations")
 
 
 class QuotaReservationGroupService:
@@ -57,6 +59,10 @@ class QuotaReservationGroupService:
             raise ValueError("at least one quota scope is required")
         if len({(s.scope_type, s.scope_id) for s in scopes}) != len(scopes):
             raise ValueError("quota scopes must be unique")
+        if not any(s.scope_type == "tenant" and s.scope_id == tenant_id for s in scopes):
+            raise ValueError("reservation group must include the tenant budget")
+        if not any(s.scope_type == "run" and s.scope_id == root_run_id for s in scopes):
+            raise ValueError("reservation group must include the root Run budget")
         if any(s.scope_type == "run" and s.scope_id != root_run_id for s in scopes):
             raise ValueError("Run budget scope_id must equal root_run_id")
         if (not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool)
