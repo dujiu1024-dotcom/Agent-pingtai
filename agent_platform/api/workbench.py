@@ -69,7 +69,10 @@ def create_workbench_router(
             if not await authorize_task(principal, task_id, action):
                 raise HTTPException(403, "task access denied")
             service = await resolve_task_service(principal)
-            bound_tenant = getattr(getattr(service, "repository", None), "tenant_id", principal.tenant_id)
+            bound_tenant = getattr(
+                service, "tenant_id",
+                getattr(getattr(service, "repository", None), "tenant_id", principal.tenant_id),
+            )
             if bound_tenant != principal.tenant_id:
                 raise HTTPException(403, "task service tenant mismatch")
             return principal, service
