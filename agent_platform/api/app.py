@@ -70,6 +70,7 @@ def create_platform_app(
     webhook_admin_authorizer: Any | None = None,
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
+    task_worker: Any | None = None,
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
     blackboard_evidence_verifier: Any | None = None,
@@ -137,12 +138,21 @@ def create_platform_app(
             authorize=session_authorizer,
         ))
     task_center_configured = any(value is not None for value in (
-        task_service_resolver, task_authorizer,
+        task_service_resolver, task_authorizer, task_worker,
     ))
     if task_center_configured and any(value is None for value in (
-        task_service_resolver, task_authorizer,
+        task_service_resolver, task_authorizer, task_worker,
     )):
-        raise ValueError("task service resolver and authorizer must be configured together")
+        raise ValueError(
+            "task service resolver, authorizer and durable task worker must be configured together"
+        )
+    if task_center_configured:
+        if not callable(getattr(task_worker, "start", None)) or not callable(
+            getattr(task_worker, "stop", None)
+        ):
+            raise ValueError("task_worker must expose async start() and stop() lifecycle methods")
+        app.add_event_handler("startup", task_worker.start)
+        app.add_event_handler("shutdown", task_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
         blackboard_evidence_verifier,
