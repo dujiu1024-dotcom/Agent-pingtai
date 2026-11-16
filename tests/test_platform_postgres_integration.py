@@ -1350,6 +1350,11 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             template_version=7, input={"prompt": "persisted"},
             project_id="project-a", session_id="session-a",
             preparation_owner="prep-a", idempotency_key="workbench-request-1", request_digest=digest,
+            registry_snapshot=[
+                {"kind": "agent", "item_id": "researcher", "version": 1},
+                {"kind": "model_template", "item_id": "general", "version": 1},
+                {"kind": "model_provider", "item_id": "provider-a", "version": 1},
+            ],
         )
         self.assertTrue(created)
         self.assertFalse(await store.create_task_run(
