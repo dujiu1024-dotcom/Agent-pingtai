@@ -451,6 +451,20 @@ class SessionAssetService:
             raise SessionError("stored object integrity check failed")
         return record, content
 
+    async def restore_asset_version(
+        self, *, tenant_id: str, asset_id: str, version: int,
+        expected_version: int | None = None,
+    ) -> FileAssetVersion:
+        """Restore historical bytes as a new current version; history remains append-only."""
+        historical, content = await self.download_asset_version(
+            tenant_id=tenant_id, asset_id=asset_id, version=version,
+        )
+        return await self.create_asset_version(
+            tenant_id=tenant_id, asset_id=asset_id, content=content,
+            filename=historical.filename, media_type=historical.media_type,
+            expected_version=expected_version,
+        )
+
     async def create_download_url(
         self, *, tenant_id: str, asset_id: str, expires_in: int = 300,
     ) -> tuple[FileAsset, str]:
