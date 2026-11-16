@@ -245,11 +245,22 @@ class RegistryBackedTaskCenterService:
                         "idempotency_key was already used with a different task request"
                     )
                 if existing.get("status") == "queued" and not existing.get("dispatch_ready"):
-                    await self._ensure_task_ready(
-                        tenant_id=tenant_id, run_id=str(existing["run_id"]),
-                        agent_id=agent_id,
-                        existing_digest=existing.get("registry_snapshot_digest"),
-                    )
+                    try:
+                        await self._ensure_task_ready(
+                            tenant_id=tenant_id, run_id=str(existing["run_id"]),
+                            agent_id=agent_id,
+                            existing_digest=existing.get("registry_snapshot_digest"),
+                        )
+                    except Exception as exc:
+                        current = await self.run_store.get(tenant_id, str(existing["run_id"]))
+                        if current is not None and current.status == RunStatus.QUEUED:
+                            await self.lifecycle.finish(
+                                tenant_id, str(existing["run_id"]), RunStatus.FAILED,
+                                error=f"registry snapshot retry failed: {str(exc)[:400]}",
+                            )
+                        raise WorkbenchTaskError(
+                            "could not recover the task's registry snapshot"
+                        ) from exc
                     existing = await self.run_store.get_task_record(
                         tenant_id, str(existing["task_id"]), actor_id=actor_id,
                     )
