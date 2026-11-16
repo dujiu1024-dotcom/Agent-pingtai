@@ -130,6 +130,7 @@ def create_authenticated_mcp_asgi_app(
         required_scopes=["platform:tools"],
         validate_token_resource=True,
     )
+    verifier: Any
     if token_service is not None:
         from agent_platform.control_plane.gateway_auth import PersistentRunTokenVerifier
         verifier = PersistentRunTokenVerifier(token_service=token_service, resource_server_url=resource_server_url)

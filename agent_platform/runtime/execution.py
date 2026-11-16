@@ -1,9 +1,17 @@
 """Connect Run lifecycle management to LangGraph execution and worker recovery."""
 from __future__ import annotations
+
 import asyncio
 from typing import Any, Callable
 from uuid import uuid4
-from agent_platform.runtime.lifecycle import RunLifecycleManager, RunSnapshot, RunStatus, WorkerLeaseLost
+
+from agent_platform.runtime.lifecycle import (
+ RunLifecycleManager,
+ RunSnapshot,
+ RunStatus,
+ WorkerLeaseLost,
+)
+
 
 class LangGraphRunExecutor:
  """Execute a compiled LangGraph with durable checkpoints and a renewable worker lease."""
@@ -134,7 +142,7 @@ class LangGraphRunExecutor:
    if actual is None or actual!=row.checkpoint_ref:
     raise RuntimeError("LangGraph checkpoint is missing or does not match the Run checkpoint reference")
   async def resume(row:RunSnapshot)->None:
-   payload=None if row.checkpoint_ref else load_initial_input(row)
+   payload: Any = None if row.checkpoint_ref else load_initial_input(row)
    if hasattr(payload,"__await__"):payload=await payload
    ref_input=self.graph.ainvoke(payload,config=await self._run_config(row.tenant_id,row.run_id))
    try:

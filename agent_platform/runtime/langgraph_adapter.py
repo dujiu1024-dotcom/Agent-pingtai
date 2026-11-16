@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Hashable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -28,7 +28,7 @@ def build_state_graph(
             "LangGraph is not installed. Install the platform runtime dependencies."
         ) from exc
 
-    graph = StateGraph(state_schema)
+    graph: Any = StateGraph(state_schema)
     for name, node in nodes.items():
         graph.add_node(name, node)
 
@@ -37,7 +37,7 @@ def build_state_graph(
     for source, target in edges:
         graph.add_edge(source, END if target == "__end__" else target)
     for source, router, destinations in conditional_edges:
-        normalized = {
+        normalized: dict[Hashable, str] = {
             key: END if value == "__end__" else value
             for key, value in destinations.items()
         }

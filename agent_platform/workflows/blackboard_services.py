@@ -176,7 +176,7 @@ class BlackboardMultiExpertServices:
             conflict_entry_id = conflict.get("blackboard_entry_id")
             if not conflict_entry_id:
                 raise ValueError("conflict is missing its durable Blackboard entry")
-            decision = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_instance_id") == conflict.get("conflict_instance_id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
+            decision: dict[str, Any] = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_instance_id") == conflict.get("conflict_instance_id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
             evidence_refs = decision.get("evidence_refs", conflict.get("evidence_refs", []))
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),

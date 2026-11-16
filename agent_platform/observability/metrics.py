@@ -48,10 +48,10 @@ class InMemoryMetricsRecorder:
 
     def snapshot(self) -> dict[str, dict[str, float | int]]:
         with self._lock:
-            counters = {
+            counters: dict[str, float | int] = {
                 self._format_key(key): value for key, value in self._counters.items()
             }
-            observations = {
+            observations: dict[str, float | int] = {
                 self._format_key(key): len(values)
                 for key, values in self._observations.items()
             }

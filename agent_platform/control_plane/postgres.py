@@ -4,9 +4,18 @@ from __future__ import annotations
 from typing import Any, Callable
 from uuid import UUID
 
-from agent_platform.control_plane.registry import RegistryConflict, RegistryNotFound, RegistryVersion
+from agent_platform.control_plane.registry import (
+    RegistryConflict,
+    RegistryNotFound,
+    RegistryVersion,
+)
 from agent_platform.control_plane.sessions_assets import (
-    AssetStatus, ConversationMessage, ConversationSession, FileAsset, MessageRole,
+    AssetStatus,
+    ConversationMessage,
+    ConversationSession,
+    FileAsset,
+    MessageRole,
+    SessionNotFound,
 )
 
 ConnectionFactory = Callable[[], Any]

@@ -2,26 +2,35 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
+from typing import Any
 
 from agent_platform.identity.models import (
-    ApiCredentialRecord, InvitationRecord, ResourceRef, SessionRecord, UserRecord,
+    ApiCredentialRecord,
+    InvitationRecord,
+    ResourceRef,
+    SessionRecord,
+    UserRecord,
 )
 from agent_platform.identity.security import CredentialError, PasswordHasher, token_digest
-from agent_platform.identity.service import AuthenticationError, AuthorizationDenied, IdentityService
+from agent_platform.identity.service import (
+    AuthenticationError,
+    AuthorizationDenied,
+    IdentityService,
+)
 
 
 class FakeIdentityRepository:
     def __init__(self, user: UserRecord):
         self.user = user
         self.memberships = {("tenant-a", user.user_id)}
-        self.sessions = {}
-        self.permissions = set()
-        self.revoked = set()
-        self.touched = []
-        self.grants = []
-        self.revokes = []
-        self.api_credentials = {}
-        self.invitations = {}
+        self.sessions: dict[str, SessionRecord] = {}
+        self.permissions: set[tuple[str, str]] = set()
+        self.revoked: set[str] = set()
+        self.touched: list[tuple[str, str]] = []
+        self.grants: list[dict[str, Any]] = []
+        self.revokes: list[dict[str, Any]] = []
+        self.api_credentials: dict[str, ApiCredentialRecord] = {}
+        self.invitations: dict[str, InvitationRecord] = {}
 
     async def get_user_by_email(self, normalized_email):
         return self.user if normalized_email == self.user.email.casefold() else None

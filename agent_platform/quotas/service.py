@@ -43,8 +43,8 @@ class Budget:
         for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens):
             if value is not None and value < 0:
                 raise ValueError("token and concurrency limits must be non-negative")
-        for value in (self.hard_cost_usd, self.soft_cost_usd):
-            if value is not None and value < 0:
+        for cost in (self.hard_cost_usd, self.soft_cost_usd):
+            if cost is not None and cost < 0:
                 raise ValueError("cost limits must be non-negative")
 
 

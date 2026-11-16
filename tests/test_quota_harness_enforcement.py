@@ -58,7 +58,7 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
             model_template=SimpleNamespace(template_id="general", version=1),
             project_id=None, agent_id="agent-a",
         ))
-        result = await adapter.run(request)
+        await adapter.run(request)
         self.assertEqual(inner.calls, 1)
         tokens, cost, concurrency = await store.usage(
             "tenant-a", "tenant", "tenant-a",

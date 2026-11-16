@@ -194,6 +194,9 @@ class SupervisedToolGateway:
             RiskLevel.EXTERNAL_OR_IRREVERSIBLE,
             RiskLevel.FINANCIAL_OR_SECURITY,
         }
+        effects = self._idempotency_store if requires_idempotency else None
+        run_key = run_id or ""
+        call_key = call_id or ""
         if requires_idempotency:
             if self._idempotency_store is None or not run_id or not call_id:
                 raise ToolExecutionDenied(
@@ -254,9 +257,9 @@ class SupervisedToolGateway:
             run_id=run_id,
             agent_id=agent_id,
         )
-        if requires_idempotency:
-            claimed = await self._idempotency_store.claim(
-                tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+        if effects is not None:
+            claimed = await effects.claim(
+                tenant_id=tenant_id, run_id=run_key, call_id=call_key,
                 action_digest=request.digest(), actor_id=actor_id,
             )
             if claimed.state == "succeeded":
@@ -269,9 +272,9 @@ class SupervisedToolGateway:
             else:
                 result = await definition.handler(arguments)
         except Exception as exc:
-            if requires_idempotency:
-                await self._idempotency_store.fail(
-                    tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+            if effects is not None:
+                await effects.fail(
+                    tenant_id=tenant_id, run_id=run_key, call_id=call_key,
                     error=type(exc).__name__,
                 )
             await self._audit_sink.record(
@@ -287,9 +290,9 @@ class SupervisedToolGateway:
             )
             raise
 
-        if requires_idempotency:
-            await self._idempotency_store.complete(
-                tenant_id=tenant_id, run_id=run_id, call_id=call_id, result=result,
+        if effects is not None:
+            await effects.complete(
+                tenant_id=tenant_id, run_id=run_key, call_id=call_key, result=result,
             )
         await self._audit_sink.record(
             tenant_id=tenant_id,
