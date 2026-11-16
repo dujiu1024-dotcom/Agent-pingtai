@@ -341,5 +341,47 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((tokens, concurrency), (12, 1))
 
+    async def test_context_estimation_is_enforced_without_configured_quota_budget(self):
+        class RejectingEstimator:
+            def __init__(self):
+                self.calls = 0
+                self.context_window = None
+
+            def estimate(self, **kwargs):
+                self.calls += 1
+                self.context_window = kwargs["context_window_tokens"]
+                raise ValueError("estimated prompt plus planned output exceeds model context window")
+
+        class NeverDispatchTransport:
+            def __init__(self):
+                self.calls = 0
+
+            async def complete(self, **kwargs):
+                self.calls += 1
+                return {
+                    "choices": [{"message": {"content": "must not dispatch"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                }
+
+        estimator = RejectingEstimator()
+        transport = NeverDispatchTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport,
+            token_estimator=estimator,
+        )
+        with self.assertRaisesRegex(ValueError, "exceeds model context window"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a",
+                run_id="run-context-guard", template_id="primary",
+                messages=({"role": "user", "content": "too much context"},),
+                request_id="request-context-guard",
+                request_parameters={"max_tokens": 8},
+            )
+        self.assertEqual(estimator.calls, 1)
+        self.assertGreater(estimator.context_window, 0)
+        self.assertEqual(transport.calls, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
