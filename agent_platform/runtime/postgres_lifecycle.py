@@ -99,7 +99,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s""",
@@ -112,7 +112,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s
@@ -241,7 +241,7 @@ class PostgresRunStateStore(RunStateStore):
     WHERE task_id IS NULL AND ((status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
       AND (%s::text IS NULL OR tenant_id=%s)
-    ORDER BY priority DESC,created_at ASC FOR UPDATE SKIP LOCKED LIMIT %s
+    ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
     )
     UPDATE platform_runs r SET worker_id=%s,lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
@@ -259,7 +259,7 @@ class PostgresRunStateStore(RunStateStore):
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
-    ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
+    ORDER BY priority DESC,created_at ASC FOR UPDATE SKIP LOCKED LIMIT %s
     )
     UPDATE platform_runs r SET worker_id=%s,
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
