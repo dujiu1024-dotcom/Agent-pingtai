@@ -143,7 +143,9 @@ class MCPHealthChecker:
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 async with self.session_factory(tenant_id, server_id) as session:
-                    await session.ping()
+                    ping_result = await session.ping()
+                    if ping_result is False:
+                        raise MCPHealthError("MCP ping returned false")
                     discovered = self._tool_names(await session.list_tools())
             if discovered == expected:
                 status = "healthy"
