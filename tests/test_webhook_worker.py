@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from agent_platform.events.webhook_worker import WebhookDeliveryWorker
 from agent_platform.events.webhook_operations import create_webhook_delivery_admin_router
+from agent_platform.events.webhook_replay import WebhookDeadLetterReplayService
 from agent_platform.identity.models import Principal
 
 
@@ -110,9 +111,27 @@ class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
 class WebhookDeadLetterApiTests(unittest.TestCase):
     def test_dead_letter_list_and_replay_are_tenant_scoped_and_authorized(self):
         store = FakeOperations()
+
+        class Audit:
+            def __init__(self):
+                self.events = []
+
+            async def record(self, **event):
+                self.events.append(event)
+
+        audit = Audit()
+        replay_service = WebhookDeadLetterReplayService(
+            store=store,
+            audit=audit,
+            authorize=lambda tenant_id, actor_id: (
+                tenant_id == "tenant-a" and actor_id == "admin"
+            ),
+        )
         app = FastAPI()
         app.include_router(create_webhook_delivery_admin_router(
-            store=store, authorize_manage=lambda actor: actor.user_id == "admin",
+            store=store,
+            authorize_manage=lambda actor: actor.user_id == "admin",
+            replay_service=replay_service,
         ))
 
         @app.middleware("http")
@@ -128,12 +147,15 @@ class WebhookDeadLetterApiTests(unittest.TestCase):
             self.assertEqual(listed.status_code, 200)
             self.assertEqual(len(listed.json()["items"]), 1)
             replay = client.post(
-                "/api/platform/v1/webhooks/dead-letters/00000000-0000-0000-0000-000000000001/replay"
+                "/api/platform/v1/webhooks/dead-letters/00000000-0000-0000-0000-000000000001/replay",
+                json={"reason": "operator recovery"},
             )
             self.assertEqual(replay.status_code, 200)
             self.assertEqual(store.replayed, [
                 ("tenant-a", "00000000-0000-0000-0000-000000000001"),
             ])
+            self.assertEqual(audit.events[-1]["outcome"], "succeeded")
+            self.assertEqual(audit.events[-1]["action"], "webhook.dead_letter.replay")
 
     def test_unauthorized_dead_letter_access_is_denied(self):
         app = FastAPI()
