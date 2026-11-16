@@ -248,3 +248,16 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    async def test_incomplete_initial_snapshot_fails_closed(self):
+        client = Client([
+            Response({"startPageToken": "start"}),
+            Response({"files": [], "incompleteSearch": True}),
+        ])
+        connector = GoogleDriveKnowledgeConnector(
+            client=client, credentials=Credentials(),
+            credential_ref="secret://tenant/drive",
+            document_factory=document_factory,
+        )
+        with self.assertRaises(GoogleDriveConnectorError):
+            await connector.list_changed(tenant_id="tenant-a", cursor=None)
