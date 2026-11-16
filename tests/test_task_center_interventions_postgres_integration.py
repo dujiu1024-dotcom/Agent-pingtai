@@ -261,6 +261,38 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["last_error"], "permanent")
 
+    async def test_expired_cancelling_task_waits_for_run_terminal_state(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskQueueWorker
+        async def cancel_run(tenant_id, run_id):
+            return {"status": "cancelling"}
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+            cancel_run=cancel_run,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "wait for Run stop"},
+        )
+        lease = await service.claim_next(worker_id="worker-before-crash")
+        await service.set_run_id(lease, str(self.run_id))
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_tasks SET status='cancelling',
+                   lease_expires_at=now()-interval '1 second'
+                   WHERE tenant_id=%s AND task_id=%s""",
+                (self.tenant_id, task["task_id"]),
+            )
+        async def must_not_execute(_lease):
+            raise AssertionError("a cancelling task must not be executed again")
+        worker = TaskQueueWorker(
+            service=service, worker_id="worker-after-crash",
+            execute_task=must_not_execute,
+        )
+        self.assertTrue(await worker.run_once())
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
+        self.assertEqual(saved["status"], "cancelling")
+        self.assertIsNone(saved["finished_at"])
+
     async def test_intervention_timeline_and_checkpoint_gated_resume(self):
         from agent_platform.runtime.interventions import (
             PostgresRunDetailService,
