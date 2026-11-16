@@ -1,9 +1,10 @@
 import asyncio
 import unittest
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from agent_platform.runtime.lifecycle import WorkerLeaseLost
+from agent_platform.runtime.lifecycle import RunSnapshot, RunStatus, WorkerLeaseLost
 from agent_platform.runtime.workbench_tasks import RunExecutionWorker
 
 
@@ -48,6 +49,50 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
                 await worker._heartbeat_until_done("tenant-a", "run-a")
 
         self.assertEqual(store.calls, 1)
+
+    async def test_interrupted_run_resumes_from_its_checkpoint(self):
+        class Store:
+            def __init__(self):
+                self.output = None
+
+            async def get(self, tenant_id, run_id):
+                return RunSnapshot(
+                    tenant_id, run_id, RunStatus.SUCCEEDED, 3,
+                    checkpoint_ref="checkpoint-42",
+                )
+
+            async def save_output(self, tenant_id, run_id, output, *, usage=None, trace_id=None):
+                self.output = output
+
+        store = Store()
+        worker = self.make_worker(store)
+        snapshot = RunSnapshot(
+            "tenant-a", "run-a", RunStatus.INTERRUPTED, 2,
+            checkpoint_ref="checkpoint-42",
+        )
+
+        class Executor:
+            def __init__(self):
+                self.worker_id = "worker-test"
+                self.lifecycle = SimpleNamespace(store=store)
+                self.resumed_snapshot = None
+
+            async def execute(self, **_kwargs):
+                raise AssertionError("interrupted Runs must resume, not start over")
+
+            async def resume_claimed(self, *, snapshot, input):
+                self.resumed_snapshot = snapshot
+                return {"answer": "resumed"}
+
+        executor = Executor()
+        with patch("agent_platform.runtime.workbench_tasks.LangGraphRunExecutor", Executor):
+            outcome = await worker._execute_claimed(
+                snapshot, executor, {"input": {"prompt": "continue"}},
+            )
+
+        self.assertEqual(outcome, "succeeded")
+        self.assertIs(executor.resumed_snapshot, snapshot)
+        self.assertEqual(store.output, {"answer": "resumed"})
 
     async def test_execution_is_cancelled_when_heartbeat_loses_lease(self):
         store = _LeaseStore(owned=False)
