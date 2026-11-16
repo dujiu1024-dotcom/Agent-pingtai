@@ -53,6 +53,20 @@ class MCPHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, "unhealthy")
         self.assertEqual(result.error_code, "tool_inventory_mismatch")
 
+    async def test_negative_ping_response_is_unhealthy(self):
+        class NotResponding(FakeSession):
+            async def ping(self):
+                return False
+        checker = MCPHealthChecker(
+            store=InMemoryMCPHealthStore(),
+            session_factory=lambda tenant, server: NotResponding(["search"]),
+        )
+        result = await checker.check(
+            tenant_id="tenant-a", server_id="docs", expected_tools=("search",),
+        )
+        self.assertEqual(result.status, "unhealthy")
+        self.assertEqual(result.error_code, "probe_MCPHealthError")
+
     async def test_probe_failure_does_not_persist_exception_text(self):
         class Broken:
             async def __aenter__(self):
