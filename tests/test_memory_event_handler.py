@@ -70,6 +70,9 @@ class FakeRunStore:
     async def get_task_record(self, tenant_id, task_id):
         return self.record if tenant_id == TENANT and task_id == RUN else None
 
+    async def get_run_record(self, tenant_id, run_id):
+        return self.record if tenant_id == TENANT and run_id == RUN else None
+
 
 class FakeExtraction:
     def __init__(self):
@@ -211,6 +214,19 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(PermissionError):
             await self.handler(repository=repository)(make_event())
+
+    async def test_loads_non_task_run_record_by_run_id(self):
+        repository = FakeRepository()
+        repository.messages = ()
+        run_store = FakeRunStore(
+            task_id=None,
+            input={"text": "normal Run question"},
+            output={"text": "normal Run answer"},
+        )
+        await self.handler(run_store=run_store, repository=repository)(make_event())
+        _, turn = self.extraction.turns[0]
+        self.assertEqual(turn.user_message, "normal Run question")
+        self.assertEqual(turn.assistant_message, "normal Run answer")
 
 
 if __name__ == "__main__":
