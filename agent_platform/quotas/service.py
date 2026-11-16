@@ -34,7 +34,7 @@ class Budget:
     hard_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker_pool"}:
+        if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model", "run", "queue", "worker_pool"}:
             raise ValueError("invalid budget scope")
         if not self.scope_id:
             raise ValueError("scope_id is required")
@@ -74,10 +74,13 @@ class QuotaReservation:
     period_end: datetime
     reserved_input_tokens: int = 0
     reserved_output_tokens: int = 0
+    root_run_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.reservation_id or not self.tenant_id or not self.run_id:
             raise ValueError("reservation, tenant and run ids are required")
+        if self.root_run_id is not None and not self.root_run_id:
+            raise ValueError("root_run_id must be a non-empty string when supplied")
         if self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker_pool"} or not self.scope_id:
             raise ValueError("invalid reservation quota scope")
         counters = (
@@ -113,10 +116,13 @@ class UsageEvent:
     storage_bytes: int = 0
     price_card_version: str | None = None
     source: str = "estimated"
+    root_run_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.event_id or not self.tenant_id or not self.run_id or not self.model_key:
             raise ValueError("usage event identifiers and model_key are required")
+        if self.root_run_id is not None and not self.root_run_id:
+            raise ValueError("root_run_id must be a non-empty string when supplied")
         counters = (
             self.input_tokens, self.output_tokens, self.tool_calls,
             self.runtime_ms, self.storage_bytes,
@@ -178,6 +184,7 @@ class InMemoryQuotaStore:
             or (scope_type == "model" and event.model_key == scope_id)
             or (scope_type == "project" and event.project_id == scope_id)
             or (scope_type == "agent" and event.agent_id == scope_id)
+            or (scope_type == "run" and (event.root_run_id or event.run_id) == scope_id)
         )
 
     async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]:
@@ -300,9 +307,13 @@ class QuotaService:
         estimated_tokens: int, estimated_cost_usd: Decimal,
         estimated_input_tokens: int | None = None,
         estimated_output_tokens: int | None = None,
+        root_run_id: str | None = None,
     ) -> tuple[QuotaReservation, tuple[str, ...]]:
         if not tenant_id or not run_id:
             raise ValueError("tenant_id and run_id are required")
+        if root_run_id is not None and (not isinstance(root_run_id, str) or not root_run_id.strip()):
+            raise ValueError("root_run_id must be a non-empty string")
+        root_run_id = root_run_id or run_id
         budget = await self.store.get_budget(tenant_id, scope_type, scope_id, datetime.now(timezone.utc))
         if budget is None:
             raise BudgetExceeded("quota budget not configured")
@@ -334,6 +345,7 @@ class QuotaService:
             period_start=budget.period_start, period_end=budget.period_end,
             reserved_input_tokens=estimated_input_tokens,
             reserved_output_tokens=estimated_output_tokens,
+            root_run_id=root_run_id,
         )
         return await self.store.reserve(reservation)
 
@@ -359,6 +371,7 @@ class QuotaService:
             created_at=datetime.now(timezone.utc),
             period_start=budget.period_start, period_end=budget.period_end,
             reserved_input_tokens=0, reserved_output_tokens=0,
+            root_run_id=run_id,
         )
         await self.store.reserve(reservation)
         return reservation
@@ -389,6 +402,7 @@ class QuotaService:
             project_id=project_id, agent_id=agent_id, tool_calls=tool_calls,
             runtime_ms=runtime_ms, storage_bytes=storage_bytes,
             price_card_version=price_card_version, source=source,
+            root_run_id=reservation.root_run_id or reservation.run_id,
         )
         await self.store.settle(reservation.reservation_id, event)
         return event
