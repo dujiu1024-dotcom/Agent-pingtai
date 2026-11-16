@@ -21,7 +21,7 @@ def _parse_version(value: str, *, field_name: str) -> tuple[int, int, int]:
     match = _SEMVER.fullmatch(value)
     if match is None:
         raise ValueError(f"{field_name} must use MAJOR.MINOR.PATCH semantic versioning")
-    return tuple(int(part) for part in match.groups())
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 
 
 def _validate_media_reference(
