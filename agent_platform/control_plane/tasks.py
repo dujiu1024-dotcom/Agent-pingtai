@@ -23,7 +23,7 @@ class TaskLease:
     lease_owner: str
 
 
-class TaskCenterError(RuntimeError):
+class TaskCenterError(ValueError):
     pass
 
 
