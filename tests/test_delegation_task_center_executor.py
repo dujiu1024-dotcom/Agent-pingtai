@@ -143,6 +143,27 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.trace_id, "child-trace")
         self.assertEqual(result.metadata["child_run_id"], self.child.run_id)
 
+    async def test_child_worker_can_be_bound_after_runtime_composition(self):
+        executor = TaskCenterChildRunExecutor(
+            task_service=self.service,
+            actor_resolver=lambda context: "user-a",
+        )
+        executor.bind_worker(self.worker)
+        result = await executor.execute_child(
+            request=self.request,
+            parent_context=self.parent,
+            idempotency_key="tenant-a:parent-run:research-1",
+        )
+        self.assertEqual(result.output_text, "delegated answer")
+
+    async def test_child_worker_must_share_the_durable_run_store(self):
+        executor = TaskCenterChildRunExecutor(
+            task_service=self.service,
+            actor_resolver=lambda context: "user-a",
+        )
+        with self.assertRaisesRegex(ValueError, "share the durable RunStateStore"):
+            executor.bind_worker(SimpleNamespace(run_store=object(), run_once=lambda: None))
+
     async def test_rejects_unapproved_tools_before_persisting_child(self):
         self.request = HarnessRequest(
             context=self.child,
