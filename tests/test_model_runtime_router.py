@@ -7,7 +7,6 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from agent_platform.models.registry_resolver import RegistryModelResolver
-from agent_platform.quotas.service import Budget, InMemoryQuotaStore, QuotaService
 from agent_platform.models.runtime_router import (
     ModelRoutingError,
     ModelTransportError,
@@ -17,6 +16,7 @@ from agent_platform.models.runtime_router import (
     PostgresModelUsageRecorder,
 )
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
+from agent_platform.quotas.service import Budget, InMemoryQuotaStore, QuotaService
 
 
 class Secrets:
