@@ -93,6 +93,49 @@ class PostgresKnowledgeRepository:
         async with conn:
             async with conn.transaction():
                 await conn.execute("""INSERT INTO knowledge_connector_sync_state(tenant_id,connector_id,cursor,last_synced_at) VALUES(%s,%s,%s,now()) ON CONFLICT(tenant_id,connector_id) DO UPDATE SET cursor=EXCLUDED.cursor,last_synced_at=now(),last_error=NULL""",(tenant_id,connector_id,cursor))
+    async def grant_document_access(
+        self, tenant_id: str, document_id: str, principal_type: str,
+        principal_id: str, permission: str, granted_by: str,
+    ) -> None:
+        if principal_type not in {"user", "role", "project"}:
+            raise ValueError("invalid ACL principal type")
+        if permission not in {"read", "manage"}:
+            raise ValueError("invalid ACL permission")
+        if not principal_id.strip() or not granted_by.strip():
+            raise ValueError("ACL principal and grantor are required")
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    "SELECT 1 FROM knowledge_documents WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL ORDER BY version DESC LIMIT 1",
+                    (tenant_id, document_id),
+                )
+                if await cur.fetchone() is None:
+                    raise ValueError("document not found")
+                await conn.execute(
+                    """INSERT INTO knowledge_document_acl
+                    (tenant_id,document_id,principal_type,principal_id,permission,granted_by)
+                    VALUES(%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT(tenant_id,document_id,principal_type,principal_id,permission)
+                    DO UPDATE SET granted_by=EXCLUDED.granted_by,created_at=now()""",
+                    (tenant_id, document_id, principal_type, principal_id, permission, granted_by),
+                )
+
+    async def revoke_document_access(
+        self, tenant_id: str, document_id: str, principal_type: str,
+        principal_id: str, permission: str,
+    ) -> bool:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    """DELETE FROM knowledge_document_acl
+                    WHERE tenant_id=%s AND document_id=%s AND principal_type=%s
+                    AND principal_id=%s AND permission=%s""",
+                    (tenant_id, document_id, principal_type, principal_id, permission),
+                )
+                return cur.rowcount > 0
+
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
         conn=await self._connect()
         async with conn:
