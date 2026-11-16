@@ -22,10 +22,10 @@
 
 ## 当前 Adapter 能力边界
 
-DeepSeek Harness 与 Strands Agents 目前仍只声明文本输入/输出。它们收到 media_inputs 会明确拒绝，不会静默忽略。要启用图片/PDF/音频/视频，必须为具体 Provider 实现受控资源解析、格式转换/编码和大小限制，并在 HarnessCapabilities 中显式声明；未完成这些接线前，不得将其标记为支持。
+DeepSeek Harness 目前仍只声明文本输入/输出，收到 media_inputs 会明确拒绝。Strands Agents 适配器默认也为 text-only；只有在宿主显式提供 HarnessCapabilities、tenant/resource 授权的 media_resolver 和可信 media_output_writer 后，才会将已声明的图片/PDF/音频/视频编码为 Strands ContentBlock 并持久化媒体产物。最终是否可用仍取决于具体 Strands Model Provider 的格式/大小支持，不能仅凭 SDK 接口声明所有模型都支持全部模态。
 
 ## 验收
 
-自动化测试覆盖资源引用/MIME/checksum 校验、未声明输入模态在模型调用前被拒绝、声明支持的 PDF/audio 输入可通过 capability guard、未声明视频输出被拒绝，以及当前 DeepSeek/Strands Adapter 对媒体输入 fail-closed。
+自动化测试覆盖资源引用/MIME/checksum 校验、未声明输入模态在模型调用前被拒绝、Strands 的 image/PDF/audio/video ContentBlock 输入、媒体输出 Artifact Store 写入与 checksum 校验、未声明视频输出被拒绝，以及 DeepSeek 对媒体输入 fail-closed。
 
 真实文件解析、模型 Provider 的图片/PDF/audio/video 支持、对象存储授权和大文件/流式处理仍需在集成环境验证。
