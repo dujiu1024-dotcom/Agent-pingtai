@@ -118,4 +118,5 @@ class PostgresConnectorRepository:
             cursor=dict(row["cursor"]) if row["cursor"] is not None else None,
             version=row["version"], last_synced_at=row["last_synced_at"],
             revoked_at=row["revoked_at"], last_error=row["last_error"],
+            project_id=row["project_id"],
         )
