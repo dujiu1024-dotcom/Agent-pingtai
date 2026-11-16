@@ -14,6 +14,8 @@ def compose_quota_enforced_harness(
     estimate_actual_cost: Callable[[Any, Any], Decimal],
     scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
     context_window_tokens: int | Callable[[Any], int] = 8192,
+    estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
+    measure_storage_bytes: Callable[[Any, Any], int] | None = None,
 ) -> QuotaEnforcedHarnessAdapter:
     """Wrap a provider Harness before exposing it to the Run execution path."""
     if quota_service is None:
@@ -24,4 +26,6 @@ def compose_quota_enforced_harness(
         inner, quota_service=quota_service, estimate_request=estimate_request,
         estimate_actual_cost=estimate_actual_cost, scope_resolver=scope_resolver,
         context_window_tokens=context_window_tokens,
+        estimate_tool_cost_usd=estimate_tool_cost_usd,
+        measure_storage_bytes=measure_storage_bytes,
     )

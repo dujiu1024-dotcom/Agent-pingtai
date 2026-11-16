@@ -37,8 +37,12 @@ class HarnessCompositionTests(unittest.TestCase):
             estimate_request=lambda request: (10, Decimal("0.01")),
             estimate_actual_cost=lambda request, result: Decimal("0.02"),
             context_window_tokens=16384,
+            estimate_tool_cost_usd=lambda request, result: Decimal("0.03"),
+            measure_storage_bytes=lambda request, result: 4096,
         )
         self.assertEqual(adapter.context_window_tokens, 16384)
+        self.assertEqual(adapter.estimate_tool_cost_usd(None, None), Decimal("0.03"))
+        self.assertEqual(adapter.measure_storage_bytes(None, None), 4096)
 
 if __name__ == "__main__":
     unittest.main()
