@@ -105,11 +105,11 @@ class StrandsAgentsAdapter:
         return aliases.get(subtype, subtype)
 
     async def _build_prompt(self, request: HarnessRequest) -> str | list[dict[str, Any]]:
+        if request.input_text and "text" not in self.capabilities.input_modalities:
+            raise RuntimeError("Strands Harness does not declare text input support")
         if not request.media_inputs:
             return request.input_text
         requested = {item.modality for item in request.media_inputs}
-        if request.input_text and "text" not in self.capabilities.input_modalities:
-            raise RuntimeError("Strands Harness does not declare text input support")
         if not requested.issubset(self.capabilities.input_modalities):
             raise RuntimeError(
                 "Strands Harness does not declare input modalities: "
@@ -298,9 +298,9 @@ class StrandsAgentsAdapter:
             for block in content
             if _value(block, "text")
         )
-        media_outputs = await self._persist_media_outputs(request, content)
         if output and "text" not in self.capabilities.output_modalities:
             raise RuntimeError("Strands Harness does not declare text output support")
+        media_outputs = await self._persist_media_outputs(request, content)
         metrics = _value(result, "metrics")
         accumulated = _value(metrics, "accumulated_metrics", {}) or {}
         latency = _value(accumulated, "latency_ms")
