@@ -168,6 +168,20 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsNone(self.service.submitted)
 
+    async def test_worker_failure_cancels_orphaned_child_run(self):
+        class FailingWorker(FakeWorker):
+            async def run_once(self):
+                raise RuntimeError("worker queue unavailable")
+
+        self.executor.worker = FailingWorker(self.service)
+        with self.assertRaisesRegex(RuntimeError, "worker queue unavailable"):
+            await self.executor.execute_child(
+                request=self.request,
+                parent_context=self.parent,
+                idempotency_key="stable-key",
+            )
+        self.assertTrue(self.service.cancelled)
+
     async def test_cancelling_parent_execution_cancels_durable_child(self):
         class CancellingWorker(FakeWorker):
             async def run_once(self):
