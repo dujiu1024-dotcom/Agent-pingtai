@@ -29,11 +29,16 @@ class GatewaySessionContext:
     agent_id: str
     allowed_tool_names: tuple[str, ...]
     approval_ids: Mapping[str, str]
+    correlation_id: str | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("tenant_id", "actor_id", "run_id", "agent_id"):
             if not getattr(self, field_name).strip():
                 raise ValueError(f"{field_name} must not be empty")
+        if self.correlation_id is not None and (
+            not self.correlation_id.strip() or len(self.correlation_id) > 256
+        ):
+            raise ValueError("correlation_id must be non-empty and at most 256 characters")
         if len(self.allowed_tool_names) != len(set(self.allowed_tool_names)):
             raise ValueError("allowed tool names must be unique")
         if any(not name.strip() for name in self.allowed_tool_names):
@@ -159,6 +164,7 @@ class GatewayMCPBridge:
             approval_id=approval_id,
             run_id=self.session.run_id,
             agent_id=self.session.agent_id,
+            correlation_id=self.session.correlation_id,
             # MCP 没有业务层面的调用号；用动作摘要在同一 run 内作为稳定幂等键，
             # 重试同一调用会命中缓存，而不是重复产生外部副作用。
             call_id=action_digest,
