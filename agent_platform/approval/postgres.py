@@ -68,3 +68,40 @@ class PostgresAuditSink:
                         action_digest, outcome, run_id, agent_id, redact_text(detail),
                     ),
                 )
+
+
+class PostgresAuditReader:
+    """Read-only tenant-scoped access to append-only tool audit events."""
+
+    def __init__(self, connection_factory: ConnectionFactory) -> None:
+        self._connection_factory = connection_factory
+
+    async def list_events(
+        self, *, tenant_id: str, limit: int = 100,
+        actor_id: str | None = None, run_id: str | None = None,
+    ) -> tuple[dict[str, Any], ...]:
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        clauses = ["tenant_id=%s"]
+        params: list[Any] = [tenant_id]
+        if actor_id:
+            clauses.append("actor_id=%s")
+            params.append(actor_id)
+        if run_id:
+            clauses.append("run_id=%s")
+            params.append(run_id)
+        params.append(limit)
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT audit_id,actor_id,action,resource,action_digest,outcome,
+                          run_id,agent_id,detail,created_at
+                   FROM platform_tool_audit
+                   WHERE """ + " AND ".join(clauses) + """
+                   ORDER BY created_at DESC,audit_id DESC LIMIT %s""",
+                tuple(params),
+            )
+            rows = await cursor.fetchall()
+        return tuple(dict(row) for row in rows)
