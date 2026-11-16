@@ -40,16 +40,16 @@ class OAuthRefreshTokenResolver:
         self.token_url = token_url
         self.refresh_skew_seconds = refresh_skew_seconds
         self._lock = asyncio.Lock()
-        self._cached_access_token: str | None = None
-        self._expires_at = 0.0
+        self._cached_access_tokens: dict[str, tuple[str, float]] = {}
 
     async def resolve(self, secret_ref: str) -> str:
         if not isinstance(secret_ref, str) or not secret_ref.startswith("secret://"):
             raise ValueError("OAuth credentials must use a secret:// reference")
         async with self._lock:
             now = time.monotonic()
-            if self._cached_access_token and now < self._expires_at - self.refresh_skew_seconds:
-                return self._cached_access_token
+            cached = self._cached_access_tokens.get(secret_ref)
+            if cached is not None and now < cached[1] - self.refresh_skew_seconds:
+                return cached[0]
             raw = await self.secret_manager.resolve(secret_ref=secret_ref)
             try:
                 credentials = json.loads(raw)
@@ -103,6 +103,7 @@ class OAuthRefreshTokenResolver:
                         secret_ref=secret_ref,
                         value=json.dumps(updated, separators=(",", ":"), sort_keys=True),
                     )
-            self._cached_access_token = access_token
-            self._expires_at = time.monotonic() + expires_in
+            self._cached_access_tokens[secret_ref] = (
+                access_token, time.monotonic() + expires_in,
+            )
             return access_token
