@@ -70,11 +70,67 @@ class PostgresRunStateStore(RunStateStore):
      raise ValueError("idempotency_key was already used with a different task request")
     return False
 
+ async def create_retry_task_run(
+  self, *, tenant_id:str, task_id:str, actor_id:str, run_id:str,
+  idempotency_key:str, request_digest:str,
+ )->str:
+  """Create a new Run from a failed task while preserving its pinned registry snapshot."""
+  run_uuid=UUID(run_id)
+  c=await self._connect()
+  async with c:
+   async with c.transaction():
+    cur=await c.execute(
+     """SELECT run_id,status,registry_snapshot,registry_snapshot_digest
+        FROM platform_runs
+        WHERE tenant_id=%s AND task_id=%s AND created_by=%s
+        FOR UPDATE""",
+     (tenant_id,task_id,actor_id),
+    )
+    source=await cur.fetchone()
+    if source is None:
+     raise KeyError("task not found")
+    if source["status"] not in ("failed","timed_out"):
+     raise ValueError("only failed or timed_out tasks can be retried")
+    if source["registry_snapshot"] is None or not source["registry_snapshot_digest"]:
+     raise ValueError("task has no immutable registry snapshot and cannot be retried")
+    cur=await c.execute(
+     """INSERT INTO platform_runs
+        (tenant_id,run_id,project_id,session_id,task_id,agent_id,agent_version,
+         template_id,template_version,workflow_id,status,priority,input,created_by,
+         idempotency_key,request_digest,registry_snapshot,registry_snapshot_digest,
+         dispatch_ready,retry_of_run_id)
+        SELECT tenant_id,%s,project_id,session_id,%s,agent_id,agent_version,
+         template_id,template_version,workflow_id,'queued',priority,input,created_by,
+         %s,%s,registry_snapshot,registry_snapshot_digest,true,%s
+        FROM platform_runs
+        WHERE tenant_id=%s AND run_id=%s AND created_by=%s
+        ON CONFLICT (tenant_id,created_by,idempotency_key)
+          WHERE idempotency_key IS NOT NULL DO NOTHING
+        RETURNING run_id""",
+     (run_uuid,str(run_uuid),idempotency_key,request_digest,source["run_id"],
+      tenant_id,source["run_id"],actor_id),
+    )
+    inserted=await cur.fetchone()
+    if inserted is not None:
+     return str(inserted["run_id"])
+    cur=await c.execute(
+     """SELECT run_id,request_digest FROM platform_runs
+        WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s
+        FOR UPDATE""",
+     (tenant_id,actor_id,idempotency_key),
+    )
+    existing=await cur.fetchone()
+    if existing is None:
+     raise RuntimeError("idempotent retry insertion conflict could not be resolved")
+    if existing["request_digest"] != request_digest:
+     raise ValueError("idempotency_key was already used with a different retry request")
+    return str(existing["run_id"])
+
  async def get_task_record(self, tenant_id:str, task_id:str, *, actor_id:str|None=None)->dict[str,Any]|None:
   c=await self._connect()
   async with c:
    query="""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,retry_of_run_id,
     idempotency_key,request_digest,registry_snapshot,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND task_id=%s"""
@@ -99,7 +155,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,retry_of_run_id,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s""",
@@ -112,7 +168,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,retry_of_run_id,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s

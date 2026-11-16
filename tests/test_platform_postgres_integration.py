@@ -607,6 +607,47 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+    async def test_failed_workbench_task_retry_preserves_registry_snapshot_and_priority(self):
+        store = PostgresRunStateStore(self.connect)
+        original_run_id = str(uuid4())
+        self.assertTrue(await store.create_task_run(
+            tenant_id=self.tenant_id, run_id=original_run_id, actor_id="retry-user",
+            agent_id="retry-agent", agent_version=2,
+            template_id="retry-template", template_version=3,
+            input={"prompt": "retry this"}, preparation_owner="prepare-retry",
+            registry_snapshot=[{"kind": "agent", "item_id": "retry-agent", "version": 2}],
+            priority=800,
+        ))
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='failed', finished_at=now(),
+                       registry_snapshot_digest=%s, dispatch_ready=true,
+                       preparation_owner=NULL, preparation_lease_expires_at=NULL
+                   WHERE tenant_id=%s AND run_id=%s""",
+                ("b" * 64, self.tenant_id, original_run_id),
+            )
+            await conn.commit()
+
+        retried_run_id = await store.create_retry_task_run(
+            tenant_id=self.tenant_id, task_id=original_run_id,
+            actor_id="retry-user", run_id=str(uuid4()),
+            idempotency_key=f"retry:{original_run_id}:integration-1",
+            request_digest="c" * 64,
+        )
+        retried = await store.get_task_record(
+            self.tenant_id, retried_run_id, actor_id="retry-user",
+        )
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["priority"], 800)
+        self.assertEqual(str(retried["retry_of_run_id"]), original_run_id)
+        self.assertEqual(
+            retried["registry_snapshot"],
+            [{"kind": "agent", "item_id": "retry-agent", "version": 2}],
+        )
+
+
+
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

@@ -32,6 +32,11 @@ class TaskCenterService(Protocol):
         self, *, tenant_id: str, task_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None: ...
 
+    async def retry_task(
+        self, *, tenant_id: str, task_id: str, actor_id: str,
+        idempotency_key: str,
+    ) -> Mapping[str, Any] | None: ...
+
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 TaskServiceResolver = Callable[[Principal], Awaitable[TaskCenterService]]
@@ -143,6 +148,29 @@ def create_workbench_router(
             if result is None:
                 raise HTTPException(404, "task not found")
             return dict(result)
+
+        @router.post("/tasks/{task_id}/retry")
+        async def retry_task(task_id: str, request: Request):
+            principal, service = await task_context(request, task_id, "retry")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "retry request body must be JSON") from exc
+            idempotency_key = body.get("idempotency_key") if isinstance(body, Mapping) else None
+            if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+                raise HTTPException(422, "idempotency_key is required for task retry")
+            try:
+                result = await service.retry_task(
+                    tenant_id=principal.tenant_id, task_id=task_id,
+                    actor_id=principal.user_id, idempotency_key=idempotency_key,
+                )
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            if result is None:
+                raise HTTPException(404, "task not found")
+            return JSONResponse(dict(result), status_code=202)
 
         @router.post("/tasks/{task_id}/cancel")
         async def cancel_task(task_id: str, request: Request):

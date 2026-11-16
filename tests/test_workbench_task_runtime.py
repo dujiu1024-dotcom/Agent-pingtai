@@ -62,6 +62,36 @@ class TaskRunStore(InMemoryRunStateStore):
             self.idempotency[key] = run_id
         return True
 
+    async def create_retry_task_run(
+        self, *, tenant_id, task_id, actor_id, run_id, idempotency_key, request_digest,
+    ):
+        key = (tenant_id, actor_id, idempotency_key)
+        if key in self.idempotency:
+            existing = self.records[self.idempotency[key]]
+            if existing["request_digest"] != request_digest:
+                raise ValueError("idempotency_key was already used with a different retry request")
+            return existing["run_id"]
+        source = self.records.get(task_id)
+        if source is None or source["tenant_id"] != tenant_id or source["created_by"] != actor_id:
+            raise KeyError("task not found")
+        snapshot = await self.get(tenant_id, task_id)
+        if snapshot is None or snapshot.status.value not in {"failed", "timed_out"}:
+            raise ValueError("only failed or timed_out tasks can be retried")
+        if not source.get("registry_snapshot_digest"):
+            raise ValueError("task has no immutable registry snapshot and cannot be retried")
+        await self.create(tenant_id, run_id)
+        now = datetime.now(timezone.utc)
+        self.records[run_id] = {
+            **source, "run_id": run_id, "task_id": run_id, "status": "queued",
+            "retry_of_run_id": task_id, "request_digest": request_digest,
+            "idempotency_key": idempotency_key, "output": None, "usage": {},
+            "trace_id": None, "started_at": None, "finished_at": None,
+            "created_at": now, "updated_at": now, "checkpoint_ref": None,
+            "last_error": None, "dispatch_ready": True, "preparation_owner": None,
+        }
+        self.idempotency[key] = run_id
+        return run_id
+
     async def get_task_record(self, tenant_id, task_id, *, actor_id=None):
         row = self.records.get(task_id)
         if row is None or row["tenant_id"] != tenant_id:
@@ -230,6 +260,33 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
             ("model_provider", "provider-a"), ("tool", "search"),
             ("skill", "summarize"),
         })
+
+    async def test_failed_task_retry_creates_new_run_with_same_pinned_snapshot(self):
+        original = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "retry me"},
+            priority=700,
+        )
+        original_row = self.run_store.records[original["run_id"]]
+        original_row["registry_snapshot_digest"] = "a" * 64
+        original_row["dispatch_ready"] = True
+        await self.lifecycle.finish(
+            "tenant-a", original["run_id"], RunStatus.FAILED, error="provider unavailable",
+        )
+        retried = await self.service.retry_task(
+            tenant_id="tenant-a", task_id=original["task_id"], actor_id="user-a",
+            idempotency_key="retry-1",
+        )
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["priority"], 700)
+        self.assertEqual(retried["retry_of_run_id"], original["run_id"])
+        self.assertEqual(retried["input"], original["input"])
+        self.assertEqual(retried["registry_snapshot"], original["registry_snapshot"])
+        same_retry = await self.service.retry_task(
+            tenant_id="tenant-a", task_id=original["task_id"], actor_id="user-a",
+            idempotency_key="retry-1",
+        )
+        self.assertEqual(same_retry["run_id"], retried["run_id"])
 
     async def test_task_priority_is_persisted_and_bound_to_idempotency(self):
         normal = await self.service.submit_task(
