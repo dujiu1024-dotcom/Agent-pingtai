@@ -84,7 +84,7 @@ class FakeEvalConnection:
             rows = [row for row in self.db.scores.values()
                     if row["tenant_id"] == tenant_id and row["eval_run_id"] == run_id]
             return FakeCursor(rows=rows)
-        if sql.startswith("SELECT eval_run_id,dataset_id"):
+        if sql.startswith("SELECT eval_run_id,tenant_id,dataset_id"):
             dataset_id, tenant_id, limit = params
             rows = [
                 row for row in self.db.runs
