@@ -14,6 +14,7 @@ class FakeS3Client:
     def __init__(self):
         self.objects = {}
         self.put_calls = []
+        self.presign_calls = []
 
     async def put_object(self, **kwargs):
         self.put_calls.append(kwargs)
@@ -25,6 +26,10 @@ class FakeS3Client:
     async def delete_object(self, **kwargs):
         self.objects.pop((kwargs["Bucket"], kwargs["Key"]), None)
 
+    def generate_presigned_url(self, method, *, Params, ExpiresIn):
+        self.presign_calls.append((method, Params, ExpiresIn))
+        return "https://storage.example.test/signed"
+
 
 class S3ObjectStorageTests(unittest.IsolatedAsyncioTestCase):
     async def test_put_get_delete_and_server_side_encryption(self):
@@ -34,6 +39,12 @@ class S3ObjectStorageTests(unittest.IsolatedAsyncioTestCase):
         await storage.put(key, b"payload", media_type="text/plain")
         self.assertEqual(client.put_calls[0]["ServerSideEncryption"], "AES256")
         self.assertEqual(await storage.get(key), b"payload")
+        self.assertEqual(await storage.presign_get(key, expires_in=120), "https://storage.example.test/signed")
+        self.assertEqual(client.presign_calls[0][0], "get_object")
+        self.assertEqual(client.presign_calls[0][1], {"Bucket": "platform-assets", "Key": key})
+        self.assertEqual(client.presign_calls[0][2], 120)
+        with self.assertRaises(ValueError):
+            await storage.presign_get(key, expires_in=901)
         await storage.delete(key)
         self.assertEqual(client.objects, {})
 
