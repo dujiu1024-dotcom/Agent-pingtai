@@ -171,6 +171,42 @@ class RunInterventionService:
         }
 
 
+    async def record_action(
+        self, *, tenant_id: str, run_id: str, actor_id: str,
+        event_type: str, payload: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any]:
+        """Append an operator action to the tenant-scoped Run audit timeline."""
+        if tenant_id != self.tenant_id:
+            raise PermissionError("Run action tenant mismatch")
+        if event_type not in {"human.run_resumed"}:
+            raise ValueError("unsupported human Run action")
+        if not actor_id.strip():
+            raise ValueError("actor_id is required")
+        from psycopg.types.json import Jsonb
+        safe_payload = redact_payload(dict(payload or {}), max_text_chars=4000)
+        db = await self._connect()
+        async with db:
+            async with db.transaction():
+                exists = await db.execute(
+                    "SELECT 1 FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR KEY SHARE",
+                    (self.tenant_id, UUID(run_id)),
+                )
+                if await exists.fetchone() is None:
+                    raise KeyError("Run not found")
+                cursor = await db.execute(
+                    """INSERT INTO platform_run_events
+                       (tenant_id,run_id,event_type,actor_id,payload)
+                       VALUES (%s,%s,%s,%s,%s)
+                       RETURNING event_id,occurred_at""",
+                    (self.tenant_id, UUID(run_id), event_type, actor_id, Jsonb(safe_payload)),
+                )
+                row = await cursor.fetchone()
+        return {
+            "event_id": str(row["event_id"]), "run_id": run_id,
+            "event_type": event_type, "actor_id": actor_id,
+            "payload": safe_payload, "occurred_at": row["occurred_at"].isoformat(),
+        }
+
     async def list_interventions(self, *, tenant_id: str, run_id: str) -> list[Mapping[str, Any]]:
         if tenant_id != self.tenant_id:
             return []
