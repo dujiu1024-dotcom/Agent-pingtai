@@ -53,6 +53,7 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.service = SessionAssetService(
             self.repository, self.storage, processing_queue=self.queue,
+            knowledge_for_tenant=lambda tenant: self.knowledge,
         )
 
     async def test_upload_is_pending_until_worker_scans_and_indexes(self):
@@ -101,6 +102,56 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception):
             await self.storage.get(asset.object_key)
         self.assertEqual(self.knowledge_repository.documents, {})
+
+    async def test_delete_asset_removes_index_and_object(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="indexed.txt",
+            media_type="text/plain", content=b"remove searchable content",
+        )
+        worker = FileProcessingWorker(
+            queue=self.queue, worker_id="worker-a",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=Scanner(),
+            knowledge_for_tenant=lambda tenant: self.knowledge,
+        )
+        await worker.run_once()
+        self.assertIn(asset.asset_id, self.knowledge_repository.documents)
+
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertNotIn(asset.asset_id, self.knowledge_repository.documents)
+        with self.assertRaises(Exception):
+            await self.storage.get(asset.object_key)
+
+    async def test_worker_does_not_reindex_asset_deleted_during_scan(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="race.txt",
+            media_type="text/plain", content=b"deleted while scanning",
+        )
+
+        class DeletingScanner:
+            async def scan(inner_self, filename, media_type, content):
+                await self.service.delete_asset(
+                    tenant_id="tenant-a", asset_id=asset.asset_id,
+                )
+                return True
+
+        worker = FileProcessingWorker(
+            queue=self.queue, worker_id="worker-a",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=DeletingScanner(),
+            knowledge_for_tenant=lambda tenant: self.knowledge,
+        )
+        await worker.run_once()
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertNotIn(asset.asset_id, self.knowledge_repository.documents)
+        self.assertEqual(self.queue.completed, [asset.asset_id])
 
     async def test_transient_processing_failure_returns_asset_to_pending(self):
         asset = await self.service.upload_asset(
