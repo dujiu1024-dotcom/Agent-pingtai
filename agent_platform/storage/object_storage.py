@@ -1,8 +1,11 @@
 """S3-compatible durable object storage adapter (AWS S3 / MinIO)."""
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import inspect
 from pathlib import PurePosixPath
+from urllib.parse import quote
 from typing import Any, Protocol
 
 
@@ -64,7 +67,9 @@ class S3ObjectStorage:
             raise ObjectStorageError("empty object payload is not allowed")
         await self.client.put_object(
             Bucket=self.bucket, Key=key, Body=bytes(content),
-            ContentType=media_type, **self._encryption_args(),
+            ContentType=media_type,
+            Metadata={"sha256": hashlib.sha256(content).hexdigest()},
+            **self._encryption_args(),
         )
 
     async def get(self, object_key: str) -> bytes:
@@ -88,3 +93,38 @@ class S3ObjectStorage:
     async def delete(self, object_key: str) -> None:
         key = self._validate_key(object_key)
         await self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    async def presign_get(
+        self, object_key: str, *, filename: str, media_type: str,
+        expires_in: int = 300,
+    ) -> str:
+        """Create a short-lived download URL for an already-authorized asset."""
+        key = self._validate_key(object_key)
+        if expires_in < 30 or expires_in > 3600:
+            raise ValueError("presigned URL expiry must be between 30 and 3600 seconds")
+        if not filename or any(char in filename for char in "\r\n"):
+            raise ValueError("filename is invalid")
+        if not media_type or any(char in media_type for char in "\r\n"):
+            raise ValueError("media_type is invalid")
+        method = getattr(self.client, "generate_presigned_url", None)
+        if method is None:
+            raise ObjectStorageError("S3 client does not support presigned URLs")
+        params = {
+            "Bucket": self.bucket,
+            "Key": key,
+            "ResponseContentType": media_type,
+            "ResponseContentDisposition": (
+                "attachment; filename*=UTF-8''" + quote(filename, safe="")
+            ),
+        }
+        if inspect.iscoroutinefunction(method):
+            url = await method(
+                "get_object", Params=params, ExpiresIn=expires_in,
+            )
+        else:
+            url = await asyncio.to_thread(
+                method, "get_object", Params=params, ExpiresIn=expires_in,
+            )
+        if not isinstance(url, str) or not url.startswith("https://"):
+            raise ObjectStorageError("S3 client returned an invalid presigned URL")
+        return url
