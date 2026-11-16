@@ -39,9 +39,9 @@ class WorkbenchCapabilityTests(unittest.TestCase):
 
     def test_task_submission_accepts_and_validates_priority(self):
         try:
+            from types import SimpleNamespace
             from fastapi import FastAPI
             from fastapi.testclient import TestClient
-            from types import SimpleNamespace
             from agent_platform.api.workbench import create_workbench_router
         except ImportError:
             self.skipTest("FastAPI is installed in the platform API test environment")
