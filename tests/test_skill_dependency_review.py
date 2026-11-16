@@ -56,6 +56,20 @@ class SkillDependencyReviewTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("dependency_not_allowlisted" in item for item in result.findings))
         self.assertTrue(any("dependency_advisory" in item for item in result.findings))
 
+    async def test_dependency_scanner_is_mandatory_for_nonempty_dependencies(self):
+        reviewer = SkillDependencyReviewer(
+            store=InMemorySkillDependencyReviewStore(),
+            approved_pins={"safe-parser": ("==1.2.3",)},
+        )
+        result = await reviewer.review(
+            item=skill({"safe-parser": "==1.2.3"}), actor_id="security-admin",
+        )
+        self.assertEqual(result.status, "rejected")
+        self.assertTrue(any(
+            "dependency_scanner_not_configured" in finding
+            for finding in result.findings
+        ))
+
     async def test_stale_manifest_cannot_reuse_previous_approval(self):
         store = InMemorySkillDependencyReviewStore()
         reviewer = SkillDependencyReviewer(
