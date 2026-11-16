@@ -68,6 +68,13 @@ class ExternalACLMappingTests(unittest.TestCase):
             ),
         )
 
+    def test_malformed_external_subject_types_fail_closed(self):
+        with self.assertRaises(ACLMappingError):
+            map_google_drive_permissions(
+                [{"id": "bad", "type": ["user"], "role": "reader"}],
+                self.resolve,
+            )
+
     def test_sharepoint_anonymous_link_and_unmapped_identity_fail_closed(self):
         with self.assertRaises(ACLMappingError):
             map_sharepoint_permissions(
