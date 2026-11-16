@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
-from agent_platform.identity.models import Principal
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager, RunStatus
 from agent_platform.runtime.registry_snapshot import InMemoryRunSnapshotStore, RunRegistrySnapshotService
 from agent_platform.runtime.execution import LangGraphRunExecutor
