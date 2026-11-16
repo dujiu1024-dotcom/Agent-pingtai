@@ -3,13 +3,18 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.control_plane.data_connectors import (
-    DataConnection, InMemoryConnectorRepository,
+    DataConnection,
+    InMemoryConnectorRepository,
 )
 from agent_platform.control_plane.legacy_conversation_adapter import (
-    LegacyConversationAdapter, LegacyMappingError,
+    LegacyConversationAdapter,
+    LegacyMappingError,
 )
 from agent_platform.control_plane.sessions_assets import (
-    AssetStatus, ConversationSession, FileAsset, InMemorySessionRepository,
+    AssetStatus,
+    ConversationSession,
+    FileAsset,
+    InMemorySessionRepository,
 )
 
 
