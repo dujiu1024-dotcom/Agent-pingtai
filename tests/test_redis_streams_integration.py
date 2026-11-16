@@ -97,6 +97,15 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
+    async def test_publish_rejects_non_uuid_event_ids(self):
+        with self.assertRaisesRegex(ValueError, "event_id must be a UUID"):
+            await self.transport.publish(
+                tenant_id=self.tenant_id,
+                topic=self.topic,
+                event_id="not-a-uuid",
+                payload={"value": "invalid"},
+            )
+
     async def test_pending_entry_can_be_reclaimed_by_replacement_consumer(self):
         event_id = str(uuid4())
         await self.transport.publish(

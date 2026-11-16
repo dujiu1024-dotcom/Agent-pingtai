@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
+from uuid import UUID
 
 from agent_platform.events.receipts import EventReceiptClaim
 from agent_platform.observability.instrumentation import safe_observation, safe_update
@@ -90,7 +91,7 @@ class RedisStreamsConsumer:
         result = {"read": len(messages), "processed": 0, "duplicates": 0, "busy": 0, "failed": 0, "dead_lettered": 0}
         for message_id, fields in messages:
             try:
-                event_id = fields["event_id"]
+                event_id = str(UUID(fields["event_id"]))
                 payload = json.loads(fields["payload"])
                 if not isinstance(payload, dict):
                     raise ValueError("event payload must be a JSON object")

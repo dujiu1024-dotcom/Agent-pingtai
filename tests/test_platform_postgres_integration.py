@@ -431,6 +431,44 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             event_id=event_id,
         ))
 
+    async def test_event_receipt_claim_is_single_owner_and_fences_stale_workers(self):
+        stores = [
+            PostgresEventReceiptStore(self.connect, lease_seconds=5),
+            PostgresEventReceiptStore(self.connect, lease_seconds=5),
+        ]
+        event_id = str(uuid4())
+        claims = await asyncio.gather(*(
+            store.claim(
+                tenant_id=self.tenant_id,
+                consumer_name="multi-instance-worker",
+                event_id=event_id,
+            )
+            for store in stores
+        ))
+        winners = [claim for claim in claims if claim is not None]
+        self.assertEqual(len(winners), 1)
+        stale_claim = winners[0]
+
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_event_receipts
+                   SET lease_until = now() - interval '1 second'
+                   WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s""",
+                (self.tenant_id, "multi-instance-worker", event_id),
+            )
+            await conn.commit()
+
+        replacement_store = stores[1] if claims[0] is not None else stores[0]
+        replacement = await replacement_store.claim(
+            tenant_id=self.tenant_id,
+            consumer_name="multi-instance-worker",
+            event_id=event_id,
+        )
+        self.assertIsNotNone(replacement)
+        self.assertNotEqual(stale_claim.lease_token, replacement.lease_token)
+        self.assertFalse(await stores[0].complete(stale_claim))
+        self.assertTrue(await replacement_store.complete(replacement))
+
     async def test_event_receipt_can_be_terminally_dead_lettered(self):
         store = PostgresEventReceiptStore(self.connect, lease_seconds=5)
         event_id = str(uuid4())

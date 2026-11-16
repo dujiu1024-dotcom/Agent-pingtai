@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Mapping
+from uuid import UUID
 
 
 class RedisStreamsTransport:
@@ -35,8 +36,10 @@ class RedisStreamsTransport:
     ) -> str:
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
-        if not event_id:
-            raise ValueError("event_id is required for idempotent consumption")
+        try:
+            event_id = str(UUID(event_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("event_id must be a UUID for idempotent consumption") from exc
         fields = {
             "event_id": event_id,
             "payload": json.dumps(dict(payload), ensure_ascii=False, separators=(",", ":")),
