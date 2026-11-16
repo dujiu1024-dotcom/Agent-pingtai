@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from contextlib import contextmanager
 from types import SimpleNamespace
 
 from agent_platform.models.registry_resolver import RegistryModelResolver
