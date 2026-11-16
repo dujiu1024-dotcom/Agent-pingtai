@@ -160,6 +160,13 @@ class OpenAICompatibleModelRouter:
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
+        parameters = request_parameters or {}
+        reserved = {
+            "model", "messages", "stream", "tools", "tool_choice",
+            "api_key", "authorization", "base_url",
+        }
+        if reserved.intersection(parameters):
+            raise ModelRoutingError("request parameters cannot override model routing or credentials")
         candidates = (template_id, *tuple(fallback_template_ids))
         if len(candidates) != len(set(candidates)):
             raise ValueError("model route candidates must be unique")
@@ -178,7 +185,7 @@ class OpenAICompatibleModelRouter:
             try:
                 raw = await self.transport.complete(
                     config=config, messages=messages,
-                    request_parameters=request_parameters or {},
+                    request_parameters=parameters,
                     timeout_seconds=self.timeout_seconds,
                 )
             except ModelTransportError as exc:
