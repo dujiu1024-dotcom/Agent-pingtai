@@ -135,7 +135,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         }
         defaults.update(kwargs)
         defaults.setdefault(
-            "resource", f"resource:{defaults["arguments"].get('value', 'global')}",
+            "resource", f"resource:{defaults['arguments'].get('value', 'global')}",
         )
         return await self.gateway.call(**defaults)
 
