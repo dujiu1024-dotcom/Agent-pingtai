@@ -141,7 +141,12 @@ class RedisStreamsTransport:
             self._dead_letter_stream(tenant_id, topic)
             if dead_letter else self._stream(tenant_id, topic)
         )
-        groups = await self._client.xinfo_groups(stream)
+        try:
+            groups = await self._client.xinfo_groups(stream)
+        except Exception as exc:
+            if "no such key" in str(exc).lower():
+                return 0
+            raise
         if not groups:
             return 0
 
