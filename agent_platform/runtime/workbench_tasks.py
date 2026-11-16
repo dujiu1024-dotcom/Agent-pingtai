@@ -422,11 +422,45 @@ class RegistryLangGraphExecutorResolver:
         agent_definition = dict(matches[0]["definition"])
         if agent_definition.get("model_template_id") != template_id:
             raise ValueError("Run-pinned Agent references a different model template")
-        tool_ids = agent_definition.get("tool_ids", [])
-        if not isinstance(tool_ids, list) or any(
-            not isinstance(item, str) or not item for item in tool_ids
+        tool_ids = RegistryBackedTaskCenterService._string_list(
+            agent_definition.get("tool_ids", []), "tool_ids",
+        )
+        skill_ids = RegistryBackedTaskCenterService._string_list(
+            agent_definition.get("skill_ids", []), "skill_ids",
+        )
+        model_definition = template_matches[0].get("definition")
+        if not isinstance(model_definition, Mapping):
+            raise ValueError("Run snapshot model template definition is invalid")
+        provider_id = model_definition.get("provider_id")
+        provider_version = model_definition.get("provider_version")
+        providers = [
+            item for item in snapshot.entries
+            if item.get("kind") == "model_provider"
+        ]
+        if (
+            len(providers) != 1
+            or providers[0].get("item_id") != provider_id
+            or providers[0].get("version") != provider_version
         ):
-            raise ValueError("Run-pinned Agent tool_ids must be a string array")
+            raise ValueError("Run snapshot model provider does not match the pinned template")
+        snapshot_tools = {
+            item.get("item_id") for item in snapshot.entries
+            if item.get("kind") == "tool"
+        }
+        snapshot_skills = {
+            item.get("item_id") for item in snapshot.entries
+            if item.get("kind") == "skill"
+        }
+        if snapshot_tools != set(tool_ids) or snapshot_skills != set(skill_ids):
+            raise ValueError("Run snapshot tool/Skill set differs from the pinned Agent definition")
+        workflow_id = agent_definition.get("workflow_id")
+        snapshot_workflows = {
+            item.get("item_id") for item in snapshot.entries
+            if item.get("kind") == "workflow"
+        }
+        expected_workflows = {workflow_id} if workflow_id else set()
+        if snapshot_workflows != expected_workflows:
+            raise ValueError("Run snapshot workflow differs from the pinned Agent definition")
         lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
         runtime_provider = await self._resolve(
             self.runtime_provider_resolver, tenant_id,
