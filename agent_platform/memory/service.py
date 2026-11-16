@@ -142,16 +142,27 @@ class MemoryService:
             target=MemoryStatus.ACTIVE if record.candidate.memory_id==selected_memory_id else MemoryStatus.SUPERSEDED
             if record.status is not target:
                 await self.repository.put(replace(record,status=target,confirmed_by=principal.user_id,updated_at=now,version=record.version+1))
+            # Superseded memories are no longer retrievable. Retry cleanup on
+            # repeated conflict resolution if an earlier cache/index purge failed.
+            if target is MemoryStatus.SUPERSEDED and self.on_delete:
+                await self.on_delete(principal.tenant_id,record.candidate.memory_id)
         return await self.repository.get(principal.tenant_id,selected_memory_id)
     async def archive(self,*,principal: MemoryPrincipal,memory_id: str)->bool:
         record=await self.repository.get(principal.tenant_id,memory_id)
-        if record is None or record.status is not MemoryStatus.ACTIVE:
+        if record is None:
             return False
         if not self._can_manage_scope(
             record.candidate.scope, record.candidate.scope_id, principal,
         ):
             raise PermissionError("memory archive is not authorized")
-        await self.repository.put(replace(record,status=MemoryStatus.ARCHIVED,updated_at=utc_now(),version=record.version+1))
+        if record.status is MemoryStatus.ACTIVE:
+            await self.repository.put(replace(record,status=MemoryStatus.ARCHIVED,updated_at=utc_now(),version=record.version+1))
+        elif record.status is not MemoryStatus.ARCHIVED:
+            return False
+        # Archive is a visibility-removing lifecycle transition. Re-running
+        # this operation retries an idempotent index/cache purge after outages.
+        if self.on_delete:
+            await self.on_delete(principal.tenant_id,memory_id)
         return True
     async def expire_due(self,*,tenant_id: str,now: datetime|None=None)->int:
         at=now or utc_now()
