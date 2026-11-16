@@ -106,6 +106,8 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
             registry.register("agent.answer", 1, {"type": "integer"})
         with self.assertRaisesRegex(KeyError, "unknown structured output schema"):
             registry.resolve("agent.answer", 2)
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            registry.resolve("agent.answer", True)
 
     async def test_registry_rejects_schema_keywords_it_cannot_validate(self):
         registry = StructuredOutputSchemaRegistry()
