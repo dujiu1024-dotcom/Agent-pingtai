@@ -51,7 +51,8 @@ class GoogleDriveKnowledgeConnector:
     }
     _FILE_FIELDS = (
         "id,name,mimeType,modifiedTime,webViewLink,description,md5Checksum,"
-        "size,trashed,parents,owners(displayName,emailAddress),"\n        "permissions(id,type,role,emailAddress,domain,allowFileDiscovery)"
+        "size,trashed,parents,owners(displayName,emailAddress),",
+        "permissions(id,type,role,emailAddress,domain,allowFileDiscovery)"
     )
 
     def __init__(
