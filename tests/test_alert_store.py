@@ -25,6 +25,8 @@ class FakeConnection:
         return self
     async def __aexit__(self, *args):
         return False
+    def transaction(self):
+        return self
     async def execute(self, query, params=()):
         sql = " ".join(query.split())
         if sql.startswith("INSERT INTO platform_alert_events"):
