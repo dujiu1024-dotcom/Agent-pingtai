@@ -15,6 +15,8 @@ UPDATE platform_quota_reservations
 ALTER TABLE platform_quota_reservations
     ALTER COLUMN root_run_id SET NOT NULL;
 ALTER TABLE platform_quota_reservations
+    DROP CONSTRAINT IF EXISTS fk_quota_reservation_root_run;
+ALTER TABLE platform_quota_reservations
     ADD CONSTRAINT fk_quota_reservation_root_run
     FOREIGN KEY (tenant_id, root_run_id)
     REFERENCES platform_runs(tenant_id, run_id);
@@ -30,12 +32,15 @@ UPDATE platform_usage_ledger u
 ALTER TABLE platform_usage_ledger
     ALTER COLUMN root_run_id SET NOT NULL;
 ALTER TABLE platform_usage_ledger
+    DROP CONSTRAINT IF EXISTS fk_usage_root_run;
+ALTER TABLE platform_usage_ledger
     ADD CONSTRAINT fk_usage_root_run
     FOREIGN KEY (tenant_id, root_run_id)
     REFERENCES platform_runs(tenant_id, run_id);
 CREATE INDEX IF NOT EXISTS idx_platform_usage_root_run_time
     ON platform_usage_ledger(tenant_id, root_run_id, occurred_at);
 
+DROP TRIGGER IF EXISTS trg_platform_usage_no_update_delete ON platform_usage_ledger;
 CREATE TRIGGER trg_platform_usage_no_update_delete
     BEFORE UPDATE OR DELETE ON platform_usage_ledger
     FOR EACH ROW EXECUTE FUNCTION platform_reject_usage_mutation();
