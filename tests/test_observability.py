@@ -228,6 +228,8 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 cleaned = redact_text(sample)
                 self.assertNotIn("hunter2", cleaned)
                 self.assertNotIn("sensitive-value", cleaned)
+                if "client_secret" in sample:
+                    self.assertIn('"client_secret":"[REDACTED]"', cleaned)
                 self.assertNotIn("abc.def.ghi", cleaned)
                 self.assertIn("[REDACTED]", cleaned)
 
