@@ -162,6 +162,11 @@ class LangGraphRunExecutor:
  async def resume_claimed(self,*,snapshot:RunSnapshot,input:Any)->Any:
   """Resume one Run already claimed by this worker's durable queue poll."""
   tenant_id=snapshot.tenant_id;run_id=snapshot.run_id
+  owns_lease=getattr(self.lifecycle.store,"owns_lease",None)
+  if owns_lease is not None and not await owns_lease(
+   tenant_id,run_id,self.worker_id,
+  ):
+   raise WorkerLeaseLost("Run worker lease was lost before resume")
   current=await self.lifecycle.store.get(tenant_id,run_id)
   if current is None:raise KeyError("Run not found")
   if current.status==RunStatus.CANCELLING:
