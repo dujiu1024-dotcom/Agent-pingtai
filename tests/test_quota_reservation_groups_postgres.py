@@ -99,11 +99,11 @@ class QuotaReservationGroupPostgresTests(unittest.IsolatedAsyncioTestCase):
         service = QuotaReservationGroupService(store)
         await store.put_budget(Budget(
             tenant_id=tenant_id, scope_type="tenant", scope_id=tenant_id,
-            period_start=start, period_end=end, hard_tokens=100,
+            period_start=start, period_end=end, hard_tokens=10,
         ))
         await store.put_budget(Budget(
             tenant_id=tenant_id, scope_type="run", scope_id=str(root_run_id),
-            period_start=start, period_end=end, hard_tokens=10,
+            period_start=start, period_end=end, hard_tokens=100,
         ))
         with self.assertRaises(BudgetExceeded):
             await service.reserve_run(
@@ -113,5 +113,9 @@ class QuotaReservationGroupPostgresTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(
             await store.usage(tenant_id, "tenant", tenant_id, start, end),
+            (0, Decimal("0"), 0),
+        )
+        self.assertEqual(
+            await store.usage(tenant_id, "run", str(root_run_id), start, end),
             (0, Decimal("0"), 0),
         )
