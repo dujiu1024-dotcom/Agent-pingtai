@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 import threading
 from collections import defaultdict
@@ -20,6 +21,14 @@ def _normalize(name: str, labels: Mapping[str, str] | None) -> tuple[str, tuple[
     return name, normalized
 
 
+def _validate_value(value: float, *, kind: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{kind} must be a finite number")
+    if value < 0:
+        raise ValueError(f"{kind} must be non-negative")
+    return float(value)
+
+
 class InMemoryMetricsRecorder:
     """Thread-safe recorder intended for tests and single-process deployments.
 
@@ -33,18 +42,16 @@ class InMemoryMetricsRecorder:
         self._lock = threading.Lock()
 
     def increment(self, name: str, value: float = 1.0, *, labels: Mapping[str, str] | None = None) -> None:
-        if value < 0:
-            raise ValueError("counter increments must be non-negative")
+        normalized_value = _validate_value(value, kind="counter increment")
         key = _normalize(name, labels)
         with self._lock:
-            self._counters[key] += value
+            self._counters[key] += normalized_value
 
     def observe(self, name: str, value: float, *, labels: Mapping[str, str] | None = None) -> None:
-        if value < 0:
-            raise ValueError("observations must be non-negative")
+        normalized_value = _validate_value(value, kind="observation")
         key = _normalize(name, labels)
         with self._lock:
-            self._observations[key].append(float(value))
+            self._observations[key].append(normalized_value)
 
     def snapshot(self) -> dict[str, dict[str, float | int]]:
         with self._lock:
@@ -60,7 +67,11 @@ class InMemoryMetricsRecorder:
     @staticmethod
     def _format_key(key: tuple[str, tuple[tuple[str, str], ...]]) -> str:
         name, labels = key
-        suffix = ",".join(f'{k}="{v}"' for k, v in labels)
+
+        def escape_label(value: str) -> str:
+            return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+        suffix = ",".join(f'{k}="{escape_label(v)}"' for k, v in labels)
         return f"{name}{{{suffix}}}" if suffix else name
 
     def render_prometheus(self) -> str:
