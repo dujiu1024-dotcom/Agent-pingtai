@@ -46,11 +46,37 @@ class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.02)
         self.assertEqual(dispatcher.calls, calls)
 
-    async def test_worker_configuration_is_bounded(self):
-        with self.assertRaises(ValueError):
-            WebhookDeliveryWorker(dispatcher=FakeDispatcher(), interval_seconds=0)
-        with self.assertRaises(ValueError):
-            WebhookDeliveryWorker(dispatcher=FakeDispatcher(), batch_limit=501)
+    async def test_worker_configuration_is_bounded_and_type_safe(self):
+        for interval in (0, True, "1"):
+            with self.subTest(interval=interval), self.assertRaises(ValueError):
+                WebhookDeliveryWorker(dispatcher=FakeDispatcher(), interval_seconds=interval)
+        for limit in (0, 501, True, 1.5):
+            with self.subTest(limit=limit), self.assertRaises(ValueError):
+                WebhookDeliveryWorker(dispatcher=FakeDispatcher(), batch_limit=limit)
+
+    async def test_worker_recovers_after_dispatch_failure(self):
+        recovered = asyncio.Event()
+
+        class FlakyDispatcher:
+            def __init__(self):
+                self.calls = 0
+            async def dispatch(self, *, limit):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("must not be logged")
+                recovered.set()
+                return {"claimed": 1}
+
+        dispatcher = FlakyDispatcher()
+        worker = WebhookDeliveryWorker(
+            dispatcher=dispatcher, interval_seconds=0.1, batch_limit=3,
+        )
+        await worker.start()
+        try:
+            await asyncio.wait_for(recovered.wait(), timeout=1)
+        finally:
+            await worker.stop()
+        self.assertGreaterEqual(dispatcher.calls, 2)
 
 
 class WebhookDeadLetterApiTests(unittest.TestCase):

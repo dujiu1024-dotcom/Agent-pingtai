@@ -11,10 +11,18 @@ logger = logging.getLogger(__name__)
 class WebhookDeliveryWorker:
     def __init__(self, *, dispatcher: Any, interval_seconds: float = 2.0,
                  batch_limit: int = 50) -> None:
-        if not 0.1 <= interval_seconds <= 300:
+        if (
+            isinstance(interval_seconds, bool)
+            or not isinstance(interval_seconds, (int, float))
+            or not 0.1 <= interval_seconds <= 300
+        ):
             raise ValueError("interval_seconds must be between 0.1 and 300")
-        if not 1 <= batch_limit <= 500:
-            raise ValueError("batch_limit must be between 1 and 500")
+        if (
+            isinstance(batch_limit, bool)
+            or not isinstance(batch_limit, int)
+            or not 1 <= batch_limit <= 500
+        ):
+            raise ValueError("batch_limit must be an integer between 1 and 500")
         self.dispatcher = dispatcher
         self.interval_seconds = interval_seconds
         self.batch_limit = batch_limit
