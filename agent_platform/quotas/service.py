@@ -43,8 +43,10 @@ class Budget:
         if self.period_end <= self.period_start:
             raise ValueError("budget period end must follow start")
         for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens, self.hard_input_tokens, self.hard_output_tokens):
-            if value is not None and value < 0:
-                raise ValueError("token and concurrency limits must be non-negative")
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
+                raise ValueError("token and concurrency limits must be non-negative integers")
         for cost in (self.hard_cost_usd, self.soft_cost_usd):
             if cost is not None and cost < 0:
                 raise ValueError("cost limits must be non-negative")
@@ -246,8 +248,12 @@ class QuotaService:
         budget = await self.store.get_budget(tenant_id, scope_type, scope_id, datetime.now(timezone.utc))
         if budget is None:
             raise BudgetExceeded("quota budget not configured")
-        if estimated_tokens < 0 or estimated_cost_usd < 0:
-            raise ValueError("reservation estimates must be non-negative")
+        if (
+            not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool)
+            or estimated_tokens < 0 or not isinstance(estimated_cost_usd, Decimal)
+            or not estimated_cost_usd.is_finite() or estimated_cost_usd < 0
+        ):
+            raise ValueError("reservation estimates must be non-negative integers and finite Decimal")
         if budget.hard_input_tokens is not None or budget.hard_output_tokens is not None:
             if estimated_input_tokens is None or estimated_output_tokens is None:
                 raise BudgetExceeded("separate input and output estimates are required by this budget")
