@@ -213,3 +213,49 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
                 Decimal("NaN"), self.start,
             )
 
+
+
+    async def test_worker_and_queue_scopes_enforce_concurrency_only(self) -> None:
+        worker_budget = Budget(
+            tenant_id="tenant-a", scope_type="worker", scope_id="worker-7",
+            period_start=self.start, period_end=self.end, hard_concurrency=1,
+        )
+        await self.service.configure(worker_budget)
+        first, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id="worker-run-1",
+            scope_type="worker", scope_id="worker-7",
+            estimated_tokens=0, estimated_cost_usd=Decimal("0"),
+        )
+        with self.assertRaises(BudgetExceeded):
+            await self.service.reserve_run(
+                tenant_id="tenant-a", run_id="worker-run-2",
+                scope_type="worker", scope_id="worker-7",
+                estimated_tokens=0, estimated_cost_usd=Decimal("0"),
+            )
+        await self.service.release_run(first)
+
+        queue_budget = Budget(
+            tenant_id="tenant-a", scope_type="queue", scope_id="critical",
+            period_start=self.start, period_end=self.end, hard_concurrency=1,
+        )
+        await self.service.configure(queue_budget)
+        queue_first, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id="queue-run-1",
+            scope_type="queue", scope_id="critical",
+            estimated_tokens=0, estimated_cost_usd=Decimal("0"),
+        )
+        with self.assertRaises(BudgetExceeded):
+            await self.service.reserve_run(
+                tenant_id="tenant-a", run_id="queue-run-2",
+                scope_type="queue", scope_id="critical",
+                estimated_tokens=0, estimated_cost_usd=Decimal("0"),
+            )
+        await self.service.release_run(queue_first)
+
+        with self.assertRaisesRegex(ValueError, "concurrency"):
+            Budget(
+                tenant_id="tenant-a", scope_type="worker", scope_id="worker-7",
+                period_start=self.start, period_end=self.end,
+                hard_concurrency=1, hard_tokens=100,
+            )
+
