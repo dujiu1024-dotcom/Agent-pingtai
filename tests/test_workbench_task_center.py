@@ -27,7 +27,7 @@ class FakeTaskService:
         self.items[task["task_id"]] = task
         return task
 
-    async def get_task(self, *, tenant_id, task_id):
+    async def get_task(self, *, tenant_id, task_id, actor_id):
         return self.items.get(task_id)
 
     async def cancel_task(self, *, tenant_id, task_id, actor_id):

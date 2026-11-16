@@ -16,7 +16,7 @@ class RunStatus(str,Enum):
     SUCCEEDED="succeeded"; FAILED="failed"; CANCELLED="cancelled"; TIMED_OUT="timed_out"; INTERRUPTED="interrupted"
 TERMINAL={RunStatus.SUCCEEDED,RunStatus.FAILED,RunStatus.CANCELLED,RunStatus.TIMED_OUT}
 _ALLOWED={
- RunStatus.QUEUED:{RunStatus.RUNNING,RunStatus.CANCELLED},
+ RunStatus.QUEUED:{RunStatus.RUNNING,RunStatus.CANCELLED,RunStatus.FAILED},
  RunStatus.RUNNING:{RunStatus.PAUSED,RunStatus.CANCELLING,RunStatus.SUCCEEDED,RunStatus.FAILED,RunStatus.TIMED_OUT,RunStatus.INTERRUPTED},
  RunStatus.PAUSED:{RunStatus.RUNNING,RunStatus.CANCELLED,RunStatus.INTERRUPTED},
  RunStatus.CANCELLING:{RunStatus.CANCELLED,RunStatus.FAILED,RunStatus.TIMED_OUT},
@@ -99,11 +99,10 @@ class RunLifecycleManager:
    updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
-  if task is not None: task.cancel()
-  if updated.status==RunStatus.CANCELLING:
-   latest=await self.store.get(tenant_id,run_id)
-   if latest and latest.status==RunStatus.CANCELLING:
-    updated=await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
+  if task is not None:
+   task.cancel()
+  # A RUNNING Run may belong to another process. Keep CANCELLING durable;
+  # its lease owner confirms cancellation after execution stops.
   return updated
  async def pause(self,tenant_id:str,run_id:str,*,checkpoint_ref:str,reason:str="human intervention requested")->RunSnapshot:
   if not checkpoint_ref.strip():raise ValueError("pause requires a durable checkpoint")

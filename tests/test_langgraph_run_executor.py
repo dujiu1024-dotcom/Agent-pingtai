@@ -154,7 +154,7 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
    await task
   self.assertEqual((await self.store.get("tenant","pause")).status,RunStatus.PAUSED)
 
- async def test_lost_worker_lease_marks_run_interrupted(self):
+ async def test_lost_worker_lease_leaves_recovery_to_new_owner(self):
   started=asyncio.Event();cancelled=asyncio.Event()
   class LeaseExpiringStore(InMemoryRunStateStore):
    async def acquire_lease(self,tenant_id,run_id,worker_id,*,lease_seconds):
@@ -178,10 +178,54 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
    await executor.execute(tenant_id="tenant",run_id="lease-lost",input={})
   self.assertTrue(started.is_set())
   self.assertTrue(cancelled.is_set())
-  self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.INTERRUPTED)
+  self.assertEqual((await store.get("tenant","lease-lost")).status,RunStatus.RUNNING)
 
 
- async def test_recovery_lease_loss_keeps_run_interrupted(self):
+ async def test_claimed_stale_run_restarts_from_persisted_initial_input(self):
+  await self.store.create("tenant","stale")
+  await self.manager.start("tenant","stale")
+  snapshot=await self.store.get("tenant","stale")
+  result=await self.executor.resume_claimed(
+   snapshot=snapshot,input={"prompt":"resume after worker loss"},
+  )
+  self.assertEqual(result,{"result":{"prompt":"resume after worker loss"}})
+  self.assertEqual((await self.store.get("tenant","stale")).status,RunStatus.SUCCEEDED)
+
+ async def test_resume_refuses_a_lease_already_transferred_to_another_worker(self):
+  class LeaseTransferredStore(InMemoryRunStateStore):
+   async def owns_lease(self,tenant_id,run_id,worker_id):
+    return False
+  store=LeaseTransferredStore();manager=RunLifecycleManager(store);graph=FakeGraph()
+  await store.create("tenant","lease-transferred")
+  await manager.start("tenant","lease-transferred")
+  snapshot=await store.get("tenant","lease-transferred")
+  executor=LangGraphRunExecutor(
+   graph=graph,lifecycle=manager,worker_id="old-worker",timeout_seconds=1,
+  )
+  from agent_platform.runtime.lifecycle import WorkerLeaseLost
+  with self.assertRaises(WorkerLeaseLost):
+   await executor.resume_claimed(snapshot=snapshot,input={"prompt":"do not duplicate"})
+  self.assertEqual((await store.get("tenant","lease-transferred")).status,RunStatus.RUNNING)
+  self.assertEqual(graph.calls,[])
+
+ async def test_claimed_cancellation_is_confirmed_without_restarting_graph(self):
+  await self.store.create("tenant","remote-cancel")
+  await self.manager.start("tenant","remote-cancel")
+  current=await self.store.get("tenant","remote-cancel")
+  from agent_platform.runtime.lifecycle import RunSnapshot
+  await self.store.transition(
+   RunSnapshot("tenant","remote-cancel",RunStatus.CANCELLING,current.version),
+   expected_version=current.version,
+  )
+  claimed=await self.store.get("tenant","remote-cancel")
+  result=await self.executor.resume_claimed(
+   snapshot=claimed,input={"prompt":"must not execute"},
+  )
+  self.assertIsNone(result)
+  self.assertEqual((await self.store.get("tenant","remote-cancel")).status,RunStatus.CANCELLED)
+  self.assertEqual(self.graph.calls,[])
+
+ async def test_recovery_lease_loss_leaves_run_for_new_lease_owner(self):
   started=asyncio.Event();cancelled=asyncio.Event()
   class LeaseExpiringStore(InMemoryRunStateStore):
    async def heartbeat(self,tenant_id,run_id,worker_id,*,lease_seconds):
@@ -205,7 +249,7 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(recovered,[])
   self.assertTrue(started.is_set())
   self.assertTrue(cancelled.is_set())
-  self.assertEqual((await store.get("tenant","recovery-lease-lost")).status,RunStatus.INTERRUPTED)
+  self.assertEqual((await store.get("tenant","recovery-lease-lost")).status,RunStatus.RUNNING)
 
 
  async def test_registry_runtime_is_prepared_before_execution_and_released_afterward(self):
