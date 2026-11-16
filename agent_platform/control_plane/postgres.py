@@ -16,6 +16,7 @@ from agent_platform.control_plane.sessions_assets import (
     FileAsset,
     FileAssetVersion,
     MessageRole,
+    SessionError,
     SessionNotFound,
 )
 
@@ -360,7 +361,7 @@ class PostgresSessionRepository:
                 if row is None or row["status"] == AssetStatus.DELETED.value:
                     raise SessionNotFound("asset not found")
                 if row["current_version"] != expected_version or version.version != expected_version + 1:
-                    raise ValueError("file asset version changed; retry from the latest version")
+                    raise SessionError("file asset version changed; retry from the latest version")
                 await connection.execute(
                     """INSERT INTO platform_file_asset_versions
                        (tenant_id,asset_id,version,object_key,filename,media_type,size_bytes,sha256,status,created_at)
@@ -416,11 +417,18 @@ class PostgresSessionRepository:
             row = await cursor.fetchone()
             if row is None:
                 raise SessionNotFound("asset not found")
-            await connection.execute(
-                """UPDATE platform_file_asset_versions SET status=%s
-                   WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
-                (status.value, self.tenant_id, _uuid(asset_id), row["current_version"]),
-            )
+            if status is AssetStatus.DELETED:
+                await connection.execute(
+                    """UPDATE platform_file_asset_versions SET status=%s
+                       WHERE tenant_id=%s AND asset_id=%s""",
+                    (status.value, self.tenant_id, _uuid(asset_id)),
+                )
+            else:
+                await connection.execute(
+                    """UPDATE platform_file_asset_versions SET status=%s
+                       WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
+                    (status.value, self.tenant_id, _uuid(asset_id), row["current_version"]),
+                )
 
 
     async def set_asset_status_if_not_deleted(
