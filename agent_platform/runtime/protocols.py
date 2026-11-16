@@ -21,16 +21,19 @@ def _validate_media_reference(
         raise ValueError("media modality must be image, pdf, audio or video")
     if not isinstance(resource_id, str) or not resource_id.strip():
         raise ValueError("media resource_id is required")
-    if "://" in resource_id or resource_id.startswith(("/", "\\")) or ".." in resource_id:
+    if (
+        "://" in resource_id or "/" in resource_id or "\\" in resource_id
+        or ".." in resource_id
+    ):
         raise ValueError("media resource_id must be an opaque authorized resource identifier")
     if not isinstance(mime_type, str) or not mime_type.strip():
         raise ValueError("media mime_type is required")
     normalized = mime_type.lower().split(";", 1)[0].strip()
     valid_mime = {
-        "image": normalized.startswith("image/"),
+        "image": re.fullmatch(r"image/[a-z0-9.+-]+", normalized) is not None,
         "pdf": normalized == "application/pdf",
-        "audio": normalized.startswith("audio/"),
-        "video": normalized.startswith("video/"),
+        "audio": re.fullmatch(r"audio/[a-z0-9.+-]+", normalized) is not None,
+        "video": re.fullmatch(r"video/[a-z0-9.+-]+", normalized) is not None,
     }[modality]
     if not valid_mime:
         raise ValueError("media mime_type does not match its declared modality")
