@@ -254,7 +254,7 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
     WHERE task_id IS NOT NULL AND dispatch_ready=true
-      AND COALESCE(worker_attempts,0) < COALESCE(max_worker_attempts,5)
+      AND (status='cancelling' OR COALESCE(worker_attempts,0) < COALESCE(max_worker_attempts,5))
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
