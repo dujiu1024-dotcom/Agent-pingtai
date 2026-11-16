@@ -52,6 +52,7 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
             inner, quota_service=service,
             estimate_request=lambda _request: (100, Decimal("0.10")),
             estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+            price_card_version_resolver=lambda _request: "harness-pricing-v1",
         )
         request = SimpleNamespace(context=SimpleNamespace(
             tenant_id="tenant-a", run_id="run-a",
@@ -67,6 +68,12 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tokens, 15)
         self.assertEqual(cost, Decimal("0.02"))
         self.assertEqual(concurrency, 0)
+        events = await store.list_usage(
+            "tenant-a", now - timedelta(hours=1), now + timedelta(hours=1),
+            run_id="run-a",
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].price_card_version, "harness-pricing-v1")
 
     async def test_context_window_limit_blocks_before_model_dispatch(self):
         inner = FakeHarness()
