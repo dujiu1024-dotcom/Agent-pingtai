@@ -6,7 +6,7 @@ MIGRATION_DIR="${MIGRATION_DIR:-agent_platform/storage/postgres}"
 [[ -d "$MIGRATION_DIR" ]] || { echo "migration directory not found: $MIGRATION_DIR" >&2; exit 2; }
 command -v psql >/dev/null
 command -v sha256sum >/dev/null
-command -v sed >/dev/null
+command -v awk >/dev/null
 [[ "$MIGRATION_DIR" != *"'"* ]] || { echo "migration path cannot contain a single quote" >&2; exit 2; }
 
 TEMP_DIR="$(mktemp -d)"
@@ -39,7 +39,7 @@ for file in "${files[@]}"; do
   awk '
     function update_dollar_state(line, rest, token) {
       rest = line
-      while (match(rest, /\\$[[:alnum:]_]*\\$/)) {
+      while (match(rest, /\$[[:alnum:]_]*\$/)) {
         token = substr(rest, RSTART, RLENGTH)
         if (dollar_tag == "") dollar_tag = token
         else if (dollar_tag == token) dollar_tag = ""
