@@ -2,7 +2,7 @@ name: agent-platform
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE in deploy/.env}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in deploy/.env}
@@ -21,7 +21,7 @@ services:
     networks: [platform]
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:?Set REDIS_IMAGE in deploy/.env}
     restart: unless-stopped
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
     environment:
@@ -38,7 +38,7 @@ services:
     networks: [platform]
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: ${MINIO_IMAGE:?Set MINIO_IMAGE in deploy/.env}
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
