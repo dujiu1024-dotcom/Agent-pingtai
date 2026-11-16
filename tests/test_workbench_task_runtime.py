@@ -284,7 +284,10 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retried["priority"], 700)
         self.assertEqual(retried["retry_of_run_id"], original["run_id"])
         self.assertEqual(retried["input"], original["input"])
-        self.assertEqual(retried["registry_snapshot"], original["registry_snapshot"])
+        self.assertEqual(
+            self.run_store.records[retried["run_id"]]["registry_snapshot"],
+            original_row["registry_snapshot"],
+        )
         same_retry = await self.service.retry_task(
             tenant_id="tenant-a", task_id=original["task_id"], actor_id="user-a",
             idempotency_key="retry-1",
