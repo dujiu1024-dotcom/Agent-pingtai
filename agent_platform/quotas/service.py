@@ -48,8 +48,8 @@ class Budget:
             ):
                 raise ValueError("token and concurrency limits must be non-negative integers")
         for cost in (self.hard_cost_usd, self.soft_cost_usd):
-            if cost is not None and cost < 0:
-                raise ValueError("cost limits must be non-negative")
+            if cost is not None and (not cost.is_finite() or cost < 0):
+                raise ValueError("cost limits must be finite and non-negative")
 
 
 @dataclass(frozen=True)
@@ -287,8 +287,11 @@ class QuotaService:
         storage_bytes: int = 0, price_card_version: str | None = None,
         source: str = "estimated",
     ) -> UsageEvent:
-        if min(input_tokens, output_tokens, tool_calls, runtime_ms, storage_bytes) < 0 or cost_usd < 0:
-            raise ValueError("actual usage must be non-negative")
+        counters = (input_tokens, output_tokens, tool_calls, runtime_ms, storage_bytes)
+        if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in counters):
+            raise ValueError("actual usage counters must be non-negative integers")
+        if not isinstance(cost_usd, Decimal) or not cost_usd.is_finite() or cost_usd < 0:
+            raise ValueError("actual cost must be a finite non-negative Decimal")
         if source not in {"estimated", "provider_reported", "reconciled"}:
             raise ValueError("invalid usage source")
         event = UsageEvent(
