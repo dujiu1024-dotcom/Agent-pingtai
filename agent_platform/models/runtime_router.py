@@ -93,11 +93,14 @@ class OpenAICompatibleHTTPTransport:
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
     ) -> Mapping[str, Any]:
+        reserved = {"model", "messages", "stream", "tools", "tool_choice"}
+        if reserved.intersection(config.parameters) or reserved.intersection(request_parameters):
+            raise ModelTransportError("model parameters cannot override routing or tool controls")
         payload = {
-            "model": config.model_id,
-            "messages": [dict(message) for message in messages],
             **dict(config.parameters),
             **dict(request_parameters),
+            "model": config.model_id,
+            "messages": [dict(message) for message in messages],
         }
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         request = urllib.request.Request(
