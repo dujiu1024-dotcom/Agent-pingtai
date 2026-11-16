@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import hashlib
 import json
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -108,6 +109,9 @@ class TaskCenterChildRunExecutor:
         await self._validate_pinned_runtime(request)
         actor_id = await self._resolve_actor(parent_context)
         task_input = self._task_input(request, parent_context)
+        durable_idempotency_key = "child-run:" + hashlib.sha256(
+            idempotency_key.encode("utf-8")
+        ).hexdigest()
         submitted = await self.task_service.submit_task(
             tenant_id=parent_context.tenant_id,
             actor_id=actor_id,
@@ -115,14 +119,14 @@ class TaskCenterChildRunExecutor:
             project_id=request.context.project_id,
             session_id=parent_context.metadata.get("session_id"),
             input=task_input,
-            idempotency_key=idempotency_key,
+            idempotency_key=durable_idempotency_key,
             run_id=request.context.run_id,
         )
         if submitted.get("run_id") != request.context.run_id:
             raise RuntimeError("idempotent child submission resolved to a different Run ID")
-        if submitted.get("template_id") not in (None, request.context.model_template.template_id):
+        if submitted.get("template_id") != request.context.model_template.template_id:
             raise PermissionError("persisted child Run changed its pinned model template")
-        if submitted.get("template_version") not in (None, request.context.model_template.version):
+        if submitted.get("template_version") != request.context.model_template.version:
             raise PermissionError("persisted child Run changed its pinned model template version")
 
         try:
