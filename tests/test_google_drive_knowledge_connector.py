@@ -249,9 +249,6 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Authorization", kwargs["headers"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
     async def test_incomplete_initial_snapshot_fails_closed(self):
         client = Client([
             Response({"startPageToken": "start"}),
@@ -264,3 +261,7 @@ if __name__ == "__main__":
         )
         with self.assertRaises(GoogleDriveConnectorError):
             await connector.list_changed(tenant_id="tenant-a", cursor=None)
+
+
+if __name__ == "__main__":
+    unittest.main()
