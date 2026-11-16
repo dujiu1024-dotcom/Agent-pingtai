@@ -19,7 +19,6 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   value="${BASH_REMATCH[2]}"
   if [[ "$value" == \"*\" && "${#value}" -ge 2 ]]; then value="${value:1:${#value}-2}"; fi
   if [[ "$value" == \'*\' && "${#value}" -ge 2 ]]; then value="${value:1:${#value}-2}"; fi
-  [[ "$value" != *"$("* && "$value" != *"$"* ]] || { echo "variable expansion is not allowed in release env values" >&2; exit 2; }
   export "$key=$value"
 done < "$ENV_FILE"
 COMPOSE=(docker compose --project-directory "$ROOT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
