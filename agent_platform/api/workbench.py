@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from agent_platform.identity.models import Principal
 
