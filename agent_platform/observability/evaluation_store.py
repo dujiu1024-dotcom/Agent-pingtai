@@ -161,7 +161,7 @@ class PostgresEvaluationRepository:
         connection = await self._connect()
         async with connection:
             cursor = await connection.execute(
-                """SELECT eval_run_id,dataset_id,dataset_version,model_key,report,
+                """SELECT eval_run_id,tenant_id,dataset_id,dataset_version,model_key,report,
                           gate_passed,created_at
                    FROM platform_eval_runs WHERE dataset_id=%s AND tenant_id=%s
                    ORDER BY created_at DESC LIMIT %s""",
@@ -169,7 +169,7 @@ class PostgresEvaluationRepository:
             )
             rows = await cursor.fetchall()
         return [{
-            "eval_run_id": str(row["eval_run_id"]), "dataset_id": row["dataset_id"],
+            "eval_run_id": str(row["eval_run_id"]), "tenant_id": row["tenant_id"], "dataset_id": row["dataset_id"],
             "dataset_version": row["dataset_version"], "model_key": row["model_key"],
             "report": row["report"], "gate_passed": row["gate_passed"],
             "created_at": row["created_at"],
