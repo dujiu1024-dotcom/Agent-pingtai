@@ -134,6 +134,13 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
             session=GatewaySessionContext(**values),
         )
 
+    async def test_session_correlation_id_reaches_contextual_tool_handler(self):
+        bridge = self.bridge(correlation_id="corr-run-001")
+        await bridge.call_tool(
+            name="read_document", arguments={"document_id": "doc-123"},
+        )
+        self.assertEqual(self.execution_contexts[-1].correlation_id, "corr-run-001")
+
     async def test_only_run_allowlisted_tools_are_discovered(self):
         bridge = self.bridge(
             allowed_tool_names=("read_document", "send_message")
