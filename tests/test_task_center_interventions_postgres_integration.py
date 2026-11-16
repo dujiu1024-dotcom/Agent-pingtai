@@ -331,6 +331,26 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         manager = RunLifecycleManager(PostgresRunStateStore(self.connect))
         resumed = await manager.request_resume(self.tenant_id, str(self.run_id))
         self.assertEqual(resumed.status.value, "interrupted")
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.step.failed", actor_id="worker-a",
+            payload={"step_id": "publish", "error": "upstream unavailable"},
+        )
+        approval_id = uuid4()
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_approvals
+                   (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
+                    requested_by,status,expires_at)
+                   VALUES (%s,%s,%s,'publish','report.pdf',3,'digest-1',
+                           'requester-a','approved',now()+interval '10 minutes')""",
+                (self.tenant_id, approval_id, self.run_id),
+            )
+            await conn.execute(
+                "UPDATE platform_runs SET last_error='step publish failed' WHERE tenant_id=%s AND run_id=%s",
+                (self.tenant_id, self.run_id),
+            )
+            await conn.commit()
         details = PostgresRunDetailService(
             tenant_id=self.tenant_id, connection_factory=self.connect,
         )
@@ -456,8 +476,11 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         self.assertEqual([item["event_type"] for item in detail["steps"]], ["run.step.started"])
         self.assertEqual(detail["logs"][0]["payload"]["message"], "Authorization: Bearer [REDACTED]")
         self.assertEqual(detail["artifacts"][0]["payload"]["artifact_id"], "artifact-1")
-        self.assertEqual(detail["approvals"], [])
-        self.assertEqual(len(detail["events"]), 3)
+        self.assertEqual(detail["steps"][1]["event_type"], "run.step.failed")
+        self.assertEqual(detail["last_error"], "step publish failed")
+        self.assertEqual(detail["approvals"][0]["approval_id"], str(approval_id))
+        self.assertEqual(detail["approvals"][0]["status"], "approved")
+        self.assertEqual(len(detail["events"]), 4)
 
     async def test_run_event_rejects_cross_tenant_and_invalid_shapes(self):
         from agent_platform.runtime.interventions import RunInterventionService
