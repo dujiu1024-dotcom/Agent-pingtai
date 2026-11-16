@@ -66,7 +66,10 @@ class MemoryExtractionEventHandler:
                    for value in (run_id, session_id, actor_id)):
             raise ValueError("memory event is missing required identifiers")
 
-        record = await self.run_store.get_task_record(event.tenant_id, run_id)
+        load_run = getattr(self.run_store, "get_run_record", None)
+        if not callable(load_run):
+            load_run = self.run_store.get_task_record
+        record = await load_run(event.tenant_id, run_id)
         if record is None:
             raise ValueError("source Run was not found")
         if (
