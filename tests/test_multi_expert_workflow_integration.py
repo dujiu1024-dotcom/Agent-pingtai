@@ -51,7 +51,7 @@ class FakeMultiExpertServices:
         return {"action": "archive_analysis", "summary": state["synthesis"]["summary"]}
 
     async def apply_approval(self, *, state, decision):
-        return {"approved": decision.get("approved") is True}
+        return {"approved": decision.get("approved") is True, "approver_id": "reviewer-a"}
 
     async def archive(self, *, state):
         return {
