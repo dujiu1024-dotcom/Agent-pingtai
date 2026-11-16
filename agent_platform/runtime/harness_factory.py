@@ -12,6 +12,7 @@ def compose_quota_enforced_harness(
     inner: Any, *, quota_service: QuotaService,
     estimate_request: Callable[[Any], tuple[int, Decimal] | tuple[int, int, Decimal]],
     estimate_actual_cost: Callable[[Any, Any], Decimal],
+    price_card_version_resolver: Callable[[Any], str | None] | None = None,
     scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
     context_window_tokens: int | Callable[[Any], int] = 8192,
     estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
@@ -25,7 +26,9 @@ def compose_quota_enforced_harness(
         raise ValueError("request and actual-cost estimators are mandatory")
     return QuotaEnforcedHarnessAdapter(
         inner, quota_service=quota_service, estimate_request=estimate_request,
-        estimate_actual_cost=estimate_actual_cost, scope_resolver=scope_resolver,
+        estimate_actual_cost=estimate_actual_cost,
+        price_card_version_resolver=price_card_version_resolver,
+        scope_resolver=scope_resolver,
         context_window_tokens=context_window_tokens,
         estimate_tool_cost_usd=estimate_tool_cost_usd,
         measure_storage_bytes=measure_storage_bytes,
