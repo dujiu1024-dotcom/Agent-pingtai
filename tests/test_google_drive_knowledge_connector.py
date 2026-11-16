@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import dataclass
-from unittest.mock import AsyncMock
 
 from agent_platform.knowledge.contracts import Document, KnowledgeScope
 from agent_platform.knowledge.google_drive_connector import (
@@ -61,53 +59,95 @@ def document_factory(tenant_id, metadata, media_type):
 
 
 class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
-    async def test_incremental_changes_downloads_content_and_returns_tombstones(self):
+    async def test_initial_snapshot_then_delta_deletion(self):
         client = Client([
             Response({"startPageToken": "start-1"}),
             Response({
-                "changes": [
-                    {
-                        "fileId": "file-doc",
-                        "file": {
-                            "id": "file-doc", "name": "Design doc",
-                            "mimeType": "application/vnd.google-apps.document",
-                            "modifiedTime": "2026-11-16T10:00:00Z",
-                            "webViewLink": "https://drive.google.com/open?id=file-doc",
-                        },
-                    },
-                    {"fileId": "deleted-file", "removed": True},
-                ],
-                "newStartPageToken": "start-2",
+                "files": [{
+                    "id": "file-doc", "name": "Design doc",
+                    "mimeType": "application/vnd.google-apps.document",
+                    "modifiedTime": "2026-11-16T10:00:00Z",
+                    "webViewLink": "https://drive.google.com/open?id=file-doc",
+                }],
             }),
             Response(content=b"docx-binary"),
+            Response({
+                "changes": [{"fileId": "deleted-file", "removed": True}],
+                "newStartPageToken": "start-2",
+            }),
         ])
         connector = GoogleDriveKnowledgeConnector(
             client=client, credentials=Credentials(),
             credential_ref="secret://tenant/drive",
             document_factory=document_factory,
         )
-        page = await connector.list_changed(
+        initial = await connector.list_changed(
             tenant_id="tenant-a", cursor=None, limit=50,
         )
-        self.assertEqual(len(page.items), 1)
-        self.assertEqual(page.items[0].document.document_id, "gdrive:file-doc")
-        self.assertEqual(page.items[0].document.media_type,
-                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-        self.assertEqual(page.items[0].content, b"docx-binary")
-        self.assertEqual(page.deleted_document_ids, ("gdrive:deleted-file",))
-        self.assertEqual(page.next_cursor, "start-2")
-        self.assertFalse(page.has_more)
+        self.assertEqual(len(initial.items), 1)
+        self.assertEqual(initial.items[0].document.document_id, "gdrive:file-doc")
+        self.assertEqual(
+            initial.items[0].document.media_type,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertEqual(initial.items[0].content, b"docx-binary")
+        self.assertFalse(initial.has_more)
         self.assertEqual(
             client.calls[2][1],
             "https://www.googleapis.com/drive/v3/files/file-doc/export",
         )
+        delta = await connector.list_changed(
+            tenant_id="tenant-a", cursor=initial.next_cursor, limit=50,
+        )
+        self.assertEqual(delta.deleted_document_ids, ("gdrive:deleted-file",))
+        self.assertEqual(delta.next_cursor, connector._encode_cursor({
+            "mode": "changes", "token": "start-2",
+        }))
 
-    async def test_pagination_preserves_next_page_token(self):
+    async def test_initial_snapshot_paginates_without_losing_delta_watermark(self):
         client = Client([
-            Response({"startPageToken": "start"}),
+            Response({"startPageToken": "watermark"}),
+            Response({
+                "files": [{
+                    "id": "first", "name": "First", "mimeType": "text/plain",
+                }],
+                "nextPageToken": "files-page-2",
+            }),
+            Response(content=b"first"),
+            Response({
+                "files": [{
+                    "id": "second", "name": "Second", "mimeType": "text/plain",
+                }],
+            }),
+            Response(content=b"second"),
+        ])
+        connector = GoogleDriveKnowledgeConnector(
+            client=client, credentials=Credentials(),
+            credential_ref="secret://tenant/drive",
+            document_factory=document_factory,
+        )
+        first = await connector.list_changed(tenant_id="tenant-a", cursor=None)
+        self.assertTrue(first.has_more)
+        state = connector._decode_cursor(first.next_cursor)
+        self.assertEqual(state["mode"], "initial")
+        self.assertEqual(state["page_token"], "files-page-2")
+        self.assertEqual(state["change_token"], "watermark")
+        second = await connector.list_changed(
+            tenant_id="tenant-a", cursor=first.next_cursor,
+        )
+        self.assertFalse(second.has_more)
+        self.assertEqual(second.items[0].document.document_id, "gdrive:second")
+        final_state = connector._decode_cursor(second.next_cursor)
+        self.assertEqual(final_state, {"mode": "changes", "token": "watermark"})
+
+    async def test_change_feed_pagination_preserves_next_page_token(self):
+        cursor = GoogleDriveKnowledgeConnector._encode_cursor({
+            "mode": "changes", "token": "change-start",
+        })
+        client = Client([
             Response({
                 "changes": [],
-                "nextPageToken": "page-2",
+                "nextPageToken": "change-page-2",
             }),
         ])
         connector = GoogleDriveKnowledgeConnector(
@@ -116,24 +156,20 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
             document_factory=document_factory,
         )
         page = await connector.list_changed(
-            tenant_id="tenant-a", cursor=None, limit=20,
+            tenant_id="tenant-a", cursor=cursor, limit=20,
         )
-        self.assertEqual(page.next_cursor, "page-2")
+        self.assertEqual(
+            connector._decode_cursor(page.next_cursor),
+            {"mode": "changes", "token": "change-page-2"},
+        )
         self.assertTrue(page.has_more)
 
     async def test_signed_download_redirect_does_not_receive_oauth_token(self):
         client = Client([
             Response({"startPageToken": "start"}),
-            Response({
-                "changes": [{
-                    "fileId": "binary-file",
-                    "file": {
-                        "id": "binary-file", "name": "notes.txt",
-                        "mimeType": "text/plain",
-                    },
-                }],
-                "newStartPageToken": "next",
-            }),
+            Response({"files": [{
+                "id": "binary-file", "name": "notes.txt", "mimeType": "text/plain",
+            }]}),
             Response(
                 headers={"location": "https://download.googleusercontent.com/signed"},
                 status_code=302,
@@ -149,24 +185,15 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a", cursor=None, limit=20,
         )
         self.assertEqual(page.items[0].content, b"plain text")
-        self.assertNotIn(
-            "Authorization", client.calls[3][2].get("headers", {}),
-        )
+        self.assertNotIn("Authorization", client.calls[3][2].get("headers", {}))
         self.assertFalse(client.calls[3][2]["follow_redirects"])
 
     async def test_rejects_unsafe_download_redirect(self):
         client = Client([
             Response({"startPageToken": "start"}),
-            Response({
-                "changes": [{
-                    "fileId": "binary-file",
-                    "file": {
-                        "id": "binary-file", "name": "notes.txt",
-                        "mimeType": "text/plain",
-                    },
-                }],
-                "newStartPageToken": "next",
-            }),
+            Response({"files": [{
+                "id": "binary-file", "name": "notes.txt", "mimeType": "text/plain",
+            }]}),
             Response(
                 headers={"location": "https://attacker.example/collect"},
                 status_code=302,
@@ -185,16 +212,9 @@ class GoogleDriveKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
     async def test_document_factory_must_preserve_tenant_and_stable_id(self):
         client = Client([
             Response({"startPageToken": "start"}),
-            Response({
-                "changes": [{
-                    "fileId": "file-doc",
-                    "file": {
-                        "id": "file-doc", "name": "Design doc",
-                        "mimeType": "text/plain",
-                    },
-                }],
-                "newStartPageToken": "next",
-            }),
+            Response({"files": [{
+                "id": "file-doc", "name": "Design doc", "mimeType": "text/plain",
+            }]}),
             Response(content=b"plain text"),
         ])
         connector = GoogleDriveKnowledgeConnector(
