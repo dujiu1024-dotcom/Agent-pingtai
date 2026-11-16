@@ -22,7 +22,7 @@
 - 请求头包含 Event ID、Idempotency-Key、时间戳和 HMAC-SHA256 签名。
 - 接收方使用 `timestamp + "." + raw_body` 计算 HMAC 并常量时间比较。
 - 非 2xx/异常采用指数退避，超过最大尝试次数进入 dead-letter。
-- 目标 URL 必须 HTTPS，拒绝凭据、localhost、私有/保留 IP 和常见内部域名。生产网络仍必须通过出站代理实施 DNS 解析后二次 IP 校验与重绑定防护；应用层 URL 检查不能替代网络 egress policy。
+- 目标 URL 必须 HTTPS，拒绝凭据、localhost、私有/保留 IP 和常见内部域名。Dispatcher 现在要求 EgressPolicy 对每次投递解析并拒绝任何非公网 DNS 答案，并把完整 IP 集传给 post_pinned transport；生产 transport 必须只连接该 IP 集，同时保留原始主机名用于 TLS SNI/证书校验。生产网络仍必须通过出站代理实施第二道 DNS/IP 校验与重绑定防护；应用层 URL 检查不能替代网络 egress policy。
 
 ## 扩展清单
 
