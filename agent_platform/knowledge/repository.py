@@ -49,6 +49,7 @@ class InMemoryKnowledgeRepository:
         self.documents: dict[tuple[str, str, int], Document] = {}
         self.chunks: dict[tuple[str, str, int], list[DocumentChunk]] = {}
         self.connector_cursors: dict[tuple[str, str], str] = {}
+        self.document_acl: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
 
     async def save_document(
         self, document: Document, chunks: Sequence[DocumentChunk]
@@ -92,6 +93,16 @@ class InMemoryKnowledgeRepository:
                 continue
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
                 continue
+            grants = self.document_acl.get((document.tenant_id, document.document_id), set())
+            if grants and not any(
+                permission == "read" and (
+                    (kind == "user" and identifier == principal.user_id)
+                    or (kind == "role" and identifier in principal.roles)
+                    or (kind == "project" and identifier in principal.project_ids)
+                )
+                for kind, identifier, permission in grants
+            ):
+                continue
             visible.append(document)
         return sorted(visible, key=lambda doc: doc.created_at, reverse=True)[:limit]
 
@@ -113,6 +124,16 @@ class InMemoryKnowledgeRepository:
             if document.scope.value == "private" and document.owner_user_id != principal.user_id:
                 continue
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
+                continue
+            grants = self.document_acl.get((document.tenant_id, document.document_id), set())
+            if grants and not any(
+                permission == "read" and (
+                    (kind == "user" and identifier == principal.user_id)
+                    or (kind == "role" and identifier in principal.roles)
+                    or (kind == "project" and identifier in principal.project_ids)
+                )
+                for kind, identifier, permission in grants
+            ):
                 continue
             for chunk in self.chunks.get(key, []):
                 body = chunk.text.casefold()
@@ -142,6 +163,27 @@ class InMemoryKnowledgeRepository:
         self, tenant_id: str, connector_id: str, cursor: str
     ) -> None:
         self.connector_cursors[(tenant_id, connector_id)] = cursor
+
+    async def grant_document_access(
+        self, tenant_id: str, document_id: str, principal_type: str,
+        principal_id: str, permission: str, granted_by: str,
+    ) -> None:
+        if await self.get_document(tenant_id, document_id) is None:
+            raise ValueError("document not found")
+        self.document_acl.setdefault((tenant_id, document_id), set()).add(
+            (principal_type, principal_id, permission)
+        )
+
+    async def revoke_document_access(
+        self, tenant_id: str, document_id: str, principal_type: str,
+        principal_id: str, permission: str,
+    ) -> bool:
+        grants = self.document_acl.get((tenant_id, document_id), set())
+        key = (principal_type, principal_id, permission)
+        if key not in grants:
+            return False
+        grants.remove(key)
+        return True
 
     async def delete_document(self, tenant_id: str, document_id: str) -> bool:
         from dataclasses import replace
