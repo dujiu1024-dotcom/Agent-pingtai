@@ -184,3 +184,32 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="tenant-a", run_id="split-missing", scope_type="tenant", scope_id="tenant-a",
                 estimated_tokens=10, estimated_cost_usd=Decimal("0.10"),
             )
+
+
+    async def test_non_finite_budget_estimate_and_actual_costs_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "finite"):
+            Budget(
+                tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+                period_start=self.start, period_end=self.end,
+                hard_cost_usd=Decimal("NaN"),
+            )
+        with self.assertRaisesRegex(ValueError, "finite"):
+            Budget(
+                tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+                period_start=self.start, period_end=self.end,
+                soft_cost_usd=Decimal("Infinity"),
+            )
+        with self.assertRaisesRegex(ValueError, "finite"):
+            await self.reserve("run-nan", 10, "NaN")
+        reservation, _ = await self.reserve("run-actual", 10, "0.10")
+        with self.assertRaisesRegex(ValueError, "finite"):
+            await self.service.settle_run(
+                reservation, model_key="model-x", input_tokens=1, output_tokens=1,
+                cost_usd=Decimal("Infinity"),
+            )
+        with self.assertRaisesRegex(ValueError, "finite"):
+            UsageEvent(
+                "event-nan", "tenant-a", "run-x", "model-x", 1, 1,
+                Decimal("NaN"), self.start,
+            )
+
