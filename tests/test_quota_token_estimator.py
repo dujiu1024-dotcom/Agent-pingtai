@@ -37,12 +37,13 @@ class ChatTokenEstimatorTests(unittest.TestCase):
             messages=[{
                 "role": "assistant",
                 "content": [{"type": "text", "text": "tool request"}],
+                "tool_call_id": "call-1",
                 "tool_calls": [{"id": "call-1", "function": {"name": "lookup", "arguments": "{}"}}],
             }],
             request_parameters={"max_tokens": 10},
             context_window_tokens=100,
         )
-        self.assertGreaterEqual(estimate.input_tokens, 10)
+        self.assertGreater(estimate.input_tokens, 10)
 
     def test_rejects_multimodal_content_without_provider_estimator(self):
         with self.assertRaisesRegex(TokenEstimationError, "multimodal"):
