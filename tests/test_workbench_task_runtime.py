@@ -12,6 +12,7 @@ from agent_platform.runtime.workbench_tasks import (
     RegistryBackedTaskCenterService,
     RegistryLangGraphExecutorResolver,
     RunExecutionWorker,
+    WorkbenchTaskError,
 )
 
 
