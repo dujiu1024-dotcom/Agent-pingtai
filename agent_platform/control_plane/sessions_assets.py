@@ -107,28 +107,6 @@ class SessionRepository(Protocol):
     async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]: ...
     async def get_asset_version(self, tenant_id: str, asset_id: str, version: int) -> FileAssetVersion | None: ...
     async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None: ...
-    async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]:
-        return tuple(self.asset_versions.get((tenant_id, asset_id), ()))
-
-    async def get_asset_version(self, tenant_id: str, asset_id: str, version: int) -> FileAssetVersion | None:
-        return next((item for item in self.asset_versions.get((tenant_id, asset_id), ()) if item.version == version), None)
-
-    async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None:
-        key = (version.tenant_id, version.asset_id)
-        current = self.assets.get(key)
-        if current is None or current.status is AssetStatus.DELETED:
-            raise SessionNotFound("asset not found")
-        if current.version != expected_version or version.version != expected_version + 1:
-            raise SessionError("file asset version changed; retry from the latest version")
-        from dataclasses import replace
-        self.asset_versions.setdefault(key, []).append(version)
-        self.assets[key] = replace(
-            current, object_key=version.object_key, filename=version.filename,
-            media_type=version.media_type, size_bytes=version.size_bytes,
-            sha256=version.sha256, status=version.status,
-            created_at=version.created_at, version=version.version,
-        )
-
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]: ...
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None: ...
     async def set_asset_status_if_not_deleted(
@@ -199,6 +177,28 @@ class InMemorySessionRepository:
 
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None:
         return self.assets.get((tenant_id, asset_id))
+
+    async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]:
+        return tuple(self.asset_versions.get((tenant_id, asset_id), ()))
+
+    async def get_asset_version(self, tenant_id: str, asset_id: str, version: int) -> FileAssetVersion | None:
+        return next((item for item in self.asset_versions.get((tenant_id, asset_id), ()) if item.version == version), None)
+
+    async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None:
+        key = (version.tenant_id, version.asset_id)
+        current = self.assets.get(key)
+        if current is None or current.status is AssetStatus.DELETED:
+            raise SessionNotFound("asset not found")
+        if current.version != expected_version or version.version != expected_version + 1:
+            raise SessionError("file asset version changed; retry from the latest version")
+        from dataclasses import replace
+        self.asset_versions.setdefault(key, []).append(version)
+        self.assets[key] = replace(
+            current, object_key=version.object_key, filename=version.filename,
+            media_type=version.media_type, size_bytes=version.size_bytes,
+            sha256=version.sha256, status=version.status,
+            created_at=version.created_at, version=version.version,
+        )
 
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]:
         if not 1 <= limit <= 500:
