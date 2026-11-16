@@ -36,10 +36,13 @@ class GatewayToolClient:
         required = ("tenant_id", "actor_id", "actor_roles")
         if any(key not in self._identity for key in required):
             raise PermissionError("trusted tool identity is incomplete")
+        roles = self._identity["actor_roles"]
+        if isinstance(roles, str) or not isinstance(roles, Sequence):
+            raise PermissionError("trusted tool roles must be a sequence")
         return await self._gateway.call_resolved(
             tenant_id=str(self._identity["tenant_id"]),
             actor_id=str(self._identity["actor_id"]),
-            actor_roles=tuple(self._identity["actor_roles"]),
+            actor_roles=tuple(roles),
             tool_name=tool_name, arguments=arguments, run_id=self._run_id,
             agent_id=self._identity.get("agent_id"),
             approval_id=self._identity.get("approval_id"),
