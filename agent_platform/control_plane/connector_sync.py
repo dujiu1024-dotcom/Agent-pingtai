@@ -160,8 +160,12 @@ class ConnectorSyncWorker:
 
     async def _run(self) -> None:
         while not self._stop_event.is_set():
-            if await self.run_once():
-                continue
+            try:
+                if await self.run_once():
+                    continue
+            except Exception:
+                # A transient database outage must not permanently stop the worker.
+                pass
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=1.0)
             except TimeoutError:
