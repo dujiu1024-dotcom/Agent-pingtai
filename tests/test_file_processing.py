@@ -182,6 +182,36 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.status, AssetStatus.DELETED)
         self.assertNotIn(asset.asset_id, self.knowledge_repository.documents)
 
+    async def test_delete_retries_index_cleanup_after_transient_failure(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="retry-delete.txt",
+            media_type="text/plain", content=b"retry index deletion",
+        )
+        original_delete = self.knowledge_repository.delete_document
+        attempts = 0
+
+        async def flaky_delete(tenant_id, document_id):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("temporary index outage")
+            return await original_delete(tenant_id, document_id)
+
+        self.knowledge_repository.delete_document = flaky_delete
+        with self.assertRaisesRegex(Exception, "index cleanup failed"):
+            await self.service.delete_asset(
+                tenant_id="tenant-a", asset_id=asset.asset_id,
+            )
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertEqual(await self.storage.get(asset.object_key), b"retry index deletion")
+
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+        with self.assertRaises(Exception):
+            await self.storage.get(asset.object_key)
+        self.assertEqual(attempts, 2)
+
     async def test_transient_processing_failure_returns_asset_to_pending(self):
         asset = await self.service.upload_asset(
             tenant_id="tenant-a", owner_id="user-a", filename="bad.bin",
