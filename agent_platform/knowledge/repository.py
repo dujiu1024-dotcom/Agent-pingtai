@@ -100,10 +100,11 @@ class InMemoryKnowledgeRepository:
                 continue
             grants = self.document_acl.get((document.tenant_id, document.document_id), set())
             if (document.tenant_id, document.document_id) in self.document_acl_enforced and not any(
-                permission == "read" and (
+                permission in {"read", "manage"} and (
                     (kind == "user" and identifier == principal.user_id)
                     or (kind == "role" and identifier in principal.roles)
                     or (kind == "project" and identifier in principal.project_ids)
+                    or (document.scope.value == "private" and document.owner_user_id == principal.user_id)
                 )
                 for kind, identifier, permission in grants
             ):
