@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
+from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
-
 
 _SUPPORTED_MODALITIES = frozenset({"text", "image", "pdf", "audio", "video"})
 
