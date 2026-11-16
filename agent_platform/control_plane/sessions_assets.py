@@ -84,12 +84,12 @@ class FileAsset:
 class SessionRepository(Protocol):
     async def create_session(self, session: ConversationSession) -> None: ...
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None: ...
-    async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100) -> tuple[ConversationSession, ...]: ...
+    async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
     async def list_messages(self, tenant_id: str, session_id: str, limit: int = 100) -> tuple[ConversationMessage, ...]: ...
     async def create_asset(self, asset: FileAsset) -> None: ...
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None: ...
-    async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]: ...
+    async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100, project_id: str | None = None) -> tuple[FileAsset, ...]: ...
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None: ...
     async def set_asset_status_if_not_deleted(
         self, tenant_id: str, asset_id: str, status: AssetStatus
@@ -127,11 +127,12 @@ class InMemorySessionRepository:
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None:
         return self.sessions.get((tenant_id, session_id))
 
-    async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100) -> tuple[ConversationSession, ...]:
+    async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]:
         if not 1 <= limit <= 500:
             raise SessionError("limit must be between 1 and 500")
         rows = [row for (tenant, _), row in self.sessions.items()
-                if tenant == tenant_id and row.owner_id == owner_id and row.status != "deleted"]
+                if tenant == tenant_id and row.owner_id == owner_id and row.status != "deleted"
+                and (project_id is None or row.project_id == project_id)]
         return tuple(sorted(rows, key=lambda row: row.updated_at, reverse=True)[:limit])
 
     async def append_message(self, message: ConversationMessage) -> None:
@@ -154,12 +155,13 @@ class InMemorySessionRepository:
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None:
         return self.assets.get((tenant_id, asset_id))
 
-    async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]:
+    async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100, project_id: str | None = None) -> tuple[FileAsset, ...]:
         if not 1 <= limit <= 500:
             raise SessionError("limit must be between 1 and 500")
         rows = [row for (tenant, _), row in self.assets.items()
                 if tenant == tenant_id and row.owner_id == owner_id
                 and (session_id is None or row.session_id == session_id)
+                and (project_id is None or row.project_id == project_id)
                 and row.status is not AssetStatus.DELETED]
         return tuple(sorted(rows, key=lambda row: row.created_at, reverse=True)[:limit])
 
