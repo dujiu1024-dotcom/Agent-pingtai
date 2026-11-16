@@ -42,6 +42,10 @@ class OAuthRefreshTokenResolver:
         self._lock = asyncio.Lock()
         self._cached_access_tokens: dict[str, tuple[str, float]] = {}
 
+    def invalidate(self, secret_ref: str) -> None:
+        """Drop a cached bearer token after remote or local credential revocation."""
+        self._cached_access_tokens.pop(secret_ref, None)
+
     async def resolve(self, secret_ref: str) -> str:
         if not isinstance(secret_ref, str) or not secret_ref.startswith("secret://"):
             raise ValueError("OAuth credentials must use a secret:// reference")
