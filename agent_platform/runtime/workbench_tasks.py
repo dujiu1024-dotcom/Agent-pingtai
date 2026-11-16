@@ -11,7 +11,7 @@ import hashlib
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 from agent_platform.control_plane.registry import RegistryService
 from agent_platform.runtime.execution import LangGraphRunExecutor
 from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus, WorkerLeaseLost
+from agent_platform.quotas.service import BudgetExceeded
 
 
 class WorkbenchTaskError(ValueError):
@@ -592,6 +593,9 @@ class RunExecutionWorker:
         self, *, run_store: Any, executor_resolver: Callable[..., Any],
         lifecycle_resolver: Callable[[str], Any], worker_id: str,
         poll_interval: float = 1.0, batch_size: int = 10, lease_seconds: int = 60,
+        concurrency_limiter: Any | None = None,
+        worker_pool_scope_id: str | None = None,
+        queue_scope_resolver: Callable[[Mapping[str, Any]], str] | None = None,
     ) -> None:
         if not worker_id.strip() or poll_interval <= 0:
             raise ValueError("worker_id and positive poll_interval are required")
@@ -603,6 +607,11 @@ class RunExecutionWorker:
         self.worker_id = worker_id
         self.poll_interval = poll_interval
         self.batch_size = batch_size
+        if concurrency_limiter is not None and not (worker_pool_scope_id or "").strip():
+            raise ValueError("worker_pool_scope_id is required with concurrency_limiter")
+        self.concurrency_limiter = concurrency_limiter
+        self.worker_pool_scope_id = worker_pool_scope_id
+        self.queue_scope_resolver = queue_scope_resolver or (lambda _record: "default")
         self.lease_seconds = lease_seconds
         self._stop = asyncio.Event()
         self._task: asyncio.Task[Any] | None = None
@@ -665,17 +674,33 @@ class RunExecutionWorker:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
                 return "skipped"
             try:
-                resolved = await self._resolve(
-                    self.executor_resolver, record, self.worker_id,
-                )
-                if callable(getattr(resolved, "__aenter__", None)) and callable(
-                    getattr(resolved, "__aexit__", None)
-                ):
-                    async with resolved as executor:
-                        return await self._execute_claimed(snapshot, executor, record)
-                return await self._execute_claimed(snapshot, resolved, record)
+                async with AsyncExitStack() as slots:
+                    if self.concurrency_limiter is not None:
+                        queue_id = self.queue_scope_resolver(record)
+                        if not isinstance(queue_id, str) or not queue_id.strip():
+                            raise ValueError("queue scope resolver must return a non-empty string")
+                        await slots.enter_async_context(self.concurrency_limiter.slot(
+                            tenant_id=tenant_id, run_id=run_id,
+                            scope_type="queue", scope_id=queue_id,
+                        ))
+                        await slots.enter_async_context(self.concurrency_limiter.slot(
+                            tenant_id=tenant_id, run_id=run_id,
+                            scope_type="worker_pool", scope_id=self.worker_pool_scope_id,
+                        ))
+                    resolved = await self._resolve(
+                        self.executor_resolver, record, self.worker_id,
+                    )
+                    if callable(getattr(resolved, "__aenter__", None)) and callable(
+                        getattr(resolved, "__aexit__", None)
+                    ):
+                        async with resolved as executor:
+                            return await self._execute_claimed(snapshot, executor, record)
+                    return await self._execute_claimed(snapshot, resolved, record)
             except asyncio.CancelledError:
                 raise
+            except BudgetExceeded:
+                # Leave the Run queued; the next poll retries after a shared slot frees.
+                return "skipped"
             except WorkerLeaseLost:
                 current = await self.run_store.get(tenant_id, run_id)
                 return "cancelled" if current and current.status == RunStatus.CANCELLED else "skipped"
