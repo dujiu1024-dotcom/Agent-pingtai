@@ -167,9 +167,17 @@ class SupervisedToolGateway:
             or not resolved_resource.strip()
             or resource != resolved_resource
         ):
+            attempted_request = ActionRequest(
+                action=tool_name,
+                resource=str(resource)[:256],
+                parameters=arguments,
+                actor_id=actor_id,
+                approval_id=approval_id,
+            )
             await self._audit_sink.record(
                 tenant_id=tenant_id, actor_id=actor_id, action=tool_name,
-                resource=str(resource)[:256], action_digest="",
+                resource=str(resource)[:256],
+                action_digest=attempted_request.digest(),
                 outcome="denied", run_id=run_id, agent_id=agent_id,
                 detail="resource_resolution_mismatch",
             )
