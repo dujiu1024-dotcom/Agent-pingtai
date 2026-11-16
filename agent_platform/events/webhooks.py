@@ -203,27 +203,29 @@ class WebhookDispatcher:
                     },
                     timeout_seconds=self.timeout_seconds,
                 )
-                if 200 <= code < 300:
-                    await self.store.complete(attempt.tenant_id, attempt.delivery_id, response_code=code)
-                    await self.audit_sink.record(
-                        tenant_id=attempt.tenant_id,
-                        actor_id=self.SYSTEM_ACTOR_ID,
-                        action="webhook.delivery",
-                        subject_id=attempt.delivery_id,
-                        outcome="succeeded",
-                        detail={
-                            "event_id": payload.event_id,
-                            "subscription_id": subscription.subscription_id,
-                            "topic": payload.topic,
-                            "attempt": attempt.attempt,
-                            "response_code": code,
-                        },
-                    )
-                    result["delivered"] += 1
-                    continue
             except Exception as exc:
                 failure_type = type(exc).__name__
                 code = None
+            if code is not None and 200 <= code < 300:
+                # Do not reinterpret an audit persistence failure after a
+                # successful remote delivery as a transport failure/retry.
+                await self.store.complete(attempt.tenant_id, attempt.delivery_id, response_code=code)
+                await self.audit_sink.record(
+                    tenant_id=attempt.tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="webhook.delivery",
+                    subject_id=attempt.delivery_id,
+                    outcome="succeeded",
+                    detail={
+                        "event_id": payload.event_id,
+                        "subscription_id": subscription.subscription_id,
+                        "topic": payload.topic,
+                        "attempt": attempt.attempt,
+                        "response_code": code,
+                    },
+                )
+                result["delivered"] += 1
+                continue
             if attempt.attempt >= self.max_attempts:
                 await self.store.dead_letter(attempt.tenant_id, attempt.delivery_id, response_code=code)
                 result["dead_lettered"] += 1
