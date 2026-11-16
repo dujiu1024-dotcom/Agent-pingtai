@@ -33,6 +33,22 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
             [],
         )
 
+    def test_template_placeholders_are_rejected(self):
+        self.document["release_id"] = "replace-with-release-id"
+        self.document["checks"]["e2e"]["owner"] = "replace-with-owner"
+        self.document["checks"]["security"]["evidence_ref"] = (
+            "replace-with-security-regression-report"
+        )
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("release_id: must not contain a template placeholder", errors)
+        self.assertIn(
+            "checks.e2e.owner: must not contain a template placeholder", errors
+        )
+        self.assertIn(
+            "checks.security.evidence_ref: must not contain a template placeholder",
+            errors,
+        )
+
     def test_boolean_schema_version_is_rejected(self):
         self.document["schema_version"] = True
         errors = validate_evidence(self.document, now=self.now)
