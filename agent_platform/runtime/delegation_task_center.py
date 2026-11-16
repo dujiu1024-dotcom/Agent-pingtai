@@ -104,7 +104,7 @@ class TaskCenterChildRunExecutor:
             raise PermissionError("child Run tenant must match its parent")
         if request.context.metadata.get("parent_run_id") != parent_context.run_id:
             raise PermissionError("child Run must carry the authenticated parent Run identity")
-        if not idempotency_key.strip():
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip():
             raise ValueError("child Run idempotency key is required")
         await self._validate_pinned_runtime(request)
         actor_id = await self._resolve_actor(parent_context)
@@ -124,9 +124,15 @@ class TaskCenterChildRunExecutor:
         )
         if submitted.get("run_id") != request.context.run_id:
             raise RuntimeError("idempotent child submission resolved to a different Run ID")
-        if submitted.get("template_id") != request.context.model_template.template_id:
-            raise PermissionError("persisted child Run changed its pinned model template")
-        if submitted.get("template_version") != request.context.model_template.version:
+        if (
+            submitted.get("template_id") != request.context.model_template.template_id
+            or submitted.get("template_version") != request.context.model_template.version
+        ):
+            await self.task_service.cancel_task(
+                tenant_id=parent_context.tenant_id,
+                task_id=request.context.run_id,
+                actor_id=actor_id,
+            )
             raise PermissionError("persisted child Run changed its pinned model template version")
 
         try:
