@@ -30,7 +30,9 @@ ALTER TABLE platform_runs
     ADD COLUMN IF NOT EXISTS request_digest char(64),
     ADD COLUMN IF NOT EXISTS agent_version integer,
     ADD COLUMN IF NOT EXISTS session_id text,
-    ADD COLUMN IF NOT EXISTS dispatch_ready boolean NOT NULL DEFAULT false;
+    ADD COLUMN IF NOT EXISTS dispatch_ready boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS preparation_owner text,
+    ADD COLUMN IF NOT EXISTS preparation_lease_expires_at timestamptz;
 
 DO $
 BEGIN
@@ -51,6 +53,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_runs_actor_idempotency
 
 CREATE INDEX IF NOT EXISTS idx_platform_runs_actor_recent
     ON platform_runs (tenant_id, created_by, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_platform_runs_preparation_lease
+    ON platform_runs (preparation_lease_expires_at)
+    WHERE task_id IS NOT NULL AND dispatch_ready = false;
 
 CREATE INDEX IF NOT EXISTS idx_platform_runs_dispatch_ready
     ON platform_runs (status, created_at)
