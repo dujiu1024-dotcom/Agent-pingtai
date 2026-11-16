@@ -63,6 +63,8 @@ def create_platform_app(
     session_authorizer: Any | None = None,
     connector_service_resolver: Any | None = None,
     connector_authorizer: Any | None = None,
+    connector_sync_worker: Any | None = None,
+    connector_cleanup_worker: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_authorizer: Any | None = None,
     run_intervention_resolver: Any | None = None,
@@ -362,6 +364,8 @@ def create_platform_app(
         app.router.on_startup.append(outbox_relay_worker.start)
         app.router.on_shutdown.append(outbox_relay_worker.stop)
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
+    if any(worker is not None for worker in (connector_sync_worker, connector_cleanup_worker)) and not connectors_configured:
+        raise ValueError("connector workers require connector routes to be configured")
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
             raise ValueError("connector service resolver and authorizer must be configured together")
@@ -371,6 +375,17 @@ def create_platform_app(
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
         ))
+    for worker, name in (
+        (connector_sync_worker, "connector_sync_worker"),
+        (connector_cleanup_worker, "connector_cleanup_worker"),
+    ):
+        if worker is not None:
+            if not callable(getattr(worker, "start", None)) or not callable(
+                getattr(worker, "stop", None)
+            ):
+                raise ValueError(f"{name} must expose async start() and stop()")
+            app.router.on_startup.append(worker.start)
+            app.router.on_shutdown.append(worker.stop)
     runs_configured = any(value is not None for value in (
         run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
     ))

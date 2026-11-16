@@ -76,6 +76,18 @@ def create_connectors_router(
             "project_id": connection.project_id,
         }
 
+    @router.post("/{connection_id}/sync", status_code=202)
+    async def request_sync(connection_id: str, request: Request):
+        principal, service = await context(request, connection_id, "sync")
+        try:
+            await service.request_sync(
+                tenant_id=principal.tenant_id, connection_id=connection_id,
+            )
+        except ConnectorError as exc:
+            status = 503 if "queue is not configured" in str(exc) else 409
+            raise HTTPException(status, str(exc)) from exc
+        return {"connection_id": connection_id, "status": "queued"}
+
     @router.post("/{connection_id}/revoke")
     async def revoke_connection(connection_id: str, request: Request):
         principal, service = await context(request, connection_id, "revoke")
