@@ -17,7 +17,8 @@ permissions:
 
 concurrency:
   group: platform-release-gate-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Preserve main-branch validation runs; only superseded PR runs are cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   e2e-security-integration:
