@@ -25,7 +25,7 @@ class PostgresRunStateStore(RunStateStore):
   return RunSnapshot(row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),row["checkpoint_ref"],row["last_error"],row["updated_at"])
  async def create_task_run(self, *, tenant_id:str, run_id:str, actor_id:str,
   agent_id:str, template_id:str, template_version:int, input:Mapping[str,Any],
-  project_id:str|None=None, workflow_id:str|None=None,
+  project_id:str|None=None, session_id:str|None=None, workflow_id:str|None=None,
   idempotency_key:str|None=None, request_digest:str|None=None)->bool:
   if not tenant_id.strip() or not actor_id.strip() or not agent_id.strip() or not template_id.strip():
    raise ValueError("tenant, actor, Agent and model template are required")
@@ -40,13 +40,13 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    async with c.transaction():
     cur=await c.execute("""INSERT INTO platform_runs
-     (tenant_id,run_id,project_id,task_id,agent_id,template_id,template_version,
+     (tenant_id,run_id,project_id,session_id,task_id,agent_id,template_id,template_version,
       workflow_id,status,input,created_by,idempotency_key,request_digest)
-     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s)
+     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s)
      ON CONFLICT (tenant_id,created_by,idempotency_key)
        WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING run_id""",
-     (tenant_id,run_uuid,project_id,str(run_uuid),agent_id,template_id,
+     (tenant_id,run_uuid,project_id,session_id,str(run_uuid),agent_id,template_id,
       template_version,workflow_id,Jsonb(dict(input)),actor_id,idempotency_key,request_digest))
     inserted=await cur.fetchone()
     if inserted is not None:
@@ -66,7 +66,7 @@ class PostgresRunStateStore(RunStateStore):
  async def get_task_record(self, tenant_id:str, task_id:str, *, actor_id:str|None=None)->dict[str,Any]|None:
   c=await self._connect()
   async with c:
-   query="""SELECT tenant_id,run_id,task_id,project_id,agent_id,template_id,
+   query="""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,template_id,
     template_version,workflow_id,status,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest
