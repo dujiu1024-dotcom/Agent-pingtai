@@ -14,6 +14,7 @@ from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
@@ -75,6 +76,8 @@ def create_platform_app(
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
+    prompt_registry: Any | None = None,
+    prompt_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
     alert_evaluation_worker: Any | None = None,
     audit_reader: Any | None = None,
@@ -172,6 +175,17 @@ def create_platform_app(
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
             authorize_eval_manage=evaluation_manage_authorizer,
+        ))
+    prompt_registry_configured = any(value is not None for value in (
+        prompt_registry, prompt_manage_authorizer,
+    ))
+    if prompt_registry_configured:
+        if prompt_registry is None or prompt_manage_authorizer is None:
+            raise ValueError(
+                "prompt registry and prompt manager authorizer must be configured together"
+            )
+        app.include_router(create_prompt_registry_router(
+            registry=prompt_registry, authorize=prompt_manage_authorizer,
         ))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
