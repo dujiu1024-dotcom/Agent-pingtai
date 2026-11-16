@@ -156,7 +156,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_repeated_turn_extraction_reuses_same_candidate_ids(self):
-        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
         class Extractor:
             async def extract(self, *, turn):
                 return [MemoryDraft(scope=MemoryScope.USER, scope_id=turn.user_id, content='keep concise', confidence=0.9)]
