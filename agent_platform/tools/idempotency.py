@@ -247,3 +247,52 @@ class PostgresToolEffectStore:
             resolution=row.get("resolution"), reconciled_by=row.get("reconciled_by"),
             reconciliation_note=row.get("reconciliation_note"), reconciled_at=row.get("reconciled_at"),
         )
+
+
+class ToolEffectReconciliationService:
+    """Operator-gated workflow for resolving ambiguous external side effects."""
+
+    def __init__(
+        self, *, store: ToolEffectStore,
+        authorize_operator: Callable[[str, str, str, str], Any],
+        audit_sink: Any,
+    ) -> None:
+        self.store = store
+        self.authorize_operator = authorize_operator
+        self.audit_sink = audit_sink
+
+    async def reconcile(
+        self, *, tenant_id: str, run_id: str, call_id: str,
+        operator_id: str, resolution: str, note: str, result: Any = None,
+    ) -> ToolEffect:
+        if not all(value.strip() for value in (tenant_id, run_id, call_id, operator_id)):
+            raise ValueError("tenant, Run, call and operator identifiers are required")
+        if not isinstance(note, str) or not note.strip() or len(note) > 1000:
+            raise ValueError("a 1-1000 character reconciliation note is required")
+        allowed = self.authorize_operator(operator_id, tenant_id, run_id, call_id)
+        if hasattr(allowed, "__await__"):
+            allowed = await allowed
+        if not allowed:
+            raise PermissionError("operator is not authorized to reconcile this tool effect")
+        current = await self.store.get(
+            tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+        )
+        if current is None:
+            raise KeyError("tool effect not found")
+        await self.audit_sink.record(
+            tenant_id=tenant_id, actor_id=operator_id,
+            action="tool_effect.reconcile", resource=f"{run_id}/{call_id}",
+            action_digest=current.action_digest, outcome="reconciliation_started",
+            run_id=run_id, detail=resolution,
+        )
+        effect = await self.store.reconcile(
+            tenant_id=tenant_id, run_id=run_id, call_id=call_id,
+            operator_id=operator_id, resolution=resolution, note=note, result=result,
+        )
+        await self.audit_sink.record(
+            tenant_id=tenant_id, actor_id=operator_id,
+            action="tool_effect.reconcile", resource=f"{run_id}/{call_id}",
+            action_digest=effect.action_digest, outcome="reconciliation_completed",
+            run_id=run_id, detail=f"{resolution}: {note}",
+        )
+        return effect
