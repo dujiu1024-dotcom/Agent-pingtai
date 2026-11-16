@@ -103,13 +103,13 @@ class PostgresRunStateStore(RunStateStore):
    rows=await cur.fetchall()
   return [dict(row) for row in rows]
 
- async def mark_task_ready(self,tenant_id:str,run_id:str)->bool:
+ async def mark_task_ready(self,tenant_id:str,run_id:str,digest:str)->bool:
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_runs SET dispatch_ready=true,updated_at=now()
     WHERE tenant_id=%s AND run_id=%s AND status='queued'
-      AND registry_snapshot IS NOT NULL AND registry_snapshot_digest IS NOT NULL
-    RETURNING run_id""",(tenant_id,UUID(run_id)))
+      AND registry_snapshot IS NOT NULL AND registry_snapshot_digest=%s
+    RETURNING run_id""",(tenant_id,UUID(run_id),digest))
    return await cur.fetchone() is not None
 
  async def save_output(self, tenant_id:str, run_id:str, output:Any, *,
