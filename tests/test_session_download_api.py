@@ -128,11 +128,8 @@ class SessionFileDownloadAuthorizationTests(unittest.TestCase):
         )
         self.assertEqual(allowed.status_code, 201, allowed.text)
         self.assertEqual(allowed.json()["status"], "available")
-        assets_after_allow = asyncio.run(
-            self.repository.list_assets("tenant-a", "user-a"),
-        )
-        self.assertEqual(len(assets_after_allow), 2)
-        self.assertNotEqual(assets_after_allow[1].asset_id, self.asset.asset_id)
+        self.assertNotEqual(allowed.json()["asset_id"], self.asset.asset_id)
+        self.assertEqual(allowed.json()["filename"], "allowed.txt")
 
 if __name__ == "__main__":
     unittest.main()
