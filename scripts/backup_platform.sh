@@ -15,6 +15,10 @@ mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 export BACKUP_DIR AGE_RECIPIENT
 
+TEMP_FILES=()
+cleanup_temp_files() { ((${#TEMP_FILES[@]} == 0)) || rm -f -- "${TEMP_FILES[@]}"; }
+trap cleanup_temp_files EXIT
+
 backup_config() {
   [[ -f "$BACKUP_ENV_FILE" && ! -L "$BACKUP_ENV_FILE" ]] || {
     echo "BACKUP_ENV_FILE must point to an existing non-symlink deployment env file" >&2
@@ -29,7 +33,7 @@ backup_config() {
   archive_tmp="$(mktemp "$BACKUP_DIR/.config-archive.XXXXXX")"
   manifest_tmp="$(mktemp "$BACKUP_DIR/.config-manifest.XXXXXX")"
   encrypted_tmp="$(mktemp "$BACKUP_DIR/.config-encrypted.XXXXXX")"
-  trap 'rm -f "$archive_tmp" "$manifest_tmp" "$encrypted_tmp"' EXIT
+  TEMP_FILES+=("$archive_tmp" "$manifest_tmp" "$encrypted_tmp")
   tar -C "$ROOT" -czf "$archive_tmp" deploy/compose.yaml "$env_relative" deploy/backup-policy.json scripts/migrate_postgres.sh agent_platform/storage/postgres
   age --encrypt --recipient "$AGE_RECIPIENT" --output "$encrypted_tmp" "$archive_tmp"
   mv "$encrypted_tmp" "$base.tar.gz.age"
