@@ -141,6 +141,7 @@ class LangGraphRunExecutor:
     if current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
+    # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
     ref=await self._checkpoint_ref(tenant_id,run_id)
@@ -156,6 +157,13 @@ class LangGraphRunExecutor:
    finally:
     if acquired and release is not None:
      await release(tenant_id,run_id,self.worker_id)
+ async def pause(self, *, tenant_id: str, run_id: str, reason: str = "human intervention requested") -> RunSnapshot:
+  checkpoint_ref=await self._checkpoint_ref(tenant_id,run_id)
+  if not checkpoint_ref:
+   raise ValueError("Run has no durable checkpoint; pause refused")
+  return await self.lifecycle.pause(
+   tenant_id,run_id,checkpoint_ref=checkpoint_ref,reason=reason,
+  )
  async def recover(self,*,load_initial_input:Callable[[RunSnapshot],Any],limit:int=100,tenant_id:str|None=None)->list[str]:
   async def verify_checkpoint(row:RunSnapshot)->None:
    actual=await self._checkpoint_ref(row.tenant_id,row.run_id)
