@@ -381,6 +381,83 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+
+    async def test_worker_enforces_shared_queue_and_worker_pool_slots(self):
+        from contextlib import asynccontextmanager
+
+        task = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "limited"},
+        )
+        events = []
+
+        class Limiter:
+            @asynccontextmanager
+            async def slot(self, *, tenant_id, run_id, scope_type, scope_id):
+                events.append(("acquire", scope_type, scope_id))
+                try:
+                    yield object()
+                finally:
+                    events.append(("release", scope_type, scope_id))
+
+        graph = FakeGraph()
+        async def executor_resolver(_record, worker_id):
+            return LangGraphRunExecutor(
+                graph=graph, lifecycle=self.lifecycle, worker_id=worker_id,
+                timeout_seconds=2,
+            )
+        async def lifecycle_resolver(_tenant_id):
+            return self.lifecycle
+
+        worker = RunExecutionWorker(
+            run_store=self.run_store, executor_resolver=executor_resolver,
+            lifecycle_resolver=lifecycle_resolver, worker_id="worker-limited",
+            concurrency_limiter=Limiter(), worker_pool_scope_id="gpu",
+            queue_scope_resolver=lambda record: "interactive",
+        )
+        result = await worker.run_once()
+        self.assertEqual(result["succeeded"], 1)
+        self.assertEqual(events, [
+            ("acquire", "queue", "interactive"),
+            ("acquire", "worker_pool", "gpu"),
+            ("release", "worker_pool", "gpu"),
+            ("release", "queue", "interactive"),
+        ])
+        updated = await self.service.get_task(
+            tenant_id="tenant-a", task_id=task["task_id"], actor_id="user-a",
+        )
+        self.assertEqual(updated["status"], "succeeded")
+
+    async def test_worker_keeps_task_queued_when_shared_concurrency_is_exhausted(self):
+        from agent_platform.quotas.service import BudgetExceeded
+
+        task = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "wait"},
+        )
+        class FullLimiter:
+            @asynccontextmanager
+            async def slot(self, **_kwargs):
+                raise BudgetExceeded("queue full")
+                yield
+        graph = FakeGraph()
+        async def executor_resolver(_record, worker_id):
+            return LangGraphRunExecutor(
+                graph=graph, lifecycle=self.lifecycle, worker_id=worker_id,
+                timeout_seconds=2,
+            )
+        async def lifecycle_resolver(_tenant_id):
+            return self.lifecycle
+        worker = RunExecutionWorker(
+            run_store=self.run_store, executor_resolver=executor_resolver,
+            lifecycle_resolver=lifecycle_resolver, worker_id="worker-full",
+            concurrency_limiter=FullLimiter(), worker_pool_scope_id="gpu",
+        )
+        result = await worker.run_once()
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(graph.calls, [])
+        self.assertEqual((await self.run_store.get("tenant-a", task["run_id"])).status, RunStatus.QUEUED)
+
     async def test_registry_executor_resolver_preserves_graph_context(self):
         task = await self.service.submit_task(
             tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
