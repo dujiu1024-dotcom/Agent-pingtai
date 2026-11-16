@@ -54,7 +54,13 @@ def document_factory(tenant_id, metadata, media_type):
         owner_user_id="mapped-platform-owner",
         document_id=f"gdrive:{metadata['id']}",
         media_type=media_type,
-        metadata={"source": "google-drive", "source_modified_time": metadata.get("modifiedTime")},
+        metadata={
+            "source": "google-drive",
+            "source_modified_time": metadata.get("modifiedTime"),
+            # The host document factory replaces this empty default with mapped
+            # platform ACL entries when external sharing can be represented.
+            "_knowledge_acl": [],
+        },
     )
 
 
