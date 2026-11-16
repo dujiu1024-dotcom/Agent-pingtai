@@ -665,6 +665,49 @@ class RunExecutionWorker:
             return "failed"
         return "skipped"
 
+    async def _heartbeat_until_done(self, tenant_id: str, run_id: str) -> None:
+        heartbeat = getattr(self.run_store, "heartbeat", None)
+        if not callable(heartbeat):
+            raise RuntimeError("RunStateStore must implement worker lease heartbeat")
+        interval = max(1.0, self.lease_seconds / 3)
+        while True:
+            await asyncio.sleep(interval)
+            owned = await heartbeat(
+                tenant_id, run_id, self.worker_id,
+                lease_seconds=self.lease_seconds,
+            )
+            if not owned:
+                raise WorkerLeaseLost(
+                    f"worker lease lost while executing Run {run_id}"
+                )
+
+    async def _execute_with_heartbeat(
+        self, snapshot: Any, executor: Any, record: Mapping[str, Any],
+    ) -> str:
+        execution = asyncio.create_task(
+            self._execute_claimed(snapshot, executor, record)
+        )
+        heartbeat = asyncio.create_task(
+            self._heartbeat_until_done(snapshot.tenant_id, snapshot.run_id)
+        )
+        try:
+            done, _pending = await asyncio.wait(
+                {execution, heartbeat},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if heartbeat in done:
+                error = heartbeat.exception()
+                if error is not None:
+                    execution.cancel()
+                    await asyncio.gather(execution, return_exceptions=True)
+                    raise error
+            return await execution
+        finally:
+            for task in (heartbeat, execution):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(heartbeat, execution, return_exceptions=True)
+
     async def run_once(self) -> dict[str, int]:
         claimed = await self.run_store.claim_workbench_tasks(
             self.worker_id, limit=self.batch_size,
@@ -698,8 +741,8 @@ class RunExecutionWorker:
                         getattr(resolved, "__aexit__", None)
                     ):
                         async with resolved as executor:
-                            return await self._execute_claimed(snapshot, executor, record)
-                    return await self._execute_claimed(snapshot, resolved, record)
+                            return await self._execute_with_heartbeat(snapshot, executor, record)
+                    return await self._execute_with_heartbeat(snapshot, resolved, record)
             except asyncio.CancelledError:
                 raise
             except BudgetExceeded:
@@ -716,10 +759,19 @@ class RunExecutionWorker:
                 elif current and current.status not in {
                     RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.TIMED_OUT,
                 }:
-                    await lifecycle.finish(
-                        tenant_id, run_id, RunStatus.FAILED,
-                        error=f"workbench worker failed: {str(exc)[:400]}",
+                    record_failure = getattr(
+                        self.run_store, "record_workbench_failure", None,
                     )
+                    if callable(record_failure):
+                        await record_failure(
+                            tenant_id, run_id, self.worker_id,
+                            error=f"workbench worker failed: {str(exc)[:400]}",
+                        )
+                    else:
+                        await lifecycle.finish(
+                            tenant_id, run_id, RunStatus.FAILED,
+                            error=f"workbench worker failed: {str(exc)[:400]}",
+                        )
                 return "failed"
             finally:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
