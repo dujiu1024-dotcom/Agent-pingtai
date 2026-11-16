@@ -132,7 +132,7 @@ task_worker = RunExecutionWorker(
 - 创建前检查子 Agent 的活动模型模板 ID/版本与父 Run 固定模板一致，并确保委派工具是 Agent 已发布工具白名单的子集。
 - 通过共享 `RunExecutionWorker` 的 `run_once()` 驱动持久化队列，等待子 Run 成功/失败/取消终态；输出、Usage 和 Trace ID 由现有 Worker 写回 PostgreSQL。
 - 父 Run 超时或取消会取消等待协程，并向子 Run 提交持久化取消请求；Worker 确认执行停止后才进入 cancelled。
-- 生产装配必须注入同一 PostgreSQL `RunStateStore` 的 Task Center 与 Worker，并提供从父 Run 可信元数据解析 actor 的 `actor_resolver`。不要从用户输入接受 actor ID。
+- 生产装配必须注入同一 PostgreSQL `RunStateStore` 的 Task Center 与 Worker，并提供从父 Run 可信元数据解析 actor 的 `actor_resolver`。不要从用户输入接受 actor ID。为解决 Graph Factory → Delegation Executor → Worker 的组合循环，可先创建不绑定 Worker 的 executor，创建 Worker 后调用 `bind_worker(worker)`。
 - 宿主 Agent Graph Factory 必须将委派输入中的 `allowed_tools` 继续约束到 Gateway 调用；平台在提交前校验它是已发布 Agent 工具集合的子集，但不会替宿主动态生成任意工具执行代码。
 
 该适配器提供可复用的持久化接线，不替代真实 PostgreSQL Checkpointer、Worker 多实例、模型代理和 Gateway 安全边界的部署演练。
