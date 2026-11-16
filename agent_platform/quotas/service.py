@@ -30,6 +30,8 @@ class Budget:
     hard_concurrency: int | None = None
     soft_tokens: int | None = None
     soft_cost_usd: Decimal | None = None
+    hard_input_tokens: int | None = None
+    hard_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model"}:
@@ -40,7 +42,7 @@ class Budget:
             raise ValueError("budget period must be timezone-aware")
         if self.period_end <= self.period_start:
             raise ValueError("budget period end must follow start")
-        for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens):
+        for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens, self.hard_input_tokens, self.hard_output_tokens):
             if value is not None and value < 0:
                 raise ValueError("token and concurrency limits must be non-negative")
         for cost in (self.hard_cost_usd, self.soft_cost_usd):
@@ -60,10 +62,9 @@ class QuotaReservation:
     created_at: datetime
     period_start: datetime
     period_end: datetime
+    reserved_input_tokens: int = 0
+    reserved_output_tokens: int = 0
 
-
-@dataclass(frozen=True)
-class UsageEvent:
     event_id: str
     tenant_id: str
     run_id: str
@@ -144,6 +145,29 @@ class InMemoryQuotaStore:
             if budget is None:
                 raise BudgetExceeded("quota budget not configured")
             tokens, cost, concurrency = self._totals(budget.tenant_id, budget.scope_type, budget.scope_id, budget.period_start, budget.period_end)
+            events = [
+                event for event in self._events.values()
+                if event.tenant_id == budget.tenant_id
+                and budget.period_start <= event.occurred_at < budget.period_end
+                and self._matches(event, budget.scope_type, budget.scope_id)
+            ]
+            reservations = [
+                item for item in self._reservations.values()
+                if item.tenant_id == budget.tenant_id
+                and item.scope_type == budget.scope_type
+                and item.scope_id == budget.scope_id
+                and item.period_start == budget.period_start
+            ]
+            input_used = sum(event.input_tokens for event in events) + sum(
+                item.reserved_input_tokens for item in reservations
+            )
+            output_used = sum(event.output_tokens for event in events) + sum(
+                item.reserved_output_tokens for item in reservations
+            )
+            if budget.hard_input_tokens is not None and input_used + reservation.reserved_input_tokens > budget.hard_input_tokens:
+                raise BudgetExceeded("hard input token budget exceeded")
+            if budget.hard_output_tokens is not None and output_used + reservation.reserved_output_tokens > budget.hard_output_tokens:
+                raise BudgetExceeded("hard output token budget exceeded")
             if budget.hard_tokens is not None and tokens + reservation.reserved_tokens > budget.hard_tokens:
                 raise BudgetExceeded("hard token budget exceeded")
             if budget.hard_cost_usd is not None and cost + reservation.reserved_cost_usd > budget.hard_cost_usd:
@@ -211,6 +235,8 @@ class QuotaService:
     async def reserve_run(
         self, *, tenant_id: str, run_id: str, scope_type: str, scope_id: str,
         estimated_tokens: int, estimated_cost_usd: Decimal,
+        estimated_input_tokens: int | None = None,
+        estimated_output_tokens: int | None = None,
     ) -> tuple[QuotaReservation, tuple[str, ...]]:
         if not tenant_id or not run_id:
             raise ValueError("tenant_id and run_id are required")
@@ -219,12 +245,28 @@ class QuotaService:
             raise BudgetExceeded("quota budget not configured")
         if estimated_tokens < 0 or estimated_cost_usd < 0:
             raise ValueError("reservation estimates must be non-negative")
+        if budget.hard_input_tokens is not None or budget.hard_output_tokens is not None:
+            if estimated_input_tokens is None or estimated_output_tokens is None:
+                raise BudgetExceeded("separate input and output estimates are required by this budget")
+        if estimated_input_tokens is None:
+            estimated_input_tokens = estimated_tokens
+        if estimated_output_tokens is None:
+            estimated_output_tokens = 0
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in (estimated_input_tokens, estimated_output_tokens)
+        ):
+            raise ValueError("input/output estimates must be non-negative integers")
+        if estimated_input_tokens + estimated_output_tokens != estimated_tokens:
+            raise ValueError("total estimate must equal input plus output estimates")
         reservation = QuotaReservation(
             reservation_id=str(uuid4()), tenant_id=tenant_id, run_id=run_id,
             scope_type=budget.scope_type, scope_id=budget.scope_id,
             reserved_tokens=estimated_tokens, reserved_cost_usd=estimated_cost_usd,
             created_at=datetime.now(timezone.utc),
             period_start=budget.period_start, period_end=budget.period_end,
+            reserved_input_tokens=estimated_input_tokens,
+            reserved_output_tokens=estimated_output_tokens,
         )
         return await self.store.reserve(reservation)
 
