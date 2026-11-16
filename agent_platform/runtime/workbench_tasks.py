@@ -302,6 +302,84 @@ def create_registry_backed_task_service_resolver(
     return resolve
 
 
+class RegistryLangGraphExecutorResolver:
+    """Resolve a Run-pinned Agent definition into the platform LangGraph executor.
+
+    Only the trusted graph factory is host supplied. Registry resolution,
+    snapshot validation, lifecycle binding and worker lease identity are enforced
+    here rather than repeated in every deployment composition.
+    """
+
+    def __init__(
+        self, *, snapshots: Any,
+        lifecycle_resolver: Callable[[str], Any],
+        runtime_provider_resolver: Callable[[str], Any],
+        graph_factory: Callable[..., Any],
+    ) -> None:
+        self.snapshots = snapshots
+        self.lifecycle_resolver = lifecycle_resolver
+        self.runtime_provider_resolver = runtime_provider_resolver
+        self.graph_factory = graph_factory
+
+    async def _resolve(self, callback: Callable[..., Any], *args: Any) -> Any:
+        value = callback(*args)
+        return await value if inspect.isawaitable(value) else value
+
+    async def __call__(
+        self, record: Mapping[str, Any], worker_id: str,
+    ) -> LangGraphRunExecutor:
+        tenant_id = str(record.get("tenant_id") or "")
+        run_id = str(record.get("run_id") or "")
+        agent_id = str(record.get("agent_id") or "")
+        template_id = str(record.get("template_id") or "")
+        if not all((tenant_id, run_id, agent_id, template_id, worker_id)):
+            raise ValueError("task record is missing tenant, Run, Agent, template or worker identity")
+        snapshot = await self.snapshots.get(
+            tenant_id=tenant_id, run_id=run_id,
+        )
+        if snapshot.tenant_id != tenant_id or snapshot.run_id != run_id:
+            raise PermissionError("Run registry snapshot scope mismatch")
+        matches = [
+            item for item in snapshot.entries
+            if item.get("kind") == "agent" and item.get("item_id") == agent_id
+        ]
+        if len(matches) != 1 or not isinstance(matches[0].get("definition"), Mapping):
+            raise ValueError("Run snapshot must contain exactly one immutable Agent definition")
+        template_matches = [
+            item for item in snapshot.entries
+            if item.get("kind") == "model_template"
+            and item.get("item_id") == template_id
+        ]
+        if len(template_matches) != 1:
+            raise ValueError("Run snapshot does not contain the selected model template")
+        agent_definition = dict(matches[0]["definition"])
+        tool_ids = agent_definition.get("tool_ids", [])
+        if not isinstance(tool_ids, list) or any(
+            not isinstance(item, str) or not item for item in tool_ids
+        ):
+            raise ValueError("Run-pinned Agent tool_ids must be a string array")
+        lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
+        runtime_provider = await self._resolve(
+            self.runtime_provider_resolver, tenant_id,
+        )
+        if lifecycle.store is None or runtime_provider is None:
+            raise RuntimeError("durable Run lifecycle and registry runtime provider are required")
+        graph = await self._resolve(
+            self.graph_factory,
+            agent_definition=agent_definition,
+            snapshot=snapshot,
+            task_record=record,
+            runtime_provider=runtime_provider,
+        )
+        return LangGraphRunExecutor(
+            graph=graph, lifecycle=lifecycle, worker_id=worker_id,
+            registry_snapshot_service=self.snapshots,
+            registry_runtime_provider=runtime_provider,
+            model_template_id=template_id,
+            required_tools=tuple(tool_ids),
+        )
+
+
 class RunExecutionWorker:
     """Lease-claiming worker for queued, interrupted and remotely cancelled Runs."""
 
