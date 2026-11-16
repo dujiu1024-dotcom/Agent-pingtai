@@ -678,7 +678,8 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 messages=({"role": "user", "content": "oversized"},),
                 request_id="request-human", request_parameters={"max_tokens": 10},
                 protected_context={
-                    "goal": "goal", "constraints": [], "decisions": [], "evidence": [],
+                    "goal": "goal", "constraints": ["read only"],
+                    "decisions": ["no automatic approval"], "evidence": ["source ticket"],
                 },
             )
         self.assertEqual(transport.calls, [])
