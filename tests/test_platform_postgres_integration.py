@@ -21,12 +21,19 @@ if DSN:
         EntryStatus,
         Scope,
     )
+    from agent_platform.control_plane.asset_processing import (
+        AssetProcessingWorker, PostgresAssetContentSink, PostgresAssetProcessingQueue,
+        TextAssetParser,
+    )
+    from agent_platform.control_plane.connector_workers import PostgresConnectorSyncQueue
     from agent_platform.control_plane.data_connectors import DataConnection
     from agent_platform.control_plane.postgres import (
         PostgresRegistryRepository,
         PostgresSessionRepository,
     )
-    from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
+    from agent_platform.control_plane.postgres_connectors import (
+        PostgresConnectorRepository, PostgresConnectorSink,
+    )
     from agent_platform.control_plane.registry import RegistryService
     from agent_platform.control_plane.sessions_assets import (
         InMemoryObjectStorage,
@@ -1336,6 +1343,82 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(saved_asset.sha256, asset.sha256)
         self.assertEqual(saved_content, b"durable metadata test")
+
+
+    async def test_postgres_asset_processing_and_connector_worker_adapters(self):
+        class CleanScanner:
+            async def scan(self, filename, media_type, content):
+                return True
+
+        session_repo = PostgresSessionRepository(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        storage = InMemoryObjectStorage()
+        asset_queue = PostgresAssetProcessingQueue(self.connect)
+        session_service = SessionAssetService(
+            session_repo, storage, processing_queue=asset_queue,
+        )
+        asset = await session_service.upload_asset(
+            tenant_id=self.tenant_id, owner_id="worker-user",
+            filename="worker.txt", media_type="text/plain",
+            content=b"postgres worker content",
+        )
+        self.assertEqual(asset.status.value, "pending")
+        worker = AssetProcessingWorker(
+            queue=asset_queue, repository=session_repo, storage=storage,
+            scanner=CleanScanner(), parser=TextAssetParser(),
+            content_sink=PostgresAssetContentSink(self.connect),
+            worker_id="postgres-asset-worker",
+        )
+        self.assertTrue(await worker.process_once())
+        saved = await session_repo.get_asset(self.tenant_id, asset.asset_id)
+        self.assertEqual(saved.status.value, "available")
+        async with await self.connect() as conn:
+            cursor = await conn.execute(
+                """SELECT extracted_text FROM platform_file_asset_contents
+                   WHERE tenant_id=%s AND asset_id=%s""",
+                (self.tenant_id, asset.asset_id),
+            )
+            parsed = await cursor.fetchone()
+        self.assertEqual(parsed["extracted_text"], "postgres worker content")
+
+        connector_repo = PostgresConnectorRepository(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        connection_id = f"worker-source-{uuid4().hex}"
+        await connector_repo.create(DataConnection(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            provider="test-drive", secret_ref="secret://integration/worker-source",
+            scopes=("files.read",),
+        ), created_by="integration")
+        connector_queue = PostgresConnectorSyncQueue(self.connect)
+        await connector_queue.enqueue(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            job_type="sync",
+        )
+        claimed = await connector_queue.claim_next(worker_id="postgres-connector-worker")
+        self.assertEqual(claimed.connection_id, connection_id)
+        await connector_queue.complete(claimed, worker_id="postgres-connector-worker")
+
+        connector_sink = PostgresConnectorSink(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        await connector_sink.upsert_page(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            items=({"id": "doc-1", "text": "connector content"},),
+        )
+        await connector_sink.revoke_connection(
+            tenant_id=self.tenant_id, connection_id=connection_id,
+            disposition="delete",
+        )
+        async with await self.connect() as conn:
+            cursor = await conn.execute(
+                """SELECT count(*) AS count FROM platform_connector_documents
+                   WHERE tenant_id=%s AND connection_id=%s""",
+                (self.tenant_id, connection_id),
+            )
+            self.assertEqual((await cursor.fetchone())["count"], 0)
+
 
 
 if __name__ == "__main__":
