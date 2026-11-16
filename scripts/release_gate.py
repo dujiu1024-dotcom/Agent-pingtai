@@ -24,6 +24,19 @@ REQUIRED_CHECKS = (
     "production_smoke",
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+PLACEHOLDER_RE = re.compile(
+    r"(?:^|[\\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\\s/_-])",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    return (normalized.startswith("<") and normalized.endswith(">")) or bool(
+        PLACEHOLDER_RE.search(normalized)
+    )
 
 
 def _parse_utc(value: Any, field: str, errors: list[str]) -> datetime | None:
@@ -74,6 +87,8 @@ def validate_evidence(
     for field in ("release_id", "environment"):
         if not isinstance(document.get(field), str) or not document[field].strip():
             errors.append(f"{field}: required non-empty string")
+    if _is_placeholder(document.get("release_id")):
+        errors.append("release_id: must not contain a template placeholder")
     if document.get("environment") != "production":
         errors.append("environment: must equal production")
     commit_sha = document.get("commit_sha")
@@ -104,8 +119,11 @@ def validate_evidence(
         if result.get("status") != "passed":
             errors.append(f"checks.{name}.status: must be passed")
         for field in ("owner", "evidence_ref"):
-            if not isinstance(result.get(field), str) or not result[field].strip():
+            value = result.get(field)
+            if not isinstance(value, str) or not value.strip():
                 errors.append(f"checks.{name}.{field}: required non-empty string")
+            elif _is_placeholder(value):
+                errors.append(f"checks.{name}.{field}: must not contain a template placeholder")
         verified = _parse_utc(
             result.get("verified_at_utc"),
             f"checks.{name}.verified_at_utc",
