@@ -7,13 +7,6 @@ from typing import Any, Callable, Protocol
 from uuid import UUID
 
 
-def _jsonb(value: Any) -> Any:
-    try:
-        from psycopg.types.json import Jsonb
-    except ImportError as exc:
-        raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
-    return Jsonb(value)
-
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus,
     ObjectStorage,
@@ -22,6 +15,13 @@ from agent_platform.control_plane.sessions_assets import (
 from agent_platform.knowledge.contracts import Document, KnowledgeScope
 from agent_platform.knowledge.service import KnowledgeService
 
+
+def _jsonb(value: Any) -> Any:
+    try:
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+    return Jsonb(value)
 
 @dataclass(frozen=True)
 class FileProcessingJob:
@@ -37,7 +37,10 @@ class FileProcessingQueue(Protocol):
     async def enqueue(self, *, tenant_id: str, asset_id: str) -> None: ...
     async def claim(self, *, worker_id: str, lease_seconds: int = 120) -> FileProcessingJob | None: ...
     async def complete(self, job: FileProcessingJob) -> None: ...
-    async def fail(self, job: FileProcessingJob, *, error_code: str) -> bool: ...
+    async def fail(
+        self, job: FileProcessingJob, *, error_code: str,
+        error_message: str | None = None,
+    ) -> bool: ...
 
 
 class FileProcessingScanner(Protocol):
