@@ -8,6 +8,29 @@ from agent_platform.knowledge.service import KnowledgeService
 
 
 class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retrieval_precision_counts_unique_documents_not_duplicate_chunks(self):
+        from types import SimpleNamespace
+        from agent_platform.knowledge.evaluation import RAGEvalCase, evaluate_retrieval
+
+        class FixtureService:
+            async def retrieve(self, *, principal, query, limit):
+                return [
+                    SimpleNamespace(document_id="doc-a", source_uri="source:a", document_version=1, chunk_id="a1"),
+                    SimpleNamespace(document_id="doc-a", source_uri="source:a", document_version=1, chunk_id="a2"),
+                    SimpleNamespace(document_id="doc-b", source_uri="source:b", document_version=1, chunk_id="b1"),
+                ][:limit]
+
+        principal = KnowledgePrincipal(tenant_id="tenant", user_id="user")
+        results = await evaluate_retrieval(
+            FixtureService(),
+            [RAGEvalCase("duplicate-chunks", "query", frozenset({"doc-a"}), principal)],
+            k=3,
+        )
+        self.assertEqual(results[0].retrieved_document_ids, ("doc-a", "doc-b"))
+        self.assertEqual(results[0].precision_at_k, 0.5)
+        self.assertEqual(results[0].recall_at_k, 1.0)
+
+
     async def test_ingest_and_acl_filter_before_return(self):
         service=KnowledgeService(InMemoryKnowledgeRepository())
         public=Document(tenant_id="t1",title="public",source_uri="s3://public",content_hash="pending")
