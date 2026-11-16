@@ -46,6 +46,19 @@ class PostgresRunStateStore(RunStateStore):
      snapshot.status.value,snapshot.status.value,snapshot.tenant_id,snapshot.run_id,expected_version))
    row=await cur.fetchone()
    if row is None:raise RuntimeError("Run state version conflict or Run not found")
+   try:
+    from psycopg.types.json import Jsonb
+   except ImportError as exc:
+    raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+   await c.execute(
+    """INSERT INTO platform_run_events
+       (tenant_id,run_id,event_type,payload)
+       VALUES (%s,%s,'run.status_changed',%s)""",
+    (snapshot.tenant_id,snapshot.run_id,Jsonb({
+     "from_status":old_status.value,"to_status":snapshot.status.value,
+     "version":int(row["version"]),
+    })),
+   )
    return self._snapshot(row)
  async def claim_recoverable(self,worker_id:str,*,tenant_id:str|None=None,limit:int=100,lease_seconds:int=60)->list[RunSnapshot]:
   if not worker_id.strip() or limit<1 or lease_seconds<5:raise ValueError("invalid worker lease parameters")
