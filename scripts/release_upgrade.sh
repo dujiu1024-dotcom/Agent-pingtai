@@ -68,7 +68,8 @@ version_le "$RELEASE_COMPATIBILITY_MIN" "$CURRENT_RELEASE_VERSION" && version_le
   echo "running release $CURRENT_RELEASE_VERSION is outside target compatibility window [$RELEASE_COMPATIBILITY_MIN, $RELEASE_COMPATIBILITY_MAX]" >&2; exit 3;
 }
 load_services
-if [[ -n "${PG_DSN:-}" ]]; then "$ROOT/scripts/check_migrations.sh"; elif [[ -n "${MIGRATION_DIR:-}" ]]; then echo "PG_DSN is required when MIGRATION_DIR is configured" >&2; exit 2; fi
+: "${PG_DSN:?PG_DSN is required for migration preflight}"
+"$ROOT/scripts/check_migrations.sh"
 if [[ "$MODE" == "--check" ]]; then echo "Release preflight passed for $CURRENT_RELEASE_VERSION -> $RELEASE_VERSION; no services changed."; exit 0; fi
 : "${PRE_UPGRADE_BACKUP_COMMAND:?PRE_UPGRADE_BACKUP_COMMAND is required before applying an upgrade}"
 bash -euo pipefail -c "$PRE_UPGRADE_BACKUP_COMMAND"
