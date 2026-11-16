@@ -36,8 +36,29 @@ for file in "${files[@]}"; do
   # Existing migrations carry their own outer BEGIN/COMMIT. Strip only those
   # boundary lines so the runner can commit the DDL and checksum ledger row
   # atomically in one transaction.
-  sed -e '1{/^[[:space:]]*BEGIN;[[:space:]]*$/d;}' \
-      -e '${/^[[:space:]]*COMMIT;[[:space:]]*$/d;}' "$file" > "$prepared"
+  awk '
+    function update_dollar_state(line, rest, token) {
+      rest = line
+      while (match(rest, /\\$[[:alnum:]_]*\\$/)) {
+        token = substr(rest, RSTART, RLENGTH)
+        if (dollar_tag == "") dollar_tag = token
+        else if (dollar_tag == token) dollar_tag = ""
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+    }
+    {
+      trimmed = $0
+      sub(/^[[:space:]]+/, "", trimmed)
+      sub(/[[:space:]]+$/, "", trimmed)
+      keyword = toupper(trimmed)
+      if (dollar_tag == "" && (keyword == "BEGIN;" || keyword == "COMMIT;")) {
+        update_dollar_state($0)
+        next
+      }
+      print
+      update_dollar_state($0)
+    }
+  ' "$file" > "$prepared"
   cat >> "$RUNNER" <<SQL
 SELECT EXISTS(
   SELECT 1 FROM platform_schema_migrations WHERE migration_name='$name'
