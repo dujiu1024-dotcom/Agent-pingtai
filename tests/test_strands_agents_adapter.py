@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.models.templates import ModelTemplateRegistry
-from agent_platform.runtime.protocols import HarnessRequest, MediaInput
+from agent_platform.runtime.protocols import HarnessCapabilities, HarnessRequest, MediaInput, MediaOutput
 from agent_platform.runtime.strands_agents import StrandsAgentsAdapter
 
 
