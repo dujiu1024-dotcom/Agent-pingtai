@@ -150,6 +150,10 @@ class LangGraphRunExecutor:
     await self._finish(tenant_id,run_id,RunStatus.FAILED,checkpoint_ref=ref,error=str(exc)[:500])
     raise
    ref=await self._checkpoint_ref(tenant_id,run_id)
+   latest=await self.lifecycle.store.get(tenant_id,run_id)
+   if latest is not None and latest.status==RunStatus.CANCELLING:
+    await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+    return None
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    return result
   finally:
@@ -217,6 +221,10 @@ class LangGraphRunExecutor:
     timeout=self.timeout_seconds,already_claimed=True,
    )
    ref=await self._checkpoint_ref(tenant_id,run_id)
+   latest=await self.lifecycle.store.get(tenant_id,run_id)
+   if latest is not None and latest.status==RunStatus.CANCELLING:
+    await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+    return None
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    return result
   except asyncio.TimeoutError:
