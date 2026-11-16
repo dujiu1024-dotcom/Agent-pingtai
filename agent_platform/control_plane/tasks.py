@@ -200,8 +200,9 @@ class PostgresTaskCenterService:
                 cursor = await db.execute(
                     """WITH candidate AS (
                            SELECT tenant_id,task_id FROM platform_tasks
-                           WHERE (status='queued' AND available_at<=now())
-                              OR (status='running' AND lease_expires_at<=now())
+                           WHERE tenant_id=%s
+                             AND ((status='queued' AND available_at<=now())
+                               OR (status='running' AND lease_expires_at<=now()))
                            ORDER BY priority DESC,available_at,created_at
                            LIMIT 1 FOR UPDATE SKIP LOCKED
                        )
@@ -212,7 +213,7 @@ class PostgresTaskCenterService:
                        WHERE task.tenant_id=candidate.tenant_id
                          AND task.task_id=candidate.task_id
                        RETURNING task.*""",
-                    (worker_id, lease_seconds),
+                    (self.tenant_id, worker_id, lease_seconds),
                 )
                 claimed = await cursor.fetchone()
                 if claimed is None:
