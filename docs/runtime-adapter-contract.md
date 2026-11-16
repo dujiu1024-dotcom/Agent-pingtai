@@ -40,8 +40,9 @@ failure, not a successful empty response.
 
 `HarnessRequest` carries the trusted `RunContext`, instructions, input,
 authorized tool names, optional output schema, and verified media references.
-Optional timeout and checkpoint-resume intent are explicit. A checkpoint
-reference is invalid unless resume is requested.
+Optional timeout and checkpoint-resume intent are explicit. A per-request timeout
+overrides the model-template timeout when the adapter declares timeout support.
+A checkpoint reference is invalid unless resume is requested.
 
 `HarnessResult` normalizes output text, tool calls, token usage, finish reason,
 trace identity, metadata and verified media artifact references. Provider SDK
@@ -54,7 +55,8 @@ enforcement and a required lifecycle observer. The observer receives ordered
 `started` followed by exactly one terminal callback:
 
 - `succeeded` with a normalized result;
-- `failed` with the original exception; or
+- `failed` with the original exception;
+- `timed_out` with the timeout error; or
 - `cancelled` when the execution task is cancelled.
 
 Streaming uses the same lifecycle callbacks and is successful only after a
