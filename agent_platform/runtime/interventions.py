@@ -238,23 +238,23 @@ class PostgresRunDetailService:
                 (self.tenant_id, UUID(run_id)),
             )
             row = await cursor.fetchone()
-        if row is None:
-            return None
-        event_cursor = await db.execute(
-            """SELECT event_id,event_type,actor_id,payload,occurred_at
-               FROM platform_run_events WHERE tenant_id=%s AND run_id=%s
-               ORDER BY occurred_at DESC,event_id DESC LIMIT 500""",
-            (self.tenant_id, UUID(run_id)),
-        )
-        event_rows = list(reversed(await event_cursor.fetchall()))
-        approval_cursor = await db.execute(
-            """SELECT approval_id,action,resource,risk_level,requested_by,
-                      decided_by,status,expires_at
-               FROM platform_approvals WHERE tenant_id=%s AND run_id=%s
-               ORDER BY expires_at,approval_id""",
-            (self.tenant_id, UUID(run_id)),
-        )
-        approval_rows = await approval_cursor.fetchall()
+            if row is None:
+                return None
+            event_cursor = await db.execute(
+                """SELECT event_id,event_type,actor_id,payload,occurred_at
+                   FROM platform_run_events WHERE tenant_id=%s AND run_id=%s
+                   ORDER BY occurred_at DESC,event_id DESC LIMIT 500""",
+                (self.tenant_id, UUID(run_id)),
+            )
+            event_rows = list(reversed(await event_cursor.fetchall()))
+            approval_cursor = await db.execute(
+                """SELECT approval_id,action,resource,risk_level,requested_by,
+                          decided_by,status,expires_at
+                   FROM platform_approvals WHERE tenant_id=%s AND run_id=%s
+                   ORDER BY expires_at,approval_id""",
+                (self.tenant_id, UUID(run_id)),
+            )
+            approval_rows = await approval_cursor.fetchall()
         events = [{
             "event_id": str(item["event_id"]), "event_type": item["event_type"],
             "actor_id": item["actor_id"], "payload": dict(item["payload"]),
