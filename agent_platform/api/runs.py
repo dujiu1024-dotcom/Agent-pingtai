@@ -96,6 +96,15 @@ def create_runs_router(
             raise HTTPException(404, "Run not found") from exc
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if resolve_interventions is not None:
+            service = await resolve_interventions(principal)
+            record_action = getattr(service, "record_action", None)
+            if callable(record_action):
+                await record_action(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    actor_id=principal.user_id, event_type="human.run_resumed",
+                    payload={"status": run.status.value},
+                )
         return serialize(run)
 
     if resolve_interventions is not None:
