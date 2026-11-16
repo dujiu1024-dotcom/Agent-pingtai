@@ -4,6 +4,7 @@ This module deliberately does not estimate tokens or enforce model context-windo
 budgets; those policies belong to Issue #72.
 """
 
+# isort: skip_file
 from __future__ import annotations
 
 import copy
