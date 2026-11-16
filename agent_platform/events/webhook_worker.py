@@ -8,6 +8,38 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def build_production_webhook_delivery_worker(
+    *,
+    store: Any,
+    resolve_secret: Any,
+    interval_seconds: float = 2.0,
+    batch_limit: int = 50,
+    max_attempts: int = 8,
+    timeout_seconds: float = 10.0,
+) -> "WebhookDeliveryWorker":
+    """Build the production dispatcher with DNS policy and pinned HTTPS transport.
+
+    The caller must provide a durable tenant-scoped store and a Secret Manager
+    resolver. No generic HTTP client or environment-proxy transport is used.
+    """
+    from agent_platform.events.webhooks import WebhookDispatcher, WebhookEgressPolicy
+    from agent_platform.events.webhook_http import PinnedWebhookHttpTransport
+
+    dispatcher = WebhookDispatcher(
+        store=store,
+        transport=PinnedWebhookHttpTransport(),
+        resolve_secret=resolve_secret,
+        egress_policy=WebhookEgressPolicy(),
+        max_attempts=max_attempts,
+        timeout_seconds=timeout_seconds,
+    )
+    return WebhookDeliveryWorker(
+        dispatcher=dispatcher,
+        interval_seconds=interval_seconds,
+        batch_limit=batch_limit,
+    )
+
+
 class WebhookDeliveryWorker:
     def __init__(self, *, dispatcher: Any, interval_seconds: float = 2.0,
                  batch_limit: int = 50) -> None:
