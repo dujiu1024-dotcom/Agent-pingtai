@@ -409,6 +409,17 @@ class OpenAICompatibleModelRouter:
                         or actual_micros < 0
                     ):
                         raise ValueError("actual model cost is unavailable")
+                    price_card_version_resolver = getattr(
+                        self.quota_cost_estimator, "price_card_version", None,
+                    )
+                    price_card_version = (
+                        price_card_version_resolver(config.model_id)
+                        if callable(price_card_version_resolver) else None
+                    )
+                    if price_card_version is not None and (
+                        not isinstance(price_card_version, str) or not price_card_version.strip()
+                    ):
+                        raise ValueError("model price card version must be non-empty text")
                     await self.quota_service.settle_run(
                         quota_reservation,
                         model_key=f"{config.template_id}@{config.template_version}",
@@ -416,6 +427,7 @@ class OpenAICompatibleModelRouter:
                         cost_usd=Decimal(actual_micros) / Decimal(1_000_000),
                         project_id=getattr(snapshot, "project_id", None),
                         agent_id=getattr(snapshot, "agent_id", None),
+                        price_card_version=price_card_version,
                         source="provider_reported",
                     )
                 except Exception as exc:
