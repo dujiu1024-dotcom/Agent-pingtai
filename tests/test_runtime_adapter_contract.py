@@ -71,6 +71,9 @@ class Lifecycle:
     async def failed(self, **kwargs):
         self.events.append(("failed", kwargs))
 
+    async def timed_out(self, **kwargs):
+        self.events.append(("timed_out", kwargs))
+
     async def cancelled(self, **kwargs):
         self.events.append(("cancelled", kwargs))
 
@@ -169,6 +172,19 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "provider unavailable"):
             await managed.run(request())
         self.assertEqual([event[0] for event in lifecycle.events], ["started", "failed"])
+
+    async def test_lifecycle_records_timeout_separately_from_failure(self):
+        class TimedOutAdapter(FakeAdapter):
+            async def run(self, _request):
+                raise TimeoutError("adapter timed out")
+
+        lifecycle = Lifecycle()
+        managed = LifecycleManagedHarnessAdapter(
+            adapter=TimedOutAdapter(), descriptor=descriptor(), lifecycle=lifecycle,
+        )
+        with self.assertRaisesRegex(TimeoutError, "adapter timed out"):
+            await managed.run(request())
+        self.assertEqual([event[0] for event in lifecycle.events], ["started", "timed_out"])
 
     async def test_lifecycle_records_cancellation(self):
         started = asyncio.Event()
