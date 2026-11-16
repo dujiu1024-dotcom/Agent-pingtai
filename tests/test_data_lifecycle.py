@@ -142,7 +142,7 @@ class DataLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(one, changed)
 
 
-async def test_retention_and_migration_validation_reject_ambiguous_types(self):
+    async def test_retention_and_migration_validation_reject_ambiguous_types(self):
         for days in (True, 1.5, "30", -1):
             with self.subTest(soft_delete_days=days), self.assertRaises(ValueError):
                 RetentionPolicy("conversation", timedelta(days=90), soft_delete_days=days)
