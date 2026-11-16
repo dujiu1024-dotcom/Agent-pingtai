@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Mapping, Sequence
+from typing import Any, AsyncIterator, Callable, Mapping
 
 
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
