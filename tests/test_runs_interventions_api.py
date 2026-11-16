@@ -8,7 +8,12 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.runs import create_runs_router
 from agent_platform.identity.models import Principal
-from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager, RunSnapshot, RunStatus
+from agent_platform.runtime.lifecycle import (
+    InMemoryRunStateStore,
+    RunLifecycleManager,
+    RunSnapshot,
+    RunStatus,
+)
 
 
 class InterventionApiTests(unittest.TestCase):

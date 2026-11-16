@@ -23,7 +23,7 @@ class TaskLease:
     lease_owner: str
 
 
-class TaskCenterError(RuntimeError):
+class TaskCenterError(ValueError):
     pass
 
 
@@ -198,21 +198,26 @@ class PostgresTaskCenterService:
         async with db:
             async with db.transaction():
                 cursor = await db.execute(
-                    """SELECT * FROM platform_tasks
-                       WHERE (status='queued' AND available_at<=now())
-                          OR (status='running' AND lease_expires_at<=now())
-                       ORDER BY priority DESC,available_at,created_at LIMIT 1 FOR UPDATE SKIP LOCKED"""
+                    """WITH candidate AS (
+                           SELECT tenant_id,task_id FROM platform_tasks
+                           WHERE tenant_id=%s
+                             AND ((status='queued' AND available_at<=now())
+                               OR (status='running' AND lease_expires_at<=now()))
+                           ORDER BY priority DESC,available_at,created_at
+                           LIMIT 1 FOR UPDATE SKIP LOCKED
+                       )
+                       UPDATE platform_tasks AS task
+                       SET status='running',attempts=task.attempts+1,lease_owner=%s,
+                           lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
+                       FROM candidate
+                       WHERE task.tenant_id=candidate.tenant_id
+                         AND task.task_id=candidate.task_id
+                       RETURNING task.*""",
+                    (self.tenant_id, worker_id, lease_seconds),
                 )
-                row = await cursor.fetchone()
-                if row is None:
+                claimed = await cursor.fetchone()
+                if claimed is None:
                     return None
-                updated = await db.execute(
-                    """UPDATE platform_tasks SET status='running',attempts=attempts+1,lease_owner=%s,
-                         lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
-                       WHERE tenant_id=%s AND task_id=%s RETURNING *""",
-                    (worker_id, lease_seconds, self.tenant_id, row["task_id"]),
-                )
-                claimed = await updated.fetchone()
         return TaskLease(
             tenant_id=claimed["tenant_id"], task_id=str(claimed["task_id"]),
             actor_id=claimed["actor_id"], agent_id=claimed["agent_id"],
