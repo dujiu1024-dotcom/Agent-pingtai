@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import Mapping
 from uuid import uuid4
@@ -76,7 +76,7 @@ def extract_trace_context(headers: Mapping[str, str]) -> TraceContext | None:
 class TraceContextScope:
     def __init__(self, context: TraceContext) -> None:
         self.context = context
-        self._token = None
+        self._token: Token[TraceContext | None] | None = None
 
     def __enter__(self) -> TraceContext:
         self._token = _current.set(self.context)
