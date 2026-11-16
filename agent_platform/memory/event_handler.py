@@ -132,7 +132,7 @@ class MemoryExtractionEventHandler:
                 (messages[index] for index in range(assistant_index - 1, -1, -1)
                  if messages[index].role is MessageRole.USER
                  and messages[index].actor_id == actor_id
-                 and messages[index].run_id in (None, run_id)),
+                 and messages[index].run_id == run_id),
                 None,
             )
             if assistant_index is not None else None
