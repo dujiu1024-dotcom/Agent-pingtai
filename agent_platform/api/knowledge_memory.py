@@ -157,6 +157,8 @@ def create_knowledge_memory_router(
     async def evaluate_knowledge(request: Request):
         principal = await resolve_knowledge_principal(request)
         body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(400, "evaluation request must be an object")
         raw_cases = body.get("cases")
         if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= 100:
             raise HTTPException(400, "cases must contain between 1 and 100 evaluation cases")
@@ -177,8 +179,8 @@ def create_knowledge_memory_router(
                 raise HTTPException(400, "each evaluation case must be an object")
             case_id = str(raw.get("case_id") or "").strip()
             query = str(raw.get("query") or "").strip()
-            if not case_id or not query or case_id in seen:
-                raise HTTPException(400, "each case needs a unique case_id and non-empty query")
+            if not case_id or len(case_id) > 128 or not query or len(query) > 2000 or case_id in seen:
+                raise HTTPException(400, "each case needs a unique short case_id and non-empty query")
             seen.add(case_id)
             expected_docs = raw.get("expected_document_ids", [])
             expected_terms = raw.get("expected_answer_terms", [])
@@ -186,6 +188,10 @@ def create_knowledge_memory_router(
             if not all(isinstance(value, list) and all(isinstance(item, str) for item in value)
                        for value in (expected_docs, expected_terms, expected_citations)):
                 raise HTTPException(400, "expected document IDs and answer terms must be string arrays")
+            if len(expected_docs) > 100 or len(expected_terms) > 100 or len(expected_citations) > 100:
+                raise HTTPException(400, "evaluation case reference arrays are too large")
+            if "expect_abstain" in raw and not isinstance(raw["expect_abstain"], bool):
+                raise HTTPException(400, "expect_abstain must be a boolean")
             retrieval_cases.append(RAGEvalCase(
                 case_id=case_id, query=query,
                 expected_document_ids=frozenset(expected_docs), principal=principal,
