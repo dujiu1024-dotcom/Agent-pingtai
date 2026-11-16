@@ -85,6 +85,8 @@ class GoogleDriveKnowledgeConnector:
     @staticmethod
     def _json(response: Any) -> dict[str, Any]:
         response.raise_for_status()
+        if callable(invalidate):
+            invalidate(self.credential_ref)
         payload = response.json()
         if not isinstance(payload, dict):
             raise GoogleDriveConnectorError("Google Drive response must be a JSON object")
@@ -357,3 +359,6 @@ class GoogleDriveKnowledgeConnector:
         if 300 <= response.status_code < 400:
             raise GoogleDriveConnectorError("Google OAuth revocation redirects are not allowed")
         response.raise_for_status()
+        invalidate = getattr(self.credentials, "invalidate", None)
+        if callable(invalidate):
+            invalidate(self.credential_ref)
