@@ -22,8 +22,8 @@ def build_production_webhook_delivery_worker(
     The caller must provide a durable tenant-scoped store and a Secret Manager
     resolver. No generic HTTP client or environment-proxy transport is used.
     """
-    from agent_platform.events.webhooks import WebhookDispatcher, WebhookEgressPolicy
     from agent_platform.events.webhook_http import PinnedWebhookHttpTransport
+    from agent_platform.events.webhooks import WebhookDispatcher, WebhookEgressPolicy
 
     dispatcher = WebhookDispatcher(
         store=store,
