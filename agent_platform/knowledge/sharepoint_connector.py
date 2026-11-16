@@ -36,7 +36,7 @@ class SharePointKnowledgeConnector:
     _GRAPH = "https://graph.microsoft.com/v1.0"
     _FIELDS = (
         "id,name,size,file,folder,deleted,webUrl,lastModifiedDateTime,"
-        "createdBy,lastModifiedBy,parentReference,sharepointIds,permissions"
+        "createdBy,lastModifiedBy,parentReference,sharepointIds"
     )
     _DOWNLOAD_SUFFIXES = (
         ".sharepoint.com", ".sharepointonline.com", ".1drv.com",
