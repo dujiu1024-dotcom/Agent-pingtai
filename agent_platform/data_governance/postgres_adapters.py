@@ -221,3 +221,124 @@ class PostgresSubjectExportLedger:
                    WHERE tenant_id=%s AND operation_id=%s""",
                 (complete, tenant_id, operation_id),
             )
+
+
+class PostgresSubjectDeletionLedger:
+    """Durable per-system checkpoints for retryable subject deletion."""
+
+    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+        self._connect = connection_factory
+
+    @staticmethod
+    def _row_value(row: Any, name: str, index: int) -> Any:
+        return row[name] if isinstance(row, Mapping) else row[index]
+
+    async def begin_operation(
+        self, *, tenant_id: str, operation_id: str, subject_id: str,
+    ) -> None:
+        if not tenant_id or not operation_id or not subject_id:
+            raise ValueError("tenant, operation and subject ids are required")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_subject_deletion_operations
+                       (tenant_id,operation_id,subject_id,status)
+                       VALUES (%s,%s,%s,'planned')
+                       ON CONFLICT (tenant_id,operation_id) DO NOTHING""",
+                    (tenant_id, operation_id, subject_id),
+                )
+                cursor = await connection.execute(
+                    """SELECT subject_id FROM platform_subject_deletion_operations
+                       WHERE tenant_id=%s AND operation_id=%s FOR UPDATE""",
+                    (tenant_id, operation_id),
+                )
+                row = await cursor.fetchone()
+                if row is None or self._row_value(row, "subject_id", 0) != subject_id:
+                    raise ValueError("deletion operation id is already bound to another subject")
+                await connection.execute(
+                    """UPDATE platform_subject_deletion_operations
+                       SET status=CASE WHEN status='completed' THEN status ELSE 'running' END,
+                           updated_at=now()
+                       WHERE tenant_id=%s AND operation_id=%s""",
+                    (tenant_id, operation_id),
+                )
+
+    async def completed_systems(self, *, tenant_id: str, operation_id: str) -> tuple[str, ...]:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT source_name FROM platform_subject_deletion_sources
+                   WHERE tenant_id=%s AND operation_id=%s AND status='completed'
+                   ORDER BY source_name""",
+                (tenant_id, operation_id),
+            )
+            rows = await cursor.fetchall()
+        return tuple(self._row_value(row, "source_name", 0) for row in rows)
+
+    async def mark_system_started(
+        self, *, tenant_id: str, operation_id: str, system: str,
+    ) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_subject_deletion_sources
+                   (tenant_id,operation_id,source_name,status)
+                   VALUES (%s,%s,%s,'running')
+                   ON CONFLICT (tenant_id,operation_id,source_name) DO UPDATE
+                   SET status=CASE
+                         WHEN platform_subject_deletion_sources.status='completed' THEN 'completed'
+                         ELSE 'running' END,
+                       error_code=NULL,updated_at=now()""",
+                (tenant_id, operation_id, system),
+            )
+
+    async def mark_system_completed(
+        self, *, tenant_id: str, operation_id: str, system: str,
+    ) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_subject_deletion_sources
+                   (tenant_id,operation_id,source_name,status)
+                   VALUES (%s,%s,%s,'completed')
+                   ON CONFLICT (tenant_id,operation_id,source_name) DO UPDATE
+                   SET status='completed',error_code=NULL,updated_at=now()""",
+                (tenant_id, operation_id, system),
+            )
+
+    async def mark_system_failed(
+        self, *, tenant_id: str, operation_id: str, system: str, error_code: str,
+    ) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_subject_deletion_sources
+                   (tenant_id,operation_id,source_name,status,error_code)
+                   VALUES (%s,%s,%s,'failed',%s)
+                   ON CONFLICT (tenant_id,operation_id,source_name) DO UPDATE
+                   SET status='failed',error_code=EXCLUDED.error_code,updated_at=now()""",
+                (tenant_id, operation_id, system, error_code),
+            )
+
+    async def finish_operation(
+        self, *, tenant_id: str, operation_id: str, complete: bool,
+    ) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """UPDATE platform_subject_deletion_operations AS operation
+                   SET status=CASE
+                         WHEN EXISTS (
+                           SELECT 1 FROM platform_subject_deletion_sources AS source
+                           WHERE source.tenant_id=operation.tenant_id
+                             AND source.operation_id=operation.operation_id
+                             AND source.status='failed'
+                         ) THEN 'partial'
+                         WHEN %s THEN 'completed'
+                         ELSE 'partial'
+                       END,
+                       updated_at=now()
+                   WHERE tenant_id=%s AND operation_id=%s""",
+                (complete, tenant_id, operation_id),
+            )
