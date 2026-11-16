@@ -9,7 +9,7 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from agent_platform.blackboard.protocol import BlackboardRepository
 from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
@@ -103,6 +103,29 @@ class BlackboardMultiExpertServices:
             return ()
         return tuple(str(ref) for ref in refs if str(ref).strip())
 
+    async def _validate_source_refs(
+        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
+    ) -> None:
+        """Reject references to Blackboard entries outside the active workflow scope.
+
+        Non-Blackboard references (for example connector evidence IDs) remain
+        opaque and are resolved by their owning resource service.
+        """
+        for ref in refs:
+            try:
+                UUID(ref)
+            except (ValueError, TypeError, AttributeError):
+                # Connector/document IDs are owned by their resource service,
+                # not by the UUID-keyed Blackboard repository.
+                continue
+            source = await self.repository.get(ref)
+            if source is not None and (
+                source.scope is not scope or source.scope_id != scope_id
+            ):
+                raise PermissionError(
+                    "Blackboard source reference crosses the active workflow scope"
+                )
+
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         self._scope(run_context)
         raw_assignments = await self.callbacks.plan_experts(
@@ -156,11 +179,13 @@ class BlackboardMultiExpertServices:
         scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.run_expert(assignment=assignment, objective=objective, run_context=run_context))
         expert_id = str(assignment.get("expert_id") or "expert")
+        refs = self._refs(result)
+        await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "expert:" + expert_id),
             scope=scope, scope_id=scope_id, kind=EntryKind.CLAIM,
             content={"expert_id": expert_id, "contribution": copy.deepcopy(result)},
-            author_id=expert_id, source_refs=self._refs(result),
+            author_id=expert_id, source_refs=refs,
         )
         persisted = await self._propose_once(entry)
         result["blackboard_entry_id"] = persisted.entry_id
@@ -170,6 +195,7 @@ class BlackboardMultiExpertServices:
         scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.synthesize(objective=objective, contributions=contributions, run_context=run_context))
         refs = tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
+        await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
         entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "synthesis"), scope=scope, scope_id=scope_id,
             kind=EntryKind.ARTIFACT, content={"synthesis": copy.deepcopy(result)},
@@ -188,6 +214,7 @@ class BlackboardMultiExpertServices:
             key = str(conflict.get("id") or conflict.get("conflict_key") or "conflict") + ":" + str(index)
             conflict["conflict_instance_id"] = key
             refs = self._refs(conflict) or tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
+            await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "conflict:" + key),
                 scope=scope, scope_id=scope_id, kind=EntryKind.CONFLICT,
@@ -268,6 +295,9 @@ class BlackboardMultiExpertServices:
                 raise ValueError("conflict is missing its durable Blackboard entry")
             decision = indexed_conflicts[index]
             evidence_refs = decision.get("evidence_refs", ())
+            await self._validate_source_refs(
+                scope=scope, scope_id=scope_id, refs=evidence_refs,
+            )
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),
                 scope=scope, scope_id=scope_id, kind=EntryKind.DECISION,
@@ -288,6 +318,9 @@ class BlackboardMultiExpertServices:
             resolved_synthesis.setdefault("parent_blackboard_entry_id", parent_synthesis_id)
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
         resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids) + ((parent_synthesis_id,) if parent_synthesis_id else ())
+        await self._validate_source_refs(
+            scope=scope, scope_id=scope_id, refs=resolution_refs,
+        )
         resolved_entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "resolved-synthesis"),
             scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
