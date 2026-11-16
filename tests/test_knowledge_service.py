@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
