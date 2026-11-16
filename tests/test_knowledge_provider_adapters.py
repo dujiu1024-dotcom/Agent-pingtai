@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
+import types
 import unittest
+from unittest.mock import patch
 
 from agent_platform.knowledge.contracts import RetrievalHit
+from agent_platform.knowledge.ingestion import OCRParserAdapter, ParserRegistry
 from agent_platform.knowledge.providers import (
     AzureDocumentIntelligenceOCRProvider,
     CohereReranker,
@@ -128,7 +132,7 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             SyncResponse(200, {"status": "running"}, {"retry-after": "0"}),
             SyncResponse(200, {
                 "status": "succeeded",
-                "analyzeResult": {"content": "OCR extracted source text"},
+                "analyzeResult": {\n                    "content": "OCR extracted source text",\n                    "pages": [{"pageNumber": 1, "spans": [{"offset": 0, "length": 25}]}],\n                },
             }),
         ])
         provider = AzureDocumentIntelligenceOCRProvider(
@@ -137,7 +141,7 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             provider.extract_text(b"%PDF-content", "application/pdf"),
-            "OCR extracted source text",
+            "\\n[page:1]\\nOCR extracted source text",
         )
         self.assertEqual(client.calls[0][0], "POST")
         self.assertEqual(
@@ -145,6 +149,34 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             "runtime-secret",
         )
         self.assertEqual([call[0] for call in client.calls], ["POST", "GET", "GET"])
+
+    def test_empty_text_pdf_falls_through_to_registered_ocr_adapter(self):
+        class EmptyPage:
+            def extract_text(self):
+                return ""
+
+        class FakePdfReader:
+            def __init__(self, stream):
+                self.pages = [EmptyPage()]
+
+        fake_pdf = types.ModuleType("pypdf")
+        fake_pdf.PdfReader = FakePdfReader
+
+        class OCRProvider:
+            def extract_text(self, content, media_type):
+                self.assert_content = content
+                self.assert_media_type = media_type
+                return "scanned page OCR text"
+
+        ocr = OCRProvider()
+        with patch.dict(sys.modules, {"pypdf": fake_pdf}):
+            registry = ParserRegistry(parsers=(OCRParserAdapter(ocr),))
+            self.assertEqual(
+                registry.parse(b"%PDF-scanned", "application/pdf"),
+                "scanned page OCR text",
+            )
+        self.assertEqual(ocr.assert_content, b"%PDF-scanned")
+        self.assertEqual(ocr.assert_media_type, "application/pdf")
 
     def test_azure_document_intelligence_rejects_cross_host_poll_url(self):
         client = SyncClient([
