@@ -10,6 +10,7 @@ def manifest(name, dependencies=(), version="1.0.0"):
     return ExtensionManifest(
         name, version, "1.0.0", ("tools.invoke",),
         tuple(dependencies), "plugin/main.py",
+        {dependency: "1.0.0" for dependency in dependencies},
     )
 
 
@@ -61,6 +62,23 @@ class ExtensionLifecycleTests(unittest.TestCase):
             plan.ordered_extension_ids,
             ("root-extension", "base-one", "base-core"),
         )
+
+
+    def test_install_requires_exact_dependency_versions(self):
+        with self.assertRaisesRegex(ValueError, "exact version pin"):
+            ExtensionManifest(
+                "root-extension", "1.0.0", "1.0.0", ("tools.invoke",),
+                ("base-one",), "plugin/main.py",
+            )
+        root = ExtensionManifest(
+            "root-extension", "1.0.0", "1.0.0", ("tools.invoke",),
+            ("base-one",), "plugin/main.py", {"base-one": "2.0.0"},
+        )
+        with self.assertRaisesRegex(ValueError, "version mismatch"):
+            self.lifecycle.plan_install(
+                root, installed={},
+                available={"base-one": manifest("base-one", version="1.0.0")},
+            )
 
     def test_uninstall_rejects_unknown_extension(self):
         with self.assertRaisesRegex(ValueError, "not installed"):
