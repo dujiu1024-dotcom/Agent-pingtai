@@ -33,6 +33,10 @@ class ToolEffect:
     created_at: datetime = datetime.min.replace(tzinfo=timezone.utc)
     updated_at: datetime = datetime.min.replace(tzinfo=timezone.utc)
     created: bool = False
+    resolution: str | None = None
+    reconciled_by: str | None = None
+    reconciliation_note: str | None = None
+    reconciled_at: datetime | None = None
 
 
 class ToolEffectStore(Protocol):
@@ -43,6 +47,10 @@ class ToolEffectStore(Protocol):
     ) -> ToolEffect: ...
     async def complete(self, *, tenant_id: str, run_id: str, call_id: str, result: Any) -> None: ...
     async def fail(self, *, tenant_id: str, run_id: str, call_id: str, error: str) -> None: ...
+    async def reconcile(
+        self, *, tenant_id: str, run_id: str, call_id: str,
+        operator_id: str, resolution: str, note: str, result: Any = None,
+    ) -> ToolEffect: ...
 
 
 class InMemoryToolEffectStore:
@@ -64,6 +72,10 @@ class InMemoryToolEffectStore:
             if old.action_digest != action_digest or old.actor_id != actor_id:
                 raise EffectConflict("idempotency key was reused for a different action")
             from dataclasses import replace
+            if old.state == "retryable":
+                old = replace(old, state="pending", error=None, updated_at=datetime.now(timezone.utc))
+                self._rows[key] = old
+                return copy.deepcopy(replace(old, created=True))
             return copy.deepcopy(replace(old, created=False))
         now = datetime.now(timezone.utc)
         row = ToolEffect(tenant_id, run_id, call_id, action_digest, actor_id, "pending",
@@ -87,6 +99,37 @@ class InMemoryToolEffectStore:
         if row is not None and row.state == "pending":
             self._rows[key] = replace(row, state="failed", error=error[:500],
                                       updated_at=datetime.now(timezone.utc))
+
+    async def reconcile(
+        self, *, tenant_id: str, run_id: str, call_id: str,
+        operator_id: str, resolution: str, note: str, result: Any = None,
+    ) -> ToolEffect:
+        from dataclasses import replace
+        key = (tenant_id, run_id, call_id)
+        row = self._rows.get(key)
+        if row is None or row.state not in {"pending", "failed"}:
+            raise EffectConflict("tool effect is not awaiting reconciliation")
+        state = {
+            "confirmed_succeeded": "succeeded",
+            "confirmed_not_applied": "retryable",
+            "compensated": "compensated",
+        }.get(resolution)
+        if state is None:
+            raise ValueError("unsupported tool effect reconciliation resolution")
+        if not operator_id.strip() or not note.strip() or len(note) > 1000:
+            raise ValueError("operator_id and a 1-1000 character reconciliation note are required")
+        if resolution == "confirmed_succeeded" and result is None:
+            raise ValueError("confirmed_succeeded requires the externally observed result")
+        now = datetime.now(timezone.utc)
+        updated = replace(
+            row, state=state,
+            result=copy.deepcopy(result) if resolution == "confirmed_succeeded" else row.result,
+            error=None if state == "succeeded" else row.error,
+            resolution=resolution, reconciled_by=operator_id,
+            reconciliation_note=note, reconciled_at=now, updated_at=now,
+        )
+        self._rows[key] = updated
+        return copy.deepcopy(updated)
 
 
 class PostgresToolEffectStore:
