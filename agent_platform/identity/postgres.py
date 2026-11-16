@@ -277,7 +277,7 @@ class PostgresIdentityRepository:
                     """INSERT INTO platform_identity_audit
                        (tenant_id,actor_id,action,subject_id,outcome,detail)
                        VALUES (%s,%s,'auth.login',%s,'succeeded',
-                               jsonb_build_object('session_id',%s))""",
+                               jsonb_build_object('session_id',%s::text))""",
                     (tenant_id, user_id, user_id, session_id),
                 )
                 await connection.execute(
@@ -335,7 +335,7 @@ class PostgresIdentityRepository:
                     """INSERT INTO platform_identity_audit
                        (tenant_id,actor_id,action,subject_id,outcome,detail)
                        VALUES (%s,%s,'auth.logout',%s,'succeeded',
-                               jsonb_build_object('session_id',%s))""",
+                               jsonb_build_object('session_id',%s::text))""",
                     (tenant_id, user_id, user_id, session_id),
                 )
             return row is not None

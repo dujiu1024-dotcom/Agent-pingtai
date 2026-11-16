@@ -1087,7 +1087,9 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
                    ORDER BY audit_id""",
                 (self.tenant_id, str(self.user_id)),
             )
-            self.assertEqual([row["action"] for row in await cur.fetchall()],
+            actions = [row["action"] for row in await cur.fetchall()]
+            # 同一主体在同一事务前会有 auth.login 审计行，这里只校验角色变更审计
+            self.assertEqual([a for a in actions if a.startswith("role.")],
                              ["role.granted", "role.revoked"])
 
 
