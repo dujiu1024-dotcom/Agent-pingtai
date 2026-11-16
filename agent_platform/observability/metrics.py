@@ -8,7 +8,7 @@ import threading
 from collections import defaultdict
 from collections.abc import Mapping
 
-_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\\Z")
+_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\Z")
 _ALLOWED_LABELS = frozenset({"component", "status", "model_template", "finish_reason", "operation"})
 
 
@@ -67,8 +67,10 @@ class InMemoryMetricsRecorder:
     @staticmethod
     def _format_key(key: tuple[str, tuple[tuple[str, str], ...]]) -> str:
         name, labels = key
+
         def escape_label(value: str) -> str:
-            return value.replace("\\\\", "\\\\\\\\").replace("\\n", "\\\\n").replace('"', '\\"')
+            return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
         suffix = ",".join(f'{k}="{escape_label(v)}"' for k, v in labels)
         return f"{name}{{{suffix}}}" if suffix else name
 
@@ -83,4 +85,4 @@ class InMemoryMetricsRecorder:
                 sum_key = self._format_key((name + "_sum", labels))
                 lines.append(f"{count_key} {len(values)}")
                 lines.append(f"{sum_key} {sum(values)}")
-            return "\\n".join(lines) + ("\\n" if lines else "")
+            return "\n".join(lines) + ("\n" if lines else "")
