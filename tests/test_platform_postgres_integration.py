@@ -1,9 +1,9 @@
 """Real PostgreSQL integration tests; enabled only with AGENT_PLATFORM_TEST_DSN."""
 
 import asyncio
-from dataclasses import replace
 import os
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
