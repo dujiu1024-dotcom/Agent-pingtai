@@ -99,5 +99,34 @@ class SessionFileDownloadAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+
+    def test_upload_to_project_session_requires_project_file_create(self):
+        self.denied.add(("project", "project-a", "file.create"))
+        denied = self.client.post(
+            f"/api/platform/v1/files?session_id={self.session.session_id}",
+            content=b"private project file",
+            headers={
+                "content-type": "text/plain",
+                "x-filename": "private.txt",
+            },
+        )
+        self.assertEqual(denied.status_code, 403, denied.text)
+        self.assertEqual(
+            asyncio.run(self.repository.list_assets("tenant-a", "user-a")),
+            (),
+        )
+
+        self.denied.clear()
+        allowed = self.client.post(
+            f"/api/platform/v1/files?session_id={self.session.session_id}",
+            content=b"authorized project file",
+            headers={
+                "content-type": "text/plain",
+                "x-filename": "allowed.txt",
+            },
+        )
+        self.assertEqual(allowed.status_code, 201, allowed.text)
+        self.assertEqual(allowed.json()["status"], "available")
+
 if __name__ == "__main__":
     unittest.main()
