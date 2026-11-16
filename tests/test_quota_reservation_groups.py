@@ -107,7 +107,7 @@ class QuotaReservationGroupTests(unittest.IsolatedAsyncioTestCase):
                 scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("tenant", "tenant-a")),
                 estimated_tokens=1, estimated_cost_usd=Decimal("0.01"),
             )
-        with self.assertRaisesRegex(ValueError, "root_run_id"):
+        with self.assertRaisesRegex(ValueError, "must include the root Run budget"):
             await self.service.reserve_run(
                 tenant_id="tenant-a", run_id="child-run", root_run_id="root-run",
                 scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "other-root")),
