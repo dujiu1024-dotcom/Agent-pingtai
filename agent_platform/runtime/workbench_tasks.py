@@ -49,6 +49,8 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "project_id": row.get("project_id"),
         "session_id": row.get("session_id"),
         "status": row["status"],
+        "priority": row.get("priority", 100),
+        "retry_of_run_id": str(row["retry_of_run_id"]) if row.get("retry_of_run_id") else None,
         "input": _json_value(row.get("input") or {}),
         "output": _json_value(row.get("output")),
         "usage": _json_value(row.get("usage") or {}),
@@ -287,13 +289,15 @@ class RegistryBackedTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
-        run_id: str | None = None,
+        run_id: str | None = None, priority: int = 100,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
             raise PermissionError("authenticated actor is required")
         if not isinstance(input, Mapping) or not input:
             raise WorkbenchTaskError("task input must be a non-empty object")
+        if type(priority) is not int or not 0 <= priority <= 1000:
+            raise WorkbenchTaskError("priority must be an integer between 0 and 1000")
         if idempotency_key is not None and (
             not isinstance(idempotency_key, str)
             or not idempotency_key.strip() or len(idempotency_key) > 200
@@ -310,8 +314,10 @@ class RegistryBackedTaskCenterService:
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
         }
-        # Preserve the pre-existing idempotency digest for ordinary submissions;
-        # deterministic child Run IDs are included only when explicitly supplied.
+        # Keep default-priority request digests compatible with existing idempotency keys.
+        if priority != 100:
+            request_body["priority"] = priority
+        # Deterministic child Run IDs are included only when explicitly supplied.
         if run_id is not None:
             request_body["requested_run_id"] = run_id
         canonical = json.dumps(
@@ -358,7 +364,7 @@ class RegistryBackedTaskCenterService:
             agent_id=agent_id, agent_version=agent.version,
             template_id=template_id, template_version=template_version,
             input=dict(input), preparation_owner=preparation_owner,
-            project_id=project_id, session_id=session_id,
+            priority=priority, project_id=project_id, session_id=session_id,
             workflow_id=workflow.item_id if workflow is not None else None,
             idempotency_key=idempotency_key, request_digest=digest,
             registry_snapshot=[
@@ -412,6 +418,44 @@ class RegistryBackedTaskCenterService:
             tenant_id, task_id, actor_id=actor_id,
         )
         return _task_view(row) if row is not None else None
+
+    async def retry_task(
+        self, *, tenant_id: str, task_id: str, actor_id: str,
+        idempotency_key: str,
+    ) -> Mapping[str, Any] | None:
+        self._check_tenant(tenant_id)
+        if not actor_id.strip():
+            raise PermissionError("authenticated actor is required")
+        if (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key.strip() or len(idempotency_key) > 150
+        ):
+            raise WorkbenchTaskError("idempotency_key must contain 1 to 150 characters")
+        source = await self.run_store.get_task_record(
+            tenant_id, task_id, actor_id=actor_id,
+        )
+        if source is None:
+            return None
+        if source["status"] not in {"failed", "timed_out"}:
+            raise WorkbenchTaskError("only failed or timed_out tasks can be retried")
+        source_run_id = str(source["run_id"])
+        retry_key = f"retry:{source_run_id}:{idempotency_key}"
+        digest_body = {
+            "tenant_id": tenant_id, "actor_id": actor_id,
+            "retry_of_run_id": source_run_id,
+        }
+        digest = hashlib.sha256(json.dumps(
+            digest_body, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        new_run_id = str(uuid4())
+        retried_run_id = await self.run_store.create_retry_task_run(
+            tenant_id=tenant_id, task_id=task_id, actor_id=actor_id,
+            run_id=new_run_id, idempotency_key=retry_key, request_digest=digest,
+        )
+        retried = await self.run_store.get_task_record(
+            tenant_id, retried_run_id, actor_id=actor_id,
+        )
+        return _task_view(retried) if retried is not None else None
 
     async def cancel_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
