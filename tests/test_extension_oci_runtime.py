@@ -23,14 +23,14 @@ class _Store:
     def __init__(self):
         self.items = {}
 
-    async def put(self, manifest, package):
-        self.items[manifest.extension_id] = package
+    async def put(self, tenant_id, manifest, package):
+        self.items[(tenant_id, manifest.extension_id)] = package
 
-    async def get(self, manifest):
-        return self.items.get(manifest.extension_id)
+    async def get(self, tenant_id, manifest):
+        return self.items.get((tenant_id, manifest.extension_id))
 
-    async def delete(self, manifest):
-        self.items.pop(manifest.extension_id, None)
+    async def delete(self, tenant_id, manifest):
+        self.items.pop((tenant_id, manifest.extension_id), None)
 
 
 class _Runner:
@@ -64,6 +64,7 @@ class SandboxedExtensionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.runner = _Runner()
         self.audit_events = []
         self.runtime = SandboxedExtensionRuntime(
+            tenant_id="tenant-a",
             package_resolver=_Resolver(self.package),
             artifact_store=self.store,
             sandbox_runner=self.runner,
@@ -74,12 +75,12 @@ class SandboxedExtensionRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_install_verifies_and_stores_signed_package(self):
         await self.runtime.install(_manifest())
-        self.assertIs(await self.store.get(_manifest()), self.package)
+        self.assertIs(await self.store.get("tenant-a", _manifest()), self.package)
 
     async def test_invoke_runs_isolated_python_and_records_audit(self):
         await self.runtime.install(_manifest())
         result = await self.runtime.invoke(
-            _manifest(), principal=object(), action="summarize",
+            _manifest(), principal=type("Principal", (), {"tenant_id": "tenant-a"})(), action="summarize",
             payload={"text": "hello"},
         )
         self.assertEqual(result, {"ok": True})
@@ -96,6 +97,14 @@ class SandboxedExtensionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await self.runtime.invoke(
                 _manifest(), principal=object(), action="run", payload={},
+            )
+        self.assertEqual(self.runner.calls, [])
+
+    async def test_cross_tenant_invocation_is_rejected_before_store_access(self):
+        with self.assertRaises(PermissionError):
+            await self.runtime.invoke(
+                _manifest(), principal=type("Principal", (), {"tenant_id": "tenant-b"})(),
+                action="run", payload={},
             )
         self.assertEqual(self.runner.calls, [])
 
