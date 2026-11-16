@@ -98,7 +98,7 @@ class PostgresToolEffectStore:
         async with db:
             cur = await db.execute(
                 """SELECT tenant_id,run_id,call_id,action_digest,actor_id,state,
-                          result,error,created_at,updated_at
+                          result,error,created_at,updated_at,resolution,reconciled_by,reconciliation_note,reconciled_at
                    FROM platform_tool_effects
                    WHERE tenant_id=%s AND run_id=%s AND call_id=%s""",
                 (tenant_id, run_id, call_id),
@@ -124,12 +124,29 @@ class PostgresToolEffectStore:
                 created = await inserted.fetchone() is not None
                 cur = await db.execute(
                     """SELECT tenant_id,run_id,call_id,action_digest,actor_id,state,
-                              result,error,created_at,updated_at
+                              result,error,created_at,updated_at,resolution,reconciled_by,reconciliation_note,reconciled_at
                        FROM platform_tool_effects
                        WHERE tenant_id=%s AND run_id=%s AND call_id=%s FOR UPDATE""",
                     (tenant_id, run_id, call_id),
                 )
                 row = await cur.fetchone()
+                if row["state"] == "retryable":
+                    await db.execute(
+                        """UPDATE platform_tool_effects
+                           SET state='pending',error=NULL,updated_at=now()
+                           WHERE tenant_id=%s AND run_id=%s AND call_id=%s AND state='retryable'""",
+                        (tenant_id, run_id, call_id),
+                    )
+                    cur = await db.execute(
+                        """SELECT tenant_id,run_id,call_id,action_digest,actor_id,state,
+                                  result,error,created_at,updated_at,resolution,reconciled_by,
+                                  reconciliation_note,reconciled_at
+                           FROM platform_tool_effects
+                           WHERE tenant_id=%s AND run_id=%s AND call_id=%s FOR UPDATE""",
+                        (tenant_id, run_id, call_id),
+                    )
+                    row = await cur.fetchone()
+                    created = True
         effect = self._to_effect(row)
         if effect.action_digest != action_digest or effect.actor_id != actor_id:
             raise EffectConflict("idempotency key was reused for a different action")
@@ -163,6 +180,63 @@ class PostgresToolEffectStore:
                 (error[:500], tenant_id, run_id, call_id),
             )
 
+    async def reconcile(
+        self, *, tenant_id: str, run_id: str, call_id: str,
+        operator_id: str, resolution: str, note: str, result: Any = None,
+    ) -> ToolEffect:
+        try:
+            from psycopg.types.json import Jsonb
+        except ImportError as exc:
+            raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+        state = {
+            "confirmed_succeeded": "succeeded",
+            "confirmed_not_applied": "retryable",
+            "compensated": "compensated",
+        }.get(resolution)
+        if state is None:
+            raise ValueError("unsupported tool effect reconciliation resolution")
+        if not operator_id.strip() or not note.strip() or len(note) > 1000:
+            raise ValueError("operator_id and a 1-1000 character reconciliation note are required")
+        if resolution == "confirmed_succeeded" and result is None:
+            raise ValueError("confirmed_succeeded requires the externally observed result")
+        db = await self._connect()
+        async with db:
+            async with db.transaction():
+                cur = await db.execute(
+                    """SELECT tenant_id,run_id,call_id,action_digest,actor_id,state,
+                              result,error,created_at,updated_at,resolution,reconciled_by,
+                              reconciliation_note,reconciled_at
+                       FROM platform_tool_effects
+                       WHERE tenant_id=%s AND run_id=%s AND call_id=%s FOR UPDATE""",
+                    (tenant_id, run_id, call_id),
+                )
+                old = await cur.fetchone()
+                if old is None or old["state"] not in {"pending", "failed"}:
+                    raise EffectConflict("tool effect is not awaiting reconciliation")
+                cur = await db.execute(
+                    """UPDATE platform_tool_effects
+                       SET state=%s,result=CASE WHEN %s='confirmed_succeeded' THEN %s ELSE result END,
+                           error=CASE WHEN %s='confirmed_succeeded' THEN NULL ELSE error END,
+                           resolution=%s,reconciled_by=%s,reconciliation_note=%s,
+                           reconciled_at=now(),updated_at=now()
+                       WHERE tenant_id=%s AND run_id=%s AND call_id=%s
+                       RETURNING tenant_id,run_id,call_id,action_digest,actor_id,state,
+                                 result,error,created_at,updated_at,resolution,reconciled_by,
+                                 reconciliation_note,reconciled_at""",
+                    (state, resolution, Jsonb(result) if result is not None else None,
+                     resolution, resolution, operator_id, note,
+                     tenant_id, run_id, call_id),
+                )
+                updated = await cur.fetchone()
+                await db.execute(
+                    """INSERT INTO platform_tool_effect_reconciliations
+                       (tenant_id,run_id,call_id,operator_id,resolution,note,evidence)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    (tenant_id, run_id, call_id, operator_id, resolution, note,
+                     Jsonb(result) if result is not None else None),
+                )
+        return self._to_effect(updated)
+
     @staticmethod
     def _to_effect(row: Mapping[str, Any]) -> ToolEffect:
         return ToolEffect(
@@ -170,4 +244,6 @@ class PostgresToolEffectStore:
             call_id=row["call_id"], action_digest=row["action_digest"],
             actor_id=row["actor_id"], state=row["state"], result=row["result"],
             error=row["error"], created_at=row["created_at"], updated_at=row["updated_at"],
+            resolution=row.get("resolution"), reconciled_by=row.get("reconciled_by"),
+            reconciliation_note=row.get("reconciliation_note"), reconciled_at=row.get("reconciled_at"),
         )
