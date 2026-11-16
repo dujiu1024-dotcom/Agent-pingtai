@@ -82,6 +82,7 @@ include = [
   "tests/test_http_connector.py",
   "tests/test_connector_cleanup_postgres_integration.py",
   "tests/test_clamav_scanner.py",
+  "tests/test_s3_object_storage.py",
   "tests/test_data_connectors.py",
   "tests/test_runs_interventions_api.py",
   "tests/test_task_center_interventions_postgres_integration.py",
