@@ -387,7 +387,7 @@ class TaskQueueWorker:
         except asyncio.CancelledError:
             execution.cancel()
             await asyncio.gather(execution, return_exceptions=True)
-            await self.service.acknowledge_cancel(lease)
+            await self.service.reconcile_cancellation(lease)
             raise
         except Exception as exc:
             await self.service.fail(lease, error=type(exc).__name__)
