@@ -138,6 +138,29 @@ class ConnectorSyncWorker:
         self.service = service
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        self._stop_event = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+
+    async def start(self) -> None:
+        if self._task is not None and not self._task.done():
+            return
+        self._stop_event.clear()
+        self._task = asyncio.create_task(self._run(), name="connector-sync-worker")
+
+    async def stop(self) -> None:
+        self._stop_event.set()
+        if self._task is not None:
+            await self._task
+            self._task = None
+
+    async def _run(self) -> None:
+        while not self._stop_event.is_set():
+            if await self.run_once():
+                continue
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=1.0)
+            except TimeoutError:
+                pass
 
     async def run_once(self) -> bool:
         job = await self.queue.claim(
