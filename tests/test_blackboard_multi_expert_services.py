@@ -161,6 +161,60 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         kinds = {entry.kind for entry in repository.entries.values()}
         self.assertTrue({EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT, EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE}.issubset(kinds))
 
+    async def test_conflict_decisions_keep_their_own_conflict_and_evidence_lineage(self):
+        class MultipleConflictCallbacks(WorkflowCallbacks):
+            async def review(self, *, synthesis, contributions, run_context):
+                return {"conflicts": [
+                    {"conflict_key": "growth", "reason": "growth differs",
+                     "evidence_refs": ["source:growth-review"]},
+                    {"conflict_key": "revenue", "reason": "revenue differs",
+                     "evidence_refs": ["source:revenue-review"]},
+                ]}
+
+            async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
+                return {"decisions": [
+                    {"conflict_key": "growth", "outcome": "accept", "rationale": "growth evidence",
+                     "evidence_refs": ["source:growth-decision"]},
+                    {"conflict_key": "revenue", "outcome": "reject", "rationale": "revenue evidence",
+                     "evidence_refs": ["source:revenue-decision"]},
+                ]}
+
+        repository = InMemoryBlackboard()
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository,
+            callbacks=MultipleConflictCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task-lineage", "run_id": "multi-lineage"}
+        contribution = await services.run_expert(
+            assignment={"expert_id": "researcher"}, objective="resolve", run_context=context,
+        )
+        synthesis = await services.synthesize(
+            objective="resolve", contributions=[contribution], run_context=context,
+        )
+        review = await services.review(
+            synthesis=synthesis, contributions=[contribution], run_context=context,
+        )
+        await services.resolve_conflicts(
+            synthesis=synthesis, conflicts=review["conflicts"], run_context=context,
+        )
+
+        by_outcome = {
+            entry.content["outcome"]: entry
+            for entry in repository.entries.values()
+            if entry.kind is EntryKind.DECISION
+        }
+        self.assertEqual(len(by_outcome), 2)
+        growth = by_outcome["accept"]
+        revenue = by_outcome["reject"]
+        growth_conflict = next(c for c in review["conflicts"] if c["conflict_key"] == "growth")
+        revenue_conflict = next(c for c in review["conflicts"] if c["conflict_key"] == "revenue")
+        self.assertEqual(growth.source_refs, (
+            growth_conflict["blackboard_entry_id"], "source:growth-decision",
+        ))
+        self.assertEqual(revenue.source_refs, (
+            revenue_conflict["blackboard_entry_id"], "source:revenue-decision",
+        ))
+
     async def test_approval_requires_a_persisted_request_and_boolean_decision(self):
         services = BlackboardMultiExpertServices(
             tenant_id="tenant-a",

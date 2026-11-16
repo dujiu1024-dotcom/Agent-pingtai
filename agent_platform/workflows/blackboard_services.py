@@ -294,9 +294,13 @@ class BlackboardMultiExpertServices:
             if not conflict_entry_id:
                 raise ValueError("conflict is missing its durable Blackboard entry")
             decision = indexed_conflicts[index]
-            evidence_refs = decision.get("evidence_refs", ())
+            evidence_refs = tuple(decision.get("evidence_refs", ()))
+            # The decision must be durably linked to the exact conflict it
+            # resolves, not merely mention that entry ID in opaque content.
+            # Keep evidence lineage alongside the conflict reference.
+            decision_refs = (str(conflict_entry_id), *evidence_refs)
             await self._validate_source_refs(
-                scope=scope, scope_id=scope_id, refs=evidence_refs,
+                scope=scope, scope_id=scope_id, refs=decision_refs,
             )
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),
@@ -307,7 +311,7 @@ class BlackboardMultiExpertServices:
                     "rationale": decision["rationale"].strip(),
                 },
                 author_id=str(decision.get("decider_id") or "conflict-resolver"),
-                source_refs=tuple(evidence_refs),
+                source_refs=decision_refs,
                 status=EntryStatus.ACCEPTED,
             )
             persisted = await self._propose_once(entry)
