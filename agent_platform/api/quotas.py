@@ -59,7 +59,7 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             if scope_type == "tenant":
                 if scope_id != principal.tenant_id:
                     raise PermissionError("tenant budget scope must match authenticated tenant")
-            elif scope_type in {"project", "agent", "model"}:
+            elif scope_type in {"project", "agent", "model", "queue", "worker_pool"}:
                 if authorize_scope is None:
                     raise PermissionError("resource scope authorization is not configured")
                 scope_allowed = authorize_scope(principal, scope_type, scope_id)

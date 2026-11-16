@@ -34,7 +34,7 @@ class Budget:
     hard_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model"}:
+        if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker_pool"}:
             raise ValueError("invalid budget scope")
         if not self.scope_id:
             raise ValueError("scope_id is required")
@@ -47,6 +47,12 @@ class Budget:
                 not isinstance(value, int) or isinstance(value, bool) or value < 0
             ):
                 raise ValueError("token and concurrency limits must be non-negative integers")
+        if self.scope_type in {"queue", "worker_pool"}:
+            if self.hard_concurrency is None or any(value is not None for value in (
+                self.hard_tokens, self.hard_cost_usd, self.soft_tokens,
+                self.soft_cost_usd, self.hard_input_tokens, self.hard_output_tokens,
+            )):
+                raise ValueError("queue and worker_pool budgets must define only hard_concurrency")
         for cost in (self.hard_cost_usd, self.soft_cost_usd):
             if cost is not None and (
                 not isinstance(cost, Decimal) or not cost.is_finite() or cost < 0
@@ -72,7 +78,7 @@ class QuotaReservation:
     def __post_init__(self) -> None:
         if not self.reservation_id or not self.tenant_id or not self.run_id:
             raise ValueError("reservation, tenant and run ids are required")
-        if self.scope_type not in {"tenant", "project", "agent", "model"} or not self.scope_id:
+        if self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker_pool"} or not self.scope_id:
             raise ValueError("invalid reservation quota scope")
         counters = (
             self.reserved_tokens, self.reserved_input_tokens, self.reserved_output_tokens,
@@ -316,6 +322,32 @@ class QuotaService:
             reserved_output_tokens=estimated_output_tokens,
         )
         return await self.store.reserve(reservation)
+
+
+    async def reserve_concurrency(
+        self, *, tenant_id: str, run_id: str,
+        scope_type: str, scope_id: str,
+    ) -> QuotaReservation:
+        """Acquire a shared queue/worker-pool slot; callers must release it in finally."""
+        if not tenant_id or not run_id or not scope_id:
+            raise ValueError("tenant_id, run_id and scope_id are required")
+        if scope_type not in {"queue", "worker_pool"}:
+            raise ValueError("concurrency scope must be queue or worker_pool")
+        budget = await self.store.get_budget(
+            tenant_id, scope_type, scope_id, datetime.now(timezone.utc),
+        )
+        if budget is None or budget.hard_concurrency is None:
+            raise BudgetExceeded("queue/worker_pool concurrency budget not configured")
+        reservation = QuotaReservation(
+            reservation_id=str(uuid4()), tenant_id=tenant_id, run_id=run_id,
+            scope_type=scope_type, scope_id=scope_id,
+            reserved_tokens=0, reserved_cost_usd=Decimal("0"),
+            created_at=datetime.now(timezone.utc),
+            period_start=budget.period_start, period_end=budget.period_end,
+            reserved_input_tokens=0, reserved_output_tokens=0,
+        )
+        await self.store.reserve(reservation)
+        return reservation
 
     async def settle_run(
         self, reservation: QuotaReservation, *, model_key: str,
