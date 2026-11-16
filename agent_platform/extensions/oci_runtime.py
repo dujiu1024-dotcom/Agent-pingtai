@@ -26,9 +26,9 @@ class ExtensionPackageResolver(Protocol):
 
 
 class ExtensionArtifactStore(Protocol):
-    async def put(self, manifest: ExtensionManifest, package: SignedExtensionPackage) -> None: ...
-    async def get(self, manifest: ExtensionManifest) -> SignedExtensionPackage | None: ...
-    async def delete(self, manifest: ExtensionManifest) -> None: ...
+    async def put(self, tenant_id: str, manifest: ExtensionManifest, package: SignedExtensionPackage) -> None: ...
+    async def get(self, tenant_id: str, manifest: ExtensionManifest) -> SignedExtensionPackage | None: ...
+    async def delete(self, tenant_id: str, manifest: ExtensionManifest) -> None: ...
 
 
 class ExtensionSandboxRunner(Protocol):
@@ -129,6 +129,7 @@ class SandboxedExtensionRuntime:
     def __init__(
         self,
         *,
+        tenant_id: str,
         package_resolver: ExtensionPackageResolver,
         artifact_store: ExtensionArtifactStore,
         sandbox_runner: ExtensionSandboxRunner,
@@ -139,6 +140,9 @@ class SandboxedExtensionRuntime:
     ) -> None:
         if not 0 < timeout_seconds <= 120:
             raise ValueError("extension sandbox timeout must be in (0, 120]")
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("a tenant-scoped extension runtime is required")
+        self.tenant_id = tenant_id
         self.package_resolver = package_resolver
         self.artifact_store = artifact_store
         self.sandbox_runner = sandbox_runner
@@ -150,10 +154,10 @@ class SandboxedExtensionRuntime:
     async def install(self, manifest: ExtensionManifest) -> None:
         package = await self.package_resolver.resolve(manifest)
         _verify_signed_package(package, verifier=self.signature_verifier)
-        await self.artifact_store.put(manifest, package)
+        await self.artifact_store.put(self.tenant_id, manifest, package)
 
     async def uninstall(self, manifest: ExtensionManifest) -> None:
-        await self.artifact_store.delete(manifest)
+        await self.artifact_store.delete(self.tenant_id, manifest)
 
     async def invoke(
         self,
@@ -163,6 +167,8 @@ class SandboxedExtensionRuntime:
         action: str,
         payload: Mapping[str, Any],
     ) -> Any:
+        if getattr(principal, "tenant_id", None) != self.tenant_id:
+            raise PermissionError("extension invocation tenant mismatch")
         if not isinstance(action, str) or not action or len(action) > 128:
             raise ValueError("extension action must be non-empty and at most 128 characters")
         if not isinstance(payload, Mapping):
@@ -174,7 +180,7 @@ class SandboxedExtensionRuntime:
             if allowed is not True:
                 raise PermissionError("extension permission denied")
 
-        package = await self.artifact_store.get(manifest)
+        package = await self.artifact_store.get(self.tenant_id, manifest)
         if package is None:
             raise LookupError("extension package is not installed")
         _verify_signed_package(package, verifier=self.signature_verifier)
