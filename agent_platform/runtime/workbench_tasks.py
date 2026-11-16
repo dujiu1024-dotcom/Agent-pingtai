@@ -468,11 +468,13 @@ class RegistryLangGraphExecutorResolver:
         lifecycle_resolver: Callable[[str], Any],
         runtime_provider_resolver: Callable[[str], Any],
         graph_factory: Callable[..., Any],
+        run_context_resolver: Callable[[str], Any] | None = None,
     ) -> None:
         self.snapshots = snapshots
         self.lifecycle_resolver = lifecycle_resolver
         self.runtime_provider_resolver = runtime_provider_resolver
         self.graph_factory = graph_factory
+        self.run_context_resolver = run_context_resolver
 
     async def _resolve(self, callback: Callable[..., Any], *args: Any) -> Any:
         value = callback(*args)
@@ -555,6 +557,11 @@ class RegistryLangGraphExecutorResolver:
         runtime_provider = await self._resolve(
             self.runtime_provider_resolver, tenant_id,
         )
+        run_context_service = None
+        if self.run_context_resolver is not None:
+            run_context_service = await self._resolve(
+                self.run_context_resolver, tenant_id,
+            )
         if lifecycle.store is None or runtime_provider is None:
             raise RuntimeError("durable Run lifecycle and registry runtime provider are required")
         graph = self.graph_factory(
@@ -573,6 +580,7 @@ class RegistryLangGraphExecutorResolver:
                 registry_runtime_provider=runtime_provider,
                 model_template_id=template_id,
                 required_tools=tuple(tool_ids),
+                run_context_service=run_context_service,
             )
 
         if callable(getattr(graph, "__aenter__", None)) and callable(
