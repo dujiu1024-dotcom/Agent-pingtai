@@ -27,8 +27,13 @@ def chunk_document(document: Document, text: str, *, max_chars: int = 1200, over
         body = raw.strip()
         if body:
             offset = start + len(raw) - len(raw.lstrip())
-            page_markers = list(re.finditer(r"\[page:(\d+)\]", normalized[:end]))
-            page_number = int(page_markers[-1].group(1)) if page_markers else None
+            # Cite the page at the chunk's first source offset, even when
+            # the chunk overlaps a later page boundary.
+            page_number = None
+            for marker in re.finditer(r"\[page:(\d+)\]", normalized):
+                if marker.start() > start:
+                    break
+                page_number = int(marker.group(1))
             ordinal = len(chunks)
             content_hash = sha256_text(body)
             identity = ":".join((document.tenant_id, document.document_id, str(document.version), str(ordinal), content_hash))
