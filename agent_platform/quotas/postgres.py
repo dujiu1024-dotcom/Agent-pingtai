@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from agent_platform.quotas.service import Budget, BudgetExceeded, QuotaReservation, UsageEvent
 
@@ -152,6 +152,63 @@ class PostgresQuotaStore:
             )
             row = await cursor.fetchone()
         return int(row["tokens"]), Decimal(row["cost"]), int(row["concurrency"])
+
+
+    async def reconcile_cost(
+        self, tenant_id: str, start: datetime, end: datetime, *,
+        source: str, actual_cost_usd: Decimal,
+    ) -> dict[str, Any]:
+        """Persist an idempotent tenant invoice reconciliation snapshot."""
+        if not tenant_id or not source.strip() or len(source) > 128:
+            raise ValueError("tenant_id and a source label of at most 128 characters are required")
+        if start.tzinfo is None or end.tzinfo is None or end <= start:
+            raise ValueError("reconciliation period must be ordered and timezone-aware")
+        if not isinstance(actual_cost_usd, Decimal) or not actual_cost_usd.is_finite() or actual_cost_usd < 0:
+            raise ValueError("actual_cost_usd must be a finite non-negative Decimal")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT COALESCE(SUM(cost_usd),0) AS estimated_cost_usd
+                       FROM platform_usage_ledger
+                       WHERE tenant_id=%s AND occurred_at >= %s AND occurred_at < %s""",
+                    (tenant_id, start, end),
+                )
+                estimated = Decimal((await cursor.fetchone())["estimated_cost_usd"])
+                reconciliation_id = uuid4()
+                cursor = await connection.execute(
+                    """INSERT INTO platform_usage_reconciliation
+                       (reconciliation_id,tenant_id,period_start,period_end,source,
+                        estimated_cost_usd,actual_cost_usd)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (tenant_id,period_start,period_end,source) DO NOTHING
+                       RETURNING reconciliation_id,estimated_cost_usd,actual_cost_usd,variance_usd""",
+                    (reconciliation_id,tenant_id,start,end,source,estimated,actual_cost_usd),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    cursor = await connection.execute(
+                        """SELECT reconciliation_id,estimated_cost_usd,actual_cost_usd,variance_usd
+                           FROM platform_usage_reconciliation
+                           WHERE tenant_id=%s AND period_start=%s AND period_end=%s AND source=%s
+                           FOR UPDATE""",
+                        (tenant_id,start,end,source),
+                    )
+                    row = await cursor.fetchone()
+                    if row is None:
+                        raise RuntimeError("cost reconciliation record disappeared")
+                    if Decimal(row["actual_cost_usd"]) != actual_cost_usd:
+                        raise ValueError("this billing source and period were already reconciled with a different actual cost")
+        return {
+            "reconciliation_id": str(row["reconciliation_id"]),
+            "tenant_id": tenant_id,
+            "period_start": start.isoformat(),
+            "period_end": end.isoformat(),
+            "source": source,
+            "estimated_cost_usd": str(row["estimated_cost_usd"]),
+            "actual_cost_usd": str(row["actual_cost_usd"]),
+            "variance_usd": str(row["variance_usd"]),
+        }
 
     async def list_usage(
         self, tenant_id: str, start: datetime, end: datetime, *,
