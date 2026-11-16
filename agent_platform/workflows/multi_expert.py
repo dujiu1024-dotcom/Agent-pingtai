@@ -196,9 +196,9 @@ def build_multi_expert_workflow(
         request = await services.prepare_approval(state=state)
         return {"approval_request": dict(request)}
 
-    def human_approval(state: MultiExpertState) -> dict[str, Any]:
-        # interrupt() reads LangGraph's runnable context synchronously. Keep it
-        # in a sync node; async persistence happens in adjacent nodes.
+    async def human_approval(state: MultiExpertState) -> dict[str, Any]:
+        # interrupt() 需要读取 LangGraph 的 runnable 上下文；写成 async 节点可保证
+        # 与其余节点同路径执行（Python 3.10 下同步节点会被丢进线程池而丢失上下文）。
         try:
             from langgraph.types import interrupt
         except ImportError as exc:
