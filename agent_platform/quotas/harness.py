@@ -12,8 +12,10 @@ from agent_platform.quotas.service import QuotaService
 class QuotaEnforcedHarnessAdapter:
     """Enforce server-side quota around every call made through this Harness adapter.
 
-    Both estimators are mandatory: silently defaulting to zero would undermine
-    hard budgets. Register this decorator in the trusted Harness composition root.
+    Request and model/provider cost estimators are mandatory: silently defaulting
+    to zero would undermine hard budgets. Optional tool-cost and storage-byte
+    callbacks extend the ledger to those dimensions. The model cost callback must
+    exclude tool cost when the separate tool-cost callback is configured.
     """
 
     def __init__(
@@ -25,6 +27,8 @@ class QuotaEnforcedHarnessAdapter:
         estimate_actual_cost: Callable[[Any, Any], Decimal],
         scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
         context_window_tokens: int | Callable[[Any], int] = 8192,
+        estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
+        measure_storage_bytes: Callable[[Any, Any], int] | None = None,
     ) -> None:
         if not callable(context_window_tokens) and (
             not isinstance(context_window_tokens, int)
@@ -38,6 +42,8 @@ class QuotaEnforcedHarnessAdapter:
         self.estimate_request = estimate_request
         self.estimate_actual_cost = estimate_actual_cost
         self.scope_resolver = scope_resolver or self._tenant_scope
+        self.estimate_tool_cost_usd = estimate_tool_cost_usd
+        self.measure_storage_bytes = measure_storage_bytes
 
     @staticmethod
     def _tenant_scope(request: Any) -> tuple[str, str]:
@@ -122,8 +128,20 @@ class QuotaEnforcedHarnessAdapter:
         actual_cost = self.estimate_actual_cost(request, result)
         if not isinstance(actual_cost, Decimal) or not actual_cost.is_finite() or actual_cost < 0:
             raise ValueError("actual cost must be a finite non-negative Decimal")
-        if tool_calls < 0:
-            raise ValueError("actual usage counters must be non-negative")
+        if self.estimate_tool_cost_usd is not None:
+            tool_cost = self.estimate_tool_cost_usd(request, result)
+            if not isinstance(tool_cost, Decimal) or not tool_cost.is_finite() or tool_cost < 0:
+                raise ValueError("tool cost must be a finite non-negative Decimal")
+            actual_cost += tool_cost
+        storage_bytes = (
+            self.measure_storage_bytes(request, result)
+            if self.measure_storage_bytes is not None else 0
+        )
+        if (
+            not isinstance(storage_bytes, int) or isinstance(storage_bytes, bool)
+            or storage_bytes < 0
+        ):
+            raise ValueError("measured storage bytes must be a non-negative integer")
         model_key = (
             f"{context.model_template.template_id}@{context.model_template.version}"
         )
@@ -137,5 +155,6 @@ class QuotaEnforcedHarnessAdapter:
             agent_id=context.agent_id,
             tool_calls=tool_calls,
             runtime_ms=int((monotonic() - started) * 1000),
+            storage_bytes=storage_bytes,
         )
         return result
