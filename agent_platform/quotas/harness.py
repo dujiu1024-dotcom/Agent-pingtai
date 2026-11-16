@@ -25,6 +25,7 @@ class QuotaEnforcedHarnessAdapter:
         quota_service: QuotaService,
         estimate_request: Callable[[Any], tuple[int, Decimal] | tuple[int, int, Decimal]],
         estimate_actual_cost: Callable[[Any, Any], Decimal],
+        price_card_version_resolver: Callable[[Any], str | None] | None = None,
         scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
         context_window_tokens: int | Callable[[Any], int] = 8192,
         estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
@@ -42,6 +43,7 @@ class QuotaEnforcedHarnessAdapter:
         self.quota_service = quota_service
         self.estimate_request = estimate_request
         self.estimate_actual_cost = estimate_actual_cost
+        self.price_card_version_resolver = price_card_version_resolver
         self.scope_resolver = scope_resolver or self._tenant_scope
         self.estimate_tool_cost_usd = estimate_tool_cost_usd
         self.measure_storage_bytes = measure_storage_bytes
@@ -169,12 +171,21 @@ class QuotaEnforcedHarnessAdapter:
         model_key = (
             f"{context.model_template.template_id}@{context.model_template.version}"
         )
+        price_card_version = (
+            self.price_card_version_resolver(request)
+            if self.price_card_version_resolver is not None else None
+        )
+        if price_card_version is not None and (
+            not isinstance(price_card_version, str) or not price_card_version.strip()
+        ):
+            raise ValueError("price card version must be non-empty text")
         await self.quota_service.settle_run(
             reservation,
             model_key=model_key,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=actual_cost,
+            price_card_version=price_card_version,
             project_id=context.project_id,
             agent_id=context.agent_id,
             tool_calls=tool_calls,
