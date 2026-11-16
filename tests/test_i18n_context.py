@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date, time
+from datetime import date, time, timezone
 
 from agent_platform.i18n import (
     format_currency, format_date, format_time, locale_context,
@@ -45,7 +45,7 @@ class LocaleFormattingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ISO 4217"):
             format_currency(10, "usd", locale_context("en-US", "UTC"))
         with self.assertRaisesRegex(ValueError, "timezone-naive"):
-            format_time(time(9, 5, tzinfo=__import__("datetime").timezone.utc),
+            format_time(time(9, 5, tzinfo=timezone.utc),
                         locale_context("en-US", "UTC"))
 
 
