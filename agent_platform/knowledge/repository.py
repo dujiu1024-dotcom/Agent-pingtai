@@ -99,15 +99,17 @@ class InMemoryKnowledgeRepository:
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
                 continue
             grants = self.document_acl.get((document.tenant_id, document.document_id), set())
-            if (document.tenant_id, document.document_id) in self.document_acl_enforced and not any(
+            acl_key = (document.tenant_id, document.document_id)
+            owner_access = document.scope.value == "private" and document.owner_user_id == principal.user_id
+            grant_access = any(
                 permission in {"read", "manage"} and (
                     (kind == "user" and identifier == principal.user_id)
                     or (kind == "role" and identifier in principal.roles)
                     or (kind == "project" and identifier in principal.project_ids)
-                    or (document.scope.value == "private" and document.owner_user_id == principal.user_id)
                 )
                 for kind, identifier, permission in grants
-            ):
+            )
+            if acl_key in self.document_acl_enforced and not (owner_access or grant_access):
                 continue
             visible.append(document)
         return sorted(visible, key=lambda doc: doc.created_at, reverse=True)[:limit]
@@ -132,14 +134,17 @@ class InMemoryKnowledgeRepository:
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
                 continue
             grants = self.document_acl.get((document.tenant_id, document.document_id), set())
-            if (document.tenant_id, document.document_id) in self.document_acl_enforced and not any(
-                permission == "read" and (
+            acl_key = (document.tenant_id, document.document_id)
+            owner_access = document.scope.value == "private" and document.owner_user_id == principal.user_id
+            grant_access = any(
+                permission in {"read", "manage"} and (
                     (kind == "user" and identifier == principal.user_id)
                     or (kind == "role" and identifier in principal.roles)
                     or (kind == "project" and identifier in principal.project_ids)
                 )
                 for kind, identifier, permission in grants
-            ):
+            )
+            if acl_key in self.document_acl_enforced and not (owner_access or grant_access):
                 continue
             for chunk in self.chunks.get(key, []):
                 body = chunk.text.casefold()
