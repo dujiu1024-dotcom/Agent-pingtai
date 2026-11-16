@@ -16,7 +16,7 @@ def _load_mappings(path: Path) -> list[TableMapping]:
     payload: Any = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise ValueError("mapping file must contain a JSON array")
-    return [TableMapping(item["source_table"], item["target_table"], item["columns"])
+    return [TableMapping(item["source_table"], item["target_table"], item["columns"], item.get("transforms"))
             for item in payload]
 
 
