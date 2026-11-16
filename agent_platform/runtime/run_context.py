@@ -114,6 +114,9 @@ class RunContextSnapshotService:
         by_id: dict[str, dict[str, Any]] = {}
         for item in (*existing, *incoming):
             normalized = self._reference(item)
+            previous = by_id.get(normalized["ref_id"])
+            if previous is not None and previous.get("pinned"):
+                normalized["pinned"] = True
             by_id[normalized["ref_id"]] = normalized
         all_refs = list(by_id.values())
         pinned = [item for item in all_refs if item["pinned"]]
