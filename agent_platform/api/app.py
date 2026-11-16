@@ -31,6 +31,7 @@ from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
+from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 
 
 async def _principal_from_request(request: Any) -> Any:
@@ -125,6 +126,7 @@ def create_platform_app(
         protected_paths=("/api", "/auth"),
         login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
     )
+    app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
     if metrics_exporter is not None:
         app.include_router(create_observability_router(metrics=metrics_exporter))
