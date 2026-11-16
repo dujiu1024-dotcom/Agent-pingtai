@@ -169,9 +169,9 @@ class KnowledgeService:
             identifier = item.get("principal_id")
             permission = item.get("permission")
             if (
-                kind not in {"user", "role", "project"}
+                not isinstance(kind, str) or kind not in {"user", "role", "project"}
                 or not isinstance(identifier, str) or not identifier.strip()
-                or permission not in {"read", "manage"}
+                or not isinstance(permission, str) or permission not in {"read", "manage"}
             ):
                 raise ValueError("connector ACL contains an unmapped or invalid principal")
             grants.add((kind, identifier, permission))
@@ -208,9 +208,9 @@ class KnowledgeService:
         results=[]
         for item in page.items:
             document=self._connector_document(connector,tenant_id,item.document)
-            await self.ingest(document=document,content=item.content)
+            result = await self.ingest(document=document,content=item.content)
             await self._apply_connector_acl(tenant_id=tenant_id, document=document)
-            results.append(await self.repository.get_document(tenant_id, document.document_id))
+            results.append(result)
         await self._apply_connector_deletions(
             connector=connector, tenant_id=tenant_id,
             document_ids=page.deleted_document_ids,
