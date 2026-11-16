@@ -79,6 +79,23 @@ async def executor_resolver(record, worker_id):
 
 Worker 会验证返回对象必须是 `LangGraphRunExecutor`，且使用领取任务的同一 worker ID 和同一 RunStateStore。宿主 Graph Factory 是运行时扩展点，不是第二套任务/Run 生命周期。
 
+宿主可直接使用平台的快照执行器解析器，而不是自行重复实现 Run 解析与执行器组装：
+
+```python
+executor_resolver = RegistryLangGraphExecutorResolver(
+    snapshots=snapshot_service,
+    lifecycle_resolver=lifecycle_for_tenant,
+    runtime_provider_resolver=runtime_provider_for_tenant,
+    graph_factory=trusted_agent_graph_factory,
+)
+task_worker = RunExecutionWorker(
+    run_store=postgres_run_store,
+    executor_resolver=executor_resolver,
+    lifecycle_resolver=lifecycle_for_tenant,
+    worker_id=stable_worker_id,
+)
+```
+
 ## 应用组装
 
 - 使用同一连接池构建 `PostgresRunStateStore`、`PostgresRegistryRepository` 和 `PostgresRunSnapshotStore`。
