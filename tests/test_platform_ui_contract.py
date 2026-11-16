@@ -26,6 +26,7 @@ class PlatformWorkbenchUiContractTests(unittest.TestCase):
         self.assertIn('api("/files?limit=100")', source)
         self.assertIn('"/quotas/usage?start="', source)
         self.assertIn('"/observability/metrics"', source)
+        self.assertIn('api("/audit/tool-events?limit=100")', source)
 
     def test_ui_keeps_unmounted_capabilities_fail_closed(self):
         source = (
