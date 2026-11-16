@@ -27,6 +27,8 @@ class PlatformWorkbenchUiContractTests(unittest.TestCase):
         self.assertIn('"/quotas/usage?start="', source)
         self.assertIn('"/observability/metrics"', source)
         self.assertIn('api("/audit/tool-events?limit=100")', source)
+        self.assertIn('data-view="evaluation"', source)
+        self.assertIn('api("/knowledge/evaluate"', source)
         self.assertIn('data-memory-action=\'archive\'', source)
         self.assertIn('api("/knowledge/search?q="+encodeURIComponent', source)
 
