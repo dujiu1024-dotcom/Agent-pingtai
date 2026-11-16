@@ -132,7 +132,10 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             SyncResponse(200, {"status": "running"}, {"retry-after": "0"}),
             SyncResponse(200, {
                 "status": "succeeded",
-                "analyzeResult": {\n                    "content": "OCR extracted source text",\n                    "pages": [{"pageNumber": 1, "spans": [{"offset": 0, "length": 25}]}],\n                },
+                "analyzeResult": {
+                    "content": "OCR extracted source text",
+                    "pages": [{"pageNumber": 1, "spans": [{"offset": 0, "length": 25}]}],
+                },
             }),
         ])
         provider = AzureDocumentIntelligenceOCRProvider(
