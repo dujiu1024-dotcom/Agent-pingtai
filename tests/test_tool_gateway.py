@@ -174,6 +174,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.executed, [])
         self.assertEqual(self.audit.records[-1]["outcome"], "denied")
         self.assertEqual(self.audit.records[-1]["detail"], "resource_resolution_mismatch")
+        self.assertEqual(len(self.audit.records[-1]["action_digest"]), 64)
 
     async def test_unknown_tool_is_denied(self):
         with self.assertRaises(ToolExecutionDenied):
