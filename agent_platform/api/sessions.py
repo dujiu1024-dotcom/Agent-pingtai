@@ -57,8 +57,9 @@ def create_sessions_router(
             trace = getattr(request.state, "trace_context", None)
             await audit_writer.record(
                 tenant_id=principal.tenant_id, actor_id=principal.user_id,
-                action=f"{resource_type}.{action}", subject_id=resource_id,
-                detail={"trace_id": getattr(trace, "trace_id", None),
+                action="resource.access_granted", subject_id=resource_id,
+                detail={"resource_type": resource_type, "requested_action": action,
+                        "trace_id": getattr(trace, "trace_id", None),
                         "correlation_id": getattr(trace, "correlation_id", None)},
             )
         return principal, service
