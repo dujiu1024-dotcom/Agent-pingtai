@@ -20,15 +20,15 @@ def chunk_document(document: Document, text: str, *, max_chars: int = 1200, over
     while start < len(normalized):
         hard_end = min(len(normalized), start + max_chars)
         end = hard_end
-        if hard_end < len(normalized):
-            # Keep explicit page markers at chunk boundaries so citations never
-            # attribute text from a later page to the previous page.
-            page_boundary = normalized.find("[page:", start + 1, hard_end)
-            if page_boundary > start:
-                end = page_boundary
-            else:
-                boundary = max(normalized.rfind("\n", start, hard_end), normalized.rfind("。", start, hard_end), normalized.rfind(". ", start, hard_end))
-                if boundary > start + max_chars // 2: end = boundary + 1
+        # Keep explicit page markers at chunk boundaries so citations never
+        # attribute text from a later page to the previous page, including when
+        # the page marker falls inside the final chunk.
+        page_boundary = normalized.find("[page:", start + 1, hard_end)
+        if page_boundary > start:
+            end = page_boundary
+        elif hard_end < len(normalized):
+            boundary = max(normalized.rfind("\n", start, hard_end), normalized.rfind("。", start, hard_end), normalized.rfind(". ", start, hard_end))
+            if boundary > start + max_chars // 2: end = boundary + 1
         raw = normalized[start:end]
         body = raw.strip()
         if body:
