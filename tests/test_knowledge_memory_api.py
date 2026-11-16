@@ -83,6 +83,7 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
                 "expected_answer_terms": ["Evidence-backed"],
                 "expected_citation_document_ids": [document_id],
             }]},
+            headers={"x-roles": "knowledge.manage"},
         )
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json()["retrieval_summary"]["case_count"], 1)
