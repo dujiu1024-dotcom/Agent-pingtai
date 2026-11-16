@@ -37,7 +37,9 @@ class OutboxReplayTests(unittest.IsolatedAsyncioTestCase):
     async def test_replay_is_tenant_scoped_and_keeps_event_identity(self):
         event_id = uuid4()
         connection = FakeConnection([{"event_id": event_id}])
-        store = PostgresOutboxReplayStore(lambda: connection)
+        async def connect():
+            return connection
+        store = PostgresOutboxReplayStore(connect)
         replayed = await store.requeue_published(
             tenant_id="tenant-a", event_ids=[str(event_id)], actor_id="operator-a",
             confirmation="REPLAY-OUTBOX:tenant-a",
@@ -49,7 +51,9 @@ class OutboxReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(params[0], "tenant-a")
 
     async def test_requires_confirmation_and_bounded_unique_uuid_set(self):
-        store = PostgresOutboxReplayStore(lambda: FakeConnection([]))
+        async def connect():
+            return FakeConnection([])
+        store = PostgresOutboxReplayStore(connect)
         event_id = str(uuid4())
         with self.assertRaises(PermissionError):
             await store.requeue_published(
