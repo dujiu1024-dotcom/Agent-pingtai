@@ -242,14 +242,14 @@ def build_multi_expert_workflow(
                 route_after_review,
                 {
                     "resolve_conflicts": "resolve_conflicts",
-                    "prepare_approval": "prepare_approval",
+                    "human_approval": "prepare_approval",
                     "archive": "archive",
                 },
             ),
             (
                 "resolve_conflicts",
                 route_after_resolution,
-                {"human_approval": "human_approval", "archive": "archive"},
+                {"human_approval": "prepare_approval", "archive": "archive"},
             ),
             (
                 "apply_approval",
