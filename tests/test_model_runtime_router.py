@@ -8,6 +8,7 @@ from agent_platform.models.registry_resolver import RegistryModelResolver
 from agent_platform.models.runtime_router import (
     ModelRoutingError,
     ModelTransportError,
+    ModelUsageRecordingError,
     OpenAICompatibleHTTPTransport,
     OpenAICompatibleModelRouter,
     PostgresModelUsageRecorder,
@@ -218,7 +219,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             resolver=RegistryModelResolver(Secrets()),
             transport=transport, usage_recorder=usage,
         )
-        with self.assertRaisesRegex(Exception, "without provider usage"):
+        with self.assertRaisesRegex(ModelUsageRecordingError, "without provider usage"):
             await router.complete(
                 snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-no-usage",
                 template_id="primary", fallback_template_ids=("fallback",),
@@ -240,7 +241,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             resolver=RegistryModelResolver(Secrets()),
             transport=BooleanUsageTransport(),
         )
-        with self.assertRaisesRegex(Exception, "invalid token usage counters"):
+        with self.assertRaisesRegex(ModelUsageRecordingError, "invalid token usage counters"):
             await router.complete(
                 snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-bool-usage",
                 template_id="primary",
