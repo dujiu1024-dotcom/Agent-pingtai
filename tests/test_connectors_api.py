@@ -25,6 +25,14 @@ class Secrets:
         return "runtime-secret"
 
 
+class SyncQueue:
+    def __init__(self):
+        self.enqueued = []
+
+    async def enqueue(self, *, tenant_id, connection_id):
+        self.enqueued.append((tenant_id, connection_id))
+
+
 class Sink:
     async def upsert_page(self, *, tenant_id, connection_id, items):
         return None
@@ -36,6 +44,7 @@ class Sink:
 class ConnectorApiTests(unittest.TestCase):
     def setUp(self):
         self.repositories = {}
+        self.sync_queue = SyncQueue()
 
         async def principal(request):
             return Principal(
@@ -47,7 +56,7 @@ class ConnectorApiTests(unittest.TestCase):
             repo = self.repositories.setdefault(p.tenant_id, InMemoryConnectorRepository())
             return DataConnectorService(
                 repository=repo, providers={"drive": Provider()},
-                secrets=Secrets(), sink=Sink(),
+                secrets=Secrets(), sink=Sink(), sync_queue=self.sync_queue,
             )
 
         async def authorize(p, resource_type, resource_id, action):
@@ -74,6 +83,20 @@ class ConnectorApiTests(unittest.TestCase):
         revoked = self.client.post("/api/platform/v1/connectors/drive-1/revoke")
         self.assertEqual(revoked.status_code, 200)
         self.assertEqual(revoked.json()["status"], "revoked")
+
+    def test_sync_request_is_authorized_and_enqueued(self):
+        created = self.client.post(
+            "/api/platform/v1/connectors",
+            json={
+                "connection_id": "drive-sync", "provider": "drive",
+                "display_name": "Drive", "secret_ref": "secret://tenant-a/drive-sync",
+                "scopes": ["files.read"],
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        queued = self.client.post("/api/platform/v1/connectors/drive-sync/sync")
+        self.assertEqual(queued.status_code, 202)
+        self.assertEqual(self.sync_queue.enqueued, [("tenant-a", "drive-sync")])
 
     def test_plaintext_secret_reference_is_rejected(self):
         response = self.client.post(
