@@ -30,6 +30,14 @@ class LegacyExportVerificationTests(unittest.TestCase):
             self.assertTrue(report["valid"])
             self.assertEqual(report["rows"], 1)
 
+    def test_rejects_non_object_manifest(self):
+        for payload in ("[]", '"manifest"', "null", "42"):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as directory:
+                output = self._export(Path(directory))
+                (output / "manifest.json").write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "manifest must be a JSON object"):
+                    verify_export(output)
+
     def test_rejects_symlinked_export_file(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

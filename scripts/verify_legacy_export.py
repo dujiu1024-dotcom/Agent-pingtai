@@ -21,6 +21,8 @@ def verify_export(output_dir: Path) -> dict[str, Any]:
     manifest_path = output_dir / "manifest.json"
     _regular_file(manifest_path, "manifest")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest must be a JSON object")
     if manifest.get("format") != "legacy-sqlite-jsonl-v1":
         raise ValueError("unsupported export manifest format")
     tables = manifest.get("tables")
