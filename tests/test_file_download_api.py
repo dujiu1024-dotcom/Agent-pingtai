@@ -154,6 +154,15 @@ class FileDownloadApiAuthorizationTests(unittest.TestCase):
         self.assertEqual(current.status_code, 200)
         self.assertEqual(current.content, b"revised file bytes")
 
+        restored = client.post(
+            f"/api/platform/v1/files/{asset.asset_id}/versions/1/restore?expected_version=2",
+        )
+        self.assertEqual(restored.status_code, 201, restored.text)
+        self.assertEqual(restored.json()["version"], 3)
+        self.assertEqual(restored.json()["restored_from_version"], 1)
+        current = client.get(f"/api/platform/v1/files/{asset.asset_id}")
+        self.assertEqual(current.content, b"private file contents")
+
     def test_version_api_enforces_file_write_and_read_permissions(self):
         client, service, _repository, _storage, denied = self._client()
         _session, asset = self._seed(service)
