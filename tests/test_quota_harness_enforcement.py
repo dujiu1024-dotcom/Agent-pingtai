@@ -166,6 +166,74 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((tokens, cost, concurrency), (100, Decimal("0.10"), 1))
         store.settle = original_settle
 
+
+    async def test_tool_cost_and_storage_measurements_are_settled_to_usage_ledger(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"),
+        ))
+
+        class ToolAndStorageHarness:
+            async def run(self, _request):
+                return SimpleNamespace(
+                    usage={"input_tokens": 10, "output_tokens": 5},
+                    tool_calls=("search", "write"),
+                )
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            ToolAndStorageHarness(), quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+            estimate_tool_cost_usd=lambda _request, _result: Decimal("0.03"),
+            measure_storage_bytes=lambda _request, _result: 4096,
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-tool-storage",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id="project-a", agent_id="agent-a",
+        ))
+        await adapter.run(request)
+        events = await store.list_usage(
+            "tenant-a", now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].tool_calls, 2)
+        self.assertEqual(events[0].storage_bytes, 4096)
+        self.assertEqual(events[0].cost_usd, Decimal("0.05"))
+
+    async def test_invalid_storage_measurement_fails_closed_after_execution(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"), hard_concurrency=1,
+        ))
+        inner = FakeHarness()
+        adapter = QuotaEnforcedHarnessAdapter(
+            inner, quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+            measure_storage_bytes=lambda _request, _result: True,
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-invalid-storage",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        with self.assertRaisesRegex(ValueError, "storage bytes"):
+            await adapter.run(request)
+        tokens, cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (100, Decimal("0.10"), 1))
+
     async def test_tenant_scope_cannot_be_overridden_by_untrusted_resolver(self):
         inner = FakeHarness()
         adapter = QuotaEnforcedHarnessAdapter(
