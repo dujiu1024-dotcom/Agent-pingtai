@@ -392,8 +392,19 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 self.arguments = kwargs
                 return SimpleNamespace(input_tokens=12, output_tokens=10, total_tokens=22)
 
+        class SuccessTransport:
+            def __init__(self):
+                self.calls = []
+
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+                self.calls.append((config.provider_id, config.model_id))
+                return {
+                    "choices": [{"message": {"content": "budget answer"}}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 10},
+                }
+
         estimator = RecordingEstimator()
-        transport = FallbackTransport()
+        transport = SuccessTransport()
         router = OpenAICompatibleModelRouter(
             resolver=RegistryModelResolver(Secrets()),
             transport=transport,
@@ -409,7 +420,6 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(estimator.arguments["model_id"], "model-a")
         self.assertEqual(estimator.arguments["context_window_tokens"], 8192)
         self.assertEqual(transport.calls, [("primary", "model-a")])
-
     async def test_token_estimation_failure_blocks_provider_dispatch(self):
         from agent_platform.quotas.token_estimator import TokenEstimationError
 
