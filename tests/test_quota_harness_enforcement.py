@@ -243,10 +243,6 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
             await adapter.run(request)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     async def test_split_estimator_is_reserved_and_settled(self):
         now = datetime.now(timezone.utc)
         store = InMemoryQuotaStore()
@@ -274,4 +270,9 @@ if __name__ == "__main__":
             "tenant-a", "tenant", "tenant-a", now - timedelta(hours=1), now + timedelta(hours=1),
         )
         self.assertEqual((tokens, concurrency), (40, 0))
+
+
+if __name__ == "__main__":
+    unittest.main()
+
 
