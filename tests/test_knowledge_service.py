@@ -371,8 +371,8 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_office_parsers_extract_table_cells_from_docx_xlsx_and_pptx(self):
         import io
         try:
-            from docx import Document as WordDocument
             import openpyxl
+            from docx import Document as WordDocument
             from pptx import Presentation
             from pptx.util import Inches
         except ImportError:
