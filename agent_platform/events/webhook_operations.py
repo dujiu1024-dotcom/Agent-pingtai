@@ -76,9 +76,10 @@ def create_webhook_delivery_admin_router(
     store: Any,
     authorize_manage: Callable[[Principal], Any],
     replay_service: Any | None = None,
-
 ) -> APIRouter:
-    if replay_service is not None and not callable(getattr(replay_service, "replay", None)):
+    if replay_service is not None and not callable(
+        getattr(replay_service, "replay", None)
+    ):
         raise TypeError("replay_service must expose async replay()")
     router = APIRouter(prefix="/api/platform/v1/webhooks", tags=["webhooks"])
 
