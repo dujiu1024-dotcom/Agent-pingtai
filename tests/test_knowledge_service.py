@@ -101,6 +101,8 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
                 self.parser_thread = threading.get_ident()
                 return content.decode("utf-8")
 
+        from agent_platform.knowledge.ingestion import ParserRegistry
+
         parser = ThreadCheckingParser()
         registry = ParserRegistry(parsers=(parser,))
         service = KnowledgeService(InMemoryKnowledgeRepository(), parsers=registry)
