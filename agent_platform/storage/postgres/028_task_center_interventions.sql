@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS platform_tasks (
     project_id text,
     session_id uuid,
     input jsonb NOT NULL,
+    priority integer NOT NULL DEFAULT 100 CHECK (priority BETWEEN 0 AND 1000),
     status text NOT NULL DEFAULT 'queued'
         CHECK (status IN ('queued','running','paused','cancelling','succeeded','failed','cancelled')),
     run_id uuid,
@@ -32,7 +33,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_tasks_idempotency
     ON platform_tasks (tenant_id, actor_id, idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_platform_tasks_queue
-    ON platform_tasks (status, available_at, lease_expires_at, created_at);
+    ON platform_tasks (status, priority DESC, available_at, lease_expires_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_platform_tasks_actor
     ON platform_tasks (tenant_id, actor_id, updated_at DESC);
 
