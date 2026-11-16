@@ -5,7 +5,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Mapping, Protocol
 
 from agent_platform.control_plane.registry import RegistryVersion
 
@@ -172,7 +172,8 @@ class SkillDependencyReviewer:
     ) -> SkillDependencyReview:
         review = await self.store.get(tenant_id, item.item_id, item.version)
         if (
-            review is None or review.status != "approved"
+            tenant_id != item.tenant_id or review is None
+            or review.status != "approved"
             or review.manifest_digest != skill_manifest_digest(item.definition)
         ):
             raise SkillDependencyReviewError("Skill dependency review is missing, rejected, or stale")
