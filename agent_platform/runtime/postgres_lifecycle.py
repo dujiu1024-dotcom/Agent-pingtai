@@ -254,12 +254,14 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
     WHERE task_id IS NOT NULL AND dispatch_ready=true
+      AND COALESCE(worker_attempts,0) < COALESCE(max_worker_attempts,5)
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
     )
     UPDATE platform_runs r SET worker_id=%s,
+      worker_attempts=COALESCE(r.worker_attempts,0)+1,
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
     RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
@@ -290,6 +292,36 @@ class PostgresRunStateStore(RunStateStore):
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND lease_expires_at>now() AND status='running'
     RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
+ async def record_workbench_failure(self,tenant_id:str,run_id:str,worker_id:str,*,error:str)->str|None:
+  """Retry an owned task after failure, or atomically move exhausted work to the DLQ."""
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""WITH updated AS (
+    UPDATE platform_runs SET
+      status=CASE WHEN worker_attempts>=max_worker_attempts THEN 'failed' ELSE 'interrupted' END,
+      last_error=%s,
+      dead_lettered_at=CASE WHEN worker_attempts>=max_worker_attempts THEN now() ELSE NULL END,
+      dead_letter_reason=CASE WHEN worker_attempts>=max_worker_attempts THEN %s ELSE NULL END,
+      finished_at=CASE WHEN worker_attempts>=max_worker_attempts THEN now() ELSE NULL END,
+      worker_id=NULL,lease_expires_at=NULL,version=version+1,updated_at=now()
+    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s
+      AND status NOT IN ('succeeded','failed','cancelled','timed_out')
+    RETURNING tenant_id,run_id,status,worker_attempts,max_worker_attempts,last_error
+   ), dead_letter AS (
+    INSERT INTO platform_run_dead_letters
+      (tenant_id,run_id,attempt_count,max_attempts,reason,payload)
+    SELECT tenant_id,run_id,worker_attempts,max_worker_attempts,last_error,
+      jsonb_build_object('source','workbench_worker','run_id',run_id)
+    FROM updated WHERE status='failed'
+    ON CONFLICT (tenant_id,run_id) DO UPDATE SET
+      attempt_count=EXCLUDED.attempt_count,max_attempts=EXCLUDED.max_attempts,
+      reason=EXCLUDED.reason,payload=EXCLUDED.payload,updated_at=now()
+    RETURNING run_id
+   )
+   SELECT status FROM updated""",(error[:500],error[:500],tenant_id,UUID(run_id),worker_id))
+   row=await cur.fetchone()
+   return row["status"] if row is not None else None
+
  async def release_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
   c=await self._connect()
   async with c:
