@@ -42,7 +42,7 @@ class TaskRunStore(InMemoryRunStateStore):
             "output": None, "usage": {}, "trace_id": None, "created_by": actor_id,
             "request_digest": request_digest, "created_at": now, "updated_at": now,
             "started_at": None, "finished_at": None, "checkpoint_ref": None,
-            "last_error": None, "registry_snapshot_digest": None,
+            "last_error": None, "registry_snapshot_digest": None, "dispatch_ready": False,
         }
         if key:
             self.idempotency[key] = run_id
@@ -69,6 +69,14 @@ class TaskRunStore(InMemoryRunStateStore):
                 rows.append(await self.get_task_record(tenant_id, run_id, actor_id=actor_id))
         return rows[:limit]
 
+    async def mark_task_ready(self, tenant_id, run_id, digest):
+        row = self.records.get(run_id)
+        if row is None or row["tenant_id"] != tenant_id:
+            return False
+        row["registry_snapshot_digest"] = digest
+        row["dispatch_ready"] = True
+        return True
+
     async def save_output(self, tenant_id, run_id, output, *, usage=None, trace_id=None):
         self.records[run_id]["output"] = output
         self.records[run_id]["usage"] = dict(usage or {})
@@ -78,7 +86,7 @@ class TaskRunStore(InMemoryRunStateStore):
         rows = []
         for run_id, row in list(self.records.items()):
             current = await self.get(row["tenant_id"], run_id)
-            if current and current.status in {
+            if row.get("dispatch_ready") and current and current.status in {
                 RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELLING,
             }:
                 rows.append(current)
@@ -177,6 +185,7 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
             input={"text": "market analysis"},
         )
         self.assertEqual(task["status"], "queued")
+        self.assertTrue(task["dispatch_ready"])
         self.assertEqual(task["project_id"], "project-a")
         self.assertEqual(task["session_id"], "session-a")
         snapshot = await self.snapshots.get(
