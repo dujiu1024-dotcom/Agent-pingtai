@@ -6,10 +6,10 @@ import asyncio
 import math
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
-from agent_platform.runtime.protocols import HarnessAdapter, HarnessRequest
+from agent_platform.runtime.protocols import HarnessAdapter, HarnessRequest, HarnessResult
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class HarnessBenchmarkCase:
     expected_contains: tuple[str, ...] = ()
     timeout_seconds: float = 120.0
     quality_threshold: float = 1.0
+    streaming: bool = False
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
@@ -80,6 +81,8 @@ class HarnessBenchmarkObservation:
     estimated_cost_usd: float | None = None
     attempts: int = 1
     recovered: bool = False
+    time_to_first_token_ms: int | None = None
+    streamed_events: int = 0
     error_type: str | None = None
 
 
@@ -110,6 +113,14 @@ class HarnessBenchmarkReport:
                     sum(row.quality_score for row in rows) / len(rows), 4
                 ),
                 "recovered_cases": sum(row.recovered for row in rows),
+                "average_time_to_first_token_ms": round(
+                    sum(
+                        row.time_to_first_token_ms or 0
+                        for row in rows if row.time_to_first_token_ms is not None
+                    ) / max(1, sum(row.time_to_first_token_ms is not None for row in rows)),
+                    2,
+                ),
+                "streamed_events": sum(row.streamed_events for row in rows),
             }
             if any(row.estimated_cost_usd is not None for row in rows):
                 result[runtime]["estimated_cost_usd"] = round(
@@ -125,14 +136,15 @@ class HarnessBenchmarkReport:
 
     def to_markdown(self) -> str:
         lines = [
-            "| Runtime | Pass rate | Quality | Avg latency (ms) | Input tokens | Output tokens | Est. cost (USD) |",
-            "|---|---:|---:|---:|---:|---:|---:|",
+            "| Runtime | Pass rate | Quality | Avg latency (ms) | TTFT (ms) | Stream events | Input tokens | Output tokens | Est. cost (USD) |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for runtime, stats in sorted(self.summary().items()):
             lines.append(
                 f"| {runtime} | {stats['passed']}/{stats['cases']} "
                 f"({stats['pass_rate']:.0%}) | {stats['average_quality_score']:.2f} "
-                f"| {stats['average_duration_ms']} | {stats['total_input_tokens']} "
+                f"| {stats['average_duration_ms']} | {stats['average_time_to_first_token_ms']} "
+                f"| {stats['streamed_events']} | {stats['total_input_tokens']} "
                 f"| {stats['total_output_tokens']} | "
                 f"{stats.get('estimated_cost_usd', 'n/a')} |"
             )
@@ -183,15 +195,56 @@ class HarnessBenchmarkRunner:
                         )
                     if not self.gateway_tool_verifier(runtime, request):
                         raise ValueError("benchmark request tools are not verified as Gateway-only")
+                stream_method = getattr(adapter, "stream", None)
+                capabilities = getattr(adapter, "capabilities", None)
+                if case.streaming and (
+                    not callable(stream_method)
+                    or not bool(getattr(capabilities, "streaming", False))
+                ):
+                    raise ValueError(
+                        f"runtime {runtime} does not declare Harness streaming support"
+                    )
+
+                async def invoke_case():
+                    if not case.streaming:
+                        return await adapter.run(request), None, 0
+                    chunks: list[str] = []
+                    first_token_ms: int | None = None
+                    streamed_events = 0
+                    attempt_started = time.perf_counter()
+                    final_result: HarnessResult | None = None
+                    async for event in stream_method(request):
+                        streamed_events += 1
+                        if getattr(event, "event_type", None) == "text_delta":
+                            delta = getattr(event, "text_delta", None)
+                            if isinstance(delta, str) and delta:
+                                if first_token_ms is None:
+                                    first_token_ms = round(
+                                        (time.perf_counter() - attempt_started) * 1000
+                                    )
+                                chunks.append(delta)
+                        elif (
+                            getattr(event, "event_type", None) == "completed"
+                            and isinstance(getattr(event, "result", None), HarnessResult)
+                        ):
+                            final_result = event.result
+                    if final_result is None:
+                        final_result = HarnessResult(output_text="".join(chunks))
+                    elif not final_result.output_text and chunks:
+                        final_result = replace(final_result, output_text="".join(chunks))
+                    return final_result, first_token_ms, streamed_events
+
                 started = time.perf_counter()
                 result = None
+                time_to_first_token_ms: int | None = None
+                streamed_events = 0
                 last_error: Exception | None = None
                 attempts = 0
                 while attempts <= self.recovery_attempts:
                     attempts += 1
                     try:
-                        result = await asyncio.wait_for(
-                            adapter.run(request), timeout=case.timeout_seconds
+                        result, time_to_first_token_ms, streamed_events = await asyncio.wait_for(
+                            invoke_case(), timeout=case.timeout_seconds
                         )
                         last_error = None
                         break
@@ -214,6 +267,8 @@ class HarnessBenchmarkRunner:
                             missing_expectations=case.expected_contains,
                             output_text="",
                             attempts=attempts,
+                            time_to_first_token_ms=time_to_first_token_ms,
+                            streamed_events=streamed_events,
                             error_type=type(last_error).__name__,
                         )
                     )
@@ -256,6 +311,8 @@ class HarnessBenchmarkRunner:
                         estimated_cost_usd=estimated_cost,
                         attempts=attempts,
                         recovered=attempts > 1,
+                        time_to_first_token_ms=time_to_first_token_ms,
+                        streamed_events=streamed_events,
                     )
                 )
         return HarnessBenchmarkReport(tuple(observations))
