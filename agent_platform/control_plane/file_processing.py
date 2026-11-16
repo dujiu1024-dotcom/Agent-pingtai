@@ -146,7 +146,11 @@ class FileProcessingWorker:
             await self.queue.complete(job)
             return True
         try:
-            await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.SCANNING)
+            if not await repository.set_asset_status_if_not_deleted(
+                job.tenant_id, job.asset_id, AssetStatus.SCANNING,
+            ):
+                await self.queue.complete(job)
+                return True
             content = await storage.get(asset.object_key)
             import hashlib
             if hashlib.sha256(content).hexdigest() != asset.sha256:
@@ -157,7 +161,11 @@ class FileProcessingWorker:
                 await self.queue.complete(job)
                 return True
             if not accepted:
-                await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.REJECTED)
+                if not await repository.set_asset_status_if_not_deleted(
+                    job.tenant_id, job.asset_id, AssetStatus.REJECTED,
+                ):
+                    await self.queue.complete(job)
+                    return True
                 await storage.delete(asset.object_key)
                 await self.queue.complete(job)
                 return True
@@ -180,9 +188,10 @@ class FileProcessingWorker:
                 await knowledge.repository.delete_document(job.tenant_id, job.asset_id)
                 await self.queue.complete(job)
                 return True
-            await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.AVAILABLE)
-            latest = await repository.get_asset(job.tenant_id, job.asset_id)
-            if latest is None or latest.status is AssetStatus.DELETED:
+            became_available = await repository.set_asset_status_if_not_deleted(
+                job.tenant_id, job.asset_id, AssetStatus.AVAILABLE,
+            )
+            if not became_available:
                 await knowledge.repository.delete_document(job.tenant_id, job.asset_id)
             await self.queue.complete(job)
             return True
@@ -199,8 +208,18 @@ class FileProcessingWorker:
             error_code = type(exc).__name__.lower()
             dead = await self.queue.fail(job, error_code=error_code)
             if dead:
-                await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.REJECTED)
-                await storage.delete(asset.object_key)
+                marked_rejected = await repository.set_asset_status_if_not_deleted(
+                    job.tenant_id, job.asset_id, AssetStatus.REJECTED,
+                )
+                if marked_rejected:
+                    await storage.delete(asset.object_key)
+                else:
+                    await self.knowledge_for_tenant(job.tenant_id).repository.delete_document(
+                        job.tenant_id, job.asset_id,
+                    )
+                    await self.queue.complete(job)
             else:
-                await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.PENDING)
+                await repository.set_asset_status_if_not_deleted(
+                    job.tenant_id, job.asset_id, AssetStatus.PENDING,
+                )
             return True
