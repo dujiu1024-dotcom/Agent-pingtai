@@ -21,7 +21,7 @@ class QuotaEnforcedHarnessAdapter:
         inner: Any,
         *,
         quota_service: QuotaService,
-        estimate_request: Callable[[Any], tuple[int, Decimal]],
+        estimate_request: Callable[[Any], tuple[int, Decimal] | tuple[int, int, Decimal]],
         estimate_actual_cost: Callable[[Any, Any], Decimal],
         scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
         context_window_tokens: int | Callable[[Any], int] = 8192,
@@ -63,7 +63,16 @@ class QuotaEnforcedHarnessAdapter:
         scope_type, scope_id = self.scope_resolver(request)
         if scope_type == "tenant" and scope_id != context.tenant_id:
             raise ValueError("tenant quota scope must match authenticated Run tenant")
-        estimated_tokens, estimated_cost = self.estimate_request(request)
+        estimate = self.estimate_request(request)
+        if not isinstance(estimate, tuple) or len(estimate) not in {2, 3}:
+            raise ValueError("request estimator must return (total_tokens, cost) or (input_tokens, output_tokens, cost)")
+        if len(estimate) == 3:
+            estimated_input_tokens, estimated_output_tokens, estimated_cost = estimate
+            estimated_tokens = estimated_input_tokens + estimated_output_tokens
+        else:
+            estimated_tokens, estimated_cost = estimate
+            estimated_input_tokens = None
+            estimated_output_tokens = None
         if not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool) or estimated_tokens < 0:
             raise ValueError("estimated tokens must be a non-negative integer")
         if not isinstance(estimated_cost, Decimal) or not estimated_cost.is_finite() or estimated_cost < 0:
@@ -91,6 +100,8 @@ class QuotaEnforcedHarnessAdapter:
             scope_id=scope_id,
             estimated_tokens=estimated_tokens,
             estimated_cost_usd=estimated_cost,
+            estimated_input_tokens=estimated_input_tokens,
+            estimated_output_tokens=estimated_output_tokens,
         )
         started = monotonic()
         try:
