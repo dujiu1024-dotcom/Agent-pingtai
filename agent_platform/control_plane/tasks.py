@@ -95,6 +95,7 @@ class PostgresTaskCenterService:
                         or prior["project_id"] != project_id
                         or (str(prior["session_id"]) if prior["session_id"] else None) != session_id
                         or dict(prior["input"]) != dict(input)
+                        or prior["priority"] != priority
                     ):
                         raise TaskCenterError("idempotency key was reused with different task input")
                     return self._serialize(prior)
@@ -255,7 +256,8 @@ class PostgresTaskCenterService:
             "agent_id": row["agent_id"], "project_id": row["project_id"],
             "session_id": str(row["session_id"]) if row["session_id"] else None,
             "run_id": str(row["run_id"]) if row["run_id"] else None,
-            "status": row["status"], "input": dict(row["input"]),
+            "status": row["status"], "priority": row["priority"],
+            "attempts": row["attempts"], "input": dict(row["input"]),
             "output": dict(row["output"]) if row["output"] is not None else None,
             "last_error": row["last_error"],
             "created_at": row["created_at"].isoformat(),
