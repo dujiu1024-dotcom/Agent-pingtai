@@ -50,6 +50,15 @@ class ExtensionLifecycle:
             )
             visiting.add(extension_id)
             for required in sorted(dependency.dependencies):
+                expected_version = dependency.dependency_versions[required]
+                available_version = candidates.get(required)
+                if available_version is None:
+                    raise ValueError(f"missing extension dependency: {required}")
+                if available_version.version != expected_version:
+                    raise ValueError(
+                        f"extension dependency version mismatch: {required} "
+                        f"requires {expected_version}, found {available_version.version}"
+                    )
                 visit(required)
             visiting.remove(extension_id)
             visited.add(extension_id)
