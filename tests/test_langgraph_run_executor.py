@@ -83,6 +83,27 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await self.store.get("tenant","interrupted")).status,RunStatus.SUCCEEDED)
   self.assertEqual((await self.store.get("tenant","queued")).status,RunStatus.SUCCEEDED)
   self.assertEqual(self.graph.calls[-1][0],{"initial":"queued"})
+ async def test_recovery_applies_human_interventions_before_graph_resume(self):
+  await self.store.create("tenant","human-resume")
+  await self.manager.start("tenant","human-resume")
+  await self.manager.mark_interrupted(
+   "tenant","human-resume",checkpoint_ref="checkpoint-1",reason="human resume requested",
+  )
+  self.graph.checkpoints["tenant:human-resume"]="checkpoint-1"
+  class InterventionStore:
+   async def apply_pending(self,*,tenant_id,run_id,worker_id,applier):
+    await applier({"kind":"context","payload":{"guidance":"use verified evidence"}})
+    return 1
+  async def apply(graph,config,intervention):
+   graph.applied_intervention=intervention
+  executor=LangGraphRunExecutor(
+   graph=self.graph,lifecycle=self.manager,timeout_seconds=1,
+   intervention_store=InterventionStore(),intervention_applier=apply,
+  )
+  recovered=await executor.recover(load_initial_input=lambda row:{})
+  self.assertEqual(recovered,["human-resume"])
+  self.assertEqual(self.graph.applied_intervention["payload"]["guidance"],"use verified evidence")
+
  async def test_failed_worker_lease_does_not_start_run(self):
   class LeaseRejectingStore(InMemoryRunStateStore):
    async def acquire_lease(self,tenant_id,run_id,worker_id,*,lease_seconds):
@@ -113,6 +134,25 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   with self.assertRaises(asyncio.CancelledError): await task
   self.assertTrue(cancelled.is_set())
   self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.INTERRUPTED)
+
+ async def test_executor_pause_preserves_checkpoint_and_paused_status(self):
+  started=asyncio.Event()
+  class PausableGraph(FakeGraph):
+   async def ainvoke(self,payload,*,config):
+    self.checkpoints[config["configurable"]["thread_id"]]="checkpoint-pause"
+    started.set()
+    await asyncio.Event().wait()
+  graph=PausableGraph()
+  await self.store.create("tenant","pause")
+  executor=LangGraphRunExecutor(graph=graph,lifecycle=self.manager,timeout_seconds=10)
+  task=asyncio.create_task(executor.execute(tenant_id="tenant",run_id="pause",input={"task":"wait"}))
+  await started.wait()
+  paused=await executor.pause(tenant_id="tenant",run_id="pause")
+  self.assertEqual(paused.status,RunStatus.PAUSED)
+  self.assertEqual(paused.checkpoint_ref,"checkpoint-pause")
+  with self.assertRaises(asyncio.CancelledError):
+   await task
+  self.assertEqual((await self.store.get("tenant","pause")).status,RunStatus.PAUSED)
 
  async def test_lost_worker_lease_marks_run_interrupted(self):
   started=asyncio.Event();cancelled=asyncio.Event()

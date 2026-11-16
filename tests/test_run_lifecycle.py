@@ -13,6 +13,17 @@ from agent_platform.runtime.lifecycle import (
 class RunLifecycleTests(unittest.IsolatedAsyncioTestCase):
  async def asyncSetUp(self):
   self.store=InMemoryRunStateStore(); await self.store.create("t","r"); self.manager=RunLifecycleManager(self.store)
+ async def test_pause_requires_checkpoint_and_manual_resume_uses_interrupted_state(self):
+  await self.manager.start("t","r")
+  with self.assertRaises(ValueError):
+   await self.manager.pause("t","r",checkpoint_ref="")
+  paused=await self.manager.pause("t","r",checkpoint_ref="checkpoint-1")
+  self.assertEqual(paused.status,RunStatus.PAUSED)
+  self.assertEqual(paused.checkpoint_ref,"checkpoint-1")
+  resumed=await self.manager.request_resume("t","r")
+  self.assertEqual(resumed.status,RunStatus.INTERRUPTED)
+  self.assertEqual(resumed.last_error,"human resume requested")
+
  async def test_cancel_propagates_to_tool_and_run(self):
   await self.manager.start("t","r"); entered=asyncio.Event()
   async def tool(): entered.set(); await asyncio.Event().wait()

@@ -58,6 +58,9 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_authorizer: Any | None = None,
+    run_intervention_resolver: Any | None = None,
+    run_detail_resolver: Any | None = None,
+    run_executor_resolver: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
@@ -218,5 +221,8 @@ def create_platform_app(
             resolve_principal=_principal_from_request,
             resolve_lifecycle=run_lifecycle_resolver,
             authorize=run_authorizer,
+            resolve_interventions=run_intervention_resolver,
+            resolve_details=run_detail_resolver,
+            resolve_executor=run_executor_resolver,
         ))
     return app

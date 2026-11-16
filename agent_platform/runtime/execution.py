@@ -18,7 +18,8 @@ class LangGraphRunExecutor:
  def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900,
   worker_id:str|None=None,lease_seconds:int=60,registry_snapshot_service:Any|None=None,
   registry_runtime_provider:Any|None=None,model_template_id:str|None=None,
-  required_tools:tuple[str,...]=())->None:
+  required_tools:tuple[str,...]=(),intervention_store:Any|None=None,
+  intervention_applier:Any|None=None)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
   if registry_runtime_provider is not None and not (model_template_id or "").strip():
@@ -29,6 +30,10 @@ class LangGraphRunExecutor:
   self.registry_runtime_provider=registry_runtime_provider
   self.model_template_id=model_template_id
   self.required_tools=tuple(required_tools)
+  self.intervention_store=intervention_store
+  self.intervention_applier=intervention_applier
+  if intervention_store is not None and intervention_applier is None:
+   raise ValueError("intervention_applier is required with intervention_store")
  @staticmethod
  def _config(tenant_id:str,run_id:str)->dict[str,Any]:
   return {"configurable":{"thread_id":f"{tenant_id}:{run_id}"}}
@@ -140,6 +145,7 @@ class LangGraphRunExecutor:
     if current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
+    # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
     ref=await self._checkpoint_ref(tenant_id,run_id)
@@ -155,6 +161,13 @@ class LangGraphRunExecutor:
    finally:
     if acquired and release is not None:
      await release(tenant_id,run_id,self.worker_id)
+ async def pause(self, *, tenant_id: str, run_id: str, reason: str = "human intervention requested") -> RunSnapshot:
+  checkpoint_ref=await self._checkpoint_ref(tenant_id,run_id)
+  if not checkpoint_ref:
+   raise ValueError("Run has no durable checkpoint; pause refused")
+  return await self.lifecycle.pause(
+   tenant_id,run_id,checkpoint_ref=checkpoint_ref,reason=reason,
+  )
  async def recover(self,*,load_initial_input:Callable[[RunSnapshot],Any],limit:int=100,tenant_id:str|None=None)->list[str]:
   async def verify_checkpoint(row:RunSnapshot)->None:
    actual=await self._checkpoint_ref(row.tenant_id,row.run_id)
@@ -172,7 +185,20 @@ class LangGraphRunExecutor:
    try:
     payload: Any = None if row.checkpoint_ref else load_initial_input(row)
     if hasattr(payload,"__await__"):payload=await payload
-    ref_input=self.graph.ainvoke(payload,config=await self._run_config(row.tenant_id,row.run_id))
+    recovery_config=await self._run_config(row.tenant_id,row.run_id)
+    if self.intervention_store is not None:
+     applier=self.intervention_applier
+     if applier is None:
+      raise RuntimeError("human intervention applier is not configured")
+     async def apply_intervention(item:Any)->None:
+      await applier(
+       graph=self.graph,config=recovery_config,intervention=item,
+      )
+     await self.intervention_store.apply_pending(
+      tenant_id=row.tenant_id,run_id=row.run_id,
+      worker_id=self.worker_id,applier=apply_intervention,
+     )
+    ref_input=self.graph.ainvoke(payload,config=recovery_config)
     try:
      await self._run_leased(row.tenant_id,row.run_id,ref_input,timeout=self.timeout_seconds,already_claimed=True)
     except asyncio.TimeoutError:raise

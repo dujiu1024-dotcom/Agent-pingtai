@@ -38,14 +38,27 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""UPDATE platform_runs SET status=%s,version=version+1,checkpoint_ref=%s,last_error=%s,updated_at=now(),
     started_at=CASE WHEN %s='running' AND started_at IS NULL THEN now() ELSE started_at END,
     finished_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN now() ELSE finished_at END,
-    worker_id=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN NULL ELSE worker_id END,
-    lease_expires_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out') THEN NULL ELSE lease_expires_at END
+    worker_id=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out','interrupted','paused') THEN NULL ELSE worker_id END,
+    lease_expires_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out','interrupted','paused') THEN NULL ELSE lease_expires_at END
     WHERE tenant_id=%s AND run_id=%s AND version=%s
     RETURNING tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at""",
     (snapshot.status.value,snapshot.checkpoint_ref,snapshot.last_error,snapshot.status.value,snapshot.status.value,
      snapshot.status.value,snapshot.status.value,snapshot.tenant_id,snapshot.run_id,expected_version))
    row=await cur.fetchone()
    if row is None:raise RuntimeError("Run state version conflict or Run not found")
+   try:
+    from psycopg.types.json import Jsonb
+   except ImportError as exc:
+    raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+   await c.execute(
+    """INSERT INTO platform_run_events
+       (tenant_id,run_id,event_type,payload)
+       VALUES (%s,%s,'run.status_changed',%s)""",
+    (snapshot.tenant_id,snapshot.run_id,Jsonb({
+     "from_status":old_status.value,"to_status":snapshot.status.value,
+     "version":int(row["version"]),
+    })),
+   )
    return self._snapshot(row)
  async def claim_recoverable(self,worker_id:str,*,tenant_id:str|None=None,limit:int=100,lease_seconds:int=60)->list[RunSnapshot]:
   if not worker_id.strip() or limit<1 or lease_seconds<5:raise ValueError("invalid worker lease parameters")
