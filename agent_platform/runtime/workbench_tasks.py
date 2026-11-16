@@ -41,6 +41,7 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "task_id": str(row["task_id"]),
         "run_id": str(row["run_id"]),
         "agent_id": row["agent_id"],
+        "agent_version": row.get("agent_version"),
         "project_id": row.get("project_id"),
         "session_id": row.get("session_id"),
         "status": row["status"],
@@ -272,8 +273,9 @@ class RegistryBackedTaskCenterService:
         run_id = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
-            agent_id=agent_id, template_id=template_id,
-            template_version=template_version, input=dict(input),
+            agent_id=agent_id, agent_version=agent.version,
+            template_id=template_id, template_version=template_version,
+            input=dict(input),
             project_id=project_id, session_id=session_id,
             workflow_id=workflow.item_id if workflow is not None else None,
             idempotency_key=idempotency_key,
@@ -406,6 +408,8 @@ class RegistryLangGraphExecutorResolver:
         ]
         if len(matches) != 1 or not isinstance(matches[0].get("definition"), Mapping):
             raise ValueError("Run snapshot must contain exactly one immutable Agent definition")
+        if matches[0].get("version") != record.get("agent_version"):
+            raise ValueError("Run snapshot Agent version differs from the persisted task version")
         template_matches = [
             item for item in snapshot.entries
             if item.get("kind") == "model_template"
@@ -413,7 +417,11 @@ class RegistryLangGraphExecutorResolver:
         ]
         if len(template_matches) != 1:
             raise ValueError("Run snapshot does not contain the selected model template")
+        if template_matches[0].get("version") != record.get("template_version"):
+            raise ValueError("Run snapshot model template version differs from the persisted task version")
         agent_definition = dict(matches[0]["definition"])
+        if agent_definition.get("model_template_id") != template_id:
+            raise ValueError("Run-pinned Agent references a different model template")
         tool_ids = agent_definition.get("tool_ids", [])
         if not isinstance(tool_ids, list) or any(
             not isinstance(item, str) or not item for item in tool_ids
