@@ -1,10 +1,14 @@
 """Repeatable retrieval evaluation with Recall@K and citation coverage."""
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Sequence
+
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
+
+
 @dataclass(frozen=True)
 class RAGEvalCase:
     case_id: str

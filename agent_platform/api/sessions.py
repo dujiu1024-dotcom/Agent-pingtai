@@ -1,14 +1,17 @@
 """Authenticated session/message/file API backed by SessionAssetService."""
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from agent_platform.control_plane.sessions_assets import (
-    MessageRole, SessionAssetService, SessionError, SessionNotFound,
+    MessageRole,
+    SessionAssetService,
+    SessionError,
+    SessionNotFound,
 )
 from agent_platform.identity.models import Principal
 

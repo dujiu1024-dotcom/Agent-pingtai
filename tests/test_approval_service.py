@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import unittest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from datetime import datetime, timedelta, timezone
 
-from agent_platform.approval.policy import RiskLevel
-from agent_platform.approval.service import ApprovalRecord, ApprovalService
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from agent_platform.api.approvals import create_approval_router
+from agent_platform.approval.policy import RiskLevel
+from agent_platform.approval.service import ApprovalService
 from agent_platform.identity.models import Principal
 
 

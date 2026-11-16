@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import csv
 import inspect
+from datetime import datetime, timedelta
 from decimal import Decimal
-from datetime import datetime, timedelta, timezone
 from io import StringIO
 from typing import Any
 

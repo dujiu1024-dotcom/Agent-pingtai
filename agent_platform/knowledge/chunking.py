@@ -1,9 +1,12 @@
 """Deterministic text chunking with source offsets and content hashes."""
 from __future__ import annotations
+
 import hashlib
 import re
 from uuid import NAMESPACE_URL, uuid5
+
 from agent_platform.knowledge.contracts import Document, DocumentChunk
+
 
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()

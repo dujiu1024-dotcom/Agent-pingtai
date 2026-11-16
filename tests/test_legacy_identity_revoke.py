@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from agent_platform.identity.legacy_revoke import (
-    CONFIRMATION, invalidate_legacy_console_tokens,
+    CONFIRMATION,
+    invalidate_legacy_console_tokens,
 )
 
 

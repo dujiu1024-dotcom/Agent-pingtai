@@ -1,10 +1,19 @@
 """PostgreSQL repository with tenant/ACL-first hybrid retrieval."""
 from __future__ import annotations
-from typing import Any,Callable,Sequence
-from agent_platform.knowledge.contracts import Document,DocumentChunk,KnowledgePrincipal,KnowledgeScope,RetrievalHit
+
+from typing import Any, Callable, Sequence
+
+from agent_platform.knowledge.contracts import (
+    Document,
+    DocumentChunk,
+    KnowledgePrincipal,
+    KnowledgeScope,
+    RetrievalHit,
+)
+
 ConnectionFactory=Callable[[],Any]
 def _jsonb(value: Any)->Any:
-    try:from psycopg.types.json import Jsonb
+    try:from psycopg.types.json import Jsonb  # noqa: I001
     except ImportError as exc:raise RuntimeError("Install psycopg[binary,pool]") from exc
     return Jsonb(value)
 class PostgresKnowledgeRepository:

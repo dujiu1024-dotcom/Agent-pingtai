@@ -7,7 +7,11 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from agent_platform.identity.models import (
-    ApiCredentialRecord, AuthorizationContext, InvitationRecord, SessionRecord, UserRecord,
+    ApiCredentialRecord,
+    AuthorizationContext,
+    InvitationRecord,
+    SessionRecord,
+    UserRecord,
 )
 
 ConnectionFactory = Callable[[], Any]

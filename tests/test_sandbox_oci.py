@@ -2,7 +2,6 @@ import unittest
 
 from agent_platform.sandbox.oci import OciSandboxConfig, OciSandboxRunner
 
-
 IMAGE = "registry.example/agent-sandbox@sha256:" + "a" * 64
 
 

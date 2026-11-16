@@ -27,8 +27,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
-import db as dbm  # noqa: E402
 import feishu_env  # noqa: E402
+
+import db as dbm  # noqa: E402
 
 CONFIG = json.loads((ROOT / "agency" / "config.json").read_text(encoding="utf-8"))
 BASE_TOKEN = feishu_env.base_token(required=False)

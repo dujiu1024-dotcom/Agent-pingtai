@@ -1,11 +1,14 @@
 """Short-lived Run-bound opaque Gateway credentials; plaintext is returned once."""
 from __future__ import annotations
-import hashlib, secrets
+
+import hashlib
+import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 from uuid import uuid4
+
 
 def utcnow() -> datetime: return datetime.now(timezone.utc)
 

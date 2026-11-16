@@ -2,8 +2,10 @@
 import unittest
 
 from agent_platform.identity.http import (
-    IdentityASGIMiddleware, InMemorySlidingWindowRateLimiter,
-    auth_cookie_headers, clear_auth_cookie_headers,
+    IdentityASGIMiddleware,
+    InMemorySlidingWindowRateLimiter,
+    auth_cookie_headers,
+    clear_auth_cookie_headers,
 )
 from agent_platform.identity.models import Principal
 from agent_platform.identity.service import AuthenticationError

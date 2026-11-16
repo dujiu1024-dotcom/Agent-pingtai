@@ -1,8 +1,11 @@
 """Shared PostgreSQL endpoint directory with renewable owner leases."""
 from __future__ import annotations
-from datetime import datetime,timedelta,timezone
+
+from datetime import datetime, timedelta, timezone
 from typing import Any
-from agent_platform.gateway.service import EndpointDirectory,EndpointRecord
+
+from agent_platform.gateway.service import EndpointDirectory, EndpointRecord
+
 
 class PostgresEndpointDirectory(EndpointDirectory):
  def __init__(self,connection_factory:Any)->None:self._connect=connection_factory

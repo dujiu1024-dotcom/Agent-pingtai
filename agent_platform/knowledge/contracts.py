@@ -1,10 +1,12 @@
 """Knowledge domain contracts. Knowledge is versioned source material, not memory or chat history."""
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import uuid4
+
 
 def now_utc() -> datetime:
     return datetime.now(timezone.utc)

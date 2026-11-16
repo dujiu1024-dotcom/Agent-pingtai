@@ -4,10 +4,12 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+
 DSN=os.environ.get("AGENT_PLATFORM_TEST_DSN")
 if DSN:
  from psycopg import AsyncConnection
  from psycopg.rows import dict_row
+
  from agent_platform.control_plane.tokens import PostgresRunTokenStore, RunTokenService
  from agent_platform.gateway.postgres import PostgresEndpointDirectory
  from agent_platform.gateway.service import EndpointRecord

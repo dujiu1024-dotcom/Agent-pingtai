@@ -6,11 +6,19 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from agent_platform.identity.models import (
-    AuthenticatedApiCredential, IssuedApiCredential, IssuedSession,
-    Principal, ResourceRef,
+    AuthenticatedApiCredential,
+    IssuedApiCredential,
+    IssuedSession,
+    Principal,
+    ResourceRef,
 )
 from agent_platform.identity.protocols import IdentityRepository
-from agent_platform.identity.security import CredentialError, PasswordHasher, issue_opaque_token, token_digest
+from agent_platform.identity.security import (
+    CredentialError,
+    PasswordHasher,
+    issue_opaque_token,
+    token_digest,
+)
 
 
 class AuthenticationError(PermissionError):

@@ -12,7 +12,6 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 REQUIRED_COLUMNS = {
     "open_id", "name", "role", "projects", "console_token", "created_at",
 }

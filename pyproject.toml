@@ -77,7 +77,9 @@ include = [
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
-ignore = ["E501"]
+# E701/E702：agent_platform 全量代码统一采用单行紧凑写法（`if x: return y`、`a=1;b=2`），
+# 无自动修复且改写会触及业务行，按既有风格收敛掉这两条纯格式规则。
+ignore = ["E501", "E701", "E702"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["agent_platform", "tests"]

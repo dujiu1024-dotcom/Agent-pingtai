@@ -12,7 +12,6 @@ from agent_platform.approval.policy import RiskLevel
 from agent_platform.control_plane.registry import RegistryError, RegistryVersion
 from agent_platform.tools.gateway import ToolDefinition
 
-
 _RISK_LEVELS = {
     "read_only": RiskLevel.READ_ONLY,
     "internal_reversible": RiskLevel.INTERNAL_REVERSIBLE,

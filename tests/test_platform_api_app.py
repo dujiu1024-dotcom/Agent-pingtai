@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.app import create_platform_app
 from agent_platform.control_plane.sessions_assets import (
-    InMemoryObjectStorage, InMemorySessionRepository, SessionAssetService,
+    InMemoryObjectStorage,
+    InMemorySessionRepository,
+    SessionAssetService,
 )
 from agent_platform.identity.models import AuthorizationContext, Principal
 from agent_platform.identity.service import AuthenticationError

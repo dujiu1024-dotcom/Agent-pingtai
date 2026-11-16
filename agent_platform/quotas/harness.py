@@ -6,7 +6,7 @@ from decimal import Decimal
 from time import monotonic
 from typing import Any, Callable
 
-from agent_platform.quotas.service import QuotaService, QuotaReservation
+from agent_platform.quotas.service import QuotaService
 
 
 class QuotaEnforcedHarnessAdapter:

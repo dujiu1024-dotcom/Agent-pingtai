@@ -6,7 +6,14 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from agent_platform.quotas import Budget, BudgetExceeded, InMemoryQuotaStore, QuotaEnforcedHarnessAdapter, QuotaService, UsageEvent
+from agent_platform.quotas import (
+    Budget,
+    BudgetExceeded,
+    InMemoryQuotaStore,
+    QuotaEnforcedHarnessAdapter,
+    QuotaService,
+    UsageEvent,
+)
 
 
 class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):

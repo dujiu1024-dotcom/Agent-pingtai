@@ -1,10 +1,12 @@
 """Governed cross-session memory; candidate confirmation is required before retrieval."""
 from __future__ import annotations
-from dataclasses import dataclass,field,replace
-from datetime import datetime,timezone
+
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Protocol,Sequence,Awaitable,Callable
+from typing import Awaitable, Callable, Protocol, Sequence
 from uuid import uuid4
+
 
 def utc_now()->datetime:return datetime.now(timezone.utc)
 class MemoryScope(str,Enum): USER="user"; AGENT="agent"; PROJECT="project"; TENANT="tenant"

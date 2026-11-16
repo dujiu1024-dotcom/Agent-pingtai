@@ -5,7 +5,9 @@ from starlette.requests import Request
 
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.identity.models import (
-    AuthenticatedApiCredential, AuthorizationContext, Principal,
+    AuthenticatedApiCredential,
+    AuthorizationContext,
+    Principal,
 )
 
 

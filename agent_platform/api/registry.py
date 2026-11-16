@@ -6,7 +6,10 @@ from typing import Any, Awaitable, Callable
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.control_plane.registry import (
-    RegistryConflict, RegistryError, RegistryNotFound, RegistryService,
+    RegistryConflict,
+    RegistryError,
+    RegistryNotFound,
+    RegistryService,
 )
 from agent_platform.identity.models import Principal
 

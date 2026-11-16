@@ -1,8 +1,12 @@
 from __future__ import annotations
+
 import unittest
-from agent_platform.knowledge.contracts import Document,KnowledgePrincipal,KnowledgeScope
+
+from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
+
+
 class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_ingest_and_acl_filter_before_return(self):
         service=KnowledgeService(InMemoryKnowledgeRepository())
@@ -38,8 +42,8 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(citation["source_uri"],"file://source.md")
 
     async def test_connector_ingestion_and_rag_evaluation(self):
-        from agent_platform.knowledge.connectors import ConnectorDocument,ConnectorPage
-        from agent_platform.knowledge.evaluation import RAGEvalCase,evaluate_retrieval
+        from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
+        from agent_platform.knowledge.evaluation import RAGEvalCase, evaluate_retrieval
         class Connector:
             connector_id="fixture"
             async def list_changed(self,*,tenant_id,cursor,changed_since=None,limit=100):
@@ -60,6 +64,7 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_list_documents_respects_scope_and_latest_version(self):
         from dataclasses import replace
+
         from agent_platform.knowledge.contracts import KnowledgeScope
         service=KnowledgeService(InMemoryKnowledgeRepository())
         tenant=Document(tenant_id="t",title="tenant v1",source_uri="file://tenant",content_hash="x")

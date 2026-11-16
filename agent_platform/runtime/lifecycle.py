@@ -1,10 +1,12 @@
 """Run state transitions and cancellation propagation around Harness/LangGraph."""
 from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol
+
 
 def _now() -> datetime: return datetime.now(timezone.utc)
 class WorkerLeaseLost(RuntimeError):

@@ -1,11 +1,20 @@
 """Knowledge ingestion, connector sync and ACL-first hybrid retrieval."""
 from __future__ import annotations
-from typing import Protocol,Sequence
-from agent_platform.knowledge.chunking import chunk_document,sha256_text
+
+from typing import Protocol, Sequence
+
+from agent_platform.knowledge.chunking import chunk_document, sha256_text
 from agent_platform.knowledge.connectors import KnowledgeConnector
-from agent_platform.knowledge.contracts import Document,IngestResult,KnowledgePrincipal,RetrievalHit
+from agent_platform.knowledge.contracts import (
+    Document,
+    IngestResult,
+    KnowledgePrincipal,
+    RetrievalHit,
+)
 from agent_platform.knowledge.ingestion import ParserRegistry
 from agent_platform.knowledge.repository import KnowledgeRepository
+
+
 class Embedder(Protocol):
     model_id: str
     async def embed_query(self,text: str)->Sequence[float]: ...

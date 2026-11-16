@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 from typing import Any, Callable
-from uuid import UUID
 
 from agent_platform.observability.prompts import PromptRegistry, PromptVersion
 

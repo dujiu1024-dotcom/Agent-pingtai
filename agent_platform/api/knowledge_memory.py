@@ -4,6 +4,7 @@ Authentication is supplied by the host application; this router never trusts
 tenant/user identifiers from request bodies.
 """
 from __future__ import annotations
+
 import hashlib
 from datetime import datetime
 from typing import Any, Awaitable, Callable
@@ -17,7 +18,13 @@ from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, Kno
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
-from agent_platform.memory.service import MemoryCandidate, MemoryPrincipal, MemoryScope, MemoryService
+from agent_platform.memory.service import (
+    MemoryCandidate,
+    MemoryPrincipal,
+    MemoryScope,
+    MemoryService,
+)
+
 KnowledgePrincipalResolver=Callable[[Request],Awaitable[KnowledgePrincipal]]
 MemoryPrincipalResolver=Callable[[Request],Awaitable[MemoryPrincipal]]
 async def _authorize_document_update(

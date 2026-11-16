@@ -1,8 +1,11 @@
 """Safe text extraction adapters; binary formats are optional plug-ins."""
 from __future__ import annotations
+
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Protocol
+
+
 class DocumentParser(Protocol):
     supported_media_types: tuple[str, ...]
     def parse(self, content: bytes, media_type: str) -> str: ...
@@ -35,7 +38,12 @@ class OptionalParserAdapter:
         return self.parser.parse(content,media_type)
 class ParserRegistry:
     def __init__(self, parsers: tuple[DocumentParser,...]=()) -> None:
-        from agent_platform.knowledge.office_parsers import DOCXParser,PDFParser,PPTXParser,XLSXParser
+        from agent_platform.knowledge.office_parsers import (
+            DOCXParser,
+            PDFParser,
+            PPTXParser,
+            XLSXParser,
+        )
         self.parsers=(PlainTextParser(),HTMLParserAdapter(),PDFParser(),DOCXParser(),XLSXParser(),PPTXParser(),*parsers)
     def parse(self, content: bytes, media_type: str) -> str:
         for parser in self.parsers:

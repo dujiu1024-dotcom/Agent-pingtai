@@ -12,7 +12,6 @@ from secrets import token_urlsafe
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from agent_platform.identity.models import Principal
 from agent_platform.identity.service import AuthenticationError, IdentityService
 
 

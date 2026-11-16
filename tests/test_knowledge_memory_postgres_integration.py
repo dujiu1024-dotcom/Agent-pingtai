@@ -1,17 +1,31 @@
 """PostgreSQL integration tests for tenant-scoped Knowledge and Memory services."""
 from __future__ import annotations
+
 import os
 import unittest
 from pathlib import Path
 from uuid import uuid4
+
 DSN=os.environ.get("AGENT_PLATFORM_TEST_DSN")
 if DSN:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
-    from agent_platform.knowledge.contracts import Document,DocumentChunk,KnowledgePrincipal,KnowledgeScope
+
+    from agent_platform.knowledge.contracts import (
+        Document,
+        DocumentChunk,
+        KnowledgePrincipal,
+        KnowledgeScope,
+    )
     from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
     from agent_platform.memory.postgres_repository import PostgresMemoryRepository
-    from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService,MemoryStatus
+    from agent_platform.memory.service import (
+        MemoryCandidate,
+        MemoryPrincipal,
+        MemoryScope,
+        MemoryService,
+        MemoryStatus,
+    )
 @unittest.skipUnless(DSN,"AGENT_PLATFORM_TEST_DSN is not configured")
 class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

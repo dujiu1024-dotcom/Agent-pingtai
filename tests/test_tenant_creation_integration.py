@@ -11,6 +11,7 @@ DSN = os.environ.get("AGENT_PLATFORM_TEST_DSN")
 if DSN:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
+
     from agent_platform.identity.tenants import create_tenant_with_owner
 
 

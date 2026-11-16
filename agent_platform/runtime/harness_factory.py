@@ -1,9 +1,12 @@
 """Canonical runtime composition for supervised, quota-enforced Harness execution."""
 from __future__ import annotations
-from typing import Any, Callable
+
 from decimal import Decimal
+from typing import Any, Callable
+
 from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
 from agent_platform.quotas.service import QuotaService
+
 
 def compose_quota_enforced_harness(
     inner: Any, *, quota_service: QuotaService,

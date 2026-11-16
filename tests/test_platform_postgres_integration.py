@@ -22,11 +22,16 @@ if DSN:
         Scope,
     )
     from agent_platform.control_plane.data_connectors import DataConnection
-    from agent_platform.control_plane.postgres import PostgresRegistryRepository, PostgresSessionRepository
+    from agent_platform.control_plane.postgres import (
+        PostgresRegistryRepository,
+        PostgresSessionRepository,
+    )
     from agent_platform.control_plane.postgres_connectors import PostgresConnectorRepository
     from agent_platform.control_plane.registry import RegistryService
     from agent_platform.control_plane.sessions_assets import (
-        InMemoryObjectStorage, MessageRole, SessionAssetService,
+        InMemoryObjectStorage,
+        MessageRole,
+        SessionAssetService,
     )
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
@@ -40,7 +45,9 @@ if DSN:
         IdentityService,
     )
     from agent_platform.identity.service_accounts import (
-        PostgresServiceIdentityRepository, ServiceIdentityError, ServiceIdentityService,
+        PostgresServiceIdentityRepository,
+        ServiceIdentityError,
+        ServiceIdentityService,
     )
     from agent_platform.identity.tenants import create_tenant_with_owner
     from agent_platform.runtime.postgres_registry_snapshot import PostgresRunSnapshotStore
@@ -872,10 +879,12 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await self.service.authenticate(issued.access_token)
 
     async def test_postgres_session_and_asset_are_isolated_across_tenants(self):
-        from agent_platform.control_plane.sessions_assets import (
-            AssetStatus, ConversationSession, FileAsset, SessionNotFound,
-        )
         from agent_platform.control_plane.postgres import PostgresSessionRepository
+        from agent_platform.control_plane.sessions_assets import (
+            AssetStatus,
+            ConversationSession,
+            FileAsset,
+        )
 
         tenant_b = f"it-{uuid4().hex}"
         async with await self.connect() as conn:

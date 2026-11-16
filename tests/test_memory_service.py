@@ -1,6 +1,16 @@
 from __future__ import annotations
+
 import unittest
-from agent_platform.memory.service import InMemoryMemoryRepository,MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService
+
+from agent_platform.memory.service import (
+    InMemoryMemoryRepository,
+    MemoryCandidate,
+    MemoryPrincipal,
+    MemoryScope,
+    MemoryService,
+)
+
+
 class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_candidate_is_not_retrievable_until_confirmed(self):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="prefers concise reports",source_ref="conversation:123",confidence=.9,created_by="extractor")
@@ -118,7 +128,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(corrected.candidate.content, "approved rule")
 
     async def test_extraction_is_single_turn_provenance_bound_and_candidate_only(self):
-        from agent_platform.memory.extraction import MemoryDraft,MemoryExtractionService,MemoryTurn
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
         class Extractor:
             async def extract(self,*,turn):
                 self.received=turn
@@ -142,7 +156,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_extraction_requires_scoped_manage_grant_for_shared_memory(self):
-        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
 
         class ProjectExtractor:
             async def extract(self, *, turn):
@@ -184,7 +202,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(records[0].candidate.scope, MemoryScope.PROJECT)
 
     async def test_extraction_cannot_write_unapproved_tenant_scope(self):
-        from agent_platform.memory.extraction import MemoryDraft,MemoryExtractionService,MemoryTurn
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
         class TenantExtractor:
             async def extract(self,*,turn):
                 return [MemoryDraft(scope=MemoryScope.TENANT,scope_id=turn.tenant_id,content="shared policy",confidence=.9)]

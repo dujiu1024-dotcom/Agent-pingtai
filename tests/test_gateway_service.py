@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from agent_platform.control_plane.tokens import InMemoryRunTokenStore, RunTokenService
 from agent_platform.gateway.service import GatewayService, InMemoryEndpointDirectory
+
+
 class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
  async def test_isolates_runs_and_routes_to_owner_instance(self):
   directory=InMemoryEndpointDirectory(); app1=object(); app2=object()
@@ -54,7 +56,7 @@ class GatewayServiceTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await directory.get("t","r")).status,"inactive")
   self.assertIsNone(await tokens.resolve(issued.token))
  async def test_local_gateway_fails_closed_after_lease_deadline(self):
-  from datetime import datetime, timezone, timedelta
+  from datetime import datetime, timedelta, timezone
   directory=InMemoryEndpointDirectory()
   service=GatewayService(instance_id="gw",public_base_url="https://gw.example",directory=directory,app_factory=lambda _:object(),lease_seconds=60)
   await service.mount_run(tenant_id="t",run_id="r",bridge=object())

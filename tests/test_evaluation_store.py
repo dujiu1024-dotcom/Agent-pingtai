@@ -5,7 +5,12 @@ import unittest
 from datetime import datetime, timezone
 
 from agent_platform.observability.evaluation import (
-    EvalCase, EvalDataset, EvalGatePolicy, build_report, evaluate_case, gate_report,
+    EvalCase,
+    EvalDataset,
+    EvalGatePolicy,
+    build_report,
+    evaluate_case,
+    gate_report,
 )
 from agent_platform.observability.evaluation_store import PostgresEvaluationRepository
 
