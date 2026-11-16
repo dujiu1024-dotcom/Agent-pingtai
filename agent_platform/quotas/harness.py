@@ -66,7 +66,15 @@ class QuotaEnforcedHarnessAdapter:
         started = monotonic()
         try:
             result = await self.inner.run(request)
-            usage = getattr(result, "usage", {}) or {}
+        except BaseException:
+            # No provider result exists, so releasing the reservation is safe.
+            await self.quota_service.release_run(reservation)
+            raise
+
+        # Once the provider has returned successfully, never release the
+        # reservation on accounting/settlement failure: the model may already
+        # have incurred billable usage. Keep it active for retry/reconciliation.
+        usage = getattr(result, "usage", {}) or {}
             input_tokens = int(usage.get("input_tokens", 0))
             output_tokens = int(usage.get("output_tokens", 0))
             tool_calls = len(getattr(result, "tool_calls", ()) or ())
@@ -89,7 +97,4 @@ class QuotaEnforcedHarnessAdapter:
                 tool_calls=tool_calls,
                 runtime_ms=int((monotonic() - started) * 1000),
             )
-            return result
-        except BaseException:
-            await self.quota_service.release_run(reservation)
-            raise
+        return result
