@@ -228,6 +228,10 @@ class SessionAssetService:
             asset = await self.repository.get_asset(tenant_id, asset_id)
             if asset is None or asset.status != AssetStatus.AVAILABLE:
                 raise SessionNotFound("referenced file asset is not available")
+            if asset.project_id != session.project_id:
+                raise SessionError("referenced file must belong to the same project as its session")
+            if asset.session_id is not None and asset.session_id != session_id:
+                raise SessionError("referenced file is already linked to another session")
         message = ConversationMessage(
             tenant_id, str(uuid4()), session_id, role, content, actor_id,
             run_id, task_id, tuple(asset_ids), dict(metadata or {}),
