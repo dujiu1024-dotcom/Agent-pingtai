@@ -11,6 +11,17 @@ command -v docker >/dev/null
 command -v sort >/dev/null
 [[ -f "$COMPOSE_FILE" && -f "$ENV_FILE" && ! -L "$ENV_FILE" ]] || { echo "Compose file or safe release env file is missing" >&2; exit 2; }
 chmod 600 "$ENV_FILE"
+# Parse dotenv-style entries without evaluating the file as shell code.
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+  [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || { echo "invalid release env entry" >&2; exit 2; }
+  key="${BASH_REMATCH[1]}"
+  value="${BASH_REMATCH[2]}"
+  if [[ "$value" == \"*\" && "${#value}" -ge 2 ]]; then value="${value:1:${#value}-2}"; fi
+  if [[ "$value" == \'*\' && "${#value}" -ge 2 ]]; then value="${value:1:${#value}-2}"; fi
+  [[ "$value" != *"$("* && "$value" != *"$"* ]] || { echo "variable expansion is not allowed in release env values" >&2; exit 2; }
+  export "$key=$value"
+done < "$ENV_FILE"
 COMPOSE=(docker compose --project-directory "$ROOT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 "${COMPOSE[@]}" config --quiet
 version_le() { [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" == "$1" ]]; }
