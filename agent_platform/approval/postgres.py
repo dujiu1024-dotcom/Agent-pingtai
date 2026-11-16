@@ -53,6 +53,20 @@ class PostgresAuditSink:
         agent_id: str | None = None,
         detail: str = "",
     ) -> None:
+        # platform_tool_audit has a deliberately small CHECK constraint:
+        # denied / started / succeeded / failed. Preserve richer lifecycle
+        # semantics in detail while mapping them to the durable DB vocabulary.
+        outcome_aliases = {
+            "replayed": "succeeded",
+            "reconciliation_started": "started",
+            "reconciliation_completed": "succeeded",
+        }
+        persisted_outcome = outcome_aliases.get(outcome, outcome)
+        if persisted_outcome not in {"denied", "started", "succeeded", "failed"}:
+            raise ValueError("unsupported platform tool audit outcome")
+        persisted_detail = detail
+        if persisted_outcome != outcome:
+            persisted_detail = f"event={outcome}; {detail}" if detail else f"event={outcome}"
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
@@ -65,7 +79,8 @@ class PostgresAuditSink:
                     """,
                     (
                         tenant_id, actor_id, action, resource,
-                        action_digest, outcome, run_id, agent_id, redact_text(detail),
+                        action_digest, persisted_outcome, run_id, agent_id,
+                        redact_text(persisted_detail),
                     ),
                 )
 
