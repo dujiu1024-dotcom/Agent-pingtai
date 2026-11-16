@@ -1,4 +1,6 @@
-"""Governed consumer for successful Run memory-extraction events.
+# ruff: noqa: I001
+"""
+Governed consumer for successful Run memory-extraction events.
 
 The handler reloads all source data from tenant-scoped stores. Event payloads are
 identifiers only and are never treated as authorization evidence. Automatic
