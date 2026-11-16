@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unittest
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 from agent_platform.models.registry_resolver import RegistryModelResolver
@@ -14,6 +16,7 @@ from agent_platform.models.runtime_router import (
     PostgresModelUsageRecorder,
 )
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
+from agent_platform.quotas.service import Budget, InMemoryQuotaStore, QuotaService
 
 
 class Secrets:
@@ -249,6 +252,94 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 request_id="request-bool-usage",
             )
 
+
+    async def test_model_router_reserves_and_settles_provider_usage(self):
+        class TokenEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=4, output_tokens=8, total_tokens=12)
+
+        class CostEstimator:
+            async def estimate_micros(self, *, model_id, usage):
+                return 1000
+
+        class SuccessTransport:
+            async def complete(self, **kwargs):
+                return {
+                    "choices": [{"message": {"content": "quota answer"}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+                }
+
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        quotas = QuotaService(store)
+        await quotas.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=100, hard_input_tokens=50, hard_output_tokens=50,
+            hard_cost_usd=Decimal("0.01"), hard_concurrency=1,
+        ))
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()), transport=SuccessTransport(),
+            quota_service=quotas, token_estimator=TokenEstimator(),
+            quota_cost_estimator=CostEstimator(),
+        )
+        result = await router.complete(
+            snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-quota",
+            template_id="primary", messages=({"role": "user", "content": "hello"},),
+            request_id="request-quota", request_parameters={"max_tokens": 8},
+        )
+        self.assertEqual(result.content, "quota answer")
+        tokens, cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (5, Decimal("0.001"), 0))
+
+    async def test_ambiguous_provider_failure_retains_quota_and_disables_fallback(self):
+        class TokenEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=4, output_tokens=8, total_tokens=12)
+
+        class CostEstimator:
+            async def estimate_micros(self, *, model_id, usage):
+                return 1000
+
+        class AmbiguousTransport:
+            def __init__(self):
+                self.calls = []
+
+            async def complete(self, *, config, **kwargs):
+                self.calls.append((config.provider_id, config.model_id))
+                raise ModelTransportError("connection lost after request write")
+
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        quotas = QuotaService(store)
+        await quotas.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=100, hard_input_tokens=50, hard_output_tokens=50,
+            hard_cost_usd=Decimal("0.01"), hard_concurrency=2,
+        ))
+        transport = AmbiguousTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()), transport=transport,
+            quota_service=quotas, token_estimator=TokenEstimator(),
+            quota_cost_estimator=CostEstimator(),
+        )
+        with self.assertRaisesRegex(ModelUsageRecordingError, "outcome is ambiguous"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-ambiguous",
+                template_id="primary", fallback_template_ids=("fallback",),
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-ambiguous", request_parameters={"max_tokens": 8},
+            )
+        self.assertEqual(transport.calls, [("primary", "model-a")])
+        tokens, _cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, concurrency), (12, 1))
 
 if __name__ == "__main__":
     unittest.main()
