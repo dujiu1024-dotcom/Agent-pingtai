@@ -105,6 +105,15 @@ class RunLifecycleManager:
    if latest and latest.status==RunStatus.CANCELLING:
     updated=await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
   return updated
+ async def request_resume(self,tenant_id:str,run_id:str)->RunSnapshot:
+  old=await self.store.get(tenant_id,run_id)
+  if old is None:raise KeyError("Run not found")
+  if old.status!=RunStatus.PAUSED:raise ValueError("only a paused Run can be resumed")
+  if not old.checkpoint_ref:raise ValueError("paused Run has no durable checkpoint; resume refused")
+  return await self.store.transition(RunSnapshot(
+   tenant_id,run_id,RunStatus.INTERRUPTED,old.version,
+   checkpoint_ref=old.checkpoint_ref,last_error="human resume requested",
+  ),expected_version=old.version)
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
