@@ -189,7 +189,17 @@ class SupervisedDelegationService:
                 trace_id=result.trace_id,
             )
 
-        return tuple(await asyncio.gather(*(
-            run_one(spec, request, child_run_id)
+        # A failed child invalidates the fan-out as a whole. Cancel and await
+        # every sibling so no child Run continues detached from its parent.
+        tasks = [
+            asyncio.create_task(run_one(spec, request, child_run_id))
             for spec, (request, child_run_id) in zip(requests, prepared)
-        )))
+        ]
+        try:
+            return tuple(await asyncio.gather(*tasks))
+        except BaseException:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise

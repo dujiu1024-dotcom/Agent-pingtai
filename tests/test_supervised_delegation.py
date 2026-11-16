@@ -143,6 +143,26 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
                 DelegationSpec("same", "critic", "B"),
             ))
 
+    async def test_child_failure_cancels_and_awaits_all_siblings(self):
+        sibling_cancelled = asyncio.Event()
+
+        async def execute_child(*, request, parent_context, idempotency_key):
+            if request.input_text == "fail":
+                await asyncio.sleep(0)
+                raise RuntimeError("child failed")
+            try:
+                await asyncio.Event().wait()
+            finally:
+                sibling_cancelled.set()
+
+        self.executor.execute_child = execute_child
+        with self.assertRaisesRegex(RuntimeError, "child failed"):
+            await self.service.delegate(parent=self.parent, requests=(
+                DelegationSpec("failing", "researcher", "fail"),
+                DelegationSpec("sibling", "critic", "wait"),
+            ))
+        self.assertTrue(sibling_cancelled.is_set())
+
     async def test_timeout_and_output_limits_are_enforced(self):
         async def slow(**kwargs):
             await asyncio.sleep(0.05)
