@@ -1,8 +1,11 @@
 """Durable human intervention, Run timeline and checkpoint resume requests."""
 from __future__ import annotations
 
+import json
 from typing import Any, Awaitable, Callable, Mapping
 from uuid import UUID
+
+from agent_platform.observability.redaction import redact_payload
 
 ConnectionFactory = Callable[[], Any]
 InterventionApplier = Callable[[Mapping[str, Any]], Awaitable[None]]
@@ -82,6 +85,66 @@ class RunInterventionService:
             "applied_at": row["applied_at"].isoformat() if row["applied_at"] else None,
             "applied_by": row["applied_by"],
         } for row in rows]
+
+    async def record_event(
+        self, *, tenant_id: str, run_id: str, event_type: str,
+        payload: Mapping[str, Any], actor_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Persist a bounded, redacted Run step/log/artifact event."""
+        if tenant_id != self.tenant_id:
+            raise PermissionError("Run event tenant mismatch")
+        if event_type not in {
+            "run.step.started", "run.step.completed", "run.step.failed",
+            "run.log", "run.artifact.created",
+        }:
+            raise ValueError("unsupported Run event type")
+        if not isinstance(payload, Mapping) or not payload:
+            raise ValueError("Run event payload must be a non-empty object")
+        if actor_id is not None and (not isinstance(actor_id, str) or not actor_id.strip()):
+            raise ValueError("event actor_id must be a non-empty string")
+        if event_type.startswith("run.step.") and not (
+            isinstance(payload.get("step_id"), str) and payload["step_id"].strip()
+        ):
+            raise ValueError("step events require step_id")
+        if event_type == "run.log":
+            if payload.get("level") not in {"debug", "info", "warning", "error"}:
+                raise ValueError("Run log level is invalid")
+            if not isinstance(payload.get("message"), str) or not payload["message"].strip():
+                raise ValueError("Run log message is required")
+        if event_type == "run.artifact.created" and not (
+            isinstance(payload.get("artifact_id"), str) and payload["artifact_id"].strip()
+        ):
+            raise ValueError("artifact events require artifact_id")
+        safe_payload = redact_payload(dict(payload), max_text_chars=4000)
+        try:
+            encoded = json.dumps(safe_payload, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Run event payload must be JSON serializable") from exc
+        if len(encoded) > 32_000:
+            raise ValueError("Run event payload exceeds 32 KB")
+        from psycopg.types.json import Jsonb
+        db = await self._connect()
+        async with db:
+            async with db.transaction():
+                exists = await db.execute(
+                    "SELECT 1 FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR KEY SHARE",
+                    (self.tenant_id, UUID(run_id)),
+                )
+                if await exists.fetchone() is None:
+                    raise KeyError("Run not found")
+                cursor = await db.execute(
+                    """INSERT INTO platform_run_events
+                       (tenant_id,run_id,event_type,actor_id,payload)
+                       VALUES (%s,%s,%s,%s,%s)
+                       RETURNING event_id,occurred_at""",
+                    (self.tenant_id, UUID(run_id), event_type, actor_id, Jsonb(safe_payload)),
+                )
+                row = await cursor.fetchone()
+        return {
+            "event_id": str(row["event_id"]), "run_id": run_id,
+            "event_type": event_type, "actor_id": actor_id,
+            "payload": safe_payload, "occurred_at": row["occurred_at"].isoformat(),
+        }
 
     async def list_events(self, *, tenant_id: str, run_id: str, limit: int = 200) -> list[Mapping[str, Any]]:
         if tenant_id != self.tenant_id:
@@ -175,8 +238,34 @@ class PostgresRunDetailService:
                 (self.tenant_id, UUID(run_id)),
             )
             row = await cursor.fetchone()
-        if row is None:
-            return None
+            if row is None:
+                return None
+            event_cursor = await db.execute(
+                """SELECT event_id,event_type,actor_id,payload,occurred_at
+                   FROM platform_run_events WHERE tenant_id=%s AND run_id=%s
+                   ORDER BY occurred_at DESC,event_id DESC LIMIT 500""",
+                (self.tenant_id, UUID(run_id)),
+            )
+            event_rows = list(reversed(await event_cursor.fetchall()))
+            approval_cursor = await db.execute(
+                """SELECT approval_id,action,resource,risk_level,requested_by,
+                          decided_by,status,expires_at
+                   FROM platform_approvals WHERE tenant_id=%s AND run_id=%s
+                   ORDER BY expires_at,approval_id""",
+                (self.tenant_id, UUID(run_id)),
+            )
+            approval_rows = await approval_cursor.fetchall()
+        events = [{
+            "event_id": str(item["event_id"]), "event_type": item["event_type"],
+            "actor_id": item["actor_id"], "payload": dict(item["payload"]),
+            "occurred_at": item["occurred_at"].isoformat(),
+        } for item in event_rows]
+        approvals = [{
+            "approval_id": str(item["approval_id"]), "action": item["action"],
+            "resource": item["resource"], "risk_level": item["risk_level"],
+            "requested_by": item["requested_by"], "decided_by": item["decided_by"],
+            "status": item["status"], "expires_at": item["expires_at"].isoformat(),
+        } for item in approval_rows]
         return {
             "tenant_id": row["tenant_id"], "run_id": str(row["run_id"]),
             "project_id": row["project_id"], "task_id": row["task_id"],
@@ -190,4 +279,9 @@ class PostgresRunDetailService:
             "created_at": row["created_at"].isoformat(),
             "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
             "checkpoint_ref": row["checkpoint_ref"], "last_error": row["last_error"],
+            "events": events,
+            "steps": [event for event in events if event["event_type"].startswith("run.step.")],
+            "logs": [event for event in events if event["event_type"] == "run.log"],
+            "artifacts": [event for event in events if event["event_type"] == "run.artifact.created"],
+            "approvals": approvals,
         }
