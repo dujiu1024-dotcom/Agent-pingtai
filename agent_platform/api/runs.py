@@ -98,7 +98,9 @@ def create_runs_router(
     if resolve_interventions is not None:
         @router.post("/{run_id}/interventions", status_code=201)
         async def submit_intervention(run_id: str, request: Request):
-            principal, _ = await context(request, run_id, "intervene")
+            principal, lifecycle = await context(request, run_id, "intervene")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
             try:
                 body = await request.json()
             except Exception as exc:
@@ -122,7 +124,9 @@ def create_runs_router(
 
         @router.get("/{run_id}/interventions")
         async def list_interventions(run_id: str, request: Request):
-            principal, _ = await context(request, run_id, "read")
+            principal, lifecycle = await context(request, run_id, "read")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
             service = await resolve_interventions(principal)
             return {"items": await service.list_interventions(
                 tenant_id=principal.tenant_id, run_id=run_id,
@@ -130,7 +134,9 @@ def create_runs_router(
 
         @router.get("/{run_id}/events")
         async def list_run_events(run_id: str, request: Request, limit: int = 200):
-            principal, _ = await context(request, run_id, "read")
+            principal, lifecycle = await context(request, run_id, "read")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
             service = await resolve_interventions(principal)
             try:
                 items = await service.list_events(
