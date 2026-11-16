@@ -39,16 +39,19 @@ class PostgresQuotaStore:
                 await connection.execute(
                     """INSERT INTO platform_quota_budgets
                     (tenant_id,scope_type,scope_id,period_start,period_end,hard_tokens,
-                     hard_cost_usd,hard_concurrency,soft_tokens,soft_cost_usd)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     hard_cost_usd,hard_concurrency,soft_tokens,soft_cost_usd,
+                     hard_input_tokens,hard_output_tokens)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (tenant_id,scope_type,scope_id,period_start)
                     DO UPDATE SET period_end=EXCLUDED.period_end,
                     hard_tokens=EXCLUDED.hard_tokens,hard_cost_usd=EXCLUDED.hard_cost_usd,
                     hard_concurrency=EXCLUDED.hard_concurrency,soft_tokens=EXCLUDED.soft_tokens,
-                    soft_cost_usd=EXCLUDED.soft_cost_usd,updated_at=now()""",
+                    soft_cost_usd=EXCLUDED.soft_cost_usd,hard_input_tokens=EXCLUDED.hard_input_tokens,
+                    hard_output_tokens=EXCLUDED.hard_output_tokens,updated_at=now()""",
                     (budget.tenant_id,budget.scope_type,budget.scope_id,budget.period_start,
                      budget.period_end,budget.hard_tokens,budget.hard_cost_usd,
-                     budget.hard_concurrency,budget.soft_tokens,budget.soft_cost_usd),
+                     budget.hard_concurrency,budget.soft_tokens,budget.soft_cost_usd,
+                     budget.hard_input_tokens,budget.hard_output_tokens),
                 )
 
     async def get_budget(self, tenant_id: str, scope_type: str, scope_id: str, now: datetime) -> Budget | None:
@@ -71,6 +74,8 @@ class PostgresQuotaStore:
             hard_cost_usd=Decimal(row["hard_cost_usd"]) if row["hard_cost_usd"] is not None else None,
             hard_concurrency=row["hard_concurrency"],soft_tokens=row["soft_tokens"],
             soft_cost_usd=Decimal(row["soft_cost_usd"]) if row["soft_cost_usd"] is not None else None,
+            hard_input_tokens=row.get("hard_input_tokens"),
+            hard_output_tokens=row.get("hard_output_tokens"),
         )
 
     async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]:
@@ -80,10 +85,11 @@ class PostgresQuotaStore:
                 try:
                     cursor = await connection.execute(
                         """SELECT warning_soft_tokens,warning_soft_cost
-                        FROM platform_quota_reserve(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        FROM platform_quota_reserve_split(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (UUID(reservation.reservation_id),reservation.tenant_id,UUID(reservation.run_id),
                          reservation.scope_type,reservation.scope_id,reservation.period_start,
-                         reservation.reserved_tokens,reservation.reserved_cost_usd),
+                         reservation.reserved_tokens,reservation.reserved_cost_usd,
+                         reservation.reserved_input_tokens,reservation.reserved_output_tokens),
                     )
                     row = await cursor.fetchone()
                 except Exception as exc:
@@ -91,6 +97,7 @@ class PostgresQuotaStore:
                     if any(reason in message for reason in (
                         "quota budget not configured", "hard token budget exceeded",
                         "hard cost budget exceeded", "concurrency quota exceeded",
+                        "hard input token budget exceeded", "hard output token budget exceeded",
                     )):
                         raise BudgetExceeded(message) from exc
                     raise
