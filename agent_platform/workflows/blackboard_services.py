@@ -294,7 +294,7 @@ class BlackboardMultiExpertServices:
             if not conflict_entry_id:
                 raise ValueError("conflict is missing its durable Blackboard entry")
             decision = indexed_conflicts[index]
-            evidence_refs = tuple(evidence_refs)
+            evidence_refs = tuple(decision.get("evidence_refs", ()))
             # The decision must be durably linked to the exact conflict it
             # resolves, not merely mention that entry ID in opaque content.
             # Keep evidence lineage alongside the conflict reference.
