@@ -216,7 +216,6 @@ class QuotaReportingApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["hard_input_tokens"], 700)
         self.assertEqual(response.json()["hard_output_tokens"], 300)
-        stored = awaitable = None
 
     def test_budget_configuration_rejects_bool_string_and_infinite_limits(self):
         app = FastAPI()
