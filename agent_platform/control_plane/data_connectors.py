@@ -208,8 +208,8 @@ class DataConnectorService:
         provider = self.providers.get(connection.provider)
         if provider is None:
             raise ConnectorError("connector provider is not registered")
-        credential = await self.secrets.resolve(connection.secret_ref)
         try:
+            credential = await self.secrets.resolve(connection.secret_ref)
             page = await provider.fetch_page(
                 credential=credential, scopes=connection.scopes, cursor=connection.cursor,
             )
