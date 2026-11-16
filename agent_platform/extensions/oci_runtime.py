@@ -84,6 +84,10 @@ with zipfile.ZipFile(io.BytesIO(archive), "r") as package:
         kind = stat.S_IFMT(mode)
         if (not name or path.is_absolute() or "\" in name or
             any(part in ("", ".", "..") for part in name.rstrip("/").split("/")) or
+            ":" in name.rstrip("/").split("/")[0] or
+            (info.flag_bits & 0x1) or
+            (info.file_size and info.compress_size == 0) or
+            (info.compress_size and info.file_size / info.compress_size > 100) or
             (kind not in (0, stat.S_IFREG, stat.S_IFDIR)) or stat.S_ISLNK(mode)):
             raise RuntimeError("unsafe extension archive member")
         key = path.as_posix().casefold()
