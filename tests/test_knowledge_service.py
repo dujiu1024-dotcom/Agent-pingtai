@@ -8,6 +8,23 @@ from agent_platform.knowledge.service import KnowledgeService
 
 
 class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ingestion_rejects_invalid_upload_and_chunk_contracts(self):
+        repository = InMemoryKnowledgeRepository()
+        for value in (True, 1024.5, "2048", 0, 1023):
+            with self.subTest(max_upload_bytes=value), self.assertRaises(ValueError):
+                KnowledgeService(repository, max_upload_bytes=value)
+
+        service = KnowledgeService(repository)
+        document = Document(
+            tenant_id="t", title="contract", source_uri="memory://contract",
+            content_hash="pending",
+        )
+        for max_chars, overlap in ((0, 0), (True, 0), (10, -1), (10, True), (10, 10), (10, 1.5)):
+            with self.subTest(max_chars=max_chars, overlap=overlap), self.assertRaises(ValueError):
+                await service.ingest(document=document, content=b"valid bytes", max_chars=max_chars, overlap=overlap)
+        with self.assertRaises(TypeError):
+            await service.ingest(document=document, content="not bytes")
+
     async def test_ingest_and_acl_filter_before_return(self):
         service=KnowledgeService(InMemoryKnowledgeRepository())
         public=Document(tenant_id="t1",title="public",source_uri="s3://public",content_hash="pending")
