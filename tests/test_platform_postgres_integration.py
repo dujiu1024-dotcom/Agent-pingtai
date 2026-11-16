@@ -1545,7 +1545,46 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed["status"], "succeeded")
         self.assertEqual(completed["output"], {"answer": "complete"})
         self.assertEqual(completed["trace_id"], "trace-task")
+        source_record = await store.get_run_record(self.tenant_id, run_id)
+        self.assertEqual(source_record["created_by"], "actor-a")
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT topic,payload FROM platform_outbox
+                   WHERE tenant_id=%s AND topic='memory.extraction.requested'""",
+                (self.tenant_id,),
+            )
+            memory_events = await cur.fetchall()
+        self.assertEqual(len(memory_events), 1)
+        self.assertEqual(memory_events[0]["payload"]["run_id"], run_id)
+        self.assertEqual(memory_events[0]["payload"]["session_id"], "session-a")
+        self.assertEqual(memory_events[0]["payload"]["actor_id"], "actor-a")
 
+
+
+    async def test_failed_and_non_session_runs_do_not_queue_memory_events(self):
+        store = PostgresRunStateStore(self.connect)
+        lifecycle = RunLifecycleManager(store)
+        for run_id, session_id, terminal_status in (
+            (str(uuid4()), "failed-session", RunStatus.FAILED),
+            (str(uuid4()), None, RunStatus.SUCCEEDED),
+        ):
+            await store.create_task_run(
+                tenant_id=self.tenant_id, run_id=run_id, actor_id="actor-a",
+                agent_id="agent-a", agent_version=1, template_id="template-a",
+                template_version=1, input={"text": "question"},
+                preparation_owner="prep-a", registry_snapshot=[],
+                project_id=None, session_id=session_id,
+            )
+            await lifecycle.start(self.tenant_id, run_id)
+            await lifecycle.finish(self.tenant_id, run_id, terminal_status)
+
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT count(*) AS n FROM platform_outbox
+                   WHERE tenant_id=%s AND topic='memory.extraction.requested'""",
+                (self.tenant_id,),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 0)
 
     async def test_postgres_session_repository_lists_only_owner_sessions_and_assets(self):
         repository = PostgresSessionRepository(

@@ -280,6 +280,44 @@ class PlatformApiCompositionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_platform_app(**arguments, allowed_origins=("http://console.example.com",))
 
+    def test_memory_extraction_event_worker_uses_app_lifecycle(self):
+        class Worker:
+            def __init__(self):
+                self.started = False
+                self.stopped = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.stopped = True
+
+        worker = Worker()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            memory_extraction_event_worker=worker,
+        )
+        with TestClient(app, base_url="https://testserver"):
+            self.assertTrue(worker.started)
+        self.assertTrue(worker.stopped)
+
+    def test_memory_extraction_event_worker_requires_lifecycle_methods(self):
+        with self.assertRaisesRegex(ValueError, "memory_extraction_event_worker"):
+            create_platform_app(
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                memory_extraction_event_worker=object(),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

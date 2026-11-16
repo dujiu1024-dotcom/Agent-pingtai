@@ -220,3 +220,101 @@ class RedisStreamsConsumer:
             )
             result["processed"] += 1
         return result
+
+
+class RedisStreamsConsumerWorker:
+    """Poll one tenant-scoped consumer; deployments should create one worker per tenant."""
+
+    def __init__(
+        self,
+        *,
+        consumer: RedisStreamsConsumer,
+        interval_seconds: float = 1.0,
+        batch_size: int = 20,
+        block_ms: int = 1000,
+        pending_idle_ms: int = 30_000,
+    ) -> None:
+        import asyncio
+
+        if not 0.1 <= interval_seconds <= 300:
+            raise ValueError("interval_seconds must be between 0.1 and 300")
+        if not 1 <= batch_size <= 500 or block_ms < 0 or pending_idle_ms < 0:
+            raise ValueError("invalid Redis Streams consumer polling configuration")
+        self.consumer = consumer
+        self.interval_seconds = interval_seconds
+        self.batch_size = batch_size
+        self.block_ms = block_ms
+        self.pending_idle_ms = pending_idle_ms
+        self._asyncio = asyncio
+        self._stop = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+        self._connected = False
+
+    @property
+    def running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    async def start(self) -> None:
+        if self.running:
+            return
+        transport = self.consumer.transport
+        connect = getattr(transport, "connect", None)
+        if callable(connect):
+            await connect()
+            self._connected = True
+        try:
+            ensure_group = getattr(transport, "ensure_group", None)
+            if callable(ensure_group):
+                await ensure_group(
+                    tenant_id=self.consumer.tenant_id,
+                    topic=self.consumer.topic,
+                    group=self.consumer.group,
+                )
+        except Exception:
+            await self._close_transport()
+            raise
+        self._stop = self._asyncio.Event()
+        self._task = self._asyncio.create_task(
+            self._run(), name=f"event-consumer-{self.consumer.consumer_name}",
+        )
+
+    async def stop(self) -> None:
+        task = self._task
+        if task is None:
+            await self._close_transport()
+            return
+        self._stop.set()
+        try:
+            await task
+        finally:
+            self._task = None
+            await self._close_transport()
+
+    async def _close_transport(self) -> None:
+        if self._connected:
+            close = getattr(self.consumer.transport, "close", None)
+            try:
+                if callable(close):
+                    await close()
+            finally:
+                self._connected = False
+
+    async def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                await self.consumer.consume_batch(
+                    count=self.batch_size,
+                    block_ms=self.block_ms,
+                    pending_idle_ms=self.pending_idle_ms,
+                )
+            except self._asyncio.CancelledError:
+                raise
+            except Exception:
+                # A transient broker or receipt-store failure must not kill polling.
+                pass
+            try:
+                await self._asyncio.wait_for(
+                    self._stop.wait(), timeout=self.interval_seconds,
+                )
+            except self._asyncio.TimeoutError:
+                pass
