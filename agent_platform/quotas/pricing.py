@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING
 from types import MappingProxyType
 from typing import Mapping
 
@@ -97,7 +97,7 @@ class CatalogModelCostEstimator:
         if estimate is None:
             return None
         # Round upward to avoid under-reserving due to sub-micro-dollar fractions.
-        return int((estimate * Decimal(1_000_000)).to_integral_value(rounding="ROUND_CEILING"))
+        return int((estimate * Decimal(1_000_000)).to_integral_value(rounding=ROUND_CEILING))
 
     def price_card_version(self, model_id: str) -> str | None:
         card = self.catalog.get(model_id)
