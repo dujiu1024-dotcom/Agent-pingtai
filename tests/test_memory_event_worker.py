@@ -1,6 +1,5 @@
 import asyncio
 import unittest
-from types import SimpleNamespace
 
 from agent_platform.events.consumer import RedisStreamsConsumerWorker
 
