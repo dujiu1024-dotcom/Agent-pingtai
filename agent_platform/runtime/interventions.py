@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Mapping
 from uuid import UUID
 
-
 ConnectionFactory = Callable[[], Any]
 InterventionApplier = Callable[[Mapping[str, Any]], Awaitable[None]]
 
