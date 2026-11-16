@@ -1386,8 +1386,27 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (Jsonb([]), "d" * 64, self.tenant_id, run_id),
             )
             await conn.commit()
+        self.assertFalse(await store.claim_task_preparation(
+            self.tenant_id, run_id, "prep-b",
+        ))
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs SET preparation_lease_expires_at=now()-interval '1 second'
+                   WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, run_id),
+            )
+            await conn.commit()
+        self.assertTrue(await store.claim_task_preparation(
+            self.tenant_id, run_id, "prep-b",
+        ))
+        self.assertFalse(await store.mark_task_ready(
+            self.tenant_id, run_id, "d" * 64, "prep-a",
+        ))
+        self.assertTrue(await store.owns_task_preparation(
+            self.tenant_id, run_id, "prep-b",
+        ))
         self.assertTrue(await store.mark_task_ready(
-            self.tenant_id, run_id, "d" * 64,
+            self.tenant_id, run_id, "d" * 64, "prep-b",
         ))
         self.assertEqual(len(await store.list_task_records(
             self.tenant_id, "actor-a",
