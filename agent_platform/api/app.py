@@ -84,6 +84,7 @@ def create_platform_app(
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
     quota_service: Any | None = None,
+    quota_reservation_worker: Any | None = None,
     quota_manage_authorizer: Any | None = None,
     quota_scope_authorizer: Any | None = None,
     webhook_admin_service: WebhookSubscriptionService | None = None,
@@ -226,6 +227,13 @@ def create_platform_app(
             raise ValueError("memory_expiry_worker must expose async start() and stop()")
         app.router.on_startup.append(memory_expiry_worker.start)
         app.router.on_shutdown.append(memory_expiry_worker.stop)
+    if quota_reservation_worker is not None:
+        if not callable(getattr(quota_reservation_worker, "start", None)) or not callable(
+            getattr(quota_reservation_worker, "stop", None)
+        ):
+            raise ValueError("quota_reservation_worker must expose async start() and stop()")
+        app.router.on_startup.append(quota_reservation_worker.start)
+        app.router.on_shutdown.append(quota_reservation_worker.stop)
     if alert_dispatch_worker is not None:
         if not callable(getattr(alert_dispatch_worker, "start", None)) or not callable(
             getattr(alert_dispatch_worker, "stop", None)
