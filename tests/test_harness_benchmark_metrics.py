@@ -8,7 +8,12 @@ from agent_platform.runtime.harness_benchmark import (
     HarnessBenchmarkRunner,
     HarnessTokenPricing,
 )
-from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
+from agent_platform.runtime.protocols import (
+    HarnessCapabilities,
+    HarnessRequest,
+    HarnessResult,
+    HarnessStreamEvent,
+)
 
 
 class BenchmarkAdapter:
@@ -106,6 +111,57 @@ class HarnessBenchmarkMetricsTests(unittest.IsolatedAsyncioTestCase):
             HarnessBenchmarkCase("tools-verified", "analyze", "same task")
         ])
         self.assertTrue(report.observations[0].passed)
+
+    async def test_benchmark_measures_streaming_first_token_and_events(self):
+        class StreamingAdapter:
+            capabilities = HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text"}),
+                streaming=True,
+            )
+
+            async def run(self, request):
+                raise AssertionError("streaming case must use stream()")
+
+            async def stream(self, request):
+                yield HarnessStreamEvent(event_type="text_delta", text_delta="alpha ")
+                yield HarnessStreamEvent(event_type="text_delta", text_delta="evidence")
+                yield HarnessStreamEvent(
+                    event_type="completed",
+                    result=HarnessResult(
+                        output_text="alpha evidence",
+                        usage={"input_tokens": 10, "output_tokens": 5},
+                    ),
+                )
+
+        report = await HarnessBenchmarkRunner(
+            adapters={"strands-stream": StreamingAdapter()},
+            request_factory=self.request_factory,
+        ).run([
+            HarnessBenchmarkCase(
+                "streaming-case", "analyze", "same task",
+                expected_contains=("alpha", "evidence"),
+                streaming=True,
+            )
+        ])
+        row = report.observations[0]
+        self.assertTrue(row.passed)
+        self.assertIsNotNone(row.time_to_first_token_ms)
+        self.assertEqual(row.streamed_events, 3)
+        self.assertEqual(report.summary()["strands-stream"]["streamed_events"], 3)
+        self.assertIn("TTFT (ms)", report.to_markdown())
+
+    async def test_streaming_case_rejects_adapter_without_declared_streaming(self):
+        runner = HarnessBenchmarkRunner(
+            adapters={"text-only": BenchmarkAdapter()},
+            request_factory=self.request_factory,
+        )
+        with self.assertRaisesRegex(ValueError, "does not declare Harness streaming"):
+            await runner.run([
+                HarnessBenchmarkCase(
+                    "streaming-unsupported", "analyze", "same task", streaming=True
+                )
+            ])
 
     async def test_quality_threshold_and_pricing_validation(self):
         report = await HarnessBenchmarkRunner(
