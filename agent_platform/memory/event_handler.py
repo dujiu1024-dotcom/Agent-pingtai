@@ -70,7 +70,8 @@ class MemoryExtractionEventHandler:
         if record is None:
             raise ValueError("source Run was not found")
         if (
-            str(record.get("run_id")) != run_id
+            str(record.get("tenant_id")) != event.tenant_id
+            or str(record.get("run_id")) != run_id
             or str(record.get("status", "")).lower() != "succeeded"
             or str(record.get("created_by")) != actor_id
             or str(record.get("session_id")) != session_id
@@ -100,6 +101,7 @@ class MemoryExtractionEventHandler:
             or session.tenant_id != event.tenant_id
             or session.session_id != session_id
             or session.owner_id != actor_id
+            or session.status != "active"
             or session.project_id != project_id
         ):
             raise PermissionError("session ownership or project does not match the Run")
