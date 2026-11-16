@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from typing import Mapping
 from uuid import uuid4
 
-_TRACE_ID = re.compile(r"[0-9a-f]{32}\\Z")
-_SPAN_ID = re.compile(r"[0-9a-f]{16}\\Z")
-_FLAGS = re.compile(r"[0-9a-f]{2}\\Z")
+_TRACE_ID = re.compile(r"[0-9a-f]{32}\Z")
+_SPAN_ID = re.compile(r"[0-9a-f]{16}\Z")
+_FLAGS = re.compile(r"[0-9a-f]{2}\Z")
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,10 @@ class TraceContext:
         if not _FLAGS.fullmatch(self.trace_flags):
             raise ValueError("invalid trace_flags")
         if self.correlation_id is not None and (
-            not isinstance(self.correlation_id, str) or not self.correlation_id.strip()
+            not isinstance(self.correlation_id, str)
+            or not self.correlation_id.strip()
+            or len(self.correlation_id) > 256
+            or any(ord(char) < 32 or ord(char) == 127 for char in self.correlation_id)
         ):
             raise ValueError("invalid correlation_id")
 
