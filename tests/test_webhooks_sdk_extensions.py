@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from urllib.request import Request
 
 from agent_platform.events.webhooks import (
-    WebhookAttempt, WebhookDispatcher, WebhookPayload, WebhookSubscription,
-    signature, verify_signature,
+    WebhookAttempt, WebhookDispatcher, WebhookEgressPolicy, WebhookPayload,
+    WebhookSubscription, signature, verify_signature,
 )
 from agent_platform.sdk.client import ApiResponse, PlatformApiError, PlatformClient
 from agent_platform.extensions.manifest import ExtensionManifest, validate_platform_compatibility
@@ -51,8 +51,8 @@ class FakeWebhookTransport:
         self.code = code
         self.requests = []
 
-    async def post(self, url, *, body, headers, timeout_seconds):
-        self.requests.append((url, body, headers, timeout_seconds))
+    async def post_pinned(self, url, *, resolved_addresses, body, headers, timeout_seconds):
+        self.requests.append((url, body, headers, timeout_seconds, resolved_addresses))
         return self.code
 
 
@@ -71,16 +71,40 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 WebhookSubscription("s", "t", url, "secret://ref", ("topic",))
 
+
+    async def test_egress_policy_rejects_private_and_mixed_dns_answers(self):
+        private = WebhookEgressPolicy(
+            resolver=lambda _host, _port: ("93.184.216.34", "127.0.0.1"),
+        )
+        with self.assertRaisesRegex(ValueError, "non-public"):
+            await private.resolve_public_addresses("https://hooks.example.test/event")
+
+        direct_private = WebhookEgressPolicy()
+        with self.assertRaisesRegex(ValueError, "non-public"):
+            await direct_private.resolve_public_addresses("https://127.0.0.1/hook")
+
+    async def test_egress_policy_returns_normalized_public_ip_set(self):
+        policy = WebhookEgressPolicy(
+            resolver=lambda _host, _port: ("2606:4700:4700::1111", "93.184.216.34",
+                                           "93.184.216.34"),
+        )
+        addresses = await policy.resolve_public_addresses("https://hooks.example.test/event")
+        self.assertEqual(addresses, ("2606:4700:4700::1111", "93.184.216.34"))
+
     async def test_dispatch_signs_and_deduplicates_with_event_id(self):
         store = FakeWebhookStore()
         transport = FakeWebhookTransport()
         dispatcher = WebhookDispatcher(
             store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
             clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
         )
         result = await dispatcher.dispatch()
         self.assertEqual(result["delivered"], 1)
-        _, body, headers, _ = transport.requests[0]
+        _, body, headers, _, resolved = transport.requests[0]
+        self.assertEqual(resolved, ("93.184.216.34",))
         self.assertEqual(headers["Idempotency-Key"], "event-1")
         self.assertTrue(verify_signature(
             SECRET, headers["X-Platform-Timestamp"], body,
@@ -94,6 +118,9 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         transport = FakeWebhookTransport(code=503)
         dispatcher = WebhookDispatcher(
             store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
             max_attempts=8,
         )
         result = await dispatcher.dispatch()

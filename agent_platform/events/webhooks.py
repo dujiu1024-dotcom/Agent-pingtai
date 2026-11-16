@@ -1,10 +1,12 @@
 """Signed, idempotent webhook delivery primitives."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import ipaddress
 import json
+import socket
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Protocol
@@ -62,8 +64,47 @@ class WebhookAttempt:
 
 
 class WebhookTransport(Protocol):
-    async def post(self, url: str, *, body: bytes, headers: Mapping[str, str],
-                   timeout_seconds: float) -> int: ...
+    async def post_pinned(
+        self, url: str, *, resolved_addresses: tuple[str, ...], body: bytes,
+        headers: Mapping[str, str], timeout_seconds: float,
+    ) -> int: ...
+
+
+class WebhookEgressPolicy:
+    """Resolve each destination and pass the exact public IP set to the transport.
+
+    Production transports must connect only to one of the supplied addresses
+    while preserving the original hostname for TLS SNI and certificate checks.
+    """
+
+    def __init__(self, resolver: Callable[[str, int], Any] | None = None) -> None:
+        self.resolver = resolver or self._system_resolver
+
+    @staticmethod
+    async def _system_resolver(host: str, port: int) -> tuple[str, ...]:
+        loop = asyncio.get_running_loop()
+        rows = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        return tuple(sorted({row[4][0] for row in rows}))
+
+    async def resolve_public_addresses(self, url: str) -> tuple[str, ...]:
+        parsed = urlsplit(url)
+        if parsed.scheme != "https" or not parsed.hostname:
+            raise ValueError("webhook destination must be HTTPS")
+        host = parsed.hostname
+        port = parsed.port or 443
+        try:
+            literal = ipaddress.ip_address(host)
+            addresses = (str(literal),)
+        except ValueError:
+            resolved = self.resolver(host, port)
+            if hasattr(resolved, "__await__"):
+                resolved = await resolved
+            addresses = tuple(sorted({str(ipaddress.ip_address(item)) for item in resolved}))
+        if not addresses:
+            raise ValueError("webhook destination did not resolve")
+        if any(not ipaddress.ip_address(address).is_global for address in addresses):
+            raise ValueError("webhook destination resolves to a non-public address")
+        return addresses
 
 
 class WebhookStore(Protocol):
@@ -90,14 +131,15 @@ def verify_signature(secret: bytes, timestamp: str, body: bytes, supplied: str, 
 
 class WebhookDispatcher:
     def __init__(self, *, store: WebhookStore, transport: WebhookTransport,
-                 resolve_secret: Callable[[str], bytes], max_attempts: int = 8,
-                 timeout_seconds: float = 10.0,
+                 resolve_secret: Callable[[str], bytes], egress_policy: WebhookEgressPolicy,
+                 max_attempts: int = 8, timeout_seconds: float = 10.0,
                  clock: Callable[[], datetime] | None = None) -> None:
         if not 1 <= max_attempts <= 20 or not 0 < timeout_seconds <= 60:
             raise ValueError("invalid webhook retry or timeout policy")
         self.store = store
         self.transport = transport
         self.resolve_secret = resolve_secret
+        self.egress_policy = egress_policy
         self.max_attempts = max_attempts
         self.timeout_seconds = timeout_seconds
         self.clock = clock or (lambda: datetime.now(timezone.utc))
@@ -118,8 +160,11 @@ class WebhookDispatcher:
                 secret = self.resolve_secret(subscription.secret_ref)
                 if not isinstance(secret, bytes) or len(secret) < 32:
                     raise ValueError("webhook signing secret must contain at least 32 bytes")
-                code = await self.transport.post(
-                    subscription.url, body=body,
+                resolved_addresses = await self.egress_policy.resolve_public_addresses(
+                    subscription.url,
+                )
+                code = await self.transport.post_pinned(
+                    subscription.url, resolved_addresses=resolved_addresses, body=body,
                     headers={
                         "Content-Type": "application/json",
                         "X-Platform-Event-Id": payload.event_id,
