@@ -20,6 +20,7 @@ from agent_platform.models.registry_resolver import (
     ResolvedModelConfig,
 )
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
+from agent_platform.observability.trace_context import current_trace_context
 
 
 class ModelRoutingError(RuntimeError):
@@ -274,6 +275,14 @@ class OpenAICompatibleModelRouter:
                 "model_template": config.template_id,
                 "model_template_version": config.template_version,
             }
+            trace_context = current_trace_context()
+            if trace_context is not None:
+                metadata.update({
+                    "trace_id": trace_context.trace_id,
+                    "span_id": trace_context.span_id,
+                    "traceparent": trace_context.traceparent,
+                    "correlation_id": trace_context.correlation_id,
+                })
             quota_reservation = None
             if self.quota_service is not None:
                 estimate = self.token_estimator.estimate(
