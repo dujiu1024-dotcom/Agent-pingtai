@@ -267,6 +267,32 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 outbox_relay_worker=InvalidWorker(),
             )
 
+    def test_alert_evaluation_worker_is_started_and_stopped_with_app(self):
+        class Worker:
+            def __init__(self):
+                self.started = False
+                self.stopped = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.stopped = True
+
+        worker = Worker()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            alert_evaluation_worker=worker,
+        )
+        with TestClient(app, base_url="https://testserver"):
+            self.assertTrue(worker.started)
+        self.assertTrue(worker.stopped)
+
     def test_observability_routes_are_wired_through_platform_app(self):
         class AlertStore:
             def __init__(self):

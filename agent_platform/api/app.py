@@ -76,6 +76,7 @@ def create_platform_app(
     evaluation_repository: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
+    alert_evaluation_worker: Any | None = None,
     audit_reader: Any | None = None,
     audit_authorizer: Any | None = None,
     audit_request_sink: Any | None = None,
@@ -232,6 +233,13 @@ def create_platform_app(
             raise ValueError("alert_dispatch_worker must expose async start() and stop()")
         app.router.on_startup.append(alert_dispatch_worker.start)
         app.router.on_shutdown.append(alert_dispatch_worker.stop)
+    if alert_evaluation_worker is not None:
+        if not callable(getattr(alert_evaluation_worker, "start", None)) or not callable(
+            getattr(alert_evaluation_worker, "stop", None)
+        ):
+            raise ValueError("alert_evaluation_worker must expose async start() and stop()")
+        app.router.on_startup.append(alert_evaluation_worker.start)
+        app.router.on_shutdown.append(alert_evaluation_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
         blackboard_evidence_verifier,
