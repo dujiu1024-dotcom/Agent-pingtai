@@ -113,6 +113,19 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
                 role=MessageRole.USER, content="reuse already linked file", asset_ids=(asset.asset_id,),
             )
 
+    async def test_delete_tombstones_before_storage_cleanup_and_is_retryable(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="remove.txt",
+            media_type="text/plain", content=b"remove me",
+        )
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+        deleted = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(deleted.status, AssetStatus.DELETED)
+        self.assertNotIn(asset.object_key, self.storage.objects)
+        with self.assertRaises(SessionNotFound):
+            await self.service.download_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+
     async def test_list_sessions_and_assets_are_owner_scoped(self):
         first = await self.service.create_session(
             tenant_id="tenant-a", owner_id="user-a", title="My session",
