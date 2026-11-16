@@ -225,3 +225,48 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         counters = metrics.snapshot()["counters"]
         self.assertIn('rag_requests_total{component="rag",status="grounded"}', counters)
         self.assertIn("rag_retrieval_hits", " ".join(metrics.snapshot()["observation_counts"]))
+
+
+    async def test_scanned_pdf_can_use_explicit_ocr_extension(self):
+        from unittest.mock import patch
+
+        from agent_platform.knowledge.ingestion import OCRParserAdapter, ParserRegistry
+
+        class EmptyPdfParser:
+            supported_media_types = ("application/pdf",)
+
+            def parse(self, content, media_type):
+                return ""
+
+        class FakeOCR:
+            def __init__(self):
+                self.calls = []
+
+            def extract_text(self, content, media_type):
+                self.calls.append((content, media_type))
+                return "[page:1] scanned invoice total 42"
+
+        ocr = FakeOCR()
+        # Keep this test independent of optional pypdf installation and prove
+        # that the registry falls through from an empty PDF text layer.
+        with patch("agent_platform.knowledge.office_parsers.PDFParser", EmptyPdfParser):
+            registry = ParserRegistry(parsers=(OCRParserAdapter(ocr),))
+        service = KnowledgeService(InMemoryKnowledgeRepository(), parsers=registry)
+        document = Document(
+            tenant_id="tenant-ocr", title="scanned invoice",
+            source_uri="file://invoice.pdf", content_hash="pending",
+            media_type="application/pdf",
+        )
+        result = await service.ingest(document=document, content=b"%PDF-scanned")
+        self.assertIn("scanned invoice total 42", result.chunks[0].text)
+        self.assertEqual(ocr.calls, [(b"%PDF-scanned", "application/pdf")])
+
+    async def test_ocr_extension_rejects_non_text_provider_result(self):
+        from agent_platform.knowledge.ingestion import OCRParserAdapter
+
+        class InvalidOCR:
+            def extract_text(self, content, media_type):
+                return None
+
+        with self.assertRaises(TypeError):
+            OCRParserAdapter(InvalidOCR()).parse(b"image", "image/png")
