@@ -139,6 +139,15 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         return await self.gateway.call(**defaults)
 
+    async def test_call_resolved_uses_trusted_resource_resolver(self):
+        result = await self.gateway.call_resolved(
+            tenant_id="tenant-a", actor_id="agent-a", actor_roles=("agent",),
+            tool_name="read", arguments={"value": "resolved"}, run_id="run-resolved",
+        )
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(self.executed, [{"value": "resolved"}])
+        self.assertEqual(self.audit.records[-1]["resource"], "resource:resolved")
+
     async def test_correlation_id_is_propagated_into_tool_observation(self):
         await self.call("read", correlation_id="corr-123")
         self.assertEqual(self.observer.calls[-1][2]["correlation_id"], "corr-123")
