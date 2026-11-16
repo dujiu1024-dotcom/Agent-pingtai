@@ -425,6 +425,56 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         self.assertEqual(step_two_calls, 2)
         self.assertTrue(result["done"])
 
+    async def test_run_detail_timeline_records_steps_logs_artifacts_and_redacts_secrets(self):
+        from agent_platform.runtime.interventions import (
+            PostgresRunDetailService, RunInterventionService,
+        )
+        events = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.step.started", actor_id="worker-a",
+            payload={"step_id": "retrieve", "input": {"query": "safe"}},
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.log", actor_id="worker-a",
+            payload={"level": "info", "message": "Authorization: Bearer abc.def.secret"},
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.artifact.created", actor_id="worker-a",
+            payload={"artifact_id": "artifact-1", "name": "report.pdf"},
+        )
+        details = PostgresRunDetailService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        detail = await details.get(tenant_id=self.tenant_id, run_id=str(self.run_id))
+        self.assertEqual(detail["input"], {})
+        self.assertEqual(detail["checkpoint_ref"], "checkpoint-1")
+        self.assertEqual([item["event_type"] for item in detail["steps"]], ["run.step.started"])
+        self.assertEqual(detail["logs"][0]["payload"]["message"], "Authorization: Bearer [REDACTED]")
+        self.assertEqual(detail["artifacts"][0]["payload"]["artifact_id"], "artifact-1")
+        self.assertEqual(detail["approvals"], [])
+        self.assertEqual(len(detail["events"]), 3)
+
+    async def test_run_event_rejects_cross_tenant_and_invalid_shapes(self):
+        from agent_platform.runtime.interventions import RunInterventionService
+        events = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        with self.assertRaises(PermissionError):
+            await events.record_event(
+                tenant_id="other-tenant", run_id=str(self.run_id),
+                event_type="run.log", payload={"level": "info", "message": "x"},
+            )
+        with self.assertRaises(ValueError):
+            await events.record_event(
+                tenant_id=self.tenant_id, run_id=str(self.run_id),
+                event_type="run.log", payload={"level": "trace", "message": "x"},
+            )
+
     async def test_intervention_is_rejected_for_non_paused_run(self):
         from agent_platform.runtime.interventions import RunInterventionService
         service = RunInterventionService(
