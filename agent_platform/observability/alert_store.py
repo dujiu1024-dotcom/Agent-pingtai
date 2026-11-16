@@ -60,8 +60,8 @@ class PostgresAlertEventStore:
                          WHERE delivery_status IN ('pending','failed')
                            AND (%s IS NULL OR event_id=%s)
                          ORDER BY fired_at
-                         FOR UPDATE SKIP LOCKED
                          LIMIT %s
+                         FOR UPDATE SKIP LOCKED
                        )
                        UPDATE platform_alert_events AS event
                        SET delivery_status='sending',delivery_attempts=delivery_attempts+1
