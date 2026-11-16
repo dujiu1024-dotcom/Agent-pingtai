@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import log2
 from typing import Sequence
 
 from agent_platform.knowledge.contracts import KnowledgePrincipal
@@ -21,15 +22,41 @@ class RAGEvalResult:
     retrieved_document_ids: tuple[str,...]
     recall_at_k: float
     citation_coverage: float
+    precision_at_k: float
+    reciprocal_rank: float
+    ndcg_at_k: float
 async def evaluate_retrieval(service: KnowledgeService,cases: Sequence[RAGEvalCase],*,k: int=5)->list[RAGEvalResult]:
     if k<1: raise ValueError("k must be >= 1")
     results=[]
     for case in cases:
         hits=await service.retrieve(principal=case.principal,query=case.query,limit=k)
-        found={h.document_id for h in hits}
-        recall=len(found & case.expected_document_ids)/len(case.expected_document_ids) if case.expected_document_ids else 1.0
-        cited=sum(bool(h.source_uri and h.document_version and h.chunk_id) for h in hits)/len(hits) if hits else 0.0
-        results.append(RAGEvalResult(case_id=case.case_id,retrieved_document_ids=tuple(h.document_id for h in hits),recall_at_k=recall,citation_coverage=cited))
+        expected = case.expected_document_ids
+        # Rank documents, not chunks: multiple chunks from one source must not
+        # inflate precision, reciprocal rank, or nDCG.
+        ranked_document_ids = list(dict.fromkeys(hit.document_id for hit in hits))
+        ranked_relevant = [
+            1 if document_id in expected else 0 for document_id in ranked_document_ids
+        ]
+        found = set(ranked_document_ids)
+        recall = len(found & expected) / len(expected) if expected else 1.0
+        precision = sum(ranked_relevant) / k if expected else (1.0 if not hits else 0.0)
+        reciprocal_rank = next(
+            (1.0 / index for index, relevant in enumerate(ranked_relevant, 1) if relevant),
+            0.0,
+        )
+        ideal_count = min(len(expected), k)
+        if ideal_count:
+            dcg = sum(relevant / log2(index + 1) for index, relevant in enumerate(ranked_relevant, 1))
+            idcg = sum(1.0 / log2(index + 1) for index in range(1, ideal_count + 1))
+            ndcg = dcg / idcg
+        else:
+            ndcg = 1.0 if not hits else 0.0
+        cited = sum(bool(h.source_uri and h.document_version and h.chunk_id) for h in hits) / len(hits) if hits else 0.0
+        results.append(RAGEvalResult(
+            case_id=case.case_id, retrieved_document_ids=tuple(ranked_document_ids),
+            recall_at_k=recall, citation_coverage=cited, precision_at_k=precision,
+            reciprocal_rank=reciprocal_rank, ndcg_at_k=ndcg,
+        ))
     return results
 
 

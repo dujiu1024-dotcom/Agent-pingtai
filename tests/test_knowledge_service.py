@@ -364,6 +364,11 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(retrieval), 3)
         self.assertTrue(all(result.recall_at_k == 1.0 for result in retrieval))
         self.assertTrue(all(result.citation_coverage == 1.0 for result in retrieval[:2]))
+        self.assertTrue(all(result.reciprocal_rank == 1.0 for result in retrieval[:2]))
+        self.assertTrue(all(result.ndcg_at_k == 1.0 for result in retrieval[:2]))
+        self.assertTrue(all(result.precision_at_k > 0.0 for result in retrieval[:2]))
+        self.assertEqual(retrieval[-1].precision_at_k, 1.0)
+        self.assertEqual(retrieval[-1].ndcg_at_k, 1.0)
         self.assertTrue(all(result.grounded for result in answer_results))
         self.assertTrue(answer_results[-1].abstained)
 
