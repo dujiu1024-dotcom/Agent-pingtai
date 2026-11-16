@@ -151,6 +151,38 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
         ), 1)
         self.assertEqual(len(self.sink.items), 2)
 
+    async def test_active_cursor_race_does_not_trigger_revocation_cleanup(self):
+        from dataclasses import replace
+
+        class ConcurrentRepository(InMemoryConnectorRepository):
+            def __init__(self):
+                super().__init__()
+                self.reads = 0
+
+            async def get(self, tenant_id, connection_id):
+                self.reads += 1
+                item = await super().get(tenant_id, connection_id)
+                if self.reads == 2 and item is not None:
+                    item = replace(item, version=item.version + 1)
+                    self.records[(tenant_id, connection_id)] = item
+                return item
+
+        repository = ConcurrentRepository()
+        await repository.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-race", provider="drive",
+            secret_ref="secret://tenant-a/source", scopes=("files.read",),
+        ))
+        service = DataConnectorService(
+            repository=repository, providers={"drive": self.provider},
+            secrets=FakeSecrets(), sink=self.sink,
+        )
+        with self.assertRaisesRegex(ConnectorError, "cursor changed"):
+            await service.sync_once(
+                tenant_id="tenant-a", connection_id="drive-race",
+                revocation_disposition="delete",
+            )
+        self.assertEqual(self.sink.revocations, [])
+
     async def test_revocation_stops_future_sync_and_applies_delete_policy(self):
         await self.service.sync_once(tenant_id="tenant-a", connection_id="drive-1")
         self.assertTrue(await self.service.revoke(
