@@ -21,7 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 for component_script in restore_postgres.sh restore_redis.sh restore_object_storage.sh; do
-  [[ -x "$SCRIPT_DIR/$component_script" ]] || {
+  [[ -f "$SCRIPT_DIR/$component_script" ]] || {
     echo "required executable is missing: $SCRIPT_DIR/$component_script" >&2
     exit 2
   }
@@ -40,12 +40,12 @@ for artifact in "$PG_BACKUP_FILE" "$REDIS_BACKUP_FILE" "$OBJECT_BACKUP_FILE"; do
 done
 
 export BACKUP_FILE="$PG_BACKUP_FILE"
-"$SCRIPT_DIR/restore_postgres.sh"
+bash "$SCRIPT_DIR/restore_postgres.sh"
 
 export BACKUP_FILE="$REDIS_BACKUP_FILE"
-"$SCRIPT_DIR/restore_redis.sh"
+bash "$SCRIPT_DIR/restore_redis.sh"
 
 export BACKUP_FILE="$OBJECT_BACKUP_FILE"
-"$SCRIPT_DIR/restore_object_storage.sh"
+bash "$SCRIPT_DIR/restore_object_storage.sh"
 
 printf 'Component restores completed. Keep application writers stopped until the runbook validation checklist passes.\n'
