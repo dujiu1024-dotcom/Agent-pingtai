@@ -179,7 +179,7 @@ class HarnessBenchmarkRunner:
                 if request.allowed_tools:
                     if self.gateway_tool_verifier is None:
                         raise ValueError(
-                            "benchmark requests with tools require a Gateway-only verifier"
+                            "benchmark must not expose platform tools without a Gateway-only verifier"
                         )
                     if not self.gateway_tool_verifier(runtime, request):
                         raise ValueError("benchmark request tools are not verified as Gateway-only")
