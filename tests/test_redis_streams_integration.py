@@ -119,6 +119,16 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
             consumer="slow-consumer", count=1, block_ms=100,
         )
         self.assertEqual(slow_next[0][0], message_ids[1])
+        group_states = await self.transport._client.xinfo_groups(
+            self.transport._stream(self.tenant_id, self.topic)
+        )
+        slow_state = next(item for item in group_states if item["name"] == slow_group)
+        fast_state = next(item for item in group_states if item["name"] == fast_group)
+        slow_pending = await self.transport._client.xpending(
+            self.transport._stream(self.tenant_id, self.topic), slow_group
+        )
+        self.assertEqual(slow_pending["min"], message_ids[1])
+        self.assertEqual(fast_state["last-delivered-id"], message_ids[2])
         self.assertEqual(
             await self.transport.trim_acknowledged(
                 tenant_id=self.tenant_id, topic=self.topic,
