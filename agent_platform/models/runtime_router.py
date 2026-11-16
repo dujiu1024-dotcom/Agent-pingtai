@@ -12,6 +12,7 @@ import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal
 from time import monotonic
+from types import SimpleNamespace
 from typing import Any, Mapping, Protocol, Sequence
 
 from agent_platform.models.registry_resolver import (
