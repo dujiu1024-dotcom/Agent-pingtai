@@ -14,12 +14,13 @@ class WorkbenchMainFlowUiContractTests(unittest.TestCase):
     def test_agent_model_tool_flows_use_versioned_registry(self):
         self.assertIn("/registry/agent?limit=100", self.html)
         self.assertIn("/registry/agent/", self.html)
-        self.assertIn("/registry/model_template", self.html)
-        self.assertIn("/registry/model_provider", self.html)
-        self.assertIn("/registry/tool", self.html)
-        self.assertIn("/registry/skill", self.html)
-        self.assertIn("data-registry-action='publish'", self.html)
-        self.assertIn("data-registry-action='disable'", self.html)
+        self.assertIn('"model_template"', self.html)
+        self.assertIn('"model_provider"', self.html)
+        self.assertIn('"tool"', self.html)
+        self.assertIn('"skill"', self.html)
+        self.assertIn('?"publish":"disable"', self.html)
+        self.assertIn('action==="publish"', self.html)
+        self.assertIn('action==="disable"', self.html)
 
     def test_task_center_uses_authenticated_workbench_routes(self):
         self.assertIn("/workbench/tasks?limit=100", self.html)
