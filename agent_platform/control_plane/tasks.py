@@ -43,11 +43,14 @@ class PostgresTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
+        priority: int = 100,
     ) -> Mapping[str, Any]:
         if tenant_id != self.tenant_id:
             raise PermissionError("task tenant mismatch")
         if not actor_id.strip() or not agent_id.strip() or not input:
             raise ValueError("actor, agent and non-empty task input are required")
+        if not isinstance(priority, int) or not 0 <= priority <= 1000:
+            raise ValueError("priority must be between 0 and 1000")
         if idempotency_key is not None and (
             not idempotency_key.strip() or len(idempotency_key) > 200
         ):
@@ -69,13 +72,13 @@ class PostgresTaskCenterService:
                     raise PermissionError("Agent is not active or not visible")
                 inserted = await db.execute(
                     """INSERT INTO platform_tasks
-                       (tenant_id,task_id,actor_id,agent_id,project_id,session_id,input,idempotency_key)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                       (tenant_id,task_id,actor_id,agent_id,project_id,session_id,input,priority,idempotency_key)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT (tenant_id,actor_id,idempotency_key)
                        WHERE idempotency_key IS NOT NULL DO NOTHING
                        RETURNING task_id""",
                     (self.tenant_id, task_id, actor_id, agent_id, project_id,
-                     UUID(session_id) if session_id else None, Jsonb(dict(input)), idempotency_key),
+                     UUID(session_id) if session_id else None, Jsonb(dict(input)), priority, idempotency_key),
                 )
                 created = await inserted.fetchone()
                 if created is None:
@@ -165,7 +168,7 @@ class PostgresTaskCenterService:
                     """SELECT * FROM platform_tasks
                        WHERE (status='queued' AND available_at<=now())
                           OR (status='running' AND lease_expires_at<=now())
-                       ORDER BY available_at,created_at LIMIT 1 FOR UPDATE SKIP LOCKED"""
+                       ORDER BY priority DESC,available_at,created_at LIMIT 1 FOR UPDATE SKIP LOCKED"""
                 )
                 row = await cursor.fetchone()
                 if row is None:
