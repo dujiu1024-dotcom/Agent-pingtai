@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from agent_platform.extensions.lifecycle import ExtensionLifecycle
+from agent_platform.extensions.executor import ExtensionLifecycleExecutor
+from agent_platform.extensions.lifecycle import ExtensionLifecycle, ExtensionLifecyclePlan
 from agent_platform.extensions.manifest import ExtensionManifest
 
 
@@ -14,7 +15,7 @@ def manifest(name, dependencies=(), version="1.0.0"):
     )
 
 
-class ExtensionLifecycleTests(unittest.TestCase):
+class ExtensionLifecycleTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.lifecycle = ExtensionLifecycle(platform_api_version="1.0.0")
 
@@ -83,6 +84,96 @@ class ExtensionLifecycleTests(unittest.TestCase):
     def test_uninstall_rejects_unknown_extension(self):
         with self.assertRaisesRegex(ValueError, "not installed"):
             self.lifecycle.plan_uninstall("missing", installed={})
+
+
+    async def test_executor_authorizes_every_manifest_before_side_effects(self):
+        base = manifest("base-extension")
+        root = manifest("root-extension", ("base-extension",))
+        calls = []
+        class Runtime:
+            async def install(self, item):
+                calls.append(("install", item.extension_id))
+            async def uninstall(self, item):
+                calls.append(("uninstall", item.extension_id))
+        executor = ExtensionLifecycleExecutor(
+            runtime=Runtime(),
+            authorize=lambda action, item: item.extension_id != "root-extension",
+            audit=lambda action, item, outcome: calls.append(("audit", item.extension_id, outcome)),
+        )
+        plan = self.lifecycle.plan_install(
+            root, installed={}, available={"base-extension": base},
+        )
+        with self.assertRaises(PermissionError):
+            await executor.execute(plan)
+        self.assertEqual(calls, [])
+
+    async def test_executor_rolls_back_partial_install_and_audits(self):
+        base = manifest("base-extension")
+        root = manifest("root-extension", ("base-extension",))
+        calls = []
+        class Runtime:
+            async def install(self, item):
+                calls.append(("install", item.extension_id))
+                if item.extension_id == "root-extension":
+                    raise RuntimeError("install failed")
+            async def uninstall(self, item):
+                calls.append(("uninstall", item.extension_id))
+        executor = ExtensionLifecycleExecutor(
+            runtime=Runtime(),
+            authorize=lambda action, item: True,
+            audit=lambda action, item, outcome: calls.append(("audit", action, item.extension_id, outcome)),
+        )
+        plan = self.lifecycle.plan_install(
+            root, installed={}, available={"base-extension": base},
+        )
+        with self.assertRaisesRegex(RuntimeError, "install failed"):
+            await executor.execute(plan)
+        self.assertIn(("uninstall", "base-extension"), calls)
+        self.assertIn(("audit", "rollback_install", "base-extension", "succeeded"), calls)
+
+    async def test_executor_uninstall_restores_removed_extensions_after_failure(self):
+        base = manifest("base-extension")
+        root = manifest("root-extension", ("base-extension",))
+        calls = []
+        class Runtime:
+            async def install(self, item):
+                calls.append(("install", item.extension_id))
+            async def uninstall(self, item):
+                calls.append(("uninstall", item.extension_id))
+                if item.extension_id == "base-extension":
+                    raise RuntimeError("uninstall failed")
+        executor = ExtensionLifecycleExecutor(
+            runtime=Runtime(),
+            authorize=lambda action, item: True,
+            audit=lambda action, item, outcome: calls.append(("audit", action, item.extension_id, outcome)),
+        )
+        plan = self.lifecycle.plan_uninstall(
+            "base-extension",
+            installed={"base-extension": base, "root-extension": root},
+            cascade=True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "uninstall failed"):
+            await executor.execute(plan)
+        self.assertEqual(
+            [item for item in calls if item[0] == "install"],
+            [("install", "root-extension")],
+        )
+
+    async def test_executor_rejects_misaligned_or_unsupported_plans(self):
+        calls = []
+        class Runtime:
+            async def install(self, item): calls.append(item.extension_id)
+            async def uninstall(self, item): calls.append(item.extension_id)
+        executor = ExtensionLifecycleExecutor(
+            runtime=Runtime(), authorize=lambda action, item: True,
+            audit=lambda action, item, outcome: None,
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            await executor.execute(ExtensionLifecyclePlan("remove", (), ()))
+        with self.assertRaisesRegex(ValueError, "do not align"):
+            await executor.execute(ExtensionLifecyclePlan("install", ("base-extension",), ()))
+        self.assertEqual(calls, [])
+
 
 
 if __name__ == "__main__":
