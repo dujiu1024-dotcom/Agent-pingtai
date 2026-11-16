@@ -695,6 +695,11 @@ class RunExecutionWorker:
                 {execution, heartbeat},
                 return_when=asyncio.FIRST_COMPLETED,
             )
+            # A fast execution may finish and release its lease in the same
+            # event-loop turn in which the heartbeat observes the terminal state.
+            # Prefer the completed execution result when both tasks are done.
+            if execution in done:
+                return await execution
             if heartbeat in done:
                 error = heartbeat.exception()
                 if error is not None:
