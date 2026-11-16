@@ -16,6 +16,30 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="prefers concise reports",source_ref="conversation:123",confidence=.9,created_by="extractor")
         await service.propose(c); p=MemoryPrincipal(tenant_id="t",user_id="u1"); self.assertEqual(await service.retrieve(principal=p),[])
         await service.confirm(tenant_id="t",memory_id=c.memory_id,confirmer_id="u1"); self.assertEqual(len(await service.retrieve(principal=p)),1)
+    async def test_reject_retries_derived_data_cleanup_after_tombstone(self):
+        attempts = []
+
+        async def cleanup(tenant_id, memory_id):
+            attempts.append((tenant_id, memory_id))
+            if len(attempts) == 1:
+                raise RuntimeError("index unavailable")
+
+        service = MemoryService(InMemoryMemoryRepository(), on_delete=cleanup)
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u1",
+            content="candidate fact", source_ref="chat:reject",
+            confidence=0.8, created_by="extractor",
+        )
+        await service.propose(candidate)
+        with self.assertRaisesRegex(RuntimeError, "index unavailable"):
+            await service.reject(tenant_id="t", memory_id=candidate.memory_id)
+        self.assertEqual(
+            (await service.repository.get("t", candidate.memory_id)).status.value,
+            "deleted",
+        )
+        self.assertTrue(await service.reject(tenant_id="t", memory_id=candidate.memory_id))
+        self.assertEqual(attempts, [("t", candidate.memory_id)] * 2)
+
     async def test_user_scope_isolation_and_forget(self):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="x",source_ref="chat:1",confidence=.8,created_by="u1")
         await service.propose(c); await service.confirm(tenant_id="t",memory_id=c.memory_id,confirmer_id="u1")
