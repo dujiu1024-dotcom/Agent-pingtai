@@ -46,12 +46,16 @@ class MemoryExtractionEventHandler:
         session_service_resolver: Resolver,
         memory_principal_resolver: Callable[[str, str], Awaitable[MemoryPrincipal] | MemoryPrincipal],
         extraction: MemoryExtractionService,
+        audit_sink: Any,
         policy_enabled: Callable[[str, str | None, str | None], Awaitable[bool] | bool] | None = None,
     ) -> None:
         self.run_store = run_store
         self.session_service_resolver = session_service_resolver
         self.memory_principal_resolver = memory_principal_resolver
+        if not callable(getattr(audit_sink, "record", None)):
+            raise TypeError("memory extraction handler requires an audit sink with record()")
         self.extraction = extraction
+        self.audit_sink = audit_sink
         # Fail closed: deployments must explicitly opt in through policy.
         self.policy_enabled = policy_enabled or (lambda _tenant, _project, _agent: False)
 
@@ -178,7 +182,46 @@ class MemoryExtractionEventHandler:
             agent_id=agent_id,
             project_id=project_id,
         )
-        await self.extraction.propose_from_turn(principal=principal, turn=turn)
+        audit_detail = {
+            "run_id": run_id,
+            "session_id": session_id,
+            "source_ref": source_ref,
+            "source_actor_id": actor_id,
+            "project_id": project_id,
+            "agent_id": agent_id,
+        }
+        # This is a background service action. Keep the worker principal
+        # explicit and retain the Run owner separately as source_actor_id.
+        await self.audit_sink.record(
+            tenant_id=event.tenant_id,
+            actor_id="system:memory-extraction-worker",
+            action="memory.extraction.propose.attempt",
+            subject_id=run_id,
+            outcome="succeeded",
+            detail=audit_detail,
+        )
+        try:
+            records = await self.extraction.propose_from_turn(
+                principal=principal, turn=turn,
+            )
+        except Exception as exc:
+            await self.audit_sink.record(
+                tenant_id=event.tenant_id,
+                actor_id="system:memory-extraction-worker",
+                action="memory.extraction.propose",
+                subject_id=run_id,
+                outcome="failed",
+                detail={**audit_detail, "error_type": type(exc).__name__},
+            )
+            raise
+        await self.audit_sink.record(
+            tenant_id=event.tenant_id,
+            actor_id="system:memory-extraction-worker",
+            action="memory.extraction.propose",
+            subject_id=run_id,
+            outcome="succeeded",
+            detail={**audit_detail, "candidate_count": len(records)},
+        )
 
 
 def create_memory_extraction_event_worker(
@@ -191,6 +234,7 @@ def create_memory_extraction_event_worker(
     session_service_resolver: Resolver,
     memory_principal_resolver: Callable[[str, str], Awaitable[MemoryPrincipal] | MemoryPrincipal],
     extraction: MemoryExtractionService,
+    audit_sink: Any,
     policy_enabled: Callable[[str, str | None, str | None], Awaitable[bool] | bool] | None = None,
     group: str = "memory-extraction",
     max_attempts: int = 5,
@@ -208,6 +252,7 @@ def create_memory_extraction_event_worker(
         session_service_resolver=session_service_resolver,
         memory_principal_resolver=memory_principal_resolver,
         extraction=extraction,
+        audit_sink=audit_sink,
         policy_enabled=policy_enabled,
     )
     consumer = RedisStreamsConsumer(
