@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Callable, Protocol
 from uuid import UUID
 
 from agent_platform.control_plane.sessions_assets import (
-    AssetStatus, FileAsset, ObjectStorage, SessionRepository,
+    AssetStatus, ObjectStorage, SessionRepository,
 )
-from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
+from agent_platform.knowledge.contracts import Document, KnowledgeScope
 from agent_platform.knowledge.service import KnowledgeService
 
 
