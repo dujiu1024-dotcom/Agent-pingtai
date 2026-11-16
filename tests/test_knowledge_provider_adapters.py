@@ -83,6 +83,7 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             client.calls[0][1]["headers"]["Authorization"],
             "Bearer runtime-secret",
         )
+        self.assertFalse(client.calls[0][1]["follow_redirects"])
 
     async def test_embedding_rejects_dimension_mismatch(self):
         client = AsyncClient({
@@ -124,6 +125,7 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ranked[1].page_number, 3)
         self.assertEqual(ranked[1].retrieval_trace, {"strategy": "hybrid"})
         self.assertEqual(ranked[0].score, 0.99)
+        self.assertFalse(client.calls[0][1]["follow_redirects"])
 
     def test_azure_document_intelligence_extracts_text_from_real_api_contract(self):
         operation = "https://resource.example/documentintelligence/operations/abc"
@@ -147,6 +149,8 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             "\n[page:1]\nOCR extracted source text",
         )
         self.assertEqual(client.calls[0][0], "POST")
+        self.assertFalse(client.calls[0][2]["follow_redirects"])
+        self.assertFalse(client.calls[1][2]["follow_redirects"])
         self.assertEqual(
             client.calls[0][2]["headers"]["Ocp-Apim-Subscription-Key"],
             "runtime-secret",
