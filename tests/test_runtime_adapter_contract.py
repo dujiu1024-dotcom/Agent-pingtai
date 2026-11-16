@@ -126,7 +126,7 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.calls, 0)
 
     def test_request_rejects_invalid_timeout_and_checkpoint_reference(self):
-        with self.assertRaisesRegex(ValueError, "must be positive"):
+        with self.assertRaisesRegex(ValueError, "finite positive"):
             request(timeout_seconds=0)
         with self.assertRaisesRegex(ValueError, "requires resume=True"):
             request(checkpoint_ref="checkpoint-1")
