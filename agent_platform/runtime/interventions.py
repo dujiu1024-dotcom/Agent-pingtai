@@ -176,6 +176,24 @@ class RunInterventionService:
         }
 
 
+    async def ensure_decisions_resolved(
+        self, *, tenant_id: str, run_id: str,
+    ) -> None:
+        """Prevent continuation while an approval/decision still awaits a human."""
+        if tenant_id != self.tenant_id:
+            raise PermissionError("Run intervention tenant mismatch")
+        db = await self._connect()
+        async with db:
+            cursor = await db.execute(
+                """SELECT 1 FROM platform_run_interventions
+                   WHERE tenant_id=%s AND run_id=%s AND status='pending'
+                     AND kind IN ('decision','approval') AND NOT (payload ? 'decision')
+                   LIMIT 1""",
+                (self.tenant_id, UUID(run_id)),
+            )
+            if await cursor.fetchone() is not None:
+                raise ValueError("Run has an unresolved human decision or approval")
+
     async def record_action(
         self, *, tenant_id: str, run_id: str, actor_id: str,
         event_type: str, payload: Mapping[str, Any] | None = None,
