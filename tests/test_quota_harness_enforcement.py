@@ -245,3 +245,33 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    async def test_split_estimator_is_reserved_and_settled(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_input_tokens=80, hard_output_tokens=40,
+            hard_cost_usd=Decimal("1.00"),
+        ))
+        class Harness:
+            async def run(self, _request):
+                return SimpleNamespace(usage={"input_tokens": 30, "output_tokens": 10}, tool_calls=())
+        adapter = QuotaEnforcedHarnessAdapter(
+            Harness(), quota_service=service,
+            estimate_request=lambda _request: (80, 40, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-split", agent_id="agent-a",
+            project_id=None, model_template=SimpleNamespace(template_id="general", version=1),
+        ))
+        await adapter.run(request)
+        tokens, _cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a", now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, concurrency), (40, 0))
+
