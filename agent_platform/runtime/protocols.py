@@ -333,6 +333,35 @@ class LifecycleManagedHarnessAdapter:
         )
         return result
 
+    async def stream(self, request: "HarnessRequest") -> AsyncIterator["HarnessStreamEvent"]:
+        await self.lifecycle.started(request=request, adapter=self.descriptor)
+        completed = False
+        try:
+            async for event in self.adapter.stream(request):
+                if event.event_type == "completed":
+                    if event.result is None:
+                        raise RuntimeError("Harness completion event must include a normalized result")
+                    if completed:
+                        raise RuntimeError("Harness stream emitted more than one completion event")
+                    completed = True
+                    await self.lifecycle.succeeded(
+                        request=request, adapter=self.descriptor, result=event.result,
+                    )
+                yield event
+            if not completed:
+                raise RuntimeError("Harness stream ended without a completion event")
+        except asyncio.CancelledError:
+            await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
+            raise
+        except Exception as exc:
+            await self.lifecycle.failed(
+                request=request, adapter=self.descriptor, error=exc,
+            )
+            raise
+
+    async def cancel(self, *, run_id: str) -> None:
+        await self.adapter.cancel(run_id=run_id)
+
 
 class ModelProvider(Protocol):
     async def complete(
