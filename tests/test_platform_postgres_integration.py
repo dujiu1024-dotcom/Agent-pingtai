@@ -1375,6 +1375,11 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 agent_id="agent-registry-only", agent_version=3, template_id="template-registry-only",
                 template_version=7, input={"prompt": "changed"},
                 preparation_owner="prep-b", idempotency_key="workbench-request-1", request_digest="c" * 64,
+                registry_snapshot=[
+                    {"kind": "agent", "item_id": "agent-registry-only", "version": 3},
+                    {"kind": "model_template", "item_id": "template-registry-only", "version": 7},
+                    {"kind": "model_provider", "item_id": "provider-registry-only", "version": 2},
+                ],
             )
 
         before_pin = await store.get_task_record(
