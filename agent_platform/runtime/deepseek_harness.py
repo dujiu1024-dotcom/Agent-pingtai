@@ -168,7 +168,7 @@ class DeepSeekHarnessAdapter:
             "profile": self.profile,
             "model": template.model,
             "max_tokens": template.parameters.get("max_tokens"),
-            "request_timeout_seconds": template.parameters.get("timeout_seconds"),
+            "request_timeout_seconds": request.timeout_seconds or template.parameters.get("timeout_seconds"),
             "env": dict(child_env),
         }
         if template.provider and self.profile != "sdk-minimal":
