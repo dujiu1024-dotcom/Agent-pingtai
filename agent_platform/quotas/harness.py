@@ -128,6 +128,7 @@ class QuotaEnforcedHarnessAdapter:
             estimated_cost_usd=estimated_cost,
             estimated_input_tokens=estimated_input_tokens,
             estimated_output_tokens=estimated_output_tokens,
+            root_run_id=getattr(context, "root_run_id", None),
         )
         started = monotonic()
         try:
