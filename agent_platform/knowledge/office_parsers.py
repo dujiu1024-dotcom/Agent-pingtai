@@ -26,7 +26,14 @@ class DOCXParser:
         try:from docx import Document as WordDocument  # noqa: I001
         except ImportError as exc:raise RuntimeError("Install python-docx from requirements-knowledge-parsers.txt") from exc
         import io
-        doc=WordDocument(io.BytesIO(content));return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        doc=WordDocument(io.BytesIO(content))
+        parts=[p.text for p in doc.paragraphs if p.text.strip()]
+        for table_index,table in enumerate(doc.tables,1):
+            parts.append("[table:"+str(table_index)+"]")
+            for row in table.rows:
+                values=[cell.text.strip().replace("\\n"," ") for cell in row.cells]
+                if any(values):parts.append(" | ".join(values))
+        return "\n".join(parts)
 @dataclass
 class XLSXParser:
     supported_media_types: tuple[str,...]=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",)
@@ -35,11 +42,14 @@ class XLSXParser:
         except ImportError as exc:raise RuntimeError("Install openpyxl from requirements-knowledge-parsers.txt") from exc
         import io
         book=openpyxl.load_workbook(io.BytesIO(content),read_only=True,data_only=True);parts=[]
-        for sheet in book.worksheets:
-            parts.append("[sheet:"+sheet.title+"]")
-            for row in sheet.iter_rows(values_only=True):
-                values=[str(v) for v in row if v is not None]
-                if values:parts.append(" | ".join(values))
+        try:
+            for sheet in book.worksheets:
+                parts.append("[sheet:"+sheet.title+"]")
+                for row in sheet.iter_rows(values_only=True):
+                    values=[str(v) for v in row if v is not None]
+                    if values:parts.append(" | ".join(values))
+        finally:
+            book.close()
         return "\n".join(parts)
 @dataclass
 class PPTXParser:
@@ -51,5 +61,11 @@ class PPTXParser:
         deck=Presentation(io.BytesIO(content));parts=[]
         for index,slide in enumerate(deck.slides,1):
             parts.append("[slide:"+str(index)+"]")
-            parts.extend(shape.text for shape in slide.shapes if getattr(shape,"has_text_frame",False) and shape.text.strip())
+            for shape in slide.shapes:
+                if getattr(shape,"has_text_frame",False) and shape.text.strip():
+                    parts.append(shape.text)
+                if getattr(shape,"has_table",False):
+                    for row in shape.table.rows:
+                        values=[cell.text.strip().replace("\\n"," ") for cell in row.cells]
+                        if any(values):parts.append(" | ".join(values))
         return "\n".join(parts)
