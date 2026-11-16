@@ -224,3 +224,24 @@ def create_memory_extraction_event_worker(
         interval_seconds=interval_seconds,
         batch_size=batch_size,
     )
+
+
+def memory_principal_resolver_from_identity(identity_repository: Any) -> Resolver:
+    """Build a trusted tenant/user resolver from persisted RBAC authorization context."""
+    async def resolve(tenant_id: str, user_id: str) -> MemoryPrincipal:
+        context = await identity_repository.get_authorization_context(
+            tenant_id=tenant_id, user_id=user_id,
+        )
+        if context is None:
+            raise PermissionError("active tenant membership is required for memory extraction")
+        return MemoryPrincipal(
+            tenant_id=context.tenant_id,
+            user_id=context.user_id,
+            project_ids=context.project_ids,
+            agent_ids=context.agent_ids,
+            permissions=context.tenant_permissions,
+            manage_project_ids=context.memory_manage_project_ids,
+            manage_agent_ids=context.memory_manage_agent_ids,
+        )
+
+    return resolve
