@@ -70,9 +70,9 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("agent_platform.runtime.workbench_tasks.asyncio.sleep", immediate_sleep):
             with self.assertRaises(WorkerLeaseLost):
-                await worker._execute_with_heartbeat(
+                await worker._with_heartbeat(
                     type("Snapshot", (), {"tenant_id": "tenant-a", "run_id": "run-a"})(),
-                    object(), {},
+                    execute(None, None, {}),
                 )
 
         self.assertTrue(cancelled.is_set())
