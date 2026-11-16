@@ -79,12 +79,8 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
             client.calls[0][1]["headers"]["Authorization"],
             "Bearer runtime-secret",
         )
-        self.assertEqual(
-            await embedder.embed_query("query"),  # one-item response is independently validated
-            [1.0, 0.0],
-        ) if False else None
 
-    async def test_embedding_rejects_dimension_and_duplicate_index(self):
+    async def test_embedding_rejects_dimension_mismatch(self):
         client = AsyncClient({
             "data": [{"index": 0, "embedding": [1.0]}],
         })
