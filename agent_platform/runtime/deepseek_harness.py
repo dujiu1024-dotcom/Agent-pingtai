@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping
 
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
-from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
+from agent_platform.runtime.protocols import HarnessCapabilities, HarnessRequest, HarnessResult
 
 WorkspaceResolver = Callable[[RunContext], str | Path]
 HomeResolver = Callable[[RunContext], str | Path]
@@ -50,6 +50,13 @@ class DeepSeekHarnessAdapter:
         self.patches = patches
         self.container_isolation_verified = container_isolation_verified
         self.sdk_factory = sdk_factory
+        self.capabilities = HarnessCapabilities(
+            input_modalities=frozenset({"text"}),
+            output_modalities=frozenset({"text"}),
+            streaming=False,
+            cancellation=True,
+            structured_output=False,
+        )
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
         if request.media_inputs:
