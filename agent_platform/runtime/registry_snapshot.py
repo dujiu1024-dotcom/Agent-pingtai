@@ -100,6 +100,14 @@ class RunRegistrySnapshotService:
                 raise RegistryNotFound(
                     f"published registry version not found: {kind}:{item_id}@{version}"
                 )
+            active = await self.registry.resolve_active(
+                tenant_id=tenant_id, kind=kind, item_id=item_id,
+            )
+            if active.version != version:
+                raise ValueError(
+                    f"registry active version changed before Run snapshot pin: "
+                    f"{kind}:{item_id}@{version}"
+                )
             entries.append({
                 "kind": item.kind, "item_id": item.item_id,
                 "version": item.version,
