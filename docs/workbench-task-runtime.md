@@ -31,7 +31,7 @@
 1. API 从认证 Principal 得到 tenant 和 actor；先执行 Agent、项目、会话授权。
 2. 服务解析当前已发布 Agent 和模型模板，检查模型供应商版本、工具、Skill、工作流引用。
 3. 计算请求摘要并按 `(tenant_id, actor_id, idempotency_key)` 实现幂等提交。
-4. 在 `platform_runs` 创建 queued Run；`task_id` 使用 Run UUID，但 `dispatch_ready=false`，Worker 不可领取。
+4. 在 `platform_runs` 创建 queued Run；`task_id` 使用 Run UUID，并持久化 Agent 与模型模板版本；`dispatch_ready=false` 时 Worker 不可领取。
 5. 将 Agent、模型模板、模型供应商、工具、Skill、工作流的确切活动版本固定到不可变 Run 注册快照；版本若在校验期间变更则拒绝提交。
 6. 仅在快照持久化且摘要匹配后设置 `dispatch_ready=true`，再返回 queued 任务；后台 Worker 通过 `FOR UPDATE SKIP LOCKED` 和租约领取任务，调用 `LangGraphRunExecutor` 执行。
 7. Worker 写入输出、Usage、Trace ID 和终态；工作台列表/详情读取同一份持久化 Run 记录。
