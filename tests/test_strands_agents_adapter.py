@@ -365,6 +365,40 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1].result.usage["total_tokens"], 8)
         self.assertTrue(self.agents[0].closed)
 
+    async def test_stream_cancellation_closes_the_agent(self):
+        started = asyncio.Event()
+
+        class BlockingStreamingAgent(FakeAgent):
+            async def stream_async(self, prompt, *, idempotency_token):
+                self.prompt = (prompt, idempotency_token)
+                yield {"data": "first"}
+                started.set()
+                await asyncio.Event().wait()
+
+        def streaming_factory(**kwargs):
+            agent = BlockingStreamingAgent(**kwargs)
+            self.agents.append(agent)
+            return agent
+
+        adapter = self.adapter(
+            agent_factory=streaming_factory,
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text"}),
+                streaming=True,
+            ),
+        )
+        iterator = adapter.stream(self.request)
+        first = await anext(iterator)
+        self.assertEqual(first.text_delta, "first")
+        pending = asyncio.create_task(anext(iterator))
+        await started.wait()
+        pending.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await pending
+        await iterator.aclose()
+        self.assertTrue(self.agents[0].closed)
+
     async def test_streaming_is_rejected_when_capability_is_not_declared(self):
         adapter = self.adapter()
         with self.assertRaisesRegex(UnsupportedHarnessCapability, "streaming support"):
