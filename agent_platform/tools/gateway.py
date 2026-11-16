@@ -221,9 +221,10 @@ class SupervisedToolGateway:
                         outcome="replayed", run_id=run_id, agent_id=agent_id,
                     )
                     return existing.result
-                raise ToolExecutionDenied(
-                    "previous side effect is pending or failed and requires reconciliation"
-                )
+                if existing.state != "retryable":
+                    raise ToolExecutionDenied(
+                        "previous side effect is pending, failed or compensated and requires reconciliation"
+                    )
 
         approved_hash = None
         if approval_id and definition.risk == RiskLevel.EXTERNAL_OR_IRREVERSIBLE:
