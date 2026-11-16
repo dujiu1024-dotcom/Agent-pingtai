@@ -48,7 +48,7 @@ class PostgresAlertEventStore:
         event_id, _ = await self.record_once(event, scope_key=scope_key, dedupe_key=dedupe_key)
         return event_id
 
-    async def claim_pending_deliveries(self, *, limit: int = 100) -> list[dict[str, Any]]:
+    async def claim_pending_deliveries(self, *, limit: int = 100, event_id: str | None = None) -> list[dict[str, Any]]:
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
         connection = await self._connect()
@@ -58,6 +58,7 @@ class PostgresAlertEventStore:
                     """WITH candidates AS (
                          SELECT event_id FROM platform_alert_events
                          WHERE delivery_status IN ('pending','failed')
+                           AND (%s IS NULL OR event_id=%s)
                          ORDER BY fired_at
                          FOR UPDATE SKIP LOCKED
                          LIMIT %s
@@ -69,7 +70,7 @@ class PostgresAlertEventStore:
                        RETURNING event.event_id,event.scope_key,event.rule_id,event.metric_name,
                                  event.observed_value,event.threshold,event.severity,
                                  event.fired_at,event.description""",
-                    (limit,),
+                    (event_id,event_id,limit),
                 )
                 rows = await cursor.fetchall()
         return [dict(row) for row in rows]
