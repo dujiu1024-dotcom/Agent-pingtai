@@ -172,6 +172,17 @@ class DataConnectorService:
         await self.repository.create(connection, created_by=actor_id)
         return connection
 
+    async def schedule_sync(self, *, tenant_id: str, connection_id: str) -> None:
+        connection = await self.repository.get(tenant_id, connection_id)
+        if connection is None or connection.status != "active":
+            raise ConnectorError("connection is not active")
+        if self.sync_queue is None:
+            raise ConnectorError("connector sync queue is not configured")
+        await self.sync_queue.enqueue(
+            tenant_id=tenant_id, connection_id=connection_id,
+            job_type="sync", disposition="retain",
+        )
+
     async def sync_once(
         self, *, tenant_id: str, connection_id: str,
         revocation_disposition: str = "retain",
