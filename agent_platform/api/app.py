@@ -32,6 +32,7 @@ from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
+from agent_platform.security.audit_http import AuditRequestASGIMiddleware
 
 
 async def _principal_from_request(request: Any) -> Any:
@@ -73,6 +74,8 @@ def create_platform_app(
     alert_dispatch_worker: Any | None = None,
     audit_reader: Any | None = None,
     audit_authorizer: Any | None = None,
+    audit_request_sink: Any | None = None,
+    audit_actor_resolver: Any | None = None,
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
     quota_service: Any | None = None,
@@ -117,7 +120,23 @@ def create_platform_app(
         ):
             raise ValueError("allowed_origins must contain exact HTTPS origins only")
 
+    audit_request_configured = any(value is not None for value in (
+        audit_request_sink, audit_actor_resolver,
+    ))
+    if audit_request_configured and any(value is None for value in (
+        audit_request_sink, audit_actor_resolver,
+    )):
+        raise ValueError("audit request sink and actor resolver must be configured together")
+
     app = FastAPI()
+    # Add request auditing before Identity middleware so it executes inside the
+    # authenticated identity boundary and sees the verified principal.
+    if audit_request_configured:
+        app.add_middleware(
+            AuditRequestASGIMiddleware,
+            sink=audit_request_sink,
+            resolve_actor=audit_actor_resolver,
+        )
     app.add_middleware(
         IdentityASGIMiddleware,
         identity=identity,
