@@ -389,7 +389,11 @@ class OpenAICompatibleModelRouter:
                 except ContextOverflowError as exc:
                     await record_preflight_failure(
                         candidate_id=candidate,
-                        reason="context_overflow_policy_failed",
+                        reason=(
+                            "token_estimate_invalid_or_context_window_exceeded"
+                            if self.context_overflow_policy == "reject"
+                            else "context_overflow_policy_failed"
+                        ),
                         error_type=type(exc).__name__,
                     )
                     raise ModelRoutingError(str(exc)) from exc
