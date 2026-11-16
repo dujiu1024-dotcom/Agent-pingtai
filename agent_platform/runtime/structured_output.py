@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from dataclasses import replace
 from typing import Any, Mapping
 
@@ -25,19 +26,33 @@ _SUPPORTED_SCHEMA_TYPES = frozenset({
 def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> None:
     if not isinstance(schema, Mapping):
         raise ValueError(f"{path}: schema definition must be an object")
+    if any(not isinstance(key, str) for key in schema):
+        raise ValueError(f"{path}: schema keywords must be strings")
     unknown = set(schema) - _SUPPORTED_SCHEMA_KEYWORDS
     if unknown:
         raise ValueError(f"{path}: unsupported schema keywords: {', '.join(sorted(unknown))}")
     expected = schema.get("type")
-    if expected is not None and expected not in _SUPPORTED_SCHEMA_TYPES:
+    if expected is not None and (
+        not isinstance(expected, str) or expected not in _SUPPORTED_SCHEMA_TYPES
+    ):
         raise ValueError(f"{path}: unsupported schema type")
-    if "enum" in schema and not isinstance(schema["enum"], list):
-        raise ValueError(f"{path}.enum must be an array")
+    if "enum" in schema and (
+        not isinstance(schema["enum"], list) or not schema["enum"]
+    ):
+        raise ValueError(f"{path}.enum must be a non-empty array")
+    if "additionalProperties" in schema and not isinstance(
+        schema["additionalProperties"], bool
+    ):
+        raise ValueError(f"{path}.additionalProperties must be a boolean")
+    for key in ("title", "description", "$schema"):
+        if key in schema and not isinstance(schema[key], str):
+            raise ValueError(f"{path}.{key} must be a string")
     if "required" in schema and (
         not isinstance(schema["required"], list)
         or any(not isinstance(item, str) or not item for item in schema["required"])
+        or len(set(schema["required"])) != len(schema["required"])
     ):
-        raise ValueError(f"{path}.required must be an array of non-empty strings")
+        raise ValueError(f"{path}.required must contain unique non-empty strings")
     if "properties" in schema:
         properties = schema["properties"]
         if not isinstance(properties, Mapping):
@@ -55,7 +70,9 @@ def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> N
             raise ValueError(f"{path}.{key} must be a non-negative integer")
     for key in ("minimum", "maximum"):
         if key in schema and (
-            isinstance(schema[key], bool) or not isinstance(schema[key], (int, float))
+            isinstance(schema[key], bool)
+            or not isinstance(schema[key], (int, float))
+            or not math.isfinite(schema[key])
         ):
             raise ValueError(f"{path}.{key} must be numeric")
     if "minItems" in schema and "maxItems" in schema and schema["minItems"] > schema["maxItems"]:
@@ -155,10 +172,14 @@ def _validate(value: Any, schema: Mapping[str, Any], path: str = "$") -> list[st
     return errors
 
 
+def _reject_non_json_constant(value: str) -> None:
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
 def validate_structured_output(raw: str, schema: Mapping[str, Any]) -> tuple[Any | None, list[str]]:
     try:
-        value = json.loads(raw)
-    except (TypeError, json.JSONDecodeError) as exc:
+        value = json.loads(raw, parse_constant=_reject_non_json_constant)
+    except (TypeError, ValueError) as exc:
         return None, [f"$: invalid JSON ({type(exc).__name__})"]
     return value, _validate(value, schema)
 
