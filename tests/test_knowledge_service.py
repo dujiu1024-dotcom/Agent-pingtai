@@ -5,8 +5,8 @@ import unittest
 from types import SimpleNamespace
 
 from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
-from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.ingestion import ParserRegistry
+from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 
 
