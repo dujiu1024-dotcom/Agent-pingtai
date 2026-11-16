@@ -53,7 +53,7 @@ class TraceContextASGIMiddleware:
                     if key.lower() not in (b"traceparent", b"x-correlation-id")
                 ]
                 outgoing.extend(
-                    (key.encode("ascii"), value.encode("ascii"))
+                    (key.encode("ascii"), value.encode("latin-1"))
                     for key, value in context.as_headers().items()
                 )
                 message = {**message, "headers": outgoing}
