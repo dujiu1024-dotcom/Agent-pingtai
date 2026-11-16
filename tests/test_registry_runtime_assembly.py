@@ -91,7 +91,7 @@ class RegistryRuntimeAssemblyTests(unittest.IsolatedAsyncioTestCase):
             async def complete(self, **kwargs):
                 return kwargs
 
-        with self.assertRaisesRegex(RegistryRuntimeError, "quota enforcement"):
+        with self.assertRaisesRegex(RegistryRuntimeError, "budget enforcement"):
             RegistryRuntimeAssembler(
                 snapshots=SnapshotService(SimpleNamespace()),
                 model_router=UnbudgetedModelRouter(),
