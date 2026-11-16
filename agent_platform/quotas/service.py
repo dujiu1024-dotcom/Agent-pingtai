@@ -34,7 +34,7 @@ class Budget:
     hard_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model"}:
+        if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker"}:
             raise ValueError("invalid budget scope")
         if not self.scope_id:
             raise ValueError("scope_id is required")
@@ -52,6 +52,13 @@ class Budget:
                 not isinstance(cost, Decimal) or not cost.is_finite() or cost < 0
             ):
                 raise ValueError("cost limits must be finite non-negative Decimals")
+        if self.scope_type in {"queue", "worker"} and (
+            self.hard_concurrency is None or self.hard_tokens is not None
+            or self.hard_cost_usd is not None or self.soft_tokens is not None
+            or self.soft_cost_usd is not None or self.hard_input_tokens is not None
+            or self.hard_output_tokens is not None
+        ):
+            raise ValueError("queue/worker scopes support hard_concurrency limits only")
 
 
 @dataclass(frozen=True)
@@ -72,7 +79,7 @@ class QuotaReservation:
     def __post_init__(self) -> None:
         if not self.reservation_id or not self.tenant_id or not self.run_id:
             raise ValueError("reservation, tenant and run ids are required")
-        if self.scope_type not in {"tenant", "project", "agent", "model"} or not self.scope_id:
+        if self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker"} or not self.scope_id:
             raise ValueError("invalid reservation quota scope")
         counters = (
             self.reserved_tokens, self.reserved_input_tokens, self.reserved_output_tokens,
