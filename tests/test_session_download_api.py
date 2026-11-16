@@ -111,10 +111,11 @@ class SessionFileDownloadAuthorizationTests(unittest.TestCase):
             },
         )
         self.assertEqual(denied.status_code, 403, denied.text)
-        self.assertEqual(
-            asyncio.run(self.repository.list_assets("tenant-a", "user-a")),
-            (),
+        assets_after_denial = asyncio.run(
+            self.repository.list_assets("tenant-a", "user-a"),
         )
+        self.assertEqual(len(assets_after_denial), 1)
+        self.assertEqual(assets_after_denial[0].asset_id, self.asset.asset_id)
 
         self.denied.clear()
         allowed = self.client.post(
@@ -127,6 +128,11 @@ class SessionFileDownloadAuthorizationTests(unittest.TestCase):
         )
         self.assertEqual(allowed.status_code, 201, allowed.text)
         self.assertEqual(allowed.json()["status"], "available")
+        assets_after_allow = asyncio.run(
+            self.repository.list_assets("tenant-a", "user-a"),
+        )
+        self.assertEqual(len(assets_after_allow), 2)
+        self.assertNotEqual(assets_after_allow[1].asset_id, self.asset.asset_id)
 
 if __name__ == "__main__":
     unittest.main()
