@@ -42,6 +42,14 @@ class DeploymentComposeTests(unittest.TestCase):
             with self.subTest(variable=variable):
                 self.assertIn("${" + variable + ":?", compose_text)
 
+    def test_image_tags_are_configurable_for_upgrade_and_rollback(self):
+        compose_text = (ROOT / "deploy" / "compose.yaml").read_text()
+        env_text = (ROOT / "deploy" / ".env.example").read_text()
+        for variable in ("POSTGRES_IMAGE", "REDIS_IMAGE", "MINIO_IMAGE"):
+            with self.subTest(variable=variable):
+                self.assertIn("${" + variable + ":-", compose_text)
+                self.assertIn(variable + "=", env_text)
+
     def test_example_env_contains_placeholders_not_live_credentials(self):
         env_text = (ROOT / "deploy" / ".env.example").read_text()
         self.assertIn("REPLACE_WITH_RANDOM_POSTGRES_PASSWORD", env_text)
