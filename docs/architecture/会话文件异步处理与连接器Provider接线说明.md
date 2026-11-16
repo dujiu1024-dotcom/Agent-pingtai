@@ -6,7 +6,7 @@
 
 - 生产上传服务组合 `PostgresSessionRepository`、`S3ObjectStorage` 和 `PostgresFileProcessingQueue`。
 - 将 queue 注入 `SessionAssetService(processing_queue=...)`。上传先写对象和元数据，资产状态为 pending，再写入持久化处理队列；入队失败时资产拒绝并删除对象。
-- Worker 由宿主调度器循环调用 `FileProcessingWorker.run_once()`。Worker 通过租户工厂取得会话仓储、对象存储、知识服务；扫描器必须配置，扫描失败/超时不会放行。
+- Worker 由宿主调度器循环调用 `FileProcessingWorker.run_once()`。Worker 通过租户工厂取得会话仓储、对象存储、知识服务；扫描器必须配置，扫描失败/超时不会放行。可使用 `ClamAVScanner` 通过 clamd INSTREAM 协议传输文件字节，支持 TLS、超时、大小限制；FOUND 拒绝，daemon 异常 fail-closed。
 - Worker 校验对象 SHA-256，执行病毒/内容扫描，再通过 ParserRegistry 解析 PDF、DOCX、XLSX、PPTX、HTML 或纯文本，最后将文档写入知识库。项目文件继承 project scope；非项目文件进入 owner private scope。
 - 队列使用 PostgreSQL `FOR UPDATE SKIP LOCKED` 领取、租约超时接管、指数退避和 dead-letter；处理成功幂等完成。达到最大尝试次数后文件标记 rejected 并删除对象。
 - 新增 migration `027_file_processing_jobs.sql`。部署时需按顺序应用所有 PostgreSQL migrations。
