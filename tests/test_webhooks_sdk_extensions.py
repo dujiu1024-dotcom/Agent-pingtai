@@ -151,6 +151,7 @@ class SdkAndExtensionTests(unittest.TestCase):
             "my-extension", "1.2.0", "1.0.0",
             permissions=("knowledge.read", "tools.invoke"),
             dependencies=("base-connector",), entrypoint="plugin/main.py",
+            dependency_versions={"base-connector": "1.0.0"},
         )
         validate_platform_compatibility(manifest, platform_api_version="1.0.0")
         with self.assertRaises(ValueError):
