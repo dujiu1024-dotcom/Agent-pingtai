@@ -179,5 +179,23 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_presigned_download_requires_available_asset(self) -> None:
+        class SignedStorage(InMemoryObjectStorage):
+            async def presign_get(self, object_key, *, filename, media_type, expires_in):
+                return "https://objects.example.test/signed"
+        storage = SignedStorage()
+        service = SessionAssetService(self.repository, storage)
+        asset = await service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="file.txt",
+            media_type="text/plain", content=b"ready",
+        )
+        saved, url = await service.create_download_url(
+            tenant_id="tenant-a", asset_id=asset.asset_id,
+        )
+        self.assertEqual(saved.asset_id, asset.asset_id)
+        self.assertEqual(url, "https://objects.example.test/signed")
+
+
+
 if __name__ == "__main__":
     unittest.main()
