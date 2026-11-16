@@ -473,10 +473,12 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         detail = await details.get(tenant_id=self.tenant_id, run_id=str(self.run_id))
         self.assertEqual(detail["input"], {})
         self.assertEqual(detail["checkpoint_ref"], "checkpoint-1")
-        self.assertEqual([item["event_type"] for item in detail["steps"]], ["run.step.started"])
+        self.assertEqual(
+            [item["event_type"] for item in detail["steps"]],
+            ["run.step.started", "run.step.failed"],
+        )
         self.assertEqual(detail["logs"][0]["payload"]["message"], "Authorization: Bearer [REDACTED]")
         self.assertEqual(detail["artifacts"][0]["payload"]["artifact_id"], "artifact-1")
-        self.assertEqual(detail["steps"][1]["event_type"], "run.step.failed")
         self.assertEqual(detail["last_error"], "step publish failed")
         self.assertEqual(detail["approvals"][0]["approval_id"], str(approval_id))
         self.assertEqual(detail["approvals"][0]["status"], "approved")
