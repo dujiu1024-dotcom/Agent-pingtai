@@ -93,7 +93,7 @@ PY
 IFS=',' read -r -a components <<< "$BACKUP_COMPONENTS"
 (("${#components[@]}" > 0)) || { echo "no backup components selected" >&2; exit 2; }
 for component in "${components[@]}"; do
-  component="${component//[[:space:]]/}"
+  component="$(printf '%s' "$component" | tr -d '[:space:]')"
   [[ -n "$component" ]] || continue
   echo "Starting $component backup"
   run_component "$component"
