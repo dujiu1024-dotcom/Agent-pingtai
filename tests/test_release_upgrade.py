@@ -27,6 +27,32 @@ class ReleaseUpgradeTests(unittest.TestCase):
         self.assertNotIn("INSERT INTO", script)
         self.assertNotIn("CREATE TABLE", script)
 
+    def test_migration_preflight_accepts_matching_ledger_and_rejects_checksum_drift(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migrations = root / "migrations"
+            migrations.mkdir()
+            migration = migrations / "001_create_table.sql"
+            migration.write_text("SELECT 1;\\n", encoding="utf-8")
+            checksum = subprocess.run(["sha256sum", str(migration)], capture_output=True, text=True, check=True).stdout.split()[0]
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            psql = bin_dir / "psql"
+            psql.write_text(
+                "#!/usr/bin/env bash\\n"
+                'if [[ "$*" == *"to_regclass"* ]]; then echo t; else printf "%s\\n" "$LEDGER_ROW"; fi\\n',
+                encoding="utf-8",
+            )
+            psql.chmod(0o755)
+            env = os.environ.copy()
+            env.update({"PATH": f"{bin_dir}:{env['PATH']}", "PG_DSN": "postgresql://test", "MIGRATION_DIR": str(migrations), "LEDGER_ROW": f"001_create_table.sql|{checksum}"})
+            good = subprocess.run(["bash", str(ROOT / "scripts" / "check_migrations.sh")], cwd=ROOT, env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(good.returncode, 0, good.stderr)
+            env["LEDGER_ROW"] = "001_create_table.sql|" + ("0" * 64)
+            bad = subprocess.run(["bash", str(ROOT / "scripts" / "check_migrations.sh")], cwd=ROOT, env=env, capture_output=True, text=True, check=False)
+            self.assertEqual(bad.returncode, 3)
+            self.assertIn("checksum mismatch", bad.stderr)
+
     def test_incompatible_release_is_blocked_before_state_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
