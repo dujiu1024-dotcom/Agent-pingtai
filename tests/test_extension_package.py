@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
-from agent_platform.extensions.package import extract_extension_zip
+from agent_platform.extensions.package import (
+    extract_extension_zip,
+    verify_extension_signature,
+)
 
 
 class ExtensionPackageExtractionTests(unittest.TestCase):
@@ -57,6 +63,52 @@ class ExtensionPackageExtractionTests(unittest.TestCase):
             extract_extension_zip(self.archive, self.destination, max_files=1)
         with self.assertRaisesRegex(ValueError, "limits"):
             extract_extension_zip(self.archive, self.destination, max_uncompressed_bytes=4)
+
+
+    @unittest.skipUnless(shutil.which("openssl"), "OpenSSL is required for Ed25519 test")
+    def test_verifies_detached_ed25519_signature_and_binds_extraction_digest(self):
+        self._write_zip([("manifest.json", b'{"id":"signed-extension"}')])
+        private_key = self.root / "publisher-private.pem"
+        public_key = self.root / "publisher-public.pem"
+        digest_file = self.root / "archive.sha256"
+        signature_file = self.root / "archive.sig"
+        subprocess.run(
+            ["openssl", "genpkey", "-algorithm", "ED25519", "-out", str(private_key)],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
+            check=True, capture_output=True,
+        )
+        archive_digest = hashlib.sha256(self.archive.read_bytes()).digest()
+        digest_file.write_bytes(archive_digest)
+        subprocess.run(
+            ["openssl", "pkeyutl", "-sign", "-inkey", str(private_key),
+             "-rawin", "-in", str(digest_file), "-out", str(signature_file)],
+            check=True, capture_output=True,
+        )
+        verified = verify_extension_signature(
+            self.archive, signature_file.read_bytes(), public_key.read_bytes(),
+        )
+        report = extract_extension_zip(
+            self.archive, self.destination, expected_archive_sha256=verified,
+        )
+        self.assertEqual(report.archive_sha256, verified)
+
+        tampered = self.root / "tampered.zip"
+        tampered.write_bytes(self.archive.read_bytes() + b"tamper")
+        with self.assertRaisesRegex(ValueError, "signature verification failed"):
+            verify_extension_signature(
+                tampered, signature_file.read_bytes(), public_key.read_bytes(),
+            )
+
+    def test_extraction_rejects_digest_changed_after_signature_verification(self):
+        self._write_zip([("main.py", b"safe")])
+        with self.assertRaisesRegex(ValueError, "digest does not match"):
+            extract_extension_zip(
+                self.archive, self.destination, expected_archive_sha256="0" * 64,
+            )
+        self.assertFalse(self.destination.exists())
 
     def test_rejects_existing_destination_and_archive_symlink(self):
         self._write_zip([("main.py", b"ok")])
