@@ -7,8 +7,7 @@ extraction is disabled unless the host supplies an explicit policy callback.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Any
+from typing import Any, Awaitable, Callable, Mapping
 
 from agent_platform.control_plane.sessions_assets import MessageRole
 from agent_platform.events.consumer import EventEnvelope
