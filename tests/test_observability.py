@@ -216,6 +216,21 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "finite number"):
             metrics.observe("not_finite", float("nan"))
 
+    def test_redaction_removes_secret_assignments_from_audit_text(self):
+        samples = (
+            "password=hunter2",
+            "api_key=sk-12345678901234567890",
+            '{"client_secret":"sensitive-value"}',
+            "Authorization: Bearer abc.def.ghi",
+        )
+        for sample in samples:
+            with self.subTest(sample=sample):
+                cleaned = redact_text(sample)
+                self.assertNotIn("hunter2", cleaned)
+                self.assertNotIn("sensitive-value", cleaned)
+                self.assertNotIn("abc.def.ghi", cleaned)
+                self.assertIn("[REDACTED]", cleaned)
+
 
 if __name__ == "__main__":
     unittest.main()
