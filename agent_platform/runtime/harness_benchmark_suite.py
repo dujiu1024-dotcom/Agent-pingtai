@@ -124,9 +124,7 @@ def benchmark_evidence_payload(
     """Serialize comparable metrics plus explicit unsupported capability evidence."""
     return {
         "suite_version": 1,
-        "execution_mode": "provider-backed" if any(
-            row.usage or row.estimated_cost_usd is not None for row in report.observations
-        ) else "adapter-run",
+        "execution_mode": "caller-supplied-adapters",
         "candidate_capabilities": [asdict(item) for item in scorecards],
         "summary": report.summary(),
         "observations": [asdict(row) for row in report.observations],
