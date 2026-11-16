@@ -154,9 +154,35 @@ class PostgresTaskCenterService:
         if row is None:
             return None
         result = self._serialize(row)
-        if row["status"] == "cancelling" and row["run_id"] and self._cancel_run:
-            await self._cancel_run(self.tenant_id, str(row["run_id"]))
+        if row["status"] == "cancelling":
+            if row["run_id"] and self._cancel_run:
+                await self._cancel_run(self.tenant_id, str(row["run_id"]))
+            elif row["run_id"] and self._cancel_run is None:
+                raise TaskCenterError("running task cancellation requires a Run cancellation handler")
+            await self.acknowledge_cancel_by_id(task_id=task_id)
+            result = await self.get_task(tenant_id=self.tenant_id, task_id=task_id) or result
         return result
+
+    async def acknowledge_cancel_by_id(self, *, task_id: str) -> None:
+        db = await self._connect()
+        async with db:
+            await db.execute(
+                """UPDATE platform_tasks SET status='cancelled',lease_owner=NULL,
+                     lease_expires_at=NULL,finished_at=now(),updated_at=now()
+                   WHERE tenant_id=%s AND task_id=%s AND status='cancelling'""",
+                (self.tenant_id, UUID(task_id)),
+            )
+
+    async def acknowledge_cancel(self, lease: TaskLease) -> None:
+        db = await self._connect()
+        async with db:
+            await db.execute(
+                """UPDATE platform_tasks SET status='cancelled',lease_owner=NULL,
+                     lease_expires_at=NULL,finished_at=now(),updated_at=now()
+                   WHERE tenant_id=%s AND task_id=%s AND status='cancelling'
+                     AND lease_owner=%s""",
+                (self.tenant_id, UUID(lease.task_id), lease.lease_owner),
+            )
 
     async def claim_next(self, *, worker_id: str, lease_seconds: int = 60) -> TaskLease | None:
         if not worker_id.strip() or lease_seconds < 5:
@@ -225,7 +251,7 @@ class PostgresTaskCenterService:
         async with db:
             cursor = await db.execute(
                 """UPDATE platform_tasks SET lease_expires_at=now()+(%s * interval '1 second')
-                   WHERE tenant_id=%s AND task_id=%s AND status='running'
+                   WHERE tenant_id=%s AND task_id=%s AND status IN ('running','cancelling')
                      AND lease_owner=%s AND lease_expires_at>now()
                    RETURNING task_id""",
                 (lease_seconds, self.tenant_id, UUID(lease.task_id), lease.lease_owner),
@@ -306,6 +332,7 @@ class TaskQueueWorker:
         except asyncio.CancelledError:
             execution.cancel()
             await asyncio.gather(execution, return_exceptions=True)
+            await self.service.acknowledge_cancel(lease)
             raise
         except Exception as exc:
             await self.service.fail(lease, error=type(exc).__name__)
