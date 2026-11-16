@@ -10,7 +10,8 @@ def manifest(extension_id, dependencies=()):
     return ExtensionManifest(
         extension_id=extension_id, version="1.0.0", platform_api="1.0.0",
         permissions=(), dependencies=tuple(dependencies),
-        dependency_versions={item: ">=1.0.0" for item in dependencies},
+        entrypoint="plugin.py",
+        dependency_versions={item: "1.0.0" for item in dependencies},
     )
 
 
@@ -19,6 +20,10 @@ class ExtensionDependencyGraphTests(unittest.TestCase):
         items = [manifest("base"), manifest("middle", ("base",)), manifest("app", ("middle",))]
         self.assertEqual(resolve_install_order(items), ("base", "middle", "app"))
         self.assertEqual(uninstall_impact("base", items), ("app", "middle", "base"))
+
+    def test_duplicate_extension_ids_are_rejected(self):
+        with self.assertRaises(ValueError):
+            resolve_install_order([manifest("same"), manifest("same")])
 
     def test_missing_dependency_and_cycle_are_rejected(self):
         with self.assertRaises(ValueError):
