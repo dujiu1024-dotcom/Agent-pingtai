@@ -74,6 +74,7 @@ class RegistryVersion:
 class RegistryRepository(Protocol):
     async def get(self, tenant_id: str, kind: str, item_id: str, version: int) -> RegistryVersion | None: ...
     async def list_versions(self, tenant_id: str, kind: str, item_id: str) -> tuple[RegistryVersion, ...]: ...
+    async def list_items(self, tenant_id: str, kind: str, *, limit: int = 100) -> tuple[RegistryVersion, ...]: ...
     async def put(self, item: RegistryVersion, *, expected_latest: int | None) -> None: ...
     async def set_active(self, tenant_id: str, kind: str, item_id: str, version: int) -> None: ...
     async def get_active(self, tenant_id: str, kind: str, item_id: str) -> RegistryVersion | None: ...
@@ -93,6 +94,20 @@ class InMemoryRegistryRepository:
     async def list_versions(self, tenant_id: str, kind: str, item_id: str) -> tuple[RegistryVersion, ...]:
         values = [v for k, v in self._items.items() if k[:3] == (tenant_id, kind, item_id)]
         return tuple(copy.deepcopy(sorted(values, key=lambda x: x.version)))
+
+    async def list_items(self, tenant_id: str, kind: str, *, limit: int = 100) -> tuple[RegistryVersion, ...]:
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        latest: dict[str, RegistryVersion] = {}
+        for (row_tenant, row_kind, item_id, _), item in self._items.items():
+            if row_tenant != tenant_id or row_kind != kind:
+                continue
+            current = latest.get(item_id)
+            if current is None or item.version > current.version:
+                latest[item_id] = item
+        return tuple(copy.deepcopy(sorted(
+            latest.values(), key=lambda item: (item.created_at, item.item_id), reverse=True,
+        )[:limit]))
 
     async def put(self, item: RegistryVersion, *, expected_latest: int | None) -> None:
         key = (item.tenant_id, item.kind, item.item_id)

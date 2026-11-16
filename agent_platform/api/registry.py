@@ -43,6 +43,24 @@ def create_registry_router(
             "published_at": item.published_at.isoformat() if item.published_at else None,
         }
 
+    @router.get("/{kind}")
+    async def list_items(kind: str, request: Request, limit: int = 100):
+        principal = await resolve_principal(request)
+        if not await authorize(principal, kind, "*", "read"):
+            raise HTTPException(403, "registry resource access denied")
+        service = await resolve_service(principal)
+        repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
+        if repository_tenant != principal.tenant_id:
+            raise HTTPException(403, "registry repository tenant mismatch")
+        list_items = getattr(service.repository, "list_items", None)
+        if list_items is None:
+            raise HTTPException(501, "registry repository does not support item listing")
+        try:
+            items = await list_items(principal.tenant_id, kind, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"items": [serialize(item) for item in items]}
+
     @router.post("/{kind}/{item_id}/versions", status_code=201)
     async def create_version(kind: str, item_id: str, request: Request):
         principal, service = await context(request, kind, item_id, "write")

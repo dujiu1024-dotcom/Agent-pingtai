@@ -245,7 +245,9 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError,"cache unavailable"):
             await service.forget(principal=principal,memory_id=candidate.memory_id)
         self.assertEqual((await service.repository.get("t",candidate.memory_id)).status.value,"deleted")
-        self.assertFalse(await service.forget(principal=principal,memory_id=candidate.memory_id))
+        # A repeated logical deletion is successful once the tombstone exists;
+        # the cleanup hook above is retried before the idempotent response.
+        self.assertTrue(await service.forget(principal=principal,memory_id=candidate.memory_id))
         self.assertEqual(attempts,[("t",candidate.memory_id),("t",candidate.memory_id)])
 
     async def test_expiry_retries_derived_data_cleanup(self):

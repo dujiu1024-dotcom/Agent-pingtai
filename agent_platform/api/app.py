@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI
 
 from agent_platform.api.approvals import create_approval_router
+from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
@@ -67,6 +68,11 @@ def create_platform_app(
     quota_scope_authorizer: Any | None = None,
     webhook_admin_service: WebhookSubscriptionService | None = None,
     webhook_admin_authorizer: Any | None = None,
+    task_service_resolver: Any | None = None,
+    task_authorizer: Any | None = None,
+    blackboard_repository_resolver: Any | None = None,
+    blackboard_authorizer: Any | None = None,
+    blackboard_evidence_verifier: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -130,16 +136,43 @@ def create_platform_app(
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
         ))
-    app.include_router(create_workbench_router(features={
-        "knowledge": True,
-        "memory": True,
-        "sessions": sessions_configured,
-        "registry": registry_configured,
-        "agent_management": False,
-        "task_execution": False,
-        "approvals": approval_service is not None and approval_authorizer is not None,
-        "blackboard": False,
-    }))
+    task_center_configured = any(value is not None for value in (
+        task_service_resolver, task_authorizer,
+    ))
+    if task_center_configured and any(value is None for value in (
+        task_service_resolver, task_authorizer,
+    )):
+        raise ValueError("task service resolver and authorizer must be configured together")
+    blackboard_configured = any(value is not None for value in (
+        blackboard_repository_resolver, blackboard_authorizer,
+        blackboard_evidence_verifier,
+    ))
+    if blackboard_configured and any(value is None for value in (
+        blackboard_repository_resolver, blackboard_authorizer,
+    )):
+        raise ValueError("Blackboard repository resolver and authorizer must be configured together")
+    app.include_router(create_workbench_router(
+        features={
+            "knowledge": True,
+            "memory": True,
+            "sessions": sessions_configured,
+            "registry": registry_configured,
+            "agent_management": registry_configured,
+            "task_execution": task_center_configured,
+            "approvals": approval_service is not None and approval_authorizer is not None,
+            "blackboard": blackboard_configured,
+        },
+        resolve_principal=_principal_from_request if task_center_configured else None,
+        resolve_task_service=task_service_resolver,
+        authorize_task=task_authorizer,
+    ))
+    if blackboard_configured:
+        app.include_router(create_blackboard_router(
+            resolve_principal=_principal_from_request,
+            resolve_repository=blackboard_repository_resolver,
+            authorize_scope=blackboard_authorizer,
+            verify_evidence_refs=blackboard_evidence_verifier,
+        ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
     if approvals_configured:
         if approval_service is None or approval_authorizer is None:
