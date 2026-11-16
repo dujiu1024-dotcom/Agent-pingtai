@@ -5,6 +5,7 @@ import hashlib
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ def extract_extension_zip(
     max_files: int = 1000,
     max_uncompressed_bytes: int = 64 * 1024 * 1024,
     max_compression_ratio: int = 100,
+    expected_archive_sha256: str | None = None,
 ) -> ExtensionExtractionReport:
     """Validate every ZIP member before writing into a new private directory.
 
@@ -112,14 +114,74 @@ def extract_extension_zip(
         with archive.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
+        archive_sha256 = digest.hexdigest()
+        if expected_archive_sha256 is not None and archive_sha256 != expected_archive_sha256:
+            raise ValueError("extension archive digest does not match verified signature")
         os.replace(stage, destination)
         return ExtensionExtractionReport(
             destination=destination,
             files_extracted=file_count,
             uncompressed_bytes=total_bytes,
-            archive_sha256=digest.hexdigest(),
+            archive_sha256=archive_sha256,
         )
     except Exception:
         raise
     finally:
         shutil.rmtree(temporary_root, ignore_errors=True)
+
+
+
+def verify_extension_signature(
+    archive: Path,
+    signature: bytes,
+    trusted_public_key_pem: bytes,
+    *,
+    openssl_binary: str = "openssl",
+    timeout_seconds: float = 10.0,
+) -> str:
+    """Verify a detached Ed25519 signature over the archive's SHA-256 digest.
+
+    The public key must come from a trusted publisher registry, never from the
+    archive itself. OpenSSL is invoked without a shell and with bounded runtime.
+    The returned digest should be passed to extract_extension_zip as
+    expected_archive_sha256 to bind verification to the extracted bytes.
+    """
+    if not archive.is_file() or archive.is_symlink():
+        raise ValueError("extension archive must be a regular non-symlink file")
+    if len(signature) != 64:
+        raise ValueError("Ed25519 signature must be exactly 64 bytes")
+    if b"-----BEGIN PUBLIC KEY-----" not in trusted_public_key_pem:
+        raise ValueError("trusted Ed25519 public key must be PEM encoded")
+    if timeout_seconds <= 0:
+        raise ValueError("signature verification timeout must be positive")
+
+    digest = hashlib.sha256()
+    with archive.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    archive_digest = digest.digest()
+
+    with tempfile.TemporaryDirectory(prefix="extension-signature-") as directory:
+        root = Path(directory)
+        key_path = root / "trusted-publisher.pem"
+        signature_path = root / "package.sig"
+        digest_path = root / "archive.sha256"
+        key_path.write_bytes(trusted_public_key_pem)
+        signature_path.write_bytes(signature)
+        digest_path.write_bytes(archive_digest)
+        for path in (key_path, signature_path, digest_path):
+            path.chmod(0o600)
+        try:
+            result = subprocess.run(
+                [
+                    openssl_binary, "pkeyutl", "-verify", "-pubin",
+                    "-inkey", str(key_path), "-sigfile", str(signature_path),
+                    "-rawin", "-in", str(digest_path),
+                ],
+                capture_output=True, check=False, timeout=timeout_seconds,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError("OpenSSL Ed25519 signature verification unavailable") from exc
+        if result.returncode != 0:
+            raise ValueError("extension package signature verification failed")
+    return digest.hexdigest()
