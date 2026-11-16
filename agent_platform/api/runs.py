@@ -12,6 +12,7 @@ PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
 InterventionResolver = Callable[[Principal], Awaitable[Any]]
 DetailResolver = Callable[[Principal], Awaitable[Any]]
+ExecutorResolver = Callable[[Principal], Awaitable[Any]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
 
@@ -21,6 +22,7 @@ def create_runs_router(
     authorize: Authorizer,
     resolve_interventions: InterventionResolver | None = None,
     resolve_details: DetailResolver | None = None,
+    resolve_executor: ExecutorResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/runs", tags=["runs"])
 
@@ -64,6 +66,23 @@ def create_runs_router(
             raise HTTPException(409, str(exc)) from exc
         return serialize(run)
 
+
+
+    if resolve_executor is not None:
+        @router.post("/{run_id}/pause")
+        async def pause_run(run_id: str, request: Request):
+            principal, _ = await context(request, run_id, "pause")
+            executor = await resolve_executor(principal)
+            try:
+                run = await executor.pause(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    reason="paused by authorized human operator",
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "Run not found") from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return serialize(run)
 
     @router.post("/{run_id}/resume")
     async def resume_run(run_id: str, request: Request):
