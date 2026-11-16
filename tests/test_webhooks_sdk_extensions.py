@@ -47,12 +47,15 @@ class FakeWebhookStore:
 
 
 class FakeAuditSink:
-    def __init__(self, fail=False):
+    def __init__(self, fail=False, fail_on_call=None):
         self.events = []
         self.fail = fail
+        self.fail_on_call = fail_on_call
+        self.calls = 0
 
     async def record(self, **event):
-        if self.fail:
+        self.calls += 1
+        if self.fail or self.calls == self.fail_on_call:
             raise RuntimeError("audit unavailable")
         self.events.append(event)
 
@@ -145,6 +148,24 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             await dispatcher.dispatch()
         self.assertEqual(transport.requests, [])
         self.assertEqual(store.completed, [])
+        self.assertEqual(store.retried, [])
+        self.assertEqual(store.dead, [])
+
+
+    async def test_post_delivery_audit_failure_does_not_schedule_duplicate_delivery(self):
+        store = FakeWebhookStore()
+        transport = FakeWebhookTransport()
+        dispatcher = WebhookDispatcher(
+            store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+            audit_sink=FakeAuditSink(fail_on_call=2),
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await dispatcher.dispatch()
+        self.assertEqual(len(transport.requests), 1)
+        self.assertEqual(len(store.completed), 1)
         self.assertEqual(store.retried, [])
         self.assertEqual(store.dead, [])
 
