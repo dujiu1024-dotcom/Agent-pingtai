@@ -12,7 +12,12 @@ from agent_platform.identity.models import Principal
 
 
 def _principal(request: Request) -> Principal:
-    actor = getattr(getattr(request.state, "identity", None), "principal", None)
+    # IdentityASGIMiddleware stores the authenticated principal under the
+    # dotted state key; retain compatibility with hosts that expose a nested
+    # identity.principal object.
+    actor = getattr(request.state, "identity.principal", None)
+    if actor is None:
+        actor = getattr(getattr(request.state, "identity", None), "principal", None)
     if not isinstance(actor, Principal):
         raise HTTPException(401, "authenticated user required")
     return actor

@@ -267,6 +267,76 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 outbox_relay_worker=InvalidWorker(),
             )
 
+    def test_observability_routes_are_wired_through_platform_app(self):
+        class AlertStore:
+            def __init__(self):
+                self.scopes = []
+
+            async def list_open(self, *, scope_key, limit):
+                self.scopes.append(scope_key)
+                return [{"event_id": "alert-a"}]
+
+        class EvaluationRepository:
+            def __init__(self):
+                self.saved = []
+                self.listed = []
+
+            async def save_human_score(self, **kwargs):
+                self.saved.append(kwargs)
+                return "score-a"
+
+            async def list_human_scores(self, **kwargs):
+                self.listed.append(kwargs)
+                return [{"score_id": "score-a"}]
+
+        alerts = AlertStore()
+        evaluations = EvaluationRepository()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            alert_store=alerts,
+            alert_manage_authorizer=lambda principal: principal.tenant_id == "tenant-a",
+            evaluation_repository=evaluations,
+            evaluation_manage_authorizer=lambda principal: principal.tenant_id == "tenant-a",
+        )
+        client = TestClient(app, base_url="https://testserver")
+        headers = {"Authorization": "Bearer valid-session"}
+        alerts_response = client.get(
+            "/api/platform/v1/observability/alerts", headers=headers,
+        )
+        self.assertEqual(alerts_response.status_code, 200)
+        self.assertEqual(alerts.scopes, ["tenant-a"])
+
+        score_response = client.post(
+            "/api/platform/v1/observability/evaluations/eval-a/scores",
+            headers=headers,
+            json={"case_id": "case-a", "score": 0.9, "rationale": "verified"},
+        )
+        self.assertEqual(score_response.status_code, 201)
+        self.assertEqual(evaluations.saved[0]["tenant_id"], "tenant-a")
+        listed = client.get(
+            "/api/platform/v1/observability/evaluations/eval-a/scores",
+            headers=headers,
+        )
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(evaluations.listed[0]["tenant_id"], "tenant-a")
+
+    def test_observability_evaluation_dependencies_must_be_paired(self):
+        with self.assertRaisesRegex(ValueError, "evaluation repository"):
+            create_platform_app(
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                evaluation_repository=object(),
+            )
+
     def test_factory_rejects_wildcard_and_non_https_origins(self):
         arguments = {
             "identity": self.identity,
