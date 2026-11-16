@@ -312,10 +312,11 @@ class RegistryBackedTaskCenterService:
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
-            "priority": priority,
         }
-        # Preserve the pre-existing idempotency digest for ordinary submissions;
-        # deterministic child Run IDs are included only when explicitly supplied.
+        # Keep default-priority request digests compatible with existing idempotency keys.
+        if priority != 100:
+            request_body["priority"] = priority
+        # Deterministic child Run IDs are included only when explicitly supplied.
         if run_id is not None:
             request_body["requested_run_id"] = run_id
         canonical = json.dumps(
