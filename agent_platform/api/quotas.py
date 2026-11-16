@@ -116,6 +116,8 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             if not isinstance(source, str) or not source.strip() or len(source) > 128:
                 raise ValueError("source must be a non-empty label of at most 128 characters")
             actual_cost = Decimal(str(body["actual_cost_usd"]))
+            if not actual_cost.is_finite() or actual_cost < 0:
+                raise ValueError("actual_cost_usd must be a finite non-negative amount")
             return await quota_store.reconcile_cost(
                 principal.tenant_id, start, end, source=source.strip(),
                 actual_cost_usd=actual_cost,
