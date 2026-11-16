@@ -217,3 +217,31 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
                 Decimal("NaN"), self.start,
             )
 
+    async def test_usage_export_rejects_invalid_ranges_filters_and_limits(self) -> None:
+        with self.assertRaisesRegex(ValueError, "integer"):
+            await self.store.list_usage("tenant-a", self.start, self.end, limit=True)
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            await self.store.list_usage(
+                "tenant-a", self.start.replace(tzinfo=None), self.end,
+            )
+        with self.assertRaisesRegex(ValueError, "tenant_id"):
+            await self.store.list_usage(" ", self.start, self.end)
+        with self.assertRaisesRegex(ValueError, "run_id"):
+            await self.store.list_usage(
+                "tenant-a", self.start, self.end, run_id=" ",
+            )
+        with self.assertRaisesRegex(ValueError, "model_key"):
+            await self.store.list_usage(
+                "tenant-a", self.start, self.end, model_key=" ",
+            )
+
+        from agent_platform.quotas.postgres import PostgresQuotaStore
+        postgres = PostgresQuotaStore(lambda: self.fail("invalid export must not connect"))
+        with self.assertRaisesRegex(ValueError, "integer"):
+            await postgres.list_usage("tenant-a", self.start, self.end, limit=True)
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            await postgres.list_usage(
+                "tenant-a", self.start.replace(tzinfo=None), self.end,
+            )
+        with self.assertRaisesRegex(ValueError, "tenant_id"):
+            await postgres.list_usage(" ", self.start, self.end)
