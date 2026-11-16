@@ -366,3 +366,57 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(result.citation_coverage == 1.0 for result in retrieval[:2]))
         self.assertTrue(all(result.grounded for result in answer_results))
         self.assertTrue(answer_results[-1].abstained)
+
+
+    async def test_office_parsers_extract_table_cells_from_docx_xlsx_and_pptx(self):
+        import io
+        try:
+            from docx import Document as WordDocument
+            import openpyxl
+            from pptx import Presentation
+            from pptx.util import Inches
+        except ImportError:
+            self.skipTest("optional Office parser dependencies are not installed")
+        from agent_platform.knowledge.office_parsers import DOCXParser, PPTXParser, XLSXParser
+
+        word = WordDocument()
+        word.add_paragraph("Quarterly report")
+        table = word.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "Metric"
+        table.cell(0, 1).text = "Value"
+        table.cell(1, 0).text = "Revenue"
+        table.cell(1, 1).text = "125"
+        word_bytes = io.BytesIO()
+        word.save(word_bytes)
+        docx_text = DOCXParser().parse(word_bytes.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        self.assertIn("Quarterly report", docx_text)
+        self.assertIn("Metric | Value", docx_text)
+        self.assertIn("Revenue | 125", docx_text)
+
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Forecast"
+        sheet.append(["Metric", "Value"])
+        sheet.append(["Revenue", 125])
+        xlsx_bytes = io.BytesIO()
+        workbook.save(xlsx_bytes)
+        workbook.close()
+        xlsx_text = XLSXParser().parse(xlsx_bytes.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.assertIn("[sheet:Forecast]", xlsx_text)
+        self.assertIn("Metric | Value", xlsx_text)
+        self.assertIn("Revenue | 125", xlsx_text)
+
+        presentation = Presentation()
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        slide.shapes.add_table(2, 2, Inches(1), Inches(1), Inches(5), Inches(1))
+        ppt_table = slide.shapes[-1].table
+        ppt_table.cell(0, 0).text = "Metric"
+        ppt_table.cell(0, 1).text = "Value"
+        ppt_table.cell(1, 0).text = "Revenue"
+        ppt_table.cell(1, 1).text = "125"
+        pptx_bytes = io.BytesIO()
+        presentation.save(pptx_bytes)
+        pptx_text = PPTXParser().parse(pptx_bytes.getvalue(), "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        self.assertIn("[slide:1]", pptx_text)
+        self.assertIn("Metric | Value", pptx_text)
+        self.assertIn("Revenue | 125", pptx_text)
