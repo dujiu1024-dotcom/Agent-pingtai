@@ -17,6 +17,7 @@
 
 ## Legacy adapter and migration boundary
 
+- `agent_platform/control_plane/legacy_conversation_adapter.py` is a pure, read-only mapper: it requires explicit tenant, actor, and approved project mappings; it produces deterministic IDs and provenance metadata but has no persistence capability.
 - `conversation.py` and historical docs tables are legacy compatibility sources only. They are not authoritative stores for new sessions, messages, or file assets.
 - New writes go only through `SessionAssetService` and tenant-bound PostgreSQL repositories. No dual-write to legacy stores is permitted.
 - Any future import must be an explicit, idempotent, separately reviewed migration: preserve source identifiers as provenance, require an explicit tenant mapping, resolve project mapping from an approved mapping table, quarantine ambiguous/orphaned rows, and emit per-row audit evidence.
