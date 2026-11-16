@@ -306,9 +306,12 @@ class RegistryBackedTaskCenterService:
 
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
-            "project_id": project_id, "session_id": session_id,
-            "requested_run_id": run_id, "input": dict(input),
+            "project_id": project_id, "session_id": session_id, "input": dict(input),
         }
+        # Preserve the pre-existing idempotency digest for ordinary submissions;
+        # deterministic child Run IDs are included only when explicitly supplied.
+        if run_id is not None:
+            request_body["requested_run_id"] = run_id
         canonical = json.dumps(
             request_body, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False,
