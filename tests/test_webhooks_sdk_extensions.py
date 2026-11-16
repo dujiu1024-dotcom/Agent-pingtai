@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from urllib.request import Request
 
 from agent_platform.events.webhooks import (
@@ -378,6 +379,34 @@ class SdkRetryContractTests(unittest.TestCase):
         sleeps = []
         self.assertEqual(self._client(capped, sleeps).get("/health"), {})
         self.assertEqual(sleeps, [30.0])
+
+    def test_retry_after_http_date_is_honored_and_invalid_or_past_dates_fall_back(self):
+        future = format_datetime(
+            datetime.now(timezone.utc) + timedelta(seconds=12),
+            usegmt=True,
+        )
+        transport = RetrySequenceTransport([
+            ApiResponse(503, {"Retry-After": future}, {}),
+            ApiResponse(200, {}, {"ok": True}),
+        ])
+        sleeps = []
+        self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreaterEqual(sleeps[0], 10.0)
+        self.assertLessEqual(sleeps[0], 12.0)
+
+        for header in ("not-a-date", format_datetime(
+            datetime.now(timezone.utc) - timedelta(seconds=30),
+            usegmt=True,
+        )):
+            with self.subTest(retry_after=header):
+                fallback = RetrySequenceTransport([
+                    ApiResponse(503, {"Retry-After": header}, {}),
+                    ApiResponse(200, {}, {}),
+                ])
+                delays = []
+                self.assertEqual(self._client(fallback, delays).get("/health"), {})
+                self.assertEqual(delays, [0.5])
 
     def test_connection_errors_retry_but_client_errors_do_not(self):
         transport = RetrySequenceTransport([
