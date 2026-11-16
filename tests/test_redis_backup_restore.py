@@ -20,7 +20,7 @@ class RedisBackupRestoreTests(unittest.TestCase):
     def test_restore_is_confirmed_validated_and_preserves_previous_rdb(self):
         script = (ROOT / "scripts" / "restore_redis.sh").read_text()
         for token in (
-            "RESTORE-PLATFORM-REDIS", "sha256sum --check",
+            "RESTORE-PLATFORM-REDIS", "REDIS_STOPPED_CONFIRM", "REDIS_UID", "REDIS_GID", "sha256sum --check",
             "redis-check-rdb", "age --decrypt", ".pre-restore.",
             "refusing to replace symlink RDB", "REDIS_DATA_DIR",
         ):
