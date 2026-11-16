@@ -167,7 +167,7 @@ class RegistryBackedTaskCenterService:
 
     async def _ensure_task_ready(
         self, *, tenant_id: str, run_id: str, agent_id: str,
-        existing_digest: str | None = None,
+        preparation_owner: str, existing_digest: str | None = None,
         pinned_items: Sequence[Any] | None = None,
     ) -> None:
         if existing_digest:
@@ -193,12 +193,44 @@ class RegistryBackedTaskCenterService:
                 tenant_id=tenant_id, run_id=run_id, references=references,
             )
         ready = await self.run_store.mark_task_ready(
-            tenant_id, run_id, snapshot.digest,
+            tenant_id, run_id, snapshot.digest, preparation_owner,
         )
         if not ready:
             current = await self.run_store.get_task_record(tenant_id, run_id)
-            if current is None or not current.get("dispatch_ready"):
+            if current is not None and current.get("dispatch_ready"):
+                return
+            owns_lease = await self.run_store.owns_task_preparation(
+                tenant_id, run_id, preparation_owner,
+            )
+            if owns_lease:
                 raise RuntimeError("Run could not be marked ready after snapshot pinning")
+
+    async def _prepare_or_wait(
+        self, *, tenant_id: str, run_id: str, agent_id: str,
+        preparation_owner: str, existing_digest: str | None = None,
+        pinned_items: Sequence[Any] | None = None,
+    ) -> None:
+        try:
+            await self._ensure_task_ready(
+                tenant_id=tenant_id, run_id=run_id, agent_id=agent_id,
+                preparation_owner=preparation_owner,
+                existing_digest=existing_digest, pinned_items=pinned_items,
+            )
+        except Exception as exc:
+            owns_lease = await self.run_store.owns_task_preparation(
+                tenant_id, run_id, preparation_owner,
+            )
+            if not owns_lease:
+                return
+            current = await self.run_store.get(tenant_id, run_id)
+            if current is not None and current.status == RunStatus.QUEUED:
+                await self.lifecycle.finish(
+                    tenant_id, run_id, RunStatus.FAILED,
+                    error=f"registry snapshot preparation failed: {str(exc)[:400]}",
+                )
+            raise WorkbenchTaskError(
+                "could not pin the Agent runtime registry snapshot"
+            ) from exc
 
     async def list_tasks(
         self, *, tenant_id: str, actor_id: str, limit: int = 100,
@@ -236,6 +268,7 @@ class RegistryBackedTaskCenterService:
             separators=(",", ":"), allow_nan=False,
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
         if idempotency_key is not None:
             existing = await self.run_store.get_task_by_idempotency(
                 tenant_id, actor_id, idempotency_key,
@@ -246,66 +279,66 @@ class RegistryBackedTaskCenterService:
                         "idempotency_key was already used with a different task request"
                     )
                 if existing.get("status") == "queued" and not existing.get("dispatch_ready"):
-                    try:
-                        await self._ensure_task_ready(
+                    owner = str(uuid4())
+                    claimed = await self.run_store.claim_task_preparation(
+                        tenant_id, str(existing["run_id"]), owner,
+                    )
+                    if claimed:
+                        await self._prepare_or_wait(
                             tenant_id=tenant_id, run_id=str(existing["run_id"]),
-                            agent_id=agent_id,
+                            agent_id=agent_id, preparation_owner=owner,
                             existing_digest=existing.get("registry_snapshot_digest"),
                         )
-                    except Exception as exc:
-                        current = await self.run_store.get(tenant_id, str(existing["run_id"]))
-                        if current is not None and current.status == RunStatus.QUEUED:
-                            await self.lifecycle.finish(
-                                tenant_id, str(existing["run_id"]), RunStatus.FAILED,
-                                error=f"registry snapshot retry failed: {str(exc)[:400]}",
-                            )
-                        raise WorkbenchTaskError(
-                            "could not recover the task's registry snapshot"
-                        ) from exc
                     existing = await self.run_store.get_task_record(
                         tenant_id, str(existing["task_id"]), actor_id=actor_id,
                     )
                 return _task_view(existing)
 
-        agent, template, provider, tools, skills, workflow = await self._runtime_references(agent_id)
+        agent, template, provider, tools, skills, workflow = (
+            await self._runtime_references(agent_id)
+        )
         template_id = template.item_id
         template_version = template.version
         run_id = str(uuid4())
+        preparation_owner = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
             agent_id=agent_id, agent_version=agent.version,
             template_id=template_id, template_version=template_version,
-            input=dict(input),
+            input=dict(input), preparation_owner=preparation_owner,
             project_id=project_id, session_id=session_id,
             workflow_id=workflow.item_id if workflow is not None else None,
-            idempotency_key=idempotency_key,
-            request_digest=digest,
+            idempotency_key=idempotency_key, request_digest=digest,
         )
         if not created:
-            # The unique idempotency key resolves to the original Run and snapshot.
             existing = await self.run_store.get_task_by_idempotency(
                 tenant_id, actor_id, idempotency_key,
             )
             if existing is None:
                 raise RuntimeError("idempotent task record disappeared")
+            if existing.get("status") == "queued" and not existing.get("dispatch_ready"):
+                owner = str(uuid4())
+                claimed = await self.run_store.claim_task_preparation(
+                    tenant_id, str(existing["run_id"]), owner,
+                )
+                if claimed:
+                    await self._prepare_or_wait(
+                        tenant_id=tenant_id, run_id=str(existing["run_id"]),
+                        agent_id=agent_id, preparation_owner=owner,
+                        existing_digest=existing.get("registry_snapshot_digest"),
+                    )
+                existing = await self.run_store.get_task_record(
+                    tenant_id, str(existing["task_id"]), actor_id=actor_id,
+                )
             return _task_view(existing)
 
-        try:
-            pinned_items = [agent, template, provider, *tools, *skills]
-            if workflow is not None:
-                pinned_items.append(workflow)
-            await self._ensure_task_ready(
-                tenant_id=tenant_id, run_id=run_id, agent_id=agent_id,
-                pinned_items=pinned_items,
-            )
-        except Exception as exc:
-            current = await self.run_store.get(tenant_id, run_id)
-            if current is not None and current.status == RunStatus.QUEUED:
-                await self.lifecycle.finish(
-                    tenant_id, run_id, RunStatus.FAILED,
-                    error=f"registry snapshot pin failed: {str(exc)[:400]}",
-                )
-            raise WorkbenchTaskError("could not pin the Agent runtime registry snapshot") from exc
+        pinned_items = [agent, template, provider, *tools, *skills]
+        if workflow is not None:
+            pinned_items.append(workflow)
+        await self._prepare_or_wait(
+            tenant_id=tenant_id, run_id=run_id, agent_id=agent_id,
+            preparation_owner=preparation_owner, pinned_items=pinned_items,
+        )
 
         record = await self.run_store.get_task_record(
             tenant_id, run_id, actor_id=actor_id,
