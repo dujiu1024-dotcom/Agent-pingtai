@@ -17,6 +17,8 @@ from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.workbench import create_workbench_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.quotas.service import QuotaService
+from agent_platform.api.webhooks import create_webhook_admin_router
+from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
@@ -64,6 +66,8 @@ def create_platform_app(
     quota_service: Any | None = None,
     quota_manage_authorizer: Any | None = None,
     quota_scope_authorizer: Any | None = None,
+    webhook_admin_service: WebhookSubscriptionService | None = None,
+    webhook_admin_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -157,6 +161,14 @@ def create_platform_app(
         ))
     elif quota_store is not None:
         app.include_router(create_quota_reporting_router(quota_store=quota_store))
+    webhooks_configured = any(value is not None for value in (webhook_admin_service, webhook_admin_authorizer))
+    if webhooks_configured:
+        if webhook_admin_service is None or webhook_admin_authorizer is None:
+            raise ValueError("webhook admin service and authorizer must be configured together")
+        app.include_router(create_webhook_admin_router(
+            service=webhook_admin_service,
+            authorize_manage=webhook_admin_authorizer,
+        ))
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
