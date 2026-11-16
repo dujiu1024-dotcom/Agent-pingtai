@@ -57,6 +57,7 @@ def document_factory(tenant_id, drive_id, metadata, media_type):
             "source": "sharepoint",
             "source_permissions": permissions,
             "source_modified_time": metadata.get("lastModifiedDateTime"),
+            "_knowledge_acl": [],
         },
     )
 
