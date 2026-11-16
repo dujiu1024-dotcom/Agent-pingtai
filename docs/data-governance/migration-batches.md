@@ -15,7 +15,8 @@
       "id": "id",
       "display_name": "name",
       "active": "active"
-    }
+    },
+    "transforms": {"name": "strip", "active": "bool"}
   }
 ]
 ```
