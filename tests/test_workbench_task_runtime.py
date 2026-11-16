@@ -12,6 +12,7 @@ from agent_platform.runtime.workbench_tasks import (
     RegistryBackedTaskCenterService,
     RegistryLangGraphExecutorResolver,
     RunExecutionWorker,
+    WorkbenchTaskError,
 )
 
 
@@ -315,6 +316,35 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(updated["status"], "succeeded")
         self.assertEqual(updated["output"], {"answer": "research processed"})
+
+
+    async def test_submit_accepts_stable_child_run_id_and_binds_it_to_idempotency(self):
+        child_run_id = "00000000-0000-0000-0000-000000000123"
+        task = await self.service.submit_task(
+            tenant_id="tenant-a",
+            actor_id="user-a",
+            agent_id="researcher",
+            project_id="project-a",
+            session_id=None,
+            input={"input_text": "delegated task"},
+            idempotency_key="child-run-stable-key",
+            run_id=child_run_id,
+        )
+        self.assertEqual(task["run_id"], child_run_id)
+        self.assertEqual(task["task_id"], child_run_id)
+        self.assertEqual(task["template_id"], "general")
+        self.assertEqual(task["template_version"], 2)
+
+        with self.assertRaisesRegex(WorkbenchTaskError, "run_id must be a UUID"):
+            await self.service.submit_task(
+                tenant_id="tenant-a",
+                actor_id="user-a",
+                agent_id="researcher",
+                project_id="project-a",
+                session_id=None,
+                input={"input_text": "invalid"},
+                run_id="not-a-uuid",
+            )
 
 
 if __name__ == "__main__":

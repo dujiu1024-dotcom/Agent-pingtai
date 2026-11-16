@@ -13,7 +13,7 @@ import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from agent_platform.control_plane.registry import RegistryService
 from agent_platform.runtime.execution import LangGraphRunExecutor
@@ -42,6 +42,8 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "run_id": str(row["run_id"]),
         "agent_id": row["agent_id"],
         "agent_version": row.get("agent_version"),
+        "template_id": row.get("template_id"),
+        "template_version": row.get("template_version"),
         "project_id": row.get("project_id"),
         "session_id": row.get("session_id"),
         "status": row["status"],
@@ -283,6 +285,7 @@ class RegistryBackedTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
+        run_id: str | None = None,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
@@ -295,10 +298,20 @@ class RegistryBackedTaskCenterService:
         ):
             raise WorkbenchTaskError("idempotency_key must contain 1 to 200 characters")
 
+        if run_id is not None:
+            try:
+                run_id = str(UUID(run_id))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise WorkbenchTaskError("run_id must be a UUID") from exc
+
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
         }
+        # Preserve the pre-existing idempotency digest for ordinary submissions;
+        # deterministic child Run IDs are included only when explicitly supplied.
+        if run_id is not None:
+            request_body["requested_run_id"] = run_id
         canonical = json.dumps(
             request_body, ensure_ascii=False, sort_keys=True,
             separators=(",", ":"), allow_nan=False,
@@ -336,7 +349,7 @@ class RegistryBackedTaskCenterService:
         )
         template_id = template.item_id
         template_version = template.version
-        run_id = str(uuid4())
+        run_id = run_id or str(uuid4())
         preparation_owner = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
