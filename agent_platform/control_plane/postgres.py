@@ -70,6 +70,24 @@ class PostgresRegistryRepository:
             rows = await cursor.fetchall()
         return tuple(self._to_version(row) for row in rows)
 
+    async def list_items(self, tenant_id: str, kind: str, *, limit: int = 100) -> tuple[RegistryVersion, ...]:
+        if tenant_id != self.tenant_id:
+            return ()
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT DISTINCT ON (item_id) *
+                   FROM platform_registry_versions
+                   WHERE tenant_id=%s AND kind=%s
+                   ORDER BY item_id, version DESC
+                   LIMIT %s""",
+                (self.tenant_id, kind, limit),
+            )
+            rows = await cursor.fetchall()
+        return tuple(self._to_version(row) for row in rows)
+
     async def put(self, item: RegistryVersion, *, expected_latest: int | None) -> None:
         if item.tenant_id != self.tenant_id:
             raise PermissionError("registry tenant mismatch")
