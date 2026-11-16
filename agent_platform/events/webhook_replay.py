@@ -6,7 +6,7 @@ from typing import Any, Callable, Protocol
 
 
 class DeadLetterReplayStore(Protocol):
-    async def replay_dead_letter(self, tenant_id: str, delivery_id: str, *, reason: str) -> bool: ...
+    async def replay_dead_letter(self, tenant_id: str, delivery_id: str) -> bool: ...
 
 
 class ReplayAuditWriter(Protocol):
@@ -38,12 +38,36 @@ class WebhookDeadLetterReplayService:
         if inspect.isawaitable(allowed):
             allowed = await allowed
         if allowed is not True:
+            await self.audit.record(
+                tenant_id=tenant_id, actor_id=actor_id,
+                action="webhook.dead_letter.replay",
+                subject_id=delivery_id, outcome="denied",
+                detail={"reason": reason},
+            )
             raise PermissionError("webhook replay permission is required")
+
+        detail = {"reason": reason}
         await self.audit.record(
             tenant_id=tenant_id, actor_id=actor_id,
-            action="webhook.dead_letter.replay", subject_id=delivery_id,
-            outcome="requested", detail={"reason": reason},
+            action="webhook.dead_letter.replay.requested",
+            subject_id=delivery_id, outcome="succeeded", detail=detail,
         )
-        return await self.store.replay_dead_letter(
-            tenant_id, delivery_id, reason=reason,
+        try:
+            replayed = await self.store.replay_dead_letter(tenant_id, delivery_id)
+        except Exception as exc:
+            await self.audit.record(
+                tenant_id=tenant_id, actor_id=actor_id,
+                action="webhook.dead_letter.replay",
+                subject_id=delivery_id, outcome="failed",
+                detail={**detail, "error_type": type(exc).__name__},
+            )
+            raise
+
+        await self.audit.record(
+            tenant_id=tenant_id, actor_id=actor_id,
+            action="webhook.dead_letter.replay",
+            subject_id=delivery_id,
+            outcome="succeeded" if replayed else "denied",
+            detail={**detail, "replayed": replayed},
         )
+        return replayed
