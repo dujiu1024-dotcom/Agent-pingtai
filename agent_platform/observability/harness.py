@@ -10,6 +10,7 @@ from typing import Any, Mapping, Protocol
 from agent_platform.observability.cost import ModelCostEstimator
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.redaction import redact_payload
+from agent_platform.observability.trace_context import current_trace_context
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
 
@@ -105,6 +106,14 @@ class ObservedHarnessAdapter:
             "model_template": template,
             "correlation_id": context.correlation_id,
         }
+        trace_context = current_trace_context()
+        if trace_context is not None:
+            metadata.update({
+                "trace_id": trace_context.trace_id,
+                "span_id": trace_context.span_id,
+                "traceparent": trace_context.traceparent,
+                "correlation_id": trace_context.correlation_id or context.correlation_id,
+            })
         trace_input: dict[str, Any] = {
             "input_chars": len(request.input_text),
             "instruction_chars": len(request.instructions),
