@@ -6,7 +6,7 @@ host must call reserve before dispatch and settle after receiving provider usage
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -138,12 +138,21 @@ class PostgresRunBudgetLedger:
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
+                    """SELECT tenant_id,run_id FROM platform_model_call_budget_ledger
+                       WHERE call_id=%s""", (UUID(call_id),),
+                )
+                identity = await cursor.fetchone()
+                if identity is None:
+                    raise KeyError("model-call budget reservation not found")
+                # All paths lock the Run account before the call row to avoid lock inversion.
+                await self._snapshot(
+                    connection,identity["tenant_id"],str(identity["run_id"]),lock=True,
+                )
+                cursor = await connection.execute(
                     """SELECT * FROM platform_model_call_budget_ledger
                        WHERE call_id=%s FOR UPDATE""", (UUID(call_id),),
                 )
                 call = await cursor.fetchone()
-                if call is None:
-                    raise KeyError("model-call budget reservation not found")
                 if call["status"] == "settled":
                     if (call["actual_input_tokens"],call["actual_output_tokens"],
                         Decimal(call["actual_cost_usd"])) != (

@@ -5,7 +5,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from agent_platform.quotas.run_ledger import (
-    RunBudgetExceeded, _validate_budget, _validate_counter, _validate_money,
+    _validate_budget, _validate_counter, _validate_money,
 )
 
 
