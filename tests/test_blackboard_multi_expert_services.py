@@ -200,6 +200,43 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(PermissionError, "pending or rejected approval"):
             await services.archive(state=context)
 
+    async def test_rejected_approval_is_audited_and_cannot_be_archived(self):
+        repository = InMemoryBlackboard()
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=repository,
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "approval-rejected"}
+        request = await services.prepare_approval(state=context)
+        approval = await services.apply_approval(
+            state=context, decision={"approved": False}
+        )
+        state = {**context, "approval_result": approval}
+        with self.assertRaisesRegex(PermissionError, "pending or rejected approval"):
+            await services.archive(state=state)
+        await services.reject(state=state)
+        rejection = await repository.get(services._entry_id(state, "rejected-result"))
+        self.assertEqual(
+            set(rejection.source_refs),
+            {request["blackboard_entry_id"], approval["blackboard_entry_id"]},
+        )
+
+    async def test_archive_rejects_forged_approval_result_reference(self):
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "approval-forged"}
+        await services.prepare_approval(state=context)
+        state = {
+            **context,
+            "approval_result": {"approved": True, "blackboard_entry_id": "forged-entry"},
+        }
+        with self.assertRaisesRegex(PermissionError, "accepted approval decision"):
+            await services.archive(state=state)
+
     async def test_expert_assignments_require_registered_enabled_capabilities(self):
         class CapabilityCallbacks(WorkflowCallbacks):
             async def plan_experts(self, *, objective, run_context):
