@@ -177,6 +177,8 @@ class StrandsAgentsAdapter:
                     raise ValueError("Strands media output must contain raw bytes")
                 media_format = str(value.get("format") or "")
                 if modality == "document":
+                    if media_format != "pdf":
+                        raise ValueError("Strands document output currently supports PDF only")
                     mime_type = "application/pdf"
                 else:
                     mime_type = f"{modality}/{media_format}"
