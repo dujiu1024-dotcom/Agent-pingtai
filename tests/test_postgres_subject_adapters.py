@@ -74,8 +74,11 @@ class PostgresSubjectTableAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_delete_uses_parameterized_tenant_and_subject_predicates(self):
         connection = FakeConnection()
+        async def connect():
+            return connection
+
         adapter = PostgresSubjectTableAdapter(
-            connection_factory=lambda: connection,
+            connection_factory=connect,
             table=SubjectTable(
                 table="user_records", tenant_column="tenant_id",
                 subject_column="user_id", columns=("record_id",),
