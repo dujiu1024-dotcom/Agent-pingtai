@@ -36,7 +36,7 @@
 - 汇总通过率、平均分和平均召回率；
 - 按阈值生成阻断原因。
 
-当前是确定性基线，不以模型自评替代事实评测。后续需要把真实回归集、人工评分、模型对比结果持久化，并补充引用正确性、事实一致性、拒答、安全策略、延迟和成本等评测维度。
+当前是确定性基线，不以模型自评替代事实评测。`PostgresEvaluationRepository` 持久化版本化数据集和门禁报告；新增 `platform_eval_human_scores` 保存人工评分，按 tenant + run + case + reviewer 隔离，并对评分理由脱敏。`POST/GET /api/platform/v1/observability/evaluations/{run_id}/scores` 需要显式评测管理授权。仍需由项目团队建设真实回归集、多人评分规范、模型对比和发布门禁，并补充引用正确性、事实一致性、拒答、安全策略、延迟和成本等维度。
 
 ## 4. Prompt 版本
 
@@ -46,7 +46,7 @@
 - 显式激活版本和回滚；
 - 基于 rollout_key 的确定性 Canary 百分比分流。
 
-当前注册表为进程内实现，重启后不保留；尚未接入 PostgreSQL 持久化、审批工作流、灰度指标自动回滚和 Prompt 管理 API。生产发布前不得把内存注册表当作唯一版本事实源。
+`PostgresPromptRegistry` 已提供 PostgreSQL 持久化的不可变 Prompt 版本、内容哈希、激活、Canary 分流和版本解析；`PromptRegistry` 仍作为内存测试实现。尚需接入审批工作流、灰度指标自动回滚、管理 API 和变更审计。生产环境应注入 PostgreSQL 实现，不得把内存注册表作为唯一版本事实源。
 
 ## 5. 测试
 
@@ -58,12 +58,23 @@ mypy
 
 测试覆盖脱敏、默认不采集原文、Trace/指标记录、失败状态、Token 计数、低基数标签、Agent/RAG 规则评测门禁、Prompt 变量校验、Canary 与回滚。
 
-## 6. 未完成项
+## 6. 告警运营 API 与通知 Outbox
+
+- `GET /api/platform/v1/observability/alerts` 仅按已认证 Principal 的 tenant_id 查询未解决告警。
+- `POST /alerts/{event_id}/acknowledge` 与 `POST /alerts/{event_id}/resolve` 需要显式注入告警管理授权策略；缺少策略时默认拒绝。
+- `PostgresAlertEventStore.record_once` 以 tenant scope + dedupe key 幂等落库。
+- `AlertDispatchService` 先持久化告警，再投递通知；通知失败会记录脱敏错误和投递次数，保留为可重试状态。
+- Outbox worker 可调用 `retry_pending(limit=...)`；PostgreSQL 使用 `FOR UPDATE SKIP LOCKED` 领取待投递事件，避免多 worker 重复领取。
+- Migration `021_alert_delivery_outbox.sql` 增加 delivery status、attempts、last error 和索引。
+
+通知 Provider、定时 worker/任务队列和真实值班渠道凭据仍需部署方注入；API 本身不虚构通知已送达。告警阈值和采样值拒绝非有限数值。
+
+## 7. 未完成项
 
 - Langfuse 在真实部署环境的自托管连通性、权限隔离和数据保留策略验证；
 - 将 Trace/Span 贯穿模型调用、工具、MCP、知识检索、黑板、审批和事件消费；
-- Prometheus/OpenTelemetry exporter、/metrics endpoint、告警聚合/抑制、通知渠道和处理闭环；
-- 真实 Agent/RAG 回归数据集、人工评分、模型对比和发布门禁；
+- Prometheus exporter 与 /metrics 已有实现；仍需部署 Prometheus 服务发现、真实告警规则配置、通知 Provider/值班渠道和运行中的 outbox worker；
+- 真实 Agent/RAG 回归数据集、多人评分规范、模型对比和发布门禁；
 - Prompt 版本持久化、审批、灰度、自动回滚和变更审计。
 
 未完成上述项目之前，不得将 #16 标记为完成。
