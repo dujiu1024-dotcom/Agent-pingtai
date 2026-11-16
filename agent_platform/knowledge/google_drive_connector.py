@@ -150,6 +150,7 @@ class GoogleDriveKnowledgeConnector:
             if (
                 parsed.scheme != "https" or not allowed
                 or parsed.username or parsed.password or parsed.fragment
+                or parsed.port not in (None, 443)
             ):
                 raise GoogleDriveConnectorError("Google Drive returned an unsafe download redirect")
             # Signed download URLs are bearer capabilities; never forward OAuth.
@@ -256,6 +257,8 @@ class GoogleDriveKnowledgeConnector:
             if state.get("page_token"):
                 params["pageToken"] = state["page_token"]
             payload = self._json(await self._api_get("/files", token=token, params=params))
+            if payload.get("incompleteSearch") is True:
+                raise GoogleDriveConnectorError("Google Drive reported an incomplete initial snapshot")
             files = payload.get("files")
             if not isinstance(files, list):
                 raise GoogleDriveConnectorError("Google Drive files must be an array")
