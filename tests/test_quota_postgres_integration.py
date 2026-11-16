@@ -359,4 +359,4 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                 "SELECT status FROM platform_quota_reservations WHERE reservation_id=%s",
                 (reservation_id,),
             )
-            self.assertEqual((await cursor.fetchone())["status"], "expired")
+            self.assertEqual((await cursor.fetchone())[0], "expired")
