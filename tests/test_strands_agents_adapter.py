@@ -474,6 +474,24 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "unsupported keys"):
             await adapter.run(self.request)
 
+    async def test_per_request_timeout_overrides_template_timeout(self):
+        class SlowAgent(FakeAgent):
+            async def invoke_async(self, prompt, *, idempotency_token):
+                await asyncio.sleep(0.05)
+                return await super().invoke_async(prompt, idempotency_token=idempotency_token)
+
+        request = HarnessRequest(
+            context=self.context,
+            instructions="Be precise.",
+            input_text="Analyze this request.",
+            timeout_seconds=0.001,
+        )
+        adapter = self.adapter(
+            agent_factory=lambda **kwargs: SlowAgent(**kwargs),
+        )
+        with self.assertRaises(TimeoutError):
+            await adapter.run(request)
+
     async def test_timeout_is_enforced(self):
         class SlowAgent(FakeAgent):
             async def invoke_async(self, prompt, *, idempotency_token):
