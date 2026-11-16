@@ -44,6 +44,55 @@ class OutboxRelayWorkerTests(unittest.IsolatedAsyncioTestCase):
         await worker.stop()
         self.assertGreaterEqual(len(relay.calls), 2)
 
+    async def test_redis_outage_replays_durable_outbox_after_transport_recovers(self):
+        from agent_platform.events.outbox import OutboxRecord, OutboxRelay
+
+        class DurableStore:
+            def __init__(self):
+                self.record = OutboxRecord(
+                    tenant_id="tenant-a", outbox_id=9, event_id="event-replay",
+                    topic="platform.run.completed", payload={"run_id": "run-9"},
+                    lease_token="00000000-0000-0000-0000-000000000009",
+                )
+                self.published = False
+                self.failures = 0
+
+            async def claim_batch(self, *, limit):
+                return [] if self.published else [self.record][:limit]
+
+            async def mark_published(self, record):
+                self.published = True
+                return True
+
+            async def mark_failed(self, record, error):
+                self.failures += 1
+
+        class RecoveringRedis:
+            def __init__(self):
+                self.calls = 0
+                self.events = []
+
+            async def publish(self, **event):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ConnectionError("redis unavailable")
+                self.events.append(event)
+                return "1-0"
+
+        store, redis = DurableStore(), RecoveringRedis()
+        relay = OutboxRelay(store=store, transport=redis)
+        worker = OutboxRelayWorker(relay=relay, interval_seconds=0.1)
+        await worker.start()
+        for _ in range(20):
+            if store.published:
+                break
+            await asyncio.sleep(0.02)
+        await worker.stop()
+        self.assertEqual(store.failures, 1)
+        self.assertTrue(store.published)
+        self.assertEqual(len(redis.events), 1)
+        self.assertEqual(redis.events[0]["event_id"], "event-replay")
+
     async def test_rejects_unsafe_poll_configuration(self):
         with self.assertRaises(ValueError):
             OutboxRelayWorker(relay=FakeRelay(), interval_seconds=0)
