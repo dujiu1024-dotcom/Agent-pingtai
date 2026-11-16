@@ -382,7 +382,7 @@ class SdkRetryContractTests(unittest.TestCase):
 
     def test_retry_after_http_date_is_honored_and_invalid_or_past_dates_fall_back(self):
         future = format_http_date(
-            datetime.now(timezone.utc) + timedelta(seconds=12),
+            datetime.now(timezone.utc) + timedelta(seconds=20),
             usegmt=True,
         )
         transport = RetrySequenceTransport([
@@ -392,7 +392,7 @@ class SdkRetryContractTests(unittest.TestCase):
         sleeps = []
         self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
         self.assertEqual(len(sleeps), 1)
-        self.assertGreaterEqual(sleeps[0], 10.0)
+        self.assertGreaterEqual(sleeps[0], 18.0)
         self.assertLessEqual(sleeps[0], 12.0)
 
         for header in ("not-a-date", format_http_date(
