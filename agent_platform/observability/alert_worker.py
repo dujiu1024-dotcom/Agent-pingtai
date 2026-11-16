@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections.abc import Mapping
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class AlertDispatcher(Protocol):
@@ -99,9 +99,9 @@ class AlertRuleEvaluationWorker:
     def __init__(
         self,
         *,
-        manager: object,
-        metrics_provider: object,
-        event_store: object,
+        manager: Any,
+        metrics_provider: Any,
+        event_store: Any,
         scope_key: str,
         poll_interval_seconds: float = 15.0,
     ) -> None:
