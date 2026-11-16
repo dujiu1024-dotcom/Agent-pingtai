@@ -131,13 +131,17 @@ class LangGraphRunExecutor:
    except asyncio.TimeoutError:raise
    except WorkerLeaseLost:
     current=await self.lifecycle.store.get(tenant_id,run_id)
-    if current and current.status==RunStatus.RUNNING:
+    if current and current.status==RunStatus.CANCELLING:
+     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+    elif current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="worker lease lost")
     raise
    except asyncio.CancelledError:
     current=await self.lifecycle.store.get(tenant_id,run_id)
-    if current and current.status==RunStatus.RUNNING:
+    if current and current.status==RunStatus.CANCELLING:
+     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+    elif current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
     raise
@@ -155,6 +159,95 @@ class LangGraphRunExecutor:
    finally:
     if acquired and release is not None:
      await release(tenant_id,run_id,self.worker_id)
+ async def resume_claimed(self,*,snapshot:RunSnapshot,input:Any)->Any:
+  """Resume one Run already claimed by this worker's durable queue poll."""
+  tenant_id=snapshot.tenant_id;run_id=snapshot.run_id
+  current=await self.lifecycle.store.get(tenant_id,run_id)
+  if current is None:raise KeyError("Run not found")
+  if current.status==RunStatus.CANCELLING:
+   await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+   return None
+  if current.status==RunStatus.QUEUED:
+   return await self.execute(tenant_id=tenant_id,run_id=run_id,input=input)
+  if current.status==RunStatus.RUNNING:
+   current=await self.lifecycle.store.transition(
+    RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,current.version,
+     current.checkpoint_ref,"previous worker lease expired"),
+    expected_version=current.version,
+   )
+  if current.status!=RunStatus.INTERRUPTED:
+   raise ValueError(f"claimed Run cannot resume from {current.status.value}")
+  if current.checkpoint_ref:
+   actual=await self._checkpoint_ref(tenant_id,run_id)
+   if actual!=current.checkpoint_ref:
+    failed=await self.lifecycle.store.transition(
+     RunSnapshot(tenant_id,run_id,RunStatus.FAILED,current.version,
+      current.checkpoint_ref,"LangGraph checkpoint is missing or does not match the Run reference"),
+     expected_version=current.version,
+    )
+    return None
+  elif current.last_error!="previous worker lease expired":
+   await self.lifecycle.finish(
+    tenant_id,run_id,RunStatus.FAILED,
+    error="interrupted Run has no checkpoint; automatic recovery refused",
+   )
+   return None
+  running=await self.lifecycle.store.transition(
+   RunSnapshot(tenant_id,run_id,RunStatus.RUNNING,current.version,
+    current.checkpoint_ref),expected_version=current.version,
+  )
+  runtime_prepared=False
+  try:
+   if self.registry_runtime_provider is not None:
+    await self.registry_runtime_provider.prepare(
+     tenant_id=tenant_id,run_id=run_id,
+     model_template_id=self.model_template_id or "",
+     required_tools=self.required_tools,
+    )
+    runtime_prepared=True
+   payload=None if running.checkpoint_ref else input
+   result=await self._run_leased(
+    tenant_id,run_id,
+    self.graph.ainvoke(payload,config=await self._run_config(tenant_id,run_id)),
+    timeout=self.timeout_seconds,already_claimed=True,
+   )
+   ref=await self._checkpoint_ref(tenant_id,run_id)
+   await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
+   return result
+  except asyncio.TimeoutError:
+   raise
+  except WorkerLeaseLost:
+   latest=await self.lifecycle.store.get(tenant_id,run_id)
+   if latest and latest.status==RunStatus.CANCELLING:
+    await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+   elif latest and latest.status==RunStatus.RUNNING:
+    ref=await self._checkpoint_ref(tenant_id,run_id)
+    await self.lifecycle.mark_interrupted(
+     tenant_id,run_id,checkpoint_ref=ref,reason="worker lease lost during recovery")
+   raise
+  except asyncio.CancelledError:
+   latest=await self.lifecycle.store.get(tenant_id,run_id)
+   if latest and latest.status==RunStatus.CANCELLING:
+    await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
+   elif latest and latest.status==RunStatus.RUNNING:
+    ref=await self._checkpoint_ref(tenant_id,run_id)
+    await self.lifecycle.mark_interrupted(
+     tenant_id,run_id,checkpoint_ref=ref,reason="recovery execution cancelled")
+   raise
+  except Exception as exc:
+   ref=await self._checkpoint_ref(tenant_id,run_id)
+   await self._finish(tenant_id,run_id,RunStatus.FAILED,
+    checkpoint_ref=ref,error=str(exc)[:500])
+   raise
+  finally:
+   try:
+    if runtime_prepared and self.registry_runtime_provider is not None:
+     await self.registry_runtime_provider.release(tenant_id,run_id)
+   finally:
+    release=getattr(self.lifecycle.store,"release_lease",None)
+    if release is not None:
+     await release(tenant_id,run_id,self.worker_id)
+
  async def recover(self,*,load_initial_input:Callable[[RunSnapshot],Any],limit:int=100,tenant_id:str|None=None)->list[str]:
   async def verify_checkpoint(row:RunSnapshot)->None:
    actual=await self._checkpoint_ref(row.tenant_id,row.run_id)
