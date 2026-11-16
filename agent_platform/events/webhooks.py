@@ -350,6 +350,35 @@ class PostgresWebhookStore:
     async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None) -> None:
         await self._update(tenant_id, delivery_id, "dead_lettered", response_code=response_code)
 
+
+    async def replay_dead_letter(
+        self, tenant_id: str, delivery_id: str, *, reason: str
+    ) -> bool:
+        """Requeue one dead-lettered delivery without changing its event identity."""
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not isinstance(delivery_id, str) or not delivery_id.strip():
+            raise ValueError("delivery_id is required")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 256:
+            raise ValueError("replay reason must contain 1 to 256 characters")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_webhook_deliveries d
+                       SET status='pending', attempts=0, response_code=NULL,
+                           next_attempt_at=NULL, lease_token=NULL, lease_until=NULL
+                       FROM platform_webhook_subscriptions s
+                       WHERE d.tenant_id=%s AND d.delivery_id=%s
+                         AND d.status='dead_lettered'
+                         AND s.tenant_id=d.tenant_id
+                         AND s.subscription_id=d.subscription_id
+                         AND s.status='active' AND d.topic=ANY(s.topics)
+                       RETURNING d.delivery_id""",
+                    (tenant_id, UUID(delivery_id)),
+                )
+                return await cursor.fetchone() is not None
+
     async def _update(self, tenant_id: str, delivery_id: str, status: str, *,
                       response_code: int | None,
                       next_attempt_at: datetime | None = None) -> None:
