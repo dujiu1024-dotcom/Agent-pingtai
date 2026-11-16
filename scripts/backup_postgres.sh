@@ -35,10 +35,14 @@ python3 - "$BASE.dump.age" "$DB_NAME" "$SERVER_VERSION" "$DUMP_VERSION" "$STAMP"
 import hashlib, json, pathlib, sys
 artifact, database, server_version, dump_version, stamp = sys.argv[1:]
 path = pathlib.Path(artifact)
+digest = hashlib.sha256()
+with path.open("rb") as stream:
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
 print(json.dumps({
     "format": "postgres-custom-age-v1",
     "artifact": path.name,
-    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    "sha256": digest.hexdigest(),
     "database": database,
     "server_version": server_version,
     "pg_dump_version": dump_version,
