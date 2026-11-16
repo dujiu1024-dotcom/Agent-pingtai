@@ -120,7 +120,8 @@ class RunContextSnapshotService:
         if len(pinned) > self.reference_window_size:
             raise ValueError("pinned context references exceed the configured reference window")
         recent = [item for item in all_refs if not item["pinned"]]
-        selected = pinned + recent[-(self.reference_window_size - len(pinned)):]
+        remaining = self.reference_window_size - len(pinned)
+        selected = pinned + (recent[-remaining:] if remaining else [])
         return tuple(_json_copy(item) for item in selected)
 
     async def capture(
