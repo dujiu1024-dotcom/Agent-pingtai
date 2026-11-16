@@ -13,10 +13,7 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         from psycopg import AsyncConnection
         from psycopg.rows import dict_row
-        from agent_platform.control_plane.file_processing import (
-            FileProcessingJob, PostgresFileProcessingQueue,
-        )
-        self.FileProcessingJob = FileProcessingJob
+        from agent_platform.control_plane.file_processing import PostgresFileProcessingQueue
         self.tenant_id = "file-it-" + uuid4().hex
         self.asset_id = uuid4()
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
