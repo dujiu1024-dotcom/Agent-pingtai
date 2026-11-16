@@ -139,6 +139,33 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
         self.assertEqual(saved["status"], "running")
 
+    async def test_worker_cannot_claim_tasks_from_another_tenant(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService
+        other_tenant = self.tenant_id + "-other"
+        other_agent = self.agent_id + "-other"
+        async with await self.connect() as conn:
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id,display_name) VALUES (%s,%s)",
+                (other_tenant, "Other Tenant"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id,agent_id,display_name,role_definition,status)
+                   VALUES (%s,%s,%s,%s,'active')""",
+                (other_tenant, other_agent, "Other Agent", "integration"),
+            )
+        other_service = PostgresTaskCenterService(
+            tenant_id=other_tenant, connection_factory=self.connect,
+        )
+        await other_service.submit_task(
+            tenant_id=other_tenant, actor_id="user-b", agent_id=other_agent,
+            project_id=None, session_id=None, input={"goal": "private"},
+        )
+        own_service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        self.assertIsNone(await own_service.claim_next(worker_id="tenant-a-worker"))
+
     async def test_task_queue_claims_higher_priority_first(self):
         from agent_platform.control_plane.tasks import PostgresTaskCenterService
         service = PostgresTaskCenterService(
