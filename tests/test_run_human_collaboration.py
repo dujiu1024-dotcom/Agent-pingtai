@@ -134,12 +134,23 @@ class HumanCollaborationPostgresTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, run_id=str(self.run_id), actor_id="requester",
             kind="approval", payload={"action": "publish", "resource": "report"},
         )
+        with self.assertRaises(ValueError):
+            await service.ensure_decisions_resolved(
+                tenant_id=self.tenant_id, run_id=str(self.run_id),
+            )
+        self.assertEqual(await service.apply_pending(
+            tenant_id=self.tenant_id, run_id=str(self.run_id), worker_id="worker-before-decision",
+            applier=lambda payload: _capture([], payload),
+        ), 0)
         decision = await service.decide(
             tenant_id=self.tenant_id, run_id=str(self.run_id),
             intervention_id=request["intervention_id"], actor_id="approver",
             decision="approved", rationale="Evidence reviewed",
         )
         self.assertEqual(decision["status"], "pending")
+        await service.ensure_decisions_resolved(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+        )
         applied = []
         self.assertEqual(await service.apply_pending(
             tenant_id=self.tenant_id, run_id=str(self.run_id), worker_id="worker-a",
