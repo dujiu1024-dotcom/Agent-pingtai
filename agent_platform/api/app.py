@@ -170,6 +170,7 @@ def create_platform_app(
     app.include_router(create_workbench_router(
         features={
             "knowledge": True,
+            "rag": rag is not None,
             "memory": True,
             "sessions": sessions_configured,
             "registry": registry_configured,
