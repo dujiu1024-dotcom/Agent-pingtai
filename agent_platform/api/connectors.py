@@ -60,6 +60,17 @@ def create_connectors_router(
             "scopes": list(connection.scopes), "status": connection.status,
         }
 
+    @router.post("/{connection_id}/sync")
+    async def schedule_sync(connection_id: str, request: Request):
+        principal, service = await context(request, connection_id, "sync")
+        try:
+            await service.schedule_sync(
+                tenant_id=principal.tenant_id, connection_id=connection_id,
+            )
+        except ConnectorError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {"connection_id": connection_id, "status": "queued"}
+
     @router.post("/{connection_id}/revoke")
     async def revoke_connection(connection_id: str, request: Request):
         principal, service = await context(request, connection_id, "revoke")
@@ -72,6 +83,10 @@ def create_connectors_router(
             raise HTTPException(422, str(exc)) from exc
         if not revoked:
             raise HTTPException(404, "connection not found or already revoked")
-        return {"connection_id": connection_id, "status": "revoked"}
+        saved = await service.repository.get(principal.tenant_id, connection_id)
+        return {
+            "connection_id": connection_id, "status": "revoked",
+            "cleanup_pending": bool(saved and saved.last_error),
+        }
 
     return router
