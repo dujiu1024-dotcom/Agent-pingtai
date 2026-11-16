@@ -282,6 +282,8 @@ def create_platform_app(
     webhook_delivery_admin_configured = any(value is not None for value in (
         webhook_delivery_store, webhook_delivery_authorizer,
     ))
+    if webhook_delivery_replay_service is not None and not webhook_delivery_admin_configured:
+        raise ValueError("webhook replay service requires the delivery admin router")
     if webhook_delivery_admin_configured:
         if webhook_delivery_store is None or webhook_delivery_authorizer is None:
             raise ValueError("webhook delivery store and authorizer must be configured together")
