@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 
+from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
@@ -52,6 +53,8 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_authorizer: Any | None = None,
+    approval_service: Any | None = None,
+    approval_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -120,9 +123,16 @@ def create_platform_app(
         "registry": registry_configured,
         "agent_management": False,
         "task_execution": False,
-        "approvals": False,
+        "approvals": approval_service is not None and approval_authorizer is not None,
         "blackboard": False,
     }))
+    approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
+    if approvals_configured:
+        if approval_service is None or approval_authorizer is None:
+            raise ValueError("approval service and approver authorizer must be configured together")
+        app.include_router(create_approval_router(
+            service=approval_service, authorize_approver=approval_authorizer,
+        ))
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:

@@ -268,6 +268,14 @@ class PostgresIdentityRepository:
                     ) RETURNING session_id""", (session_id, tenant_id, user_id, token_hash, expires_at, tenant_id, user_id))
                 if await cursor.fetchone() is None:
                     raise PermissionError("active tenant membership required")
+                # Audit the successful login without recording bearer/session secrets.
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id,actor_id,action,subject_id,outcome,detail)
+                       VALUES (%s,%s,'auth.login',%s,'succeeded',
+                               jsonb_build_object('session_id',%s))""",
+                    (tenant_id, user_id, user_id, session_id),
+                )
                 await connection.execute(
                     "UPDATE platform_users SET last_login_at=now(), updated_at=now() WHERE user_id=%s",
                     (user_id,),
@@ -311,8 +319,22 @@ class PostgresIdentityRepository:
     async def revoke_session(self, *, session_id: str, tenant_id: str, user_id: str, revoked_at: datetime) -> bool:
         connection = await self._connection_factory()
         async with connection:
-            cursor = await connection.execute("UPDATE platform_sessions SET revoked_at=%s WHERE session_id=%s AND tenant_id=%s AND user_id=%s AND revoked_at IS NULL RETURNING session_id", (revoked_at, session_id, tenant_id, user_id))
-            return await cursor.fetchone() is not None
+            cursor = await connection.execute(
+                """UPDATE platform_sessions SET revoked_at=%s
+                   WHERE session_id=%s AND tenant_id=%s AND user_id=%s
+                     AND revoked_at IS NULL RETURNING session_id""",
+                (revoked_at, session_id, tenant_id, user_id),
+            )
+            row = await cursor.fetchone()
+            if row is not None:
+                await connection.execute(
+                    """INSERT INTO platform_identity_audit
+                       (tenant_id,actor_id,action,subject_id,outcome,detail)
+                       VALUES (%s,%s,'auth.logout',%s,'succeeded',
+                               jsonb_build_object('session_id',%s))""",
+                    (tenant_id, user_id, user_id, session_id),
+                )
+            return row is not None
 
     async def has_permission(self, *, tenant_id: str, user_id: str, resource_type: str, resource_id: str, permission_key: str) -> bool:
         connection = await self._connection_factory()
