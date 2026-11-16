@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
+from agent_platform.api.observability import create_observability_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
@@ -91,6 +92,8 @@ def create_platform_app(
         login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
     )
     app.include_router(create_identity_router(identity=identity))
+    if metrics_exporter is not None:
+        app.include_router(create_observability_router(metrics=metrics_exporter))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
         memory=memory,
