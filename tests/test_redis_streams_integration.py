@@ -25,6 +25,69 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.transport.close()
 
+
+    async def test_stream_retention_preserves_pending_and_undelivered_entries(self):
+        event_ids = [str(uuid4()) for _ in range(3)]
+        message_ids = []
+        for index, event_id in enumerate(event_ids):
+            message_ids.append(await self.transport.publish(
+                tenant_id=self.tenant_id,
+                topic=self.topic,
+                event_id=event_id,
+                payload={"index": index},
+            ))
+
+        first = await self.transport.read_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
+            consumer="retention-consumer", count=1, block_ms=100,
+        )
+        self.assertEqual(first[0][0], message_ids[0])
+        trimmed = await self.transport.trim_acknowledged(
+            tenant_id=self.tenant_id, topic=self.topic,
+        )
+        self.assertEqual(trimmed, 0)
+        rows = await self.transport._client.xrange(
+            self.transport._stream(self.tenant_id, self.topic)
+        )
+        self.assertEqual([row[0] for row in rows], message_ids)
+
+        await self.transport.acknowledge(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
+            message_id=message_ids[0],
+        )
+        second = await self.transport.read_group(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
+            consumer="retention-consumer", count=1, block_ms=100,
+        )
+        self.assertEqual(second[0][0], message_ids[1])
+        trimmed = await self.transport.trim_acknowledged(
+            tenant_id=self.tenant_id, topic=self.topic,
+        )
+        self.assertEqual(trimmed, 1)
+        rows = await self.transport._client.xrange(
+            self.transport._stream(self.tenant_id, self.topic)
+        )
+        self.assertEqual([row[0] for row in rows], message_ids[1:])
+
+    async def test_stream_retention_does_not_trim_without_consumer_groups(self):
+        topic = "unconsumed.retention"
+        await self.transport.publish(
+            tenant_id=self.tenant_id, topic=topic,
+            event_id=str(uuid4()), payload={"value": "unconsumed"},
+        )
+        self.assertEqual(
+            await self.transport.trim_acknowledged(
+                tenant_id=self.tenant_id, topic=topic,
+            ),
+            0,
+        )
+        self.assertEqual(
+            await self.transport._client.xlen(
+                self.transport._stream(self.tenant_id, topic)
+            ),
+            1,
+        )
+
     async def test_pending_entry_can_be_reclaimed_by_replacement_consumer(self):
         event_id = str(uuid4())
         await self.transport.publish(
