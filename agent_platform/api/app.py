@@ -11,6 +11,7 @@ from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
+from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.quotas import create_quota_reporting_router
@@ -139,10 +140,15 @@ def create_platform_app(
     if sessions_configured:
         if session_service_resolver is None or session_authorizer is None:
             raise ValueError("session service resolver and authorizer must be configured together")
+        memory_context_resolver = IdentityContextResolver(identity_repository)
         app.include_router(create_sessions_router(
             resolve_principal=_principal_from_request,
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
+            memory_extraction=memory_extraction,
+            resolve_memory_principal=(
+                memory_context_resolver.memory if memory_extraction is not None else None
+            ),
         ))
     task_center_configured = any(value is not None for value in (
         task_service_resolver, task_authorizer, task_worker,
