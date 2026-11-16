@@ -21,6 +21,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                     """SELECT proname FROM pg_proc
                        WHERE proname IN (
                          'platform_quota_reserve',
+                         'platform_quota_reserve_split',
                          'platform_quota_settle',
                          'platform_quota_release'
                        )"""
@@ -44,7 +45,8 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                 )
             ).fetchall()
         self.assertEqual({row[0] for row in rows}, {
-            "platform_quota_reserve", "platform_quota_settle", "platform_quota_release",
+            "platform_quota_reserve", "platform_quota_reserve_split",
+            "platform_quota_settle", "platform_quota_release",
         })
         self.assertEqual({row[0] for row in tables}, {
             "platform_quota_budgets", "platform_quota_reservations",
