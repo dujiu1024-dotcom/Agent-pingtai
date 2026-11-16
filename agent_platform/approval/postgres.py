@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+
+from agent_platform.observability.redaction import redact_text
 from uuid import UUID
 
 ConnectionFactory = Callable[[], Any]
