@@ -4,6 +4,7 @@ import unittest
 
 from agent_platform.extensions.manifest import ExtensionManifest
 from agent_platform.extensions.oci_runtime import (
+    _BOOTSTRAP,
     SandboxedExtensionRuntime,
     SignedExtensionPackage,
 )
@@ -71,6 +72,9 @@ class SandboxedExtensionRuntimeTests(unittest.IsolatedAsyncioTestCase):
             audit=lambda principal, manifest, action, status: self.audit_events.append(status),
             signature_verifier=lambda archive, signature, key: "a" * 64,
         )
+
+    async def test_embedded_sandbox_bootstrap_is_valid_python(self):
+        compile(_BOOTSTRAP, "<extension-bootstrap>", "exec")
 
     async def test_install_verifies_and_stores_signed_package(self):
         await self.runtime.install(_manifest())
