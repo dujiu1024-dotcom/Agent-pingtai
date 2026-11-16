@@ -216,3 +216,82 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             await store.reconcile_cost(
                 tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("3.00"),
             )
+
+
+    async def test_worker_queue_scopes_enforce_shared_concurrency_caps(self):
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        tenant_id = f"quota-scope-it-{uuid4().hex}"
+        agent_id = f"agent-{uuid4().hex}"
+        template_id = f"template-{uuid4().hex}"
+        run_worker_a, run_worker_b, run_queue_a, run_queue_b = (uuid4() for _ in range(4))
+        period_start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        period_end = period_start + timedelta(hours=1)
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            migration_dir = Path("agent_platform/storage/postgres")
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_id, "Queue Worker Quota Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Quota Agent', 'integration')""",
+                (tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id, template_id, version, definition, status, created_by)
+                   VALUES (%s, %s, 1, '{}'::jsonb, 'active', 'integration')""",
+                (tenant_id, template_id),
+            )
+            for run_id in (run_worker_a, run_worker_b, run_queue_a, run_queue_b):
+                await conn.execute(
+                    """INSERT INTO platform_runs
+                       (tenant_id, run_id, agent_id, template_id, template_version, status)
+                       VALUES (%s, %s, %s, %s, 1, 'queued')""",
+                    (tenant_id, run_id, agent_id, template_id),
+                )
+            for scope_type, scope_id in (("worker", "worker-7"), ("queue", "critical")):
+                await conn.execute(
+                    """INSERT INTO platform_quota_budgets
+                       (tenant_id, scope_type, scope_id, period_start, period_end, hard_concurrency)
+                       VALUES (%s, %s, %s, %s, %s, 1)""",
+                    (tenant_id, scope_type, scope_id, period_start, period_end),
+                )
+        async with await AsyncConnection.connect(DSN) as conn:
+            await conn.execute(
+                """SELECT * FROM platform_quota_reserve_split
+                   (%s,%s,%s,'worker','worker-7',%s,0,0,0,0)""",
+                (uuid4(), tenant_id, run_worker_a, period_start),
+            )
+            await conn.commit()
+        async with await AsyncConnection.connect(DSN) as conn:
+            with self.assertRaises(Exception) as raised:
+                await conn.execute(
+                    """SELECT * FROM platform_quota_reserve_split
+                       (%s,%s,%s,'worker','worker-7',%s,0,0,0,0)""",
+                    (uuid4(), tenant_id, run_worker_b, period_start),
+                )
+            self.assertIn("concurrency quota exceeded", str(raised.exception))
+            await conn.rollback()
+        async with await AsyncConnection.connect(DSN) as conn:
+            await conn.execute(
+                """SELECT * FROM platform_quota_reserve_split
+                   (%s,%s,%s,'queue','critical',%s,0,0,0,0)""",
+                (uuid4(), tenant_id, run_queue_a, period_start),
+            )
+            await conn.commit()
+        async with await AsyncConnection.connect(DSN) as conn:
+            with self.assertRaises(Exception) as raised:
+                await conn.execute(
+                    """SELECT * FROM platform_quota_reserve_split
+                       (%s,%s,%s,'queue','critical',%s,0,0,0,0)""",
+                    (uuid4(), tenant_id, run_queue_b, period_start),
+                )
+            self.assertIn("concurrency quota exceeded", str(raised.exception))
+            await conn.rollback()
+
