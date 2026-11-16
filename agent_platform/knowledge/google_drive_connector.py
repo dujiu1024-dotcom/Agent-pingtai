@@ -187,6 +187,11 @@ class GoogleDriveKnowledgeConnector:
             raise GoogleDriveConnectorError("Google Drive file is missing its ID")
         if not isinstance(mime_type, str):
             raise GoogleDriveConnectorError("Google Drive file is missing mimeType")
+        permissions = file_meta.get("permissions")
+        if not isinstance(permissions, list):
+            raise GoogleDriveConnectorError(
+                "Google Drive permissions were not returned; ACL mapping must fail closed"
+            )
         # Folders and shortcuts are navigation metadata, not document content.
         if mime_type in {
             "application/vnd.google-apps.folder",
