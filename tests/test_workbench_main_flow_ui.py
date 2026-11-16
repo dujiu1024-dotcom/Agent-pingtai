@@ -18,7 +18,8 @@ class WorkbenchMainFlowUiContractTests(unittest.TestCase):
         self.assertIn('"model_provider"', self.html)
         self.assertIn('"tool"', self.html)
         self.assertIn('"skill"', self.html)
-        self.assertIn('?"publish":"disable"', self.html)
+        self.assertIn('?"publish":', self.html)
+        self.assertIn('x.status==="published"?"disable"', self.html)
         self.assertIn('action==="publish"', self.html)
         self.assertIn('action==="disable"', self.html)
 
