@@ -217,7 +217,9 @@ class InMemorySessionRepository:
         from dataclasses import replace
         self.assets[key] = replace(asset, status=status)
         versions = self.asset_versions.get(key, [])
-        if versions:
+        if status is AssetStatus.DELETED:
+            self.asset_versions[key] = [replace(item, status=status) for item in versions]
+        elif versions:
             versions[-1] = replace(versions[-1], status=status)
 
     async def set_asset_status_if_not_deleted(
@@ -377,8 +379,8 @@ class SessionAssetService:
         expected_version: int | None = None,
     ) -> FileAssetVersion:
         asset = await self.repository.get_asset(tenant_id, asset_id)
-        if asset is None or asset.status is AssetStatus.DELETED:
-            raise SessionNotFound("file asset not found")
+        if asset is None or asset.status is not AssetStatus.AVAILABLE:
+            raise SessionNotFound("file asset not found or unavailable")
         if not content or len(content) > self.max_upload_bytes:
             raise SessionError("file is empty or exceeds upload size limit")
         if expected_version is not None and expected_version != asset.version:
