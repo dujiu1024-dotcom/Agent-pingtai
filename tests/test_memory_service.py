@@ -12,6 +12,23 @@ from agent_platform.memory.service import (
 
 
 class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_candidate_rejects_invalid_scope_confidence_and_metadata(self):
+        base = dict(
+            tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
+            content="prefers concise answers", source_ref="conversation:1",
+            confidence=0.9, created_by="extractor",
+        )
+        invalid = (
+            {"confidence": True}, {"confidence": float("nan")},
+            {"confidence": float("inf")}, {"scope": "user"},
+            {"tenant_id": 7}, {"source_ref": " "},
+            {"metadata": {"token": 7}}, {"metadata": {1: "bad"}},
+            {"conflict_key": " "},
+        )
+        for overrides in invalid:
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                MemoryCandidate(**{**base, **overrides})
+
     async def test_candidate_is_not_retrievable_until_confirmed(self):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="prefers concise reports",source_ref="conversation:123",confidence=.9,created_by="extractor")
         await service.propose(c); p=MemoryPrincipal(tenant_id="t",user_id="u1"); self.assertEqual(await service.retrieve(principal=p),[])
