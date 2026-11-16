@@ -48,7 +48,7 @@ class KnowledgeService:
         if len(content)>self.max_upload_bytes:
             raise ValueError("document exceeds configured upload size limit")
         from dataclasses import replace
-        text=await asyncio.to_thread(self.parsers.parse,content,document.media_type)
+        # OCR and Office parsers may perform blocking I/O/CPU work; keep it off the event loop.\n        text=await asyncio.to_thread(self.parsers.parse,content,document.media_type)
         digest=sha256_text(text)
         existing=await self.repository.get_document(document.tenant_id,document.document_id)
         if existing is not None:
