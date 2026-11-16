@@ -1,9 +1,9 @@
 """Resolve model runtime configuration from a Run-pinned registry snapshot."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 
 class ModelRegistryError(ValueError):
@@ -23,7 +23,7 @@ class ResolvedModelConfig:
     provider_type: str
     base_url: str
     model_id: str
-    api_key: str
+    api_key: str = field(repr=False, compare=False)
     parameters: Mapping[str, Any]
     capabilities: tuple[str, ...]
     allowed_data_levels: tuple[str, ...]
@@ -31,8 +31,11 @@ class ResolvedModelConfig:
 
 class RegistryModelResolver:
     """Resolve model and credentials only from the immutable Run snapshot."""
-    def __init__(self, secrets: ModelSecretResolver) -> None:
+    def __init__(
+        self, secrets: ModelSecretResolver, *, allow_insecure_loopback: bool = False,
+    ) -> None:
         self.secrets = secrets
+        self.allow_insecure_loopback = allow_insecure_loopback
 
     @staticmethod
     def _find(
@@ -84,13 +87,28 @@ class RegistryModelResolver:
         parsed = urlsplit(base_url)
         loopback = parsed.hostname in {"127.0.0.1", "localhost", "::1"}
         if (
-            (parsed.scheme != "https" and not (parsed.scheme == "http" and loopback))
+            (parsed.scheme != "https" and not (
+                self.allow_insecure_loopback and parsed.scheme == "http" and loopback
+            ))
             or not parsed.hostname or parsed.username is not None or parsed.password is not None
             or parsed.query or parsed.fragment
         ):
-            raise ModelRegistryError("model provider base_url must be HTTPS (loopback HTTP only for development)")
-        if not isinstance(secret_ref, str) or not secret_ref.startswith("secret://"):
+            raise ModelRegistryError("model provider base_url must be HTTPS")
+        tenant_id = getattr(snapshot, "tenant_id", None)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ModelRegistryError("Run snapshot tenant_id is required for secret resolution")
+        if not isinstance(secret_ref, str):
             raise ModelRegistryError("model provider must reference a host-managed secret")
+        secret = urlsplit(secret_ref)
+        secret_path = unquote(secret.path)
+        if (
+            secret.scheme != "secret" or secret.netloc != tenant_id
+            or not secret_path.strip("/")
+            or any(part in {".", ".."} for part in secret_path.split("/"))
+            or secret.username is not None or secret.password is not None
+            or secret.query or secret.fragment
+        ):
+            raise ModelRegistryError("model provider secret_ref must be scoped to the Run tenant")
         api_key = await self.secrets.resolve(secret_ref)
         if not isinstance(api_key, str) or not api_key.strip():
             raise ModelRegistryError("model provider secret could not be resolved")
