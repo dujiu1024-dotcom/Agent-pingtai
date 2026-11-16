@@ -35,8 +35,8 @@ class MemoryCandidate:
         if (
             isinstance(self.confidence, bool)
             or not isinstance(self.confidence, (int, float))
-            or not isfinite(self.confidence)
             or not 0 <= self.confidence <= 1
+            or not isfinite(self.confidence)
         ):
             raise ValueError("confidence must be a finite number between 0 and 1")
         if self.expires_at is not None and (
