@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping
 from uuid import UUID, uuid4
 
-
 ConnectionFactory = Callable[[], Any]
 
 
