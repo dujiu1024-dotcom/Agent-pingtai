@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Mapping, Protocol
 from uuid import UUID, uuid4
 
@@ -95,6 +96,60 @@ class PostgresOutboxStore:
             )
             for row in rows
         ]
+
+    async def requeue_published(
+        self,
+        *,
+        since: datetime,
+        until: datetime,
+        confirmation: str,
+        tenant_id: str | None = None,
+        limit: int = 1000,
+    ) -> int:
+        """Requeue a bounded published window after Redis data loss.
+
+        Consumers must retain durable event receipts and deduplicate by event_id.
+        The explicit confirmation and mandatory time window prevent accidental
+        unbounded replay of the entire outbox.
+        """
+        if confirmation != "REPLAY_PUBLISHED_OUTBOX":
+            raise ValueError("explicit outbox replay confirmation is required")
+        for name, value in (("since", since), ("until", until)):
+            if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError(f"{name} must be a timezone-aware datetime")
+        if since >= until:
+            raise ValueError("since must be earlier than until")
+        if tenant_id is not None and (not isinstance(tenant_id, str) or not tenant_id.strip()):
+            raise ValueError("tenant_id must be a non-empty string when supplied")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 10000:
+            raise ValueError("limit must be an integer between 1 and 10000")
+
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """
+                    WITH candidates AS (
+                        SELECT tenant_id, outbox_id
+                        FROM platform_outbox
+                        WHERE published_at IS NOT NULL
+                          AND published_at >= %s AND published_at < %s
+                          AND (%s IS NULL OR tenant_id = %s)
+                        ORDER BY published_at, tenant_id, outbox_id
+                        LIMIT %s
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    UPDATE platform_outbox AS outbox
+                    SET published_at = NULL, lease_token = NULL, lease_until = NULL,
+                        last_error = 'recovery replay requested', next_attempt_at = NULL
+                    FROM candidates
+                    WHERE outbox.tenant_id = candidates.tenant_id
+                      AND outbox.outbox_id = candidates.outbox_id
+                    RETURNING outbox.outbox_id
+                    """,
+                    (since, until, tenant_id, tenant_id, limit),
+                )
+                return len(await cursor.fetchall())
 
     async def mark_published(self, record: OutboxRecord) -> bool:
         connection = await self._connection_factory()
