@@ -154,7 +154,9 @@ class MemoryExtractionEventHandler:
             # Output is saved just after the Run succeeds, so absence is retryable.
             output = record.get("output")
             if output is None:
-                raise RuntimeError("successful Run output is not persisted yet")
+                if record.get("task_id") is not None:
+                    raise RuntimeError("successful Run output is not persisted yet")
+                return
             user_text = _text_value(
                 record.get("input"),
                 ("text", "input_text", "message", "prompt", "query"),
