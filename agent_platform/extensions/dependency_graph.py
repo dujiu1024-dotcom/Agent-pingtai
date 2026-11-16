@@ -2,15 +2,16 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from typing import Iterable, Mapping
+from typing import Iterable
 
 from agent_platform.extensions.manifest import ExtensionManifest
 
 
 def resolve_install_order(manifests: Iterable[ExtensionManifest]) -> tuple[str, ...]:
     """Return dependencies before dependants; reject missing deps and cycles."""
-    by_id = {item.extension_id: item for item in manifests}
-    if len(by_id) != len(tuple(by_id.values())):
+    records = tuple(manifests)
+    by_id = {item.extension_id: item for item in records}
+    if len(by_id) != len(records):
         raise ValueError("duplicate extension id")
     indegree = {key: 0 for key in by_id}
     dependants: dict[str, set[str]] = defaultdict(set)
