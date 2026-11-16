@@ -26,6 +26,7 @@ class ModelRouter:
     token_estimator = object()
     quota_service = object()
     quota_cost_estimator = object()
+    audit_sink = object()
 
     async def complete(self, **kwargs):
         return kwargs
