@@ -129,7 +129,7 @@ class FileDownloadApiAuthorizationTests(unittest.TestCase):
 
 
     def test_version_api_creates_lists_and_downloads_historical_content(self):
-        client, _service, _repository, _storage, denied = self._client()
+        client, _service, _repository, _storage, _denied = self._client()
         _session, asset = self._seed(_service)
 
         created = client.post(
