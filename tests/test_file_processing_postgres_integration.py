@@ -55,6 +55,35 @@ class FileProcessingPostgresTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual((await cursor.fetchone())["status"], "succeeded")
 
+    async def test_result_and_attempt_history_are_persisted(self):
+        await self.queue.enqueue(tenant_id=self.tenant_id, asset_id=str(self.asset_id))
+        job = await self.queue.claim(worker_id="worker-result", lease_seconds=30)
+        await self.queue.record_result(
+            job,
+            result={"document_id": str(self.asset_id), "chunk_count": 2},
+            parser_name="PlainTextParser",
+        )
+        await self.queue.complete(job)
+        async with await self.queue._connect() as conn:
+            cursor = await conn.execute(
+                """SELECT status,parser_name,result FROM platform_file_processing_jobs
+                   WHERE tenant_id=%s AND job_id=%s""",
+                (self.tenant_id, job.job_id),
+            )
+            saved = await cursor.fetchone()
+            self.assertEqual(saved["status"], "succeeded")
+            self.assertEqual(saved["parser_name"], "PlainTextParser")
+            self.assertEqual(saved["result"]["chunk_count"], 2)
+            cursor = await conn.execute(
+                """SELECT status,parser_name,result FROM platform_file_processing_attempts
+                   WHERE tenant_id=%s AND job_id=%s AND attempt=1""",
+                (self.tenant_id, job.job_id),
+            )
+            attempt = await cursor.fetchone()
+            self.assertEqual(attempt["status"], "succeeded")
+            self.assertEqual(attempt["parser_name"], "PlainTextParser")
+            self.assertEqual(attempt["result"]["document_id"], str(self.asset_id))
+
     async def test_failed_job_is_requeued_then_dead_lettered(self):
         await self.queue.enqueue(tenant_id=self.tenant_id, asset_id=str(self.asset_id))
         async with await self.queue._connect() as conn:
