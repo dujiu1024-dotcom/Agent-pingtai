@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import unittest
 from pathlib import Path
@@ -255,6 +256,86 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         )
         detail = await details.get(tenant_id=self.tenant_id, run_id=str(self.run_id))
         self.assertEqual(detail["checkpoint_ref"], "checkpoint-1")
+
+    async def test_postgres_checkpoint_survives_worker_restart_and_resumes(self):
+        try:
+            from langgraph.graph import END, START, StateGraph
+            from agent_platform.runtime.postgres_checkpointer import postgres_run_executor
+            from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+            from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
+        except ImportError as exc:
+            self.skipTest(f"LangGraph PostgreSQL runtime dependencies are unavailable: {exc}")
+
+        run_id = uuid4()
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id,run_id,agent_id,template_id,template_version,status,input)
+                   VALUES (%s,%s,%s,%s,1,'queued','{}'::jsonb)""",
+                (self.tenant_id, run_id, self.agent_id, self.template_id),
+            )
+            await conn.commit()
+
+        store = PostgresRunStateStore(self.connect)
+        lifecycle = RunLifecycleManager(store)
+        step_one_calls = 0
+        step_two_calls = 0
+        fail_first_step_two = True
+
+        def build_graph():
+            graph = StateGraph(dict)
+
+            async def step_one(state):
+                nonlocal step_one_calls
+                step_one_calls += 1
+                return {"value": state.get("value", 0) + 1}
+
+            async def step_two(state):
+                nonlocal step_two_calls, fail_first_step_two
+                step_two_calls += 1
+                if fail_first_step_two:
+                    fail_first_step_two = False
+                    raise asyncio.CancelledError()
+                return {"done": True}
+
+            graph.add_node("step_one", step_one)
+            graph.add_node("step_two", step_two)
+            graph.add_edge(START, "step_one")
+            graph.add_edge("step_one", "step_two")
+            graph.add_edge("step_two", END)
+            return graph
+
+        async with postgres_run_executor(
+            build_graph(), DSN, lifecycle=lifecycle, worker_id="worker-before-restart",
+        ) as executor:
+            with self.assertRaises(asyncio.CancelledError):
+                await executor.execute(
+                    tenant_id=self.tenant_id, run_id=str(run_id), input={"value": 0},
+                )
+
+        interrupted = await store.get(self.tenant_id, str(run_id))
+        self.assertIsNotNone(interrupted)
+        self.assertEqual(interrupted.status, RunStatus.INTERRUPTED)
+        self.assertTrue(interrupted.checkpoint_ref)
+        self.assertEqual(step_one_calls, 1)
+        self.assertEqual(step_two_calls, 1)
+
+        self.assertTrue(await store.acquire_lease(
+            self.tenant_id, str(run_id), "worker-after-restart",
+        ))
+        async with postgres_run_executor(
+            build_graph(), DSN, lifecycle=lifecycle, worker_id="worker-after-restart",
+        ) as executor:
+            result = await executor.resume_claimed(
+                snapshot=interrupted, input={"value": 0},
+            )
+
+        completed = await store.get(self.tenant_id, str(run_id))
+        self.assertIsNotNone(completed)
+        self.assertEqual(completed.status, RunStatus.SUCCEEDED)
+        self.assertEqual(step_one_calls, 1, "recovery must not replay the completed checkpointed node")
+        self.assertEqual(step_two_calls, 2)
+        self.assertTrue(result["done"])
 
     async def test_intervention_is_rejected_for_non_paused_run(self):
         from agent_platform.runtime.interventions import RunInterventionService
