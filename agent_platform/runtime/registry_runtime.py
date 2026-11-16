@@ -158,3 +158,55 @@ class RegistryRuntimeAssembler:
             ),
             tools=tools, skill_reviews=tuple(reviews),
         )
+
+
+class RunRuntimeStore:
+    """Worker-local, tenant/run-keyed runtime cache; rebuilt from durable snapshots."""
+
+    def __init__(self) -> None:
+        import asyncio
+        self._rows: dict[tuple[str, str], RunRegistryRuntime] = {}
+        self._lock = asyncio.Lock()
+
+    async def save(self, runtime: RunRegistryRuntime) -> None:
+        async with self._lock:
+            self._rows[(runtime.tenant_id, runtime.run_id)] = runtime
+
+    async def get(self, tenant_id: str, run_id: str) -> RunRegistryRuntime:
+        async with self._lock:
+            runtime = self._rows.get((tenant_id, run_id))
+        if runtime is None:
+            raise RegistryRuntimeError("Run runtime has not been prepared by its worker")
+        return runtime
+
+    async def delete(self, tenant_id: str, run_id: str) -> None:
+        async with self._lock:
+            self._rows.pop((tenant_id, run_id), None)
+
+
+class RegistryRuntimeProvider:
+    """Prepare/release a Run runtime around execution and rebuild it after recovery."""
+
+    def __init__(
+        self, *, assembler: RegistryRuntimeAssembler,
+        store: RunRuntimeStore | None = None,
+    ) -> None:
+        self.assembler = assembler
+        self.store = store or RunRuntimeStore()
+
+    async def prepare(
+        self, *, tenant_id: str, run_id: str, model_template_id: str,
+        required_tools: Sequence[str] = (),
+    ) -> RunRegistryRuntime:
+        runtime = await self.assembler.assemble(
+            tenant_id=tenant_id, run_id=run_id,
+            model_template_id=model_template_id, required_tools=required_tools,
+        )
+        await self.store.save(runtime)
+        return runtime
+
+    async def get(self, tenant_id: str, run_id: str) -> RunRegistryRuntime:
+        return await self.store.get(tenant_id, run_id)
+
+    async def release(self, tenant_id: str, run_id: str) -> None:
+        await self.store.delete(tenant_id, run_id)
