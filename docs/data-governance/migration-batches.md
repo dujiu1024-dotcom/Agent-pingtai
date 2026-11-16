@@ -53,6 +53,6 @@ python -m scripts.run_legacy_migration --source ./legacy.db --target ./target.db
 
 - 当前适配器是 SQLite→SQLite，目标库需预建表；PostgreSQL 目标适配器、跨数据库分布式事务和在线双写不在本任务实现范围。
 - 单列主键是当前断点续传游标约束；复合主键和无主键表拒绝执行。
-- 映射支持显式列重命名/筛选，不自动推断类型、枚举或业务语义转换。
+- 映射支持显式列重命名/筛选，以及 `strip/lower/upper/int/float/bool/json` 白名单转换；不会自动推断类型、枚举或业务语义。
 - 不删除目标端多余行；差异报告只比较源端存在的记录。删除传播、双写/灰度切换和回滚策略属于后续独立任务。
 - 不连接生产服务、不读取生产凭据、不访问外部资源；所有验证使用临时 SQLite fixture。
