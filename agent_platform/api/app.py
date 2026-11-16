@@ -26,6 +26,7 @@ from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
 )
+from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 from agent_platform.identity.service import IdentityService
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
@@ -125,6 +126,7 @@ def create_platform_app(
         protected_paths=("/api", "/auth"),
         login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
     )
+    app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
     if metrics_exporter is not None:
         app.include_router(create_observability_router(metrics=metrics_exporter))
