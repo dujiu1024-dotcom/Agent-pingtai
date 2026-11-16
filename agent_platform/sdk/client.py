@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
@@ -184,10 +186,18 @@ class PlatformClient:
                 (value for key, value in response.headers.items() if key.lower() == "retry-after"),
                 None,
             )
-            try:
-                server_delay = float(retry_after) if retry_after is not None else None
-            except (TypeError, ValueError):
-                server_delay = None
+            server_delay = None
+            if retry_after is not None:
+                try:
+                    server_delay = float(retry_after)
+                except (TypeError, ValueError):
+                    try:
+                        retry_at = parsedate_to_datetime(retry_after)
+                        if retry_at.tzinfo is None:
+                            retry_at = retry_at.replace(tzinfo=timezone.utc)
+                        server_delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+                    except (TypeError, ValueError, OverflowError):
+                        server_delay = None
             delay = server_delay if server_delay is not None and server_delay >= 0 else (
                 self.retry_backoff_seconds * (2 ** attempt)
             )
