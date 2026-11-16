@@ -30,6 +30,7 @@ class DataConnection:
     last_synced_at: datetime | None = None
     revoked_at: datetime | None = None
     last_error: str | None = None
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,7 @@ class DataConnectorService:
     async def create_connection(
         self, *, tenant_id: str, connection_id: str, provider: str,
         display_name: str, secret_ref: str, scopes: tuple[str, ...], actor_id: str,
+        project_id: str | None = None,
     ) -> DataConnection:
         if (
             not tenant_id.strip() or not actor_id.strip()
@@ -184,6 +186,7 @@ class DataConnectorService:
         connection = DataConnection(
             tenant_id=tenant_id, connection_id=connection_id, provider=provider,
             secret_ref=secret_ref, scopes=normalized_scopes, display_name=display_name.strip(),
+            project_id=project_id,
         )
         await self.repository.create(connection, created_by=actor_id)
         return connection
