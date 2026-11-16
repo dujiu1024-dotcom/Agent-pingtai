@@ -117,7 +117,6 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_or_unavailable_audit_sink_blocks_provider_dispatch(self):
         transport = FallbackTransport()
         router = OpenAICompatibleModelRouter(
-            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()), transport=transport,
             audit_sink=AuditRecorder(fail=True),
         )
@@ -133,7 +132,6 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         audit = AuditRecorder()
         transport = FallbackTransport()
         router = OpenAICompatibleModelRouter(
-            audit_sink=AuditRecorder(),
             resolver=RegistryModelResolver(Secrets()), transport=transport,
             audit_sink=audit,
         )
