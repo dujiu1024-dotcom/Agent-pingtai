@@ -16,6 +16,7 @@ from agent_platform.observability.harness import ObservedHarnessAdapter
 from agent_platform.observability.langfuse import LangfuseObservationSink
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.prompts import PromptRegistry
+from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.observability.redaction import redact_payload, redact_text
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
@@ -183,6 +184,37 @@ class ObservabilityTests(unittest.IsolatedAsyncioTestCase):
         allowed, reasons = gate_report(report, EvalGatePolicy())
         self.assertFalse(allowed)
         self.assertIn("pass_rate_below_threshold", reasons)
+
+
+    def test_prometheus_client_recorder_exports_counters_and_histograms(self):
+        metrics = PrometheusClientMetricsRecorder()
+        metrics.increment(
+            "agent_runs_total", 2,
+            labels={"component": "harness", "status": "succeeded"},
+        )
+        metrics.observe(
+            "agent_run_duration_seconds", 0.25,
+            labels={"component": "harness"},
+        )
+        exposition = metrics.render_prometheus()
+        self.assertIn('agent_runs_total{component="harness",status="succeeded"} 2.0', exposition)
+        self.assertIn('agent_run_duration_seconds_count{component="harness"} 1.0', exposition)
+        self.assertIn('agent_run_duration_seconds_sum{component="harness"} 0.25', exposition)
+        self.assertIn("agent_run_duration_seconds_bucket", exposition)
+
+    def test_prometheus_client_recorder_rejects_cardinality_and_schema_drift(self):
+        metrics = PrometheusClientMetricsRecorder()
+        with self.assertRaisesRegex(ValueError, "high-cardinality"):
+            metrics.increment("agent_runs_total", labels={"tenant_id": "tenant-a"})
+        metrics.increment("agent_runs_total", labels={"status": "ok"})
+        with self.assertRaisesRegex(ValueError, "label names must remain stable"):
+            metrics.increment("agent_runs_total", labels={"component": "harness"})
+        with self.assertRaisesRegex(ValueError, "metric type and label names"):
+            metrics.observe("agent_runs_total", 0.1, labels={"status": "ok"})
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            metrics.increment("negative_counter", -1)
+        with self.assertRaisesRegex(ValueError, "finite number"):
+            metrics.observe("not_finite", float("nan"))
 
 
 if __name__ == "__main__":
