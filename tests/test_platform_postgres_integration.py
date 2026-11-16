@@ -3,6 +3,7 @@
 import asyncio
 import os
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -224,6 +225,35 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual((await cur.fetchone())["n"], 1)
 
+
+    async def test_replaying_same_blackboard_event_is_idempotent_and_payload_bound(self):
+        entry = await self.repo.propose(self.make_entry())
+        event = BlackboardEvent(
+            event_type="blackboard.replay_probe",
+            scope=entry.scope,
+            scope_id=entry.scope_id,
+            entry_id=entry.entry_id,
+            entry_version=entry.version,
+            actor_id="integration-test",
+            payload={"attempt": 1},
+            correlation_id=entry.correlation_id,
+        )
+        await self.repo.append_event(event)
+        await self.repo.append_event(event)
+        with self.assertRaisesRegex(ValueError, "reused with a different payload"):
+            await self.repo.append_event(replace(event, payload={"attempt": 2}))
+
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM blackboard_events WHERE tenant_id=%s AND event_id=%s",
+                (self.tenant_id, event.event_id),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 1)
+            cur = await conn.execute(
+                "SELECT count(*) AS n FROM platform_outbox WHERE tenant_id=%s AND event_id=%s",
+                (self.tenant_id, event.event_id),
+            )
+            self.assertEqual((await cur.fetchone())["n"], 1)
 
     async def test_event_and_outbox_write_roll_back_as_one_transaction(self):
         entry = await self.repo.propose(self.make_entry())
