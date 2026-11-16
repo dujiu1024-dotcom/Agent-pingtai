@@ -318,14 +318,20 @@ class PostgresSessionRepository:
             raise ValueError("limit must be between 1 and 500")
         connection = await self._connection_factory()
         async with connection:
-            cursor = await connection.execute(
-                """SELECT * FROM platform_file_assets
-                   WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'
-                     AND (%s IS NULL OR session_id=%s)
-                   ORDER BY created_at DESC,asset_id LIMIT %s""",
-                (self.tenant_id, owner_id, _uuid(session_id) if session_id else None,
-                 _uuid(session_id) if session_id else None, limit),
-            )
+            if session_id:
+                cursor = await connection.execute(
+                    """SELECT * FROM platform_file_assets
+                       WHERE tenant_id=%s AND owner_id=%s AND session_id=%s AND status <> 'deleted'
+                       ORDER BY created_at DESC,asset_id LIMIT %s""",
+                    (self.tenant_id, owner_id, _uuid(session_id), limit),
+                )
+            else:
+                cursor = await connection.execute(
+                    """SELECT * FROM platform_file_assets
+                       WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'
+                       ORDER BY created_at DESC,asset_id LIMIT %s""",
+                    (self.tenant_id, owner_id, limit),
+                )
             rows = await cursor.fetchall()
         return tuple(self._to_asset(row) for row in rows)
 
