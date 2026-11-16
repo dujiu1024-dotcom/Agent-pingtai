@@ -185,7 +185,7 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual((await self.store.get("tenant","remote-cancel")).status,RunStatus.CANCELLED)
   self.assertEqual(self.graph.calls,[])
 
- async def test_recovery_lease_loss_keeps_run_interrupted(self):
+ async def test_recovery_lease_loss_leaves_run_for_new_lease_owner(self):
   started=asyncio.Event();cancelled=asyncio.Event()
   class LeaseExpiringStore(InMemoryRunStateStore):
    async def heartbeat(self,tenant_id,run_id,worker_id,*,lease_seconds):
@@ -209,7 +209,7 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   self.assertEqual(recovered,[])
   self.assertTrue(started.is_set())
   self.assertTrue(cancelled.is_set())
-  self.assertEqual((await store.get("tenant","recovery-lease-lost")).status,RunStatus.INTERRUPTED)
+  self.assertEqual((await store.get("tenant","recovery-lease-lost")).status,RunStatus.RUNNING)
 
 
  async def test_registry_runtime_is_prepared_before_execution_and_released_afterward(self):
