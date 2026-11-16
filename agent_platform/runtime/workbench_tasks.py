@@ -10,7 +10,7 @@ import asyncio
 import hashlib
 import inspect
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -167,6 +167,7 @@ class RegistryBackedTaskCenterService:
     async def _ensure_task_ready(
         self, *, tenant_id: str, run_id: str, agent_id: str,
         existing_digest: str | None = None,
+        pinned_items: Sequence[Any] | None = None,
     ) -> None:
         if existing_digest:
             snapshot = await self.snapshots.get(
@@ -175,14 +176,17 @@ class RegistryBackedTaskCenterService:
             if snapshot.digest != existing_digest:
                 raise WorkbenchTaskError("stored Run registry snapshot digest does not match")
         else:
-            agent, template, provider, tools, skills, workflow = (
-                await self._runtime_references(agent_id)
-            )
-            pinned_items = [agent, template, provider, *tools, *skills]
-            if workflow is not None:
-                pinned_items.append(workflow)
+            if pinned_items is None:
+                agent, template, provider, tools, skills, workflow = (
+                    await self._runtime_references(agent_id)
+                )
+                resolved_items = [agent, template, provider, *tools, *skills]
+                if workflow is not None:
+                    resolved_items.append(workflow)
+            else:
+                resolved_items = list(pinned_items)
             references = [
-                (item.kind, item.item_id, item.version) for item in pinned_items
+                (item.kind, item.item_id, item.version) for item in resolved_items
             ]
             snapshot = await self.snapshots.pin_versions(
                 tenant_id=tenant_id, run_id=run_id, references=references,
@@ -251,7 +255,7 @@ class RegistryBackedTaskCenterService:
                     )
                 return _task_view(existing)
 
-        _, template, _, _, _, workflow = await self._runtime_references(agent_id)
+        agent, template, provider, tools, skills, workflow = await self._runtime_references(agent_id)
         template_id = template.item_id
         template_version = template.version
         run_id = str(uuid4())
@@ -274,8 +278,12 @@ class RegistryBackedTaskCenterService:
             return _task_view(existing)
 
         try:
+            pinned_items = [agent, template, provider, *tools, *skills]
+            if workflow is not None:
+                pinned_items.append(workflow)
             await self._ensure_task_ready(
                 tenant_id=tenant_id, run_id=run_id, agent_id=agent_id,
+                pinned_items=pinned_items,
             )
         except Exception as exc:
             current = await self.run_store.get(tenant_id, run_id)
