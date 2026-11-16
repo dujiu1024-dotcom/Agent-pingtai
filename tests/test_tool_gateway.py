@@ -193,3 +193,23 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    async def test_correlation_id_is_propagated_into_tool_observation(self):
+        class Observer:
+            def __init__(self):
+                self.metadata = None
+            @contextmanager
+            def observe(self, *, name, input, metadata):
+                self.metadata = dict(metadata)
+                yield type("Span", (), {"update": lambda self, **kwargs: None})()
+
+        observer = Observer()
+        gateway, _audit, _approval = self.make_gateway(observer=observer)
+        await gateway.call(
+            tenant_id="tenant-a", actor_id="actor-a", actor_roles=("operator",),
+            tool_name="read_file", resource="file:123", arguments={"path": "a.txt"},
+            run_id="run-a", agent_id="agent-a", correlation_id="corr-123",
+        )
+        self.assertEqual(observer.metadata["correlation_id"], "corr-123")
+
