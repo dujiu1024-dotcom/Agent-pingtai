@@ -179,7 +179,7 @@ $("searchKnowledge").onclick=async()=>{
  try{const r=await api("/knowledge/search?q="+encodeURIComponent($("knowledgeQuery").value));$("knowledgeSearchResults").innerHTML=table((r.items||[]).map(x=>[x.title,x.score,x.snippet,x.document_id]))}catch(e){msg("知识检索失败："+e.message)}
 };
 $("answerKnowledge").onclick=async()=>{
- if(!capabilities.knowledge)return;
+ if(!capabilities.rag){msg("当前宿主未配置 RAG 生成器");return}
  try{const r=await api("/knowledge/answer",{method:"POST",body:JSON.stringify({query:$("knowledgeQuery").value})});$("knowledgeSearchResults").innerHTML="<div class='panel'><p>"+esc(r.answer)+"</p><div class='muted'>引用："+esc((r.citations||[]).map(x=>x.document_id+":"+x.chunk_id).join(", "))+"</div></div>"}catch(e){msg("RAG 问答失败："+e.message)}
 };
 $("memoryList").addEventListener("click",async e=>{
