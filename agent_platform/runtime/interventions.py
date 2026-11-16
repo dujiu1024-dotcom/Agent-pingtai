@@ -96,9 +96,10 @@ class RunInterventionService:
                     raise ValueError("intervention has already been resolved")
                 await db.execute(
                     """UPDATE platform_run_interventions
-                       SET status='applied',applied_at=now(),applied_by=%s
+                       SET status=%s,applied_at=now(),applied_by=%s
                        WHERE tenant_id=%s AND run_id=%s AND intervention_id=%s AND status='pending'""",
-                    (actor_id, self.tenant_id, UUID(run_id), UUID(intervention_id)),
+                    ("rejected" if decision == "rejected" else "applied", actor_id,
+                     self.tenant_id, UUID(run_id), UUID(intervention_id)),
                 )
                 await db.execute(
                     """INSERT INTO platform_run_events
@@ -112,7 +113,7 @@ class RunInterventionService:
                 )
         return {
             "intervention_id": intervention_id, "run_id": run_id,
-            "decision": decision, "status": "applied", "decided_by": actor_id,
+            "decision": decision, "status": "rejected" if decision == "rejected" else "applied", "decided_by": actor_id,
         }
 
     async def revise_result(
