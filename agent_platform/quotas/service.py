@@ -7,6 +7,7 @@ must use a shared transactional store implementing QuotaStore (see migration 012
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -411,3 +412,34 @@ class QuotaService:
         if not callable(expire):
             raise RuntimeError("quota store does not support reservation lease recovery")
         return int(await expire(limit=limit))
+
+    @asynccontextmanager
+    async def reservation_lease(
+        self, reservation: QuotaReservation, *,
+        lease_seconds: int = 300, heartbeat_interval_seconds: float = 60.0,
+    ):
+        """Keep any active Run or concurrency reservation alive during long work."""
+        if not 15 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 15 and 3600")
+        if not 0 < heartbeat_interval_seconds < lease_seconds:
+            raise ValueError("heartbeat interval must be positive and shorter than the lease")
+        if not callable(getattr(self.store, "heartbeat_reservation", None)):
+            yield reservation
+            return
+
+        async def renew() -> None:
+            while True:
+                await asyncio.sleep(heartbeat_interval_seconds)
+                if not await self.heartbeat_reservation(
+                    reservation, lease_seconds=lease_seconds,
+                ):
+                    raise RuntimeError("quota reservation lease could not be renewed")
+
+        async with asyncio.TaskGroup() as group:
+            heartbeat = group.create_task(
+                renew(), name=f"quota-reservation-heartbeat-{reservation.reservation_id}",
+            )
+            try:
+                yield reservation
+            finally:
+                heartbeat.cancel()
