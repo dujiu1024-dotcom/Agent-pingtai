@@ -247,10 +247,9 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
                 return "[page:1] scanned invoice total 42"
 
         ocr = FakeOCR()
-        registry = ParserRegistry(parsers=(OCRParserAdapter(ocr),))
         # Keep this test independent of optional pypdf installation and prove
         # that the registry falls through from an empty PDF text layer.
-        with patch("agent_platform.knowledge.ingestion.PDFParser", EmptyPdfParser):
+        with patch("agent_platform.knowledge.office_parsers.PDFParser", EmptyPdfParser):
             registry = ParserRegistry(parsers=(OCRParserAdapter(ocr),))
         service = KnowledgeService(InMemoryKnowledgeRepository(), parsers=registry)
         document = Document(
