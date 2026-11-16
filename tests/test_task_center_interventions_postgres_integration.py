@@ -100,6 +100,35 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
                 idempotency_key="same-key",
             )
 
+    async def test_task_failures_retry_then_enter_terminal_failed_state(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "retry"},
+        )
+        async with await self.connect() as conn:
+            await conn.execute(
+                "UPDATE platform_tasks SET max_attempts=2 WHERE tenant_id=%s AND task_id=%s",
+                (self.tenant_id, task["task_id"]),
+            )
+        lease = await service.claim_next(worker_id="worker-a")
+        self.assertEqual(lease.attempts, 1)
+        await service.fail(lease, error="temporary")
+        async with await self.connect() as conn:
+            await conn.execute(
+                "UPDATE platform_tasks SET available_at=now() WHERE tenant_id=%s AND task_id=%s",
+                (self.tenant_id, task["task_id"]),
+            )
+        lease = await service.claim_next(worker_id="worker-b")
+        self.assertEqual(lease.attempts, 2)
+        await service.fail(lease, error="permanent")
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
+        self.assertEqual(saved["status"], "failed")
+        self.assertEqual(saved["last_error"], "permanent")
+
     async def test_intervention_timeline_and_checkpoint_gated_resume(self):
         from agent_platform.runtime.interventions import (
             PostgresRunDetailService, RunInterventionService,
