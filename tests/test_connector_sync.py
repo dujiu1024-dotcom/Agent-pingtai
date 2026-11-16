@@ -1,0 +1,132 @@
+from __future__ import annotations
+
+import unittest
+from dataclasses import replace
+
+from agent_platform.control_plane.connector_sync import ConnectorSyncWorker
+from agent_platform.control_plane.data_connectors import (
+    ConnectorPage, DataConnection, DataConnectorService, InMemoryConnectorRepository,
+)
+
+
+class Provider:
+    def __init__(self):
+        self.fail_once = True
+        self.calls = 0
+
+    async def fetch_page(self, *, credential, scopes, cursor):
+        self.calls += 1
+        if self.fail_once:
+            self.fail_once = False
+            raise TimeoutError("provider temporarily unavailable")
+        return ConnectorPage(({"id": "item-1"},), {"page": 2}, False)
+
+    async def revoke(self, *, credential):
+        return None
+
+
+class Secrets:
+    async def resolve(self, secret_ref):
+        return "short-lived-token"
+
+
+class Sink:
+    def __init__(self):
+        self.items = []
+
+    async def upsert_page(self, *, tenant_id, connection_id, items):
+        self.items.extend(items)
+
+    async def revoke_connection(self, *, tenant_id, connection_id, disposition):
+        return None
+
+
+class Queue:
+    def __init__(self):
+        self.job = None
+        self.dead = False
+
+    async def enqueue(self, *, tenant_id, connection_id):
+        self.job = {
+            "tenant_id": tenant_id, "connection_id": connection_id,
+            "attempts": 0, "max_attempts": 3, "lease_owner": None,
+        }
+
+    async def claim(self, *, worker_id, lease_seconds=120):
+        if self.job is None or self.dead:
+            return None
+        self.job["attempts"] += 1
+        self.job["lease_owner"] = worker_id
+        return replace_job(self.job)
+
+    async def heartbeat(self, job, *, lease_seconds=120):
+        return self.job is not None and self.job["lease_owner"] == job.lease_owner
+
+    async def complete(self, job):
+        self.job = None
+
+    async def fail(self, job, *, error_code):
+        self.last_error = error_code
+        if job.attempts >= job.max_attempts:
+            self.dead = True
+        else:
+            self.job["lease_owner"] = None
+        return self.dead
+
+
+def replace_job(row):
+    from agent_platform.control_plane.connector_sync import ConnectorSyncJob
+    return ConnectorSyncJob(
+        tenant_id=row["tenant_id"], job_id="sync-job-1",
+        connection_id=row["connection_id"], attempts=row["attempts"],
+        max_attempts=row["max_attempts"], lease_owner=row["lease_owner"],
+    )
+
+
+class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_transient_provider_failure_is_retried_and_cursor_advances(self):
+        repo = InMemoryConnectorRepository()
+        await repo.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-a", provider="drive",
+            secret_ref="secret://tenant-a/drive-a", scopes=("files.read",),
+        ))
+        provider = Provider()
+        sink = Sink()
+        queue = Queue()
+        service = DataConnectorService(
+            repository=repo, providers={"drive": provider}, secrets=Secrets(),
+            sink=sink, sync_queue=queue,
+        )
+        await service.request_sync(tenant_id="tenant-a", connection_id="drive-a")
+        worker = ConnectorSyncWorker(
+            queue=queue, service=service, worker_id="sync-worker", lease_seconds=5,
+        )
+        self.assertTrue(await worker.run_once())
+        self.assertIsNotNone(queue.job)
+        self.assertEqual(queue.last_error, "timeouterror")
+        self.assertTrue(await worker.run_once())
+        self.assertIsNone(queue.job)
+        saved = await repo.get("tenant-a", "drive-a")
+        self.assertEqual(saved.cursor, {"page": 2})
+        self.assertEqual(len(sink.items), 1)
+        self.assertEqual(provider.calls, 2)
+
+    async def test_request_sync_rejects_revoked_connections(self):
+        repo = InMemoryConnectorRepository()
+        await repo.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-a", provider="drive",
+            secret_ref="secret://tenant-a/drive-a", scopes=("files.read",),
+            status="revoked",
+        ))
+        queue = Queue()
+        service = DataConnectorService(
+            repository=repo, providers={"drive": Provider()}, secrets=Secrets(),
+            sink=Sink(), sync_queue=queue,
+        )
+        with self.assertRaisesRegex(Exception, "not active"):
+            await service.request_sync(tenant_id="tenant-a", connection_id="drive-a")
+        self.assertIsNone(queue.job)
+
+
+if __name__ == "__main__":
+    unittest.main()
