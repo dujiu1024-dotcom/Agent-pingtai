@@ -30,8 +30,6 @@ class Budget:
     hard_concurrency: int | None = None
     soft_tokens: int | None = None
     soft_cost_usd: Decimal | None = None
-    hard_input_tokens: int | None = None
-    hard_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model"}:
@@ -42,14 +40,16 @@ class Budget:
             raise ValueError("budget period must be timezone-aware")
         if self.period_end <= self.period_start:
             raise ValueError("budget period end must follow start")
-        for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens, self.hard_input_tokens, self.hard_output_tokens):
+        for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens):
             if value is not None and (
-                not isinstance(value, int) or isinstance(value, bool) or value < 0
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
             ):
                 raise ValueError("token and concurrency limits must be non-negative integers")
         for cost in (self.hard_cost_usd, self.soft_cost_usd):
-            if cost is not None and cost < 0:
-                raise ValueError("cost limits must be non-negative")
+            if cost is not None and (
+                not isinstance(cost, Decimal) or not cost.is_finite() or cost < 0
+            ):
+                raise ValueError("cost limits must be finite non-negative Decimals")
 
 
 @dataclass(frozen=True)
@@ -64,8 +64,18 @@ class QuotaReservation:
     created_at: datetime
     period_start: datetime
     period_end: datetime
-    reserved_input_tokens: int = 0
-    reserved_output_tokens: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.reservation_id or not self.tenant_id or not self.run_id:
+            raise ValueError("reservation, tenant and run ids are required")
+        if self.scope_type not in {"tenant", "project", "agent", "model"} or not self.scope_id:
+            raise ValueError("invalid reservation quota scope")
+        if isinstance(self.reserved_tokens, bool) or not isinstance(self.reserved_tokens, int) or self.reserved_tokens < 0:
+            raise ValueError("reserved_tokens must be a non-negative integer")
+        if not isinstance(self.reserved_cost_usd, Decimal) or not self.reserved_cost_usd.is_finite() or self.reserved_cost_usd < 0:
+            raise ValueError("reserved_cost_usd must be a finite non-negative Decimal")
+        if self.created_at.tzinfo is None or self.period_start.tzinfo is None or self.period_end.tzinfo is None or self.period_end <= self.period_start:
+            raise ValueError("reservation timestamps must be ordered and timezone-aware")
 
 
 @dataclass(frozen=True)
@@ -85,6 +95,19 @@ class UsageEvent:
     storage_bytes: int = 0
     price_card_version: str | None = None
     source: str = "estimated"
+
+    def __post_init__(self) -> None:
+        if not self.event_id or not self.tenant_id or not self.run_id or not self.model_key:
+            raise ValueError("usage event identifiers and model_key are required")
+        for value in (self.input_tokens, self.output_tokens, self.tool_calls, self.runtime_ms, self.storage_bytes):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError("usage counters must be non-negative integers")
+        if not isinstance(self.cost_usd, Decimal) or not self.cost_usd.is_finite() or self.cost_usd < 0:
+            raise ValueError("usage cost must be a finite non-negative Decimal")
+        if self.occurred_at.tzinfo is None:
+            raise ValueError("usage timestamp must be timezone-aware")
+        if self.source not in {"estimated", "provider_reported", "reconciled"}:
+            raise ValueError("invalid usage source")
 
     @property
     def total_tokens(self) -> int:
@@ -150,29 +173,6 @@ class InMemoryQuotaStore:
             if budget is None:
                 raise BudgetExceeded("quota budget not configured")
             tokens, cost, concurrency = self._totals(budget.tenant_id, budget.scope_type, budget.scope_id, budget.period_start, budget.period_end)
-            events = [
-                event for event in self._events.values()
-                if event.tenant_id == budget.tenant_id
-                and budget.period_start <= event.occurred_at < budget.period_end
-                and self._matches(event, budget.scope_type, budget.scope_id)
-            ]
-            reservations = [
-                item for item in self._reservations.values()
-                if item.tenant_id == budget.tenant_id
-                and item.scope_type == budget.scope_type
-                and item.scope_id == budget.scope_id
-                and item.period_start == budget.period_start
-            ]
-            input_used = sum(event.input_tokens for event in events) + sum(
-                item.reserved_input_tokens for item in reservations
-            )
-            output_used = sum(event.output_tokens for event in events) + sum(
-                item.reserved_output_tokens for item in reservations
-            )
-            if budget.hard_input_tokens is not None and input_used + reservation.reserved_input_tokens > budget.hard_input_tokens:
-                raise BudgetExceeded("hard input token budget exceeded")
-            if budget.hard_output_tokens is not None and output_used + reservation.reserved_output_tokens > budget.hard_output_tokens:
-                raise BudgetExceeded("hard output token budget exceeded")
             if budget.hard_tokens is not None and tokens + reservation.reserved_tokens > budget.hard_tokens:
                 raise BudgetExceeded("hard token budget exceeded")
             if budget.hard_cost_usd is not None and cost + reservation.reserved_cost_usd > budget.hard_cost_usd:
@@ -240,42 +240,22 @@ class QuotaService:
     async def reserve_run(
         self, *, tenant_id: str, run_id: str, scope_type: str, scope_id: str,
         estimated_tokens: int, estimated_cost_usd: Decimal,
-        estimated_input_tokens: int | None = None,
-        estimated_output_tokens: int | None = None,
     ) -> tuple[QuotaReservation, tuple[str, ...]]:
         if not tenant_id or not run_id:
             raise ValueError("tenant_id and run_id are required")
         budget = await self.store.get_budget(tenant_id, scope_type, scope_id, datetime.now(timezone.utc))
         if budget is None:
             raise BudgetExceeded("quota budget not configured")
-        if (
-            not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool)
-            or estimated_tokens < 0 or not isinstance(estimated_cost_usd, Decimal)
-            or not estimated_cost_usd.is_finite() or estimated_cost_usd < 0
-        ):
-            raise ValueError("reservation estimates must be non-negative integers and finite Decimal")
-        if budget.hard_input_tokens is not None or budget.hard_output_tokens is not None:
-            if estimated_input_tokens is None or estimated_output_tokens is None:
-                raise BudgetExceeded("separate input and output estimates are required by this budget")
-        if estimated_input_tokens is None:
-            estimated_input_tokens = estimated_tokens
-        if estimated_output_tokens is None:
-            estimated_output_tokens = 0
-        if any(
-            not isinstance(value, int) or isinstance(value, bool) or value < 0
-            for value in (estimated_input_tokens, estimated_output_tokens)
-        ):
-            raise ValueError("input/output estimates must be non-negative integers")
-        if estimated_input_tokens + estimated_output_tokens != estimated_tokens:
-            raise ValueError("total estimate must equal input plus output estimates")
+        if isinstance(estimated_tokens, bool) or not isinstance(estimated_tokens, int) or estimated_tokens < 0:
+            raise ValueError("estimated_tokens must be a non-negative integer")
+        if not isinstance(estimated_cost_usd, Decimal) or not estimated_cost_usd.is_finite() or estimated_cost_usd < 0:
+            raise ValueError("estimated_cost_usd must be a finite non-negative Decimal")
         reservation = QuotaReservation(
             reservation_id=str(uuid4()), tenant_id=tenant_id, run_id=run_id,
             scope_type=budget.scope_type, scope_id=budget.scope_id,
             reserved_tokens=estimated_tokens, reserved_cost_usd=estimated_cost_usd,
             created_at=datetime.now(timezone.utc),
             period_start=budget.period_start, period_end=budget.period_end,
-            reserved_input_tokens=estimated_input_tokens,
-            reserved_output_tokens=estimated_output_tokens,
         )
         return await self.store.reserve(reservation)
 
@@ -287,8 +267,15 @@ class QuotaService:
         storage_bytes: int = 0, price_card_version: str | None = None,
         source: str = "estimated",
     ) -> UsageEvent:
-        if min(input_tokens, output_tokens, tool_calls, runtime_ms, storage_bytes) < 0 or cost_usd < 0:
-            raise ValueError("actual usage must be non-negative")
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+               for value in (input_tokens, output_tokens, tool_calls, runtime_ms, storage_bytes)):
+            raise ValueError("actual usage counters must be non-negative integers")
+        if not isinstance(cost_usd, Decimal) or not cost_usd.is_finite() or cost_usd < 0:
+            raise ValueError("actual cost must be a finite non-negative Decimal")
+        if occurred_at is not None and occurred_at.tzinfo is None:
+            raise ValueError("usage timestamp must be timezone-aware")
+        if not model_key.strip():
+            raise ValueError("model_key is required")
         if source not in {"estimated", "provider_reported", "reconciled"}:
             raise ValueError("invalid usage source")
         event = UsageEvent(
