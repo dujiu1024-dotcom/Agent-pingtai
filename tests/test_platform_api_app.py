@@ -415,5 +415,36 @@ class PlatformApiCompositionTests(unittest.TestCase):
             )
 
 
+    def test_prompt_registry_router_is_wired_with_explicit_authorizer(self):
+        from agent_platform.observability.prompts import PromptRegistry
+
+        class AsyncRegistry:
+            def __init__(self):
+                self.inner = PromptRegistry()
+
+            async def register(self, prompt_id, template, *, created_by):
+                return self.inner.register(prompt_id, template)
+
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            prompt_registry=AsyncRegistry(),
+            prompt_manage_authorizer=lambda principal, prompt_id, action: True,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.post(
+            "/api/platform/v1/prompts/support/versions",
+            json={"template": "Answer {question}"},
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["prompt_id"], "support")
+
+
+
 if __name__ == "__main__":
     unittest.main()

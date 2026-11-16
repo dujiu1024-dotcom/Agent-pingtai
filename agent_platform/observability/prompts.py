@@ -93,3 +93,12 @@ class PromptRegistry:
             extra = sorted(supplied - expected)
             raise ValueError(f"prompt variables mismatch; missing={missing}, extra={extra}")
         return prompt.template.format_map(variables), prompt
+
+
+def tenant_prompt_key(tenant_id: str, prompt_id: str) -> str:
+    """Namespace prompt identifiers because the legacy registry schema is global."""
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        raise ValueError("tenant_id is required")
+    if not isinstance(prompt_id, str) or not prompt_id.strip():
+        raise ValueError("prompt_id is required")
+    return f"tenant:{len(tenant_id)}:{tenant_id}:{prompt_id}"
