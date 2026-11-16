@@ -162,7 +162,7 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
         for estimate in (
             (0, -1, Decimal("0.01")),
             (0, True, Decimal("0.01")),
-            (1, 1, Decimal("0.01")),
+            (1, "1", Decimal("0.01")),
         ):
             adapter = QuotaEnforcedHarnessAdapter(
                 MustNotRunHarness(), quota_service=self.service,
