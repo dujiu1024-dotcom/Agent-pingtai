@@ -62,12 +62,12 @@ BEGIN
        AND used_output + p_reserved_output_tokens > b.hard_output_tokens
        THEN RAISE EXCEPTION 'hard output token budget exceeded'; END IF;
 
-    SELECT warning_soft_tokens, warning_soft_cost
+    SELECT q.warning_soft_tokens, q.warning_soft_cost
       INTO soft_token_warning, soft_cost_warning
       FROM platform_quota_reserve(
         p_reservation_id,p_tenant_id,p_run_id,p_scope_type,p_scope_id,
         p_period_start,p_reserved_tokens,p_reserved_cost_usd
-      );
+      ) AS q;
     UPDATE platform_quota_reservations
        SET reserved_input_tokens=p_reserved_input_tokens,
            reserved_output_tokens=p_reserved_output_tokens
