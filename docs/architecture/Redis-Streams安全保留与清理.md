@@ -9,7 +9,7 @@ Redis Stream 的近似 MAXLEN 裁剪可能删除仍处于 Consumer Group Pending
 - 正常 Outbox 发布和 DLQ 写入不再设置 MAXLEN。
 - 新增 `RedisStreamsTransport.trim_acknowledged`，只按所有 Consumer Group 的安全水位裁剪。
 - 每个 Group 的安全水位取其最早 pending ID；若无 pending，则取 last-delivered-id。
-- 全局裁剪水位取所有 Group 水位的最小值；使用独占 XRANGE 上界 + XDEL，只删除严格早于水位的消息，保留 pending 和未投递消息。
+- 全局裁剪水位取所有 Group 水位的最小值；使用精确 XTRIM MINID，只删除严格早于水位的消息，保留 pending 和未投递消息。
 - 没有 Consumer Group、Group 水位不可确认或存在未投递起点时，不执行裁剪。
 - DLQ 使用相同规则，调用时传 `dead_letter=True`。
 
