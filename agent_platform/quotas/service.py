@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Protocol
+from typing import AsyncIterator, Protocol
 from uuid import uuid4
 
 
@@ -417,7 +417,7 @@ class QuotaService:
     async def reservation_lease(
         self, reservation: QuotaReservation, *,
         lease_seconds: int = 300, heartbeat_interval_seconds: float = 60.0,
-    ):
+    ) -> AsyncIterator[QuotaReservation]:
         """Keep any active Run or concurrency reservation alive during long work."""
         if not 15 <= lease_seconds <= 3600:
             raise ValueError("lease_seconds must be between 15 and 3600")
