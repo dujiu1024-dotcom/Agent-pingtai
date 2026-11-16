@@ -293,7 +293,7 @@ class StrandsAgentsAdapter:
                 context_manager=False,
                 agent_id=f"{request.context.run_id}-{request.context.agent_id}",
             )
-            timeout = parameters.get("timeout_seconds")
+            timeout = request.timeout_seconds or parameters.get("timeout_seconds")
             try:
                 invoke = agent.invoke_async(prompt, idempotency_token=request.context.run_id)
                 if timeout is None:
