@@ -160,7 +160,7 @@ class PostgresSessionRepository:
         connection = await self._connection_factory()
         async with connection:
             await connection.execute(
-                """INSERT INTO platform_sessions
+                """INSERT INTO platform_conversation_sessions
                    (tenant_id,session_id,owner_id,project_id,title,status,created_at,updated_at)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (self.tenant_id, _uuid(session.session_id), session.owner_id,
@@ -174,7 +174,7 @@ class PostgresSessionRepository:
         connection = await self._connection_factory()
         async with connection:
             cursor = await connection.execute(
-                "SELECT * FROM platform_sessions WHERE tenant_id=%s AND session_id=%s",
+                "SELECT * FROM platform_conversation_sessions WHERE tenant_id=%s AND session_id=%s",
                 (self.tenant_id, _uuid(session_id)),
             )
             row = await cursor.fetchone()
@@ -192,7 +192,7 @@ class PostgresSessionRepository:
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
-                    """SELECT 1 FROM platform_sessions
+                    """SELECT 1 FROM platform_conversation_sessions
                        WHERE tenant_id=%s AND session_id=%s AND status='active' FOR UPDATE""",
                     (self.tenant_id, _uuid(message.session_id)),
                 )
@@ -209,7 +209,7 @@ class PostgresSessionRepository:
                      _jsonb(dict(message.metadata)), message.created_at),
                 )
                 await connection.execute(
-                    "UPDATE platform_sessions SET updated_at=now() WHERE tenant_id=%s AND session_id=%s",
+                    "UPDATE platform_conversation_sessions SET updated_at=now() WHERE tenant_id=%s AND session_id=%s",
                     (self.tenant_id, _uuid(message.session_id)),
                 )
 

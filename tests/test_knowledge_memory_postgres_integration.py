@@ -11,7 +11,7 @@ if DSN:
     from agent_platform.knowledge.contracts import Document,DocumentChunk,KnowledgePrincipal,KnowledgeScope
     from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
     from agent_platform.memory.postgres_repository import PostgresMemoryRepository
-    from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService
+    from agent_platform.memory.service import MemoryCandidate,MemoryPrincipal,MemoryScope,MemoryService,MemoryStatus
 @unittest.skipUnless(DSN,"AGENT_PLATFORM_TEST_DSN is not configured")
 class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

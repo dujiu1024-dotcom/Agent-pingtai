@@ -171,13 +171,13 @@ class PostgresServiceIdentityRepository:
                      AND (
                        (b.subject_type='service_account'
                          AND b.subject_id=%s)
-                       OR (%s IS NOT NULL AND b.subject_type='agent'
+                       OR (%s::text IS NOT NULL AND b.subject_type='agent'
                          AND b.subject_id=%s)
                      )
                      AND (
                        (b.resource_type=%s AND b.resource_id=%s)
                        OR (b.resource_type='tenant' AND b.resource_id=%s)
-                       OR (%s='project' AND b.resource_type='organization'
+                       OR (%s::text='project' AND b.resource_type='organization'
                          AND b.resource_id=(
                            SELECT p.organization_id FROM platform_projects p
                            JOIN platform_organizations o
