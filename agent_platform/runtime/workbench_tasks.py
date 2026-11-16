@@ -298,9 +298,16 @@ class RegistryBackedTaskCenterService:
         ):
             raise WorkbenchTaskError("idempotency_key must contain 1 to 200 characters")
 
+        if run_id is not None:
+            try:
+                run_id = str(UUID(run_id))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise WorkbenchTaskError("run_id must be a UUID") from exc
+
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
-            "project_id": project_id, "session_id": session_id, "input": dict(input),
+            "project_id": project_id, "session_id": session_id,
+            "requested_run_id": run_id, "input": dict(input),
         }
         canonical = json.dumps(
             request_body, ensure_ascii=False, sort_keys=True,
@@ -339,13 +346,7 @@ class RegistryBackedTaskCenterService:
         )
         template_id = template.item_id
         template_version = template.version
-        if run_id is None:
-            run_id = str(uuid4())
-        else:
-            try:
-                run_id = str(UUID(run_id))
-            except (ValueError, TypeError, AttributeError) as exc:
-                raise WorkbenchTaskError("run_id must be a UUID") from exc
+        run_id = run_id or str(uuid4())
         preparation_owner = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
