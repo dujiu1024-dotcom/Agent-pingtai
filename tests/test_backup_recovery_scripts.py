@@ -48,6 +48,13 @@ class BackupRecoveryScriptTests(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_infrastructure_deploy_rolls_back_only_to_successful_snapshot(self):
+        script = (ROOT / "scripts" / "deploy_infrastructure.sh").read_text()
+        self.assertIn("env-*.success", script)
+        self.assertIn("previous successful deployment snapshot", script)
+        self.assertIn("automatic rollback", script)
+        self.assertIn('printf \'%s\\n\' "$SNAPSHOT" > "$SNAPSHOT.success"', script)
+
     def test_migration_runner_expands_required_environment_and_file_list(self):
         script = (ROOT / "scripts" / "migrate_postgres.sh").read_text()
         self.assertIn(': "${PG_DSN:', script)
