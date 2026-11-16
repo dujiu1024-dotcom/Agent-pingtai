@@ -171,23 +171,69 @@ class BlackboardMultiExpertServices:
         scope, scope_id = self._scope(run_context)
         result = dict(await self.callbacks.resolve_conflicts(synthesis=synthesis, conflicts=conflicts, run_context=run_context))
         decisions = result.get("decisions", [])
+        if not isinstance(decisions, Sequence) or isinstance(decisions, (str, bytes)):
+            raise ValueError("conflict resolver must return a sequence of decisions")
+
+        indexed_conflicts: dict[int, Mapping[str, Any]] = {}
+        for decision in decisions:
+            if not isinstance(decision, Mapping):
+                raise ValueError("each conflict decision must be an object")
+            selectors = {
+                str(decision.get(key)).strip()
+                for key in ("conflict_id", "conflict_instance_id", "conflict_key")
+                if decision.get(key) is not None and str(decision.get(key)).strip()
+            }
+            if not selectors:
+                raise ValueError("each conflict decision must identify its conflict")
+            matches = []
+            for index, conflict in enumerate(conflicts):
+                conflict_selectors = {
+                    str(conflict.get(key)).strip()
+                    for key in (
+                        "blackboard_entry_id", "id", "conflict_instance_id", "conflict_key"
+                    )
+                    if conflict.get(key) is not None and str(conflict.get(key)).strip()
+                }
+                if selectors & conflict_selectors:
+                    matches.append(index)
+            if len(matches) != 1:
+                raise ValueError("conflict decision reference is unknown or ambiguous")
+            index = matches[0]
+            if index in indexed_conflicts:
+                raise ValueError("multiple decisions target the same conflict")
+            outcome = decision.get("outcome")
+            rationale = decision.get("rationale")
+            if not isinstance(outcome, str) or not outcome.strip():
+                raise ValueError("conflict decision requires a non-empty outcome")
+            if not isinstance(rationale, str) or not rationale.strip():
+                raise ValueError("conflict decision requires a non-empty rationale")
+            evidence_refs = decision.get("evidence_refs", ())
+            if not isinstance(evidence_refs, (list, tuple)):
+                raise ValueError("conflict decision evidence_refs must be an array")
+            if any(not isinstance(ref, str) or not ref.strip() for ref in evidence_refs):
+                raise ValueError("conflict decision evidence_refs must contain non-empty strings")
+            indexed_conflicts[index] = decision
+
+        if len(indexed_conflicts) != len(conflicts):
+            raise ValueError("conflict resolver must decide every persisted conflict")
+
         decision_entry_ids = []
-        for conflict in conflicts:
+        for index, conflict in enumerate(conflicts):
             conflict_entry_id = conflict.get("blackboard_entry_id")
             if not conflict_entry_id:
                 raise ValueError("conflict is missing its durable Blackboard entry")
-            decision: dict[str, Any] = next((item for item in decisions if item.get("conflict_id") == conflict_entry_id or item.get("conflict_id") == conflict.get("id") or item.get("conflict_instance_id") == conflict.get("conflict_instance_id") or item.get("conflict_key") == conflict.get("conflict_key")), {})
-            evidence_refs = decision.get("evidence_refs", conflict.get("evidence_refs", []))
+            decision = indexed_conflicts[index]
+            evidence_refs = decision.get("evidence_refs", ())
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),
                 scope=scope, scope_id=scope_id, kind=EntryKind.DECISION,
                 content={
                     "conflict_entry_id": conflict_entry_id,
-                    "outcome": str(decision.get("outcome") or "resolved"),
-                    "rationale": str(decision.get("rationale") or result.get("rationale") or ""),
+                    "outcome": decision["outcome"].strip(),
+                    "rationale": decision["rationale"].strip(),
                 },
                 author_id=str(decision.get("decider_id") or "conflict-resolver"),
-                source_refs=tuple(str(ref) for ref in evidence_refs),
+                source_refs=tuple(evidence_refs),
                 status=EntryStatus.ACCEPTED,
             )
             persisted = await self._propose_once(entry)
