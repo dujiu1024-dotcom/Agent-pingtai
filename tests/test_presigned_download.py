@@ -88,6 +88,8 @@ class PresignedDownloadTests(unittest.IsolatedAsyncioTestCase):
         client = TestClient(app)
         denied = client.get("/api/platform/v1/files/asset-a/download-url")
         self.assertEqual(denied.status_code, 403)
+        denied_stream = client.get("/api/platform/v1/files/asset-a")
+        self.assertEqual(denied_stream.status_code, 403)
         denied_project["allowed"] = True
         allowed = client.get("/api/platform/v1/files/asset-a/download-url?expires_in=60")
         self.assertEqual(allowed.status_code, 200)
