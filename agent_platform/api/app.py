@@ -85,6 +85,7 @@ def create_platform_app(
     audit_authorizer: Any | None = None,
     audit_request_sink: Any | None = None,
     audit_actor_resolver: Any | None = None,
+    resource_audit_writer: Any | None = None,
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
     quota_service: Any | None = None,
@@ -218,6 +219,7 @@ def create_platform_app(
             resolve_memory_principal=(
                 memory_context_resolver.memory if memory_extraction is not None else None
             ),
+            audit_writer=resource_audit_writer,
         ))
     task_center_configured = any(value is not None for value in (
         task_service_resolver, task_authorizer, task_worker,
@@ -367,6 +369,7 @@ def create_platform_app(
             resolve_principal=_principal_from_request,
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
+            audit_writer=resource_audit_writer,
         ))
     runs_configured = any(value is not None for value in (
         run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
