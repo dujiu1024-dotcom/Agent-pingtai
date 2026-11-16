@@ -99,7 +99,10 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         return DeepSeekHarnessAdapter(**options)
 
     async def test_runs_with_explicit_workspace_home_and_permission_mode(self):
-        result = await self.adapter().run(self.request)
+        adapter = self.adapter()
+        self.assertEqual(adapter.capabilities.input_modalities, frozenset({"text"}))
+        self.assertEqual(adapter.capabilities.output_modalities, frozenset({"text"}))
+        result = await adapter.run(self.request)
         self.assertEqual(result.output_text, "analysis complete")
         self.assertEqual(result.finish_reason, "completed")
         self.assertEqual(result.metadata["profile"], "sdk-minimal")
