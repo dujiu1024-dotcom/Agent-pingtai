@@ -498,7 +498,7 @@ class StrandsAgentsAdapter:
                             event_type="completed", result=completed_result
                         )
 
-            timeout = parameters.get("timeout_seconds")
+            timeout = request.timeout_seconds or parameters.get("timeout_seconds")
             try:
                 if timeout is None:
                     async for stream_event in consume_events():
