@@ -34,6 +34,7 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
             ExpertProfile("critic", "Critic", "Review", frozenset({"review"})),
             ExpertProfile("disabled", "Disabled", "Disabled", frozenset({"research"}), enabled=False),
         ))
+        self.registry.tenant_id = "tenant-a"
         self.service = SupervisedDelegationService(
             executor=self.executor,
             expert_registry=self.registry,
@@ -104,6 +105,17 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await self.service.delegate(parent=deep_parent, requests=(
                 DelegationSpec("too-deep", "researcher", "Do work"),
+            ))
+
+    async def test_rejects_registry_without_tenant_binding(self):
+        class UnscopedRegistry:
+            async def get(self, expert_id):
+                return ExpertProfile(expert_id, expert_id, "", frozenset())
+
+        self.service.expert_registry = UnscopedRegistry()
+        with self.assertRaises(PermissionError):
+            await self.service.delegate(parent=self.parent, requests=(
+                DelegationSpec("unscoped", "researcher", "Do work"),
             ))
 
     async def test_rejects_registry_bound_to_another_tenant(self):
