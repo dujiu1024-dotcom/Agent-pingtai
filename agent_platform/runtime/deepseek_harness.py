@@ -15,7 +15,13 @@ from typing import Any, Callable, Mapping
 
 from agent_platform.contracts import RunContext
 from agent_platform.models.templates import ModelTemplate, ModelTemplateRegistry
-from agent_platform.runtime.protocols import HarnessCapabilities, HarnessRequest, HarnessResult
+from agent_platform.runtime.protocols import (
+    HarnessCapabilities,
+    HarnessRequest,
+    HarnessResult,
+    RUNTIME_ADAPTER_CONTRACT_VERSION,
+    RuntimeAdapterDescriptor,
+)
 
 WorkspaceResolver = Callable[[RunContext], str | Path]
 HomeResolver = Callable[[RunContext], str | Path]
@@ -54,8 +60,19 @@ class DeepSeekHarnessAdapter:
             input_modalities=frozenset({"text"}),
             output_modalities=frozenset({"text"}),
             streaming=False,
-            cancellation=True,
+            # DSH executes in a worker thread; cancelling the awaiting coroutine
+            # does not reliably stop the SDK process, so do not advertise cancellation.
+            cancellation=False,
             structured_output=False,
+            timeout=True,
+            resume=False,
+            tool_gateway=False,
+        )
+        self.descriptor = RuntimeAdapterDescriptor(
+            adapter_id="deepseek_harness",
+            adapter_version="1.0.0",
+            contract_version=RUNTIME_ADAPTER_CONTRACT_VERSION,
+            capabilities=self.capabilities,
         )
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
