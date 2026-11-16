@@ -76,8 +76,69 @@ class RunRegistrySnapshotService:
         )
         return await self.store.save_once(snapshot)
 
+    async def pin_versions(
+        self, *, tenant_id: str, run_id: str,
+        references: Sequence[tuple[str, str, int]],
+    ) -> RunRegistrySnapshot:
+        """Pin explicit published versions captured during task validation."""
+        entries: list[dict[str, Any]] = []
+        seen: dict[tuple[str, str], int] = {}
+        for kind, item_id, version in references:
+            key = (kind, item_id)
+            previous = seen.get(key)
+            if previous is not None:
+                if previous != version:
+                    raise ValueError("Run snapshot contains conflicting versions for one registry item")
+                continue
+            if version < 1:
+                raise ValueError("registry version must be positive")
+            seen[key] = version
+            item = await self.registry.repository.get(
+                tenant_id, kind, item_id, version,
+            )
+            if item is None or item.status != "published":
+                raise RegistryNotFound(
+                    f"published registry version not found: {kind}:{item_id}@{version}"
+                )
+            active = await self.registry.resolve_active(
+                tenant_id=tenant_id, kind=kind, item_id=item_id,
+            )
+            if active.version != version:
+                raise ValueError(
+                    f"registry active version changed before Run snapshot pin: "
+                    f"{kind}:{item_id}@{version}"
+                )
+            entries.append({
+                "kind": item.kind, "item_id": item.item_id,
+                "version": item.version,
+                "definition": copy.deepcopy(dict(item.definition)),
+            })
+        entries.sort(key=lambda entry: (entry["kind"], entry["item_id"]))
+        canonical = json.dumps(
+            {"tenant_id": tenant_id, "run_id": run_id, "entries": entries},
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        )
+        snapshot = RunRegistrySnapshot(
+            tenant_id=tenant_id, run_id=run_id, entries=tuple(entries),
+            digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        )
+        return await self.store.save_once(snapshot)
+
     async def get(self, *, tenant_id: str, run_id: str) -> RunRegistrySnapshot:
         snapshot = await self.store.get(tenant_id, run_id)
         if snapshot is None:
             raise RegistryNotFound("Run registry snapshot has not been pinned")
+        canonical = json.dumps(
+            {
+                "tenant_id": snapshot.tenant_id,
+                "run_id": snapshot.run_id,
+                "entries": [dict(entry) for entry in snapshot.entries],
+            },
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        )
+        expected_digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if snapshot.tenant_id != tenant_id or snapshot.run_id != run_id:
+            raise ValueError("Run registry snapshot scope mismatch")
+        if snapshot.digest != expected_digest:
+            raise ValueError("Run registry snapshot integrity check failed")
         return snapshot
