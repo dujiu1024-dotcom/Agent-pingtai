@@ -24,7 +24,7 @@ class TaskRunStore(InMemoryRunStateStore):
     async def create_task_run(
         self, *, tenant_id, run_id, actor_id, agent_id, agent_version, template_id,
         template_version, input, preparation_owner, project_id=None, session_id=None,
-        workflow_id=None, idempotency_key=None, request_digest=None,
+        workflow_id=None, idempotency_key=None, request_digest=None, registry_snapshot=None,
     ):
         key = (tenant_id, actor_id, idempotency_key) if idempotency_key else None
         if key and key in self.idempotency:
@@ -40,7 +40,8 @@ class TaskRunStore(InMemoryRunStateStore):
             "agent_version": agent_version, "template_id": template_id, "template_version": template_version,
             "workflow_id": workflow_id, "status": "queued", "input": dict(input),
             "output": None, "usage": {}, "trace_id": None, "created_by": actor_id,
-            "request_digest": request_digest, "preparation_owner": preparation_owner,
+            "request_digest": request_digest, "registry_snapshot": list(registry_snapshot or []),
+            "preparation_owner": preparation_owner,
             "created_at": now, "updated_at": now,
             "started_at": None, "finished_at": None, "checkpoint_ref": None,
             "last_error": None, "registry_snapshot_digest": None, "dispatch_ready": False,
