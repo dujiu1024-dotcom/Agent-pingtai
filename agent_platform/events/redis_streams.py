@@ -31,7 +31,7 @@ class RedisStreamsTransport:
 
     async def publish(
         self, *, tenant_id: str, topic: str, event_id: str,
-        payload: Mapping[str, Any], maxlen: int = 100_000,
+        payload: Mapping[str, Any],
     ) -> str:
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
@@ -41,8 +41,10 @@ class RedisStreamsTransport:
             "event_id": event_id,
             "payload": json.dumps(dict(payload), ensure_ascii=False, separators=(",", ":")),
         }
+        # Never trim on publish: XADD MAXLEN can remove payloads for
+        # unacknowledged Pending Entries List (PEL) records.
         message_id = await self._client.xadd(
-            self._stream(tenant_id, topic), fields, maxlen=maxlen, approximate=True
+            self._stream(tenant_id, topic), fields,
         )
         return str(message_id)
 
@@ -111,10 +113,56 @@ class RedisStreamsTransport:
             "consumer_name": consumer_name,
         }
         async with self._client.pipeline(transaction=True) as pipe:
-            pipe.xadd(destination, dlq_fields, maxlen=100_000, approximate=True)
+            # DLQ entries are retained until every configured DLQ consumer group
+            # acknowledges them and explicit safe trimming is requested.
+            pipe.xadd(destination, dlq_fields)
             pipe.xack(source, group, message_id)
             results = await pipe.execute()
         return str(results[0])
+
+
+    @staticmethod
+    def _stream_id_key(message_id: str) -> tuple[int, int]:
+        major, minor = message_id.split("-", 1)
+        return int(major), int(minor)
+
+    async def trim_acknowledged(
+        self, *, tenant_id: str, topic: str, dead_letter: bool = False,
+    ) -> int:
+        """Trim only entries known to be acknowledged by every consumer group.
+
+        The safe cutoff is the earliest pending ID or, when a group has no
+        pending entries, that group's last-delivered ID. Entries at/after the
+        cutoff are retained. No groups means no trimming.
+        """
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        stream = (
+            self._dead_letter_stream(tenant_id, topic)
+            if dead_letter else self._stream(tenant_id, topic)
+        )
+        groups = await self._client.xinfo_groups(stream)
+        if not groups:
+            return 0
+
+        cutoffs: list[str] = []
+        for group in groups:
+            group_name = group.get("name")
+            if not group_name:
+                return 0
+            pending = await self._client.xpending(stream, group_name)
+            if int(pending.get("pending", 0)) > 0:
+                cutoff = pending.get("min")
+            else:
+                cutoff = group.get("last-delivered-id")
+            if not isinstance(cutoff, str) or cutoff == "0-0":
+                return 0
+            cutoffs.append(cutoff)
+
+        safe_cutoff = min(cutoffs, key=self._stream_id_key)
+        return int(await self._client.xtrim(
+            stream, minid=safe_cutoff, approximate=False,
+        ))
 
     async def pending_summary(
         self, *, tenant_id: str, topic: str, group: str
