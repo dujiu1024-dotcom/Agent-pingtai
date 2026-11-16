@@ -25,6 +25,8 @@ class FakeConnection:
         return self
     async def __aexit__(self, *args):
         return False
+    def transaction(self):
+        return self
     async def execute(self, query, params=()):
         sql = " ".join(query.split())
         if sql.startswith("INSERT INTO platform_alert_events"):
@@ -35,10 +37,30 @@ class FakeConnection:
             row = {"event_id": event_id, "scope_key": scope, "rule_id": rule,
                    "metric_name": metric, "observed_value": value, "threshold": threshold,
                    "severity": severity, "fired_at": fired, "description": description,
-                   "status": "open", "acknowledged_by": None, "acknowledged_at": None,
+                   "status": "open", "delivery_status": "pending", "delivery_attempts": 0, "acknowledged_by": None, "acknowledged_at": None,
                    "resolved_at": None}
             self.events[key] = row
             return FakeCursor(row)
+        if sql.startswith("WITH candidates AS"):
+            requested_id, _, limit = params
+            rows = []
+            for row in self.events.values():
+                if row["delivery_status"] in {"pending", "failed"} and (requested_id is None or row["event_id"] == requested_id):
+                    row["delivery_status"] = "sending"
+                    row["delivery_attempts"] += 1
+                    rows.append(dict(row))
+                    if len(rows) >= limit:
+                        break
+            return FakeCursor(rows=rows)
+        if sql.startswith("UPDATE platform_alert_events") and "delivery_status=%s" in sql:
+            status, success, delivered_at, error, event_id = params
+            row = next((v for v in self.events.values() if v["event_id"] == event_id), None)
+            if row and row["delivery_status"] == "sending":
+                row["delivery_status"] = status
+                row["delivered_at"] = delivered_at if success else None
+                row["last_delivery_error"] = error
+                return FakeCursor(row)
+            return FakeCursor()
         if sql.startswith("SELECT event_id FROM platform_alert_events"):
             return FakeCursor({"event_id": self.events[(params[0], params[1])]["event_id"]})
         if sql.startswith("SELECT event_id,scope_key"):
@@ -77,6 +99,30 @@ class AlertStoreTests(unittest.IsolatedAsyncioTestCase):
                                             actor_id="operator", now=datetime.now(timezone.utc)))
         self.assertFalse(await store.resolve(first, scope_key="tenant-a",
                                              actor_id="operator", now=datetime.now(timezone.utc)))
+
+
+    async def test_delivery_outbox_claims_once_and_records_success_or_failure(self):
+        connection = FakeConnection()
+        async def connect():
+            return connection
+        store = PostgresAlertEventStore(connect)
+        event = AlertEvent("cpu", "cpu_percent", 95, 90, "critical",
+                           datetime.now(timezone.utc), "CPU high")
+        event_id = await store.record(event, scope_key="tenant-a", dedupe_key="cpu:delivery")
+        claimed = await store.claim_pending_deliveries(event_id=event_id, limit=1)
+        self.assertEqual(len(claimed), 1)
+        self.assertEqual(claimed[0]["event_id"], event_id)
+        self.assertEqual(await store.claim_pending_deliveries(event_id=event_id, limit=1), [])
+        await store.mark_delivery(
+            event_id, success=False, now=datetime.now(timezone.utc),
+            error="provider unavailable",
+        )
+        claimed_again = await store.claim_pending_deliveries(event_id=event_id, limit=1)
+        self.assertEqual(len(claimed_again), 1)
+        await store.mark_delivery(event_id, success=True, now=datetime.now(timezone.utc))
+        row = next(iter(connection.events.values()))
+        self.assertEqual(row["delivery_status"], "sent")
+        self.assertEqual(row["delivery_attempts"], 2)
 
 
 if __name__ == "__main__":
