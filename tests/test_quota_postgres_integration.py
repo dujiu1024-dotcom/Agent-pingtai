@@ -357,3 +357,72 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                 scope_type="run", scope_id=str(root_run_id), estimated_tokens=51,
                 estimated_cost_usd=Decimal("0.10"),
             )
+
+
+    async def test_reservation_lease_heartbeat_and_crash_recovery(self):
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        from agent_platform.quotas.postgres import PostgresQuotaStore
+
+        tenant_id = f"quota-lease-it-{uuid4().hex}"
+        agent_id, template_id, run_id = f"agent-{uuid4().hex}", f"template-{uuid4().hex}", uuid4()
+        reservation_id = uuid4()
+        period_start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        period_end = period_start + timedelta(hours=1)
+
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            migration_dir = Path("agent_platform/storage/postgres")
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_id, "Quota Lease Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Lease Agent', 'integration')""",
+                (tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id, template_id, version, definition, status, created_by)
+                   VALUES (%s, %s, 1, '{}'::jsonb, 'active', 'integration')""",
+                (tenant_id, template_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id, run_id, agent_id, template_id, template_version, status)
+                   VALUES (%s, %s, %s, %s, 1, 'running')""",
+                (tenant_id, run_id, agent_id, template_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_quota_budgets
+                   (tenant_id, scope_type, scope_id, period_start, period_end, hard_concurrency)
+                   VALUES (%s, 'worker_pool', 'lease-test', %s, %s, 1)""",
+                (tenant_id, period_start, period_end),
+            )
+            await conn.execute(
+                """INSERT INTO platform_quota_reservations
+                   (reservation_id, tenant_id, run_id, scope_type, scope_id, period_start,
+                    reserved_tokens, reserved_cost_usd, status)
+                   VALUES (%s, %s, %s, 'worker_pool', 'lease-test', %s, 0, 0, 'active')""",
+                (reservation_id, tenant_id, run_id, period_start),
+            )
+
+        store = PostgresQuotaStore.from_dsn(DSN)
+        self.assertTrue(await store.heartbeat_reservation(str(reservation_id), lease_seconds=60))
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            await conn.execute(
+                "UPDATE platform_quota_reservations SET lease_expires_at=now()-interval '1 second' WHERE reservation_id=%s",
+                (reservation_id,),
+            )
+        self.assertFalse(await store.heartbeat_reservation(str(reservation_id), lease_seconds=60))
+        self.assertEqual(await store.expire_stale_reservations(limit=10), 1)
+        async with await AsyncConnection.connect(DSN) as conn:
+            cursor = await conn.execute(
+                "SELECT status FROM platform_quota_reservations WHERE reservation_id=%s",
+                (reservation_id,),
+            )
+            self.assertEqual((await cursor.fetchone())[0], "expired")
