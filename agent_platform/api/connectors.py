@@ -1,7 +1,7 @@
 """Authenticated external data connector administration API."""
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -17,6 +17,7 @@ def create_connectors_router(
     *, resolve_principal: PrincipalResolver,
     resolve_service: ServiceResolver,
     authorize: Authorizer,
+    audit_writer: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/connectors", tags=["connectors"])
 
@@ -28,6 +29,11 @@ def create_connectors_router(
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "connector repository tenant mismatch")
+        connection = await service.repository.get(principal.tenant_id, connection_id) if connection_id != "*" else None
+        if connection is not None and connection.project_id and not await authorize(
+            principal, "project", connection.project_id, action,
+        ):
+            raise HTTPException(403, "linked project connector access denied")
         return principal, service
 
     @router.post("", status_code=201)
@@ -39,6 +45,9 @@ def create_connectors_router(
             raise HTTPException(400, "JSON object is required") from exc
         if not isinstance(body, dict):
             raise HTTPException(400, "JSON object is required")
+        project_id = str(body["project_id"]) if body.get("project_id") else None
+        if project_id and not await authorize(principal, "project", project_id, "connector.create"):
+            raise HTTPException(403, "project connector creation denied")
         scopes = body.get("scopes", [])
         if not isinstance(scopes, list) or any(not isinstance(value, str) for value in scopes):
             raise HTTPException(400, "scopes must be an array of strings")
@@ -49,15 +58,22 @@ def create_connectors_router(
                 provider=str(body.get("provider") or ""),
                 display_name=str(body.get("display_name") or ""),
                 secret_ref=str(body.get("secret_ref") or ""),
-                scopes=tuple(scopes), actor_id=principal.user_id,
+                scopes=tuple(scopes), actor_id=principal.user_id, project_id=project_id,
             )
         except ConnectorError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="connector.created", subject_id=connection.connection_id,
+                detail={"project_id": connection.project_id, "provider": connection.provider},
+            )
         return {
             "connection_id": connection.connection_id,
             "provider": connection.provider,
             "display_name": connection.display_name,
             "scopes": list(connection.scopes), "status": connection.status,
+            "project_id": connection.project_id,
         }
 
     @router.post("/{connection_id}/revoke")
@@ -72,6 +88,13 @@ def create_connectors_router(
             raise HTTPException(422, str(exc)) from exc
         if not revoked:
             raise HTTPException(404, "connection not found or already revoked")
+        if audit_writer is not None:
+            connection = await service.repository.get(principal.tenant_id, connection_id)
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="connector.revoked", subject_id=connection_id,
+                detail={"project_id": connection.project_id if connection else None},
+            )
         return {"connection_id": connection_id, "status": "revoked"}
 
     return router
