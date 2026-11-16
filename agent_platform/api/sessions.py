@@ -37,6 +37,56 @@ def create_sessions_router(
             raise HTTPException(403, "session repository tenant mismatch")
         return principal, service
 
+    @router.get("/sessions")
+    async def list_sessions(request: Request, limit: int = 100):
+        principal = await resolve_principal(request)
+        service = await resolve_service(principal)
+        repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
+        if repository_tenant != principal.tenant_id:
+            raise HTTPException(403, "session repository tenant mismatch")
+        try:
+            items = await service.repository.list_sessions(
+                principal.tenant_id, principal.user_id, limit,
+            )
+        except (SessionError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        visible = []
+        for session in items:
+            if await authorize(principal, "session", session.session_id, "read"):
+                visible.append({
+                    "session_id": session.session_id, "title": session.title,
+                    "project_id": session.project_id, "status": session.status,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                })
+        return {"items": visible}
+
+    @router.get("/files")
+    async def list_files(request: Request, session_id: str | None = None, limit: int = 100):
+        principal = await resolve_principal(request)
+        service = await resolve_service(principal)
+        repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
+        if repository_tenant != principal.tenant_id:
+            raise HTTPException(403, "session repository tenant mismatch")
+        if session_id and not await authorize(principal, "session", session_id, "read"):
+            raise HTTPException(403, "session file access denied")
+        try:
+            items = await service.repository.list_assets(
+                principal.tenant_id, principal.user_id, session_id, limit,
+            )
+        except (SessionError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        visible = []
+        for asset in items:
+            if await authorize(principal, "file", asset.asset_id, "read"):
+                visible.append({
+                    "asset_id": asset.asset_id, "filename": asset.filename,
+                    "media_type": asset.media_type, "size_bytes": asset.size_bytes,
+                    "status": asset.status.value, "session_id": asset.session_id,
+                    "project_id": asset.project_id, "created_at": asset.created_at.isoformat(),
+                })
+        return {"items": visible}
+
     @router.post("/sessions", status_code=201)
     async def create_session(request: Request):
         principal = await resolve_principal(request)
