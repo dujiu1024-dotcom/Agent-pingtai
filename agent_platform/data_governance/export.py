@@ -19,6 +19,28 @@ class SubjectExportAdapter(Protocol):
     ) -> AsyncIterable[Mapping[str, object]]: ...
 
 
+class SubjectExportLedger(Protocol):
+    async def begin_operation(
+        self, *, tenant_id: str, operation_id: str, subject_id: str,
+    ) -> None: ...
+    async def completed_sources(
+        self, *, tenant_id: str, operation_id: str,
+    ) -> Sequence[str]: ...
+    async def mark_source_started(
+        self, *, tenant_id: str, operation_id: str, source: str,
+    ) -> None: ...
+    async def mark_source_completed(
+        self, *, tenant_id: str, operation_id: str, source: str,
+        record_count: int, sha256: str,
+    ) -> None: ...
+    async def mark_source_failed(
+        self, *, tenant_id: str, operation_id: str, source: str, error_code: str,
+    ) -> None: ...
+    async def finish_operation(
+        self, *, tenant_id: str, operation_id: str, complete: bool,
+    ) -> None: ...
+
+
 class SubjectExportSink(Protocol):
     """Durable sink; writes must be idempotent for operation/source/ordinal."""
 
@@ -81,10 +103,21 @@ class SubjectExportCoordinator:
         operation_id: str,
         sink: SubjectExportSink,
         completed_sources: Sequence[str] = (),
+        ledger: SubjectExportLedger | None = None,
     ) -> SubjectExportResult:
         if not tenant_id or not subject_id or not operation_id:
             raise ValueError("tenant, subject and operation ids are required")
-        completed_set = set(completed_sources)
+        if ledger is not None:
+            if completed_sources:
+                raise ValueError("completed_sources must be loaded from the durable ledger")
+            await ledger.begin_operation(
+                tenant_id=tenant_id, operation_id=operation_id, subject_id=subject_id,
+            )
+            completed_set = set(await ledger.completed_sources(
+                tenant_id=tenant_id, operation_id=operation_id,
+            ))
+        else:
+            completed_set = set(completed_sources)
         unknown = completed_set - self.adapters.keys()
         if unknown:
             raise ValueError("completed sources include unknown adapters")
@@ -100,6 +133,10 @@ class SubjectExportCoordinator:
             digest = hashlib.sha256()
             count = 0
             try:
+                if ledger is not None:
+                    await ledger.mark_source_started(
+                        tenant_id=tenant_id, operation_id=operation_id, source=name,
+                    )
                 async for item in adapter.export_subject(
                     tenant_id=tenant_id, subject_id=subject_id,
                 ):
@@ -117,12 +154,27 @@ class SubjectExportCoordinator:
                         ordinal=count, record=encoded,
                     )
                     count += 1
+                if ledger is not None:
+                    await ledger.mark_source_completed(
+                        tenant_id=tenant_id, operation_id=operation_id, source=name,
+                        record_count=count, sha256=digest.hexdigest(),
+                    )
                 completed.append(name)
                 source_results.append(ExportSourceResult(
                     source=name, record_count=count, sha256=digest.hexdigest(),
                 ))
             except Exception as exc:
                 failed[name] = type(exc).__name__
+                if ledger is not None:
+                    await ledger.mark_source_failed(
+                        tenant_id=tenant_id, operation_id=operation_id, source=name,
+                        error_code=type(exc).__name__,
+                    )
+        if ledger is not None:
+            await ledger.finish_operation(
+                tenant_id=tenant_id, operation_id=operation_id,
+                complete=not failed and len(completed) == len(self.adapters),
+            )
         return SubjectExportResult(
             operation_id=operation_id, subject_id=subject_id,
             completed=tuple(completed), failed=failed,
