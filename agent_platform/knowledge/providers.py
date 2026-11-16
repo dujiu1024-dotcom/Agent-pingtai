@@ -66,7 +66,7 @@ class OpenAICompatibleEmbedder:
     ) -> None:
         if not api_key.strip() or not model_id.strip():
             raise ValueError("embedding API key and model_id are required")
-        if isinstance(dimensions, bool) or dimensions < 1:
+        if isinstance(dimensions, bool) or not isinstance(dimensions, int) or dimensions < 1:
             raise ValueError("embedding dimensions must be a positive integer")
         self.client = client
         self.endpoint = _https_endpoint(base_url, suffix="/embeddings")
@@ -209,6 +209,39 @@ class AzureDocumentIntelligenceOCRProvider:
         self.max_file_bytes = max_file_bytes
         self.max_polls = max_polls
 
+    @staticmethod
+    def _page_text(analysis: dict[str, Any], content: str) -> str:
+        pages = analysis.get("pages")
+        if not isinstance(pages, list):
+            return content
+        parts: list[str] = []
+        for page in pages:
+            if not isinstance(page, dict):
+                continue
+            page_number = page.get("pageNumber")
+            spans = page.get("spans")
+            if (
+                isinstance(page_number, bool) or not isinstance(page_number, int)
+                or page_number < 1 or not isinstance(spans, list)
+            ):
+                continue
+            segments: list[str] = []
+            for span in spans:
+                if not isinstance(span, dict):
+                    continue
+                offset, length = span.get("offset"), span.get("length")
+                if (
+                    isinstance(offset, bool) or not isinstance(offset, int)
+                    or isinstance(length, bool) or not isinstance(length, int)
+                    or offset < 0 or length < 0 or offset + length > len(content)
+                ):
+                    continue
+                segments.append(content[offset:offset + length])
+            page_content = "".join(segments)
+            if page_content.strip():
+                parts.append(f"\n[page:{page_number}]\n{page_content}")
+        return "\n".join(parts) if parts else content
+
     def extract_text(self, content: bytes, media_type: str) -> str:
         if not content or len(content) > self.max_file_bytes:
             raise ValueError("OCR content is empty or exceeds configured size limit")
@@ -236,6 +269,8 @@ class AzureDocumentIntelligenceOCRProvider:
         if (
             parsed.scheme != "https" or parsed.hostname != base.hostname
             or parsed.port != base.port or not parsed.path
+            or parsed.username is not None or parsed.password is not None
+            or parsed.fragment
         ):
             raise KnowledgeProviderError("OCR provider returned an unsafe operation URL")
         for _ in range(self.max_polls):
@@ -251,7 +286,7 @@ class AzureDocumentIntelligenceOCRProvider:
                 text = analysis.get("content") if isinstance(analysis, dict) else None
                 if not isinstance(text, str) or not text.strip():
                     raise KnowledgeProviderError("OCR provider returned no extracted text")
-                return text
+                return self._page_text(analysis, text)
             if status in {"failed", "canceled"}:
                 raise KnowledgeProviderError("OCR document analysis failed")
             if status not in {"notStarted", "running"}:
