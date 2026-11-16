@@ -21,6 +21,7 @@ class DataConnection:
     tenant_id: str
     connection_id: str
     provider: str
+    # OAuth access/refresh material stays in the secret manager; this is only its opaque reference.
     secret_ref: str
     scopes: tuple[str, ...]
     display_name: str = ""
@@ -94,6 +95,8 @@ class ConnectorSink(Protocol):
 
 
 class SecretResolver(Protocol):
+    """Resolve an opaque secret:// reference just in time; never persist the returned token."""
+
     async def resolve(self, secret_ref: str) -> str: ...
 
 
@@ -241,7 +244,7 @@ class DataConnectorService:
         except Exception as exc:
             await self.repository.mark_error(
                 tenant_id=tenant_id, connection_id=connection_id,
-                error=f"{type(exc).__name__}: {exc}",
+                error=type(exc).__name__,
             )
             raise ConnectorError("connector synchronization failed") from exc
 
