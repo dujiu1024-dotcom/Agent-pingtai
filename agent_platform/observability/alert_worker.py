@@ -6,7 +6,7 @@ as a dedicated process or attach it to an application lifespan explicitly.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Protocol
+from typing import Protocol
 
 
 class AlertDispatcher(Protocol):
