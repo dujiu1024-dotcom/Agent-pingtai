@@ -1545,6 +1545,19 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed["status"], "succeeded")
         self.assertEqual(completed["output"], {"answer": "complete"})
         self.assertEqual(completed["trace_id"], "trace-task")
+        source_record = await store.get_run_record(self.tenant_id, run_id)
+        self.assertEqual(source_record["created_by"], "actor-a")
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT topic,payload FROM platform_outbox
+                   WHERE tenant_id=%s AND topic='memory.extraction.requested'""",
+                (self.tenant_id,),
+            )
+            memory_events = await cur.fetchall()
+        self.assertEqual(len(memory_events), 1)
+        self.assertEqual(memory_events[0]["payload"]["run_id"], run_id)
+        self.assertEqual(memory_events[0]["payload"]["session_id"], "session-a")
+        self.assertEqual(memory_events[0]["payload"]["actor_id"], "actor-a")
 
 
     async def test_postgres_session_repository_lists_only_owner_sessions_and_assets(self):
