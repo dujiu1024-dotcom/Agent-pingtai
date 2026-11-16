@@ -114,7 +114,8 @@ def create_sessions_router(
                     "asset_id": asset.asset_id, "filename": asset.filename,
                     "media_type": asset.media_type, "size_bytes": asset.size_bytes,
                     "status": asset.status.value, "session_id": asset.session_id,
-                    "project_id": asset.project_id, "created_at": asset.created_at.isoformat(),
+                    "project_id": asset.project_id, "version": asset.version,
+                    "created_at": asset.created_at.isoformat(),
                 })
         return {"items": visible}
 
@@ -482,6 +483,7 @@ def create_sessions_router(
             "status": asset.status.value,
             "session_id": asset.session_id,
             "project_id": asset.project_id,
+            "version": asset.version,
             "created_at": asset.created_at.isoformat(),
         }
 
