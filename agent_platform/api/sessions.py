@@ -155,6 +155,25 @@ def create_sessions_router(
             "session_id": asset.session_id,
         }
 
+    @router.get("/files/{asset_id}/download-url")
+    async def download_file_url(asset_id: str, request: Request, expires_in: int = 300):
+        principal, service = await context(request, "file", asset_id, "read")
+        if expires_in < 30 or expires_in > 3600:
+            raise HTTPException(400, "expires_in must be between 30 and 3600 seconds")
+        try:
+            asset, url = await service.create_download_url(
+                tenant_id=principal.tenant_id, asset_id=asset_id,
+                expires_in=expires_in,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, "file not found") from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "asset_id": asset.asset_id, "download_url": url,
+            "expires_in": expires_in,
+        }
+
     @router.get("/files/{asset_id}")
     async def download_file(asset_id: str, request: Request):
         principal, service = await context(request, "file", asset_id, "read")
