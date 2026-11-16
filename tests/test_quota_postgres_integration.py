@@ -291,3 +291,69 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             await store.reconcile_cost(
                 tenant_id, start, end, source="invoice-001", actual_cost_usd=Decimal("3.00"),
             )
+
+    async def test_root_run_budget_aggregates_child_run_usage(self):
+        from datetime import datetime, timedelta, timezone
+        from decimal import Decimal
+        from uuid import uuid4
+
+        from agent_platform.quotas.postgres import PostgresQuotaStore
+        from agent_platform.quotas.service import Budget, BudgetExceeded, QuotaService
+
+        tenant_id = f"quota-root-run-it-{uuid4().hex}"
+        agent_id = f"agent-{uuid4().hex}"
+        template_id = f"template-{uuid4().hex}"
+        root_run_id, child_run_id = uuid4(), uuid4()
+        start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        end = start + timedelta(hours=1)
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            for migration_path in sorted(Path("agent_platform/storage/postgres").glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_id, "Root Run Quota Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Quota Agent', 'integration')""",
+                (tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id, template_id, version, definition, status, created_by)
+                   VALUES (%s, %s, 1, '{}'::jsonb, 'active', 'integration')""",
+                (tenant_id, template_id),
+            )
+            for run_id in (root_run_id, child_run_id):
+                await conn.execute(
+                    """INSERT INTO platform_runs
+                       (tenant_id, run_id, agent_id, template_id, template_version, status)
+                       VALUES (%s, %s, %s, %s, 1, 'queued')""",
+                    (tenant_id, run_id, agent_id, template_id),
+                )
+        service = QuotaService(PostgresQuotaStore.from_dsn(DSN))
+        await service.configure(Budget(
+            tenant_id=tenant_id, scope_type="run", scope_id=str(root_run_id),
+            period_start=start, period_end=end, hard_tokens=100,
+        ))
+        reservation, _ = await service.reserve_run(
+            tenant_id=tenant_id, run_id=str(child_run_id), root_run_id=str(root_run_id),
+            scope_type="run", scope_id=str(root_run_id), estimated_tokens=80,
+            estimated_cost_usd=Decimal("0.20"),
+        )
+        event = await service.settle_run(
+            reservation, model_key="model-child", input_tokens=30, output_tokens=20,
+            cost_usd=Decimal("0.10"),
+        )
+        self.assertEqual(event.root_run_id, str(root_run_id))
+        tokens, cost, concurrency = await service.store.usage(
+            tenant_id, "run", str(root_run_id), start, end,
+        )
+        self.assertEqual((tokens, cost, concurrency), (50, Decimal("0.10"), 0))
+        with self.assertRaises(BudgetExceeded):
+            await service.reserve_run(
+                tenant_id=tenant_id, run_id=str(uuid4()), root_run_id=str(root_run_id),
+                scope_type="run", scope_id=str(root_run_id), estimated_tokens=51,
+                estimated_cost_usd=Decimal("0.10"),
+            )
