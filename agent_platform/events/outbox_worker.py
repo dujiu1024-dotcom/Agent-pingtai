@@ -31,6 +31,7 @@ class OutboxRelayWorker:
         self.batch_limit = batch_limit
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._transport_connected = False
 
     @property
     def running(self) -> bool:
@@ -39,6 +40,11 @@ class OutboxRelayWorker:
     async def start(self) -> None:
         if self.running:
             return
+        transport = getattr(self.relay, "transport", None)
+        connect = getattr(transport, "connect", None)
+        if callable(connect):
+            await connect()
+            self._transport_connected = True
         self._stop = asyncio.Event()
         self._task = asyncio.create_task(
             self._run(), name="platform-outbox-relay",
@@ -53,6 +59,14 @@ class OutboxRelayWorker:
             await task
         finally:
             self._task = None
+            if self._transport_connected:
+                transport = getattr(self.relay, "transport", None)
+                close = getattr(transport, "close", None)
+                try:
+                    if callable(close):
+                        await close()
+                finally:
+                    self._transport_connected = False
 
     async def _run(self) -> None:
         while not self._stop.is_set():
