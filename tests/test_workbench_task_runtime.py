@@ -11,6 +11,7 @@ from agent_platform.runtime.registry_snapshot import InMemoryRunSnapshotStore, R
 from agent_platform.runtime.execution import LangGraphRunExecutor
 from agent_platform.runtime.workbench_tasks import (
     RegistryBackedTaskCenterService,
+    RegistryLangGraphExecutorResolver,
     RunExecutionWorker,
 )
 
@@ -222,6 +223,45 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(await self.service.list_tasks(
             tenant_id="tenant-a", actor_id="user-b",
         )), 0)
+
+    async def test_executor_resolver_uses_run_pinned_agent_definition(self):
+        task = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "resolve"},
+        )
+        record = await self.run_store.get_task_record(
+            "tenant-a", task["task_id"], actor_id="user-a",
+        )
+        graph = FakeGraph()
+        runtime_provider = SimpleNamespace(
+            prepare=lambda **kwargs: None,
+            release=lambda tenant_id, run_id: None,
+        )
+        seen = {}
+
+        async def graph_factory(**kwargs):
+            seen.update(kwargs)
+            return graph
+
+        async def lifecycle_resolver(tenant_id):
+            return self.lifecycle
+
+        async def runtime_provider_resolver(tenant_id):
+            return runtime_provider
+
+        resolver = RegistryLangGraphExecutorResolver(
+            snapshots=self.snapshots,
+            lifecycle_resolver=lifecycle_resolver,
+            runtime_provider_resolver=runtime_provider_resolver,
+            graph_factory=graph_factory,
+        )
+        executor = await resolver(record, "worker-pinned")
+        self.assertEqual(executor.worker_id, "worker-pinned")
+        self.assertEqual(seen["agent_definition"]["model_template_id"], "general")
+        self.assertEqual(seen["agent_definition"]["tool_ids"], ["search"])
+        self.assertEqual(seen["snapshot"].digest, (
+            await self.snapshots.get(tenant_id="tenant-a", run_id=task["run_id"])
+        ).digest)
 
     async def test_worker_executes_queued_task_and_persists_output(self):
         task = await self.service.submit_task(
