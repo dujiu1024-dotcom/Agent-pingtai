@@ -75,6 +75,7 @@ include = [
   "tests/test_run_lifecycle.py",
   "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
+  "tests/test_postgres_checkpointer.py",
   "tests/test_quotas.py",
   "tests/test_quota_reporting_api.py",
   "tests/test_quota_harness_enforcement.py",
