@@ -4,7 +4,8 @@ import unittest
 from contextlib import asynccontextmanager
 
 from agent_platform.data_governance.postgres_adapters import (
-    PostgresSubjectTableAdapter, SubjectTable,
+    PostgresSubjectTableAdapter,
+    SubjectTable,
 )
 
 
