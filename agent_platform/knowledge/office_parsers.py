@@ -17,7 +17,11 @@ class PDFParser:
         import io
         reader=PdfReader(io.BytesIO(content));pages=[]
         for index,page in enumerate(reader.pages,1):
-            pages.append("\n[page:"+str(index)+"]\n"+(page.extract_text() or ""))
+            text=page.extract_text() or ""
+            # Do not let a page-number marker alone masquerade as extracted text:
+            # ParserRegistry must be able to fall through to a configured OCR adapter.
+            if text.strip():
+                pages.append("\n[page:"+str(index)+"]\n"+text)
         return "\n".join(pages)
 @dataclass
 class DOCXParser:
