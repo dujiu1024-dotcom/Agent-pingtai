@@ -186,13 +186,15 @@ class RunInterventionService:
         async with db:
             cursor = await db.execute(
                 """SELECT 1 FROM platform_run_interventions
-                   WHERE tenant_id=%s AND run_id=%s AND status='pending'
-                     AND kind IN ('decision','approval') AND NOT (payload ? 'decision')
+                   WHERE tenant_id=%s AND run_id=%s
+                     AND ((status='pending' AND kind IN ('decision','approval')
+                           AND NOT (payload ? 'decision'))
+                       OR status='rejected')
                    LIMIT 1""",
                 (self.tenant_id, UUID(run_id)),
             )
             if await cursor.fetchone() is not None:
-                raise ValueError("Run has an unresolved human decision or approval")
+                raise ValueError("Run has a pending or rejected human decision/approval")
 
     async def record_action(
         self, *, tenant_id: str, run_id: str, actor_id: str,
