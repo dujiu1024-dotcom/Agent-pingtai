@@ -1,0 +1,15 @@
+{
+  "id": "textedit",
+  "name": "文本编辑",
+  "bundle_id": "com.apple.TextEdit",
+  "launch": "open -b com.apple.TextEdit",
+  "window_match": "文本编辑",
+  "interactive": [
+    {"key": "search", "role": "AXTextField", "title": "搜索文本栏"},
+    {"key": "cancel", "role": "AXButton", "title": "取消"},
+    {"key": "open", "role": "AXButton", "title": "打开"}
+  ],
+  "dialogs": ["更新", "权限申请", "允许"],
+  "dangerous": ["删除", "清空", "退出登录"],
+  "verified_at": "2026-11-11"
+}

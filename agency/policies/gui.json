@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "models": {
+    "route": {"primary": "qwen3:1.7b", "fallback": ["rules"]},
+    "extract": {"primary": "qwen3:1.7b", "fallback": ["rules"]},
+    "judge": {"primary": "qwen3:1.7b", "fallback": ["rules"]},
+    "plan": {"primary": "remote:doubao", "fallback": ["qwen3:1.7b", "rules"]},
+    "generate": {"primary": "remote:doubao", "fallback": ["qwen3:1.7b"]},
+    "embed": {"primary": "bge-m3", "fallback": []}
+  },
+  "apps": {
+    "textedit": {"backend": "peekaboo", "verified_at": "2026-11-11"},
+    "safari": {"backend": "peekaboo", "verified_at": "2026-11-11"},
+    "browser": {"backend": "browser", "verified_at": "2026-11-11"},
+    "doubao": {"backend": "browser", "verified_at": ""}
+  },
+  "risk": {
+    "observe": "A0",
+    "screenshot": "A0",
+    "wait": "A0",
+    "assert": "A0",
+    "click": "A1",
+    "set": "A1",
+    "type": "A1",
+    "key": "A1",
+    "scroll": "A1",
+    "launch": "A2",
+    "focus": "A2"
+  },
+  "night": {"window": "23:00-08:00", "allow": []}
+}

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FDE OPC 平台设计说明 · 大白话版</title>
+<style>
+  :root{
+    --ink:#1c2430; --muted:#5b6878; --line:#e3e7ee; --bg:#f7f8fa;
+    --card:#ffffff; --accent:#2f6feb; --accent-soft:#eef3ff;
+    --warn:#b42318; --warn-soft:#fff4f2; --ok:#067647; --ok-soft:#eefbf3;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.75; font-size:16px;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:48px 24px 80px}
+  header.hero{
+    background:linear-gradient(135deg,#1b2a4a 0%,#2f6feb 100%);
+    color:#fff;border-radius:18px;padding:40px 44px;margin-bottom:32px;
+    box-shadow:0 16px 40px rgba(31,58,110,.18);
+  }
+  header.hero .kicker{font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
+  header.hero h1{margin:10px 0 12px;font-size:32px;line-height:1.3}
+  header.hero p{margin:0;opacity:.9;font-size:16px}
+  .meta{margin-top:18px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px;opacity:.85}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:28px 30px;margin:22px 0;box-shadow:0 2px 10px rgba(20,30,50,.04);
+  }
+  h2{font-size:24px;margin:0 0 6px;letter-spacing:.01em}
+  h3{font-size:18px;margin:22px 0 8px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+  .key3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0 0}
+  .key3 div{background:var(--accent-soft);border:1px solid #dbe6ff;border-radius:12px;padding:16px 18px;font-size:14px}
+  .key3 b{display:block;font-size:15px;margin-bottom:4px;color:#1d3f8a}
+  .mermaid{
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:18px;overflow-x:auto;text-align:center;margin:14px 0 6px;
+  }
+  .explain{background:#fbfcfe;border-left:4px solid var(--accent);border-radius:0 10px 10px 0;padding:14px 18px;margin:16px 0}
+  .explain p{margin:6px 0}
+  .look{font-size:13px;color:var(--muted);border-top:1px dashed var(--line);padding-top:12px;margin-top:14px}
+  .look code{background:#f0f2f6;padding:1px 6px;border-radius:5px;font-size:12.5px}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:12px 0}
+  th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;vertical-align:top}
+  th{background:#f3f5f9;font-weight:600;font-size:13px;color:#3c4a5c}
+  .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;font-weight:600}
+  .tag.bad{background:var(--warn-soft);color:var(--warn)}
+  .tag.good{background:var(--ok-soft);color:var(--ok)}
+  ul{margin:8px 0 0;padding-left:20px}
+  li{margin:5px 0}
+  .toc{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+  .toc a{
+    text-decoration:none;color:#22437f;background:#fff;border:1px solid #cfdbf3;
+    border-radius:999px;padding:5px 13px;font-size:13px;
+  }
+  .note{font-size:13px;color:var(--muted)}
+  footer{color:var(--muted);font-size:13px;text-align:center;margin-top:34px}
+  @media (max-width:820px){
+    .key3{grid-template-columns:1fr}
+    header.hero{padding:28px 24px}
+    header.hero h1{font-size:25px}
+    .card{padding:22px 18px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">FDE OPC · 平台设计说明</div>
+  <h1>这套系统到底是怎么运转的</h1>
+  <p>只根据代码推导，不引用设计文档。写给不懂技术的创始人看。</p>
+  <div class="meta">
+    <span>代码基线：2026-11-12</span>
+    <span>数据库：agency.db · schema v5 · 21 张表</span>
+    <span>主程序 3374 行 · 纯标准库</span>
+  </div>
+</header>
+
+<section class="card">
+  <h2>先记住三句话</h2>
+  <div class="key3">
+    <div><b>1 个执行器，11 份提示词</b>角色不是常驻员工，是每次被叫醒时读一遍 ROLE.md 的模型调用。</div>
+    <div><b>唯一事实源是一个 SQLite 文件</b>命令行、控制台、飞书都只是入口，最后都回到 agency.py 和 agency.db。</div>
+    <div><b>“自动”比看起来少</b>事件要人踢 sync，提醒没有定时器，产出不会自动进飞书，角色之间零调用。</div>
+  </div>
+  <div class="toc">
+    <a href="#d1">图 1 业务架构</a>
+    <a href="#d2">图 2 业务流程</a>
+    <a href="#d3">图 3 技术架构</a>
+    <a href="#d4">图 4 数据流转</a>
+    <a href="#gaps">落差清单</a>
+  </div>
+</section>
+
+<section class="card" id="d1">
+  <h2>图 1｜业务架构：有谁、谁调谁、谁负责</h2>
+  <p class="sub">依据：db.py 的 ROLE 注册表、agents/*/ROLE.md、agency.py 的 cmd_run / build_prompt / _dispatch_execute。</p>
+  <pre class="mermaid">
+flowchart TB
+    F["创始人 龍奕<br/>唯一能开闸门、唯一能关任务"]
+    subgraph ENTRY["入口层（代码里真实存在的三个）"]
+        CLI["命令行<br/>python3 agency.py ..."]
+        WEB["本地控制台<br/>console.py · 127.0.0.1:8787<br/>console.html（含 3D 办公室）"]
+        FS["飞书<br/>listener.py 长连接<br/>feishu_commands.py 解析 /指令"]
+    end
+    subgraph ROLES["11 个角色 = 11 份 ROLE.md 提示词"]
+        CS["幕僚长"]
+        PM["产品经理"]
+        PL["规划师"]
+        SE["秘书"]
+        CO["教练"]
+        SC["商机侦察"]
+        CT["内容"]
+        HR["HR"]
+        FI["财务"]
+        PR["制作人"]
+        AU["审计"]
+    end
+    EXE["agency.py run 角色 --task 任务<br/>build_prompt：事实 + 任务 + 记忆 + 指令<br/>→ 调模型 → 产出 md"]
+    BB[("SQLite 黑板<br/>agency/state/agency.db<br/>21 张表")]
+    BUS["事件总线 sync_pending<br/>按 subscriptions 决定叫醒谁"]
+    NOTE["关键事实：<br/>角色之间没有任何互相调用<br/>只有 人/入口 → 子进程 → 模型"]
+    F -->|"建任务 / 派活 / 关任务 / 开闸门"| CLI
+    F -->|"点按钮"| WEB
+    F -->|"发消息"| FS
+    CLI -->|"同进程"| EXE
+    WEB -->|"subprocess"| EXE
+    FS -->|"subprocess"| EXE
+    EXE -->|"读取当提示词"| ROLES
+    EXE -->|"读写"| BB
+    BB --> BUS
+    BUS -->|"唯一真跑过的自动唤醒：audit_flag → auditor:run"| EXE
+    ROLES ~~~ NOTE
+  </pre>
+  <div class="explain">
+    <p><b>这张图在说什么：</b>“11 个人”其实是 11 份岗位说明书，唯一的员工是 <code>agency.py run</code>。角色之间没有任何调用关系，唯一“机器叫机器”是事件订阅，目前只有 <code>audit_flag → auditor</code> 真跑通。</p>
+    <p><b>谁对谁负责：</b>只有创始人有最终权力。关任务必须带证据，Agent 无关闭权限。审计看起来独立，实际和别的角色同一个执行器，区别只是提示词；真正的自动审计是一段日期正则。</p>
+  </div>
+  <div class="look">看代码：<code>db.py:41-44</code> ROLE ｜ <code>agency.py:1855</code> cmd_run ｜ <code>agency.py:1093</code> _dispatch_execute ｜ <code>agency.py:1991</code> audit_output</div>
+</section>
+
+<section class="card" id="d2">
+  <h2>图 2｜业务流程：从需求到收尾的真实路径</h2>
+  <p class="sub">依据：cmd_task_add / cmd_plan / plan_check / plan_apply / cmd_dispatch / cmd_task_close / sync_pending。</p>
+  <pre class="mermaid">
+flowchart TD
+    A["需求 / 想法<br/>（代码里没有客户线索表、没有 CRM）"] --> B{从哪进}
+    B -->|"agency.py task add"| C["建任务校验<br/>标题 / owner / 完成标准必填<br/>start 不晚于 due<br/>kind=code 要过开工闸门 + 商务闸门"]
+    B -->|"agency.py plan 或飞书 /plan"| D["producer 用模型生成 JSON 草案<br/>plan_check 逐条校验<br/>plan_apply 只写入通过项"]
+    B -->|"控制台新建"| C2["console.create_task<br/>kind 默认写成 plan，绕过 kind 校验"]
+    C --> E[("tasks 表 status=todo")]
+    C2 --> E
+    D --> E
+    E --> F["log_event task_created → events 表"]
+    F --> G["sync 消费事件<br/>只在本地 09:00–23:00<br/>必须有人/按钮/飞书指令触发"]
+    G -->|"action=notify"| H["feishu_bot.send_text 发一条文本"]
+    G -->|"action=run"| I["唤醒某个角色执行"]
+    G -->|"无订阅"| G2["直接标记 delivered_at<br/>归档，不通知任何人"]
+    E --> J["dispatch 选 ready<br/>owner 是角色 + 今天在窗口内 + 依赖全关"]
+    J --> K["_dispatch_execute<br/>facts 最近 8 条 + 向量检索 8 条 + 六槽位记忆"]
+    K --> L["调模型<br/>写 agency/outputs/时间-角色-任务.md<br/>写 agent_runs、wm_session"]
+    L --> M["创始人自己看产出<br/>没有自动验收、没有审批流"]
+    M --> N{创始人判断}
+    N -->|"再改一版"| K
+    N -->|"task close --evidence"| O[("tasks.status=closed + task_closed 事件")]
+    N -->|"先放着"| P["保持 todo<br/>check / brief 显示临期或逾期"]
+    O --> Q["wbs 导出 CSV · check_consistency 对工时"]
+    O -.->|"代码里不存在"| R["自动推飞书文档 / 通知客户 / 开票"]
+    style R stroke-dasharray: 5 5,fill:#fff3f3
+  </pre>
+  <div class="explain">
+    <p><b>这张图在说什么：</b>链条起点是“人已经把需求想清楚了”，代码里没有客户/线索表。任务只有 <code>todo</code> 和 <code>closed</code> 两种状态在跑，中间的“进行中/阻塞/待评审”从未被写入。</p>
+    <p><b>交付终点是本地一个 markdown 文件。</b>没有自动推飞书文档、没有通知客户、没有归档到客户目录。红色虚线那块就是“设计上有、代码里没有”。</p>
+  </div>
+  <div class="look">看代码：<code>agency.py:661</code> cmd_task_add ｜ <code>agency.py:1029</code> cmd_plan ｜ <code>agency.py:1121</code> cmd_dispatch ｜ <code>agency.py:712</code> cmd_task_close ｜ <code>console.py:448</code> kind 默认值</div>
+</section>
+
+<section class="card" id="d3">
+  <h2>图 3｜技术架构：进程、模块、外部依赖</h2>
+  <p class="sub">依据：仓库根目录全部 .py、config.json、.env 读取逻辑、.venv-listener、启动脚本、limits.json。</p>
+  <pre class="mermaid">
+flowchart TB
+    subgraph L1["第一层：入口进程"]
+        P1["agency.py<br/>命令行 · 40+ 子命令 · 3374 行"]
+        P2["console.py<br/>HTTP 127.0.0.1:8787<br/>console.html 前端"]
+        P3["listener.py<br/>飞书长连接<br/>跑在 .venv-listener（lark-oapi）"]
+        P4["run-listener.sh / 启动服务.command<br/>手工启动脚本，无 cron / launchd"]
+    end
+    subgraph L2["第二层：编排与规则"]
+        M1["任务台账 / 闸门 / 计划校验"]
+        M2["调度 dispatch_ready · _dispatch_execute"]
+        M3["事件总线 log_event · sync_pending · subscriptions"]
+        M4["提示词组装 build_prompt · recent_facts · retrieved_context"]
+        M5["飞书指令路由 feishu_commands.handle"]
+        M6["财务 / WBS / 一致性 cmd_finance · cmd_wbs · tools/check_consistency.py"]
+    end
+    subgraph L3["第三层：能力模块"]
+        C1["db.py 建表与 5 次迁移"]
+        C2["memory.py wm_session 六槽位"]
+        C3["vectors.py bge-m3 + hash-tfidf 兜底"]
+        C4["ratelimit.py 滑动窗口 + 并发闸门"]
+        C5["feishu_bot.py 应用身份"]
+        C6["policy.py · llm_local.py"]
+        C7["gui.py · browser.py · probe.py"]
+    end
+    subgraph L4["第四层：数据"]
+        D1[("SQLite agency.db<br/>21 张表 · WAL")]
+        D2["agency/outputs/*.md"]
+        D3["agency/state/gui、probe、tmp"]
+        D4["config.json · limits.json · policies/gui.json"]
+    end
+    subgraph L5["第五层：外部依赖"]
+        X1["模型 endpoint<br/>OpenAI 兼容 /chat/completions"]
+        X2["Ollama 127.0.0.1:11434<br/>bge-m3，不可用自动降级"]
+        X3["飞书开放平台<br/>tenant_access_token · im/v1/messages"]
+        X4["lark-cli（用户身份）<br/>只被 check_consistency 调用"]
+        X5["Peekaboo / screencapture<br/>OpenClaw gateway"]
+    end
+    P1 --> M1 & M2 & M3 & M4 & M6
+    P2 -->|"HTTP API"| M1 & M2 & M3
+    P2 -->|"subprocess"| P1
+    P3 -->|"subprocess"| P1
+    P3 --> M5
+    M1 & M2 & M3 & M4 --> C1 & C2 & C3 & C4
+    M3 --> C5
+    M6 --> C5
+    P1 --> C6 & C7
+    C1 --> D1
+    M2 --> D2
+    C7 --> D3
+    M6 --> D4
+    C5 --> X3
+    C3 --> X2
+    P1 --> X1
+    M6 --> X4
+    C7 --> X5
+  </pre>
+  <div class="explain">
+    <p><b>这张图在说什么：</b>一个 Python 主程序 + 两个壳。控制台和飞书都通过 <code>subprocess</code> 回到 <code>agency.py</code>，所以任何入口做的事最终都落在同一个库、走同一套校验。</p>
+    <p><b>只有一个真数据库：SQLite 一个文件。</b>主链路零第三方依赖；唯一装了第三方包的是飞书监听，所以有两套运行环境。</p>
+  </div>
+  <div class="look">看代码：<code>agency.py:44-52</code> import ｜ <code>agency/config.json</code> ｜ <code>console.py:551</code> _execute ｜ <code>feishu_commands.py:175</code> _run ｜ <code>agency/limits.json</code></div>
+</section>
+
+<section class="card" id="d4">
+  <h2>图 4｜数据流转：任务、事件、事实各走哪条路</h2>
+  <p class="sub">依据：log_event / sync_pending / build_prompt / cmd_facts / console.snapshot / vectors.index_all。</p>
+  <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as 入口
+    participant A as agency.py
+    participant T as tasks 表
+    participant E as events 表
+    participant S as sync_pending
+    participant SUB as subscriptions
+    participant K as config_kv
+    participant F as 飞书
+    participant X as _dispatch_execute
+    participant M as 模型 endpoint
+    participant O as agent_runs / outputs / wm_session
+    participant P as console 页面接口
+    U->>A: task add（标题/owner/完成标准/起止/kind）
+    A->>A: 校验必填、start 不晚于 due、code 过双闸门
+    A->>T: INSERT id=T-00xx, status=todo, content_hash
+    A->>E: log_event task_created<br/>dedup_key = hash(微秒时间 · 类型 · ref · detail)
+    Note over E: 事件只落库，不会自己发出去
+    U->>S: 必须有人踢一脚（sync / 按钮 / 飞书 /sync）
+    S->>E: SELECT 全部 delivered_at IS NULL
+    S->>SUB: 查 enabled=1 的订阅
+    alt 没有任何启用订阅
+        S->>E: UPDATE delivered_at（归档，谁也不知道）
+    else action = notify
+        S->>F: send_text
+        S->>K: 写 sync.delivered.事件id.target.action
+    else action = run
+        S->>X: 用事件绑定的 task 唤醒角色
+        X->>M: build_prompt（事实+任务+记忆+向量）
+        M-->>X: 文本产出
+        X->>O: 写 outputs、agent_runs、wm_session
+        X->>E: log_event agent_run
+    end
+    Note over S,F: 失败不标记 delivered，写 dead_letter
+    P->>T: snapshot() 读全部任务
+    P->>E: event_list() 最近 20 条
+    P->>SUB: subscriptions_view() + 今日 token
+    P->>O: agent_runs 最近 8 条
+    P-->>U: JSON → console.html（3D 办公室/任务卡/事件流）
+  </pre>
+  <pre class="mermaid">
+flowchart LR
+    subgraph FACT["事实线（facts 表）"]
+        FA["facts add<br/>--level S1..S4 --source 必填"] --> FB[("facts 表<br/>id=F-000x, source_level, source_ref<br/>content_hash 去重")]
+        FB --> FC["recent_facts(project, 8)<br/>按创建时间倒序取最近 8 条"]
+        FC --> FD["build_prompt 的【相关事实】"]
+    end
+    subgraph VEC["文档线（embeddings 表）"]
+        VA["vector index-all<br/>company/ + templates/"] --> VB[("embeddings 表<br/>source_id, chunk_no, model, dim, vector")]
+        VA2["vector index clients/xxx"] --> VB
+        VB --> VC["search(query, project, k=8)<br/>Ollama 可用走 bge-m3，否则 hash"]
+        VC --> VD["_doc_headers 补命中文件首块"]
+        VD --> VE["build_prompt 的【相关资料】"]
+    end
+    FD --> PP["build_prompt 四段固定顺序"]
+    VE --> PP
+    PP --> LLM["模型"]
+    LLM --> OUT["agency/outputs/*.md"]
+    OUT -.->|"代码里没有回写"| FB
+    OUT -.->|"代码里没有自动索引"| VB
+  </pre>
+  <div class="explain">
+    <p><b>这张图在说什么：</b>任务先落 <code>tasks</code>，再生成一条 <code>events</code>；事件不会自己发，必须有人调 <code>sync</code>。投递成功写 <code>config_kv</code> 标记防重，失败写 <code>dead_letter</code>。</p>
+    <p><b>事实和文档是两条互不相通的管道。</b><code>facts</code> 只按“最近 8 条”进提示词，不参与向量检索；<code>embeddings</code> 只索引 .md/.txt 文件。产出也不会自动回流成事实或索引。</p>
+  </div>
+  <div class="look">看代码：<code>agency.py:388</code> log_event ｜ <code>agency.py:1312</code> sync_pending ｜ <code>agency.py:1634</code> build_prompt ｜ <code>console.py:362</code> snapshot ｜ <code>vectors.py:229</code> index_all ｜ <code>memory.py:149</code> render</div>
+</section>
+
+<section class="card" id="gaps">
+  <h2>落差清单：看起来有、实际没接上</h2>
+  <p class="sub">判定标准：表 0 行且全仓库无引用 = 空壳；事件类型有定义但无 log_event 调用 = 永不触发。</p>
+
+  <h3>一、空壳表（0 行 + 业务代码零引用）</h3>
+  <table>
+    <thead><tr><th>表</th><th>现状</th><th>直接后果</th></tr></thead>
+    <tbody>
+      <tr><td><code>reminders</code></td><td><span class="tag bad">空壳</span> 仅 db.py 建表</td><td>“到点提醒”没有实现，只有手动 check</td></tr>
+      <tr><td><code>feishu_tasks</code></td><td><span class="tag bad">空壳</span> 仅 db.py 建表</td><td>飞书任务映射层不存在</td></tr>
+      <tr><td><code>docs</code></td><td><span class="tag bad">空壳</span> 仅 db.py 建表</td><td>文档登记、密级 L1–L4、飞书同步全空</td></tr>
+      <tr><td><code>entities</code> / <code>relations</code></td><td><span class="tag bad">空壳</span> 零读写</td><td>知识图谱是纯占位</td></tr>
+      <tr><td><code>quotes</code>/<code>contracts</code>/<code>invoices</code>/<code>payments</code>/<code>costs</code></td><td><span class="tag bad">全 0 行</span></td><td>财务只有录入工具，没有业务数据</td></tr>
+    </tbody>
+  </table>
+
+  <h3>二、永远不会触发的事件（19 种定义，只发出 8 种）</h3>
+  <p>真正会发出的只有：<code>task_created</code>、<code>tasks_created</code>、<code>task_closed</code>、<code>gate_confirmed</code>、<code>gate_revoked</code>、<code>agent_run</code>、<code>audit_flag</code>、<code>check</code>。</p>
+  <p>因此这 3 条已启用的订阅<strong>永远等不到事件</strong>：<code>task_due_soon → secretary:notify</code>、<code>task_overdue → secretary:notify</code>、<code>invoice_overdue → finance:notify</code>。临期/逾期提醒、发票逾期提醒在代码层面不存在。</p>
+
+  <h3>三、实现与意图不一致（挑最关键的）</h3>
+  <table>
+    <thead><tr><th>落差</th><th>代码事实</th><th>影响</th></tr></thead>
+    <tbody>
+      <tr><td>任务状态机是二态</td><td>只写 todo / closed；_task_view 折叠 open/closed</td><td>看板看不到“在做/阻塞/待评审”</td></tr>
+      <tr><td>事件去重形同虚设</td><td>dedup_key 含微秒时间戳</td><td>同一动作重跑会重复产生事件</td></tr>
+      <tr><td>审计不独立</td><td>与其它角色同一执行器；自动审计只是日期正则</td><td>不查数字来源、不查报价/合同、不冻结文档</td></tr>
+      <tr><td>失败账本两套</td><td>run 失败写 agent_runs.ok=0；dispatch/sync 失败才写 dead_letter</td><td>手工失败不进死信，容易漏看</td></tr>
+      <tr><td>日 token 闸可绕过</td><td>token_gate 只在 run / plan 调用</td><td>dispatch 与事件唤醒不检查日上限</td></tr>
+      <tr><td>控制台可写非法 kind</td><td>console.py:448 默认 kind="plan"，db 只认 general/code</td><td>能写进校验器判非法的数据</td></tr>
+      <tr><td>两套意图识别</td><td>控制台规则打分；飞书调 LLM 200 tokens</td><td>行为不一致，飞书这次调用不限流、不记账</td></tr>
+      <tr><td>事实不进向量检索</td><td>facts 只按最近 8 条注入；index 只收文件</td><td>语义检索搜不到历史事实</td></tr>
+      <tr><td>六槽位只用了一个</td><td>多数槽位是 []；digest 仅 1 条有值</td><td>记忆压缩逻辑没被真实压力验证</td></tr>
+      <tr><td>导出包含客户产出</td><td>cmd_export 的 include 含 outputs</td><td>与 README“排除 outputs”相反</td></tr>
+      <tr><td>一致性检查可跳过飞书</td><td>飞书比对失败只打印提示，不置失败</td><td>“全绿”可能是没连上飞书</td></tr>
+      <tr><td>商务闸门被旁路</td><td>quotes/contracts 0 行 → 新 code 任务必被拒；历史任务由 migrate-json 直接 INSERT</td><td>闸门只管命令行一条路</td></tr>
+      <tr><td>没有定时器</td><td>无 cron / launchd；sync 和 check 靠人触发</td><td>“事件驱动”实际是“人驱动”</td></tr>
+      <tr><td>3D 办公室是演出</td><td>页面读数据库快照；人物动画在前端</td><td>看到“有人在忙”不等于真在跑</td></tr>
+    </tbody>
+  </table>
+
+  <h3>四、如果只改三处</h3>
+  <ul>
+    <li><b>补事件产生点：</b>在 check 里生成 task_due_soon / task_overdue，在发票查询里生成 invoice_overdue，否则提醒订阅永远是摆设。</li>
+    <li><b>统一状态机：</b>派活写 doing，产出待审写 review，前端不再折叠状态。</li>
+    <li><b>堵住闸门旁路：</b>控制台补商务闸门并修正 kind 默认值；migrate-json 导入 code 任务时至少告警。</li>
+  </ul>
+
+  <h3>五、真能用的部分（避免只讲坏消息）</h3>
+  <p><span class="tag good">真能用</span> 任务台账与强制证据关闭 · 双闸门（仅命令行） · 计划拆解与校验 · 派活与预算熔断 · 事件投递与死信 · 向量检索（bge-m3 + hash 兜底）· 按模型限流 · 控制台任务/派活/事件视图 · 飞书斜杠指令 · 电脑操作层（依赖 Peekaboo/OpenClaw，缺依赖直接报错不伪装）。</p>
+</section>
+
+<section class="card">
+  <h2>一页数字（2026-11-12 实测）</h2>
+  <table>
+    <thead><tr><th>项目</th><th>数值</th></tr></thead>
+    <tbody>
+      <tr><td>数据库</td><td>schema v5，21 张表，WAL 模式</td></tr>
+      <tr><td>任务</td><td>30 条（23 关 / 7 开）</td></tr>
+      <tr><td>事件</td><td>112 条（24 条未投递），实际只出现 7 种类型</td></tr>
+      <tr><td>Agent 运行</td><td>42 条记录；content 21 次里 10 次失败（多为限流）</td></tr>
+      <tr><td>事实</td><td>4 条，全部 S1</td></tr>
+      <tr><td>工作记忆</td><td>13 行，只有 artifacts 槽普遍有内容</td></tr>
+      <tr><td>向量</td><td>382 块 / 29 个文件（bge-m3 191 + hash 191）</td></tr>
+      <tr><td>订阅</td><td>10 条，5 条启用，其中 3 条永不触发</td></tr>
+      <tr><td>角色</td><td>11 个目录与 ROLE 注册表一致</td></tr>
+      <tr><td>外部依赖</td><td>模型 endpoint、Ollama、飞书、lark-cli、Peekaboo/OpenClaw</td></tr>
+    </tbody>
+  </table>
+  <p class="note">完整证据与逐条代码位置见同目录 05-落差清单.md；四张图的 Markdown 版本见 01–04。</p>
+</section>
+
+<footer>FDE OPC · 平台设计说明 · 以代码为准 · 2026-11-12</footer>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    securityLevel: 'loose',
+    fontFamily: '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif',
+    themeVariables: {
+      primaryColor: '#eef3ff',
+      primaryBorderColor: '#8fb0ee',
+      primaryTextColor: '#1c2430',
+      lineColor: '#7b8aa0',
+      secondaryColor: '#f7f8fa',
+      tertiaryColor: '#ffffff',
+      clusterBkg: '#fbfcfe',
+      clusterBorder: '#d7deea',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis', htmlLabels: true, padding: 14 },
+    sequence: { mirrorActors: false, messageMargin: 26, actorMargin: 38 }
+  });
+</script>
+</body>
+</html>
