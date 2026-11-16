@@ -13,7 +13,7 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
     def test_rejects_secret_environment_allowlist(self):
         with self.assertRaisesRegex(ValueError, "secret-bearing"):
             OciSandboxConfig(
-                image=IMAGE,
+                image=IMAGE, runtime="podman",
                 allowed_environment_keys=frozenset({"MODEL_API_KEY"}),
             )
 
@@ -89,7 +89,7 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
     def test_only_explicit_non_secret_environment_is_passed(self):
         runner = OciSandboxRunner(
             OciSandboxConfig(
-                image=IMAGE,
+                image=IMAGE, runtime="podman",
                 allowed_environment_keys=frozenset({"LANG"}),
             )
         )
