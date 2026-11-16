@@ -2,10 +2,12 @@
 BEGIN;
 
 ALTER TABLE platform_quota_budgets
-    DROP CONSTRAINT IF EXISTS platform_quota_budgets_scope_type_check;
+    DROP CONSTRAINT IF EXISTS platform_quota_budgets_scope_type_check_v2;
 ALTER TABLE platform_quota_budgets
-    ADD CONSTRAINT platform_quota_budgets_scope_type_check
-    CHECK (scope_type IN ('tenant','project','agent','model','run','queue','worker_pool'));
+    ADD CONSTRAINT platform_quota_budgets_scope_type_check_v2
+    CHECK (scope_type IN ('tenant','project','agent','model','run','queue','worker_pool')) NOT VALID;
+ALTER TABLE platform_quota_budgets
+    DROP CONSTRAINT IF EXISTS platform_quota_budgets_scope_type_check;
 
 ALTER TABLE platform_quota_reservations
     ADD COLUMN IF NOT EXISTS root_run_id uuid;
