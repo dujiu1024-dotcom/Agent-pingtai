@@ -144,3 +144,26 @@ class DataLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    async def test_retention_and_migration_validation_reject_ambiguous_types(self):
+        for days in (True, 1.5, "30", -1):
+            with self.subTest(soft_delete_days=days), self.assertRaises(ValueError):
+                RetentionPolicy("conversation", timedelta(days=90), soft_delete_days=days)
+
+        from agent_platform.data_governance.lifecycle import PostgresMigrationRepository
+
+        class Connection:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *_args):
+                return None
+
+        repository = PostgresMigrationRepository(lambda: Connection())
+        for counts in ((True, 1), (1, False), (1.5, 1), (-1, 1)):
+            with self.subTest(counts=counts), self.assertRaises(ValueError):
+                await repository.validate_batch(
+                    "tenant-a", "batch-a", source_count=counts[0],
+                    target_count=counts[1], source_checksum="source",
+                    target_checksum="target",
+                )
+
