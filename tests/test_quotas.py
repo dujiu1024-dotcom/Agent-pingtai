@@ -234,3 +234,14 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.store.list_usage(
                 "tenant-a", self.start, self.end, model_key=" ",
             )
+
+        from agent_platform.quotas.postgres import PostgresQuotaStore
+        postgres = PostgresQuotaStore(lambda: self.fail("invalid export must not connect"))
+        with self.assertRaisesRegex(ValueError, "integer"):
+            await postgres.list_usage("tenant-a", self.start, self.end, limit=True)
+        with self.assertRaisesRegex(ValueError, "timezone-aware"):
+            await postgres.list_usage(
+                "tenant-a", self.start.replace(tzinfo=None), self.end,
+            )
+        with self.assertRaisesRegex(ValueError, "tenant_id"):
+            await postgres.list_usage(" ", self.start, self.end)
