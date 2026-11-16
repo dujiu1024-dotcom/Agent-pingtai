@@ -85,6 +85,10 @@ class StructuredOutputSchemaRegistry:
         self._schemas[key] = value
 
     def resolve(self, schema_id: str, version: int) -> dict[str, Any]:
+        if not isinstance(schema_id, str) or not schema_id.strip():
+            raise ValueError("schema_id must be a non-empty string")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("schema version must be a positive integer")
         try:
             schema = self._schemas[(schema_id, version)]
         except KeyError as exc:
