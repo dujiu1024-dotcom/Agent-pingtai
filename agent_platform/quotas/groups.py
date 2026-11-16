@@ -11,10 +11,13 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from agent_platform.quotas.service import (
-    BudgetExceeded, QuotaReservation, UsageEvent, InMemoryQuotaStore,
-)
 from agent_platform.quotas.postgres import PostgresQuotaStore
+from agent_platform.quotas.service import (
+    BudgetExceeded,
+    InMemoryQuotaStore,
+    QuotaReservation,
+    UsageEvent,
+)
 
 
 @dataclass(frozen=True)
