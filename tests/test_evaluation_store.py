@@ -93,7 +93,7 @@ class FakeEvalConnection:
 
 class FakeEvalDb:
     def __init__(self):
-        self.datasets, self.cases, self.runs, self.scores = {}, {}, [], []
+        self.datasets, self.cases, self.runs, self.scores = {}, {}, [], {}
     async def connect(self):
         return FakeEvalConnection(self)
 
