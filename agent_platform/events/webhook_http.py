@@ -112,7 +112,8 @@ class PinnedWebhookHttpTransport:
             key: value for key, value in headers.items()
             if key.lower() not in {"host", "content-length", "connection", "transfer-encoding"}
         }
-        request_headers["Host"] = hostname if port == 443 else f"{hostname}:{port}"
+        host_header = f"[{hostname}]" if ":" in hostname else hostname
+        request_headers["Host"] = host_header if port == 443 else f"{host_header}:{port}"
         request_headers["Content-Length"] = str(len(body))
         request_headers["Connection"] = "close"
 
