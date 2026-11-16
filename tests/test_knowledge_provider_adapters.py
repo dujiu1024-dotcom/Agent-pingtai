@@ -144,7 +144,7 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             provider.extract_text(b"%PDF-content", "application/pdf"),
-            "\\n[page:1]\\nOCR extracted source text",
+            "\n[page:1]\nOCR extracted source text",
         )
         self.assertEqual(client.calls[0][0], "POST")
         self.assertEqual(
