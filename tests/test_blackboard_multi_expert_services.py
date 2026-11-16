@@ -266,5 +266,98 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_conflict_resolution_requires_one_explicit_decision_per_conflict(self):
+        class MissingDecisionCallbacks(WorkflowCallbacks):
+            async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
+                return {"synthesis": dict(synthesis), "decisions": []}
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=MissingDecisionCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task", "run_id": "missing-decision"}
+        contribution = await services.run_expert(
+            assignment={"expert_id": "researcher"},
+            objective="resolve evidence",
+            run_context=context,
+        )
+        synthesis = await services.synthesize(
+            objective="resolve evidence", contributions=[contribution], run_context=context
+        )
+        review = await services.review(
+            synthesis=synthesis, contributions=[contribution], run_context=context
+        )
+        with self.assertRaisesRegex(ValueError, "decide every persisted conflict"):
+            await services.resolve_conflicts(
+                synthesis=synthesis, conflicts=review["conflicts"], run_context=context
+            )
+
+    async def test_conflict_resolution_rejects_duplicate_or_incomplete_decisions(self):
+        class DuplicateDecisionCallbacks(WorkflowCallbacks):
+            async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
+                decision = {
+                    "conflict_key": "market-growth",
+                    "outcome": "accept",
+                    "rationale": "source is authoritative",
+                }
+                return {"synthesis": dict(synthesis), "decisions": [decision, decision]}
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=DuplicateDecisionCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task", "run_id": "duplicate-decision"}
+        contribution = await services.run_expert(
+            assignment={"expert_id": "researcher"},
+            objective="resolve evidence",
+            run_context=context,
+        )
+        synthesis = await services.synthesize(
+            objective="resolve evidence", contributions=[contribution], run_context=context
+        )
+        review = await services.review(
+            synthesis=synthesis, contributions=[contribution], run_context=context
+        )
+        with self.assertRaisesRegex(ValueError, "multiple decisions"):
+            await services.resolve_conflicts(
+                synthesis=synthesis, conflicts=review["conflicts"], run_context=context
+            )
+
+    async def test_conflict_resolution_rejects_missing_rationale(self):
+        class IncompleteDecisionCallbacks(WorkflowCallbacks):
+            async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
+                return {
+                    "synthesis": dict(synthesis),
+                    "decisions": [{
+                        "conflict_key": "market-growth",
+                        "outcome": "accept",
+                    }],
+                }
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=IncompleteDecisionCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task", "run_id": "incomplete-decision"}
+        contribution = await services.run_expert(
+            assignment={"expert_id": "researcher"},
+            objective="resolve evidence",
+            run_context=context,
+        )
+        synthesis = await services.synthesize(
+            objective="resolve evidence", contributions=[contribution], run_context=context
+        )
+        review = await services.review(
+            synthesis=synthesis, contributions=[contribution], run_context=context
+        )
+        with self.assertRaisesRegex(ValueError, "non-empty rationale"):
+            await services.resolve_conflicts(
+                synthesis=synthesis, conflicts=review["conflicts"], run_context=context
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
