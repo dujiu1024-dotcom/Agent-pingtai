@@ -18,7 +18,7 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
             )
 
     def test_command_has_required_isolation_and_no_host_mounts(self):
-        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE))
+        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE, runtime="podman"))
         command = runner.build_command(("python", "-I", "-c", "print('ok')"))
         self.assertIn("--network=none", command)
         self.assertIn("--read-only", command)
@@ -42,12 +42,24 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(command[-5:], (IMAGE, "python", "-I", "-c", "print('ok')"))
 
     def test_rejects_untrusted_or_secret_environment_values(self):
-        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE))
+        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE, runtime="podman"))
         with self.assertRaisesRegex(ValueError, "not explicitly allowlisted"):
             runner.build_command(("python",), environment={"HOME": "/root"})
         with self.assertRaisesRegex(ValueError, "NUL-free"):
             runner.build_command(("python", "bad\x00arg"))
 
+
+
+    def test_docker_requires_verified_user_namespace_isolation_and_uses_valid_flags(self):
+        with self.assertRaisesRegex(ValueError, "verified rootless mode or daemon userns-remap"):
+            OciSandboxConfig(image=IMAGE, runtime="docker")
+        config = OciSandboxConfig(
+            image=IMAGE, runtime="docker", docker_userns_remap_verified=True,
+        )
+        command = OciSandboxRunner(config).build_command(("python",))
+        self.assertNotIn("--userns=private", command)
+        self.assertNotIn("--pid=private", command)
+        self.assertIn("--ipc=private", command)
 
     def test_rejects_boolean_and_unbounded_resource_configuration(self):
         for kwargs in (
@@ -62,7 +74,7 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejects_oversized_stdin_and_boolean_timeout(self):
         runner = OciSandboxRunner(OciSandboxConfig(
-            image=IMAGE, max_stdin_bytes=4,
+            image=IMAGE, runtime="podman", max_stdin_bytes=4,
         ))
         with self.assertRaisesRegex(ValueError, "input limit"):
             await runner.run(("python", "-I", "-c", "pass"), stdin=b"12345")
@@ -70,7 +82,7 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
             await runner.run(("python", "-I", "-c", "pass"), timeout_seconds=True)
 
     def test_rejects_string_instead_of_argv_sequence(self):
-        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE))
+        runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE, runtime="podman"))
         with self.assertRaisesRegex(ValueError, "argv sequence"):
             runner.build_command("python")
 
