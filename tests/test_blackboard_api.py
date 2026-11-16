@@ -16,11 +16,13 @@ class InMemoryBlackboard:
     def __init__(self, tenant_id="tenant-a"):
         self.tenant_id = tenant_id
         self.entries = {}
+        self.history = {}
 
     async def propose(self, entry):
         if entry.entry_id in self.entries:
             raise RuntimeError("duplicate entry")
         self.entries[entry.entry_id] = entry
+        self.history.setdefault(entry.entry_id, []).append(entry)
         return entry
 
     async def get(self, entry_id):
@@ -34,6 +36,9 @@ class InMemoryBlackboard:
         ]
         return values[:limit]
 
+    async def list_versions(self, entry_id):
+        return list(self.history.get(entry_id, ()))
+
     async def revise(self, entry_id, *, expected_version, replacement):
         current = self.entries.get(entry_id)
         if current is None:
@@ -42,6 +47,7 @@ class InMemoryBlackboard:
             raise VersionConflict("stale version")
         revised = replace(replacement, version=expected_version + 1)
         self.entries[entry_id] = revised
+        self.history.setdefault(entry_id, []).append(revised)
         return revised
 
     async def record_challenge(self, entry_id, challenger_id, reason, evidence_refs):
@@ -110,6 +116,28 @@ class BlackboardApiTests(unittest.TestCase):
             verify_evidence_refs=verify_evidence_refs,
         ))
         self.client = TestClient(app)
+
+    def test_entry_history_returns_all_immutable_versions(self):
+        proposed = self.client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "task", "scope_id": "task-a", "kind": "claim",
+                "content": {"claim": "initial"},
+            },
+        )
+        self.assertEqual(proposed.status_code, 201)
+        entry_id = proposed.json()["entry_id"]
+        revised = self.client.patch(
+            f"/api/platform/v1/blackboard/entries/{entry_id}",
+            json={"expected_version": 1, "content": {"claim": "corrected"}},
+        )
+        self.assertEqual(revised.status_code, 200)
+        history = self.client.get(
+            f"/api/platform/v1/blackboard/entries/{entry_id}/history",
+        )
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual([item["version"] for item in history.json()["items"]], [1, 2])
+        self.assertEqual(history.json()["items"][0]["content"]["claim"], "initial")
 
     def test_propose_list_get_challenge_decide_and_revise(self):
         proposed = self.client.post(

@@ -33,6 +33,10 @@ class BlackboardRepository(Protocol):
     ) -> list[BlackboardEntry]:
         ...
 
+    async def list_versions(self, entry_id: str) -> list[BlackboardEntry]:
+        """Return the immutable version chain for one tenant-scoped entry."""
+        ...
+
     async def revise(
         self,
         entry_id: str,

@@ -120,6 +120,15 @@ def create_blackboard_router(
             raise HTTPException(409, str(exc)) from exc
         return serialize(persisted)
 
+    @router.get("/entries/{entry_id}/history")
+    async def entry_history(entry_id: str, request: Request):
+        _, repository, entry = await target_context(request, entry_id, "read")
+        list_versions = getattr(repository, "list_versions", None)
+        if list_versions is None:
+            raise HTTPException(501, "Blackboard repository does not expose version history")
+        versions = await list_versions(entry.entry_id)
+        return {"items": [serialize(version) for version in versions]}
+
     @router.get("/entries/{entry_id}")
     async def get_entry(entry_id: str, request: Request):
         _, _, entry = await target_context(request, entry_id, "read")
