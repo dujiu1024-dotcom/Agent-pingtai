@@ -224,5 +224,49 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         self.assertEqual(other.json()["items"], [])
 
 
+    def test_memory_correction_and_export_api_are_scoped(self):
+        proposed = self.client.post(
+            "/api/platform/v1/memories/candidates",
+            json={"scope":"user","content":"old preference","source_ref":"conversation:1","confidence":0.8},
+        )
+        memory_id = proposed.json()["memory_id"]
+        self.assertEqual(self.client.post(f"/api/platform/v1/memories/{memory_id}/confirm").status_code, 200)
+        corrected = self.client.patch(
+            f"/api/platform/v1/memories/{memory_id}",
+            json={"content":"updated preference","source_ref":"conversation:2","confidence":0.95},
+        )
+        self.assertEqual(corrected.status_code, 200)
+        self.assertEqual(corrected.json()["version"], 3)
+        exported = self.client.get("/api/platform/v1/memories/export")
+        self.assertEqual(exported.status_code, 200)
+        self.assertEqual(exported.json()["items"][0]["content"], "updated preference")
+        self.assertEqual(exported.json()["items"][0]["source_ref"], "conversation:2")
+        other = self.client.get("/api/platform/v1/memories/export", headers={"x-user":"user-b"})
+        self.assertEqual(other.json()["items"], [])
+        denied = self.client.patch(
+            f"/api/platform/v1/memories/{memory_id}",
+            json={"content":"takeover","source_ref":"conversation:3"},
+            headers={"x-user":"user-b"},
+        )
+        self.assertEqual(denied.status_code, 403)
+
+    def test_memory_correction_rejects_invalid_payload(self):
+        proposed = self.client.post(
+            "/api/platform/v1/memories/candidates",
+            json={"scope":"user","content":"old preference","source_ref":"conversation:1"},
+        )
+        memory_id = proposed.json()["memory_id"]
+        self.client.post(f"/api/platform/v1/memories/{memory_id}/confirm")
+        for payload in (
+            {"content":"","source_ref":"conversation:2"},
+            {"content":"new","source_ref":""},
+            {"content":"new","source_ref":"conversation:2","confidence":True},
+            {"content":"new","source_ref":"conversation:2","confidence":1.1},
+        ):
+            response = self.client.patch(f"/api/platform/v1/memories/{memory_id}",json=payload)
+            self.assertEqual(response.status_code,400)
+
+
+
 if __name__ == "__main__":
     unittest.main()
