@@ -204,14 +204,9 @@ class RegistryBackedTaskCenterService:
         )
         if not created:
             # The unique idempotency key resolves to the original Run and snapshot.
-            existing = await self.run_store.get_task_record(
-                tenant_id, self._task_id_for_idempotency(actor_id, idempotency_key),
-                actor_id=actor_id,
+            existing = await self.run_store.get_task_by_idempotency(
+                tenant_id, actor_id, idempotency_key,
             )
-            if existing is None:
-                existing = await self.run_store.get_task_by_idempotency(
-                    tenant_id, actor_id, idempotency_key,
-                )
             if existing is None:
                 raise RuntimeError("idempotent task record disappeared")
             return _task_view(existing)
@@ -245,19 +240,7 @@ class RegistryBackedTaskCenterService:
             raise RuntimeError("created task record could not be read")
         return _task_view(record)
 
-    @staticmethod
-    def _task_id_for_idempotency(actor_id: str, idempotency_key: str | None) -> str:
-        # Compatibility hook for stores that expose a direct idempotency lookup.
-        return idempotency_key or actor_id
-
     async def get_task(
-        self, *, tenant_id: str, task_id: str,
-    ) -> Mapping[str, Any] | None:
-        self._check_tenant(tenant_id)
-        row = await self.run_store.get_task_record(tenant_id, task_id)
-        return _task_view(row) if row is not None else None
-
-    async def get_task_for_actor(
         self, *, tenant_id: str, task_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None:
         self._check_tenant(tenant_id)
