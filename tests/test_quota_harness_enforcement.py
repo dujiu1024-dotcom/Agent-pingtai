@@ -155,5 +155,68 @@ class QuotaHarnessEnforcementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inner.calls, 0)
 
 
+    async def test_missing_provider_usage_fails_closed_and_keeps_reservation(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"), hard_concurrency=1,
+        ))
+
+        class MissingUsageHarness:
+            async def run(self, _request):
+                return SimpleNamespace(usage={}, tool_calls=())
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            MissingUsageHarness(), quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-missing-usage",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        with self.assertRaisesRegex(ValueError, "input_tokens"):
+            await adapter.run(request)
+        tokens, cost, concurrency = await store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            now - timedelta(hours=1), now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (100, Decimal("0.10"), 1))
+
+    async def test_boolean_provider_usage_is_rejected(self):
+        now = datetime.now(timezone.utc)
+        store = InMemoryQuotaStore()
+        service = QuotaService(store)
+        await service.configure(Budget(
+            tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+            period_start=now - timedelta(hours=1), period_end=now + timedelta(hours=1),
+            hard_tokens=1000, hard_cost_usd=Decimal("1.00"),
+        ))
+
+        class InvalidUsageHarness:
+            async def run(self, _request):
+                return SimpleNamespace(
+                    usage={"input_tokens": True, "output_tokens": 5},
+                    tool_calls=(),
+                )
+
+        adapter = QuotaEnforcedHarnessAdapter(
+            InvalidUsageHarness(), quota_service=service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.02"),
+        )
+        request = SimpleNamespace(context=SimpleNamespace(
+            tenant_id="tenant-a", run_id="run-invalid-usage",
+            model_template=SimpleNamespace(template_id="general", version=1),
+            project_id=None, agent_id="agent-a",
+        ))
+        with self.assertRaisesRegex(ValueError, "input_tokens"):
+            await adapter.run(request)
+
+
 if __name__ == "__main__":
     unittest.main()
