@@ -24,6 +24,17 @@ async def _resolve(callback: Resolver, *args: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
 
+def _text_value(value: Any, keys: tuple[str, ...]) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        for key in keys:
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+    return ""
+
+
 class MemoryExtractionEventHandler:
     """Reload and extract exactly the completed user/assistant Run turn."""
 
@@ -110,9 +121,6 @@ class MemoryExtractionEventHandler:
              and messages[index].run_id == run_id),
             None,
         )
-        if assistant_index is None:
-            raise ValueError("completed Run has no persisted assistant message")
-
         user_message = next(
             (messages[index] for index in range(assistant_index - 1, -1, -1)
              if messages[index].role is MessageRole.USER
@@ -120,24 +128,42 @@ class MemoryExtractionEventHandler:
              and messages[index].run_id in (None, run_id)),
             None,
         )
-        if user_message is None:
-            raise ValueError("completed Run has no preceding user message from its owner")
-
-        assistant_message = messages[assistant_index]
-        metadata = dict(assistant_message.metadata or {})
-        message_agent_id = metadata.get("agent_id")
-        if message_agent_id is not None and message_agent_id != agent_id:
-            raise PermissionError("assistant message Agent does not match the Run")
+        if assistant_index is not None and user_message is not None:
+            assistant_message = messages[assistant_index]
+            metadata = dict(assistant_message.metadata or {})
+            message_agent_id = metadata.get("agent_id")
+            if message_agent_id is not None and message_agent_id != agent_id:
+                raise PermissionError("assistant message Agent does not match the Run")
+            source_ref = (
+                f"run:{run_id}:session:{session_id}:"
+                f"user:{user_message.message_id}:assistant:{assistant_message.message_id}"
+            )
+            user_text = user_message.content
+            assistant_text = assistant_message.content
+        else:
+            # Workbench task Runs persist their exact input/output on platform_runs;
+            # use those only when no session transcript was written for this Run.
+            # Output is saved just after the Run succeeds, so absence is retryable.
+            output = record.get("output")
+            if output is None:
+                raise RuntimeError("successful Run output is not persisted yet")
+            user_text = _text_value(
+                record.get("input"),
+                ("text", "input_text", "message", "prompt", "query"),
+            )
+            assistant_text = _text_value(
+                output, ("text", "output", "response", "content", "answer"),
+            )
+            if not user_text or not assistant_text:
+                return
+            source_ref = f"run:{run_id}:session:{session_id}:task-output"
 
         turn = MemoryTurn(
             tenant_id=event.tenant_id,
             user_id=actor_id,
-            source_ref=(
-                f"run:{run_id}:session:{session_id}:"
-                f"user:{user_message.message_id}:assistant:{assistant_message.message_id}"
-            ),
-            user_message=user_message.content,
-            assistant_message=assistant_message.content,
+            source_ref=source_ref,
+            user_message=user_text,
+            assistant_message=assistant_text,
             agent_id=agent_id,
             project_id=project_id,
         )
