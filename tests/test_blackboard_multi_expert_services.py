@@ -60,7 +60,7 @@ class WorkflowCallbacks:
         return {"action": "publish_report"}
 
     async def apply_approval(self, *, state, decision):
-        return {"approved": decision.get("approved") is True}
+        return {"approved": decision.get("approved") is True, "approver_id": "reviewer-a"}
 
     async def archive(self, *, state):
         return {"result": "report archived"}
@@ -138,6 +138,7 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         }
         request = await services.prepare_approval(state=state)
         self.assertEqual(request["action"], "publish_report")
+        self.assertIn("blackboard_entry_id", request)
         approved = await services.apply_approval(
             state=state, decision={"approved": True}
         )
@@ -153,8 +154,51 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(challenge_id, final_entry.source_refs)
         self.assertIn(resolution["synthesis"]["blackboard_decision_entry_ids"][0], final_entry.source_refs)
         self.assertIn(approved["blackboard_entry_id"], final_entry.source_refs)
+        self.assertIn(request["blackboard_entry_id"], final_entry.source_refs)
+        approval_entry = await repository.get(approved["blackboard_entry_id"])
+        self.assertEqual(approval_entry.author_id, "reviewer-a")
+        self.assertEqual(approval_entry.source_refs, (request["blackboard_entry_id"],))
         kinds = {entry.kind for entry in repository.entries.values()}
         self.assertTrue({EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT, EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE}.issubset(kinds))
+
+    async def test_approval_requires_a_persisted_request_and_boolean_decision(self):
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "approval-guard"}
+        with self.assertRaisesRegex(RuntimeError, "persisted approval request"):
+            await services.apply_approval(state=context, decision={"approved": True})
+        await services.prepare_approval(state=context)
+        with self.assertRaisesRegex(ValueError, "boolean approved"):
+            await services.apply_approval(state=context, decision={"approved": "yes"})
+
+    async def test_approval_requires_trusted_approver_identity(self):
+        class MissingApproverCallbacks(WorkflowCallbacks):
+            async def apply_approval(self, *, state, decision):
+                return {"approved": decision["approved"]}
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=MissingApproverCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "approval-actor"}
+        await services.prepare_approval(state=context)
+        with self.assertRaisesRegex(PermissionError, "authenticated approver"):
+            await services.apply_approval(state=context, decision={"approved": True})
+
+    async def test_archive_rejects_pending_or_rejected_approval(self):
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a",
+            repository=InMemoryBlackboard(),
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "approval-pending"}
+        await services.prepare_approval(state=context)
+        with self.assertRaisesRegex(PermissionError, "pending or rejected approval"):
+            await services.archive(state=context)
 
     async def test_expert_assignments_require_registered_enabled_capabilities(self):
         class CapabilityCallbacks(WorkflowCallbacks):
