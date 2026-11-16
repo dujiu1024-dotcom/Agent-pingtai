@@ -21,6 +21,7 @@ ALTER TABLE platform_quota_reservations
 
 ALTER TABLE platform_usage_ledger
     ADD COLUMN IF NOT EXISTS root_run_id uuid;
+DROP TRIGGER IF EXISTS trg_platform_usage_no_update_delete ON platform_usage_ledger;
 UPDATE platform_usage_ledger u
    SET root_run_id = r.root_run_id
   FROM platform_quota_reservations r
@@ -34,6 +35,10 @@ ALTER TABLE platform_usage_ledger
     REFERENCES platform_runs(tenant_id, run_id);
 CREATE INDEX IF NOT EXISTS idx_platform_usage_root_run_time
     ON platform_usage_ledger(tenant_id, root_run_id, occurred_at);
+
+CREATE TRIGGER trg_platform_usage_no_update_delete
+    BEFORE UPDATE OR DELETE ON platform_usage_ledger
+    FOR EACH ROW EXECUTE FUNCTION platform_reject_usage_mutation();
 
 CREATE OR REPLACE FUNCTION platform_quota_set_root_run_id()
 RETURNS trigger LANGUAGE plpgsql AS $$
