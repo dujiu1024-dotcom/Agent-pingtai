@@ -334,7 +334,7 @@ def create_sessions_router(
             "asset_id": asset.asset_id, "filename": asset.filename,
             "media_type": asset.media_type, "size_bytes": asset.size_bytes,
             "sha256": asset.sha256, "status": asset.status.value,
-            "session_id": asset.session_id,
+            "session_id": asset.session_id, "version": asset.version,
         }
 
     @router.post("/files/{asset_id}/versions", status_code=201)
