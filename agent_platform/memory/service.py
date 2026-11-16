@@ -92,10 +92,23 @@ class MemoryService:
         rec=await self.repository.get(tenant_id,memory_id)
         if rec is None or rec.status is not MemoryStatus.CANDIDATE:raise ValueError("candidate memory not found or already reviewed")
         updated=replace(rec,status=MemoryStatus.ACTIVE,confirmed_by=confirmer_id,updated_at=utc_now(),version=rec.version+1);await self.repository.put(updated);return updated
-    async def reject(self,*,tenant_id: str,memory_id: str)->bool:
-        rec=await self.repository.get(tenant_id,memory_id)
-        if rec is None or rec.status is not MemoryStatus.CANDIDATE:return False
-        await self.repository.put(replace(rec,status=MemoryStatus.DELETED,deleted_at=utc_now(),updated_at=utc_now(),version=rec.version+1));return True
+    async def reject(self, *, tenant_id: str, memory_id: str) -> bool:
+        rec = await self.repository.get(tenant_id, memory_id)
+        if rec is None or rec.status not in {
+            MemoryStatus.CANDIDATE, MemoryStatus.DELETED,
+        }:
+            return False
+        if rec.status is MemoryStatus.CANDIDATE:
+            now = utc_now()
+            await self.repository.put(replace(
+                rec, status=MemoryStatus.DELETED, deleted_at=now,
+                updated_at=now, version=rec.version + 1,
+            ))
+        # Candidate rejection also removes derived index/cache state. Repeating
+        # the operation retries cleanup after a transient downstream failure.
+        if self.on_delete:
+            await self.on_delete(tenant_id, memory_id)
+        return True
     @staticmethod
     def _can_manage_scope(scope: MemoryScope, scope_id: str, principal: MemoryPrincipal) -> bool:
         if scope is MemoryScope.USER:
