@@ -33,7 +33,7 @@ class OAuthRefreshTokenResolver:
             or parsed.port not in (None, 443)
         ):
             raise ValueError("OAuth token endpoint must be an approved Google or Microsoft HTTPS endpoint")
-        if isinstance(refresh_skew_seconds, bool) or not 0 <= refresh_skew_seconds <= 600:
+        if isinstance(refresh_skew_seconds, bool) or not isinstance(refresh_skew_seconds, int) or not 0 <= refresh_skew_seconds <= 600:
             raise ValueError("refresh skew must be between 0 and 600 seconds")
         self.client = client
         self.secret_manager = secret_manager
@@ -90,11 +90,15 @@ class OAuthRefreshTokenResolver:
             if not isinstance(payload, dict):
                 raise OAuthCredentialError("OAuth token response must be a JSON object")
             access_token = payload.get("access_token")
+            token_type = payload.get("token_type")
             expires_in = payload.get("expires_in")
             if (
                 not isinstance(access_token, str) or not access_token.strip()
                 or isinstance(expires_in, bool) or not isinstance(expires_in, int)
                 or expires_in < 60 or expires_in > 86400
+                or (token_type is not None and (
+                    not isinstance(token_type, str) or token_type.casefold() != "bearer"
+                ))
             ):
                 raise OAuthCredentialError("OAuth token response is missing a valid access token lifetime")
             rotated_refresh_token = payload.get("refresh_token")
