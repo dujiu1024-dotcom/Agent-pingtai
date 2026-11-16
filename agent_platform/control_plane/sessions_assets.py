@@ -333,3 +333,19 @@ class SessionAssetService:
         if hashlib.sha256(content).hexdigest() != asset.sha256:
             raise SessionError("stored object integrity check failed")
         return asset, content
+
+    async def delete_asset(self, *, tenant_id: str, asset_id: str) -> None:
+        """Tombstone metadata before deleting bytes; retries safely finish storage cleanup."""
+        asset = await self.repository.get_asset(tenant_id, asset_id)
+        if asset is None:
+            raise SessionNotFound("file asset not found")
+        if asset.status is not AssetStatus.DELETED:
+            await self.repository.set_asset_status(
+                tenant_id, asset_id, AssetStatus.DELETED,
+            )
+        try:
+            await self.storage.delete(asset.object_key)
+        except Exception as exc:
+            raise SessionError(
+                "file is tombstoned but object cleanup failed; retry deletion"
+            ) from exc
