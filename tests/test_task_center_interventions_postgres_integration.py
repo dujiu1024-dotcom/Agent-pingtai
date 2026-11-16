@@ -100,6 +100,45 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
                 idempotency_key="same-key",
             )
 
+    async def test_running_task_cancellation_calls_run_handler_and_finishes(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService
+        cancelled_runs = []
+        async def cancel_run(tenant_id, run_id):
+            cancelled_runs.append((tenant_id, run_id))
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+            cancel_run=cancel_run,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "cancel"},
+        )
+        lease = await service.claim_next(worker_id="worker-cancel")
+        await service.set_run_id(lease, str(self.run_id))
+        result = await service.cancel_task(
+            tenant_id=self.tenant_id, task_id=task["task_id"], actor_id="user-a",
+        )
+        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(cancelled_runs, [(self.tenant_id, str(self.run_id))])
+
+    async def test_running_task_cancellation_requires_handler_and_restores_state(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskCenterError
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "cancel"},
+        )
+        lease = await service.claim_next(worker_id="worker-cancel")
+        await service.set_run_id(lease, str(self.run_id))
+        with self.assertRaises(TaskCenterError):
+            await service.cancel_task(
+                tenant_id=self.tenant_id, task_id=task["task_id"], actor_id="user-a",
+            )
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
+        self.assertEqual(saved["status"], "running")
+
     async def test_task_queue_claims_higher_priority_first(self):
         from agent_platform.control_plane.tasks import PostgresTaskCenterService
         service = PostgresTaskCenterService(
