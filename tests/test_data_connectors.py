@@ -124,6 +124,21 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
                 scopes=("files.read",), actor_id="user-a",
             )
 
+    async def test_credential_resolution_failure_is_recorded_without_leaking_secret(self):
+        class BrokenSecrets:
+            async def resolve(self, secret_ref):
+                raise RuntimeError("sensitive token material")
+
+        service = DataConnectorService(
+            repository=self.repo, providers={"drive": self.provider},
+            secrets=BrokenSecrets(), sink=self.sink,
+        )
+        with self.assertRaises(ConnectorError):
+            await service.sync_once(tenant_id="tenant-a", connection_id="drive-1")
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.last_error, "RuntimeError")
+        self.assertNotIn("sensitive", saved.last_error)
+
     async def test_incremental_sync_advances_cursor_and_is_idempotent(self):
         self.assertEqual(await self.service.sync_once(
             tenant_id="tenant-a", connection_id="drive-1",
