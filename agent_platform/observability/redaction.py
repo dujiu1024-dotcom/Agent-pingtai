@@ -12,6 +12,9 @@ _SENSITIVE_KEY = re.compile(
 )
 _BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
 _API_KEY = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{20,})\b")
+_SECRET_ASSIGNMENT = re.compile(
+    r"""(?i)(?<![A-Za-z0-9_])(["']?)(password|passwd|secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|api[_-]?token|api[_-]?key|authorization|cookie|credential|private[_-]?key)\1\s*([:=])\s*("[^"]*"|'[^']*'|[^\s,;}\]]+)"""
+)
 
 
 def redact_text(value: str, *, max_chars: int = 2000) -> str:
@@ -19,6 +22,7 @@ def redact_text(value: str, *, max_chars: int = 2000) -> str:
         raise ValueError("max_chars must be positive")
     redacted = _BEARER.sub("Bearer [REDACTED]", value)
     redacted = _API_KEY.sub("[REDACTED]", redacted)
+    redacted = _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)}[REDACTED]", redacted)
     if len(redacted) > max_chars:
         return redacted[:max_chars] + "…[TRUNCATED]"
     return redacted
