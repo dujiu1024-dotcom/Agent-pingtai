@@ -8,8 +8,7 @@ from enum import StrEnum
 from typing import Any, Mapping, Protocol
 
 
-_CONTRACT_VERSION = re.compile(r"^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$")
-_ADAPTER_VERSION = _CONTRACT_VERSION
+_CONTRACT_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$")
 
 
 def _version(value: str, *, label: str) -> tuple[int, int, int]:
