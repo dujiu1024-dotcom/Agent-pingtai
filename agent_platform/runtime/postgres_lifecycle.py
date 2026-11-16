@@ -304,7 +304,7 @@ class PostgresRunStateStore(RunStateStore):
     RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
     (tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
- async def claim_workbench_tasks(self,worker_id:str,*,limit:int=20,lease_seconds:int=60)->list[RunSnapshot]:
+ async def claim_workbench_tasks(self,worker_id:str,*,tenant_id:str|None=None,limit:int=20,lease_seconds:int=60)->list[RunSnapshot]:
   if not worker_id.strip() or not 1<=limit<=200 or lease_seconds<5:
    raise ValueError("invalid workbench worker lease parameters")
   c=await self._connect()
@@ -312,6 +312,7 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
     WHERE task_id IS NOT NULL AND dispatch_ready=true
+      AND (%s::text IS NULL OR tenant_id=%s)
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
@@ -321,7 +322,7 @@ class PostgresRunStateStore(RunStateStore):
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
     RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
-    (limit,worker_id,lease_seconds))
+    (tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
 
  async def acquire_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60)->bool:

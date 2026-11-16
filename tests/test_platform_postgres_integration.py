@@ -599,7 +599,8 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 await conn.commit()
 
         claimed = await store.claim_workbench_tasks(
-            "worker-priority-integration", limit=2, lease_seconds=30,
+            "worker-priority-integration", tenant_id=self.tenant_id,
+            limit=2, lease_seconds=30,
         )
         self.assertEqual(
             [row.run_id for row in claimed],

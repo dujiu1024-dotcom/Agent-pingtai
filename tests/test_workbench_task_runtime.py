@@ -141,7 +141,7 @@ class TaskRunStore(InMemoryRunStateStore):
         self.records[run_id]["usage"] = dict(usage or {})
         self.records[run_id]["trace_id"] = trace_id
 
-    async def claim_workbench_tasks(self, worker_id, *, limit=20, lease_seconds=60):
+    async def claim_workbench_tasks(self, worker_id, *, tenant_id=None, limit=20, lease_seconds=60):
         rows = []
         ordered = sorted(
             self.records.items(),
@@ -149,9 +149,12 @@ class TaskRunStore(InMemoryRunStateStore):
         )
         for run_id, row in ordered:
             current = await self.get(row["tenant_id"], run_id)
-            if row.get("dispatch_ready") and current and current.status in {
-                RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELLING,
-            }:
+            if (
+                (tenant_id is None or row["tenant_id"] == tenant_id)
+                and row.get("dispatch_ready") and current and current.status in {
+                    RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELLING,
+                }
+            ):
                 rows.append(current)
             if len(rows) >= limit:
                 break
