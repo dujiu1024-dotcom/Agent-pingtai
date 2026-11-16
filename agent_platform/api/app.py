@@ -65,6 +65,7 @@ def create_platform_app(
     run_intervention_resolver: Any | None = None,
     run_detail_resolver: Any | None = None,
     run_executor_resolver: Any | None = None,
+    tool_effect_reconciliation_resolver: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
@@ -280,7 +281,9 @@ def create_platform_app(
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
         ))
-    runs_configured = any(value is not None for value in (run_lifecycle_resolver, run_authorizer))
+    runs_configured = any(value is not None for value in (
+        run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
+    ))
     if runs_configured:
         if run_lifecycle_resolver is None or run_authorizer is None:
             raise ValueError("Run lifecycle resolver and authorizer must be configured together")
@@ -291,5 +294,6 @@ def create_platform_app(
             resolve_interventions=run_intervention_resolver,
             resolve_details=run_detail_resolver,
             resolve_executor=run_executor_resolver,
+            resolve_tool_effects=tool_effect_reconciliation_resolver,
         ))
     return app
