@@ -48,6 +48,54 @@ class UsageRecorder(Protocol):
     ) -> None: ...
 
 
+class ModelCostEstimator(Protocol):
+    async def estimate_micros(
+        self, *, model_id: str, usage: Mapping[str, Any],
+    ) -> int | None: ...
+
+
+class PostgresModelUsageRecorder:
+    """Idempotently persist provider usage and optional host-priced cost."""
+
+    def __init__(
+        self, connection_factory: Any, *,
+        cost_estimator: ModelCostEstimator | None = None,
+    ) -> None:
+        self._connect = connection_factory
+        self.cost_estimator = cost_estimator
+
+    async def record(
+        self, *, tenant_id: str, run_id: str, request_id: str,
+        template_id: str, template_version: int, provider_id: str,
+        provider_version: int, model_id: str, usage: Mapping[str, Any],
+    ) -> None:
+        try:
+            from psycopg.types.json import Jsonb
+        except ImportError as exc:
+            raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+        estimated_cost_micros = None
+        if self.cost_estimator is not None:
+            estimated_cost_micros = await self.cost_estimator.estimate_micros(
+                model_id=model_id, usage=usage,
+            )
+            if estimated_cost_micros is not None and (
+                not isinstance(estimated_cost_micros, int) or estimated_cost_micros < 0
+            ):
+                raise ValueError("estimated model cost must be a non-negative integer in micros")
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_model_usage_events
+                   (tenant_id,run_id,request_id,template_id,template_version,
+                    provider_id,provider_version,model_id,usage,estimated_cost_micros)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (tenant_id,run_id,request_id) DO NOTHING""",
+                (tenant_id, run_id, request_id, template_id, template_version,
+                 provider_id, provider_version, model_id, Jsonb(dict(usage)),
+                 estimated_cost_micros),
+            )
+
+
 @dataclass(frozen=True)
 class RoutedModelResponse:
     content: str
