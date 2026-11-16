@@ -65,6 +65,9 @@ class QuotaReservation:
     reserved_input_tokens: int = 0
     reserved_output_tokens: int = 0
 
+
+@dataclass(frozen=True)
+class UsageEvent:
     event_id: str
     tenant_id: str
     run_id: str
