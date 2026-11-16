@@ -395,3 +395,19 @@ class QuotaService:
 
     async def release_run(self, reservation: QuotaReservation) -> bool:
         return await self.store.release(reservation.reservation_id)
+
+    async def heartbeat_reservation(
+        self, reservation: QuotaReservation, *, lease_seconds: int = 300,
+    ) -> bool:
+        """Renew a live concurrency reservation when the backing store supports leases."""
+        heartbeat = getattr(self.store, "heartbeat_reservation", None)
+        if not callable(heartbeat):
+            return True
+        return bool(await heartbeat(reservation.reservation_id, lease_seconds=lease_seconds))
+
+    async def expire_stale_reservations(self, *, limit: int = 500) -> int:
+        """Reclaim expired reservations; production stores must implement the operation."""
+        expire = getattr(self.store, "expire_stale_reservations", None)
+        if not callable(expire):
+            raise RuntimeError("quota store does not support reservation lease recovery")
+        return int(await expire(limit=limit))
