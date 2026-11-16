@@ -97,8 +97,13 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             sink=sink, sync_queue=queue,
         )
         await service.request_sync(tenant_id="tenant-a", connection_id="drive-a")
+        async def resolve_service(tenant_id):
+            self.assertEqual(tenant_id, "tenant-a")
+            return service
+
         worker = ConnectorSyncWorker(
-            queue=queue, service=service, worker_id="sync-worker", lease_seconds=5,
+            queue=queue, resolve_service=resolve_service,
+            worker_id="sync-worker", lease_seconds=5,
         )
         self.assertTrue(await worker.run_once())
         self.assertIsNotNone(queue.job)
