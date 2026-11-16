@@ -63,8 +63,10 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
 
         worker._execute_claimed = execute
 
+        original_sleep = asyncio.sleep
+
         async def immediate_sleep(_seconds):
-            await asyncio.sleep(0)
+            await original_sleep(0)
 
         with patch("agent_platform.runtime.workbench_tasks.asyncio.sleep", immediate_sleep):
             with self.assertRaises(WorkerLeaseLost):
