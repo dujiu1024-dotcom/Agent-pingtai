@@ -187,10 +187,12 @@ class DataConnectorService:
         if not display_name.strip() or len(display_name) > 120:
             raise ConnectorError("display name must contain 1 to 120 characters")
         if (
-            not secret_ref.startswith("secret://") or len(secret_ref) > 512
+            not secret_ref.startswith(f"secret://{tenant_id}/")
+            or len(secret_ref) > 512
             or any(character.isspace() for character in secret_ref)
+            or any(part in {".", ".."} for part in secret_ref.split("/")[3:])
         ):
-            raise ConnectorError("credentials must be stored as a valid secret:// reference")
+            raise ConnectorError("credentials must use a tenant-scoped secret:// reference")
         normalized_scopes = tuple(sorted(set(scope.strip() for scope in scopes if scope.strip())))
         if not normalized_scopes or any(len(scope) > 128 for scope in normalized_scopes):
             raise ConnectorError("one or more valid connector scopes are required")
