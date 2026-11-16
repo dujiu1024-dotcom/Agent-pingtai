@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from decimal import Decimal
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -194,6 +195,10 @@ class OpenAICompatibleModelRouter:
         timeout_seconds: float = 60,
         observer: Any | None = None,
         metrics: Any | None = None,
+        quota_service: Any | None = None,
+        token_estimator: Any | None = None,
+        quota_cost_estimator: ModelCostEstimator | None = None,
+        quota_scope_resolver: Any | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -203,6 +208,16 @@ class OpenAICompatibleModelRouter:
         self.timeout_seconds = timeout_seconds
         self.observer = observer
         self.metrics = metrics
+        if quota_service is not None and (
+            token_estimator is None or quota_cost_estimator is None
+        ):
+            raise ValueError(
+                "quota-enforced model routing requires a tokenizer and cost estimator"
+            )
+        self.quota_service = quota_service
+        self.token_estimator = token_estimator
+        self.quota_cost_estimator = quota_cost_estimator
+        self.quota_scope_resolver = quota_scope_resolver
 
     async def complete(
         self, *, snapshot: Any, tenant_id: str, run_id: str,
@@ -259,6 +274,47 @@ class OpenAICompatibleModelRouter:
                 "model_template": config.template_id,
                 "model_template_version": config.template_version,
             }
+            quota_reservation = None
+            if self.quota_service is not None:
+                estimate = self.token_estimator.estimate(
+                    model_id=config.model_id,
+                    messages=messages,
+                    request_parameters=parameters,
+                    context_window_tokens=config.context_window_tokens,
+                )
+                estimated_usage = {
+                    "input_tokens": estimate.input_tokens,
+                    "output_tokens": estimate.output_tokens,
+                }
+                estimated_micros = await self.quota_cost_estimator.estimate_micros(
+                    model_id=config.model_id, usage=estimated_usage,
+                )
+                if (
+                    not isinstance(estimated_micros, int)
+                    or isinstance(estimated_micros, bool)
+                    or estimated_micros < 0
+                ):
+                    raise ModelUsageRecordingError(
+                        "model price card could not estimate a finite reservation cost"
+                    )
+                scope_type, scope_id = (
+                    self.quota_scope_resolver(snapshot, config)
+                    if self.quota_scope_resolver is not None
+                    else ("tenant", tenant_id)
+                )
+                if (
+                    not isinstance(scope_type, str) or not scope_type
+                    or not isinstance(scope_id, str) or not scope_id
+                ):
+                    raise ModelRoutingError("model quota scope resolver returned an invalid scope")
+                quota_reservation, _warnings = await self.quota_service.reserve_run(
+                    tenant_id=tenant_id, run_id=run_id,
+                    scope_type=scope_type, scope_id=scope_id,
+                    estimated_tokens=estimate.total_tokens,
+                    estimated_cost_usd=Decimal(estimated_micros) / Decimal(1_000_000),
+                    estimated_input_tokens=estimate.input_tokens,
+                    estimated_output_tokens=estimate.output_tokens,
+                )
             try:
                 with safe_observation(
                     self.observer, name="model.complete",
@@ -278,6 +334,12 @@ class OpenAICompatibleModelRouter:
                     status = "response_received"
                     safe_update(span, output={"status": status})
             except ModelTransportError as exc:
+                if quota_reservation is not None:
+                    # The provider may have accepted the request before the transport failed.
+                    # Keep the reservation and prohibit automatic fallback to avoid duplicate billing.
+                    raise ModelUsageRecordingError(
+                        "model transport outcome is ambiguous; quota reservation retained for reconciliation"
+                    ) from exc
                 last_error = exc
                 continue
             finally:
@@ -315,6 +377,34 @@ class OpenAICompatibleModelRouter:
                 raise ModelUsageRecordingError(
                     "model response contains missing or invalid token usage counters"
                 )
+            if quota_reservation is not None:
+                normalized_usage = dict(usage)
+                normalized_usage["input_tokens"] = input_tokens
+                normalized_usage["output_tokens"] = output_tokens
+                try:
+                    actual_micros = await self.quota_cost_estimator.estimate_micros(
+                        model_id=config.model_id, usage=normalized_usage,
+                    )
+                    if (
+                        not isinstance(actual_micros, int)
+                        or isinstance(actual_micros, bool)
+                        or actual_micros < 0
+                    ):
+                        raise ValueError("actual model cost is unavailable")
+                    await self.quota_service.settle_run(
+                        quota_reservation,
+                        model_key=f"{config.template_id}@{config.template_version}",
+                        input_tokens=input_tokens, output_tokens=output_tokens,
+                        cost_usd=Decimal(actual_micros) / Decimal(1_000_000),
+                        project_id=getattr(snapshot, "project_id", None),
+                        agent_id=getattr(snapshot, "agent_id", None),
+                        source="provider_reported",
+                    )
+                except Exception as exc:
+                    # A successful provider response may be billable; retain reservation if settlement fails.
+                    raise ModelUsageRecordingError(
+                        "model response succeeded but quota settlement failed"
+                    ) from exc
             if input_tokens > 0:
                 safe_metric(
                     self.metrics, "increment", "model_input_tokens_total", input_tokens,
