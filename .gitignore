@@ -32,3 +32,5 @@ coverage.json
 
 # 本地工具产物
 .trae-html-share-packages/
+.git-sync.lock
+backups/

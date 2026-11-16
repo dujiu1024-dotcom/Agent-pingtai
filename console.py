@@ -526,6 +526,8 @@ LAUNCHD_SPEC = {
          "串联下面 5 个内部到点动作"),
         ("selfcheck", "com.fde.selfcheck", "每日自检", "",
          "监听器/看板/定时器/飞书凭据/死信"),
+        ("git-sync", "com.fde.git-sync", "夜间代码同步", "",
+         "每小时拉 GitHub main，HEAD 变化才做 bundle 备份"),
     ],
     "dev": [
         ("listener", "com.fde.dev.listener", "飞书消息监听", "常驻",
@@ -538,6 +540,8 @@ LAUNCHD_SPEC = {
          "串联下面 5 个内部到点动作"),
         ("selfcheck", "com.fde.dev.selfcheck", "每日自检", "",
          "监听器/看板/定时器/飞书凭据/死信"),
+        ("git-sync", "com.fde.git-sync", "夜间代码同步", "",
+         "每小时拉 GitHub main，HEAD 变化才做 bundle 备份"),
     ],
 }
 INTERNAL_SPEC = [
@@ -569,6 +573,9 @@ def _schedule_text(plist, fallback="常驻"):
     if isinstance(cal, dict):
         return "每天 %02d:%02d" % (cal.get("Hour", 0), cal.get("Minute", 0))
     if isinstance(cal, list) and cal:
+        hours = sorted(int(c.get("Hour", 0)) for c in cal)
+        if len(hours) > 2 and hours == list(range(hours[0], hours[-1] + 1)):
+            return "每天 %02d:00–%02d:00 每小时" % (hours[0], hours[-1])
         return "、".join("每天 %02d:%02d" % (c.get("Hour", 0), c.get("Minute", 0))
                         for c in cal)
     return fallback
@@ -583,6 +590,20 @@ def _iso_local(iso):
     if t.tzinfo is None:
         t = t.replace(tzinfo=dt.timezone.utc)
     return t.astimezone()
+
+
+def _git_sync_status():
+    """夜间同步没有进 job_runs（shell 脚本），直接读它自己的日志最后一行。"""
+    p = ROOT / "logs" / "git-sync.log"
+    if not p.exists():
+        return "", None, "还没有执行记录"
+    lines = [x for x in p.read_text(encoding="utf-8", errors="replace").splitlines()
+             if x.strip()]
+    if not lines:
+        return "", None, "日志为空"
+    ts, _, rest = lines[-1].partition(" | ")
+    ok = not (rest.startswith("失败") or rest.startswith("跳过"))
+    return ts, ok, rest
 
 
 def scheduled_jobs():
@@ -651,6 +672,32 @@ def scheduled_jobs():
                 else:
                     row["ok"] = None
                     row["note"] = "暂无台账记录（自检结果见日志）"
+        elif name == "git-sync":
+            ts, ok, detail = _git_sync_status()
+            row["last_at"] = ts
+            row["last_ok"] = ok
+            row["last_detail"] = detail
+            hours = [1, 2, 3, 4, 5, 6, 7]
+            future = [h for h in hours if h > now.hour]
+            nxt = now.replace(hour=future[0] if future else 1, minute=0,
+                              second=0, microsecond=0)
+            if not future:
+                nxt += dt.timedelta(days=1)
+            row["next_at"] = nxt.isoformat()
+            in_window = 1 <= now.hour <= 7
+            try:
+                base = dt.datetime.fromisoformat(ts).astimezone() if ts else None
+            except ValueError:
+                base = None
+            stale = bool(in_window and base and
+                         (now - base).total_seconds() > 75 * 60)
+            row["ok"] = (ok is not False) and not stale
+            if ok is False:
+                row["note"] = "上轮失败或跳过"
+            elif stale:
+                row["note"] = "本夜超过 75 分钟未运行"
+            elif not in_window:
+                row["note"] = "仅夜间 01:00–07:00 触发"
         else:
             row["ok"] = bool(info.get("running"))
             if not row["ok"]:
@@ -675,12 +722,18 @@ def scheduled_jobs():
             row["note"] = "还没有执行过"
         else:
             base = _iso_local(rec["started_at"])
-            stale = base and (now - base).total_seconds() > tick_interval * 2
+            # 死信重试只在投递时段（09:00-23:00）执行，夜间不跑属正常
+            window_limited = job == "dead_letter_retry"
+            in_window = 9 <= now.hour < 23
+            overdue = bool(base and (now - base).total_seconds() > tick_interval * 2)
+            stale = overdue and (in_window or not window_limited)
             row["ok"] = bool(rec["ok"]) and not stale
             if not rec["ok"]:
                 row["note"] = "上轮失败"
             elif stale:
                 row["note"] = "超过 2 个周期没有记录"
+            elif window_limited and not in_window:
+                row["note"] = "非投递时段，夜间不重试"
         rows.append(row)
     return {"env": env, "jobs": rows, "recent": recent,
             "generated_at": dbm.now()}
@@ -1182,7 +1235,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/d/"):
             self._serve_delivery(path[3:])
             return
-        if BOARD_ONLY and path not in ("/board", "/board.html", "/api/board"):
+        if BOARD_ONLY and path not in ("/board", "/board.html",
+                                       "/api/board", "/api/scheduled"):
             self._json({"ok": False, "error": "本服务只提供看板：/board 与 /api/board"}, 404)
             return
         if path in ("/board", "/board.html"):
