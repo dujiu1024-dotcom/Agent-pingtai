@@ -14,9 +14,13 @@ class ToolRegistryCatalogTests(unittest.TestCase):
         async def handler(arguments):
             return {"ok": True}
         self.handler = handler
+        async def authorize(_context, _arguments):
+            return True
         self.trusted = ToolDefinition(
             name="send-email", risk=RiskLevel.READ_ONLY, handler=handler,
             description="Host-registered email handler",
+            resource_resolver=lambda arguments: f"email:{arguments.get('to', 'global')}",
+            resource_authorizer=authorize,
         )
 
     def registry_tool(self, definition, *, status="published"):
@@ -59,6 +63,19 @@ class ToolRegistryCatalogTests(unittest.TestCase):
                     "risk_level": "read_only", "input_schema": {"type": "not-a-schema"},
                 }),),
                 trusted_handlers={"send-email": self.trusted},
+            )
+
+    def test_missing_resource_acl_callbacks_are_rejected(self):
+        unscoped = ToolDefinition(
+            name="send-email", risk=RiskLevel.READ_ONLY, handler=self.handler,
+        )
+        with self.assertRaisesRegex(RegistryError, "resource_resolver and resource_authorizer"):
+            build_tool_definitions(
+                published_tools=(self.registry_tool({
+                    "risk_level": "read_only",
+                    "input_schema": {"type": "object"},
+                }),),
+                trusted_handlers={"send-email": unscoped},
             )
 
 
