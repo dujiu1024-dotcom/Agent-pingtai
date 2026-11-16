@@ -9,6 +9,60 @@ from typing import Any, Mapping
 from agent_platform.runtime.protocols import HarnessAdapter, HarnessRequest, HarnessResult
 
 
+_SUPPORTED_SCHEMA_KEYWORDS = frozenset({
+    "type", "enum", "properties", "required", "additionalProperties", "items",
+    "minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum",
+    "title", "description", "$schema",
+})
+_SUPPORTED_SCHEMA_TYPES = frozenset({
+    "object", "array", "string", "number", "integer", "boolean", "null",
+})
+
+
+def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> None:
+    if not isinstance(schema, Mapping):
+        raise ValueError(f"{path}: schema definition must be an object")
+    unknown = set(schema) - _SUPPORTED_SCHEMA_KEYWORDS
+    if unknown:
+        raise ValueError(f"{path}: unsupported schema keywords: {', '.join(sorted(unknown))}")
+    expected = schema.get("type")
+    if expected is not None and expected not in _SUPPORTED_SCHEMA_TYPES:
+        raise ValueError(f"{path}: unsupported schema type")
+    if "enum" in schema and not isinstance(schema["enum"], list):
+        raise ValueError(f"{path}.enum must be an array")
+    if "required" in schema and (
+        not isinstance(schema["required"], list)
+        or any(not isinstance(item, str) or not item for item in schema["required"])
+    ):
+        raise ValueError(f"{path}.required must be an array of non-empty strings")
+    if "properties" in schema:
+        properties = schema["properties"]
+        if not isinstance(properties, Mapping):
+            raise ValueError(f"{path}.properties must be an object")
+        for key, child in properties.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(f"{path}.properties keys must be non-empty strings")
+            _validate_schema_definition(child, f"{path}.properties.{key}")
+    if "items" in schema:
+        _validate_schema_definition(schema["items"], f"{path}.items")
+    for key in ("minItems", "maxItems", "minLength", "maxLength"):
+        if key in schema and (
+            isinstance(schema[key], bool) or not isinstance(schema[key], int) or schema[key] < 0
+        ):
+            raise ValueError(f"{path}.{key} must be a non-negative integer")
+    for key in ("minimum", "maximum"):
+        if key in schema and (
+            isinstance(schema[key], bool) or not isinstance(schema[key], (int, float))
+        ):
+            raise ValueError(f"{path}.{key} must be numeric")
+    if "minItems" in schema and "maxItems" in schema and schema["minItems"] > schema["maxItems"]:
+        raise ValueError(f"{path}: minItems exceeds maxItems")
+    if "minLength" in schema and "maxLength" in schema and schema["minLength"] > schema["maxLength"]:
+        raise ValueError(f"{path}: minLength exceeds maxLength")
+    if "minimum" in schema and "maximum" in schema and schema["minimum"] > schema["maximum"]:
+        raise ValueError(f"{path}: minimum exceeds maximum")
+
+
 class StructuredOutputSchemaRegistry:
     """In-process immutable-by-version schema registry for Harness output contracts."""
 
@@ -22,6 +76,7 @@ class StructuredOutputSchemaRegistry:
             raise ValueError("schema version must be a positive integer")
         if not isinstance(schema, Mapping) or not schema:
             raise ValueError("structured output schema must be a non-empty object")
+        _validate_schema_definition(schema)
         key = (schema_id, version)
         value = copy.deepcopy(dict(schema))
         existing = self._schemas.get(key)
