@@ -95,7 +95,7 @@ class RegistryBackedTaskCenterService:
 
     async def _runtime_references(
         self, agent_id: str,
-    ) -> tuple[Any, str, int, str | None, tuple[str, ...], tuple[str, ...]]:
+    ) -> tuple[Any, Any, Any, tuple[Any, ...], tuple[Any, ...], Any | None]:
         agent = await self.registry.resolve_active(
             tenant_id=self.tenant_id, kind="agent", item_id=agent_id,
         )
@@ -139,17 +139,29 @@ class RegistryBackedTaskCenterService:
         ):
             raise WorkbenchTaskError("workflow_id must be a non-empty string when supplied")
 
-        for kind, item_ids in (("tool", tool_ids), ("skill", skill_ids)):
-            for item_id in item_ids:
+        tools = tuple(
+            [
                 await self.registry.resolve_active(
-                    tenant_id=self.tenant_id, kind=kind, item_id=item_id,
+                    tenant_id=self.tenant_id, kind="tool", item_id=item_id,
                 )
+                for item_id in tool_ids
+            ]
+        )
+        skills = tuple(
+            [
+                await self.registry.resolve_active(
+                    tenant_id=self.tenant_id, kind="skill", item_id=item_id,
+                )
+                for item_id in skill_ids
+            ]
+        )
+        workflow = None
         if workflow_id:
-            await self.registry.resolve_active(
+            workflow = await self.registry.resolve_active(
                 tenant_id=self.tenant_id, kind="workflow", item_id=workflow_id,
             )
 
-        return agent, template_id, template.version, workflow_id, tool_ids, skill_ids
+        return agent, template, provider, tools, skills, workflow
 
     async def list_tasks(
         self, *, tenant_id: str, actor_id: str, limit: int = 100,
@@ -198,19 +210,19 @@ class RegistryBackedTaskCenterService:
                     )
                 return _task_view(existing)
 
-        agent, template_id, template_version, workflow_id, tool_ids, skill_ids = (
+        agent, template, provider, tools, skills, workflow = (
             await self._runtime_references(agent_id)
         )
-        template = await self.registry.resolve_active(
-            tenant_id=tenant_id, kind="model_template", item_id=template_id,
-        )
+        template_id = template.item_id
+        template_version = template.version
         run_id = str(uuid4())
         created = await self.run_store.create_task_run(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
             agent_id=agent_id, template_id=template_id,
             template_version=template_version, input=dict(input),
             project_id=project_id, session_id=session_id,
-            workflow_id=workflow_id, idempotency_key=idempotency_key,
+            workflow_id=workflow.item_id if workflow is not None else None,
+            idempotency_key=idempotency_key,
             request_digest=digest,
         )
         if not created:
@@ -222,17 +234,14 @@ class RegistryBackedTaskCenterService:
                 raise RuntimeError("idempotent task record disappeared")
             return _task_view(existing)
 
+        pinned_items = [agent, template, provider, *tools, *skills]
+        if workflow is not None:
+            pinned_items.append(workflow)
         references = [
-            ("agent", agent_id),
-            ("model_template", template_id),
-            ("model_provider", str(template.definition["provider_id"])),
-            *(("tool", item_id) for item_id in tool_ids),
-            *(("skill", item_id) for item_id in skill_ids),
+            (item.kind, item.item_id, item.version) for item in pinned_items
         ]
-        if workflow_id:
-            references.append(("workflow", workflow_id))
         try:
-            await self.snapshots.pin(
+            await self.snapshots.pin_versions(
                 tenant_id=tenant_id, run_id=run_id, references=references,
             )
         except Exception as exc:
