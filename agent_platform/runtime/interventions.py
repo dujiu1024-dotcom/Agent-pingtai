@@ -108,54 +108,52 @@ class RunInterventionService:
         self, *, tenant_id: str, run_id: str, worker_id: str,
         applier: InterventionApplier,
     ) -> int:
-        """Apply each pending intervention before a paused Run is resumed.
-
-        The host applier updates the graph's durable checkpoint state. A failed
-        application remains pending and therefore cannot be silently skipped.
-        """
+        """Apply pending interventions under row locks before Run recovery."""
         if tenant_id != self.tenant_id or not worker_id.strip():
             raise PermissionError("invalid intervention worker context")
-        db = await self._connect()
-        async with db:
-            cursor = await db.execute(
-                """SELECT intervention_id,actor_id,kind,payload
-                   FROM platform_run_interventions
-                   WHERE tenant_id=%s AND run_id=%s AND status='pending'
-                   ORDER BY created_at,intervention_id""",
-                (self.tenant_id, UUID(run_id)),
-            )
-            rows = await cursor.fetchall()
+        try:
+            from psycopg.types.json import Jsonb
+        except ImportError as exc:
+            raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
         applied = 0
-        for row in rows:
-            payload = {
-                "intervention_id": str(row["intervention_id"]),
-                "actor_id": row["actor_id"], "kind": row["kind"],
-                "payload": dict(row["payload"]),
-            }
-            await applier(payload)
+        while True:
             db = await self._connect()
             async with db:
                 async with db.transaction():
-                    updated = await db.execute(
+                    cursor = await db.execute(
+                        """SELECT intervention_id,actor_id,kind,payload
+                           FROM platform_run_interventions
+                           WHERE tenant_id=%s AND run_id=%s AND status='pending'
+                           ORDER BY created_at,intervention_id
+                           LIMIT 1 FOR UPDATE SKIP LOCKED""",
+                        (self.tenant_id, UUID(run_id)),
+                    )
+                    row = await cursor.fetchone()
+                    if row is None:
+                        return applied
+                    payload = {
+                        "intervention_id": str(row["intervention_id"]),
+                        "actor_id": row["actor_id"], "kind": row["kind"],
+                        "payload": dict(row["payload"]),
+                    }
+                    # Keep the row lock until the durable graph checkpoint has
+                    # accepted the intervention and the applied marker commits.
+                    await applier(payload)
+                    await db.execute(
                         """UPDATE platform_run_interventions
                            SET status='applied',applied_at=now(),applied_by=%s
-                           WHERE tenant_id=%s AND intervention_id=%s AND status='pending'
-                           RETURNING intervention_id""",
+                           WHERE tenant_id=%s AND intervention_id=%s AND status='pending'""",
                         (worker_id, self.tenant_id, row["intervention_id"]),
                     )
-                    if await updated.fetchone() is None:
-                        raise RuntimeError("intervention status changed while applying")
                     await db.execute(
                         """INSERT INTO platform_run_events
                            (tenant_id,run_id,event_type,actor_id,payload)
                            VALUES (%s,%s,'human.intervention_applied',%s,%s)""",
                         (self.tenant_id, UUID(run_id), worker_id,
-                         __import__("psycopg.types.json", fromlist=["Jsonb"]).Jsonb({
-                             "intervention_id": str(row["intervention_id"]),
-                         })),
+                         Jsonb({"intervention_id": str(row["intervention_id"])})),
                     )
             applied += 1
-        return applied
+
 
 
 class PostgresRunDetailService:
