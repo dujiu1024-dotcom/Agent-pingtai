@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 from uuid import UUID
 
+
+def _jsonb(value: Any) -> Any:
+    try:
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+    return Jsonb(value)
+
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus,
     ObjectStorage,
@@ -71,6 +79,14 @@ class PostgresFileProcessingQueue:
                 row = await cursor.fetchone()
                 if row is None:
                     return None
+                if row["attempts"]:
+                    await connection.execute(
+                        """UPDATE platform_file_processing_attempts
+                           SET status='abandoned',finished_at=now(),
+                               error_code='lease_expired',error_message='worker lease expired'
+                           WHERE tenant_id=%s AND job_id=%s AND attempt=%s AND status='running'""",
+                        (row["tenant_id"], row["job_id"], row["attempts"]),
+                    )
                 updated = await connection.execute(
                     """UPDATE platform_file_processing_jobs
                        SET status='running', attempts=attempts+1, lease_owner=%s,
