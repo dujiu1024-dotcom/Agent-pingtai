@@ -124,6 +124,26 @@ class HumanCollaborationPostgresTests(unittest.IsolatedAsyncioTestCase):
             return await AsyncConnection.connect(DSN, row_factory=dict_row)
         self.connect = connect
 
+    async def test_rejected_approval_blocks_run_continuation(self):
+        from agent_platform.runtime.interventions import RunInterventionService
+
+        service = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        request = await service.submit(
+            tenant_id=self.tenant_id, run_id=str(self.run_id), actor_id="requester",
+            kind="approval", payload={"action": "publish", "resource": "report"},
+        )
+        await service.decide(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            intervention_id=request["intervention_id"], actor_id="approver",
+            decision="rejected", rationale="Approval denied",
+        )
+        with self.assertRaises(ValueError):
+            await service.ensure_decisions_resolved(
+                tenant_id=self.tenant_id, run_id=str(self.run_id),
+            )
+
     async def test_approval_decision_result_revision_and_audit_timeline(self):
         from agent_platform.runtime.interventions import RunInterventionService
 
