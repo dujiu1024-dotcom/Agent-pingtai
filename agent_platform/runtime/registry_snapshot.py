@@ -128,4 +128,17 @@ class RunRegistrySnapshotService:
         snapshot = await self.store.get(tenant_id, run_id)
         if snapshot is None:
             raise RegistryNotFound("Run registry snapshot has not been pinned")
+        canonical = json.dumps(
+            {
+                "tenant_id": snapshot.tenant_id,
+                "run_id": snapshot.run_id,
+                "entries": [dict(entry) for entry in snapshot.entries],
+            },
+            ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+        )
+        expected_digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+        if snapshot.tenant_id != tenant_id or snapshot.run_id != run_id:
+            raise ValueError("Run registry snapshot scope mismatch")
+        if snapshot.digest != expected_digest:
+            raise ValueError("Run registry snapshot integrity check failed")
         return snapshot
