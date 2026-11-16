@@ -302,3 +302,67 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(TypeError):
             OCRParserAdapter(InvalidOCR()).parse(b"image", "image/png")
+
+
+    async def test_versioned_rag_evaluation_fixture_covers_recall_citations_and_abstention(self):
+        import json
+        from pathlib import Path
+
+        from agent_platform.knowledge.evaluation import (
+            RAGAnswerEvalCase,
+            RAGEvalCase,
+            evaluate_answers,
+            evaluate_retrieval,
+        )
+        from agent_platform.knowledge.rag import RAGService
+
+        fixture_path = Path(__file__).parent / "fixtures" / "knowledge_rag_eval_v1.json"
+        dataset = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self.assertEqual(dataset["dataset_id"], "platform-knowledge-smoke-v1")
+        service = KnowledgeService(InMemoryKnowledgeRepository())
+        document_ids = {}
+        for item in dataset["documents"]:
+            document = Document(
+                tenant_id="rag-eval-tenant", title=item["title"],
+                source_uri=item["source_uri"], content_hash="pending",
+            )
+            result = await service.ingest(
+                document=document, content=item["content"].encode("utf-8"),
+            )
+            document_ids[item["key"]] = result.document.document_id
+
+        principal = KnowledgePrincipal(tenant_id="rag-eval-tenant", user_id="eval-user")
+        retrieval_cases = []
+        answer_cases = []
+        answers = {}
+        for item in dataset["cases"]:
+            expected = frozenset(
+                document_ids[key] for key in item["expected_document_keys"]
+            )
+            retrieval_cases.append(RAGEvalCase(
+                case_id=item["case_id"], query=item["query"],
+                expected_document_ids=expected, principal=principal,
+            ))
+            answer_cases.append(RAGAnswerEvalCase(
+                case_id=item["case_id"], query=item["query"], principal=principal,
+                expected_answer_terms=frozenset(item["expected_answer_terms"]),
+                expected_citation_document_ids=expected,
+                expect_abstain=item["expect_abstain"],
+            ))
+            answers[item["query"]] = item["answer"]
+
+        class FixtureGenerator:
+            async def generate(self, *, query, context):
+                return {
+                    "answer": answers[query],
+                    "citation_ids": [str(item["citation_id"]) for item in context],
+                }
+
+        rag = RAGService(knowledge=service, generator=FixtureGenerator())
+        retrieval = await evaluate_retrieval(service, retrieval_cases, k=3)
+        answer_results = await evaluate_answers(rag, answer_cases, k=3)
+        self.assertEqual(len(retrieval), 3)
+        self.assertTrue(all(result.recall_at_k == 1.0 for result in retrieval))
+        self.assertTrue(all(result.citation_coverage == 1.0 for result in retrieval[:2]))
+        self.assertTrue(all(result.grounded for result in answer_results))
+        self.assertTrue(answer_results[-1].abstained)
