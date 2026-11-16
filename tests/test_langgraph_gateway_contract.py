@@ -17,6 +17,10 @@ class FakeGateway:
 
 
 class LangGraphGatewayContractTests(unittest.IsolatedAsyncioTestCase):
+    def test_graph_requires_explicit_tool_node_inventory(self):
+        with self.assertRaises(TypeError):
+            build_state_graph(state_schema=dict, nodes={})
+
     def test_graph_rejects_plain_callable_for_declared_tool_node(self):
         async def node(state, config):
             return state
