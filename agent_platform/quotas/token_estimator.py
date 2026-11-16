@@ -111,6 +111,19 @@ class TiktokenChatEstimator:
                     except (TypeError, ValueError) as exc:
                         raise TokenEstimationError("tool metadata is not safely serializable") from exc
                     input_tokens += self._encode(encoding, serialized)
+            for key, value in message.items():
+                if key in {"role", "name", "content", "tool_calls", "function_call"} or value is None:
+                    continue
+                if key.lower() in {"image", "image_url", "audio", "input_audio", "video"}:
+                    raise TokenEstimationError("multimodal message metadata requires a provider-specific estimator")
+                if isinstance(value, str):
+                    input_tokens += self._encode(encoding, value)
+                else:
+                    try:
+                        serialized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+                    except (TypeError, ValueError) as exc:
+                        raise TokenEstimationError("additional message metadata is not safely serializable") from exc
+                    input_tokens += self._encode(encoding, serialized)
         if input_tokens + output_tokens > context_window_tokens:
             raise TokenEstimationError("estimated prompt plus planned output exceeds model context window")
         return TokenEstimate(input_tokens=input_tokens, output_tokens=output_tokens)
