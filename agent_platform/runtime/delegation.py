@@ -7,6 +7,7 @@ stable idempotency keys; it never invokes an LLM or a tool directly.
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -26,16 +27,36 @@ class DelegationSpec:
     timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
-        if not self.delegation_key.strip() or not self.agent_id.strip() or not self.task.strip():
-            raise ValueError("delegation_key, agent_id and task are required")
+        for name, value in (
+            ("delegation_key", self.delegation_key),
+            ("agent_id", self.agent_id),
+            ("task", self.task),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
         if len(self.task) > 50_000:
             raise ValueError("delegated task exceeds the input size limit")
+        if not isinstance(self.allowed_tools, tuple) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.allowed_tools
+        ):
+            raise ValueError("allowed_tools must be a tuple of non-empty strings")
         if len(set(self.allowed_tools)) != len(self.allowed_tools):
             raise ValueError("delegated tool allowlist must not contain duplicates")
-        if any(not item.strip() for item in self.required_capabilities):
-            raise ValueError("required capabilities must be non-empty strings")
+        if not isinstance(self.required_capabilities, tuple) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.required_capabilities
+        ):
+            raise ValueError("required_capabilities must be a tuple of non-empty strings")
         if len(set(self.required_capabilities)) != len(self.required_capabilities):
             raise ValueError("required capabilities must not contain duplicates")
+        if (
+            isinstance(self.timeout_seconds, bool)
+            or not isinstance(self.timeout_seconds, (int, float))
+            or not math.isfinite(self.timeout_seconds)
+            or self.timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
 
 
 @dataclass(frozen=True)
@@ -48,12 +69,30 @@ class DelegationPolicy:
     max_output_chars: int = 30_000
 
     def __post_init__(self) -> None:
-        if not self.allowed_agent_ids or any(not item.strip() for item in self.allowed_agent_ids):
+        if not isinstance(self.allowed_agent_ids, frozenset) or not self.allowed_agent_ids or any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.allowed_agent_ids
+        ):
             raise ValueError("an explicit non-empty delegated Agent allowlist is required")
-        if self.max_depth < 1 or self.max_children < 1 or self.max_output_chars < 1:
-            raise ValueError("delegation limits must be positive")
-        if not 0 < self.max_timeout_seconds <= 1800:
-            raise ValueError("max_timeout_seconds must be in (0, 1800]")
+        if not isinstance(self.allowed_tool_ids, frozenset) or any(
+            not isinstance(item, str) or not item.strip()
+            for item in self.allowed_tool_ids
+        ):
+            raise ValueError("allowed_tool_ids must be a frozenset of non-empty strings")
+        for name, value in (
+            ("max_depth", self.max_depth),
+            ("max_children", self.max_children),
+            ("max_output_chars", self.max_output_chars),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if (
+            isinstance(self.max_timeout_seconds, bool)
+            or not isinstance(self.max_timeout_seconds, (int, float))
+            or not math.isfinite(self.max_timeout_seconds)
+            or not 0 < self.max_timeout_seconds <= 1800
+        ):
+            raise ValueError("max_timeout_seconds must be finite and in (0, 1800]")
 
 
 @dataclass(frozen=True)
@@ -157,8 +196,12 @@ class SupervisedDelegationService:
     async def delegate(
         self, *, parent: RunContext, requests: Sequence[DelegationSpec]
     ) -> tuple[DelegationResult, ...]:
+        if not isinstance(requests, Sequence) or isinstance(requests, (str, bytes)):
+            raise ValueError("delegation requests must be a sequence of DelegationSpec values")
         if not requests:
             return ()
+        if any(not isinstance(item, DelegationSpec) for item in requests):
+            raise ValueError("every delegation request must be a DelegationSpec")
         if len(requests) > self.policy.max_children:
             raise ValueError("delegation fan-out exceeds the configured limit")
         keys = [item.delegation_key for item in requests]

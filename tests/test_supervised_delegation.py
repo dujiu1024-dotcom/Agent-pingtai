@@ -130,6 +130,26 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
                 DelegationSpec("wrong-tenant", "researcher", "Do work"),
             ))
 
+    async def test_rejects_malformed_policy_and_spec_numeric_inputs(self):
+        with self.assertRaises(ValueError):
+            DelegationSpec("bad-timeout", "researcher", "Work", timeout_seconds=float("nan"))
+        with self.assertRaises(ValueError):
+            DelegationSpec("bool-timeout", "researcher", "Work", timeout_seconds=True)
+        with self.assertRaises(ValueError):
+            DelegationSpec("bad-tools", "researcher", "Work", allowed_tools=(" ",))
+        with self.assertRaises(ValueError):
+            DelegationPolicy(
+                allowed_agent_ids=frozenset({"researcher"}),
+                max_depth=True,
+            )
+        with self.assertRaises(ValueError):
+            DelegationPolicy(
+                allowed_agent_ids=frozenset({"researcher"}),
+                max_timeout_seconds=float("inf"),
+            )
+        with self.assertRaises(ValueError):
+            await self.service.delegate(parent=self.parent, requests=("not-a-spec",))
+
     async def test_rejects_excess_fanout_and_duplicate_keys(self):
         with self.assertRaises(ValueError):
             await self.service.delegate(parent=self.parent, requests=(
