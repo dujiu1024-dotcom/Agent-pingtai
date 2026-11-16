@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS platform_run_events (
     occurred_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, event_id),
     FOREIGN KEY (tenant_id, run_id) REFERENCES platform_runs(tenant_id,run_id) ON DELETE CASCADE,
-    FOREIGN KEY (tenant_id, task_id) REFERENCES platform_tasks(tenant_id,task_id) ON DELETE SET NULL
+    FOREIGN KEY (tenant_id, task_id) REFERENCES platform_tasks(tenant_id,task_id)
 );
 CREATE INDEX IF NOT EXISTS idx_platform_run_events_timeline
     ON platform_run_events (tenant_id, run_id, occurred_at, event_id);
