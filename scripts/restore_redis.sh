@@ -5,6 +5,7 @@ set -euo pipefail
 : "${BACKUP_FILE:?BACKUP_FILE must point to .rdb.age}"
 : "${REDIS_DATA_DIR:?REDIS_DATA_DIR must be set}"
 : "${CONFIRM_REDIS_RESTORE:?Set CONFIRM_REDIS_RESTORE=RESTORE-PLATFORM-REDIS}"
+: "${REDIS_STOPPED_CONFIRM:?Set REDIS_STOPPED_CONFIRM=YES only after stopping Redis}"
 [[ "$CONFIRM_REDIS_RESTORE" == "RESTORE-PLATFORM-REDIS" ]] || {
   echo "Redis restore confirmation mismatch" >&2
   exit 2
@@ -17,6 +18,10 @@ command -v age >/dev/null
 command -v redis-check-rdb >/dev/null
 command -v sha256sum >/dev/null
 command -v python3 >/dev/null
+command -v stat >/dev/null
+command -v chown >/dev/null
+command -v realpath >/dev/null
+[[ "$REDIS_STOPPED_CONFIRM" == "YES" ]] || { echo "Redis must be stopped before replacing its RDB" >&2; exit 2; }
 [[ -d "$REDIS_DATA_DIR" && ! -L "$REDIS_DATA_DIR" ]] || {
   echo "REDIS_DATA_DIR must be an existing non-symlink directory" >&2
   exit 2
@@ -49,10 +54,20 @@ cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT
 age --decrypt --identity "$AGE_IDENTITY" --output "$WORK_DIR/dump.rdb" "$BACKUP_FILE"
 redis-check-rdb "$WORK_DIR/dump.rdb"
-chmod "${REDIS_RDB_MODE:-600}" "$WORK_DIR/dump.rdb"
 if [[ -f "$TARGET" ]]; then
+  TARGET_OWNER="$(stat -c '%u:%g' "$TARGET")"
+  TARGET_MODE="$(stat -c '%a' "$TARGET")"
+  chown "$TARGET_OWNER" "$WORK_DIR/dump.rdb"
+  chmod "$TARGET_MODE" "$WORK_DIR/dump.rdb"
+  PREVIOUS="$TARGET.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
+  [[ ! -e "$PREVIOUS" ]] || { echo "pre-restore backup already exists: $PREVIOUS" >&2; exit 2; }
   cp -p "$TARGET" "$WORK_DIR/pre-restore.rdb"
-  mv "$WORK_DIR/pre-restore.rdb" "$TARGET.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$WORK_DIR/pre-restore.rdb" "$PREVIOUS"
+else
+  : "${REDIS_UID:?Set REDIS_UID when restoring into a data directory without an existing RDB}"
+  : "${REDIS_GID:?Set REDIS_GID when restoring into a data directory without an existing RDB}"
+  chown "$REDIS_UID:$REDIS_GID" "$WORK_DIR/dump.rdb"
+  chmod "${REDIS_RDB_MODE:-600}" "$WORK_DIR/dump.rdb"
 fi
 mv "$WORK_DIR/dump.rdb" "$TARGET"
 printf 'Redis RDB restored to %s. Restart Redis only after verifying file ownership and service configuration.\n' "$TARGET"
