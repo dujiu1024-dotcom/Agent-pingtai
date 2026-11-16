@@ -11,6 +11,7 @@ import hashlib
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -563,13 +564,25 @@ class RegistryLangGraphExecutorResolver:
         )
         if inspect.isawaitable(graph):
             graph = await graph
-        return LangGraphRunExecutor(
-            graph=graph, lifecycle=lifecycle, worker_id=worker_id,
-            registry_snapshot_service=self.snapshots,
-            registry_runtime_provider=runtime_provider,
-            model_template_id=template_id,
-            required_tools=tuple(tool_ids),
-        )
+
+        def build_executor(compiled_graph: Any) -> LangGraphRunExecutor:
+            return LangGraphRunExecutor(
+                graph=compiled_graph, lifecycle=lifecycle, worker_id=worker_id,
+                registry_snapshot_service=self.snapshots,
+                registry_runtime_provider=runtime_provider,
+                model_template_id=template_id,
+                required_tools=tuple(tool_ids),
+            )
+
+        if callable(getattr(graph, "__aenter__", None)) and callable(
+            getattr(graph, "__aexit__", None)
+        ):
+            @asynccontextmanager
+            async def scoped_executor() -> Any:
+                async with graph as compiled_graph:
+                    yield build_executor(compiled_graph)
+            return scoped_executor()
+        return build_executor(graph)
 
 
 class RunExecutionWorker:
@@ -598,6 +611,47 @@ class RunExecutionWorker:
         value = callback(*args)
         return await value if inspect.isawaitable(value) else value
 
+    async def _execute_claimed(
+        self, snapshot: Any, resolved: Any, record: Mapping[str, Any],
+    ) -> str:
+        tenant_id, run_id = snapshot.tenant_id, snapshot.run_id
+        if not isinstance(resolved, LangGraphRunExecutor):
+            raise TypeError("executor_resolver must return LangGraphRunExecutor or an async context manager")
+        if resolved.worker_id != self.worker_id:
+            raise ValueError("resolved executor must use the claiming worker_id")
+        if resolved.lifecycle.store is not self.run_store:
+            raise ValueError("resolved executor must share the worker RunStateStore")
+        if snapshot.status == RunStatus.QUEUED:
+            result = await resolved.execute(
+                tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
+            )
+        else:
+            result = await resolved.resume_claimed(
+                snapshot=snapshot, input=record.get("input") or {},
+            )
+        current = await self.run_store.get(tenant_id, run_id)
+        if current is not None and current.status == RunStatus.SUCCEEDED and result is not None:
+            usage = result.get("usage", {}) if isinstance(result, Mapping) else {}
+            trace_id = result.get("trace_id") if isinstance(result, Mapping) else None
+            safe_result = _json_value(result)
+            try:
+                json.dumps(safe_result, ensure_ascii=False, allow_nan=False)
+            except (TypeError, ValueError):
+                safe_result = {"text": str(result)}
+            await self.run_store.save_output(
+                tenant_id, run_id, safe_result,
+                usage=usage if isinstance(usage, Mapping) else {},
+                trace_id=trace_id if isinstance(trace_id, str) else None,
+            )
+        current = await self.run_store.get(tenant_id, run_id)
+        if current and current.status == RunStatus.SUCCEEDED:
+            return "succeeded"
+        if current and current.status == RunStatus.CANCELLED:
+            return "cancelled"
+        if current and current.status in {RunStatus.FAILED, RunStatus.TIMED_OUT}:
+            return "failed"
+        return "skipped"
+
     async def run_once(self) -> dict[str, int]:
         claimed = await self.run_store.claim_workbench_tasks(
             self.worker_id, limit=self.batch_size,
@@ -614,46 +668,15 @@ class RunExecutionWorker:
                 resolved = await self._resolve(
                     self.executor_resolver, record, self.worker_id,
                 )
-                if not isinstance(resolved, LangGraphRunExecutor):
-                    raise TypeError("executor_resolver must return LangGraphRunExecutor")
-                if resolved.worker_id != self.worker_id:
-                    raise ValueError("resolved executor must use the claiming worker_id")
-                if resolved.lifecycle.store is not self.run_store:
-                    raise ValueError("resolved executor must share the worker RunStateStore")
-                if snapshot.status == RunStatus.QUEUED:
-                    result = await resolved.execute(
-                        tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
-                    )
-                else:
-                    result = await resolved.resume_claimed(
-                        snapshot=snapshot, input=record.get("input") or {},
-                    )
-                current = await self.run_store.get(tenant_id, run_id)
-                if current is not None and current.status == RunStatus.SUCCEEDED and result is not None:
-                    usage = result.get("usage", {}) if isinstance(result, Mapping) else {}
-                    trace_id = result.get("trace_id") if isinstance(result, Mapping) else None
-                    safe_result = _json_value(result)
-                    try:
-                        json.dumps(safe_result, ensure_ascii=False, allow_nan=False)
-                    except (TypeError, ValueError):
-                        safe_result = {"text": str(result)}
-                    await self.run_store.save_output(
-                        tenant_id, run_id, safe_result,
-                        usage=usage if isinstance(usage, Mapping) else {},
-                        trace_id=trace_id if isinstance(trace_id, str) else None,
-                    )
-                current = await self.run_store.get(tenant_id, run_id)
-                if current and current.status == RunStatus.SUCCEEDED:
-                    return "succeeded"
-                if current and current.status == RunStatus.CANCELLED:
-                    return "cancelled"
-                if current and current.status in {RunStatus.FAILED, RunStatus.TIMED_OUT}:
-                    return "failed"
-                return "skipped"
+                if callable(getattr(resolved, "__aenter__", None)) and callable(
+                    getattr(resolved, "__aexit__", None)
+                ):
+                    async with resolved as executor:
+                        return await self._execute_claimed(snapshot, executor, record)
+                return await self._execute_claimed(snapshot, resolved, record)
             except asyncio.CancelledError:
                 raise
             except WorkerLeaseLost:
-                # Another worker owns the lease now; never mark its Run failed.
                 current = await self.run_store.get(tenant_id, run_id)
                 return "cancelled" if current and current.status == RunStatus.CANCELLED else "skipped"
             except Exception as exc:
