@@ -144,9 +144,9 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             [(event["action"], event["outcome"], event["detail"]["phase"] if "phase" in event["detail"] else "result")
              for event in audit.events],
             [
-                ("model.request", "succeeded", "started"),
+                ("model.request", "started", "started"),
                 ("model.response", "failed", "result"),
-                ("model.request", "succeeded", "started"),
+                ("model.request", "started", "started"),
                 ("model.response", "succeeded", "result"),
             ],
         )
