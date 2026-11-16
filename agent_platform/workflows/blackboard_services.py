@@ -354,7 +354,18 @@ class BlackboardMultiExpertServices:
                 raise PermissionError("cannot archive a workflow with a pending or rejected approval")
             approval_id = approval.get("blackboard_entry_id")
             approval_entry = await self.repository.get(str(approval_id)) if approval_id else None
-            if approval_entry is None or approval_entry.status is not EntryStatus.ACCEPTED:
+            approval_payload = (
+                approval_entry.content.get("approval_result", {})
+                if approval_entry is not None else {}
+            )
+            if (
+                approval_entry is None
+                or approval_entry.kind is not EntryKind.DECISION
+                or approval_entry.status is not EntryStatus.ACCEPTED
+                or request_id not in approval_entry.source_refs
+                or not isinstance(approval_payload, Mapping)
+                or approval_payload.get("approved") is not True
+            ):
                 raise PermissionError("accepted approval decision must be persisted before archiving")
         result = dict(await self.callbacks.archive(state=state))
         scope, scope_id = self._scope(state)
@@ -398,7 +409,18 @@ class BlackboardMultiExpertServices:
                 raise PermissionError("rejection requires a persisted negative approval decision")
             approval_id = approval.get("blackboard_entry_id")
             approval_entry = await self.repository.get(str(approval_id)) if approval_id else None
-            if approval_entry is None or approval_entry.status is not EntryStatus.REJECTED:
+            approval_payload = (
+                approval_entry.content.get("approval_result", {})
+                if approval_entry is not None else {}
+            )
+            if (
+                approval_entry is None
+                or approval_entry.kind is not EntryKind.DECISION
+                or approval_entry.status is not EntryStatus.REJECTED
+                or self._entry_id(state, "approval-request") not in approval_entry.source_refs
+                or not isinstance(approval_payload, Mapping)
+                or approval_payload.get("approved") is not False
+            ):
                 raise PermissionError("negative approval decision must be persisted before rejection")
         result = dict(await self.callbacks.reject(state=state))
         scope, scope_id = self._scope(state)
