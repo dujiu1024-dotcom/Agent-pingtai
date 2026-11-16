@@ -71,7 +71,10 @@ class SessionListingApiTests(unittest.TestCase):
         sessions = client.get("/api/platform/v1/sessions")
         files = client.get("/api/platform/v1/files")
         self.assertEqual(sessions.status_code, 200)
-        self.assertEqual([x["session_id"] for x in sessions.json()["items"]], [own.session_id])
+        self.assertEqual(
+            {x["session_id"] for x in sessions.json()["items"]},
+            {own.session_id, project_session.session_id},
+        )
         self.assertEqual(files.status_code, 200)
         self.assertEqual([x["asset_id"] for x in files.json()["items"]], [asset.asset_id, private_asset.asset_id])
         denied["project"].add("project-private")
