@@ -85,6 +85,7 @@ def create_platform_app(
     webhook_admin_authorizer: Any | None = None,
     webhook_delivery_store: Any | None = None,
     webhook_delivery_authorizer: Any | None = None,
+    webhook_delivery_replay_service: Any | None = None,
     webhook_delivery_worker: Any | None = None,
     outbox_relay_worker: Any | None = None,
     memory_extraction_event_worker: Any | None = None,
@@ -281,12 +282,15 @@ def create_platform_app(
     webhook_delivery_admin_configured = any(value is not None for value in (
         webhook_delivery_store, webhook_delivery_authorizer,
     ))
+    if webhook_delivery_replay_service is not None and not webhook_delivery_admin_configured:
+        raise ValueError("webhook replay service requires the delivery admin router")
     if webhook_delivery_admin_configured:
         if webhook_delivery_store is None or webhook_delivery_authorizer is None:
             raise ValueError("webhook delivery store and authorizer must be configured together")
         app.include_router(create_webhook_delivery_admin_router(
             store=webhook_delivery_store,
             authorize_manage=webhook_delivery_authorizer,
+            replay_service=webhook_delivery_replay_service,
         ))
     if webhook_delivery_worker is not None:
         if not callable(getattr(webhook_delivery_worker, "start", None)) or not callable(

@@ -6,8 +6,13 @@ from typing import Any, Callable
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from agent_platform.identity.models import Principal
+
+
+class DeadLetterReplayRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=256)
 
 
 class PostgresWebhookOperationsStore:
@@ -66,8 +71,16 @@ class PostgresWebhookOperationsStore:
                 return await cursor.fetchone() is not None
 
 
-def create_webhook_delivery_admin_router(*, store: Any,
-                                         authorize_manage: Callable[[Principal], Any]) -> APIRouter:
+def create_webhook_delivery_admin_router(
+    *,
+    store: Any,
+    authorize_manage: Callable[[Principal], Any],
+    replay_service: Any | None = None,
+) -> APIRouter:
+    if replay_service is not None and not callable(
+        getattr(replay_service, "replay", None)
+    ):
+        raise TypeError("replay_service must expose async replay()")
     router = APIRouter(prefix="/api/platform/v1/webhooks", tags=["webhooks"])
 
     def principal(request: Request) -> Principal:
@@ -90,14 +103,27 @@ def create_webhook_delivery_admin_router(*, store: Any,
         return {"items": await store.list_dead_letters(actor.tenant_id, limit=limit)}
 
     @router.post("/dead-letters/{delivery_id}/replay")
-    async def replay_dead_letter(delivery_id: str, request: Request):
+    async def replay_dead_letter(
+        delivery_id: str,
+        request: Request,
+        payload: DeadLetterReplayRequest,
+    ):
         actor = principal(request)
         if not await can_manage(actor):
             raise HTTPException(403, "webhook management permission required")
+        if replay_service is None:
+            raise HTTPException(503, "audited webhook replay service is not configured")
         try:
-            replayed = await store.replay_dead_letter(actor.tenant_id, delivery_id)
+            replayed = await replay_service.replay(
+                tenant_id=actor.tenant_id,
+                actor_id=actor.user_id,
+                delivery_id=delivery_id,
+                reason=payload.reason,
+            )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, "webhook replay permission required") from exc
         if not replayed:
             raise HTTPException(404, "dead-letter delivery not found or subscription disabled")
         return {"delivery_id": delivery_id, "status": "pending"}
