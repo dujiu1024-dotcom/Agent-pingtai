@@ -12,10 +12,13 @@ from agent_platform.identity.models import Principal
 
 
 class FakeDispatcher:
-    def __init__(self):
+    def __init__(self, started=None):
         self.calls = 0
+        self.started = started
     async def dispatch(self, *, limit):
         self.calls += 1
+        if self.started is not None:
+            self.started.set()
         return {"claimed": 0}
 
 
@@ -34,17 +37,27 @@ class FakeOperations:
 
 class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
     async def test_worker_starts_stops_and_dispatches(self):
-        dispatcher = FakeDispatcher()
+        started = asyncio.Event()
+        dispatcher = FakeDispatcher(started)
         worker = WebhookDeliveryWorker(
             dispatcher=dispatcher, interval_seconds=0.1, batch_limit=7,
         )
         await worker.start()
-        await asyncio.sleep(0.02)
+        first_task = worker._task
+        await worker.start()
+        self.assertIs(worker._task, first_task)
+        await asyncio.wait_for(started.wait(), timeout=1)
         await worker.stop()
         self.assertGreaterEqual(dispatcher.calls, 1)
         calls = dispatcher.calls
         await asyncio.sleep(0.02)
         self.assertEqual(dispatcher.calls, calls)
+        restarted = asyncio.Event()
+        dispatcher.started = restarted
+        await worker.start()
+        await asyncio.wait_for(restarted.wait(), timeout=1)
+        await worker.stop()
+        self.assertGreater(dispatcher.calls, calls)
 
     async def test_worker_configuration_is_bounded_and_type_safe(self):
         for interval in (0, True, "1"):
@@ -53,6 +66,21 @@ class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
         for limit in (0, 501, True, 1.5):
             with self.subTest(limit=limit), self.assertRaises(ValueError):
                 WebhookDeliveryWorker(dispatcher=FakeDispatcher(), batch_limit=limit)
+
+    async def test_worker_does_not_log_provider_exception_text(self):
+        class SecretFailureDispatcher:
+            async def dispatch(self, *, limit):
+                raise RuntimeError("destination=https://private.example/token=secret")
+
+        worker = WebhookDeliveryWorker(
+            dispatcher=SecretFailureDispatcher(), interval_seconds=0.1,
+        )
+        with self.assertLogs("agent_platform.events.webhook_worker", level="WARNING") as captured:
+            await worker.start()
+            await asyncio.sleep(0)
+            await worker.stop()
+        self.assertTrue(any("RuntimeError" in line for line in captured.output))
+        self.assertFalse(any("private.example" in line or "secret" in line for line in captured.output))
 
     async def test_worker_recovers_after_dispatch_failure(self):
         recovered = asyncio.Event()
