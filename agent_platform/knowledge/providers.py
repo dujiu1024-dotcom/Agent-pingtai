@@ -86,6 +86,7 @@ class OpenAICompatibleEmbedder:
                 "Content-Type": "application/json",
             },
             json={"model": self.model_id, "input": list(texts)},
+            follow_redirects=False,
         )
         response.raise_for_status()
         payload = response.json()
@@ -150,6 +151,7 @@ class CohereReranker:
                 "top_n": len(hits),
                 "return_documents": False,
             },
+            follow_redirects=False,
         )
         response.raise_for_status()
         payload = response.json()
@@ -259,6 +261,7 @@ class AzureDocumentIntelligenceOCRProvider:
         }
         response = self.client.post(
             url, headers=headers, content=bytes(content), timeout=self.timeout_seconds,
+            follow_redirects=False,
         )
         if response.status_code != 202:
             response.raise_for_status()
@@ -276,7 +279,7 @@ class AzureDocumentIntelligenceOCRProvider:
         for _ in range(self.max_polls):
             result = self.client.get(
                 operation_url, headers={"Ocp-Apim-Subscription-Key": self.api_key},
-                timeout=self.timeout_seconds,
+                timeout=self.timeout_seconds, follow_redirects=False,
             )
             result.raise_for_status()
             payload = result.json()
