@@ -34,6 +34,9 @@ class SessionListingApiTests(unittest.TestCase):
                 row.session_id for row in repository.sessions.values()
                 if row.owner_id == actor.user_id
             } or resource_id in {
+                row.project_id for row in repository.sessions.values()
+                if row.owner_id == actor.user_id and row.project_id is not None
+            } or resource_id in {
                 row.asset_id for row in repository.assets.values()
                 if row.owner_id == actor.user_id
             }
