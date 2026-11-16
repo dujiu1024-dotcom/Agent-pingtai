@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import unittest
 
 from agent_platform.extensions.manifest import ExtensionManifest
@@ -96,7 +95,7 @@ class SandboxedExtensionRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.install(_manifest())
         with self.assertRaises(PermissionError):
             await self.runtime.invoke(
-                _manifest(), principal=object(), action="run", payload={},
+                _manifest(), principal=type("Principal", (), {"tenant_id": "tenant-a"})(), action="run", payload={},
             )
         self.assertEqual(self.runner.calls, [])
 
