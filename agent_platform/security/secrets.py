@@ -13,6 +13,7 @@ class SecretVersion:
     version: int
     status: str
     created_at: datetime
+    backend_revoked_at: datetime | None = None
 
 
 class SecretBackend(Protocol):
@@ -27,6 +28,8 @@ class SecretMetadataRepository(Protocol):
     async def activate_version(self, secret_ref: str, version: int) -> None: ...
     async def revoke_version(self, secret_ref: str, version: int, revoked_at: datetime) -> None: ...
     async def revoke_all(self, secret_ref: str, revoked_at: datetime) -> list[int]: ...
+    async def list_pending_revocations(self, secret_ref: str | None = None) -> list[int]: ...
+    async def mark_backend_revoked(self, secret_ref: str, version: int, revoked_at: datetime) -> None: ...
 
 
 class SecretManager:
@@ -65,8 +68,14 @@ class SecretManager:
             await self.backend.put(secret_ref, version, value)
             await self.metadata.activate_version(secret_ref, version)
         except Exception:
-            await self.backend.revoke(secret_ref, version)
+            # Mark metadata revoked first, then attempt cleanup. If Vault is
+            # unavailable, the unconfirmed cleanup remains discoverable/retryable.
             await self.metadata.revoke_version(secret_ref, version, datetime.now(timezone.utc))
+            try:
+                await self.backend.revoke(secret_ref, version)
+                await self.metadata.mark_backend_revoked(secret_ref, version, datetime.now(timezone.utc))
+            except Exception:
+                pass
             raise
         return SecretVersion(secret_ref, version, "active", now)
 
@@ -85,9 +94,7 @@ class SecretManager:
             raise KeyError("active secret version not found")
         created = await self._write_version(ref, clean_value)
         # Metadata activation revokes all older versions before backend cleanup.
-        for item in current:
-            if item.status == "active":
-                await self.backend.revoke(ref, item.version)
+        await self.retry_revocations(secret_ref=ref)
         return created
 
     async def resolve(self, *, secret_ref: str) -> str:
@@ -107,10 +114,27 @@ class SecretManager:
 
     async def revoke(self, *, secret_ref: str) -> int:
         ref = self._validate_ref(secret_ref)
-        versions = await self.metadata.revoke_all(ref, datetime.now(timezone.utc))
-        for version in versions:
-            await self.backend.revoke(ref, version)
-        return len(versions)
+        await self.metadata.revoke_all(ref, datetime.now(timezone.utc))
+        return await self.retry_revocations(secret_ref=ref)
+
+    async def retry_revocations(self, *, secret_ref: str | None = None) -> int:
+        ref = self._validate_ref(secret_ref) if secret_ref is not None else None
+        pending = await self.metadata.list_pending_revocations(ref)
+        cleaned = 0
+        failures = 0
+        for version in pending:
+            if ref is None:
+                # Global retries require a repository that can return scoped refs.
+                raise ValueError("secret_ref is required for scoped backend cleanup")
+            try:
+                await self.backend.revoke(ref, version)
+                await self.metadata.mark_backend_revoked(ref, version, datetime.now(timezone.utc))
+                cleaned += 1
+            except Exception:
+                failures += 1
+        if failures:
+            raise RuntimeError(f"{failures} secret backend revocation(s) remain pending")
+        return cleaned
 
 
 class PostgresSecretMetadataRepository:
@@ -123,7 +147,7 @@ class PostgresSecretMetadataRepository:
         connection = await self._connect()
         async with connection:
             cursor = await connection.execute(
-                """SELECT secret_ref,version,status,created_at
+                """SELECT secret_ref,version,status,created_at,backend_revoked_at
                    FROM platform_secret_versions WHERE secret_ref=%s
                    ORDER BY version""",
                 (secret_ref,),
@@ -132,6 +156,7 @@ class PostgresSecretMetadataRepository:
         return [SecretVersion(
             secret_ref=row["secret_ref"], version=row["version"],
             status=row["status"], created_at=row["created_at"],
+            backend_revoked_at=row["backend_revoked_at"],
         ) for row in rows]
 
     async def create_version(self, secret_ref: str, version: int,
@@ -180,12 +205,44 @@ class PostgresSecretMetadataRepository:
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
-                cursor = await connection.execute(
+                await connection.execute(
                     """UPDATE platform_secret_versions SET status='revoked',
-                              revoked_at=%s
-                       WHERE secret_ref=%s AND status IN ('active','pending')
-                       RETURNING version""",
+                              revoked_at=COALESCE(revoked_at,%s)
+                       WHERE secret_ref=%s AND status IN ('active','pending')""",
                     (revoked_at, secret_ref),
+                )
+                cursor = await connection.execute(
+                    """SELECT version FROM platform_secret_versions
+                       WHERE secret_ref=%s AND status='revoked'
+                         AND backend_revoked_at IS NULL
+                       ORDER BY version""",
+                    (secret_ref,),
                 )
                 rows = await cursor.fetchall()
         return [int(row["version"]) for row in rows]
+
+    async def list_pending_revocations(self, secret_ref: str | None = None) -> list[int]:
+        if secret_ref is None:
+            raise ValueError("secret_ref is required for scoped cleanup")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT version FROM platform_secret_versions
+                   WHERE secret_ref=%s AND status='revoked'
+                     AND backend_revoked_at IS NULL ORDER BY version""",
+                (secret_ref,),
+            )
+            rows = await cursor.fetchall()
+        return [int(row["version"]) for row in rows]
+
+    async def mark_backend_revoked(
+        self, secret_ref: str, version: int, revoked_at: datetime
+    ) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """UPDATE platform_secret_versions
+                   SET backend_revoked_at=%s
+                   WHERE secret_ref=%s AND version=%s AND status='revoked'""",
+                (revoked_at,secret_ref,version),
+            )
