@@ -135,6 +135,8 @@ class SessionListingApiTests(unittest.TestCase):
             return service
 
         async def authorize(actor, resource_type, resource_id, action):
+            if resource_type == "project" and action == "write":
+                return resource_id == "project-a"
             return resource_type == "session" and resource_id in {
                 row.session_id for row in repository.sessions.values()
                 if row.owner_id == actor.user_id

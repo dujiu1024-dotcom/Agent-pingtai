@@ -348,6 +348,22 @@ class PostgresSessionRepository:
             if await cursor.fetchone() is None:
                 raise SessionNotFound("asset not found")
 
+
+    async def set_asset_status_if_not_deleted(
+        self, tenant_id: str, asset_id: str, status: AssetStatus
+    ) -> bool:
+        if tenant_id != self.tenant_id:
+            raise PermissionError("asset tenant mismatch")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """UPDATE platform_file_assets SET status=%s
+                   WHERE tenant_id=%s AND asset_id=%s AND status <> 'deleted'
+                   RETURNING asset_id""",
+                (status.value, self.tenant_id, _uuid(asset_id)),
+            )
+            return await cursor.fetchone() is not None
+
     def _check_tenant(self, tenant_id: str) -> None:
         if tenant_id != self.tenant_id:
             raise PermissionError("session/asset tenant mismatch")

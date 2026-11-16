@@ -146,14 +146,26 @@ class FileProcessingWorker:
             await self.queue.complete(job)
             return True
         try:
-            await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.SCANNING)
+            if not await repository.set_asset_status_if_not_deleted(
+                job.tenant_id, job.asset_id, AssetStatus.SCANNING,
+            ):
+                await self.queue.complete(job)
+                return True
             content = await storage.get(asset.object_key)
             import hashlib
             if hashlib.sha256(content).hexdigest() != asset.sha256:
                 raise ValueError("asset_integrity_mismatch")
             accepted = await self.scanner.scan(asset.filename, asset.media_type, content)
+            latest = await repository.get_asset(job.tenant_id, job.asset_id)
+            if latest is None or latest.status is AssetStatus.DELETED:
+                await self.queue.complete(job)
+                return True
             if not accepted:
-                await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.REJECTED)
+                if not await repository.set_asset_status_if_not_deleted(
+                    job.tenant_id, job.asset_id, AssetStatus.REJECTED,
+                ):
+                    await self.queue.complete(job)
+                    return True
                 await storage.delete(asset.object_key)
                 await self.queue.complete(job)
                 return True
@@ -167,20 +179,46 @@ class FileProcessingWorker:
                 document_id=asset.asset_id, media_type=asset.media_type,
                 metadata={"asset_id": asset.asset_id, "session_id": asset.session_id},
             )
-            await self.knowledge_for_tenant(job.tenant_id).ingest(
-                document=document, content=content,
+            knowledge = self.knowledge_for_tenant(job.tenant_id)
+            await knowledge.ingest(document=document, content=content)
+            # Deletion may race with parsing/indexing. Never resurrect a tombstoned
+            # asset; remove any index entry created while the worker was running.
+            latest = await repository.get_asset(job.tenant_id, job.asset_id)
+            if latest is None or latest.status is AssetStatus.DELETED:
+                await knowledge.repository.delete_document(job.tenant_id, job.asset_id)
+                await self.queue.complete(job)
+                return True
+            became_available = await repository.set_asset_status_if_not_deleted(
+                job.tenant_id, job.asset_id, AssetStatus.AVAILABLE,
             )
-            await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.AVAILABLE)
+            if not became_available:
+                await knowledge.repository.delete_document(job.tenant_id, job.asset_id)
             await self.queue.complete(job)
             return True
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            latest = await repository.get_asset(job.tenant_id, job.asset_id)
+            if latest is None or latest.status is AssetStatus.DELETED:
+                await self.knowledge_for_tenant(job.tenant_id).repository.delete_document(
+                    job.tenant_id, job.asset_id,
+                )
+                await self.queue.complete(job)
+                return True
             error_code = type(exc).__name__.lower()
             dead = await self.queue.fail(job, error_code=error_code)
             if dead:
-                await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.REJECTED)
-                await storage.delete(asset.object_key)
+                marked_rejected = await repository.set_asset_status_if_not_deleted(
+                    job.tenant_id, job.asset_id, AssetStatus.REJECTED,
+                )
+                if marked_rejected:
+                    await storage.delete(asset.object_key)
+                else:
+                    await self.knowledge_for_tenant(job.tenant_id).repository.delete_document(
+                        job.tenant_id, job.asset_id,
+                    )
             else:
-                await repository.set_asset_status(job.tenant_id, job.asset_id, AssetStatus.PENDING)
+                await repository.set_asset_status_if_not_deleted(
+                    job.tenant_id, job.asset_id, AssetStatus.PENDING,
+                )
             return True

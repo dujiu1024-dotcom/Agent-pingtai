@@ -53,6 +53,7 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.service = SessionAssetService(
             self.repository, self.storage, processing_queue=self.queue,
+            knowledge_for_tenant=lambda tenant: self.knowledge,
         )
 
     async def test_upload_is_pending_until_worker_scans_and_indexes(self):
@@ -101,6 +102,136 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(Exception):
             await self.storage.get(asset.object_key)
         self.assertEqual(self.knowledge_repository.documents, {})
+
+    async def test_delete_asset_removes_index_and_object(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="indexed.txt",
+            media_type="text/plain", content=b"remove searchable content",
+        )
+        worker = FileProcessingWorker(
+            queue=self.queue, worker_id="worker-a",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=Scanner(),
+            knowledge_for_tenant=lambda tenant: self.knowledge,
+        )
+        await worker.run_once()
+        self.assertTrue(any(key[1] == asset.asset_id for key in self.knowledge_repository.documents))
+
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertTrue(all(
+            document.deleted_at is not None
+            for key, document in self.knowledge_repository.documents.items()
+            if key[1] == asset.asset_id
+        ))
+        self.assertFalse(any(
+            key[1] == asset.asset_id for key in self.knowledge_repository.chunks
+        ))
+        with self.assertRaises(Exception):
+            await self.storage.get(asset.object_key)
+
+    async def test_worker_does_not_reindex_asset_deleted_during_scan(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="race.txt",
+            media_type="text/plain", content=b"deleted while scanning",
+        )
+
+        class DeletingScanner:
+            async def scan(inner_self, filename, media_type, content):
+                await self.service.delete_asset(
+                    tenant_id="tenant-a", asset_id=asset.asset_id,
+                )
+                return True
+
+        worker = FileProcessingWorker(
+            queue=self.queue, worker_id="worker-a",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=DeletingScanner(),
+            knowledge_for_tenant=lambda tenant: self.knowledge,
+        )
+        await worker.run_once()
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertTrue(all(
+            document.deleted_at is not None
+            for key, document in self.knowledge_repository.documents.items()
+            if key[1] == asset.asset_id
+        ))
+        self.assertFalse(any(
+            key[1] == asset.asset_id for key in self.knowledge_repository.chunks
+        ))
+        self.assertEqual(self.queue.completed, [asset.asset_id])
+
+    async def test_worker_removes_index_if_delete_races_with_ingestion(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="ingest-race.txt",
+            media_type="text/plain", content=b"delete while indexing",
+        )
+
+        class DeleteAfterIngest:
+            repository = self.knowledge_repository
+
+            async def ingest(inner_self, **kwargs):
+                result = await self.knowledge.ingest(**kwargs)
+                await self.service.delete_asset(
+                    tenant_id="tenant-a", asset_id=asset.asset_id,
+                )
+                return result
+
+        worker = FileProcessingWorker(
+            queue=self.queue, worker_id="worker-a",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=Scanner(),
+            knowledge_for_tenant=lambda tenant: DeleteAfterIngest(),
+        )
+        await worker.run_once()
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertTrue(all(
+            document.deleted_at is not None
+            for key, document in self.knowledge_repository.documents.items()
+            if key[1] == asset.asset_id
+        ))
+        self.assertFalse(any(
+            key[1] == asset.asset_id for key in self.knowledge_repository.chunks
+        ))
+
+    async def test_delete_retries_index_cleanup_after_transient_failure(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="retry-delete.txt",
+            media_type="text/plain", content=b"retry index deletion",
+        )
+        original_delete = self.knowledge_repository.delete_document
+        attempts = 0
+
+        async def flaky_delete(tenant_id, document_id):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("temporary index outage")
+            return await original_delete(tenant_id, document_id)
+
+        self.knowledge_repository.delete_document = flaky_delete
+        with self.assertRaisesRegex(Exception, "index cleanup failed"):
+            await self.service.delete_asset(
+                tenant_id="tenant-a", asset_id=asset.asset_id,
+            )
+
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.DELETED)
+        self.assertEqual(await self.storage.get(asset.object_key), b"retry index deletion")
+
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+        with self.assertRaises(Exception):
+            await self.storage.get(asset.object_key)
+        self.assertEqual(attempts, 2)
 
     async def test_transient_processing_failure_returns_asset_to_pending(self):
         asset = await self.service.upload_asset(

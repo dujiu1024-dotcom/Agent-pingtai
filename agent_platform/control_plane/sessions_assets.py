@@ -91,6 +91,9 @@ class SessionRepository(Protocol):
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None: ...
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100) -> tuple[FileAsset, ...]: ...
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None: ...
+    async def set_asset_status_if_not_deleted(
+        self, tenant_id: str, asset_id: str, status: AssetStatus
+    ) -> bool: ...
 
 
 
@@ -168,6 +171,17 @@ class InMemorySessionRepository:
         from dataclasses import replace
         self.assets[key] = replace(asset, status=status)
 
+    async def set_asset_status_if_not_deleted(
+        self, tenant_id: str, asset_id: str, status: AssetStatus
+    ) -> bool:
+        key = (tenant_id, asset_id)
+        asset = self.assets.get(key)
+        if asset is None or asset.status is AssetStatus.DELETED:
+            return False
+        from dataclasses import replace
+        self.assets[key] = replace(asset, status=status)
+        return True
+
 
 class InMemoryObjectStorage:
     """Test adapter. Never use as production durable storage."""
@@ -196,6 +210,7 @@ class SessionAssetService:
         allowed_media_types: frozenset[str] | None = None,
         scanner: AssetScanner | None = None,
         processing_queue: AssetProcessingQueue | None = None,
+        knowledge_for_tenant: Any | None = None,
     ) -> None:
         if max_upload_bytes < 1:
             raise ValueError("max_upload_bytes must be positive")
@@ -205,6 +220,7 @@ class SessionAssetService:
         self.allowed_media_types = allowed_media_types
         self.scanner = scanner
         self.processing_queue = processing_queue
+        self.knowledge_for_tenant = knowledge_for_tenant
 
     async def create_session(self, *, tenant_id: str, owner_id: str, title: str = "", project_id: str | None = None) -> ConversationSession:
         if not tenant_id.strip() or not owner_id.strip():
@@ -343,6 +359,16 @@ class SessionAssetService:
             await self.repository.set_asset_status(
                 tenant_id, asset_id, AssetStatus.DELETED,
             )
+        # The tombstone blocks downloads immediately. Retryable index cleanup
+        # is performed before object cleanup so stale chunks cannot remain searchable.
+        if self.knowledge_for_tenant is not None:
+            try:
+                knowledge = self.knowledge_for_tenant(tenant_id)
+                await knowledge.repository.delete_document(tenant_id, asset_id)
+            except Exception as exc:
+                raise SessionError(
+                    "file is tombstoned but knowledge index cleanup failed; retry deletion"
+                ) from exc
         try:
             await self.storage.delete(asset.object_key)
         except Exception as exc:
