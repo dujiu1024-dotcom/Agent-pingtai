@@ -72,10 +72,15 @@ class WorkflowCallbacks:
 class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
     async def test_workflow_persists_claim_conflict_decision_approval_and_artifact(self):
         repository = InMemoryBlackboard()
+        registry = InMemoryExpertRegistry((
+            ExpertProfile("researcher", "Researcher", "Market research", frozenset()),
+            ExpertProfile("critic", "Critic", "Counter evidence", frozenset()),
+        ))
         services = BlackboardMultiExpertServices(
             tenant_id="tenant-a",
             repository=repository,
             callbacks=WorkflowCallbacks(),
+            expert_registry=registry,
         )
         context = {
             "tenant_id": "tenant-a",
