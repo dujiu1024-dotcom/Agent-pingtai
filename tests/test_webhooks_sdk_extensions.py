@@ -177,7 +177,7 @@ class SdkAndExtensionTests(unittest.TestCase):
         for method in ("TRACE", "CONNECT", ""):
             with self.subTest(method=method), self.assertRaises(ValueError):
                 client.request(method, "/health")
-        for key in ("", "bad\\nkey", "x" * 256):
+        for key in ("", "bad\nkey", "x" * 256):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 client.post("/runs", {}, idempotency_key=key)
         with self.assertRaises(ValueError):
