@@ -193,3 +193,68 @@ class SessionListingApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_session_memory_extraction_rejects_non_owner_even_with_session_write_access(self):
+        import asyncio
+
+        repository = InMemorySessionRepository()
+        service = SessionAssetService(repository, InMemoryObjectStorage())
+        principal = SimpleNamespace(tenant_id="tenant-a", user_id="reader")
+        memory_principal = MemoryPrincipal(tenant_id="tenant-a", user_id="reader")
+        memory = MemoryService(InMemoryMemoryRepository())
+
+        class Extractor:
+            async def extract(self, *, turn):
+                raise AssertionError("extractor must not receive another user's session")
+
+        async def resolve_principal(request):
+            return principal
+
+        async def resolve_memory_principal(request):
+            return memory_principal
+
+        async def resolve_service(actor):
+            return service
+
+        async def authorize(actor, resource_type, resource_id, action):
+            return resource_type == "session" and action in {"read", "write"}
+
+        app = FastAPI()
+        app.include_router(create_sessions_router(
+            resolve_principal=resolve_principal,
+            resolve_service=resolve_service,
+            authorize=authorize,
+            memory_extraction=MemoryExtractionService(
+                memory=memory, extractor=Extractor(),
+            ),
+            resolve_memory_principal=resolve_memory_principal,
+        ))
+        client = TestClient(app)
+
+        async def seed():
+            session = await service.create_session(
+                tenant_id="tenant-a", owner_id="session-owner",
+            )
+            await service.append_message(
+                tenant_id="tenant-a", actor_id="session-owner",
+                session_id=session.session_id, role=MessageRole.USER,
+                content="Private user preference",
+            )
+            await service.append_message(
+                tenant_id="tenant-a", actor_id="agent-a",
+                session_id=session.session_id, role=MessageRole.ASSISTANT,
+                content="Private assistant response",
+            )
+            return session
+
+        session = asyncio.run(seed())
+        response = client.post(
+            f"/api/platform/v1/sessions/{session.session_id}/memory-extract",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.json()["detail"],
+            "memory extraction is restricted to the session owner",
+        )
+        self.assertEqual(asyncio.run(memory.repository.list("tenant-a")), [])
