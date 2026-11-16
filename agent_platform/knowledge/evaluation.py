@@ -39,7 +39,10 @@ async def evaluate_retrieval(service: KnowledgeService,cases: Sequence[RAGEvalCa
         ]
         found = set(ranked_document_ids)
         recall = len(found & expected) / len(expected) if expected else 1.0
-        precision = sum(ranked_relevant) / k if expected else (1.0 if not hits else 0.0)
+        precision = (
+            sum(ranked_relevant) / len(ranked_document_ids)
+            if ranked_document_ids else 0.0
+        ) if expected else (1.0 if not ranked_document_ids else 0.0)
         reciprocal_rank = next(
             (1.0 / index for index, relevant in enumerate(ranked_relevant, 1) if relevant),
             0.0,
