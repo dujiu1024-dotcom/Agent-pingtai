@@ -56,6 +56,7 @@ def create_platform_app(
     run_authorizer: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
+    metrics_exporter: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 

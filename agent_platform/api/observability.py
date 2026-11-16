@@ -15,6 +15,9 @@ def create_observability_router(*, metrics: Any) -> APIRouter:
     @router.get("/metrics", response_class=PlainTextResponse)
     async def metrics_endpoint(request: Request):
         actor = getattr(request.state, "identity.principal", None)
+        if actor is None:
+            # 兼容直接挂载 request.state.identity 的宿主（如单测/自建中间件）
+            actor = getattr(getattr(request.state, "identity", None), "principal", None)
         if not isinstance(actor, Principal):
             raise HTTPException(401, "authenticated user required")
         render = getattr(metrics, "render_prometheus", None)
