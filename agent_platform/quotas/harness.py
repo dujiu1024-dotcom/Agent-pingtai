@@ -79,6 +79,12 @@ class QuotaEnforcedHarnessAdapter:
             )
         if len(estimate) == 3:
             estimated_input_tokens, estimated_output_tokens, estimated_cost = estimate
+            for label, value in (
+                ("estimated input tokens", estimated_input_tokens),
+                ("estimated output tokens", estimated_output_tokens),
+            ):
+                if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                    raise ValueError(f"{label} must be a non-negative integer")
             estimated_tokens = estimated_input_tokens + estimated_output_tokens
         else:
             estimated_tokens, estimated_cost = estimate
