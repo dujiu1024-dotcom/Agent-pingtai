@@ -1,8 +1,11 @@
 """Machine-readable inventory for legacy platform assets and migration decisions."""
+
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable
+
 
 class MigrationDecision(str, Enum):
     REUSE = "reuse"
@@ -10,6 +13,7 @@ class MigrationDecision(str, Enum):
     REPLACE = "replace"
     RETIRE = "retire"
     UNASSESSED = "unassessed"
+
 
 @dataclass(frozen=True)
 class LegacyAsset:
@@ -19,6 +23,7 @@ class LegacyAsset:
     owner: str
     target: str | None = None
     notes: str = ""
+
     def __post_init__(self) -> None:
         for field_name in ("name", "path", "owner"):
             value = getattr(self, field_name)
@@ -33,6 +38,7 @@ class LegacyAsset:
             raise ValueError("target must be a non-empty string when provided")
         if not isinstance(self.notes, str):
             raise ValueError("notes must be a string")
+
 
 # Targets identify current repository capability candidates, not proof of data parity.
 # Legacy source paths are historical labels; their original contents are not present here.
@@ -60,6 +66,7 @@ DEFAULT_LEGACY_ASSETS = (
                 "Generic connector capability exists; Feishu-specific auth, events, sync and rate limits need adapter validation."),
 )
 
+
 def validate_inventory(assets: Iterable[LegacyAsset]) -> tuple[LegacyAsset, ...]:
     records = tuple(assets)
     if any(not isinstance(item, LegacyAsset) for item in records):
@@ -69,6 +76,7 @@ def validate_inventory(assets: Iterable[LegacyAsset]) -> tuple[LegacyAsset, ...]
     if len(names) != len(set(names)) or len(paths) != len(set(paths)):
         raise ValueError("legacy inventory names and paths must be unique")
     return tuple(sorted(records, key=lambda item: item.name))
+
 
 def inventory_report(assets: Iterable[LegacyAsset] = DEFAULT_LEGACY_ASSETS) -> dict[str, object]:
     """Return stable mapping candidates without claiming semantic migration completion."""
