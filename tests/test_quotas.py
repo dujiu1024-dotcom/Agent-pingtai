@@ -127,16 +127,20 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         request = SimpleNamespace(context=context)
 
+        class PreDispatchFailure(RuntimeError):
+            """The host has proved the provider request was never dispatched."""
+
         class BrokenHarness:
             async def run(self, _request):
-                raise RuntimeError("model failed")
+                raise PreDispatchFailure("model failed before provider dispatch")
 
         adapter = QuotaEnforcedHarnessAdapter(
             BrokenHarness(), quota_service=self.service,
             estimate_request=lambda _request: (50, Decimal("0.20")),
             estimate_actual_cost=lambda _request, _result: Decimal("0.10"),
+            release_reservation_on_error=lambda error: isinstance(error, PreDispatchFailure),
         )
-        with self.assertRaisesRegex(RuntimeError, "model failed"):
+        with self.assertRaisesRegex(PreDispatchFailure, "before provider dispatch"):
             await adapter.run(request)
         tokens, cost, concurrency = await self.store.usage(
             "tenant-a", "tenant", "tenant-a", self.start, self.end,
