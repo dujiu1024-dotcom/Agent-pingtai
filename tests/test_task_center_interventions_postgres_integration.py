@@ -107,6 +107,7 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         cancelled_runs = []
         async def cancel_run(tenant_id, run_id):
             cancelled_runs.append((tenant_id, run_id))
+            return {"status": "cancelled"}
         service = PostgresTaskCenterService(
             tenant_id=self.tenant_id, connection_factory=self.connect,
             cancel_run=cancel_run,
@@ -122,6 +123,52 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         )
         self.assertEqual(result["status"], "cancelled")
         self.assertEqual(cancelled_runs, [(self.tenant_id, str(self.run_id))])
+
+    async def test_running_task_waits_for_run_cancellation_acknowledgement(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService
+        async def cancel_run(tenant_id, run_id):
+            return {"status": "cancelling"}
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+            cancel_run=cancel_run,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "cancel safely"},
+        )
+        lease = await service.claim_next(worker_id="worker-cancel-pending")
+        await service.set_run_id(lease, str(self.run_id))
+        result = await service.cancel_task(
+            tenant_id=self.tenant_id, task_id=task["task_id"], actor_id="user-a",
+        )
+        self.assertEqual(result["status"], "cancelling")
+
+    async def test_expired_cancelling_task_is_reclaimed_only_to_acknowledge(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskQueueWorker
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "cancel after crash"},
+        )
+        lease = await service.claim_next(worker_id="worker-before-crash")
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_tasks SET status='cancelling',
+                   lease_expires_at=now()-interval '1 second'
+                   WHERE tenant_id=%s AND task_id=%s""",
+                (self.tenant_id, task["task_id"]),
+            )
+        async def must_not_execute(_lease):
+            raise AssertionError("a cancelling task must not be executed again")
+        worker = TaskQueueWorker(
+            service=service, worker_id="worker-after-crash",
+            execute_task=must_not_execute,
+        )
+        self.assertTrue(await worker.run_once())
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
+        self.assertEqual(saved["status"], "cancelled")
 
     async def test_running_task_cancellation_requires_handler_and_restores_state(self):
         from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskCenterError
