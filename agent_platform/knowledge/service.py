@@ -26,12 +26,24 @@ class QueryRewriter(Protocol):
     async def rewrite(self,query: str)->str: ...
 class KnowledgeService:
     def __init__(self,repository: KnowledgeRepository,*,parsers: ParserRegistry|None=None,embedder: Embedder|None=None,reranker: Reranker|None=None,query_rewriter: QueryRewriter|None=None,max_upload_bytes: int=25*1024*1024,observer=None,metrics=None)->None:
-        if max_upload_bytes<1024:
-            raise ValueError("max_upload_bytes must be at least 1024")
+        if (
+            isinstance(max_upload_bytes, bool)
+            or not isinstance(max_upload_bytes, int)
+            or max_upload_bytes < 1024
+        ):
+            raise ValueError("max_upload_bytes must be an integer of at least 1024")
         self.repository=repository;self.parsers=parsers or ParserRegistry();self.embedder=embedder;self.reranker=reranker;self.query_rewriter=query_rewriter;self.max_upload_bytes=max_upload_bytes;self.observer=observer;self.metrics=metrics
         if embedder is not None and hasattr(repository,"embedding_model"):
             repository.embedding_model=embedder.model_id
     async def ingest(self,*,document: Document,content: bytes,max_chars: int=1200,overlap: int=160)->IngestResult:
+        if not isinstance(content, bytes):
+            raise TypeError("content must be bytes")
+        if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 1:
+            raise ValueError("max_chars must be a positive integer")
+        if isinstance(overlap, bool) or not isinstance(overlap, int) or overlap < 0:
+            raise ValueError("overlap must be a non-negative integer")
+        if overlap >= max_chars:
+            raise ValueError("overlap must be smaller than max_chars")
         if len(content)>self.max_upload_bytes:
             raise ValueError("document exceeds configured upload size limit")
         from dataclasses import replace
