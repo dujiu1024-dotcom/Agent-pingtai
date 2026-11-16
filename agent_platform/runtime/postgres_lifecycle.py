@@ -83,6 +83,16 @@ class PostgresRunStateStore(RunStateStore):
    row=await cur.fetchone()
   return dict(row) if row is not None else None
 
+ async def get_run_record(self,tenant_id:str,run_id:str)->dict[str,Any]|None:
+  """Load the tenant-scoped source record for event consumers."""
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT tenant_id,run_id,task_id,session_id,project_id,agent_id,
+    status,input,output,created_by FROM platform_runs
+    WHERE tenant_id=%s AND run_id=%s""",(tenant_id,UUID(run_id)))
+   row=await cur.fetchone()
+  return dict(row) if row is not None else None
+
  async def get_task_by_idempotency(self,tenant_id:str,actor_id:str,idempotency_key:str)->dict[str,Any]|None:
   c=await self._connect()
   async with c:
