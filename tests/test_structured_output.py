@@ -6,8 +6,8 @@ from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 from agent_platform.runtime.structured_output import (
     SchemaValidatedHarnessAdapter,
-    StructuredOutputValidationError,
     StructuredOutputSchemaRegistry,
+    StructuredOutputValidationError,
     validate_structured_output,
 )
 
