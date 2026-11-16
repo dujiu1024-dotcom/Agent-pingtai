@@ -1,0 +1,137 @@
+"""Tenant-scoped usage and cost reporting API."""
+from __future__ import annotations
+
+import csv
+import inspect
+from decimal import Decimal
+from datetime import datetime, timedelta, timezone
+from io import StringIO
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import PlainTextResponse
+
+from agent_platform.identity.models import Principal
+from agent_platform.quotas.service import Budget, QuotaService
+
+
+def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None) -> APIRouter:
+    router = APIRouter(prefix="/api/platform/v1/quotas", tags=["quotas"])
+
+    def actor(request: Request) -> Principal:
+        principal = getattr(request.state, "identity.principal", None)
+        if principal is None:
+            # 兼容直接挂载 request.state.identity 的宿主（如单测/自建中间件）
+            principal = getattr(getattr(request.state, "identity", None), "principal", None)
+        if not isinstance(principal, Principal):
+            raise HTTPException(401, "authenticated user required")
+        return principal
+
+    async def rows(principal: Principal, start: datetime, end: datetime,
+                   run_id: str | None, model_key: str | None, limit: int):
+        if start.tzinfo is None or end.tzinfo is None or end <= start:
+            raise HTTPException(400, "start and end must be ordered timezone-aware timestamps")
+        if end - start > timedelta(days=366):
+            raise HTTPException(400, "report range cannot exceed 366 days")
+        if not 1 <= limit <= 10000:
+            raise HTTPException(400, "limit must be between 1 and 10000")
+        return await quota_store.list_usage(
+            principal.tenant_id, start, end,
+            run_id=run_id, model_key=model_key, limit=limit,
+        )
+
+    @router.post("/budgets", status_code=201)
+    async def configure_budget(request: Request):
+        principal = actor(request)
+        if quota_service is None or authorize_manage is None:
+            raise HTTPException(503, "quota administration is not configured")
+        allowed = authorize_manage(principal)
+        if inspect.isawaitable(allowed):
+            allowed = await allowed
+        if allowed is not True:
+            raise HTTPException(403, "quota management permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON object required")
+            scope_type = str(body.get("scope_type") or "")
+            scope_id = str(body.get("scope_id") or "")
+            if scope_type == "tenant":
+                if scope_id != principal.tenant_id:
+                    raise PermissionError("tenant budget scope must match authenticated tenant")
+            elif scope_type in {"project", "agent", "model"}:
+                if authorize_scope is None:
+                    raise PermissionError("resource scope authorization is not configured")
+                scope_allowed = authorize_scope(principal, scope_type, scope_id)
+                if inspect.isawaitable(scope_allowed):
+                    scope_allowed = await scope_allowed
+                if scope_allowed is not True:
+                    raise PermissionError("quota scope is not accessible")
+            else:
+                raise ValueError("unsupported quota scope")
+            def optional_decimal(name: str):
+                value = body.get(name)
+                return None if value is None else Decimal(str(value))
+            budget = Budget(
+                tenant_id=principal.tenant_id, scope_type=scope_type, scope_id=scope_id,
+                period_start=datetime.fromisoformat(str(body["period_start"])),
+                period_end=datetime.fromisoformat(str(body["period_end"])),
+                hard_tokens=int(body["hard_tokens"]) if body.get("hard_tokens") is not None else None,
+                hard_cost_usd=optional_decimal("hard_cost_usd"),
+                hard_concurrency=int(body["hard_concurrency"]) if body.get("hard_concurrency") is not None else None,
+                soft_tokens=int(body["soft_tokens"]) if body.get("soft_tokens") is not None else None,
+                soft_cost_usd=optional_decimal("soft_cost_usd"),
+            )
+            await quota_service.configure(budget)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"tenant_id": budget.tenant_id, "scope_type": budget.scope_type,
+                "scope_id": budget.scope_id, "period_start": budget.period_start.isoformat(),
+                "period_end": budget.period_end.isoformat(), "configured": True}
+
+    @router.get("/usage")
+    async def usage_report(request: Request, start: datetime, end: datetime,
+                           run_id: str | None = None, model_key: str | None = None,
+                           limit: int = 1000):
+        principal = actor(request)
+        events = await rows(principal, start, end, run_id, model_key, limit)
+        return {"tenant_id": principal.tenant_id, "items": [{
+            "event_id": event.event_id, "run_id": event.run_id,
+            "model_key": event.model_key, "input_tokens": event.input_tokens,
+            "output_tokens": event.output_tokens, "total_tokens": event.total_tokens,
+            "cost_usd": str(event.cost_usd), "project_id": event.project_id,
+            "agent_id": event.agent_id, "tool_calls": event.tool_calls,
+            "runtime_ms": event.runtime_ms, "storage_bytes": event.storage_bytes,
+            "price_card_version": event.price_card_version,
+            "source": event.source, "occurred_at": event.occurred_at.isoformat(),
+        } for event in events]}
+
+    @router.get("/usage.csv", response_class=PlainTextResponse)
+    async def usage_csv(request: Request, start: datetime, end: datetime,
+                        run_id: str | None = None, model_key: str | None = None,
+                        limit: int = 10000):
+        principal = actor(request)
+        events = await rows(principal, start, end, run_id, model_key, limit)
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "event_id", "run_id", "model_key", "input_tokens", "output_tokens",
+            "total_tokens", "cost_usd", "project_id", "agent_id", "tool_calls",
+            "runtime_ms", "storage_bytes", "price_card_version", "source", "occurred_at",
+        ])
+        for event in events:
+            writer.writerow([
+                event.event_id, event.run_id, event.model_key, event.input_tokens,
+                event.output_tokens, event.total_tokens, str(event.cost_usd),
+                event.project_id or "", event.agent_id or "", event.tool_calls,
+                event.runtime_ms, event.storage_bytes, event.price_card_version or "",
+                event.source, event.occurred_at.isoformat(),
+            ])
+        return PlainTextResponse(
+            output.getvalue(), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="usage-report.csv"'},
+        )
+
+    return router

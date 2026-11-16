@@ -15,6 +15,8 @@ from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.workbench import create_workbench_router
+from agent_platform.api.quotas import create_quota_reporting_router
+from agent_platform.quotas.service import QuotaService
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
@@ -57,6 +59,11 @@ def create_platform_app(
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
+    quota_store: Any | None = None,
+    quota_reporting_store: Any | None = None,
+    quota_service: Any | None = None,
+    quota_manage_authorizer: Any | None = None,
+    quota_scope_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -137,6 +144,19 @@ def create_platform_app(
         app.include_router(create_approval_router(
             service=approval_service, authorize_approver=approval_authorizer,
         ))
+    quota_configured = any(value is not None for value in (
+        quota_reporting_store, quota_service, quota_manage_authorizer, quota_scope_authorizer,
+    ))
+    if quota_configured:
+        if quota_reporting_store is None:
+            raise ValueError("quota reporting store is required when quota routes are configured")
+        app.include_router(create_quota_reporting_router(
+            quota_store=quota_reporting_store, quota_service=quota_service,
+            authorize_manage=quota_manage_authorizer,
+            authorize_scope=quota_scope_authorizer,
+        ))
+    elif quota_store is not None:
+        app.include_router(create_quota_reporting_router(quota_store=quota_store))
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
