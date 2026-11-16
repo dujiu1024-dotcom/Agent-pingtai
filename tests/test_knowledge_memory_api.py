@@ -70,7 +70,7 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
     def test_retrieval_and_answer_evaluation_api_returns_metrics(self):
         response = self.client.post(
             "/api/platform/v1/knowledge/documents",
-            json={"title": "evaluation doc", "scope": "tenant",
+            json={"title": "evaluation doc", "scope": "private",
                   "content": "The evaluation answer contains alpha evidence."},
         )
         self.assertEqual(response.status_code, 200)
