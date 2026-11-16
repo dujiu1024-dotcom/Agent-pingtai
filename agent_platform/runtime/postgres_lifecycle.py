@@ -97,7 +97,7 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,template_id,
     template_version,workflow_id,status,input,output,usage,trace_id,created_by,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
-    checkpoint_ref,last_error,registry_snapshot_digest
+    checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s
     ORDER BY created_at DESC LIMIT %s""",(tenant_id,actor_id,limit))
    rows=await cur.fetchall()
