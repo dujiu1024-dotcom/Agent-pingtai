@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from agent_platform.control_plane.registry import RegistryVersion
 from agent_platform.control_plane.skill_dependency_review import (
     InMemorySkillDependencyReviewStore,
-    SkillDependencyReviewError,
     SkillDependencyReviewer,
+    SkillDependencyReviewError,
 )
 
 
