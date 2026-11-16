@@ -97,12 +97,14 @@ def build_state_graph(
     conditional_edges: Sequence[tuple[str, Callable[..., str], Mapping[str, str]]] = (),
     entry_point: str | None = None,
     checkpointer: Any = None,
-    tool_using_nodes: Sequence[str] = (),
+    tool_using_nodes: Sequence[str],
 ) -> Any:
     """Build a graph; explicitly declared tool nodes must use GatewayToolNode.
 
-    Plain callables are trusted platform logic, not an agent tool security boundary.
-    They must never execute untrusted agent code or unreviewed external side effects.
+    Callers must explicitly inventory tool-using nodes, including an empty tuple
+    when the graph is asserted to contain none. Plain callables are trusted platform
+    logic, not an agent tool security boundary; they must never execute untrusted
+    agent code or unreviewed external side effects.
     """
     missing = set(tool_using_nodes) - set(nodes)
     if missing:
