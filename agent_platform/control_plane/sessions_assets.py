@@ -500,7 +500,11 @@ class SessionAssetService:
                     "file is tombstoned but knowledge index cleanup failed; retry deletion"
                 ) from exc
         try:
-            await self.storage.delete(asset.object_key)
+            versions = await self.repository.list_asset_versions(tenant_id, asset_id)
+            object_keys = {item.object_key for item in versions}
+            object_keys.add(asset.object_key)
+            for object_key in object_keys:
+                await self.storage.delete(object_key)
         except Exception as exc:
             raise SessionError(
                 "file is tombstoned but object cleanup failed; retry deletion"
