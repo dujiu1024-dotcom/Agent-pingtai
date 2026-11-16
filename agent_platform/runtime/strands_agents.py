@@ -405,6 +405,9 @@ class StrandsAgentsAdapter:
             )
             stream_method = getattr(agent, "stream_async", None)
             if not callable(stream_method):
+                shutdown = getattr(agent, "shutdown_async", None)
+                if callable(shutdown):
+                    await shutdown()
                 raise UnsupportedHarnessCapability(
                     "configured Strands Agent does not implement stream_async"
                 )
