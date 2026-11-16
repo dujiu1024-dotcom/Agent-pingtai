@@ -140,6 +140,49 @@ class PlatformApiCompositionTests(unittest.TestCase):
         )
         self.assertEqual(other_tenant.status_code, 404)
 
+    def test_workbench_execution_requires_and_starts_durable_worker(self):
+        class Worker:
+            def __init__(self):
+                self.started = False
+                self.stopped = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.stopped = True
+
+        async def resolve_task_service(principal):
+            return object()
+
+        async def authorize_task(principal, resource_id, action):
+            return True
+
+        arguments = {
+            "identity": self.identity,
+            "identity_repository": FakeIdentityRepository(),
+            "knowledge": self.knowledge,
+            "memory": self.memory,
+            "redis": FakeRedis(),
+            "allowed_origins": ("https://console.example.com",),
+            "task_service_resolver": resolve_task_service,
+            "task_authorizer": authorize_task,
+        }
+        with self.assertRaisesRegex(ValueError, "durable task worker"):
+            create_platform_app(**arguments)
+
+        worker = Worker()
+        app = create_platform_app(**arguments, task_worker=worker)
+        with TestClient(app, base_url="https://testserver") as client:
+            response = client.get(
+                "/api/platform/v1/workbench/capabilities",
+                headers={"Authorization": "Bearer valid-session"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.json()["features"]["task_execution"])
+            self.assertTrue(worker.started)
+        self.assertTrue(worker.stopped)
+
     def test_factory_rejects_wildcard_and_non_https_origins(self):
         arguments = {
             "identity": self.identity,
