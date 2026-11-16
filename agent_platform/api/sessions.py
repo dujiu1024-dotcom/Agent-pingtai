@@ -114,7 +114,8 @@ def create_sessions_router(
                     "asset_id": asset.asset_id, "filename": asset.filename,
                     "media_type": asset.media_type, "size_bytes": asset.size_bytes,
                     "status": asset.status.value, "session_id": asset.session_id,
-                    "project_id": asset.project_id, "created_at": asset.created_at.isoformat(),
+                    "project_id": asset.project_id, "version": asset.version,
+                    "created_at": asset.created_at.isoformat(),
                 })
         return {"items": visible}
 
@@ -336,6 +337,105 @@ def create_sessions_router(
             "session_id": asset.session_id,
         }
 
+    @router.post("/files/{asset_id}/versions", status_code=201)
+    async def create_file_version(asset_id: str, request: Request, expected_version: int | None = None):
+        principal, service = await context(request, "file", asset_id, "write")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "write",
+        ):
+            raise HTTPException(403, "linked session modification denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "file.update",
+        ):
+            raise HTTPException(403, "linked project file update denied")
+        max_bytes = int(getattr(service, "max_upload_bytes", 25 * 1024 * 1024))
+        declared_length = request.headers.get("content-length")
+        if declared_length:
+            if not declared_length.isdigit():
+                raise HTTPException(400, "invalid content-length")
+            if int(declared_length) > max_bytes:
+                raise HTTPException(413, "file exceeds upload size limit")
+        chunks = bytearray()
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > max_bytes:
+                raise HTTPException(413, "file exceeds upload size limit")
+        try:
+            version = await service.create_asset_version(
+                tenant_id=principal.tenant_id, asset_id=asset_id,
+                content=bytes(chunks), filename=request.headers.get("x-filename"),
+                media_type=request.headers.get("content-type", asset.media_type).split(";", 1)[0],
+                expected_version=expected_version,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "asset_id": version.asset_id, "version": version.version,
+            "filename": version.filename, "media_type": version.media_type,
+            "size_bytes": version.size_bytes, "sha256": version.sha256,
+            "status": version.status.value, "created_at": version.created_at.isoformat(),
+        }
+
+    @router.get("/files/{asset_id}/versions")
+    async def list_file_versions(asset_id: str, request: Request):
+        principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
+        versions = await service.list_asset_versions(
+            tenant_id=principal.tenant_id, asset_id=asset_id,
+        )
+        return {"asset_id": asset_id, "current_version": asset.version, "items": [{
+            "version": item.version, "filename": item.filename,
+            "media_type": item.media_type, "size_bytes": item.size_bytes,
+            "sha256": item.sha256, "status": item.status.value,
+            "created_at": item.created_at.isoformat(),
+        } for item in versions]}
+
+    @router.get("/files/{asset_id}/versions/{version}")
+    async def download_file_version(asset_id: str, version: int, request: Request):
+        principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
+        try:
+            record, content = await service.download_asset_version(
+                tenant_id=principal.tenant_id, asset_id=asset_id, version=version,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return Response(
+            content, media_type=record.media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{quote(record.filename)}"',
+                "X-File-Asset-Version": str(record.version),
+                "Cache-Control": "no-store",
+            },
+        )
+
     @router.delete("/files/{asset_id}", status_code=204)
     async def delete_file(asset_id: str, request: Request):
         principal, service = await context(request, "file", asset_id, "delete")
@@ -383,6 +483,7 @@ def create_sessions_router(
             "status": asset.status.value,
             "session_id": asset.session_id,
             "project_id": asset.project_id,
+            "version": asset.version,
             "created_at": asset.created_at.isoformat(),
         }
 

@@ -128,5 +128,48 @@ class FileDownloadApiAuthorizationTests(unittest.TestCase):
         self.assertEqual(storage.presign_calls, [])
 
 
+    def test_version_api_creates_lists_and_downloads_historical_content(self):
+        client, _service, _repository, _storage, denied = self._client()
+        _session, asset = self._seed(_service)
+
+        created = client.post(
+            f"/api/platform/v1/files/{asset.asset_id}/versions?expected_version=1",
+            content=b"revised file bytes",
+            headers={"x-filename": "revised.txt", "content-type": "text/plain"},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["version"], 2)
+
+        history = client.get(f"/api/platform/v1/files/{asset.asset_id}/versions")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.json()["current_version"], 2)
+        self.assertEqual([item["version"] for item in history.json()["items"]], [1, 2])
+
+        old = client.get(f"/api/platform/v1/files/{asset.asset_id}/versions/1")
+        self.assertEqual(old.status_code, 200)
+        self.assertEqual(old.content, b"private file contents")
+        self.assertEqual(old.headers["x-file-asset-version"], "1")
+
+        current = client.get(f"/api/platform/v1/files/{asset.asset_id}")
+        self.assertEqual(current.status_code, 200)
+        self.assertEqual(current.content, b"revised file bytes")
+
+    def test_version_api_enforces_file_write_and_read_permissions(self):
+        client, service, _repository, _storage, denied = self._client()
+        _session, asset = self._seed(service)
+        denied.add(("file", asset.asset_id, "write"))
+        response = client.post(
+            f"/api/platform/v1/files/{asset.asset_id}/versions",
+            content=b"not allowed",
+        )
+        self.assertEqual(response.status_code, 403)
+        denied.remove(("file", asset.asset_id, "write"))
+
+        denied.add(("file", asset.asset_id, "read"))
+        response = client.get(f"/api/platform/v1/files/{asset.asset_id}/versions")
+        self.assertEqual(response.status_code, 403)
+        response = client.get(f"/api/platform/v1/files/{asset.asset_id}/versions/1")
+        self.assertEqual(response.status_code, 403)
+
 if __name__ == "__main__":
     unittest.main()

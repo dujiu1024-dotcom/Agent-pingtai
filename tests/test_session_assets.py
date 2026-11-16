@@ -144,5 +144,72 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.repository.list_sessions("tenant-b", "user-a"), ())
 
 
+    async def test_asset_versions_are_immutable_and_can_be_restored(self) -> None:
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="report.txt",
+            media_type="text/plain", content=b"version one",
+        )
+        second = await self.service.create_asset_version(
+            tenant_id="tenant-a", asset_id=asset.asset_id, content=b"version two",
+            expected_version=1,
+        )
+        self.assertEqual(second.version, 2)
+        current = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(current.version, 2)
+        self.assertEqual(current.sha256, second.sha256)
+        history = await self.service.list_asset_versions(
+            tenant_id="tenant-a", asset_id=asset.asset_id,
+        )
+        self.assertEqual([item.version for item in history], [1, 2])
+        old, old_content = await self.service.download_asset_version(
+            tenant_id="tenant-a", asset_id=asset.asset_id, version=1,
+        )
+        self.assertEqual(old.version, 1)
+        self.assertEqual(old_content, b"version one")
+        latest, latest_content = await self.service.download_asset(
+            tenant_id="tenant-a", asset_id=asset.asset_id,
+        )
+        self.assertEqual(latest.version, 2)
+        self.assertEqual(latest_content, b"version two")
+
+    async def test_asset_version_update_rejects_stale_writer_and_cross_tenant_reads(self) -> None:
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="report.txt",
+            media_type="text/plain", content=b"initial",
+        )
+        await self.service.create_asset_version(
+            tenant_id="tenant-a", asset_id=asset.asset_id, content=b"second",
+            expected_version=1,
+        )
+        with self.assertRaisesRegex(SessionError, "version changed"):
+            await self.service.create_asset_version(
+                tenant_id="tenant-a", asset_id=asset.asset_id, content=b"stale",
+                expected_version=1,
+            )
+        self.assertEqual(
+            await self.repository.list_asset_versions("tenant-b", asset.asset_id), (),
+        )
+        with self.assertRaises(SessionNotFound):
+            await self.service.download_asset_version(
+                tenant_id="tenant-b", asset_id=asset.asset_id, version=1,
+            )
+
+    async def test_delete_removes_all_version_objects(self) -> None:
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="report.txt",
+            media_type="text/plain", content=b"first",
+        )
+        second = await self.service.create_asset_version(
+            tenant_id="tenant-a", asset_id=asset.asset_id, content=b"second",
+        )
+        await self.service.delete_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+        self.assertNotIn(asset.object_key, self.storage.objects)
+        self.assertNotIn(second.object_key, self.storage.objects)
+        with self.assertRaises(SessionNotFound):
+            await self.service.download_asset_version(
+                tenant_id="tenant-a", asset_id=asset.asset_id, version=1,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
