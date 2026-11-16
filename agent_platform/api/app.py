@@ -51,6 +51,7 @@ def create_platform_app(
     service_identity: Any | None = None,
     rag: RAGService | None = None,
     memory_extraction: MemoryExtractionService | None = None,
+    memory_expiry_worker: Any | None = None,
     registry_service_resolver: Any | None = None,
     session_service_resolver: Any | None = None,
     registry_authorizer: Any | None = None,
@@ -159,6 +160,13 @@ def create_platform_app(
             raise ValueError("task_worker must expose async start() and stop() lifecycle methods")
         app.router.on_startup.append(task_worker.start)
         app.router.on_shutdown.append(task_worker.stop)
+    if memory_expiry_worker is not None:
+        if not callable(getattr(memory_expiry_worker, "start", None)) or not callable(
+            getattr(memory_expiry_worker, "stop", None)
+        ):
+            raise ValueError("memory_expiry_worker must expose async start() and stop()")
+        app.router.on_startup.append(memory_expiry_worker.start)
+        app.router.on_shutdown.append(memory_expiry_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
         blackboard_evidence_verifier,
