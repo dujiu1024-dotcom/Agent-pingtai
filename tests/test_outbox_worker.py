@@ -93,6 +93,34 @@ class OutboxRelayWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(redis.events), 1)
         self.assertEqual(redis.events[0]["event_id"], "event-replay")
 
+    async def test_worker_owns_transport_connection_lifecycle(self):
+        class ManagedTransport:
+            def __init__(self):
+                self.connected = False
+                self.closed = False
+
+            async def connect(self):
+                self.connected = True
+
+            async def close(self):
+                self.closed = True
+                self.connected = False
+
+        class RelayWithTransport(FakeRelay):
+            def __init__(self, transport):
+                super().__init__()
+                self.transport = transport
+
+        transport = ManagedTransport()
+        worker = OutboxRelayWorker(
+            relay=RelayWithTransport(transport), interval_seconds=0.1,
+        )
+        await worker.start()
+        self.assertTrue(transport.connected)
+        await worker.stop()
+        self.assertTrue(transport.closed)
+        self.assertFalse(transport.connected)
+
     async def test_rejects_unsafe_poll_configuration(self):
         with self.assertRaises(ValueError):
             OutboxRelayWorker(relay=FakeRelay(), interval_seconds=0)
