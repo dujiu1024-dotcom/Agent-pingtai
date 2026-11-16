@@ -29,6 +29,17 @@ class MigrationBatchTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_explicit_value_transform_is_applied(self):
+        mapping = [TableMapping("old_users", "users",
+                                {"id": "id", "display_name": "name", "active": "active"},
+                                {"name": "upper", "active": "bool"})]
+        state = run_migration_batch(self.source, self.target, mapping,
+                                    batch_id="batch-transform", batch_size=10)
+        self.assertEqual(state["state"], "completed")
+        with sqlite3.connect(self.target) as db:
+            self.assertEqual(db.execute("SELECT name,active FROM users WHERE id=1").fetchone(),
+                             ("USER-1", 1))
+
     def test_extract_transform_apply_and_diff(self):
         state = run_migration_batch(self.source, self.target, self.mapping,
                                      batch_id="batch-1", batch_size=3)
