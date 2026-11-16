@@ -222,7 +222,8 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(ValueError, "size does not match|checksum"):
             await adapter.run(request)
-        self.assertEqual(self.agents, [])
+        self.assertEqual(len(self.agents), 1)
+        self.assertIsNone(self.agents[0].prompt)
 
     async def test_persists_declared_media_outputs_as_verified_artifacts(self):
         import hashlib
