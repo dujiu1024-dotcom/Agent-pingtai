@@ -25,7 +25,7 @@ class TaskCenterService(Protocol):
     ) -> Mapping[str, Any]: ...
 
     async def get_task(
-        self, *, tenant_id: str, task_id: str,
+        self, *, tenant_id: str, task_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None: ...
 
     async def cancel_task(
@@ -136,6 +136,7 @@ def create_workbench_router(
             principal, service = await task_context(request, task_id, "read")
             result = await service.get_task(
                 tenant_id=principal.tenant_id, task_id=task_id,
+                actor_id=principal.user_id,
             )
             if result is None:
                 raise HTTPException(404, "task not found")
