@@ -101,7 +101,7 @@ class BackupRecoveryScriptTests(unittest.TestCase):
         self.assertIn('[[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]]', script)
         self.assertLess(script.index('"${COMPOSE[@]}" config --quiet'), script.index('SNAPSHOT="$RELEASE_DIR'))
         self.assertIn('if ((!NO_PULL)); then', script)
-        self.assertIn('"--wait" --remove-orphans', script.replace('"${COMPOSE[@]}" up -d ', '"--wait" '))
+        self.assertIn('up -d --wait --remove-orphans', script)
 
     def test_migration_runner_expands_required_environment_and_file_list(self):
         script = (ROOT / "scripts" / "migrate_postgres.sh").read_text()
