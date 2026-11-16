@@ -173,6 +173,7 @@ class SessionAssetService:
         max_upload_bytes: int = 25 * 1024 * 1024,
         allowed_media_types: frozenset[str] | None = None,
         scanner: AssetScanner | None = None,
+        processing_queue: Any | None = None,
     ) -> None:
         if max_upload_bytes < 1:
             raise ValueError("max_upload_bytes must be positive")
@@ -181,6 +182,7 @@ class SessionAssetService:
         self.max_upload_bytes = max_upload_bytes
         self.allowed_media_types = allowed_media_types
         self.scanner = scanner
+        self.processing_queue = processing_queue
 
     async def create_session(self, *, tenant_id: str, owner_id: str, title: str = "", project_id: str | None = None) -> ConversationSession:
         if not tenant_id.strip() or not owner_id.strip():
@@ -239,7 +241,10 @@ class SessionAssetService:
         await self.storage.put(object_key, content, media_type=media_type)
         asset = FileAsset(
             tenant_id, asset_id, owner_id, object_key, clean_name, media_type,
-            len(content), digest, AssetStatus.SCANNING if self.scanner else AssetStatus.AVAILABLE,
+            len(content), digest,
+            AssetStatus.PENDING if self.processing_queue is not None else (
+                AssetStatus.SCANNING if self.scanner else AssetStatus.AVAILABLE
+            ),
             project_id, session_id,
         )
         try:
@@ -247,6 +252,16 @@ class SessionAssetService:
         except Exception:
             await self.storage.delete(object_key)
             raise
+        if self.processing_queue is not None:
+            try:
+                await self.processing_queue.enqueue(
+                    tenant_id=tenant_id, asset_id=asset_id,
+                )
+            except Exception as exc:
+                await self.repository.set_asset_status(tenant_id, asset_id, AssetStatus.REJECTED)
+                await self.storage.delete(object_key)
+                raise SessionError("file processing queue is unavailable") from exc
+            return asset
         if self.scanner is not None:
             try:
                 accepted = await self.scanner.scan(clean_name, media_type, content)
@@ -273,3 +288,18 @@ class SessionAssetService:
         if hashlib.sha256(content).hexdigest() != asset.sha256:
             raise SessionError("stored object integrity check failed")
         return asset, content
+
+    async def create_download_url(
+        self, *, tenant_id: str, asset_id: str, expires_in: int = 300,
+    ) -> tuple[FileAsset, str]:
+        asset = await self.repository.get_asset(tenant_id, asset_id)
+        if asset is None or asset.status != AssetStatus.AVAILABLE:
+            raise SessionNotFound("file asset not found or unavailable")
+        presign = getattr(self.storage, "presign_get", None)
+        if presign is None:
+            raise SessionError("object storage does not support presigned downloads")
+        url = await presign(
+            asset.object_key, filename=asset.filename,
+            media_type=asset.media_type, expires_in=expires_in,
+        )
+        return asset, url
