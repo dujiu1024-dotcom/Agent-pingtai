@@ -37,12 +37,12 @@ class FakeMultiExpertServices:
             "synthesis": {"summary": "reconciled synthesis", "conflicts_resolved": len(conflicts)},
             "decisions": [
                 {
-                    "conflict_instance_id": conflict["conflict_instance_id"],
+                    "conflict_instance_id": conflict.get("conflict_instance_id") or conflict.get("id") or f"conflict:{index}",
                     "outcome": "accept reconciled synthesis",
                     "rationale": "the persisted evidence was reconciled by the expert review",
                     "evidence_refs": list(conflict.get("evidence_refs", [])),
                 }
-                for conflict in conflicts
+                for index, conflict in enumerate(conflicts)
             ],
             "requires_approval": self.require_approval,
         }
