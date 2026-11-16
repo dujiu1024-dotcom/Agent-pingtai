@@ -111,6 +111,9 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         self.assertEqual(adapter.capabilities.input_modalities, frozenset({"text"}))
         self.assertEqual(adapter.capabilities.output_modalities, frozenset({"text"}))
+        self.assertEqual(adapter.descriptor.adapter_id, "strands_agents")
+        self.assertEqual(adapter.descriptor.contract_version, "1.0.0")
+        self.assertFalse(adapter.descriptor.capabilities.cancellation)
         result = await adapter.run(self.request)
         self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(result.finish_reason, "end_turn")
@@ -442,7 +445,9 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
             input_text="Read the approved document.",
             allowed_tools=("read_document",),
         )
-        result = await self.adapter(gateway_tool_provider=provider).run(request)
+        adapter = self.adapter(gateway_tool_provider=provider)
+        self.assertTrue(adapter.descriptor.capabilities.tool_gateway)
+        result = await adapter.run(request)
         self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(provider.calls, [(self.context, ("read_document",))])
         self.assertEqual(self.agents[0].options["tools"], [provider.session.tool])
