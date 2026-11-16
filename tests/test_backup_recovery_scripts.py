@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -102,6 +103,106 @@ class BackupRecoveryScriptTests(unittest.TestCase):
         self.assertLess(script.index('"${COMPOSE[@]}" config --quiet'), script.index('SNAPSHOT="$RELEASE_DIR'))
         self.assertIn('if ((!NO_PULL)); then', script)
         self.assertIn('up -d --wait --remove-orphans', script)
+
+
+    def test_deploy_check_mode_is_non_mutating_and_deploy_waits_for_health(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env_file = root / "deploy.env"
+            env_file.write_text(
+                "POSTGRES_DB=db\\nPOSTGRES_USER=user\\nPOSTGRES_PASSWORD=secret\\n"
+                "REDIS_PASSWORD=redis-secret\\nMINIO_ROOT_USER=minio\\n"
+                "MINIO_ROOT_PASSWORD=minio-secret\\n",
+                encoding="utf-8",
+            )
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            docker_log = root / "docker.log"
+            fake_docker = bin_dir / "docker"
+            fake_docker.write_text(
+                "#!/usr/bin/env bash\\n"
+                'set -euo pipefail\\n'
+                'printf "%s\\n" "$*" >> "$DOCKER_LOG"\\n',
+                encoding="utf-8",
+            )
+            fake_docker.chmod(0o755)
+            release_dir = root / "releases"
+            env = os.environ.copy()
+            env.update({
+                "ENV_FILE": str(env_file),
+                "RELEASE_DIR": str(release_dir),
+                "DOCKER_LOG": str(docker_log),
+                "PATH": f"{bin_dir}:{env['PATH']}",
+            })
+            checked = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "deploy_infrastructure.sh"), "--check"],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            self.assertFalse(release_dir.exists())
+            self.assertEqual(docker_log.read_text().splitlines(), [
+                f"compose --project-directory {ROOT} --env-file {env_file} -f {ROOT / 'deploy' / 'compose.yaml'} config --quiet"
+            ])
+
+            docker_log.write_text("", encoding="utf-8")
+            deployed = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "deploy_infrastructure.sh"), "--no-pull"],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            commands = docker_log.read_text(encoding="utf-8")
+            self.assertIn("up -d --wait --remove-orphans", commands)
+            self.assertIn(" ps", commands)
+            self.assertNotIn(" pull", commands)
+            self.assertEqual(len(list(release_dir.glob("env-*.success"))), 1)
+
+    def test_failed_upgrade_restores_last_successful_environment_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env_file = root / "deploy.env"
+            original = (
+                "POSTGRES_DB=db\\nPOSTGRES_USER=user\\nPOSTGRES_PASSWORD=old-secret\\n"
+                "REDIS_PASSWORD=redis-secret\\nMINIO_ROOT_USER=minio\\n"
+                "MINIO_ROOT_PASSWORD=minio-secret\\n"
+            )
+            env_file.write_text(original, encoding="utf-8")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            count_file = root / "up-count"
+            fake_docker = bin_dir / "docker"
+            fake_docker.write_text(
+                "#!/usr/bin/env bash\\n"
+                'set -euo pipefail\\n'
+                'if [[ "$*" == *" up -d --wait --remove-orphans"* ]]; then\\n'
+                '  count=0; [[ ! -f "$UP_COUNT_FILE" ]] || read -r count < "$UP_COUNT_FILE"\\n'
+                '  count=$((count + 1)); printf "%s\\n" "$count" > "$UP_COUNT_FILE"\\n'
+                '  if [[ "$FAIL_FIRST_UP" == "1" && "$count" == "1" ]]; then exit 1; fi\\n'
+                'fi\\n',
+                encoding="utf-8",
+            )
+            fake_docker.chmod(0o755)
+            env = os.environ.copy()
+            env.update({
+                "ENV_FILE": str(env_file),
+                "RELEASE_DIR": str(root / "releases"),
+                "UP_COUNT_FILE": str(count_file),
+                "FAIL_FIRST_UP": "0",
+                "PATH": f"{bin_dir}:{env['PATH']}",
+            })
+            first = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "deploy_infrastructure.sh"), "--no-pull"],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            env_file.write_text(original.replace("old-secret", "new-secret"), encoding="utf-8")
+            env["FAIL_FIRST_UP"] = "1"
+            failed = subprocess.run(
+                ["bash", str(ROOT / "scripts" / "deploy_infrastructure.sh"), "--no-pull"],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(failed.returncode, 1)
+            self.assertIn("automatic rollback", failed.stderr)
+            self.assertEqual(env_file.read_text(encoding="utf-8"), original)
 
     def test_migration_runner_expands_required_environment_and_file_list(self):
         script = (ROOT / "scripts" / "migrate_postgres.sh").read_text()
