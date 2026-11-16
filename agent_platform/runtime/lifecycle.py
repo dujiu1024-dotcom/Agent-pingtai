@@ -16,7 +16,7 @@ class RunStatus(str,Enum):
     SUCCEEDED="succeeded"; FAILED="failed"; CANCELLED="cancelled"; TIMED_OUT="timed_out"; INTERRUPTED="interrupted"
 TERMINAL={RunStatus.SUCCEEDED,RunStatus.FAILED,RunStatus.CANCELLED,RunStatus.TIMED_OUT}
 _ALLOWED={
- RunStatus.QUEUED:{RunStatus.RUNNING,RunStatus.CANCELLED},
+ RunStatus.QUEUED:{RunStatus.RUNNING,RunStatus.CANCELLED,RunStatus.FAILED},
  RunStatus.RUNNING:{RunStatus.PAUSED,RunStatus.CANCELLING,RunStatus.SUCCEEDED,RunStatus.FAILED,RunStatus.TIMED_OUT,RunStatus.INTERRUPTED},
  RunStatus.PAUSED:{RunStatus.RUNNING,RunStatus.CANCELLED,RunStatus.INTERRUPTED},
  RunStatus.CANCELLING:{RunStatus.CANCELLED,RunStatus.FAILED,RunStatus.TIMED_OUT},
@@ -99,11 +99,11 @@ class RunLifecycleManager:
    updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
-  if task is not None: task.cancel()
-  if updated.status==RunStatus.CANCELLING:
-   latest=await self.store.get(tenant_id,run_id)
-   if latest and latest.status==RunStatus.CANCELLING:
-    updated=await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
+  if task is not None:
+   task.cancel()
+  # A RUNNING Run may belong to a worker in another process. Keep the
+  # CANCELLING marker durable; that worker observes it through lease heartbeat
+  # and confirms cancellation after its execution task has stopped.
   return updated
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
