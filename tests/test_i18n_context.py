@@ -4,7 +4,10 @@ import unittest
 from datetime import date, time, timezone
 
 from agent_platform.i18n import (
-    format_currency, format_date, format_time, locale_context,
+    format_currency,
+    format_date,
+    format_time,
+    locale_context,
 )
 
 
