@@ -224,6 +224,12 @@ def create_sessions_router(
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(404 if isinstance(exc, SessionNotFound) else 422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="message.appended", subject_id=message.message_id,
+                detail={"session_id": session_id, "role": message.role.value},
+            )
         return {"message_id": message.message_id, "session_id": message.session_id}
 
     if memory_extraction is not None and resolve_memory_principal is not None:
