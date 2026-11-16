@@ -79,6 +79,7 @@ def _validated_estimate(estimate: Any, context_window_tokens: int) -> tuple[int,
 async def _estimate(
     estimator: Any, *, model_id: str, messages: Sequence[Mapping[str, Any]],
     request_parameters: Mapping[str, Any], context_window_tokens: int,
+    allow_overflow_count: bool = False,
 ) -> tuple[int, int, int]:
     try:
         estimate = estimator.estimate(
@@ -93,6 +94,10 @@ async def _estimate(
         # tokenizer/encoding/serialization errors remain fail-closed.
         if "estimated prompt plus planned output exceeds model context window" not in str(exc):
             raise
+        if not allow_overflow_count:
+            raise ContextOverflowError(
+                "estimated prompt plus planned output exceeds model context window"
+            ) from exc
         estimate = estimator.estimate(
             model_id=model_id, messages=messages,
             request_parameters=request_parameters,
@@ -133,6 +138,7 @@ async def prepare_context(
         estimator, model_id=model_id, messages=original,
         request_parameters=request_parameters,
         context_window_tokens=context_window_tokens,
+        allow_overflow_count=policy != "reject",
     )
     if counts[2] <= context_window_tokens:
         return ContextPreparation(original, *counts, policy, False)
