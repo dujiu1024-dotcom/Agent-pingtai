@@ -8,6 +8,7 @@ from agent_platform.models.runtime_router import (
     ModelRoutingError,
     ModelTransportError,
     OpenAICompatibleHTTPTransport,
+    PostgresModelUsageRecorder,
     OpenAICompatibleModelRouter,
 )
 
@@ -117,6 +118,41 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 config=config, messages=({"role": "user", "content": "hi"},),
                 request_parameters={"model": "attacker-model"}, timeout_seconds=1,
             )
+
+
+    async def test_postgres_usage_recorder_persists_idempotent_costed_usage(self):
+        class Connection:
+            def __init__(self):
+                self.arguments = None
+                self.statement = ""
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return None
+            async def execute(self, statement, arguments):
+                self.statement = statement
+                self.arguments = arguments
+
+        connection = Connection()
+        async def connect():
+            return connection
+        class Cost:
+            async def estimate_micros(self, *, model_id, usage):
+                return 1250
+        recorder = PostgresModelUsageRecorder(connect, cost_estimator=Cost())
+        await recorder.record(
+            tenant_id="tenant-a", run_id="run-a", request_id="request-a",
+            template_id="general", template_version=2, provider_id="provider",
+            provider_version=4, model_id="model-x",
+            usage={"prompt_tokens": 4, "completion_tokens": 2},
+        )
+        self.assertIn("ON CONFLICT (tenant_id,run_id,request_id) DO NOTHING", connection.statement)
+        self.assertEqual(connection.arguments[0:8], (
+            "tenant-a", "run-a", "request-a", "general", 2,
+            "provider", 4, "model-x",
+        ))
+        self.assertEqual(connection.arguments[-1], 1250)
+
 
 
 if __name__ == "__main__":
