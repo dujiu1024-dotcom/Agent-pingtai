@@ -113,12 +113,12 @@ class BlackboardMultiExpertServices:
         """
         for ref in refs:
             try:
-                UUID(ref)
+                normalized_ref = str(UUID(ref))
             except (ValueError, TypeError, AttributeError):
                 # Connector/document IDs are owned by their resource service,
                 # not by the UUID-keyed Blackboard repository.
                 continue
-            source = await self.repository.get(ref)
+            source = await self.repository.get(normalized_ref)
             if source is not None and (
                 source.scope is not scope or source.scope_id != scope_id
             ):
@@ -348,6 +348,7 @@ class BlackboardMultiExpertServices:
     async def apply_approval(self, *, state: Mapping[str, Any], decision: Mapping[str, Any]) -> Mapping[str, Any]:
         if not isinstance(decision, Mapping) or not isinstance(decision.get("approved"), bool):
             raise ValueError("approval decision must contain a boolean approved field")
+        scope, scope_id = self._scope(state)
         request_id = self._entry_id(state, "approval-request")
         request_entry = await self.repository.get(request_id)
         if (
@@ -356,13 +357,15 @@ class BlackboardMultiExpertServices:
             or "approval_request" not in request_entry.content
         ):
             raise RuntimeError("a persisted approval request is required before applying a decision")
+        await self._validate_source_refs(
+            scope=scope, scope_id=scope_id, refs=(request_id,),
+        )
         result = dict(await self.callbacks.apply_approval(state=state, decision=decision))
         if not isinstance(result.get("approved"), bool):
             raise ValueError("approval callback must return a boolean approved result")
         approver_id = result.get("approver_id")
         if not isinstance(approver_id, str) or not approver_id.strip():
             raise PermissionError("approval callback must resolve the authenticated approver identity")
-        scope, scope_id = self._scope(state)
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "approval-result"), scope=scope,
             scope_id=scope_id, kind=EntryKind.DECISION,
@@ -379,6 +382,7 @@ class BlackboardMultiExpertServices:
         return result
 
     async def archive(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
+        scope, scope_id = self._scope(state)
         request_id = self._entry_id(state, "approval-request")
         request_entry = await self.repository.get(request_id)
         if request_entry is not None:
@@ -387,6 +391,9 @@ class BlackboardMultiExpertServices:
                 raise PermissionError("cannot archive a workflow with a pending or rejected approval")
             approval_id = approval.get("blackboard_entry_id")
             approval_entry = await self.repository.get(str(approval_id)) if approval_id else None
+            await self._validate_source_refs(
+                scope=scope, scope_id=scope_id, refs=(request_id, str(approval_id or "")),
+            )
             approval_payload = (
                 approval_entry.content.get("approval_result", {})
                 if approval_entry is not None else {}
@@ -400,8 +407,6 @@ class BlackboardMultiExpertServices:
                 or approval_payload.get("approved") is not True
             ):
                 raise PermissionError("accepted approval decision must be persisted before archiving")
-        result = dict(await self.callbacks.archive(state=state))
-        scope, scope_id = self._scope(state)
         refs = [
             str(item["blackboard_entry_id"])
             for item in state.get("contributions", [])
@@ -424,6 +429,10 @@ class BlackboardMultiExpertServices:
         approval = state.get("approval_result", {})
         if approval.get("blackboard_entry_id"):
             refs.append(str(approval["blackboard_entry_id"]))
+        # The final artifact is a trust boundary: revalidate every durable
+        # reference here, even when earlier workflow stages already checked it.
+        await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
+        result = dict(await self.callbacks.archive(state=state))
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "final-artifact"), scope=scope,
             scope_id=scope_id, kind=EntryKind.ARTIFACT,
@@ -435,13 +444,18 @@ class BlackboardMultiExpertServices:
         return result
 
     async def reject(self, *, state: Mapping[str, Any]) -> Mapping[str, Any]:
-        request_entry = await self.repository.get(self._entry_id(state, "approval-request"))
+        scope, scope_id = self._scope(state)
+        request_id = self._entry_id(state, "approval-request")
+        request_entry = await self.repository.get(request_id)
         approval = state.get("approval_result")
         if request_entry is not None:
             if not isinstance(approval, Mapping) or approval.get("approved") is not False:
                 raise PermissionError("rejection requires a persisted negative approval decision")
             approval_id = approval.get("blackboard_entry_id")
             approval_entry = await self.repository.get(str(approval_id)) if approval_id else None
+            await self._validate_source_refs(
+                scope=scope, scope_id=scope_id, refs=(request_id, str(approval_id or "")),
+            )
             approval_payload = (
                 approval_entry.content.get("approval_result", {})
                 if approval_entry is not None else {}
@@ -450,16 +464,16 @@ class BlackboardMultiExpertServices:
                 approval_entry is None
                 or approval_entry.kind is not EntryKind.DECISION
                 or approval_entry.status is not EntryStatus.REJECTED
-                or self._entry_id(state, "approval-request") not in approval_entry.source_refs
+                or request_id not in approval_entry.source_refs
                 or not isinstance(approval_payload, Mapping)
                 or approval_payload.get("approved") is not False
             ):
                 raise PermissionError("negative approval decision must be persisted before rejection")
-        result = dict(await self.callbacks.reject(state=state))
-        scope, scope_id = self._scope(state)
-        refs = (self._entry_id(state, "approval-request"),) if request_entry is not None else ()
+        refs = (request_id,) if request_entry is not None else ()
         if isinstance(approval, Mapping) and approval.get("blackboard_entry_id"):
             refs = (*refs, str(approval["blackboard_entry_id"]))
+        await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
+        result = dict(await self.callbacks.reject(state=state))
         entry = BlackboardEntry(
             entry_id=self._entry_id(state, "rejected-result"), scope=scope,
             scope_id=scope_id, kind=EntryKind.NOTE,
