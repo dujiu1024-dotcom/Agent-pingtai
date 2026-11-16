@@ -4,7 +4,10 @@ import unittest
 
 from agent_platform.control_plane.file_processing import FileProcessingJob, FileProcessingWorker
 from agent_platform.control_plane.sessions_assets import (
-    AssetStatus, InMemoryObjectStorage, InMemorySessionRepository, SessionAssetService,
+    AssetStatus,
+    InMemoryObjectStorage,
+    InMemorySessionRepository,
+    SessionAssetService,
 )
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.ingestion import ParserRegistry, PlainTextParser
