@@ -12,6 +12,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
+from datetime import date, datetime
 
 
 _STATES = {"pending", "running", "paused", "completed", "failed"}
