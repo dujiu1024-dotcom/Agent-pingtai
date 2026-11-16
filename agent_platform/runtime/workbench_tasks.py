@@ -524,7 +524,8 @@ class RunExecutionWorker:
                 raise
             except WorkerLeaseLost:
                 # Another worker owns the lease now; never mark its Run failed.
-                return "skipped"
+                current = await self.run_store.get(tenant_id, run_id)
+                return "cancelled" if current and current.status == RunStatus.CANCELLED else "skipped"
             except Exception as exc:
                 lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
                 current = await self.run_store.get(tenant_id, run_id)
