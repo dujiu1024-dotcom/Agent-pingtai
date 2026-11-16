@@ -275,13 +275,22 @@ class OpenAICompatibleModelRouter:
                 "model_template_version": config.template_version,
             }
             quota_reservation = None
-            if self.quota_service is not None:
+            # Context-window enforcement is independent of whether a tenant has
+            # configured a monetary/token quota. When the host supplies an estimator,
+            # every routed request must pass it before provider dispatch.
+            estimate = None
+            if self.token_estimator is not None:
                 estimate = self.token_estimator.estimate(
                     model_id=config.model_id,
                     messages=messages,
                     request_parameters=parameters,
                     context_window_tokens=config.context_window_tokens,
                 )
+            if self.quota_service is not None:
+                if estimate is None:
+                    raise ModelRoutingError(
+                        "quota-enforced model routing requires a token estimate"
+                    )
                 estimated_usage = {
                     "input_tokens": estimate.input_tokens,
                     "output_tokens": estimate.output_tokens,
