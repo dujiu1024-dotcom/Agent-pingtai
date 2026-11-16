@@ -319,10 +319,34 @@ def create_knowledge_memory_router(
         return {"memory_id":updated.candidate.memory_id,"status":updated.status.value,"version":updated.version}
     @router.patch("/memories/{memory_id}")
     async def correct_memory(memory_id: str,request: Request):
-        principal=await resolve_memory_principal(request);body=await request.json()
-        try:updated=await memory.correct(principal=principal,memory_id=memory_id,content=str(body.get("content") or ""),source_ref=str(body.get("source_ref") or ""),confidence=body.get("confidence"))
-        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
-        except ValueError as exc:raise HTTPException(404,str(exc)) from exc
+        principal=await resolve_memory_principal(request)
+        try:
+            body=await request.json()
+        except Exception as exc:
+            raise HTTPException(400,"JSON object is required") from exc
+        if not isinstance(body,dict):
+            raise HTTPException(400,"JSON object is required")
+        content=body.get("content")
+        source_ref=body.get("source_ref")
+        confidence=body.get("confidence")
+        if not isinstance(content,str) or not content.strip():
+            raise HTTPException(400,"content must be a non-empty string")
+        if not isinstance(source_ref,str) or not source_ref.strip():
+            raise HTTPException(400,"source_ref must be a non-empty string")
+        if confidence is not None and (
+            isinstance(confidence,bool) or not isinstance(confidence,(int,float))
+            or not 0 <= confidence <= 1
+        ):
+            raise HTTPException(400,"confidence must be a number between 0 and 1")
+        try:
+            updated=await memory.correct(
+                principal=principal,memory_id=memory_id,content=content.strip(),
+                source_ref=source_ref.strip(),confidence=confidence,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403,str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404,str(exc)) from exc
         return {"memory_id":updated.candidate.memory_id,"version":updated.version,"status":updated.status.value}
     @router.delete("/memories/{memory_id}",status_code=204)
     async def forget_memory(memory_id: str,request: Request):
