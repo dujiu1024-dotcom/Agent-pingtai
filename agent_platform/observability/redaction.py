@@ -17,12 +17,18 @@ _SECRET_ASSIGNMENT = re.compile(
 )
 
 
+def _redact_assignment(match: re.Match[str]) -> str:
+    key = f"{match.group(1)}{match.group(2)}{match.group(1)}"
+    value = '"[REDACTED]"' if match.group(4).startswith(('"', "\'")) else "[REDACTED]"
+    return f"{key}{match.group(3)}{value}"
+
+
 def redact_text(value: str, *, max_chars: int = 2000) -> str:
     if max_chars < 1:
         raise ValueError("max_chars must be positive")
     redacted = _BEARER.sub("Bearer [REDACTED]", value)
     redacted = _API_KEY.sub("[REDACTED]", redacted)
-    redacted = _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)}[REDACTED]", redacted)
+    redacted = _SECRET_ASSIGNMENT.sub(_redact_assignment, redacted)
     if len(redacted) > max_chars:
         return redacted[:max_chars] + "…[TRUNCATED]"
     return redacted
