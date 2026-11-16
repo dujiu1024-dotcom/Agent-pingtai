@@ -62,6 +62,7 @@ class ToolExecutionContext:
     agent_id: str | None
     tool_name: str
     resource: str
+    correlation_id: str | None = None
 
 
 ResourceAuthorizer = Callable[
@@ -134,6 +135,7 @@ class SupervisedToolGateway:
         run_id: str | None = None,
         agent_id: str | None = None,
         call_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> Any:
         definition = self._tools.get(tool_name)
         if definition is None:
@@ -171,6 +173,7 @@ class SupervisedToolGateway:
             agent_id=agent_id,
             tool_name=tool_name,
             resource=resource,
+            correlation_id=correlation_id,
         )
         if definition.resource_authorizer is not None:
             try:
@@ -280,6 +283,7 @@ class SupervisedToolGateway:
             "run_id": run_id or "",
             "agent_id": agent_id or "",
             "tool_name": tool_name,
+            "correlation_id": correlation_id or "",
         }
         try:
             try:
