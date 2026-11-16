@@ -1,11 +1,40 @@
 """Bounded structured-output validation and repair at the Harness boundary."""
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import replace
 from typing import Any, Mapping
 
 from agent_platform.runtime.protocols import HarnessAdapter, HarnessRequest, HarnessResult
+
+
+class StructuredOutputSchemaRegistry:
+    """In-process immutable-by-version schema registry for Harness output contracts."""
+
+    def __init__(self) -> None:
+        self._schemas: dict[tuple[str, int], dict[str, Any]] = {}
+
+    def register(self, schema_id: str, version: int, schema: Mapping[str, Any]) -> None:
+        if not isinstance(schema_id, str) or not schema_id.strip() or len(schema_id) > 128:
+            raise ValueError("schema_id must be a non-empty string of at most 128 characters")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("schema version must be a positive integer")
+        if not isinstance(schema, Mapping) or not schema:
+            raise ValueError("structured output schema must be a non-empty object")
+        key = (schema_id, version)
+        value = copy.deepcopy(dict(schema))
+        existing = self._schemas.get(key)
+        if existing is not None and existing != value:
+            raise ValueError("registered schema versions are immutable")
+        self._schemas[key] = value
+
+    def resolve(self, schema_id: str, version: int) -> dict[str, Any]:
+        try:
+            schema = self._schemas[(schema_id, version)]
+        except KeyError as exc:
+            raise KeyError(f"unknown structured output schema {schema_id}@{version}") from exc
+        return copy.deepcopy(schema)
 
 
 class StructuredOutputValidationError(ValueError):
@@ -75,21 +104,33 @@ def validate_structured_output(raw: str, schema: Mapping[str, Any]) -> tuple[Any
 class SchemaValidatedHarnessAdapter:
     """Validate JSON output and perform bounded repair attempts through the same adapter."""
 
-    def __init__(self, adapter: HarnessAdapter, *, max_retries: int = 1) -> None:
+    def __init__(self, adapter: HarnessAdapter, *, max_retries: int = 1, schema_registry: StructuredOutputSchemaRegistry | None = None) -> None:
         if max_retries < 0 or max_retries > 3:
             raise ValueError("max_retries must be between 0 and 3")
         self.adapter = adapter
         self.max_retries = max_retries
+        self.schema_registry = schema_registry
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
-        if request.output_schema is None:
+        schema = request.output_schema
+        schema_id = request.metadata.get("output_schema_id")
+        schema_version = request.metadata.get("output_schema_version")
+        if schema is None and (schema_id is not None or schema_version is not None):
+            if not isinstance(schema_id, str) or not schema_id.strip():
+                raise ValueError("output_schema_id is required with a versioned schema")
+            if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version < 1:
+                raise ValueError("output_schema_version must be a positive integer")
+            if self.schema_registry is None:
+                raise RuntimeError("versioned output schema requested without a schema registry")
+            schema = self.schema_registry.resolve(schema_id, schema_version)
+        if schema is None:
             return await self.adapter.run(request)
-        current = request
+        current = replace(request, output_schema=schema)
         last_errors: list[str] = []
         for attempt in range(self.max_retries + 1):
             result = await self.adapter.run(current)
             value, errors = validate_structured_output(
-                result.output_text, request.output_schema,
+                result.output_text, schema,
             )
             if not errors:
                 return replace(
@@ -99,12 +140,13 @@ class SchemaValidatedHarnessAdapter:
                         "structured_output_valid": True,
                         "structured_output_attempts": attempt + 1,
                         "structured_output": value,
+                        **({"output_schema_id": schema_id, "output_schema_version": schema_version} if schema_id is not None else {}),
                     },
                 )
             last_errors = errors
             if attempt < self.max_retries:
                 current = replace(
-                    request,
+                    current,
                     instructions=(
                         request.instructions
                         + "\n\nReturn only valid JSON matching the required schema. "
