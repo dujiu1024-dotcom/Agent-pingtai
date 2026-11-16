@@ -30,6 +30,7 @@ class AlertTests(unittest.TestCase):
             notifier, clock=lambda: now[0],
         )
         self.assertEqual(len(manager.evaluate({"queue_depth": 120})), 1)
+        self.assertEqual(manager.evaluate({"queue_depth": float("nan")}), ())
         self.assertEqual(manager.evaluate({"queue_depth": 150}), ())
         now[0] += timedelta(minutes=6)
         self.assertEqual(len(manager.evaluate({"queue_depth": 101})), 1)
@@ -38,6 +39,8 @@ class AlertTests(unittest.TestCase):
     def test_invalid_rule_and_duplicate_ids_are_rejected(self):
         with self.assertRaises(ValueError):
             AlertRule("x", "metric", 1, comparison="approx")
+        with self.assertRaisesRegex(ValueError, "finite"):
+            AlertRule("nan", "metric", float("nan"))
         rule = AlertRule("same", "metric", 1)
         with self.assertRaises(ValueError):
             AlertManager((rule, rule), FakeNotifier())
