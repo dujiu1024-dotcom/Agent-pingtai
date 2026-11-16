@@ -22,16 +22,16 @@ class FakeMetadata:
     async def activate_version(self, secret_ref, version):
         for key, row in list(self.rows.items()):
             if key[0] == secret_ref and row.status == "active":
-                self.rows[key] = SecretVersion(secret_ref, row.version, "revoked", row.created_at)
+                self.rows[key] = SecretVersion(secret_ref, row.version, "revoked", row.created_at, row.backend_revoked_at)
         key = (secret_ref, version)
         row = self.rows[key]
-        self.rows[key] = SecretVersion(secret_ref, version, "active", row.created_at)
+        self.rows[key] = SecretVersion(secret_ref, version, "active", row.created_at, row.backend_revoked_at)
 
     async def revoke_version(self, secret_ref, version, revoked_at):
         key = (secret_ref, version)
         row = self.rows.get(key)
         if row and row.status == "pending":
-            self.rows[key] = SecretVersion(secret_ref, version, "revoked", row.created_at)
+            self.rows[key] = SecretVersion(secret_ref, version, "revoked", row.created_at, row.backend_revoked_at)
 
     async def revoke_all(self, secret_ref, revoked_at):
         versions = []
@@ -39,12 +39,31 @@ class FakeMetadata:
             if key[0] == secret_ref and row.status in {"active", "pending"}:
                 self.rows[key] = SecretVersion(secret_ref, row.version, "revoked", row.created_at)
                 versions.append(row.version)
-        return versions
+        return [
+            row.version for key, row in self.rows.items()
+            if key[0] == secret_ref and row.status == "revoked"
+            and row.backend_revoked_at is None
+        ]
+
+    async def list_pending_revocations(self, secret_ref=None):
+        return [
+            row.version for key, row in self.rows.items()
+            if key[0] == secret_ref and row.status == "revoked"
+            and row.backend_revoked_at is None
+        ]
+
+    async def mark_backend_revoked(self, secret_ref, version, revoked_at):
+        key = (secret_ref, version)
+        row = self.rows[key]
+        self.rows[key] = SecretVersion(
+            secret_ref, version, row.status, row.created_at, revoked_at,
+        )
 
 
 class FakeVault:
     def __init__(self):
         self.values = {}
+        self.fail_versions = set()
 
     async def put(self, secret_ref, version, value):
         self.values[(secret_ref, version)] = value
@@ -53,6 +72,8 @@ class FakeVault:
         return self.values.get((secret_ref, version))
 
     async def revoke(self, secret_ref, version):
+        if version in self.fail_versions:
+            raise RuntimeError("vault unavailable")
         self.values.pop((secret_ref, version), None)
 
 
@@ -84,6 +105,23 @@ class SecretManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.manager.revoke(secret_ref=self.ref), 1)
         with self.assertRaises(KeyError):
             await self.manager.resolve(secret_ref=self.ref)
+
+
+    async def test_failed_revocation_remains_pending_and_can_be_retried(self):
+        await self.manager.create(secret_ref=self.ref, value="secret-material")
+        self.vault.fail_versions.add(1)
+        with self.assertRaisesRegex(RuntimeError, "revocation"):
+            await self.manager.revoke(secret_ref=self.ref)
+        version = self.metadata.rows[(self.ref, 1)]
+        self.assertEqual(version.status, "revoked")
+        self.assertIsNone(version.backend_revoked_at)
+        self.assertIn((self.ref, 1), self.vault.values)
+
+        self.vault.fail_versions.clear()
+        self.assertEqual(await self.manager.retry_revocations(secret_ref=self.ref), 1)
+        self.assertNotIn((self.ref, 1), self.vault.values)
+        self.assertIsNotNone(self.metadata.rows[(self.ref, 1)].backend_revoked_at)
+        self.assertEqual(await self.manager.retry_revocations(secret_ref=self.ref), 0)
 
     async def test_invalid_refs_and_duplicate_create_are_rejected(self):
         with self.assertRaises(ValueError):
