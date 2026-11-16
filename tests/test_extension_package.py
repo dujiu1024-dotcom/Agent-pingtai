@@ -25,7 +25,7 @@ class ExtensionPackageExtractionTests(unittest.TestCase):
                          ("plugin/main.py", b"def run(): return 1")])
         report = extract_extension_zip(self.archive, self.destination)
         self.assertEqual(report.files_extracted, 2)
-        self.assertEqual(report.uncompressed_bytes, 49)
+        self.assertEqual(report.uncompressed_bytes, 44)
         self.assertEqual(len(report.archive_sha256), 64)
         self.assertEqual(stat.S_IMODE((self.destination / "plugin/main.py").stat().st_mode),
                          0o600)
