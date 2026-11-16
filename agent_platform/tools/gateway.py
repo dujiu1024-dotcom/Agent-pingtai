@@ -156,10 +156,17 @@ class SupervisedToolGateway:
         ):
             raise ToolExecutionDenied("actor role is not allowed to call this tool")
 
+        # Narrow the optional annotations as well as fail closed at runtime;
+        # composition-time validation alone is not visible to static typing.
+        resource_resolver = definition.resource_resolver
+        resource_authorizer = definition.resource_authorizer
+        if resource_resolver is None or resource_authorizer is None:
+            raise ToolExecutionDenied("tool has no trusted resource ACL policy")
+
         # The resource identifier is derived from trusted server-side policy,
         # never accepted from an untrusted caller as the ACL authority.
         try:
-            resolved_resource = definition.resource_resolver(arguments)
+            resolved_resource = resource_resolver(arguments)
         except Exception as exc:
             raise ToolExecutionDenied("tool resource could not be resolved") from exc
         if (
@@ -213,9 +220,7 @@ class SupervisedToolGateway:
             correlation_id=correlation_id,
         )
         try:
-            resource_allowed = await definition.resource_authorizer(
-                execution_context, arguments
-            )
+            resource_allowed = await resource_authorizer(execution_context, arguments)
         except Exception as exc:
             resource_allowed = False
             authorization_detail = type(exc).__name__
