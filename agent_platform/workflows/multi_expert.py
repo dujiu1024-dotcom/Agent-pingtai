@@ -26,6 +26,7 @@ class MultiExpertState(TypedDict, total=False):
     conflicts: list[dict[str, Any]]
     requires_approval: bool
     approval_request: dict[str, Any]
+    approval_decision: dict[str, Any]
     approval_result: dict[str, Any]
     final_result: dict[str, Any]
     status: str
@@ -191,15 +192,25 @@ def build_multi_expert_workflow(
             "requires_approval": bool(result.get("requires_approval", False)),
         }
 
-    async def human_approval(state: MultiExpertState) -> dict[str, Any]:
+    async def prepare_approval(state: MultiExpertState) -> dict[str, Any]:
+        request = await services.prepare_approval(state=state)
+        return {"approval_request": dict(request)}
+
+    def human_approval(state: MultiExpertState) -> dict[str, Any]:
+        # interrupt() reads LangGraph's runnable context synchronously. Keep it
+        # in a sync node; async persistence happens in adjacent nodes.
         try:
             from langgraph.types import interrupt
         except ImportError as exc:
             raise RuntimeError("Install LangGraph to run this workflow") from exc
-        request = await services.prepare_approval(state=state)
-        decision = interrupt(dict(request))
-        result = await services.apply_approval(state=state, decision=decision)
-        return {"approval_request": dict(request), "approval_result": dict(result)}
+        decision = interrupt(dict(state.get("approval_request") or {}))
+        return {"approval_decision": dict(decision)}
+
+    async def apply_approval(state: MultiExpertState) -> dict[str, Any]:
+        result = await services.apply_approval(
+            state=state, decision=state.get("approval_decision") or {}
+        )
+        return {"approval_result": dict(result)}
 
     async def archive(state: MultiExpertState) -> dict[str, Any]:
         result = await services.archive(state=state)
@@ -217,7 +228,9 @@ def build_multi_expert_workflow(
             "synthesize": synthesize,
             "review": review,
             "resolve_conflicts": resolve_conflicts,
+            "prepare_approval": prepare_approval,
             "human_approval": human_approval,
+            "apply_approval": apply_approval,
             "archive": archive,
             "reject": reject,
         },
@@ -229,7 +242,7 @@ def build_multi_expert_workflow(
                 route_after_review,
                 {
                     "resolve_conflicts": "resolve_conflicts",
-                    "human_approval": "human_approval",
+                    "prepare_approval": "prepare_approval",
                     "archive": "archive",
                 },
             ),
@@ -239,7 +252,7 @@ def build_multi_expert_workflow(
                 {"human_approval": "human_approval", "archive": "archive"},
             ),
             (
-                "human_approval",
+                "apply_approval",
                 route_after_approval,
                 {"archive": "archive", "reject": "reject"},
             ),
@@ -247,6 +260,8 @@ def build_multi_expert_workflow(
         edges=(
             ("run_expert", "synthesize"),
             ("synthesize", "review"),
+            ("prepare_approval", "human_approval"),
+            ("human_approval", "apply_approval"),
             ("archive", "__end__"),
             ("reject", "__end__"),
         ),

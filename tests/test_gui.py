@@ -7,6 +7,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zlib
 from pathlib import Path
 
@@ -199,6 +200,11 @@ class SessionTest(unittest.TestCase):
 
 
 class PreflightTest(unittest.TestCase):
+    def setUp(self):
+        self.platform_guard = patch("gui.require_platform")
+        self.platform_guard.start()
+        self.addCleanup(self.platform_guard.stop)
+
     def test_all_pass(self):
         report = gui.preflight(fake_run_factory(elements=[]))
         self.assertTrue(report["ok"])

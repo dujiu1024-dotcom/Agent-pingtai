@@ -109,10 +109,10 @@ class RunLifecycleManager:
   updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500]),expected_version=old.version)
   if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
   return updated
- async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100,worker_id:str|None=None,lease_seconds:int=60)->list[str]:
+ async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100,worker_id:str|None=None,lease_seconds:int=60,tenant_id:str|None=None)->list[str]:
   resumed=[]
   claim=getattr(self.store,"claim_recoverable",None)
-  rows=await claim(worker_id,limit=limit,lease_seconds=lease_seconds) if worker_id and claim else await self.store.recoverable(limit)
+  rows=await claim(worker_id,tenant_id=tenant_id,limit=limit,lease_seconds=lease_seconds) if worker_id and claim else await self.store.recoverable(limit)
   release=getattr(self.store,"release_lease",None)
   for row in rows:
    running=None

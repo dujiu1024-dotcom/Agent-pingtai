@@ -174,10 +174,14 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             scope=Scope.TASK, scope_id="task-postgres-blackboard", limit=100
         )
         kinds = {entry.kind for entry in entries}
-        self.assertTrue({
+        required_kinds = {
             EntryKind.CLAIM, EntryKind.ARTIFACT, EntryKind.CONFLICT,
             EntryKind.CHALLENGE, EntryKind.DECISION, EntryKind.NOTE,
-        }.issubset(kinds))
+        }
+        self.assertTrue(
+            required_kinds.issubset(kinds),
+            f"missing Blackboard kinds: {required_kinds - kinds}; got: {kinds}",
+        )
         final_entry = await self.repo.get(
             completed["final_result"]["blackboard_entry_id"]
         )
@@ -1088,6 +1092,9 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             for migration_path in sorted(migration_dir.glob("*.sql")):
                 await conn.execute(migration_path.read_text(), prepare=False)
         self.connection = await AsyncConnection.connect(DSN, row_factory=dict_row)
+        async def connect():
+            return await AsyncConnection.connect(DSN, row_factory=dict_row)
+        self.connect = connect
         await self.connection.execute(
             "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
             (self.tenant_id, "Bootstrap Integration"),
@@ -1108,7 +1115,7 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.connection,
             tenant_id=tenant_id,
             display_name="New Tenant",
-            owner_email="new-owner@example.com",
+            owner_email=f"new-owner-{uuid4().hex}@example.com",
             owner_display_name="New Owner",
             owner_password="correct horse battery staple",
         )
