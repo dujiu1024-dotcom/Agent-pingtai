@@ -100,6 +100,23 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
                 idempotency_key="same-key",
             )
 
+    async def test_task_queue_claims_higher_priority_first(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        low = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "low"}, priority=10,
+        )
+        high = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "high"}, priority=900,
+        )
+        lease = await service.claim_next(worker_id="worker-priority")
+        self.assertEqual(lease.task_id, high["task_id"])
+        self.assertNotEqual(lease.task_id, low["task_id"])
+
     async def test_task_failures_retry_then_enter_terminal_failed_state(self):
         from agent_platform.control_plane.tasks import PostgresTaskCenterService
         service = PostgresTaskCenterService(
