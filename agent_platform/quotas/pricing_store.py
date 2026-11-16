@@ -157,7 +157,7 @@ class PostgresPricingCardRepository:
                           model_key,version,input_usd_per_million,output_usd_per_million,
                           currency,effective_at
                    FROM platform_model_pricing_cards
-                   WHERE effective_at <= %s AND (%s IS NULL OR source=%s)
+                   WHERE effective_at <= %s AND (%s::text IS NULL OR source=%s)
                    ORDER BY model_key,effective_at DESC,created_at DESC,version DESC""",
                 (as_of, source, source),
             )
