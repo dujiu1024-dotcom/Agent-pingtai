@@ -176,7 +176,7 @@ class BackupRecoveryScriptTests(unittest.TestCase):
                 'if [[ "$*" == *" up -d --wait --remove-orphans"* ]]; then\\n'
                 '  count=0; [[ ! -f "$UP_COUNT_FILE" ]] || read -r count < "$UP_COUNT_FILE"\\n'
                 '  count=$((count + 1)); printf "%s\\n" "$count" > "$UP_COUNT_FILE"\\n'
-                '  if [[ "$FAIL_FIRST_UP" == "1" && "$count" == "1" ]]; then exit 1; fi\\n'
+                '  if [[ "$FAIL_FIRST_UP" == "1" && "$count" == "2" ]]; then exit 1; fi\\n'
                 'fi\\n',
                 encoding="utf-8",
             )
