@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.runtime.delegation_task_center import TaskCenterChildRunExecutor
-from agent_platform.runtime.protocols import HarnessRequest
+from agent_platform.runtime.protocols import HarnessRequest, MediaInput
 
 
 class FakeRegistry:
@@ -142,6 +142,43 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.usage["total_tokens"], 17)
         self.assertEqual(result.trace_id, "child-trace")
         self.assertEqual(result.metadata["child_run_id"], self.child.run_id)
+
+
+    async def test_child_media_references_are_persisted_without_materializing_bytes(self):
+        media = MediaInput(
+            modality="image",
+            resource_id="authorized-image",
+            mime_type="image/png",
+            size_bytes=12,
+            sha256="a" * 64,
+            filename="evidence.png",
+        )
+        request = HarnessRequest(
+            context=self.child,
+            instructions="Inspect evidence",
+            input_text="Summarize this image",
+            media_inputs=(media,),
+        )
+        executor = TaskCenterChildRunExecutor(
+            task_service=self.service,
+            worker=self.worker,
+            actor_resolver=lambda context: "user-a",
+        )
+        await executor.execute_child(
+            request=request,
+            parent_context=self.parent,
+            idempotency_key="tenant-a:parent-run:media-1",
+        )
+        persisted = self.service.submitted["input"]["media_inputs"]
+        self.assertEqual(persisted, [{
+            "modality": "image",
+            "resource_id": "authorized-image",
+            "mime_type": "image/png",
+            "size_bytes": 12,
+            "sha256": "a" * 64,
+            "filename": "evidence.png",
+        }])
+        self.assertNotIn("bytes", persisted[0])
 
     async def test_child_worker_can_be_bound_after_runtime_composition(self):
         executor = TaskCenterChildRunExecutor(

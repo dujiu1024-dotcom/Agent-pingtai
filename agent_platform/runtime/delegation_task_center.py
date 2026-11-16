@@ -83,6 +83,17 @@ class TaskCenterChildRunExecutor:
         return {
             "instructions": request.instructions,
             "input_text": request.input_text,
+            "media_inputs": [
+                {
+                    "modality": media.modality,
+                    "resource_id": media.resource_id,
+                    "mime_type": media.mime_type,
+                    "size_bytes": media.size_bytes,
+                    "sha256": media.sha256,
+                    "filename": media.filename,
+                }
+                for media in request.media_inputs
+            ],
             "allowed_tools": list(request.allowed_tools),
             "output_schema": request.output_schema,
             "metadata": {
