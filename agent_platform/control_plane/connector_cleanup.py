@@ -9,6 +9,7 @@ from agent_platform.control_plane.data_connectors import (
     ConnectorCleanupJob,
     DataConnectorService,
 )
+
 ConnectionFactory = Callable[[], Any]
 
 
