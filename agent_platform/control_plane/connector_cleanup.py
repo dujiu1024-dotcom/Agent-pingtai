@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 from uuid import UUID
 
 from agent_platform.control_plane.data_connectors import (
@@ -14,7 +14,7 @@ from agent_platform.control_plane.data_connectors import (
 logger = logging.getLogger(__name__)
 
 ConnectionFactory = Callable[[], Any]
-TenantServiceResolver = Callable[[str], Any]
+TenantServiceResolver = Callable[[str], Awaitable[DataConnectorService]]
 
 
 class PostgresConnectorCleanupQueue:
