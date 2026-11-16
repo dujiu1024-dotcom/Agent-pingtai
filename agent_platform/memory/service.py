@@ -186,4 +186,6 @@ class MemoryService:
             await self.on_delete(principal.tenant_id,memory_id)
         # Treat an already-completed logical deletion as success. This makes
         # DELETE idempotent and lets a caller retry after transient cleanup failure.
-        return deleted or already_deleted
+        return deleted or already_deleted or (
+            latest is not None and latest.status is MemoryStatus.DELETED
+        )
