@@ -81,7 +81,7 @@ class QuotaReservation:
             raise ValueError("reservation, tenant and run ids are required")
         if self.root_run_id is not None and not self.root_run_id:
             raise ValueError("root_run_id must be a non-empty string when supplied")
-        if self.scope_type not in {"tenant", "project", "agent", "model", "queue", "worker_pool"} or not self.scope_id:
+        if self.scope_type not in {"tenant", "project", "agent", "model", "run", "queue", "worker_pool"} or not self.scope_id:
             raise ValueError("invalid reservation quota scope")
         counters = (
             self.reserved_tokens, self.reserved_input_tokens, self.reserved_output_tokens,
