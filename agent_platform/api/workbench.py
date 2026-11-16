@@ -21,7 +21,6 @@ class TaskCenterService(Protocol):
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
-        priority: int = 100,
     ) -> Mapping[str, Any]: ...
 
     async def get_task(
@@ -113,6 +112,8 @@ def create_workbench_router(
             if session_id and not await authorize_task(principal, session_id, "use_session"):
                 raise HTTPException(403, "session access denied")
             try:
+                if "priority" in body and (type(body["priority"]) is not int or body["priority"] != 100):
+                    raise HTTPException(422, "custom task priority is not supported by this task center")
                 submit_kwargs: dict[str, Any] = {
                     "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
                     "agent_id": agent_id, "project_id": project_id,
@@ -122,8 +123,6 @@ def create_workbench_router(
                         if body.get("idempotency_key") else None
                     ),
                 }
-                if "priority" in body:
-                    submit_kwargs["priority"] = int(body["priority"])
                 result = await service.submit_task(**submit_kwargs)
             except PermissionError as exc:
                 raise HTTPException(403, str(exc)) from exc

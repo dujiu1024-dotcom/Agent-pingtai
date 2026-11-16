@@ -101,6 +101,16 @@ class WorkbenchTaskCenterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.service.items, {})
 
+    def test_task_submission_rejects_unsupported_custom_priority(self):
+        for invalid_priority in (10, "fast", 10.5, True):
+            response = self.client.post(
+                "/api/platform/v1/workbench/tasks",
+                json={"agent_id": "agent-a", "input": {"text": "analyze"},
+                      "priority": invalid_priority},
+            )
+            self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.service.items, {})
+
     def test_task_submission_rejects_missing_agent_and_input(self):
         response = self.client.post(
             "/api/platform/v1/workbench/tasks",

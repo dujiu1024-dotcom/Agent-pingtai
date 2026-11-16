@@ -52,6 +52,7 @@ $("runsList").addEventListener("click",async e=>{
    $("taskDetail").classList.remove("hidden");
    $("taskDetail").innerHTML="<h3>任务详情</h3><pre style='white-space:pre-wrap;overflow-wrap:anywhere'>"+esc(JSON.stringify(d,null,2))+"</pre>";
   }else{
+   if(!window.confirm("确认取消该任务？"))return;
    await api("/workbench/tasks/"+id+"/cancel",{method:"POST",body:"{}"});
    msg("取消请求已提交");await load("runs");
   }
@@ -89,8 +90,10 @@ $("approvalList").addEventListener("click",async e=>{
    return;
   }
   if(action==="approve"||action==="reject"){
+   if(!window.confirm(action==="approve"?"确认批准这项操作？":"确认拒绝这项操作？"))return;
    await api("/approvals/"+encodeURIComponent(id)+"/decision",{method:"POST",body:JSON.stringify({approved:action==="approve"})});
   }else if(action==="revoke"){
+   if(!window.confirm("确认撤销该审批？此操作不可直接恢复。"))return;
    await api("/approvals/"+encodeURIComponent(id)+"/revoke",{method:"POST",body:"{}"});
   }
   $("approvalDetail").classList.add("hidden");msg("审批操作已提交");await load("approvals");
@@ -174,7 +177,7 @@ $("loadUsage").onclick=async()=>{
 
 $("knowledgeList").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-doc-delete]");if(!b)return;
- try{await api("/knowledge/documents/"+encodeURIComponent(b.dataset.docDelete),{method:"DELETE"});msg("文档已删除");await load("knowledge")}catch(err){msg("文档删除失败："+err.message)}
+ try{if(!window.confirm("确认删除该知识文档？关联索引也将按服务端策略处理。"))return;await api("/knowledge/documents/"+encodeURIComponent(b.dataset.docDelete),{method:"DELETE"});msg("文档已删除");await load("knowledge")}catch(err){msg("文档删除失败："+err.message)}
 });
 $("searchKnowledge").onclick=async()=>{
  if(!capabilities.knowledge)return;
@@ -189,8 +192,8 @@ $("memoryList").addEventListener("click",async e=>{
  const id=encodeURIComponent(b.dataset.id),action=b.dataset.memoryAction;
  try{
   if(action==="history"){const r=await api("/memories/"+id+"/history");$("memoryHistory").innerHTML=table((r.items||[]).map(x=>[x.version,x.status,x.content,x.recorded_at]));return}
-  if(action==="archive")await api("/memories/"+id+"/archive",{method:"POST",body:"{}"});
-  else if(action==="forget")await api("/memories/"+id,{method:"DELETE"});
+  if(action==="archive"){if(!window.confirm("确认归档该记忆？"))return;await api("/memories/"+id+"/archive",{method:"POST",body:"{}"});}
+  else if(action==="forget"){if(!window.confirm("确认永久遗忘该记忆？此操作不可直接恢复。"))return;await api("/memories/"+id,{method:"DELETE"});}
   msg("记忆操作已提交");await load("memory");
  }catch(err){msg("记忆操作失败："+err.message)}
 });
@@ -210,7 +213,7 @@ $("loadMetrics").onclick=async()=>{
  try{const r=await fetch($("apiBase").value.replace(/\/$/,"")+"/observability/metrics",{credentials:"same-origin"});if(!r.ok)throw new Error(r.status+" "+await r.text());$("metricsReport").textContent=await r.text()}catch(e){msg(e.message)}
 };
 $("refresh").onclick=()=>load();
-$("submitTask").onclick=async()=>{if(!capabilities.task_execution){msg("任务执行 API 尚未接入；不会提交到占位接口。");return}try{const r=await api("/workbench/tasks",{method:"POST",body:JSON.stringify({agent_id:$("agentId").value,project_id:$("projectId").value||null,input:{text:$("taskInput").value}})});msg("任务已提交："+r.task_id);show("runs")}catch(e){msg(e.message)}};
+$("submitTask").onclick=async()=>{if(!capabilities.task_execution){msg("任务执行 API 尚未接入；不会提交到占位接口。");return}const agentId=$("agentId").value.trim(),taskText=$("taskInput").value.trim();if(!agentId||!taskText){msg("请填写 Agent ID 和任务描述");return}try{const r=await api("/workbench/tasks",{method:"POST",body:JSON.stringify({agent_id:agentId,project_id:$("projectId").value.trim()||null,session_id:activeSessionId,input:{text:taskText}})});msg("任务已提交："+r.task_id);$("taskInput").value="";show("runs")}catch(e){msg("任务提交失败："+e.message)}};
 $("createAgent").onclick=async()=>{if(!capabilities.agent_management){msg("Agent 管理 API 尚未接入；当前请勿创建占位 Agent。");return}try{const splitIds=id=>$(id).value.split(",").map(x=>x.trim()).filter(Boolean);const definition={name:$("newAgentName").value,instructions:$("agentRole").value,model_template_id:$("templateRef").value.trim(),tool_ids:splitIds("agentToolIds"),skill_ids:splitIds("agentSkillIds")};const workflowId=$("agentWorkflowId").value.trim();if(workflowId)definition.workflow_id=workflowId;if(!definition.instructions.trim()||!definition.model_template_id)throw new Error("请填写 Agent 指令和模型模板 ID");await api("/registry/agent/"+encodeURIComponent($("newAgentId").value.trim())+"/versions",{method:"POST",body:JSON.stringify({definition})});msg("Agent 草稿已创建，请发布后再提交任务");load("agents")}catch(e){msg(e.message)}};
 $("ingestDoc").onclick=async()=>{if(!capabilities.knowledge){msg("知识库 API 尚未接入；不会提交到占位接口。");return}try{await api("/knowledge/documents",{method:"POST",body:JSON.stringify({title:$("docTitle").value,scope:$("docScope").value,content:$("docText").value,media_type:"text/plain"})});msg("文档已提交入库");load("knowledge")}catch(e){msg(e.message)}};
 const now=new Date(),week=new Date(now.getTime()-7*24*60*60*1000),localValue=d=>new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
