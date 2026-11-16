@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.models.templates import ModelTemplateRegistry
-from agent_platform.runtime.protocols import HarnessCapabilities, HarnessRequest, MediaInput, MediaOutput
+from agent_platform.runtime.protocols import (
+    HarnessCapabilities,
+    HarnessRequest,
+    HarnessStreamEvent,
+    MediaInput,
+    MediaOutput,
+)
 from agent_platform.runtime.strands_agents import StrandsAgentsAdapter
 
 
@@ -306,6 +312,57 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(ValueError, "PDF only"):
             await adapter.run(self.request)
+
+    async def test_stream_emits_normalized_text_tool_and_completion_events(self):
+        class StreamingAgent(FakeAgent):
+            async def stream_async(self, prompt, *, idempotency_token):
+                self.prompt = (prompt, idempotency_token)
+                yield {"init_event_loop": True}
+                yield {"data": "Strands "}
+                yield {"current_tool_use": {"name": "knowledge.search", "input": {"q": "secret"}}}
+                yield {"data": "stream"}
+                yield {
+                    "result": SimpleNamespace(
+                        message={"content": [{"text": "Strands stream"}]},
+                        stop_reason="end_turn",
+                        metrics=SimpleNamespace(
+                            accumulated_usage=SimpleNamespace(
+                                input_tokens=5, output_tokens=3, total_tokens=8
+                            ),
+                            accumulated_metrics=SimpleNamespace(latency_ms=42),
+                            cycle_count=1,
+                        ),
+                    )
+                }
+
+        adapter = self.adapter(
+            agent_factory=lambda **kwargs: StreamingAgent(**kwargs),
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text"}),
+                streaming=True,
+            ),
+        )
+        events = [
+            event async for event in adapter.stream(self.request)
+        ]
+        self.assertTrue(all(isinstance(event, HarnessStreamEvent) for event in events))
+        self.assertEqual(
+            [event.event_type for event in events],
+            ["lifecycle", "text_delta", "tool_call", "text_delta", "completed"],
+        )
+        self.assertEqual(events[1].text_delta, "Strands ")
+        self.assertEqual(events[2].tool_name, "knowledge.search")
+        self.assertNotIn("secret", str(events[2].metadata))
+        self.assertEqual(events[-1].result.output_text, "Strands stream")
+        self.assertEqual(events[-1].result.usage["total_tokens"], 8)
+        self.assertTrue(self.agents[0].closed)
+
+    async def test_streaming_is_rejected_when_capability_is_not_declared(self):
+        adapter = self.adapter()
+        with self.assertRaisesRegex(UnsupportedHarnessCapability, "streaming support"):
+            _ = [event async for event in adapter.stream(self.request)]
+        self.assertEqual(self.agents, [])
 
     async def test_rejects_platform_tools_until_gateway_adapter_exists(self):
         request = HarnessRequest(
