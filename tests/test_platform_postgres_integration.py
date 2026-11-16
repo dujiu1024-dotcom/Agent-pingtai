@@ -155,7 +155,7 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 return {"action": "publish", "summary": state["synthesis"]["summary"]}
 
             async def apply_approval(self, *, state, decision):
-                return {"approved": decision.get("approved") is True}
+                return {"approved": decision.get("approved") is True, "approver_id": "integration-reviewer"}
 
             async def archive(self, *, state):
                 return {"summary": state["synthesis"]["summary"]}
