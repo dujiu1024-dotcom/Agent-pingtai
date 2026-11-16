@@ -117,15 +117,12 @@ class SecretManager:
         await self.metadata.revoke_all(ref, datetime.now(timezone.utc))
         return await self.retry_revocations(secret_ref=ref)
 
-    async def retry_revocations(self, *, secret_ref: str | None = None) -> int:
-        ref = self._validate_ref(secret_ref) if secret_ref is not None else None
+    async def retry_revocations(self, *, secret_ref: str) -> int:
+        ref = self._validate_ref(secret_ref)
         pending = await self.metadata.list_pending_revocations(ref)
         cleaned = 0
         failures = 0
         for version in pending:
-            if ref is None:
-                # Global retries require a repository that can return scoped refs.
-                raise ValueError("secret_ref is required for scoped backend cleanup")
             try:
                 await self.backend.revoke(ref, version)
                 await self.metadata.mark_backend_revoked(ref, version, datetime.now(timezone.utc))
