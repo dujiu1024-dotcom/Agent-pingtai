@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
+from decimal import Decimal
+from uuid import UUID
 
 from agent_platform.data_governance.export import SubjectExportCoordinator
 
@@ -68,6 +71,46 @@ class SubjectExportCoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second.complete)
         self.assertEqual(second.completed, ("postgres", "objects"))
         self.assertEqual(len(good.calls), 1)
+
+
+    async def test_serializes_postgres_scalar_types_without_loss(self):
+        adapter = FakeAdapter([{
+            "id": UUID("12345678-1234-5678-1234-567812345678"),
+            "created_at": datetime(2026, 11, 16, 12, 30, tzinfo=timezone.utc),
+            "amount": Decimal("12.3400"),
+            "blob": b"\x00\xff",
+        }])
+        sink = FakeSink()
+        result = await SubjectExportCoordinator({"postgres": adapter}).export(
+            tenant_id="tenant-a", subject_id="user-1",
+            operation_id="export-scalars", sink=sink,
+        )
+        self.assertTrue(result.complete)
+        self.assertEqual(
+            sink.records[("export-scalars", "postgres", 0)],
+            (
+                b'{"amount":"12.3400","blob":{"$binary_base64":"AP8="},'
+                b'"created_at":"2026-11-16T12:30:00+00:00",'
+                b'"id":"12345678-1234-5678-1234-567812345678"}'
+            ),
+        )
+
+    async def test_rejects_non_finite_numbers_and_unknown_scalar_types(self):
+        sink = FakeSink()
+        non_finite = await SubjectExportCoordinator({
+            "postgres": FakeAdapter([{"value": float("nan")}]),
+        }).export(
+            tenant_id="tenant-a", subject_id="user-1",
+            operation_id="export-nan", sink=sink,
+        )
+        self.assertEqual(non_finite.failed, {"postgres": "ValueError"})
+        unsupported = await SubjectExportCoordinator({
+            "postgres": FakeAdapter([{"value": object()}]),
+        }).export(
+            tenant_id="tenant-a", subject_id="user-1",
+            operation_id="export-unsupported", sink=sink,
+        )
+        self.assertEqual(unsupported.failed, {"postgres": "TypeError"})
 
     async def test_rejects_unknown_completed_sources_and_non_mapping_records(self):
         with self.assertRaises(ValueError):
