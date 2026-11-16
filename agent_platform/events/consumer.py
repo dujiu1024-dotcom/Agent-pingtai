@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Protocol
 
 from agent_platform.events.receipts import EventReceiptClaim
+from agent_platform.observability.instrumentation import safe_observation, safe_update
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ class RedisStreamsConsumer:
     def __init__(
         self, *, transport: StreamTransport, receipts: ReceiptStore,
         tenant_id: str, topic: str, group: str, consumer_name: str,
-        handler: EventHandler, max_attempts: int = 5,
+        handler: EventHandler, max_attempts: int = 5, observer: Any | None = None,
     ) -> None:
         for name, value in (("tenant_id", tenant_id), ("topic", topic), ("group", group), ("consumer_name", consumer_name)):
             if not value.strip():
@@ -56,6 +57,7 @@ class RedisStreamsConsumer:
         self.consumer_name = consumer_name
         self.handler = handler
         self.max_attempts = max_attempts
+        self.observer = observer
 
     async def _dead_letter(
         self, *, message_id: str, fields: Mapping[str, str], event_id: str | None,
@@ -137,8 +139,27 @@ class RedisStreamsConsumer:
                 message_id=message_id, payload=payload,
             )
             try:
-                # Handlers must use event_id as an idempotency key for external side effects.
-                await self.handler(envelope)
+                # Trace metadata deliberately excludes payload content and credentials.
+                with safe_observation(
+                    self.observer,
+                    name="event.consume",
+                    input={"topic": self.topic, "event_id": event_id},
+                    metadata={
+                        "tenant_id": self.tenant_id,
+                        "group": self.group,
+                        "consumer": self.consumer_name,
+                        "message_id": message_id,
+                    },
+                ) as span:
+                    try:
+                        # Handlers must use event_id as an idempotency key for external side effects.
+                        await self.handler(envelope)
+                    except Exception as exc:
+                        safe_update(span, output={
+                            "status": "failed", "error_type": type(exc).__name__,
+                        })
+                        raise
+                    safe_update(span, output={"status": "succeeded"})
             except Exception as exc:
                 error = type(exc).__name__
                 if claim.attempts >= self.max_attempts:
