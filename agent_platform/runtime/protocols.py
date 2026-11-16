@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -319,7 +320,7 @@ class LifecycleManagedHarnessAdapter:
         await self.lifecycle.started(request=request, adapter=self.descriptor)
         try:
             result = await self.adapter.run(request)
-        except __import__("asyncio").CancelledError:
+        except asyncio.CancelledError:
             await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
             raise
         except Exception as exc:
