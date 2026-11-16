@@ -107,6 +107,13 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(KeyError, "unknown structured output schema"):
             registry.resolve("agent.answer", 2)
 
+    async def test_registry_rejects_schema_keywords_it_cannot_validate(self):
+        registry = StructuredOutputSchemaRegistry()
+        with self.assertRaisesRegex(ValueError, "unsupported schema keywords"):
+            registry.register("unsafe.schema", 1, {"type": "object", "$ref": "#/definitions/secret"})
+        with self.assertRaisesRegex(ValueError, "properties must be an object"):
+            registry.register("malformed.schema", 1, {"type": "object", "properties": []})
+
     async def test_versioned_schema_requires_registry_and_explicit_version(self):
         adapter = FakeAdapter(['{"answer":"ok"}'])
         request = HarnessRequest(
