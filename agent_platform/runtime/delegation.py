@@ -22,6 +22,7 @@ class DelegationSpec:
     agent_id: str
     task: str
     allowed_tools: tuple[str, ...] = ()
+    required_capabilities: tuple[str, ...] = ()
     timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
@@ -31,6 +32,10 @@ class DelegationSpec:
             raise ValueError("delegated task exceeds the input size limit")
         if len(set(self.allowed_tools)) != len(self.allowed_tools):
             raise ValueError("delegated tool allowlist must not contain duplicates")
+        if any(not item.strip() for item in self.required_capabilities):
+            raise ValueError("required capabilities must be non-empty strings")
+        if len(set(self.required_capabilities)) != len(self.required_capabilities):
+            raise ValueError("required capabilities must not contain duplicates")
 
 
 @dataclass(frozen=True)
@@ -72,17 +77,31 @@ class ChildRunExecutor(Protocol):
 
 
 class SupervisedDelegationService:
-    def __init__(self, *, executor: ChildRunExecutor, policy: DelegationPolicy) -> None:
+    def __init__(
+        self, *, executor: ChildRunExecutor, policy: DelegationPolicy,
+        expert_registry: Any,
+    ) -> None:
+        if expert_registry is None:
+            raise ValueError("tenant-bound ExpertRegistry is required for delegation")
         self.executor = executor
         self.policy = policy
+        self.expert_registry = expert_registry
 
-    def _child_request(
+    async def _child_request(
         self, parent: RunContext, spec: DelegationSpec
     ) -> tuple[HarnessRequest, str]:
         if spec.agent_id not in self.policy.allowed_agent_ids:
             raise PermissionError("delegated Agent is not in the supervised allowlist")
         if not set(spec.allowed_tools).issubset(self.policy.allowed_tool_ids):
             raise PermissionError("delegated tools exceed the supervised allowlist")
+        registry_tenant = getattr(self.expert_registry, "tenant_id", parent.tenant_id)
+        if registry_tenant != parent.tenant_id:
+            raise PermissionError("delegated ExpertRegistry tenant mismatch")
+        profile = await self.expert_registry.get(spec.agent_id)
+        if profile is None or not profile.enabled:
+            raise PermissionError("delegated Agent is not active and published in this tenant")
+        if not set(spec.required_capabilities).issubset(profile.capabilities):
+            raise PermissionError("delegated Agent lacks required capabilities")
         if spec.timeout_seconds <= 0 or spec.timeout_seconds > self.policy.max_timeout_seconds:
             raise ValueError("delegation timeout exceeds the configured policy")
 
@@ -144,7 +163,9 @@ class SupervisedDelegationService:
         if len(set(keys)) != len(keys):
             raise ValueError("delegation keys must be unique within a parent Run")
 
-        prepared = [self._child_request(parent, item) for item in requests]
+        prepared = await asyncio.gather(*(
+            self._child_request(parent, item) for item in requests
+        ))
 
         async def run_one(spec: DelegationSpec, request: HarnessRequest, child_run_id: str) -> DelegationResult:
             result = await asyncio.wait_for(
