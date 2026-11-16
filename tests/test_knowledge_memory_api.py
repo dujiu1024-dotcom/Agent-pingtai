@@ -67,6 +67,27 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         )
         self.client = TestClient(app)
 
+    def test_retrieval_and_answer_evaluation_api_returns_metrics(self):
+        response = self.client.post(
+            "/api/platform/v1/knowledge/documents",
+            json={"title": "evaluation doc", "scope": "tenant",
+                  "content": "The evaluation answer contains alpha evidence."},
+        )
+        self.assertEqual(response.status_code, 200)
+        document_id = response.json()["document_id"]
+        result = self.client.post(
+            "/api/platform/v1/knowledge/evaluate",
+            json={"k": 3, "cases": [{
+                "case_id": "alpha-case", "query": "alpha evidence",
+                "expected_document_ids": [document_id],
+                "expected_answer_terms": ["Evidence-backed"],
+                "expected_citation_document_ids": [document_id],
+            }]},
+        )
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()["retrieval_summary"]["case_count"], 1)
+        self.assertEqual(result.json()["answer_summary"]["grounded_cases"], 1)
+
     def test_private_document_upload_and_search_are_user_scoped(self):
         response = self.client.post(
             "/api/platform/v1/knowledge/documents",
