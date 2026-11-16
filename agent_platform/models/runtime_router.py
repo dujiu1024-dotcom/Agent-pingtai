@@ -296,12 +296,26 @@ class OpenAICompatibleModelRouter:
             content = message.get("content") if isinstance(message, Mapping) else None
             if not isinstance(content, str):
                 raise ModelRoutingError("model provider returned non-text completion content")
-            usage = raw.get("usage", {})
+            usage = raw.get("usage")
             if not isinstance(usage, Mapping):
-                raise ModelRoutingError("model provider returned invalid usage metadata")
+                raise ModelUsageRecordingError(
+                    "model response succeeded without provider usage metadata"
+                )
             input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
             output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
-            if isinstance(input_tokens, int) and not isinstance(input_tokens, bool) and input_tokens > 0:
+            if (
+                not isinstance(input_tokens, int) or isinstance(input_tokens, bool)
+                or input_tokens < 0
+                or not isinstance(output_tokens, int) or isinstance(output_tokens, bool)
+                or output_tokens < 0
+            ):
+                # The provider has already returned a potentially billable result.
+                # Do not fallback/retry or report zero usage: fail closed for
+                # accounting and let the caller's reservation reconciliation run.
+                raise ModelUsageRecordingError(
+                    "model response contains missing or invalid token usage counters"
+                )
+            if input_tokens > 0:
                 safe_metric(
                     self.metrics, "increment", "model_input_tokens_total", input_tokens,
                     labels=labels,
