@@ -191,11 +191,11 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("tool_call_duration_seconds", " ".join(self.metrics.snapshot()["observation_counts"]))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     async def test_correlation_id_is_propagated_into_tool_observation(self):
         await self.call("read", correlation_id="corr-123")
         self.assertEqual(self.observer.calls[-1][2]["correlation_id"], "corr-123")
+
+
+if __name__ == "__main__":
+    unittest.main()
 
