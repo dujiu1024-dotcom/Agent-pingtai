@@ -81,6 +81,7 @@ def create_platform_app(
     webhook_delivery_authorizer: Any | None = None,
     webhook_delivery_worker: Any | None = None,
     outbox_relay_worker: Any | None = None,
+    memory_extraction_event_worker: Any | None = None,
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
     task_worker: Any | None = None,
@@ -264,6 +265,13 @@ def create_platform_app(
             raise ValueError("webhook_delivery_worker must expose async start() and stop()")
         app.router.on_startup.append(webhook_delivery_worker.start)
         app.router.on_shutdown.append(webhook_delivery_worker.stop)
+    if memory_extraction_event_worker is not None:
+        if not callable(getattr(memory_extraction_event_worker, "start", None)) or not callable(
+            getattr(memory_extraction_event_worker, "stop", None)
+        ):
+            raise ValueError("memory_extraction_event_worker must expose async start() and stop()")
+        app.router.on_startup.append(memory_extraction_event_worker.start)
+        app.router.on_shutdown.append(memory_extraction_event_worker.stop)
     if outbox_relay_worker is not None:
         if not callable(getattr(outbox_relay_worker, "start", None)) or not callable(
             getattr(outbox_relay_worker, "stop", None)
