@@ -171,7 +171,10 @@ def create_knowledge_memory_router(
         if not 1 <= k <= 20:
             raise HTTPException(400, "k must be between 1 and 20")
         from agent_platform.knowledge.evaluation import (
-            RAGEvalCase, RAGAnswerEvalCase, evaluate_answers, evaluate_retrieval,
+            RAGAnswerEvalCase,
+            RAGEvalCase,
+            evaluate_answers,
+            evaluate_retrieval,
         )
         retrieval_cases = []
         answer_cases = []
