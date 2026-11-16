@@ -39,6 +39,35 @@ class StreamTransport(Protocol):
 EventHandler = Callable[[EventEnvelope], Awaitable[None]]
 
 
+class IdempotentEventEffectExecutor(Protocol):
+    """Downstream must durably deduplicate the supplied key before side effects."""
+
+    async def execute(
+        self, *, idempotency_key: str, event: EventEnvelope
+    ) -> Mapping[str, Any]: ...
+
+
+def event_idempotency_key(event: EventEnvelope) -> str:
+    if not event.tenant_id.strip() or not event.event_id.strip():
+        raise ValueError("tenant_id and event_id are required for idempotent effects")
+    return f"tenant:{event.tenant_id}:event:{event.event_id}"
+
+
+class IdempotentEventHandler:
+    """Bind every downstream side effect to the stable tenant/event identity."""
+
+    def __init__(self, executor: IdempotentEventEffectExecutor) -> None:
+        self.executor = executor
+
+    async def __call__(self, event: EventEnvelope) -> None:
+        result = await self.executor.execute(
+            idempotency_key=event_idempotency_key(event),
+            event=event,
+        )
+        if not isinstance(result, Mapping):
+            raise TypeError("idempotent effect executor must return a mapping")
+
+
 class RedisStreamsConsumer:
     def __init__(
         self, *, transport: StreamTransport, receipts: ReceiptStore,
