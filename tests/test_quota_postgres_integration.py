@@ -51,3 +51,79 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             "platform_usage_ledger", "platform_usage_reconciliation",
         })
         self.assertEqual(len(columns), 1)
+
+    async def test_reserve_enforces_hard_limits_with_empty_ledger_and_reservations(self):
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        tenant_id = f"quota-reserve-it-{uuid4().hex}"
+        agent_id = f"agent-{uuid4().hex}"
+        template_id = f"template-{uuid4().hex}"
+        run_a, run_b = uuid4(), uuid4()
+        reservation_a, reservation_b = uuid4(), uuid4()
+        period_start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        period_end = period_start + timedelta(hours=1)
+
+        async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+            migration_dir = Path("agent_platform/storage/postgres")
+            for migration_path in sorted(migration_dir.glob("*.sql")):
+                await conn.execute(migration_path.read_text(), prepare=False)
+            await conn.execute(
+                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                (tenant_id, "Quota Reservation Integration"),
+            )
+            await conn.execute(
+                """INSERT INTO platform_agents
+                   (tenant_id, agent_id, display_name, role_definition)
+                   VALUES (%s, %s, 'Quota Agent', 'integration')""",
+                (tenant_id, agent_id),
+            )
+            await conn.execute(
+                """INSERT INTO platform_model_templates
+                   (tenant_id, template_id, version, definition, status, created_by)
+                   VALUES (%s, %s, 1, '{}'::jsonb, 'active', 'integration')""",
+                (tenant_id, template_id),
+            )
+            for run_id in (run_a, run_b):
+                await conn.execute(
+                    """INSERT INTO platform_runs
+                       (tenant_id, run_id, agent_id, template_id, template_version, status)
+                       VALUES (%s, %s, %s, %s, 1, 'queued')""",
+                    (tenant_id, run_id, agent_id, template_id),
+                )
+            await conn.execute(
+                """INSERT INTO platform_quota_budgets
+                   (tenant_id, scope_type, scope_id, period_start, period_end,
+                    hard_tokens, hard_cost_usd, hard_concurrency)
+                   VALUES (%s, 'tenant', %s, %s, %s, 5, 1.00, 2)""",
+                (tenant_id, tenant_id, period_start, period_end),
+            )
+
+        async with await AsyncConnection.connect(DSN) as conn:
+            with self.assertRaises(Exception) as raised:
+                await conn.execute(
+                    """SELECT * FROM platform_quota_reserve
+                       (%s, %s, %s, 'tenant', %s, %s, 6, 0.10)""",
+                    (reservation_a, tenant_id, run_a, tenant_id, period_start),
+                )
+            self.assertIn("hard token budget exceeded", str(raised.exception))
+            await conn.rollback()
+
+        async with await AsyncConnection.connect(DSN) as conn:
+            cursor = await conn.execute(
+                """SELECT * FROM platform_quota_reserve
+                   (%s, %s, %s, 'tenant', %s, %s, 5, 0.10)""",
+                (reservation_a, tenant_id, run_a, tenant_id, period_start),
+            )
+            self.assertEqual((await cursor.fetchone())[0], reservation_a)
+            await conn.commit()
+
+        async with await AsyncConnection.connect(DSN) as conn:
+            with self.assertRaises(Exception) as raised:
+                await conn.execute(
+                    """SELECT * FROM platform_quota_reserve
+                       (%s, %s, %s, 'tenant', %s, %s, 1, 0.10)""",
+                    (reservation_b, tenant_id, run_b, tenant_id, period_start),
+                )
+            self.assertIn("hard token budget exceeded", str(raised.exception))
+            await conn.rollback()
