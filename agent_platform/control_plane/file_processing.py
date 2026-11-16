@@ -64,7 +64,7 @@ class PostgresFileProcessingQueue:
                        WHERE (status='queued' AND available_at<=now())
                           OR (status='running' AND lease_expires_at<=now())
                        ORDER BY available_at,created_at
-                       FOR UPDATE SKIP LOCKED LIMIT 1"""
+                       LIMIT 1 FOR UPDATE SKIP LOCKED"""
                 )
                 row = await cursor.fetchone()
                 if row is None:
