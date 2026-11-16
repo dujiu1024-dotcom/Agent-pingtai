@@ -238,8 +238,10 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             payload={"attempt": 1},
             correlation_id=entry.correlation_id,
         )
-        await self.repo.append_event(event)
-        await self.repo.append_event(event)
+        await asyncio.gather(
+            self.repo.append_event(event),
+            self.repo.append_event(event),
+        )
         with self.assertRaisesRegex(ValueError, "reused with a different payload"):
             await self.repo.append_event(replace(event, payload={"attempt": 2}))
 
@@ -312,6 +314,33 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id, entry.entry_id),
             )
             self.assertEqual([row["version"] for row in await cur.fetchall()], [1, 2])
+
+    async def test_concurrent_blackboard_revisions_allow_only_one_writer(self):
+        entry = await self.repo.propose(self.make_entry())
+        results = await asyncio.gather(
+            self.repo.revise(
+                entry.entry_id,
+                expected_version=1,
+                replacement=self.make_entry(
+                    content={"fact": "writer-a"}, status=EntryStatus.ACCEPTED,
+                    entry_id=entry.entry_id, correlation_id=entry.correlation_id,
+                ),
+            ),
+            self.repo.revise(
+                entry.entry_id,
+                expected_version=1,
+                replacement=self.make_entry(
+                    content={"fact": "writer-b"}, status=EntryStatus.ACCEPTED,
+                    entry_id=entry.entry_id, correlation_id=entry.correlation_id,
+                ),
+            ),
+            return_exceptions=True,
+        )
+        self.assertEqual(sum(isinstance(item, VersionConflict) for item in results), 1)
+        self.assertEqual(sum(isinstance(item, BlackboardEntry) for item in results), 1)
+        versions = await self.repo.list_versions(entry.entry_id)
+        self.assertEqual([item.version for item in versions], [1, 2])
+        self.assertIn((await self.repo.get(entry.entry_id)).content["fact"], {"writer-a", "writer-b"})
 
     async def test_tenant_scoping_hides_other_tenant_entries(self):
         entry = await self.repo.propose(self.make_entry())
