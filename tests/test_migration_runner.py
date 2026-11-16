@@ -59,6 +59,15 @@ class FakeTarget:
         return [self.rows[key] for key in source_keys if key in self.rows]
 
 
+
+
+class CorruptTarget(FakeTarget):
+    async def upsert(self, *, source_key, payload):
+        target_key = await super().upsert(source_key=source_key, payload=payload)
+        self.rows[source_key]["value"] = "corrupted"
+        return target_key
+
+
 def normalize_target(row):
     return {"id": row["legacy_id"], "value": row["value"]}
 
@@ -118,8 +127,7 @@ class MigrationRunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(target.rows, {})
 
     async def test_mismatched_target_snapshot_does_not_validate_batch(self):
-        ledger, target = FakeLedger(), FakeTarget()
-        target.rows["1"] = {"legacy_id": "1", "value": "wrong"}
+        ledger, target = FakeLedger(), CorruptTarget()
         report = await MigrationRunner(ledger=ledger).execute(
             batch=make_batch(), source_rows=[{"id": "1", "value": "right"}],
             key_field="id", target=target,
