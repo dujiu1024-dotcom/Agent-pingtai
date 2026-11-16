@@ -1,13 +1,17 @@
 """Google Drive Changes API adapter for the existing KnowledgeConnector contract.
 
-OAuth access tokens are resolved from the existing secret reference at execution
-time. A host-owned document factory must map Drive sharing policy into platform
-ACLs; files without an explicit policy mapping are not ingested.
+The first call snapshots existing files and captures a Changes API watermark.
+Subsequent calls consume deltas from that watermark. OAuth access tokens are
+resolved from the existing secret reference at execution time. A host-owned
+document factory must map source sharing policy into platform ACLs and fail
+closed when it cannot represent the source policy safely.
 """
 from __future__ import annotations
 
+import base64
+import json
 from typing import Any, Callable, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
 from agent_platform.knowledge.contracts import Document
@@ -26,15 +30,9 @@ DocumentFactory = Callable[[str, Mapping[str, Any], str], Document]
 
 
 class GoogleDriveKnowledgeConnector:
-    """Incremental Google Drive connector using Changes API page tokens.
-
-    The document factory is mandatory because Drive sharing permissions must be
-    translated into platform ACLs by the host. It must fail closed when the source
-    ACL cannot be represented safely.
-    """
+    """Incremental Google Drive connector using initial listing plus Changes API."""
 
     connector_id = "google-drive"
-
     _API = "https://www.googleapis.com/drive/v3"
     _EXPORTS = {
         "application/vnd.google-apps.document": (
@@ -51,6 +49,10 @@ class GoogleDriveKnowledgeConnector:
         ),
         "application/vnd.google-apps.drawing": ("application/pdf", "pdf"),
     }
+    _FILE_FIELDS = (
+        "id,name,mimeType,modifiedTime,webViewLink,description,md5Checksum,"
+        "size,trashed,parents,owners(displayName,emailAddress)"
+    )
 
     def __init__(
         self,
@@ -87,6 +89,22 @@ class GoogleDriveKnowledgeConnector:
             raise GoogleDriveConnectorError("Google Drive response must be a JSON object")
         return payload
 
+    @staticmethod
+    def _encode_cursor(state: Mapping[str, str | None]) -> str:
+        raw = json.dumps(dict(state), separators=(",", ":"), sort_keys=True).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    @staticmethod
+    def _decode_cursor(cursor: str) -> dict[str, Any]:
+        try:
+            padded = cursor + "=" * (-len(cursor) % 4)
+            value = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise GoogleDriveConnectorError("invalid Google Drive sync cursor") from exc
+        if not isinstance(value, dict) or value.get("mode") not in {"initial", "changes"}:
+            raise GoogleDriveConnectorError("invalid Google Drive sync cursor")
+        return value
+
     async def _api_get(
         self, path: str, *, token: str, params: Mapping[str, Any] | None = None,
     ) -> Any:
@@ -103,8 +121,9 @@ class GoogleDriveKnowledgeConnector:
     async def _download(
         self, *, token: str, file_id: str, export_extension: str | None,
     ) -> bytes:
+        encoded_id = quote(file_id, safe="")
         if export_extension:
-            path = f"/files/{file_id}/export"
+            path = f"/files/{encoded_id}/export"
             params = {
                 "mimeType": next(
                     mime for mime, (_, extension) in self._EXPORTS.items()
@@ -112,7 +131,7 @@ class GoogleDriveKnowledgeConnector:
                 )
             }
         else:
-            path = f"/files/{file_id}"
+            path = f"/files/{encoded_id}"
             params = {"alt": "media"}
         response = await self.client.get(
             self._API + path,
@@ -128,9 +147,12 @@ class GoogleDriveKnowledgeConnector:
                 host == "drive.usercontent.google.com"
                 or host.endswith(".googleusercontent.com")
             )
-            if parsed.scheme != "https" or not allowed or parsed.username or parsed.password:
+            if (
+                parsed.scheme != "https" or not allowed
+                or parsed.username or parsed.password or parsed.fragment
+            ):
                 raise GoogleDriveConnectorError("Google Drive returned an unsafe download redirect")
-            # Signed download URLs are bearer capabilities; never forward the OAuth token.
+            # Signed download URLs are bearer capabilities; never forward OAuth.
             response = await self.client.get(
                 location, follow_redirects=False,
                 headers={"Accept": "application/octet-stream"},
@@ -150,6 +172,43 @@ class GoogleDriveKnowledgeConnector:
                 raise GoogleDriveConnectorError("invalid Google Drive content length") from exc
         return raw
 
+    async def _document(
+        self, *, tenant_id: str, token: str, file_meta: Mapping[str, Any],
+    ) -> ConnectorDocument | None:
+        file_id = file_meta.get("id")
+        mime_type = file_meta.get("mimeType")
+        if not isinstance(file_id, str) or not file_id:
+            raise GoogleDriveConnectorError("Google Drive file is missing its ID")
+        if not isinstance(mime_type, str):
+            raise GoogleDriveConnectorError("Google Drive file is missing mimeType")
+        # Folders and shortcuts are navigation metadata, not document content.
+        if mime_type in {
+            "application/vnd.google-apps.folder",
+            "application/vnd.google-apps.shortcut",
+        }:
+            return None
+        export = self._EXPORTS.get(mime_type)
+        if mime_type.startswith("application/vnd.google-apps.") and export is None:
+            raise GoogleDriveConnectorError("unsupported native Google Workspace document type")
+        content_type = export[0] if export else mime_type
+        content = await self._download(
+            token=token, file_id=file_id,
+            export_extension=export[1] if export else None,
+        )
+        # The host maps Drive sharing/ownership into platform ACLs.
+        document = self.document_factory(tenant_id, file_meta, content_type)
+        stable_id = f"gdrive:{file_id}"
+        if (
+            not isinstance(document, Document)
+            or document.tenant_id != tenant_id
+            or document.document_id != stable_id
+            or document.media_type != content_type
+        ):
+            raise GoogleDriveConnectorError(
+                "document factory must preserve tenant, stable Drive ID, and exported media type"
+            )
+        return ConnectorDocument(document=document, content=content)
+
     async def list_changed(
         self,
         *,
@@ -161,38 +220,79 @@ class GoogleDriveKnowledgeConnector:
         if not tenant_id.strip() or not 1 <= limit <= 500:
             raise ValueError("tenant_id and a page limit between 1 and 500 are required")
         token = await self._token()
-        page_token = cursor
-        if page_token is None:
+        state = self._decode_cursor(cursor) if cursor is not None else None
+        if state is None:
             start = self._json(await self._api_get(
                 "/changes/startPageToken", token=token,
                 params={"supportsAllDrives": "true"},
             ))
-            page_token = start.get("startPageToken")
-            if not isinstance(page_token, str) or not page_token:
+            watermark = start.get("startPageToken")
+            if not isinstance(watermark, str) or not watermark:
                 raise GoogleDriveConnectorError("Google Drive did not return a start page token")
+            state = {"mode": "initial", "page_token": None, "change_token": watermark}
 
+        items: list[ConnectorDocument] = []
+        deleted: list[str] = []
+        page_size = min(limit, self.page_size)
+        if state["mode"] == "initial":
+            params: dict[str, Any] = {
+                "q": "trashed = false",
+                "pageSize": page_size,
+                "corpora": "allDrives",
+                "includeItemsFromAllDrives": "true",
+                "supportsAllDrives": "true",
+                "fields": f"nextPageToken,files({self._FILE_FIELDS})",
+            }
+            if state.get("page_token"):
+                params["pageToken"] = state["page_token"]
+            payload = self._json(await self._api_get("/files", token=token, params=params))
+            files = payload.get("files")
+            if not isinstance(files, list):
+                raise GoogleDriveConnectorError("Google Drive files must be an array")
+            for file_meta in files:
+                if not isinstance(file_meta, dict):
+                    raise GoogleDriveConnectorError("Google Drive returned invalid file metadata")
+                item = await self._document(
+                    tenant_id=tenant_id, token=token, file_meta=file_meta,
+                )
+                if item is not None:
+                    items.append(item)
+            next_page = payload.get("nextPageToken")
+            if next_page is not None and (not isinstance(next_page, str) or not next_page):
+                raise GoogleDriveConnectorError("Google Drive returned an invalid initial page token")
+            if next_page:
+                next_cursor = self._encode_cursor({
+                    "mode": "initial", "page_token": next_page,
+                    "change_token": state["change_token"],
+                })
+            else:
+                next_cursor = self._encode_cursor({
+                    "mode": "changes", "token": state["change_token"],
+                })
+            return ConnectorPage(
+                items=tuple(items), next_cursor=next_cursor,
+                has_more=bool(next_page),
+            )
+
+        change_token = state.get("token")
+        if not isinstance(change_token, str) or not change_token:
+            raise GoogleDriveConnectorError("Google Drive change cursor is missing its token")
         payload = self._json(await self._api_get(
             "/changes",
             token=token,
             params={
-                "pageToken": page_token,
-                "pageSize": min(limit, self.page_size),
+                "pageToken": change_token,
+                "pageSize": page_size,
                 "includeItemsFromAllDrives": "true",
                 "supportsAllDrives": "true",
                 "fields": (
-                    "nextPageToken,newStartPageToken,"
-                    "changes(fileId,removed,file(id,name,mimeType,modifiedTime,"
-                    "webViewLink,description,md5Checksum,size,trashed,parents,"
-                    "owners(displayName,emailAddress)))"
+                    f"nextPageToken,newStartPageToken,changes(fileId,removed,file({self._FILE_FIELDS}))"
                 ),
             },
         ))
         changes = payload.get("changes")
         if not isinstance(changes, list):
             raise GoogleDriveConnectorError("Google Drive changes must be an array")
-
-        items: list[ConnectorDocument] = []
-        deleted: list[str] = []
         for change in changes:
             if not isinstance(change, dict):
                 raise GoogleDriveConnectorError("Google Drive returned an invalid change")
@@ -208,39 +308,25 @@ class GoogleDriveKnowledgeConnector:
                 continue
             if not isinstance(file_meta, dict):
                 raise GoogleDriveConnectorError("Google Drive change is missing file metadata")
-            mime_type = file_meta.get("mimeType")
-            if not isinstance(mime_type, str):
-                raise GoogleDriveConnectorError("Google Drive file is missing mimeType")
-            export = self._EXPORTS.get(mime_type)
-            content_type = export[0] if export else mime_type
-            extension = export[1] if export else None
-            content = await self._download(
-                token=token, file_id=file_id, export_extension=extension,
+            item = await self._document(
+                tenant_id=tenant_id, token=token, file_meta=file_meta,
             )
-            # The host maps Google Drive sharing/ownership into platform ACLs.
-            document = self.document_factory(tenant_id, file_meta, content_type)
-            if (
-                not isinstance(document, Document)
-                or document.tenant_id != tenant_id
-                or document.document_id != stable_id
-                or document.media_type != content_type
-            ):
-                raise GoogleDriveConnectorError(
-                    "document factory must preserve tenant, stable Drive ID, and exported media type"
-                )
-            items.append(ConnectorDocument(document=document, content=content))
-
+            if item is not None:
+                items.append(item)
         next_page = payload.get("nextPageToken")
         if next_page is not None and (not isinstance(next_page, str) or not next_page):
             raise GoogleDriveConnectorError("Google Drive returned an invalid next page token")
-        if next_page is None:
-            next_page = payload.get("newStartPageToken")
-            if not isinstance(next_page, str) or not next_page:
+        if next_page is not None:
+            next_cursor = self._encode_cursor({"mode": "changes", "token": next_page})
+            has_more = True
+        else:
+            new_token = payload.get("newStartPageToken")
+            if not isinstance(new_token, str) or not new_token:
                 raise GoogleDriveConnectorError("Google Drive did not return a resumable page token")
+            next_cursor = self._encode_cursor({"mode": "changes", "token": new_token})
+            has_more = False
         return ConnectorPage(
-            items=tuple(items),
-            next_cursor=next_page,
-            has_more=payload.get("nextPageToken") is not None,
+            items=tuple(items), next_cursor=next_cursor, has_more=has_more,
             deleted_document_ids=tuple(deleted),
         )
 
