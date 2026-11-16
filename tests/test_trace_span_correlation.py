@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 from contextlib import contextmanager
-from decimal import Decimal
 from types import SimpleNamespace
 
 from agent_platform.contracts import ModelTemplateRef, RunContext
