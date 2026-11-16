@@ -1,7 +1,7 @@
 """Authenticated session/message/file API backed by SessionAssetService."""
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -29,6 +29,7 @@ def create_sessions_router(
     authorize: Authorizer,
     memory_extraction: MemoryExtractionService | None = None,
     resolve_memory_principal: MemoryPrincipalResolver | None = None,
+    audit_writer: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1", tags=["sessions"])
 
@@ -52,18 +53,28 @@ def create_sessions_router(
                 principal, "project", session.project_id, action,
             ):
                 raise HTTPException(403, "linked project session access denied")
+        if audit_writer is not None:
+            trace = getattr(request.state, "trace_context", None)
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action=f"{resource_type}.{action}", subject_id=resource_id,
+                detail={"trace_id": getattr(trace, "trace_id", None),
+                        "correlation_id": getattr(trace, "correlation_id", None)},
+            )
         return principal, service
 
     @router.get("/sessions")
-    async def list_sessions(request: Request, limit: int = 100):
+    async def list_sessions(request: Request, limit: int = 100, project_id: str | None = None):
         principal = await resolve_principal(request)
         service = await resolve_service(principal)
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "session repository tenant mismatch")
+        if project_id and not await authorize(principal, "project", project_id, "read"):
+            raise HTTPException(403, "project session access denied")
         try:
             items = await service.repository.list_sessions(
-                principal.tenant_id, principal.user_id, limit,
+                principal.tenant_id, principal.user_id, limit, project_id,
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -81,10 +92,16 @@ def create_sessions_router(
                 "created_at": session.created_at.isoformat(),
                 "updated_at": session.updated_at.isoformat(),
             })
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.list", subject_id=principal.user_id,
+                detail={"project_id": project_id, "returned": len(visible)},
+            )
         return {"items": visible}
 
     @router.get("/files")
-    async def list_files(request: Request, session_id: str | None = None, limit: int = 100):
+    async def list_files(request: Request, session_id: str | None = None, limit: int = 100, project_id: str | None = None):
         principal = await resolve_principal(request)
         service = await resolve_service(principal)
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
@@ -92,9 +109,11 @@ def create_sessions_router(
             raise HTTPException(403, "session repository tenant mismatch")
         if session_id and not await authorize(principal, "session", session_id, "read"):
             raise HTTPException(403, "session file access denied")
+        if project_id and not await authorize(principal, "project", project_id, "read"):
+            raise HTTPException(403, "project file access denied")
         try:
             items = await service.repository.list_assets(
-                principal.tenant_id, principal.user_id, session_id, limit,
+                principal.tenant_id, principal.user_id, session_id, limit, project_id,
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -116,6 +135,13 @@ def create_sessions_router(
                     "status": asset.status.value, "session_id": asset.session_id,
                     "project_id": asset.project_id, "created_at": asset.created_at.isoformat(),
                 })
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.list", subject_id=principal.user_id,
+                detail={"project_id": project_id, "session_id": session_id,
+                        "returned": len(visible)},
+            )
         return {"items": visible}
 
     @router.post("/sessions", status_code=201)
@@ -145,6 +171,12 @@ def create_sessions_router(
             )
         except SessionError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.created", subject_id=session.session_id,
+                detail={"project_id": session.project_id},
+            )
         return {
             "session_id": session.session_id, "title": session.title,
             "project_id": session.project_id, "status": session.status,
