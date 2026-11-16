@@ -54,6 +54,8 @@ class TaskCenterChildRunExecutor:
             tenant_id=tenant_id, kind="agent", item_id=request.context.agent_id,
         )
         definition = agent.definition
+        if not isinstance(definition, Mapping):
+            raise ValueError("published delegated Agent definition must be an object")
         template_id = definition.get("model_template_id")
         if template_id != request.context.model_template.template_id:
             raise PermissionError("delegated Agent model template differs from the parent Run template")
@@ -181,3 +183,11 @@ class TaskCenterChildRunExecutor:
                 )
             finally:
                 raise
+        except Exception:
+            # A failed worker poll must not leave an unobserved child Run queued.
+            await self.task_service.cancel_task(
+                tenant_id=parent_context.tenant_id,
+                task_id=request.context.run_id,
+                actor_id=actor_id,
+            )
+            raise
