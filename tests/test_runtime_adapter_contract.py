@@ -18,7 +18,7 @@ from agent_platform.runtime.protocols import (
 )
 
 
-def request(*, output_schema=None):
+def request(*, output_schema=None, allowed_tools=(), timeout_seconds=None, resume=False, checkpoint_ref=None):
     return HarnessRequest(
         context=RunContext(
             tenant_id="tenant-a",
@@ -29,6 +29,10 @@ def request(*, output_schema=None):
         instructions="Follow the task contract",
         input_text="hello",
         output_schema=output_schema,
+        allowed_tools=allowed_tools,
+        timeout_seconds=timeout_seconds,
+        resume=resume,
+        checkpoint_ref=checkpoint_ref,
     )
 
 
@@ -105,6 +109,41 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(UnsupportedHarnessCapability):
             await managed.run(request(output_schema={"type": "object"}))
         self.assertEqual(adapter.calls, 0)
+        self.assertEqual([event[0] for event in lifecycle.events], ["started", "failed"])
+
+    async def test_tool_timeout_and_resume_requests_require_declared_capabilities(self):
+        adapter = FakeAdapter()
+        managed = LifecycleManagedHarnessAdapter(
+            adapter=adapter, descriptor=descriptor(), lifecycle=Lifecycle(),
+        )
+        for payload in (
+            request(allowed_tools=("search",)),
+            request(timeout_seconds=5),
+            request(resume=True, checkpoint_ref="checkpoint-1"),
+        ):
+            with self.assertRaises(UnsupportedHarnessCapability):
+                await managed.run(payload)
+        self.assertEqual(adapter.calls, 0)
+
+    def test_request_rejects_invalid_timeout_and_checkpoint_reference(self):
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            request(timeout_seconds=0)
+        with self.assertRaisesRegex(ValueError, "requires resume=True"):
+            request(checkpoint_ref="checkpoint-1")
+
+    async def test_stream_without_completion_is_a_lifecycle_failure(self):
+        class IncompleteStreamAdapter(FakeAdapter):
+            async def stream(self, _request):
+                yield HarnessStreamEvent(event_type="text_delta", text_delta="partial")
+
+        lifecycle = Lifecycle()
+        managed = LifecycleManagedHarnessAdapter(
+            adapter=IncompleteStreamAdapter(),
+            descriptor=descriptor(capabilities=HarnessCapabilities(streaming=True)),
+            lifecycle=lifecycle,
+        )
+        with self.assertRaisesRegex(RuntimeError, "without a completion event"):
+            _ = [event async for event in managed.stream(request())]
         self.assertEqual([event[0] for event in lifecycle.events], ["started", "failed"])
 
     async def test_lifecycle_records_success_in_order(self):
