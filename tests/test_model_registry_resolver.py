@@ -15,7 +15,7 @@ class Secrets:
 
 class ModelRegistryResolverTests(unittest.IsolatedAsyncioTestCase):
     def snapshot(self, *, provider_version=4, base_url="https://llm.example/v1"):
-        return SimpleNamespace(entries=(
+        return SimpleNamespace(tenant_id="tenant-a", entries=(
             {
                 "kind": "model_template", "item_id": "general", "version": 2,
                 "definition": {
@@ -47,6 +47,28 @@ class ModelRegistryResolverTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ModelRegistryError):
             await RegistryModelResolver(Secrets()).resolve(
                 snapshot=self.snapshot(provider_version=3), template_id="general",
+            )
+
+    async def test_loopback_http_requires_explicit_development_opt_in(self):
+        with self.assertRaises(ModelRegistryError):
+            await RegistryModelResolver(Secrets()).resolve(
+                snapshot=self.snapshot(base_url="http://localhost:8080/v1"),
+                template_id="general",
+            )
+        resolved = await RegistryModelResolver(
+            Secrets(), allow_insecure_loopback=True,
+        ).resolve(
+            snapshot=self.snapshot(base_url="http://localhost:8080/v1"),
+            template_id="general",
+        )
+        self.assertEqual(resolved.base_url, "http://localhost:8080/v1")
+
+    async def test_secret_reference_must_be_scoped_to_snapshot_tenant(self):
+        snapshot = self.snapshot()
+        snapshot.entries[1]["definition"]["secret_ref"] = "secret://tenant-b/provider"
+        with self.assertRaises(ModelRegistryError):
+            await RegistryModelResolver(Secrets()).resolve(
+                snapshot=snapshot, template_id="general",
             )
 
     async def test_non_https_remote_provider_is_rejected(self):
