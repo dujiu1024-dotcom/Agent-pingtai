@@ -104,6 +104,10 @@ def create_workbench_router(
             session_id = str(body["session_id"]) if body.get("session_id") else None
             if not await authorize_task(principal, agent_id, "execute"):
                 raise HTTPException(403, "Agent execution access denied")
+            if project_id and not await authorize_task(principal, project_id, "use_project"):
+                raise HTTPException(403, "project access denied")
+            if session_id and not await authorize_task(principal, session_id, "use_session"):
+                raise HTTPException(403, "session access denied")
             try:
                 result = await service.submit_task(
                     tenant_id=principal.tenant_id, actor_id=principal.user_id,
