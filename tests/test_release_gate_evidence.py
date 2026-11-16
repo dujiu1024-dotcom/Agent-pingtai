@@ -33,6 +33,11 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
             [],
         )
 
+    def test_boolean_schema_version_is_rejected(self):
+        self.document["schema_version"] = True
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("schema_version must be the integer 1", errors)
+
     def test_missing_check_fails_closed(self):
         del self.document["checks"]["fault_injection"]
         errors = validate_evidence(self.document, now=self.now)

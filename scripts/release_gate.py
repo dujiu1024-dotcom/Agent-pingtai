@@ -68,8 +68,9 @@ def validate_evidence(
     errors: list[str] = []
     if not isinstance(document, dict):
         return ["evidence document must be a JSON object"]
-    if document.get("schema_version") != 1:
-        errors.append("schema_version must equal 1")
+    # bool is a subclass of int in Python; reject JSON true/false explicitly.
+    if type(document.get("schema_version")) is not int or document["schema_version"] != 1:
+        errors.append("schema_version must be the integer 1")
     for field in ("release_id", "environment"):
         if not isinstance(document.get(field), str) or not document[field].strip():
             errors.append(f"{field}: required non-empty string")
