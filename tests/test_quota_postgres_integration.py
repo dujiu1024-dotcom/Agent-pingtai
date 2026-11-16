@@ -23,7 +23,9 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                          'platform_quota_reserve',
                          'platform_quota_reserve_split',
                          'platform_quota_settle',
-                         'platform_quota_release'
+                         'platform_quota_release',
+                         'platform_quota_renew',
+                         'platform_quota_expire'
                        )"""
                 )
             ).fetchall()
@@ -47,6 +49,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({row[0] for row in rows}, {
             "platform_quota_reserve", "platform_quota_reserve_split",
             "platform_quota_settle", "platform_quota_release",
+            "platform_quota_renew", "platform_quota_expire",
         })
         self.assertEqual({row[0] for row in tables}, {
             "platform_quota_budgets", "platform_quota_reservations",
