@@ -7,12 +7,14 @@ from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
 from agent_platform.runtime.lifecycle import RunLifecycleManager
+from agent_platform.tools.idempotency import EffectConflict
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
 InterventionResolver = Callable[[Principal], Awaitable[Any]]
 DetailResolver = Callable[[Principal], Awaitable[Any]]
 ExecutorResolver = Callable[[Principal], Awaitable[Any]]
+ToolEffectResolver = Callable[[Principal], Awaitable[Any]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
 
@@ -23,6 +25,7 @@ def create_runs_router(
     resolve_interventions: InterventionResolver | None = None,
     resolve_details: DetailResolver | None = None,
     resolve_executor: ExecutorResolver | None = None,
+    resolve_tool_effects: ToolEffectResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/runs", tags=["runs"])
 
@@ -145,5 +148,67 @@ def create_runs_router(
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
             return {"items": items}
+
+
+    if resolve_tool_effects is not None:
+        def serialize_effect(effect: Any) -> dict[str, Any]:
+            return {
+                "run_id": effect.run_id,
+                "call_id": effect.call_id,
+                "action_digest": effect.action_digest,
+                "actor_id": effect.actor_id,
+                "state": effect.state,
+                "result": effect.result,
+                "error": effect.error,
+                "created_at": effect.created_at.isoformat() if effect.created_at else None,
+                "updated_at": effect.updated_at.isoformat() if effect.updated_at else None,
+                "resolution": effect.resolution,
+                "reconciled_by": effect.reconciled_by,
+                "reconciliation_note": effect.reconciliation_note,
+                "reconciled_at": effect.reconciled_at.isoformat() if effect.reconciled_at else None,
+            }
+
+        @router.get("/{run_id}/tool-effects/{call_id}")
+        async def get_tool_effect(run_id: str, call_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "read")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            service = await resolve_tool_effects(principal)
+            effect = await service.store.get(
+                tenant_id=principal.tenant_id, run_id=run_id, call_id=call_id,
+            )
+            if effect is None:
+                raise HTTPException(404, "tool effect not found")
+            return serialize_effect(effect)
+
+        @router.post("/{run_id}/tool-effects/{call_id}/reconcile")
+        async def reconcile_tool_effect(run_id: str, call_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "reconcile")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "JSON object is required") from exc
+            if (
+                not isinstance(body, dict)
+                or not isinstance(body.get("resolution"), str)
+                or not isinstance(body.get("note"), str)
+            ):
+                raise HTTPException(400, "resolution and note are required")
+            service = await resolve_tool_effects(principal)
+            try:
+                effect = await service.reconcile(
+                    tenant_id=principal.tenant_id, run_id=run_id, call_id=call_id,
+                    operator_id=principal.user_id, resolution=body["resolution"],
+                    note=body["note"], result=body.get("result"),
+                )
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except KeyError as exc:
+                raise HTTPException(404, "tool effect not found") from exc
+            except (ValueError, EffectConflict) as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return serialize_effect(effect)
 
     return router
