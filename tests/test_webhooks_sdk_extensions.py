@@ -168,6 +168,31 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.retried, [])
         self.assertEqual(store.dead, [])
 
+    async def test_dispatch_supports_async_secret_manager_resolver(self):
+        store = FakeWebhookStore()
+        transport = FakeWebhookTransport()
+        audit = FakeAuditSink()
+
+        async def resolve_secret(_ref):
+            return SECRET
+
+        dispatcher = WebhookDispatcher(
+            store=store,
+            transport=transport,
+            resolve_secret=resolve_secret,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+            audit_sink=audit,
+            clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
+        )
+        result = await dispatcher.dispatch()
+        self.assertEqual(result["delivered"], 1)
+        self.assertEqual(len(store.completed), 1)
+        self.assertEqual([event["action"] for event in audit.events], [
+            "webhook.delivery.attempt", "webhook.delivery",
+        ])
+
     async def test_dispatch_retries_then_dead_letters(self):
         store = FakeWebhookStore(attempt=8)
         transport = FakeWebhookTransport(code=503)
