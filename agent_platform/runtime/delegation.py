@@ -94,7 +94,9 @@ class SupervisedDelegationService:
             raise PermissionError("delegated Agent is not in the supervised allowlist")
         if not set(spec.allowed_tools).issubset(self.policy.allowed_tool_ids):
             raise PermissionError("delegated tools exceed the supervised allowlist")
-        registry_tenant = getattr(self.expert_registry, "tenant_id", parent.tenant_id)
+        registry_tenant = getattr(self.expert_registry, "tenant_id", None)
+        if not isinstance(registry_tenant, str) or not registry_tenant.strip():
+            raise PermissionError("delegated ExpertRegistry must be explicitly tenant-bound")
         if registry_tenant != parent.tenant_id:
             raise PermissionError("delegated ExpertRegistry tenant mismatch")
         profile = await self.expert_registry.get(spec.agent_id)
