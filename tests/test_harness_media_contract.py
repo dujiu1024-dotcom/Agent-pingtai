@@ -56,6 +56,16 @@ class HarnessMediaContractTests(unittest.IsolatedAsyncioTestCase):
                 modality="pdf", resource_id="asset-123",
                 mime_type="image/png", size_bytes=1024, sha256=DIGEST,
             )
+        with self.assertRaisesRegex(ValueError, "opaque authorized resource"):
+            MediaInput(
+                modality="image", resource_id="folder/image.png",
+                mime_type="image/png", size_bytes=1024, sha256=DIGEST,
+            )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            MediaInput(
+                modality="audio", resource_id="asset-audio",
+                mime_type="audio/", size_bytes=512, sha256=DIGEST,
+            )
         with self.assertRaisesRegex(ValueError, "sha256"):
             MediaOutput(
                 modality="audio", resource_id="artifact-123",
