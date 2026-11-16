@@ -125,6 +125,14 @@ class SharePointKnowledgeConnectorTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(MicrosoftGraphConnectorError):
             await connector.list_changed(tenant_id="tenant-a", cursor=None)
 
+    async def test_rejects_delta_cursor_for_another_drive(self):
+        cursor = SharePointKnowledgeConnector._encode_cursor(
+            "https://graph.microsoft.com/v1.0/drives/another-drive/root/delta?token=foreign"
+        )
+        connector = self.make_connector(Client([]), [])
+        with self.assertRaises(MicrosoftGraphConnectorError):
+            await connector.list_changed(tenant_id="tenant-a", cursor=cursor)
+
     async def test_rejects_untrusted_signed_download_host(self):
         client = Client([
             Response({"value": [{
