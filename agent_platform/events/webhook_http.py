@@ -6,11 +6,11 @@ TLS SNI/certificate validation. Redirects are never followed.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 import http.client
 import ipaddress
 import socket
 import ssl
-from collections.abc import Callable, Mapping
 from urllib.parse import urlsplit
 
 
