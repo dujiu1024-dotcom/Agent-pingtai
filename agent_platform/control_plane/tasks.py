@@ -158,7 +158,7 @@ class PostgresTaskCenterService:
         if row["status"] == "cancelling":
             if row["run_id"] and self._cancel_run:
                 cancellation = await self._cancel_run(self.tenant_id, str(row["run_id"]))
-                run_status = getattr(cancellation, "status", None)
+                run_status = cancellation.get("status") if isinstance(cancellation, Mapping) else getattr(cancellation, "status", None)
                 run_status = getattr(run_status, "value", run_status)
                 if run_status == "cancelled":
                     await self.acknowledge_cancel_by_id(task_id=task_id)
