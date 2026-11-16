@@ -22,7 +22,7 @@ class TaskRunStore(InMemoryRunStateStore):
         self.idempotency = {}
 
     async def create_task_run(
-        self, *, tenant_id, run_id, actor_id, agent_id, template_id,
+        self, *, tenant_id, run_id, actor_id, agent_id, agent_version, template_id,
         template_version, input, project_id=None, session_id=None,
         workflow_id=None, idempotency_key=None, request_digest=None,
     ):
@@ -37,7 +37,7 @@ class TaskRunStore(InMemoryRunStateStore):
         self.records[run_id] = {
             "tenant_id": tenant_id, "run_id": run_id, "task_id": run_id,
             "project_id": project_id, "session_id": session_id, "agent_id": agent_id,
-            "template_id": template_id, "template_version": template_version,
+            "agent_version": agent_version, "template_id": template_id, "template_version": template_version,
             "workflow_id": workflow_id, "status": "queued", "input": dict(input),
             "output": None, "usage": {}, "trace_id": None, "created_by": actor_id,
             "request_digest": request_digest, "created_at": now, "updated_at": now,
