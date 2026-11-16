@@ -80,6 +80,7 @@ class ConnectorApiTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 201)
         self.assertEqual(created.json()["display_name"], "Shared Drive")
+        self.assertNotIn("secret_ref", created.json())
         revoked = self.client.post("/api/platform/v1/connectors/drive-1/revoke")
         self.assertEqual(revoked.status_code, 200)
         self.assertEqual(revoked.json()["status"], "revoked")
