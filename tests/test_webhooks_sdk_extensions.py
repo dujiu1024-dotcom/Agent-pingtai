@@ -157,13 +157,42 @@ class SdkAndExtensionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             PlatformClient(base_url="http://insecure.test", token="x")
 
+    def test_sdk_rejects_unsafe_origins_paths_methods_and_idempotency_keys(self):
+        for origin in (
+            "https://user:pass@platform.example.test",
+            "https://platform.example.test/api",
+            "https://platform.example.test?debug=1",
+            "http://platform.example.test",
+        ):
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                PlatformClient(base_url=origin, token="token")
+
+        client = PlatformClient(
+            base_url="https://platform.example.test", token="token",
+            transport=FakeSdkTransport(),
+        )
+        for path in ("/../admin", "/%2e%2e/admin", "//attacker.test", "/safe#fragment", "/bad\\\\path"):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                client.get(path)
+        for method in ("TRACE", "CONNECT", ""):
+            with self.subTest(method=method), self.assertRaises(ValueError):
+                client.request(method, "/health")
+        for key in ("", "bad\nkey", "x" * 256):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                client.post("/runs", {}, idempotency_key=key)
+        with self.assertRaises(ValueError):
+            PlatformClient(base_url="https://platform.example.test", token="token", timeout=True)
+
     def test_sdk_surfaces_api_errors(self):
         client = PlatformClient(
             base_url="https://platform.example.test", token="x",
             transport=FakeSdkTransport(status=403),
         )
-        with self.assertRaises(PlatformApiError):
+        with self.assertRaises(PlatformApiError) as caught:
             client.get("/me")
+        self.assertEqual(caught.exception.status_code, 403)
+        self.assertEqual(caught.exception.body, {"ok": True})
+        self.assertEqual(caught.exception.headers, {})
 
     def test_tenant_locale_formats_timezone_and_numbers_without_global_locale(self):
         context = locale_context("de-DE", "Europe/Berlin")
