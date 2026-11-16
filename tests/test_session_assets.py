@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+from agent_platform.control_plane.asset_processing import (
+    AssetProcessingWorker,
+    InMemoryAssetContentSink,
+    InMemoryAssetProcessingQueue,
+    TextAssetParser,
+)
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus,
     InMemoryObjectStorage,
@@ -11,6 +17,12 @@ from agent_platform.control_plane.sessions_assets import (
     SessionError,
     SessionNotFound,
 )
+
+
+
+class AcceptScanner:
+    async def scan(self, filename: str, media_type: str, content: bytes) -> bool:
+        return True
 
 
 class RejectScanner:
@@ -86,6 +98,85 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(asset.status, AssetStatus.REJECTED)
         with self.assertRaises(SessionNotFound):
             await scanned.download_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+
+
+    async def test_upload_is_pending_until_background_scan_and_parse_complete(self) -> None:
+        queue = InMemoryAssetProcessingQueue()
+        service = SessionAssetService(
+            self.repository, self.storage, processing_queue=queue,
+        )
+        asset = await service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="notes.txt",
+            media_type="text/plain", content=b"background processing",
+        )
+        self.assertEqual(asset.status, AssetStatus.PENDING)
+        sink = InMemoryAssetContentSink()
+        worker = AssetProcessingWorker(
+            queue=queue, repository=self.repository, storage=self.storage,
+            scanner=AcceptScanner(), parser=TextAssetParser(), content_sink=sink,
+            worker_id="asset-worker",
+        )
+        self.assertTrue(await worker.process_once())
+        saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(saved.status, AssetStatus.AVAILABLE)
+        self.assertEqual(
+            sink.records[("tenant-a", asset.asset_id)].text,
+            "background processing",
+        )
+
+    async def test_scanner_outage_retries_and_never_exposes_unscanned_file(self) -> None:
+        class RetryScanner:
+            def __init__(self):
+                self.calls = 0
+            async def scan(self, filename, media_type, content):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError("scanner offline")
+                return True
+        queue = InMemoryAssetProcessingQueue()
+        service = SessionAssetService(
+            self.repository, self.storage, processing_queue=queue,
+        )
+        asset = await service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="retry.txt",
+            media_type="text/plain", content=b"retry safely",
+        )
+        scanner = RetryScanner()
+        worker = AssetProcessingWorker(
+            queue=queue, repository=self.repository, storage=self.storage,
+            scanner=scanner, parser=TextAssetParser(),
+            content_sink=InMemoryAssetContentSink(), worker_id="asset-worker",
+            max_retry_delay_seconds=0,
+        )
+        await worker.process_once()
+        pending = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(pending.status, AssetStatus.PENDING)
+        with self.assertRaises(SessionNotFound):
+            await service.download_asset(tenant_id="tenant-a", asset_id=asset.asset_id)
+        await worker.process_once()
+        available = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(available.status, AssetStatus.AVAILABLE)
+
+    async def test_malware_detection_rejects_and_deletes_binary_object(self) -> None:
+        queue = InMemoryAssetProcessingQueue()
+        service = SessionAssetService(
+            self.repository, self.storage, processing_queue=queue,
+        )
+        asset = await service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="bad.txt",
+            media_type="text/plain", content=b"malware",
+        )
+        worker = AssetProcessingWorker(
+            queue=queue, repository=self.repository, storage=self.storage,
+            scanner=RejectScanner(), parser=TextAssetParser(),
+            content_sink=InMemoryAssetContentSink(), worker_id="asset-worker",
+        )
+        await worker.process_once()
+        rejected = await self.repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(rejected.status, AssetStatus.REJECTED)
+        with self.assertRaises(SessionNotFound):
+            await self.storage.get(asset.object_key)
+
 
 
 if __name__ == "__main__":
