@@ -3,7 +3,12 @@ from __future__ import annotations
 import asyncio
 import unittest
 
-from agent_platform.observability.alert_worker import AlertDispatchWorker
+from datetime import datetime, timedelta, timezone
+
+from agent_platform.observability.alert_worker import (
+    AlertDispatchWorker, AlertRuleEvaluationWorker,
+)
+from agent_platform.observability.alerts import AlertManager, AlertRule
 
 
 class FakeDispatcher:
@@ -23,6 +28,96 @@ class FakeDispatcher:
         if self.stop_event is not None:
             self.stop_event.set()
         return {"claimed": 3, "sent": 2, "failed": 1}
+
+
+class FakeNotifier:
+    def notify(self, event):
+        raise AssertionError("durable worker must persist through the outbox, not notify inline")
+
+
+class FakeAlertEventStore:
+    def __init__(self):
+        self.events = {}
+        self.fail_once = False
+
+    async def record_once(self, event, *, scope_key, dedupe_key):
+        if self.fail_once:
+            self.fail_once = False
+            raise RuntimeError("database password=must-not-be-retained")
+        key = (scope_key, dedupe_key)
+        if key in self.events:
+            return self.events[key], False
+        event_id = f"event-{len(self.events) + 1}"
+        self.events[key] = event_id
+        return event_id, True
+
+
+class AlertRuleEvaluationWorkerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_worker_persists_events_before_advancing_cooldown(self):
+        now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        manager = AlertManager(
+            (AlertRule("cpu-high", "cpu", 0.8, cooldown=timedelta(minutes=5)),),
+            FakeNotifier(), clock=lambda: now,
+        )
+        store = FakeAlertEventStore()
+        worker = AlertRuleEvaluationWorker(
+            manager=manager, metrics_provider=lambda: {"cpu": 0.95},
+            event_store=store, scope_key="tenant-a",
+        )
+        store.fail_once = True
+        with self.assertRaisesRegex(RuntimeError, "database"):
+            await worker.run_once()
+        self.assertEqual(manager.evaluate_candidates({"cpu": 0.95})[0].rule_id, "cpu-high")
+        result = await worker.run_once()
+        self.assertEqual(result, {"observed": 1, "fired": 1, "created": 1, "deduplicated": 0})
+        self.assertEqual(await worker.run_once(), {
+            "observed": 1, "fired": 0, "created": 0, "deduplicated": 0,
+        })
+        self.assertEqual(len(store.events), 1)
+
+    async def test_worker_deduplicates_durable_event_before_marking_fired(self):
+        now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        manager = AlertManager(
+            (AlertRule("latency", "latency", 2.0, cooldown=timedelta(minutes=5)),),
+            FakeNotifier(), clock=lambda: now,
+        )
+        store = FakeAlertEventStore()
+        candidate = manager.evaluate_candidates({"latency": 3.0})[0]
+        bucket = int(candidate.fired_at.timestamp()) // 300
+        store.events[("tenant-a", f"latency:{bucket}")] = "existing-event"
+        worker = AlertRuleEvaluationWorker(
+            manager=manager, metrics_provider=lambda: {"latency": 3.0},
+            event_store=store, scope_key="tenant-a",
+        )
+        result = await worker.run_once()
+        self.assertEqual(result["deduplicated"], 1)
+        self.assertEqual(result["created"], 0)
+        self.assertEqual(manager.evaluate_candidates({"latency": 3.0}), ())
+
+    async def test_worker_survives_poll_errors_and_validates_configuration(self):
+        stop = asyncio.Event()
+        calls = 0
+        async def provider():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("provider token=secret")
+            stop.set()
+            return {}
+        manager = AlertManager((), FakeNotifier())
+        worker = AlertRuleEvaluationWorker(
+            manager=manager, metrics_provider=provider,
+            event_store=FakeAlertEventStore(), scope_key="tenant-a",
+            poll_interval_seconds=0.1,
+        )
+        await worker.run_forever(stop_event=stop)
+        self.assertEqual(worker.last_error_type, None)
+        self.assertEqual(worker.cycles, 2)
+        with self.assertRaises(ValueError):
+            AlertRuleEvaluationWorker(
+                manager=manager, metrics_provider=provider,
+                event_store=FakeAlertEventStore(), scope_key="",
+            )
 
 
 class AlertDispatchWorkerTests(unittest.IsolatedAsyncioTestCase):
