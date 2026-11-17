@@ -13,6 +13,8 @@ from agent_platform.graph.schema import (
     GraphRelation,
     GraphSchemaRegistry,
     RelationTypeDefinition,
+    PropertyDefinition,
+    PropertyKind,
 )
 
 
@@ -103,8 +105,12 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
         async def connect():
             return _Connection(self.entities, self.relations, "tenant-a")
         registry = GraphSchemaRegistry()
-        registry.register_entity_type("tenant-a", EntityTypeDefinition("person"))
-        registry.register_entity_type("tenant-a", EntityTypeDefinition("company"))
+        registry.register_entity_type("tenant-a", EntityTypeDefinition(
+            "person", (PropertyDefinition("name", PropertyKind.STRING),)
+        ))
+        registry.register_entity_type("tenant-a", EntityTypeDefinition(
+            "company", (PropertyDefinition("name", PropertyKind.STRING),)
+        ))
         registry.register_relation_type(
             "tenant-a", RelationTypeDefinition("works_for", ("person",), ("company",))
         )
