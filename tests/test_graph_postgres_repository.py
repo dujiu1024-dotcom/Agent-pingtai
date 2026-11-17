@@ -136,8 +136,8 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_put_relation_checks_endpoint_tenant_and_project_scope(self):
         connection = _Connection(
             endpoints=[
-                {"entity_id": "source-1", "project_id": "project-a"},
-                {"entity_id": "target-1", "project_id": None},
+                {"entity_id": "source-1", "entity_type": "document", "project_id": "project-a"},
+                {"entity_id": "target-1", "entity_type": "memory", "project_id": None},
             ]
         )
         repository = PostgresGraphRepository(
@@ -157,8 +157,8 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_put_relation_rejects_cross_project_endpoints(self):
         connection = _Connection(
             endpoints=[
-                {"entity_id": "source-1", "project_id": "project-a"},
-                {"entity_id": "target-1", "project_id": "project-b"},
+                {"entity_id": "source-1", "entity_type": "document", "project_id": "project-a"},
+                {"entity_id": "target-1", "entity_type": "memory", "project_id": "project-b"},
             ]
         )
         repository = PostgresGraphRepository(
@@ -220,7 +220,7 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_self_relation_accepts_single_distinct_endpoint(self):
         connection = _Connection(
-            endpoints=[{"entity_id": "entity-1", "project_id": None}]
+            endpoints=[{"entity_id": "entity-1", "entity_type": "document", "project_id": None}]
         )
         repository = PostgresGraphRepository(
             lambda: _async_value(connection),
@@ -264,6 +264,34 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("FOR UPDATE SKIP LOCKED", repository_source)
         self.assertIn("attempts >= 8", repository_source)
         self.assertIn("CHECK (jsonb_typeof(attributes) = 'object')", migration)
+
+
+    async def test_get_entity_defaults_to_tenant_shared_only(self):
+        connection = _Connection()
+        repository = PostgresGraphRepository(lambda: _async_value(connection))
+        await repository.get_entity("tenant-a", "entity-1")
+        query, params = connection.calls[0]
+        self.assertIn("project_id IS NULL OR project_id=ANY(%s)", query)
+        self.assertEqual(params, ("tenant-a", "entity-1", []))
+
+    async def test_put_relation_rejects_persisted_endpoint_type_spoofing(self):
+        connection = _Connection(
+            endpoints=[
+                {"entity_id": "source-1", "entity_type": "memory", "project_id": None},
+                {"entity_id": "target-1", "entity_type": "memory", "project_id": None},
+            ]
+        )
+        repository = PostgresGraphRepository(
+            lambda: _async_value(connection),
+            schema_resolver=lambda tenant: default_graph_schema(tenant),
+        )
+        relation = GraphRelation(
+            "tenant-a", "relation-1", "references", "source-1", "target-1",
+            "document", "memory",
+        )
+        with self.assertRaisesRegex(ValueError, "does not match persisted endpoint"):
+            await repository.put_relation(relation)
+        self.assertEqual(len(connection.calls), 1)
 
     async def test_invalid_worker_bounds_fail_before_database_access(self):
         opened = []
