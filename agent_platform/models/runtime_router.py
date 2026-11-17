@@ -12,8 +12,14 @@ import urllib.request
 from dataclasses import dataclass
 from decimal import Decimal
 from time import monotonic
+from types import SimpleNamespace
 from typing import Any, Mapping, Protocol, Sequence
 
+from agent_platform.models.context_overflow import (
+    ContextOverflowError,
+    HumanInterventionRequired,
+    prepare_context,
+)
 from agent_platform.models.registry_resolver import (
     ModelRegistryError,
     RegistryModelResolver,
@@ -210,6 +216,9 @@ class OpenAICompatibleModelRouter:
         token_estimator: Any | None = None,
         quota_cost_estimator: ModelCostEstimator | None = None,
         quota_scope_resolver: Any | None = None,
+        context_overflow_policy: str = "reject",
+        context_summarizer: Any | None = None,
+        context_intervention_handler: Any | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -230,6 +239,11 @@ class OpenAICompatibleModelRouter:
         self.token_estimator = token_estimator
         self.quota_cost_estimator = quota_cost_estimator
         self.quota_scope_resolver = quota_scope_resolver
+        if context_overflow_policy not in {"reject", "truncate", "summarize", "human_intervention"}:
+            raise ValueError("unsupported context overflow policy")
+        self.context_overflow_policy = context_overflow_policy
+        self.context_summarizer = context_summarizer
+        self.context_intervention_handler = context_intervention_handler
 
     async def complete(
         self, *, snapshot: Any, tenant_id: str, run_id: str,
@@ -238,6 +252,7 @@ class OpenAICompatibleModelRouter:
         data_level: str = "internal",
         fallback_template_ids: Sequence[str] = (),
         request_parameters: Mapping[str, Any] | None = None,
+        protected_context: Mapping[str, Any] | None = None,
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
@@ -357,46 +372,73 @@ class OpenAICompatibleModelRouter:
             # configured a monetary/token quota. When the host supplies an estimator,
             # every routed request must pass it before provider dispatch.
             estimate = None
+            dispatch_messages = messages
             if self.token_estimator is not None:
-                # Estimate the exact effective parameter set sent by the transport:
-                # template defaults are merged first and per-call values override them.
+                # Template defaults and per-call overrides are estimated together.
                 effective_parameters = {**dict(config.parameters), **dict(parameters)}
                 try:
-                    estimate = self.token_estimator.estimate(
+                    prepared = await prepare_context(
+                        estimator=self.token_estimator,
                         model_id=config.model_id,
                         messages=messages,
                         request_parameters=effective_parameters,
                         context_window_tokens=config.context_window_tokens,
+                        policy=self.context_overflow_policy,
+                        protected_context=protected_context,
+                        summarizer=self.context_summarizer,
+                        intervention_handler=self.context_intervention_handler,
                     )
+                except HumanInterventionRequired as exc:
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason="human_intervention_required",
+                        error_type=type(exc).__name__,
+                    )
+                    raise ModelRoutingError(str(exc)) from exc
+                except ContextOverflowError as exc:
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason=(
+                            "token_estimate_invalid_or_context_window_exceeded"
+                            if self.context_overflow_policy == "reject"
+                            else "context_overflow_policy_failed"
+                        ),
+                        error_type=type(exc).__name__,
+                    )
+                    raise ModelRoutingError(str(exc)) from exc
                 except Exception as exc:
                     await record_preflight_failure(
                         candidate_id=candidate,
                         reason="token_estimation_failed",
                         error_type=type(exc).__name__,
                     )
-                    # Preserve the estimator's typed failure for callers while
-                    # guaranteeing no provider dispatch or fallback can occur.
+                    # Unknown tokenizer/encoding failures remain fail-closed.
                     raise
-                input_estimate = getattr(estimate, "input_tokens", None)
-                output_estimate = getattr(estimate, "output_tokens", None)
-                total_estimate = getattr(estimate, "total_tokens", None)
-                if (
-                    not isinstance(input_estimate, int) or isinstance(input_estimate, bool)
-                    or input_estimate < 0
-                    or not isinstance(output_estimate, int) or isinstance(output_estimate, bool)
-                    or output_estimate < 1
-                    or not isinstance(total_estimate, int) or isinstance(total_estimate, bool)
-                    or total_estimate != input_estimate + output_estimate
-                    or total_estimate > config.context_window_tokens
-                ):
-                    await record_preflight_failure(
-                        candidate_id=candidate,
-                        reason="token_estimate_invalid_or_context_window_exceeded",
-                        error_type="InvalidTokenEstimate",
-                    )
-                    raise ModelRoutingError(
-                        "model token estimate is invalid or exceeds the pinned context window"
-                    )
+                dispatch_messages = prepared.messages
+                estimate = SimpleNamespace(
+                    input_tokens=prepared.input_tokens,
+                    output_tokens=prepared.output_tokens,
+                    total_tokens=prepared.total_tokens,
+                )
+                if prepared.changed:
+                    try:
+                        await audit_sink.record(
+                            tenant_id=tenant_id, actor_id="system:model-router",
+                            action="model.context_overflow_resolved", subject_id=request_id,
+                            outcome="succeeded",
+                            detail={
+                                "phase": "preflight", "run_id": run_id,
+                                "template_id": candidate, "policy": prepared.policy,
+                                "removed_messages": prepared.removed_messages,
+                                "input_tokens": prepared.input_tokens,
+                                "output_tokens": prepared.output_tokens,
+                                "context_window_tokens": config.context_window_tokens,
+                            },
+                        )
+                    except Exception as exc:
+                        raise ModelUsageRecordingError(
+                            "context overflow resolution could not be durably audited"
+                        ) from exc
             if self.quota_service is not None:
                 if estimate is None:
                     raise ModelRoutingError(
@@ -447,7 +489,7 @@ class OpenAICompatibleModelRouter:
                 ) as span:
                     try:
                         raw = await self.transport.complete(
-                            config=config, messages=messages,
+                            config=config, messages=dispatch_messages,
                             request_parameters=parameters,
                             timeout_seconds=self.timeout_seconds,
                         )
