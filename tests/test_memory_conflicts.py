@@ -37,7 +37,7 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
         )
         active = await self.memory.propose(first)
         active = await self.memory.confirm(
-            tenant_id="tenant-a", memory_id=first.memory_id, confirmer_id="user-a"
+            principal=self.owner, memory_id=first.memory_id
         )
         second = MemoryCandidate(
             tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
