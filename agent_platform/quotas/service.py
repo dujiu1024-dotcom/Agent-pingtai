@@ -7,10 +7,12 @@ must use a shared transactional store implementing QuotaStore (see migration 012
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Protocol
+from types import MappingProxyType
+from typing import AsyncIterator, Mapping, Protocol
 from uuid import uuid4
 
 
@@ -32,6 +34,7 @@ class Budget:
     soft_cost_usd: Decimal | None = None
     hard_input_tokens: int | None = None
     hard_output_tokens: int | None = None
+    hard_context_window_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if not self.tenant_id or self.scope_type not in {"tenant", "project", "agent", "model", "run", "queue", "worker_pool"}:
@@ -42,7 +45,7 @@ class Budget:
             raise ValueError("budget period must be timezone-aware")
         if self.period_end <= self.period_start:
             raise ValueError("budget period end must follow start")
-        for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens, self.hard_input_tokens, self.hard_output_tokens):
+        for value in (self.hard_tokens, self.hard_concurrency, self.soft_tokens, self.hard_input_tokens, self.hard_output_tokens, self.hard_context_window_tokens):
             if value is not None and (
                 not isinstance(value, int) or isinstance(value, bool) or value < 0
             ):
@@ -51,6 +54,7 @@ class Budget:
             if self.hard_concurrency is None or any(value is not None for value in (
                 self.hard_tokens, self.hard_cost_usd, self.soft_tokens,
                 self.soft_cost_usd, self.hard_input_tokens, self.hard_output_tokens,
+                self.hard_context_window_tokens,
             )):
                 raise ValueError("queue and worker_pool budgets must define only hard_concurrency")
         for cost in (self.hard_cost_usd, self.soft_cost_usd):
@@ -293,14 +297,97 @@ class InMemoryQuotaStore:
             return sorted(rows, key=lambda event: event.occurred_at)[:limit]
 
 
+@dataclass(frozen=True)
+class ScopeBudgetDefaults:
+    """Conservative hard limits applied when a tenant has not configured a scope budget.
+
+    Input/output limits are cumulative for the UTC calendar month. The context-window
+    limit is a per-model-request ceiling and must still be intersected with the model's
+    advertised context window by the model router.
+    """
+
+    input_tokens: int
+    context_window_tokens: int
+    output_tokens: int
+    cost_usd: Decimal
+
+    def __post_init__(self) -> None:
+        for value in (self.input_tokens, self.context_window_tokens, self.output_tokens):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError("default token budgets must be positive integers")
+        if not isinstance(self.cost_usd, Decimal) or not self.cost_usd.is_finite() or self.cost_usd <= 0:
+            raise ValueError("default cost budget must be a positive finite Decimal")
+
+
+# Explicit, intentionally conservative defaults. These are guardrails, not pricing
+# estimates; costs are USD per UTC calendar month and may be overridden by an authorized
+# tenant/project/Agent/Run budget. No default is silently created for other scope types.
+SAFE_DEFAULT_BUDGETS: Mapping[str, ScopeBudgetDefaults] = MappingProxyType({
+    "tenant": ScopeBudgetDefaults(500_000, 32_768, 100_000, Decimal("25.00")),
+    "project": ScopeBudgetDefaults(250_000, 32_768, 50_000, Decimal("10.00")),
+    "agent": ScopeBudgetDefaults(100_000, 16_384, 25_000, Decimal("5.00")),
+    "run": ScopeBudgetDefaults(50_000, 16_384, 12_000, Decimal("1.00")),
+})
+
+
+def safe_default_budget(
+    *, tenant_id: str, scope_type: str, scope_id: str,
+    now: datetime | None = None,
+    defaults: Mapping[str, ScopeBudgetDefaults] = SAFE_DEFAULT_BUDGETS,
+) -> Budget | None:
+    """Build a default hard budget for one scope over the current UTC calendar month."""
+    policy = defaults.get(scope_type)
+    if policy is None:
+        return None
+    instant = now or datetime.now(timezone.utc)
+    if instant.tzinfo is None:
+        raise ValueError("default budget clock must be timezone-aware")
+    instant = instant.astimezone(timezone.utc)
+    start = datetime(instant.year, instant.month, 1, tzinfo=timezone.utc)
+    if instant.month == 12:
+        end = datetime(instant.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        end = datetime(instant.year, instant.month + 1, 1, tzinfo=timezone.utc)
+    return Budget(
+        tenant_id=tenant_id, scope_type=scope_type, scope_id=scope_id,
+        period_start=start, period_end=end,
+        hard_input_tokens=policy.input_tokens,
+        hard_context_window_tokens=policy.context_window_tokens,
+        hard_output_tokens=policy.output_tokens,
+        hard_cost_usd=policy.cost_usd,
+    )
+
+
 class QuotaService:
     """Call before dispatch; reserve estimated usage before any model/tool execution."""
 
-    def __init__(self, store: QuotaStore) -> None:
+    def __init__(
+        self, store: QuotaStore, *,
+        defaults: Mapping[str, ScopeBudgetDefaults] = SAFE_DEFAULT_BUDGETS,
+    ) -> None:
         self.store = store
+        self.defaults = defaults
 
     async def configure(self, budget: Budget) -> None:
         await self.store.put_budget(budget)
+
+    async def _budget_or_safe_default(
+        self, *, tenant_id: str, scope_type: str, scope_id: str,
+        now: datetime,
+    ) -> Budget:
+        budget = await self.store.get_budget(tenant_id, scope_type, scope_id, now)
+        if budget is not None:
+            return budget
+        budget = safe_default_budget(
+            tenant_id=tenant_id, scope_type=scope_type, scope_id=scope_id,
+            now=now, defaults=self.defaults,
+        )
+        if budget is None:
+            raise BudgetExceeded("quota budget not configured and no safe default exists for this scope")
+        # Persist defaults so PostgreSQL's atomic reservation function sees the same
+        # policy and all workers share one effective budget for this scope and period.
+        await self.store.put_budget(budget)
+        return budget
 
     async def reserve_run(
         self, *, tenant_id: str, run_id: str, scope_type: str, scope_id: str,
@@ -316,9 +403,10 @@ class QuotaService:
         root_run_id = root_run_id or run_id
         if scope_type == "run" and scope_id != root_run_id:
             raise ValueError("Run budget scope_id must equal root_run_id")
-        budget = await self.store.get_budget(tenant_id, scope_type, scope_id, datetime.now(timezone.utc))
-        if budget is None:
-            raise BudgetExceeded("quota budget not configured")
+        budget = await self._budget_or_safe_default(
+            tenant_id=tenant_id, scope_type=scope_type, scope_id=scope_id,
+            now=datetime.now(timezone.utc),
+        )
         if (
             not isinstance(estimated_tokens, int) or isinstance(estimated_tokens, bool)
             or estimated_tokens < 0 or not isinstance(estimated_cost_usd, Decimal)
@@ -411,3 +499,49 @@ class QuotaService:
 
     async def release_run(self, reservation: QuotaReservation) -> bool:
         return await self.store.release(reservation.reservation_id)
+    async def heartbeat_reservation(
+        self, reservation: QuotaReservation, *, lease_seconds: int = 300,
+    ) -> bool:
+        """Renew a live quota reservation; expired reservations cannot be resurrected."""
+        heartbeat = getattr(self.store, "heartbeat_reservation", None)
+        if not callable(heartbeat):
+            return True
+        return bool(await heartbeat(reservation.reservation_id, lease_seconds=lease_seconds))
+
+    async def expire_stale_reservations(self, *, limit: int = 500) -> int:
+        """Reclaim expired reservations; production stores must implement the operation."""
+        expire = getattr(self.store, "expire_stale_reservations", None)
+        if not callable(expire):
+            raise RuntimeError("quota store does not support reservation lease recovery")
+        return int(await expire(limit=limit))
+
+    @asynccontextmanager
+    async def reservation_lease(
+        self, reservation: QuotaReservation, *,
+        lease_seconds: int = 300, heartbeat_interval_seconds: float = 60.0,
+    ) -> AsyncIterator[QuotaReservation]:
+        """Keep any active Run or concurrency reservation alive during long work."""
+        if not 15 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 15 and 3600")
+        if not 0 < heartbeat_interval_seconds < lease_seconds:
+            raise ValueError("heartbeat interval must be positive and shorter than the lease")
+        if not callable(getattr(self.store, "heartbeat_reservation", None)):
+            yield reservation
+            return
+
+        async def renew() -> None:
+            while True:
+                await asyncio.sleep(heartbeat_interval_seconds)
+                if not await self.heartbeat_reservation(
+                    reservation, lease_seconds=lease_seconds,
+                ):
+                    raise RuntimeError("quota reservation lease could not be renewed")
+
+        async with asyncio.TaskGroup() as group:
+            heartbeat = group.create_task(
+                renew(), name=f"quota-reservation-heartbeat-{reservation.reservation_id}",
+            )
+            try:
+                yield reservation
+            finally:
+                heartbeat.cancel()

@@ -40,18 +40,20 @@ class PostgresQuotaStore:
                     """INSERT INTO platform_quota_budgets
                     (tenant_id,scope_type,scope_id,period_start,period_end,hard_tokens,
                      hard_cost_usd,hard_concurrency,soft_tokens,soft_cost_usd,
-                     hard_input_tokens,hard_output_tokens)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     hard_input_tokens,hard_output_tokens,hard_context_window_tokens)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (tenant_id,scope_type,scope_id,period_start)
                     DO UPDATE SET period_end=EXCLUDED.period_end,
                     hard_tokens=EXCLUDED.hard_tokens,hard_cost_usd=EXCLUDED.hard_cost_usd,
                     hard_concurrency=EXCLUDED.hard_concurrency,soft_tokens=EXCLUDED.soft_tokens,
                     soft_cost_usd=EXCLUDED.soft_cost_usd,hard_input_tokens=EXCLUDED.hard_input_tokens,
-                    hard_output_tokens=EXCLUDED.hard_output_tokens,updated_at=now()""",
+                    hard_output_tokens=EXCLUDED.hard_output_tokens,
+                    hard_context_window_tokens=EXCLUDED.hard_context_window_tokens,updated_at=now()""",
                     (budget.tenant_id,budget.scope_type,budget.scope_id,budget.period_start,
                      budget.period_end,budget.hard_tokens,budget.hard_cost_usd,
                      budget.hard_concurrency,budget.soft_tokens,budget.soft_cost_usd,
-                     budget.hard_input_tokens,budget.hard_output_tokens),
+                     budget.hard_input_tokens,budget.hard_output_tokens,
+                     budget.hard_context_window_tokens),
                 )
 
     async def get_budget(self, tenant_id: str, scope_type: str, scope_id: str, now: datetime) -> Budget | None:
@@ -76,6 +78,7 @@ class PostgresQuotaStore:
             soft_cost_usd=Decimal(row["soft_cost_usd"]) if row["soft_cost_usd"] is not None else None,
             hard_input_tokens=row.get("hard_input_tokens"),
             hard_output_tokens=row.get("hard_output_tokens"),
+            hard_context_window_tokens=row.get("hard_context_window_tokens"),
         )
 
     async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]:
@@ -267,3 +270,35 @@ class PostgresQuotaStore:
             )
             for row in rows
         ]
+
+
+    async def heartbeat_reservation(
+        self, reservation_id: str, *, lease_seconds: int = 300,
+    ) -> bool:
+        """Renew an active reservation lease; expired leases cannot be resurrected."""
+        if not isinstance(lease_seconds, int) or isinstance(lease_seconds, bool):
+            raise ValueError("lease_seconds must be an integer")
+        if lease_seconds < 15 or lease_seconds > 3600:
+            raise ValueError("lease_seconds must be between 15 and 3600")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_heartbeat(%s,%s) AS renewed",
+                    (UUID(reservation_id), lease_seconds),
+                )
+                row = await cursor.fetchone()
+        return bool(row["renewed"])
+
+    async def expire_stale_reservations(self, *, limit: int = 500) -> int:
+        """Release capacity held by crashed workers using bounded, concurrent-safe batches."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 10000:
+            raise ValueError("limit must be an integer between 1 and 10000")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_expire_stale(%s) AS expired", (limit,),
+                )
+                row = await cursor.fetchone()
+        return int(row["expired"])

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import math
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -10,6 +12,17 @@ from typing import Any, Mapping, Protocol, Sequence
 from agent_platform.contracts import ModelTemplateRef, RunContext
 
 _SUPPORTED_MODALITIES = frozenset({"text", "image", "pdf", "audio", "video"})
+RUNTIME_ADAPTER_CONTRACT_VERSION = "1.0.0"
+_SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+
+
+def _parse_version(value: str, *, field_name: str) -> tuple[int, int, int]:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a semantic version")
+    match = _SEMVER.fullmatch(value)
+    if match is None:
+        raise ValueError(f"{field_name} must use MAJOR.MINOR.PATCH semantic versioning")
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
 
 
 def _validate_media_reference(
@@ -95,6 +108,9 @@ class HarnessCapabilities:
     streaming: bool = False
     cancellation: bool = True
     structured_output: bool = False
+    timeout: bool = False
+    resume: bool = False
+    tool_gateway: bool = False
 
     def __post_init__(self) -> None:
         if not self.input_modalities.issubset(_SUPPORTED_MODALITIES):
@@ -103,12 +119,55 @@ class HarnessCapabilities:
             raise ValueError("Harness declares an unsupported output modality")
 
 
+@dataclass(frozen=True)
+class RuntimeAdapterDescriptor:
+    """Versioned, inspectable declaration for a runtime adapter implementation."""
+
+    adapter_id: str
+    adapter_version: str
+    contract_version: str
+    capabilities: HarnessCapabilities
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.adapter_id, str) or not re.fullmatch(
+            r"[a-z][a-z0-9_.-]{1,127}", self.adapter_id
+        ):
+            raise ValueError("adapter_id must be a stable lowercase identifier")
+        _parse_version(self.adapter_version, field_name="adapter_version")
+        _parse_version(self.contract_version, field_name="contract_version")
+        if not isinstance(self.capabilities, HarnessCapabilities):
+            raise TypeError("capabilities must be HarnessCapabilities")
+
+
+class RuntimeAdapterCompatibilityError(RuntimeError):
+    """Raised when an adapter cannot satisfy the platform Runtime contract."""
+
+
+def ensure_runtime_adapter_compatible(
+    descriptor: RuntimeAdapterDescriptor,
+    *,
+    required_contract_version: str = RUNTIME_ADAPTER_CONTRACT_VERSION,
+) -> None:
+    """Fail closed for unsupported contract majors or older contract revisions.
+
+    A newer minor/patch revision within the same major is backward-compatible.
+    Adapter package versions are informational and do not determine contract support.
+    """
+    required = _parse_version(required_contract_version, field_name="required_contract_version")
+    provided = _parse_version(descriptor.contract_version, field_name="contract_version")
+    if provided[0] != required[0] or provided < required:
+        raise RuntimeAdapterCompatibilityError(
+            f"adapter {descriptor.adapter_id} implements contract "
+            f"{descriptor.contract_version}; platform requires {required_contract_version}"
+        )
+
+
 class UnsupportedHarnessCapability(RuntimeError):
-    """Raised when a request requires a modality not declared by its adapter."""
+    """Raised when a request requires a feature not declared by its adapter."""
 
 
 class CapabilityAwareHarnessAdapter:
-    """Fail-closed wrapper that checks declared input/output modalities."""
+    """Fail-closed wrapper enforcing declared Harness capabilities."""
 
     def __init__(self, *, adapter: Any, capabilities: HarnessCapabilities) -> None:
         if not callable(getattr(adapter, "run", None)):
@@ -116,7 +175,7 @@ class CapabilityAwareHarnessAdapter:
         self.adapter = adapter
         self.capabilities = capabilities
 
-    async def run(self, request: "HarnessRequest") -> "HarnessResult":
+    def _validate_request(self, request: "HarnessRequest") -> None:
         requested_inputs = {"text"} if request.input_text else set()
         requested_inputs.update(item.modality for item in request.media_inputs)
         unsupported = requested_inputs - self.capabilities.input_modalities
@@ -124,16 +183,51 @@ class CapabilityAwareHarnessAdapter:
             raise UnsupportedHarnessCapability(
                 "Harness does not declare input modalities: " + ", ".join(sorted(unsupported))
             )
-        result = await self.adapter.run(request)
+        if request.output_schema is not None and not self.capabilities.structured_output:
+            raise UnsupportedHarnessCapability("Harness does not declare structured output support")
+        if request.allowed_tools and not self.capabilities.tool_gateway:
+            raise UnsupportedHarnessCapability("Harness does not declare Tool Gateway integration")
+        if request.timeout_seconds is not None and not self.capabilities.timeout:
+            raise UnsupportedHarnessCapability("Harness does not declare timeout enforcement")
+        if request.resume and not self.capabilities.resume:
+            raise UnsupportedHarnessCapability("Harness does not declare checkpoint resume support")
+
+    def _validate_result(self, result: "HarnessResult") -> None:
         produced_outputs = {"text"} if result.output_text else set()
         produced_outputs.update(item.modality for item in result.media_outputs)
-        unsupported_outputs = produced_outputs - self.capabilities.output_modalities
-        if unsupported_outputs:
+        unsupported = produced_outputs - self.capabilities.output_modalities
+        if unsupported:
             raise UnsupportedHarnessCapability(
                 "Harness does not declare output modalities: "
-                + ", ".join(sorted(unsupported_outputs))
+                + ", ".join(sorted(unsupported))
             )
+
+    async def run(self, request: "HarnessRequest") -> "HarnessResult":
+        self._validate_request(request)
+        result = await self.adapter.run(request)
+        self._validate_result(result)
         return result
+
+    async def stream(self, request: "HarnessRequest") -> AsyncIterator["HarnessStreamEvent"]:
+        self._validate_request(request)
+        if not self.capabilities.streaming:
+            raise UnsupportedHarnessCapability("Harness does not declare streaming support")
+        stream = getattr(self.adapter, "stream", None)
+        if not callable(stream):
+            raise UnsupportedHarnessCapability("Harness declares streaming but has no stream method")
+        async for event in stream(request):
+            if event.event_type == "completed" and event.result is not None:
+                self._validate_result(event.result)
+            yield event
+
+    async def cancel(self, *, run_id: str) -> None:
+        if not self.capabilities.cancellation:
+            raise UnsupportedHarnessCapability("Harness does not declare cancellation support")
+        cancel = getattr(self.adapter, "cancel", None)
+        if not callable(cancel):
+            raise UnsupportedHarnessCapability("Harness declares cancellation but has no cancel method")
+        await cancel(run_id=run_id)
+
 
 @dataclass(frozen=True)
 class ToolCall:
@@ -151,6 +245,22 @@ class HarnessRequest:
     output_schema: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     media_inputs: Sequence[MediaInput] = ()
+    timeout_seconds: float | None = None
+    resume: bool = False
+    checkpoint_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds is not None and (
+            isinstance(self.timeout_seconds, bool)
+            or not isinstance(self.timeout_seconds, (int, float))
+            or not math.isfinite(self.timeout_seconds)
+            or self.timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be a finite positive number")
+        if self.resume and not self.checkpoint_ref:
+            raise ValueError("resume requires a durable checkpoint_ref")
+        if self.checkpoint_ref is not None and not self.resume:
+            raise ValueError("checkpoint_ref requires resume=True")
 
 
 @dataclass(frozen=True)
@@ -185,6 +295,110 @@ class HarnessStreamingAdapter(Protocol):
     def stream(self, request: HarnessRequest) -> AsyncIterator[HarnessStreamEvent]:
         """Stream normalized text, Gateway tool and completion events."""
         ...
+
+
+class HarnessExecutionLifecycle(Protocol):
+    """Durable lifecycle observer called around each adapter execution."""
+
+    async def started(
+        self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
+    ) -> None: ...
+
+    async def succeeded(
+        self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
+        result: HarnessResult,
+    ) -> None: ...
+
+    async def failed(
+        self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
+        error: Exception,
+    ) -> None: ...
+
+    async def timed_out(
+        self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
+        error: TimeoutError,
+    ) -> None: ...
+
+    async def cancelled(
+        self, *, request: HarnessRequest, adapter: RuntimeAdapterDescriptor,
+    ) -> None: ...
+
+
+class LifecycleManagedHarnessAdapter:
+    """Apply compatibility, capability and lifecycle contracts to a Harness adapter."""
+
+    def __init__(
+        self,
+        *,
+        adapter: Any,
+        descriptor: RuntimeAdapterDescriptor,
+        lifecycle: HarnessExecutionLifecycle,
+        required_contract_version: str = RUNTIME_ADAPTER_CONTRACT_VERSION,
+    ) -> None:
+        ensure_runtime_adapter_compatible(
+            descriptor, required_contract_version=required_contract_version,
+        )
+        self.descriptor = descriptor
+        self.lifecycle = lifecycle
+        self.adapter = CapabilityAwareHarnessAdapter(
+            adapter=adapter, capabilities=descriptor.capabilities,
+        )
+
+    async def run(self, request: "HarnessRequest") -> "HarnessResult":
+        await self.lifecycle.started(request=request, adapter=self.descriptor)
+        try:
+            result = await self.adapter.run(request)
+        except asyncio.CancelledError:
+            await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
+            raise
+        except TimeoutError as exc:
+            await self.lifecycle.timed_out(
+                request=request, adapter=self.descriptor, error=exc,
+            )
+            raise
+        except Exception as exc:
+            await self.lifecycle.failed(
+                request=request, adapter=self.descriptor, error=exc,
+            )
+            raise
+        await self.lifecycle.succeeded(
+            request=request, adapter=self.descriptor, result=result,
+        )
+        return result
+
+    async def stream(self, request: "HarnessRequest") -> AsyncIterator["HarnessStreamEvent"]:
+        await self.lifecycle.started(request=request, adapter=self.descriptor)
+        completed = False
+        try:
+            async for event in self.adapter.stream(request):
+                if event.event_type == "completed":
+                    if event.result is None:
+                        raise RuntimeError("Harness completion event must include a normalized result")
+                    if completed:
+                        raise RuntimeError("Harness stream emitted more than one completion event")
+                    completed = True
+                    await self.lifecycle.succeeded(
+                        request=request, adapter=self.descriptor, result=event.result,
+                    )
+                yield event
+            if not completed:
+                raise RuntimeError("Harness stream ended without a completion event")
+        except asyncio.CancelledError:
+            await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
+            raise
+        except TimeoutError as exc:
+            await self.lifecycle.timed_out(
+                request=request, adapter=self.descriptor, error=exc,
+            )
+            raise
+        except Exception as exc:
+            await self.lifecycle.failed(
+                request=request, adapter=self.descriptor, error=exc,
+            )
+            raise
+
+    async def cancel(self, *, run_id: str) -> None:
+        await self.adapter.cancel(run_id=run_id)
 
 
 class ModelProvider(Protocol):
