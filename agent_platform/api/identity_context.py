@@ -38,7 +38,11 @@ class IdentityContextResolver:
         return authenticated, context, permissions
 
     async def knowledge(self, request: Request) -> KnowledgePrincipal:
-        _, context, permissions = await self._context(request)
+        authenticated, context, permissions = await self._context(request)
+        if isinstance(authenticated, AuthenticatedApiCredential) and not (
+            {"knowledge.read", "knowledge.manage"} & permissions
+        ):
+            raise HTTPException(status_code=403, detail="API credential lacks Knowledge read scope")
         return KnowledgePrincipal(
             tenant_id=context.tenant_id,
             user_id=context.user_id,
@@ -53,6 +57,10 @@ class IdentityContextResolver:
 
     async def memory(self, request: Request) -> MemoryPrincipal:
         authenticated, context, permissions = await self._context(request)
+        if isinstance(authenticated, AuthenticatedApiCredential) and not (
+            {"memory.read", "memory.manage"} & permissions
+        ):
+            raise HTTPException(status_code=403, detail="API credential lacks Memory read scope")
         return MemoryPrincipal(
             tenant_id=context.tenant_id,
             user_id=context.user_id,
