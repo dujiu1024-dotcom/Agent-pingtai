@@ -53,8 +53,7 @@ class TrustedPublisherKeyRegistry:
         if (not isinstance(public_key_pem, bytes) or not public_key_pem
                 or len(public_key_pem) > 8192
                 or b"-----BEGIN PUBLIC KEY-----" not in public_key_pem
-                or b"-----BEGIN PRIVATE KEY-----" in public_key_pem
-                or b"-----BEGIN ENCRYPTED PRIVATE KEY-----" in public_key_pem):
+                or b"PRIVATE KEY-----" in public_key_pem):
             raise ValueError("public_key_pem must be a PEM public key of at most 8 KiB")
         if isinstance(not_before, bool) or not isinstance(not_before, (int, float)):
             raise ValueError("not_before must be a Unix timestamp")
