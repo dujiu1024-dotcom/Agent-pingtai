@@ -33,6 +33,10 @@ def create_graph_router(
         service = await resolve_query_service(principal)
         if getattr(service, "tenant_id", None) != principal.tenant_id:
             raise HTTPException(403, "graph query service tenant mismatch")
+        try:
+            allowed_projects = service._scope(allowed_projects)
+        except (AttributeError, ValueError) as exc:
+            raise HTTPException(403, "graph project scope is invalid") from exc
         return principal, service, allowed_projects
 
     def entity_payload(record: Any) -> dict[str, Any]:
@@ -76,7 +80,12 @@ def create_graph_router(
             items = await service.repository.search_entities(
                 q.strip(), entity_type=entity_type, allowed_project_ids=allowed, limit=limit,
             )
-        except (ValueError, PermissionError) as exc:
+            for item in items:
+                entity = getattr(item, "entity", item)
+                service._validate_entity(item, entity.entity_id, allowed)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"items": [entity_payload(item) for item in items], "limit": limit}
 
