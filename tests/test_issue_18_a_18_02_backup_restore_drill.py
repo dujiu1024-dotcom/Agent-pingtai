@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -103,6 +104,7 @@ class Issue18BackupRestoreDrillTests(unittest.TestCase):
             record = {
                 "exercise_id": f"DR-ISSUE18-{uuid4().hex[:12]}",
                 "scope": "postgres",
+                "components_in_scope": ["postgres"],
                 "environment": "ephemeral GitHub Actions PostgreSQL service; isolated source/restore databases",
                 "scenario": "encrypted pg_dump backup followed by destructive-loss simulation and restore into a separate empty database",
                 "last_known_good_write_at": iso(last_good_write),
@@ -117,7 +119,8 @@ class Issue18BackupRestoreDrillTests(unittest.TestCase):
                 "reviewer_signoff": False,
                 "evidence_references": [
                     "CI artifact: issue-18-a-18-02-backup-restore-drill",
-                    f"backup-manifest: {backup_file.name}.manifest.json",
+                    "postgres-backup-manifest.json",
+                    "postgres-backup-checksum.sha256",
                 ],
                 "limitations": [
                     "PostgreSQL component-only drill; Redis, MinIO, config, full-platform consistency and failover were not exercised.",
