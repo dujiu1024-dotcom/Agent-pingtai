@@ -62,3 +62,40 @@ class ApiIdempotencyService:
         except BaseException:
             await self.backend.release(tenant_id=tenant_id, principal_id=principal_id, method=method, route=route, key=key, owner_token=owner)
             raise
+
+class PostgresIdempotencyBackend:
+    """PostgreSQL-backed atomic claims shared by all API instances."""
+    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+        self._connect = connection_factory
+
+    async def claim(self, *, tenant_id: str, principal_id: str, method: str, route: str, key: str, request_hash: str, owner_token: str, ttl_seconds: int) -> IdempotencyClaim:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute("INSERT INTO platform_api_idempotency (tenant_id,principal_id,http_method,route,idempotency_key,request_hash,state,owner_token,lease_until,expires_at) VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,now()+make_interval(secs=>30),now()+make_interval(secs=>%s)) ON CONFLICT DO NOTHING", (tenant_id,principal_id,method,route,key,request_hash,owner_token,ttl_seconds))
+                cursor = await connection.execute("SELECT request_hash,state,owner_token,lease_until,response_status,response_headers,response_body FROM platform_api_idempotency WHERE tenant_id=%s AND principal_id=%s AND http_method=%s AND route=%s AND idempotency_key=%s FOR UPDATE", (tenant_id,principal_id,method,route,key))
+                row = await cursor.fetchone()
+                if row is None: raise RuntimeError('idempotency claim disappeared')
+                if row['request_hash'] != request_hash: return IdempotencyClaim('conflict')
+                if row['state'] == 'completed':
+                    import json
+                    headers = row['response_headers']
+                    if isinstance(headers, str): headers = json.loads(headers)
+                    return IdempotencyClaim('replay', response=IdempotencyResponse(row['response_status'], dict(headers or {}), bytes(row['response_body'] or b'')))
+                if row['owner_token'] == owner_token: return IdempotencyClaim('owner', owner_token=owner_token)
+                cursor = await connection.execute("UPDATE platform_api_idempotency SET owner_token=%s,lease_until=now()+make_interval(secs=>30) WHERE tenant_id=%s AND principal_id=%s AND http_method=%s AND route=%s AND idempotency_key=%s AND state='pending' AND lease_until<=now() RETURNING owner_token", (owner_token,tenant_id,principal_id,method,route,key))
+                if await cursor.fetchone(): return IdempotencyClaim('owner', owner_token=owner_token)
+                return IdempotencyClaim('in_progress')
+
+    async def complete(self, *, tenant_id: str, principal_id: str, method: str, route: str, key: str, owner_token: str, response: IdempotencyResponse) -> bool:
+        import json
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute("UPDATE platform_api_idempotency SET state='completed',response_status=%s,response_headers=%s,response_body=%s,owner_token=NULL,lease_until=NULL,completed_at=now() WHERE tenant_id=%s AND principal_id=%s AND http_method=%s AND route=%s AND idempotency_key=%s AND state='pending' AND owner_token=%s", (response.status_code,json.dumps(response.headers),response.body,tenant_id,principal_id,method,route,key,owner_token))
+            return cursor.rowcount == 1
+
+    async def release(self, *, tenant_id: str, principal_id: str, method: str, route: str, key: str, owner_token: str) -> bool:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute("DELETE FROM platform_api_idempotency WHERE tenant_id=%s AND principal_id=%s AND http_method=%s AND route=%s AND idempotency_key=%s AND state='pending' AND owner_token=%s", (tenant_id,principal_id,method,route,key,owner_token))
+            return cursor.rowcount == 1
