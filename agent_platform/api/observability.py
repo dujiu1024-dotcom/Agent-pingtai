@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
 from agent_platform.identity.models import Principal
 
@@ -44,6 +44,7 @@ def create_observability_router(
     authorize_eval_review: Callable[[Principal], Any] | None = None,
     authorize_eval_gate_manage: Callable[[Principal], Any] | None = None,
     evaluation_governance_service: Any | None = None,
+    evaluation_comparison_service: Any | None = None,
     operational_health_monitor: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/observability", tags=["observability"])
@@ -376,5 +377,78 @@ def create_observability_router(
             "comparison_id": evidence.comparison_id,
             "content_sha256": evidence.content_sha256,
         }
+
+    @router.post("/evaluations/comparisons", status_code=201)
+    async def create_evaluation_comparison(request: Request):
+        actor = _principal(request)
+        if evaluation_comparison_service is None:
+            raise HTTPException(503, "evaluation comparison service is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation comparison management permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict) or set(body) - {
+                "dataset_id", "dataset_version", "eval_run_ids",
+            }:
+                raise ValueError("dataset_id, dataset_version and optional eval_run_ids are required")
+            report = await evaluation_comparison_service.create_report(
+                tenant_id=actor.tenant_id, dataset_id=body.get("dataset_id"),
+                dataset_version=body.get("dataset_version"),
+                eval_run_ids=body.get("eval_run_ids"), created_by=actor.user_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation runs not found in this tenant and dataset version") from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(503, "evaluation comparison report could not be persisted") from exc
+        return report
+
+    @router.get("/evaluations/comparisons/{report_id}")
+    async def get_evaluation_comparison(report_id: str, request: Request):
+        actor = _principal(request)
+        if evaluation_comparison_service is None:
+            raise HTTPException(503, "evaluation comparison service is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation comparison read permission required")
+        try:
+            return await evaluation_comparison_service.get_report(
+                tenant_id=actor.tenant_id, report_id=report_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation comparison report not found") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.get("/evaluations/comparisons/{report_id}/export")
+    async def export_evaluation_comparison(
+        report_id: str, request: Request,
+        format: str = Query(default="html", pattern="^(html|pdf)$"),
+    ):
+        actor = _principal(request)
+        if evaluation_comparison_service is None:
+            raise HTTPException(503, "evaluation comparison service is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation comparison export permission required")
+        try:
+            report = await evaluation_comparison_service.get_report(
+                tenant_id=actor.tenant_id, report_id=report_id,
+            )
+            if format == "html":
+                return HTMLResponse(
+                    evaluation_comparison_service.render_html(report),
+                    headers={"Content-Disposition": f'attachment; filename="evaluation-{report_id}.html"'},
+                )
+            pdf = evaluation_comparison_service.render_pdf(report)
+            return Response(
+                content=pdf, media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="evaluation-{report_id}.pdf"'},
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation comparison report not found") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
 
     return router
