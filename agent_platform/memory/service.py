@@ -211,8 +211,54 @@ class MemoryService:
         await self.repository.put(updated)
         return updated
     async def export(self,*,principal: MemoryPrincipal)->list[dict[str,object]]:
-        records=await self.retrieve(principal=principal,limit=1000)
-        return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"applies_from":r.candidate.applies_from.isoformat() if r.candidate.applies_from else None,"applies_until":r.candidate.applies_until.isoformat() if r.candidate.applies_until else None,"updated_at":r.updated_at.isoformat()} for r in records]
+        """Export every non-deleted memory the principal is allowed to manage.
+
+        Retrieval intentionally returns active memories only. A data export is
+        broader: candidates and archived/expired/superseded records are still
+        part of the subject's data and must not silently disappear from export.
+        """
+        records = await self.repository.list(principal.tenant_id, limit=5000)
+        visible = [
+            record for record in records
+            if record.status is not MemoryStatus.DELETED
+            and record.deleted_at is None
+            and self._can_manage_scope(
+                record.candidate.scope, record.candidate.scope_id, principal,
+            )
+        ]
+        visible.sort(key=lambda record: (
+            record.updated_at, record.candidate.memory_id,
+        ), reverse=True)
+        return [
+            {
+                "memory_id": record.candidate.memory_id,
+                "scope": record.candidate.scope.value,
+                "scope_id": record.candidate.scope_id,
+                "content": record.candidate.content,
+                "source_ref": record.candidate.source_ref,
+                "confidence": record.candidate.confidence,
+                "version": record.version,
+                "status": record.status.value,
+                "created_by": record.candidate.created_by,
+                "confirmed_by": record.confirmed_by,
+                "metadata": dict(record.candidate.metadata),
+                "expires_at": (
+                    record.candidate.expires_at.isoformat()
+                    if record.candidate.expires_at else None
+                ),
+                "applies_from": (
+                    record.candidate.applies_from.isoformat()
+                    if record.candidate.applies_from else None
+                ),
+                "applies_until": (
+                    record.candidate.applies_until.isoformat()
+                    if record.candidate.applies_until else None
+                ),
+                "created_at": record.created_at.isoformat(),
+                "updated_at": record.updated_at.isoformat(),
+            }
+            for record in visible
+        ]
     async def history(self,*,principal: MemoryPrincipal,memory_id: str)->list[MemoryRecord]:
         record=await self.repository.get(principal.tenant_id,memory_id)
         if record is None:
