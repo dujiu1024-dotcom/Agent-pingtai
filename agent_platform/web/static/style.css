@@ -82,3 +82,19 @@ header h1{overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){
  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
+
+/* C-14-05 follow-up: keyboard-visible navigation and predictable narrow-screen scrolling. */
+:where(button,input,select,textarea,a,[tabindex]):focus-visible{outline:3px solid #a9b5ff;outline-offset:2px}
+nav button[aria-current="page"]{box-shadow:inset 3px 0 #8292f4}
+@media(max-width:640px){
+ nav{scroll-snap-type:x proximity;scroll-padding-inline:12px}
+ nav button{scroll-snap-align:start;min-height:44px}
+ nav button:focus-visible{outline-offset:-2px}
+}
+@media(max-width:380px){
+ nav{gap:5px}
+ nav button{min-height:44px;padding-inline:8px}
+}
+@media(prefers-reduced-motion:reduce){
+ html:focus-within{scroll-behavior:auto}
+}
