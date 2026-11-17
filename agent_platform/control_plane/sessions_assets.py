@@ -335,8 +335,9 @@ class InMemorySessionRepository:
 
     async def append_message(self, message: ConversationMessage) -> None:
         key = (message.tenant_id, message.session_id)
-        if key not in self.sessions:
-            raise SessionNotFound("session not found")
+        session = self.sessions.get(key)
+        if session is None or session.status != "active":
+            raise SessionNotFound("session not found or inactive")
         existing = next((
             item for (tenant_id, _), rows in self.messages.items()
             if tenant_id == message.tenant_id
