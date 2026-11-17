@@ -81,15 +81,17 @@ class LangGraphRunExecutor:
    tenant_id=tenant_id,run_id=run_id,event_type=event_type,data=data,
   )
  async def _invoke_graph(self,payload:Any,config:Any,*,tenant_id:str,run_id:str,session:Any)->Any:
-  from agent_platform.streaming.context import token_callback_context
+  from agent_platform.streaming.context import run_event_context,token_callback_context
   async def emit_token(token:str)->None:
    await self._publish_event(tenant_id,run_id,"TOKEN_STREAM",token=token)
+  async def emit_event(event_type:str,**data:Any)->None:
+   await self._publish_event(tenant_id,run_id,event_type,**data)
   await self._publish_event(tenant_id,run_id,"RUN_START")
   stream_events=getattr(self.graph,"astream_events",None)
   if self.event_broker is not None and callable(stream_events):
    latest=None
    try:
-    with token_callback_context(emit_token):
+    with token_callback_context(emit_token),run_event_context(emit_event):
      async for item in stream_events(payload,config=config,version="v2"):
       if not isinstance(item,dict):continue
       kind=item.get("event");name=str(item.get("name") or "step")
@@ -147,7 +149,7 @@ class LangGraphRunExecutor:
   stream=getattr(self.graph,"astream",None)
   if session is not None and callable(stream):
    latest=None
-   with token_callback_context(emit_token if self.event_broker is not None else None):
+   with token_callback_context(emit_token if self.event_broker is not None else None),run_event_context(emit_event if self.event_broker is not None else None):
     async for state in stream(payload,config=config,stream_mode="values"):
      if isinstance(state,dict):
       await self.session_persistence.append_progress(
