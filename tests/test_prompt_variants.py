@@ -187,6 +187,15 @@ class PromptVariantDomainTests(unittest.TestCase):
         self.assertEqual(len(registry.list_audit("other")), 0)
         self.assertEqual(len(registry.list_audit("agent", limit=2)), 2)
 
+    def test_register_rejects_non_string_prompt_id_and_template(self):
+        registry = PromptRegistry()
+        for prompt_id, template in ((None, "Hello"), ("agent", None), ("", "Hello"), ("agent", "")):
+            with self.subTest(prompt_id=prompt_id, template=template):
+                with self.assertRaisesRegex(ValueError, "prompt_id and template are required"):
+                    registry.register(prompt_id, template)
+        self.assertEqual(registry.list_versions("agent"), ())
+        self.assertEqual(registry.list_audit("agent"), ())
+
     def test_variant_version_must_be_positive_integer(self):
         registry = PromptRegistry()
         registry.register("agent", "Hello")
