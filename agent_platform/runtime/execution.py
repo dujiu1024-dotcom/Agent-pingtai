@@ -32,6 +32,11 @@ class LangGraphRunExecutor:
   self.model_template_id=model_template_id
   self.required_tools=tuple(required_tools)
   self.run_context_service=run_context_service
+  self.session_repository=session_repository
+  self.session_persistence=None
+  if session_repository is not None:
+   from agent_platform.runtime.session_persistence import SessionRunPersistence
+   self.session_persistence=SessionRunPersistence(session_repository)
   self.intervention_store=intervention_store
   self.intervention_applier=intervention_applier
   if intervention_store is not None and intervention_applier is None:
@@ -152,7 +157,7 @@ class LangGraphRunExecutor:
    await self.run_context_service.ensure_initial(
     tenant_id=tenant_id,run_id=run_id,initial_context=input,
    )
-  config=await self._run_config(tenant_id,run_id)
+  config=await self._run_config(tenant_id,run_id,session_history=session_history)
   store=self.lifecycle.store
   acquire=getattr(store,"acquire_lease",None)
   release=getattr(store,"release_lease",None)
@@ -213,14 +218,6 @@ class LangGraphRunExecutor:
      actor_id=session["actor_id"],result=result,
     )
     await self._session_checkpoint(tenant_id,run_id,config,session)
-   if session is not None:
-    await self.session_persistence.append_assistant(
-     tenant_id=tenant_id,session_id=session["session_id"],run_id=run_id,
-     actor_id=session["actor_id"],result=result,
-    )
-    await self._session_checkpoint(
-     tenant_id,run_id,await self._run_config(tenant_id,run_id,session_history=session_history),session,
-    )
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    return result
   finally:
