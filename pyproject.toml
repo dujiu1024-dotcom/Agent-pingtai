@@ -142,6 +142,7 @@ include = [
   "tests/test_quota_reporting_api.py",
   "tests/test_issue_17_a_17_03_delivery_readiness.py",
   "tests/test_issue_17_a_17_03_production_quota_wiring.py",
+  "tests/test_issue_17_a_17_03_run_worker_quota_factory.py",
   "tests/test_quota_harness_enforcement.py",
   "tests/test_quota_postgres_integration.py",
   "tests/test_file_download_api.py",
