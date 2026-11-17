@@ -219,6 +219,10 @@ class CredentialService:
         return changed
 
 
+# Public name for callers integrating a shared credential Secret Store.
+SecretStore = CredentialService
+
+
 class PostgresCredentialRepository:
     """PostgreSQL metadata adapter. No secret material is accepted or persisted."""
 
