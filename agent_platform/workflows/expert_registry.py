@@ -81,3 +81,39 @@ class ControlPlaneExpertRegistry:
             capabilities=capabilities,
             enabled=enabled and version.status == "published",
         )
+
+
+@dataclass(frozen=True)
+class ExpertAssignment:
+    """Validated, serializable dispatch contract for one expert in a task."""
+
+    assignment_id: str
+    task_id: str
+    expert_id: str
+    focus: str
+    required_capabilities: frozenset[str]
+    declared_capabilities: frozenset[str]
+
+    def __post_init__(self) -> None:
+        for field_name in ("assignment_id", "task_id", "expert_id"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must not be empty")
+        if not isinstance(self.focus, str):
+            raise ValueError("assignment focus must be a string")
+        for field_name in ("required_capabilities", "declared_capabilities"):
+            values = getattr(self, field_name)
+            if any(not isinstance(item, str) or not item.strip() for item in values):
+                raise ValueError(f"{field_name} must contain non-empty strings")
+        if not self.required_capabilities.issubset(self.declared_capabilities):
+            raise ValueError("required capabilities exceed the expert declaration")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "assignment_id": self.assignment_id,
+            "task_id": self.task_id,
+            "expert_id": self.expert_id,
+            "focus": self.focus,
+            "required_capabilities": sorted(self.required_capabilities),
+            "declared_capabilities": sorted(self.declared_capabilities),
+        }
