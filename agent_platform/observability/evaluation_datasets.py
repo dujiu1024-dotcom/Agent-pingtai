@@ -25,7 +25,7 @@ class EvaluationDatasetCase:
     source_ref: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.case_id.strip() or len(self.case_id) > 128:
+        if not isinstance(self.case_id, str) or not self.case_id.strip() or len(self.case_id) > 128:
             raise ValueError("case_id must be a non-empty string of at most 128 characters")
         if not isinstance(self.input, str) or not self.input.strip():
             raise ValueError("input must be a non-empty string")
@@ -54,7 +54,7 @@ class EvaluationDatasetVersion:
     created_at: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant_id.strip() or not self.created_by.strip():
+        if not isinstance(self.tenant_id, str) or not self.tenant_id.strip() or not isinstance(self.created_by, str) or not self.created_by.strip():
             raise ValueError("tenant_id and created_by are required")
         if not _DATASET_ID.fullmatch(self.dataset_id):
             raise ValueError("dataset_id has an invalid format")
