@@ -4,7 +4,7 @@
 
 The runner consumes the deterministic, read-only JSONL export produced by `scripts/export_legacy_sqlite.py`. It imports into **pre-created PostgreSQL tables** according to an explicit JSON mapping. It does not infer schema migrations, create tables, or silently transform data.
 
-Default mode is dry-run. Dry-run validates the manifest, file hashes, row counts, mapping coverage, destination table/column existence and empty-target precondition inside a PostgreSQL `BEGIN READ ONLY` transaction. It issues no INSERT and always rolls back.
+Default mode is dry-run. Dry-run validates the manifest, file hashes, row counts, mapping coverage, destination table/column existence and empty-target precondition inside a PostgreSQL transaction whose first statement is `SET TRANSACTION READ ONLY`. It issues no INSERT and always rolls back.
 
 Apply requires explicit `--apply`. All mapped tables are inserted in one PostgreSQL transaction; any error rolls back the complete import. Destination tables must be empty, so this runner never overwrites existing production data. Run against an isolated staging database first and take a verified backup before any production use.
 
