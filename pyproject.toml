@@ -98,6 +98,7 @@ include = [
   "tests/test_issue_21_c_21_02_security_negative.py",
   "tests/test_sandbox_lifecycle.py",
   "tests/test_audit_append_only_postgres.py",
+  "tests/test_issue_15_a_15_03_audit_boundary.py",
   "tests/test_outbox.py",
   "tests/test_multi_expert_routing.py",
   "tests/test_blackboard_multi_expert_services.py",
