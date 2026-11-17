@@ -74,7 +74,8 @@ class HarnessBenchmarkSuiteTests(unittest.IsolatedAsyncioTestCase):
                 "gateway-tool-call",
             ),
         )
-        self.assertTrue(FIXED_HARNESS_CASES[-1].streaming)
+        streaming_case = next(case for case in FIXED_HARNESS_CASES if case.case_id == "streaming-response")
+        self.assertTrue(streaming_case.streaming)
 
     def test_candidate_requires_declared_capabilities(self):
         with self.assertRaisesRegex(ValueError, "must declare Harness capabilities"):
