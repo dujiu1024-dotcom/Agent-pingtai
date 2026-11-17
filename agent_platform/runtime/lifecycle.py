@@ -179,17 +179,41 @@ class RunLifecycleManager:
      await release(row.tenant_id,row.run_id,worker_id)
   return resumed
  async def run_with_timeout(self,tenant_id:str,run_id:str,operation:Any,*,timeout:float)->Any:
-  if timeout<=0: raise ValueError("timeout must be positive")
+  if isinstance(timeout,bool) or timeout<=0: raise ValueError("timeout must be positive")
   task=asyncio.create_task(operation)
   async with self._lock: self._tasks[(tenant_id,run_id)]=task
-  try: return await asyncio.wait_for(task,timeout)
+  try:
+   return await asyncio.wait_for(task,timeout)
   except asyncio.TimeoutError:
-   old=await self.store.get(tenant_id,run_id)
-   if old and old.status==RunStatus.RUNNING:
-    await self.finish(tenant_id,run_id,RunStatus.TIMED_OUT,error="Run execution timed out")
-   await self.tools.cancel_run(run_id,tenant_id=tenant_id); raise
+   # wait_for has cancelled and joined the operation. Also stop registered
+   # tool calls before publishing the terminal state to observers.
+   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
+   latest=await self.store.get(tenant_id,run_id)
+   if latest is not None and latest.status in {RunStatus.RUNNING,RunStatus.CANCELLING}:
+    await self.finish(
+     tenant_id,run_id,RunStatus.TIMED_OUT,
+     error="Run execution timed out",
+    )
+   raise
+  except asyncio.CancelledError:
+   # Explicit Run cancellation first persists CANCELLING, then cancels this
+   # task. Finalize here so callers never observe a permanently CANCELLING Run.
+   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
+   latest=await self.store.get(tenant_id,run_id)
+   if latest is not None and latest.status==RunStatus.RUNNING:
+    latest=await self.store.transition(
+     RunSnapshot(
+      tenant_id,run_id,RunStatus.CANCELLING,latest.version,
+      checkpoint_ref=latest.checkpoint_ref,
+     ),
+     expected_version=latest.version,
+    )
+   if latest is not None and latest.status==RunStatus.CANCELLING:
+    await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
+   raise
   finally:
-   async with self._lock: self._tasks.pop((tenant_id,run_id),None)
+   async with self._lock:
+    self._tasks.pop((tenant_id,run_id),None)
  async def on_client_disconnect(self,tenant_id:str,run_id:str,*,policy:str="continue")->None:
   if policy=="cancel": await self.cancel(tenant_id,run_id)
   elif policy!="continue": raise ValueError("disconnect policy must be continue or cancel")
