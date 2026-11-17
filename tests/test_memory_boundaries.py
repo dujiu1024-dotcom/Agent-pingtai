@@ -6,6 +6,9 @@ from agent_platform.memory.boundaries import (
     MemoryBoundaryPolicy,
     MemorySourceDomain,
     MemorySourceReference,
+    MEMORY_BOUNDARIES,
+    MemoryLayer,
+    memory_boundary,
 )
 from agent_platform.memory.service import MemoryCandidate, MemoryScope
 
