@@ -140,10 +140,14 @@ class GraphExtractionService:
                 conflict_key=entity.conflict_key,
             ))
 
+        relation_ids: set[str] = set()
         for relation in draft.relations:
             if not isinstance(relation, GraphRelationDraft):
                 raise ValueError("extractor returned an invalid relation draft")
             self._validate_local_id(relation.local_id)
+            if relation.local_id in relation_ids:
+                raise ValueError("extractor returned duplicate local relation IDs")
+            relation_ids.add(relation.local_id)
             if relation.source_local_id not in entities or relation.target_local_id not in entities:
                 raise ValueError("relation references an unknown local entity")
             definition = schema.relation_type(relation.relation_type)
