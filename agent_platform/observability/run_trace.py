@@ -247,15 +247,18 @@ class LangfuseRunTraceExporter:
 
 class RunTraceService:
     def __init__(
-        self, *, repository: RunTraceRepository, exporter: LangfuseRunTraceExporter | None = None
+        self, *, repository: RunTraceRepository, exporter: LangfuseRunTraceExporter | None = None,
+        blackboard_replay: Any | None = None,
     ) -> None:
         self.repository = repository
         self.exporter = exporter
+        self.blackboard_replay = blackboard_replay
 
     async def emit(
         self, *, tenant_id: str, run_id: str, event_type: RunTraceEventType,
         payload: Mapping[str, Any] | None = None, step_id: str | None = None,
-        parent_event_id: str | None = None,
+        parent_event_id: str | None = None, event_id: str | None = None,
+        occurred_at: datetime | None = None,
     ) -> RunTraceEvent:
         safe_payload = redact_payload(dict(payload or {}), max_text_chars=2000)
         if not isinstance(safe_payload, dict):
@@ -263,6 +266,7 @@ class RunTraceService:
         event = await self.repository.append(RunTraceEvent(
             tenant_id=tenant_id, run_id=run_id, event_type=event_type,
             step_id=step_id, parent_event_id=parent_event_id, payload=safe_payload,
+            event_id=event_id or "", occurred_at=occurred_at,
         ))
         if self.exporter is not None:
             try:
@@ -283,6 +287,8 @@ class RunTraceService:
         return await self.emit(
             tenant_id=tenant_id, run_id=run_id,
             event_type=RunTraceEventType.BLACKBOARD_EVENT,
+            event_id=getattr(event, "event_id", None),
+            occurred_at=getattr(event, "occurred_at", None),
             payload={
                 "blackboard_event_id": getattr(event, "event_id", None),
                 "event_type": getattr(event, "event_type", None),
@@ -292,6 +298,27 @@ class RunTraceService:
                 "correlation_id": getattr(event, "correlation_id", None),
             },
         )
+
+
+    async def capture_blackboard_events(self, *, tenant_id: str, run_id: str) -> int:
+        """Import the durable #13 RUN-scope event stream into this Run timeline."""
+        if self.blackboard_replay is None:
+            return 0
+        from agent_platform.contracts import Scope
+        cursor = None
+        captured = 0
+        while True:
+            events = await self.blackboard_replay.list_after(
+                cursor=cursor, scope=Scope.RUN, scope_id=run_id, limit=1000,
+            )
+            for event in events:
+                await self.emit_blackboard_event(
+                    tenant_id=tenant_id, run_id=run_id, event=event,
+                )
+                captured += 1
+            if len(events) < 1000:
+                return captured
+            cursor = self.blackboard_replay.cursor_for(events[-1])
 
 
 try:
