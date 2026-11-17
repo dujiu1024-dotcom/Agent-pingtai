@@ -65,6 +65,40 @@ class SSEProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["cache-control"], "no-cache, no-transform")
         self.assertEqual(response.headers["x-accel-buffering"], "no")
 
+    def test_client_decodes_split_utf8_and_tracks_reconnect_cursor(self):
+        from agent_platform.streaming.client import SSEClient
+
+        client = SSEClient()
+        raw = (
+            'id: cursor-7\\r\\nevent: token_stream\\r\\n'
+            'retry: 1250\\r\\ndata: {"token":"你好","sequence":7}\\r\\n\\r\\n'
+        ).encode("utf-8")
+        events = []
+        for byte in raw:
+            events.extend(client.feed(bytes([byte])))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].data["token"], "你好")
+        self.assertEqual(client.last_event_id, "cursor-7")
+        self.assertEqual(client.retry_ms, 1250)
+        self.assertEqual(
+            client.reconnect_headers(),
+            {"Accept": "text/event-stream", "Last-Event-ID": "cursor-7"},
+        )
+
+    def test_client_ignores_heartbeat_and_parses_multiline_data(self):
+        from agent_platform.streaming.client import SSEClient
+
+        client = SSEClient()
+        events = client.feed(
+            b": heartbeat\\n"
+            b"event: tool_output\\n"
+            b'data: {"part":\\n'
+            b'data: "joined"}\\n\\n',
+            final=True,
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].data, {"part": "\\n" + '"joined"'})
+
 
 if __name__ == "__main__":
     unittest.main()
