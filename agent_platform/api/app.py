@@ -160,7 +160,7 @@ def create_platform_app(
 
     @app.exception_handler(StarletteHTTPException)
     async def public_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        if not request.url.path.startswith(API_V1_PREFIX):
+        if not (request.url.path == API_V1_PREFIX or request.url.path.startswith(API_V1_PREFIX + "/")):
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
         error = error_for_http_status(
             exc.status_code,
@@ -170,7 +170,7 @@ def create_platform_app(
 
     @app.exception_handler(RequestValidationError)
     async def public_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-        if not request.url.path.startswith(API_V1_PREFIX):
+        if not (request.url.path == API_V1_PREFIX or request.url.path.startswith(API_V1_PREFIX + "/")):
             return JSONResponse(status_code=422, content={"detail": exc.errors()})
         error = error_for_http_status(422, "Request validation failed")
         return JSONResponse(status_code=422, content=error.to_dict())
