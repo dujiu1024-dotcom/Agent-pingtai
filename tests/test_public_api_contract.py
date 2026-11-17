@@ -54,6 +54,12 @@ class PublicApiContractTests(unittest.TestCase):
             decode_secure_cursor(altered, secret=secret, tenant_id="tenant-a",
                                  query_fingerprint="status=open", now=101)
         with self.assertRaises(ValueError):
+            decode_secure_cursor("非ASCII." + ("0" * 64), secret=secret,
+                                 tenant_id="tenant-a", query_fingerprint="status=open", now=101)
+        with self.assertRaises(ValueError):
+            decode_secure_cursor(token, secret=secret, tenant_id="tenant-a",
+                                 query_fingerprint="status=open", now=True)
+        with self.assertRaises(ValueError):
             encode_secure_cursor({"id": 1}, secret=b"weak", tenant_id="tenant-a",
                                 query_fingerprint="all")
 
