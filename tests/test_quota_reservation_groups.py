@@ -157,6 +157,13 @@ class QuotaReservationGroupTests(unittest.IsolatedAsyncioTestCase):
             idempotency_key="attempt-2",
         )
         self.assertNotEqual(first.group_id, second.group_id)
+        with self.assertRaisesRegex(ValueError, "released"):
+            await self.service.reserve_run(
+                tenant_id="tenant-a", run_id="child-retry-2", root_run_id="root-run",
+                scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+                estimated_tokens=70, estimated_cost_usd=Decimal("0.70"),
+                idempotency_key="attempt-1",
+            )
         self.assertEqual(
             await self.store.usage("tenant-a", "tenant", "tenant-a", self.start, self.end),
             (70, Decimal("0.70"), 1),
