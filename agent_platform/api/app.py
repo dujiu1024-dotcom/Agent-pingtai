@@ -25,6 +25,7 @@ from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
@@ -102,6 +103,7 @@ def create_platform_app(
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
+    prompt_rollout_service: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
     prompt_evaluation_gate: Any | None = None,
     alert_dispatch_worker: Any | None = None,
@@ -278,6 +280,26 @@ def create_platform_app(
         app.include_router(create_prompt_registry_router(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
             evaluate_gate=prompt_evaluation_gate,
+        ))
+    evaluation_rollout_configured = prompt_rollout_service is not None
+    if evaluation_rollout_configured:
+        if (
+            evaluation_comparison_service is None
+            or evaluation_manage_authorizer is None
+            or prompt_manage_authorizer is None
+        ):
+            raise ValueError(
+                "evaluation rollout requires comparison service, evaluation manager "
+                "authorizer and Prompt Lab manager authorizer"
+            )
+        from agent_platform.observability.evaluation_rollout import EvaluationPromptRolloutBridge
+        app.include_router(create_evaluation_rollout_router(
+            bridge=EvaluationPromptRolloutBridge(
+                comparison_service=evaluation_comparison_service,
+                rollout_service=prompt_rollout_service,
+            ),
+            authorize_eval_manage=evaluation_manage_authorizer,
+            authorize_prompt=prompt_manage_authorizer,
         ))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
