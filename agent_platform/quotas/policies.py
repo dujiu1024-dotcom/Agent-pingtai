@@ -202,3 +202,69 @@ class QuotaPolicyService:
             "limits": dict(policy.limits), "priority": policy.priority,
             "enabled": policy.enabled, "version": policy.version,
         }
+
+
+class PostgresQuotaPolicyRepository:
+    """Shared PostgreSQL policy store with append-only configuration audit."""
+    def __init__(self, connection_factory: Any) -> None:
+        self._connect = connection_factory
+
+    @classmethod
+    def from_dsn(cls, dsn: str) -> "PostgresQuotaPolicyRepository":
+        if not dsn:
+            raise ValueError("PostgreSQL DSN is required")
+        async def connect() -> Any:
+            try:
+                from psycopg import AsyncConnection
+                from psycopg.rows import dict_row
+            except ImportError as exc:
+                raise RuntimeError("Install psycopg[binary] for quota policy storage") from exc
+            return await AsyncConnection.connect(dsn, row_factory=dict_row)
+        return cls(connect)
+
+    async def put_policy(self, policy: QuotaPolicy) -> None:
+        import json
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_quota_policies
+                   (policy_id,tenant_id,scope_type,scope_id,limits,priority,enabled,version,created_by)
+                   VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)
+                   ON CONFLICT (scope_type,tenant_id,scope_id,policy_id) DO UPDATE SET
+                     limits=EXCLUDED.limits,priority=EXCLUDED.priority,enabled=EXCLUDED.enabled,
+                     version=EXCLUDED.version,created_by=EXCLUDED.created_by,updated_at=now()
+                   WHERE EXCLUDED.version > platform_quota_policies.version""",
+                (policy.policy_id,policy.tenant_id,policy.scope_type,policy.scope_id,
+                 json.dumps(dict(policy.limits),allow_nan=False),policy.priority,
+                 policy.enabled,policy.version,policy.created_by),
+            )
+
+    async def list_policies(self, *, tenant_id: str) -> list[QuotaPolicy]:
+        import json
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT policy_id,tenant_id,scope_type,scope_id,limits,priority,enabled,version,created_by
+                   FROM platform_quota_policies WHERE tenant_id=%s OR scope_type='default'""",
+                (tenant_id,),
+            )
+            rows = await cursor.fetchall()
+        return [QuotaPolicy(
+            policy_id=row["policy_id"],tenant_id=row["tenant_id"],scope_type=row["scope_type"],
+            scope_id=row["scope_id"],limits=json.loads(row["limits"]) if isinstance(row["limits"],str) else row["limits"],
+            priority=row["priority"],enabled=row["enabled"],version=row["version"],created_by=row["created_by"],
+        ) for row in rows]
+
+    async def append_audit(self, event: QuotaPolicyAudit) -> None:
+        import json
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_quota_policy_audit
+                   (audit_id,tenant_id,actor_id,action,policy_id,policy_version,
+                    before_state,after_state,occurred_at,payload_sha256)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s)""",
+                (event.audit_id,event.tenant_id,event.actor_id,event.action,event.policy_id,
+                 event.policy_version,json.dumps(event.before) if event.before is not None else None,
+                 json.dumps(event.after),event.occurred_at,event.payload_sha256),
+            )
