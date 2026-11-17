@@ -291,6 +291,9 @@ class KnowledgeService:
         visible = await self.repository.list_documents(principal, limit=500)
         if not any(item.document_id == document_id and item.version == document.version for item in visible):
             raise PermissionError("document read is not authorized")
+        list_visible = getattr(self.repository, "list_visible_chunks", None)
+        if callable(list_visible):
+            return await list_visible(principal, document_id, document.version)
         return await self.repository.list_chunks(principal.tenant_id, document_id, document.version)
 
     async def update_document_chunk(self, *, principal: KnowledgePrincipal, document_id: str, chunk_id: str, text: str):
