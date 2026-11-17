@@ -68,7 +68,7 @@ def create_production_app(
     settings: ProductionSettings | None = None,
     connection_factory: Any | None = None,
     redis_client: Any | None = None,
-    run_execution: ProductionRunExecution | None = None,
+    run_execution_builder: Callable[..., ProductionRunExecution] | None = None,
 ) -> FastAPI:
     """Build the production API graph; optional arguments are test seams only."""
     configured = settings or load_production_settings()
@@ -95,8 +95,6 @@ def create_production_app(
     memory_service = MemoryService(PostgresMemoryRepository(connection_factory))
     run_store = PostgresRunStateStore(connection_factory)
     run_lifecycle = RunLifecycleManager(run_store)
-    if run_execution is not None and run_execution.run_store is not run_store:
-        raise ValueError("production Run execution must share the API PostgreSQL RunStateStore")
 
     # Quota decisions and usage reporting must share the same transactional
     # PostgreSQL store across API processes. Never fall back to in-memory state.
@@ -106,6 +104,23 @@ def create_production_app(
     quota_policy_service = QuotaPolicyService(quota_policy_repository)
     quota_maintenance_worker = QuotaReservationMaintenanceWorker(quota_service)
     quota_audit_writer = _QuotaAuditAdapter(PostgresAuditWriter(connection_factory))
+    run_execution = None
+    if run_execution_builder is not None:
+        if not callable(run_execution_builder):
+            raise ValueError("run_execution_builder must be a trusted callable")
+        run_execution = run_execution_builder(
+            run_store=run_store,
+            lifecycle=run_lifecycle,
+            quota_store=quota_store,
+            quota_service=quota_service,
+            connection_factory=connection_factory,
+            redis_client=redis_client,
+            settings=configured,
+        )
+        if not isinstance(run_execution, ProductionRunExecution):
+            raise TypeError("run_execution_builder must return ProductionRunExecution")
+        if run_execution.run_store is not run_store:
+            raise ValueError("production Run execution must share the API PostgreSQL RunStateStore")
 
     async def resolve_run_lifecycle(_principal: Any) -> RunLifecycleManager:
         return run_lifecycle
