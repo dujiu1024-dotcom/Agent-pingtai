@@ -8,6 +8,7 @@ import inspect
 import ipaddress
 import json
 import socket
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Protocol
@@ -123,9 +124,23 @@ def signature(secret: bytes, timestamp: str, body: bytes) -> str:
 
 def verify_signature(secret: bytes, timestamp: str, body: bytes, supplied: str, *,
                       now: int | None = None, tolerance_seconds: int = 300) -> bool:
-    if not timestamp.isdigit() or len(timestamp) > 12 or tolerance_seconds < 0:
+    """Verify HMAC and enforce a bounded timestamp window to prevent replay."""
+    if (
+        not isinstance(timestamp, str)
+        or not timestamp
+        or not timestamp.isascii()
+        or not timestamp.isdigit()
+        or len(timestamp) > 12
+        or isinstance(tolerance_seconds, bool)
+        or not isinstance(tolerance_seconds, int)
+        or not 1 <= tolerance_seconds <= 900
+        or (now is not None and (
+            isinstance(now, bool) or not isinstance(now, int) or now < 0
+        ))
+    ):
         return False
-    if now is not None and abs(now - int(timestamp)) > tolerance_seconds:
+    verification_time = int(time.time()) if now is None else now
+    if abs(verification_time - int(timestamp)) > tolerance_seconds:
         return False
     return hmac.compare_digest(signature(secret, timestamp, body), supplied)
 
