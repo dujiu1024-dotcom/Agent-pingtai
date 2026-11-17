@@ -79,7 +79,7 @@ class RAGMetricsTests(unittest.IsolatedAsyncioTestCase):
             "rotation": [
                 hit("other-id", "fixture://other", "Unrelated text."),
                 hit("policy-id", "fixture://policy", "Credential rotation interval is 90 days."),
-                hit("policy-id", "fixture://policy", "Credential rotation every 90 days."),
+                hit("policy-id", "fixture://policy", "Credential rotation, 90 days."),
             ],
             "snacks": [],
         })
