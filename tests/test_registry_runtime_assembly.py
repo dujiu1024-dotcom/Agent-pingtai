@@ -27,10 +27,22 @@ class ModelRouter:
         def estimate(self, **kwargs):
             return SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
 
+    class QuotaService:
+        async def reserve_run(self, **kwargs):
+            return object(), ()
+
+    class CostEstimator:
+        async def estimate_micros(self, **kwargs):
+            return 1
+
+    class AuditSink:
+        async def record(self, **kwargs):
+            return None
+
     token_estimator = Estimator()
-    quota_service = object()
-    quota_cost_estimator = object()
-    audit_sink = object()
+    quota_service = QuotaService()
+    quota_cost_estimator = CostEstimator()
+    audit_sink = AuditSink()
 
     async def complete(self, **kwargs):
         return kwargs
@@ -104,6 +116,20 @@ class RegistryRuntimeAssemblyTests(unittest.IsolatedAsyncioTestCase):
             RegistryRuntimeAssembler(
                 snapshots=SnapshotService(SimpleNamespace()),
                 model_router=UnbudgetedModelRouter(),
+                skill_reviewer=SkillDependencyReviewer(
+                    store=InMemorySkillDependencyReviewStore(), approved_pins={},
+                ),
+                trusted_tool_handlers={},
+            )
+
+    def test_runtime_assembly_rejects_non_callable_budget_dependencies(self):
+        class BrokenBudgetRouter(ModelRouter):
+            quota_service = object()
+
+        with self.assertRaisesRegex(RegistryRuntimeError, "quota_service.reserve_run"):
+            RegistryRuntimeAssembler(
+                snapshots=SnapshotService(SimpleNamespace()),
+                model_router=BrokenBudgetRouter(),
                 skill_reviewer=SkillDependencyReviewer(
                     store=InMemorySkillDependencyReviewStore(), approved_pins={},
                 ),
