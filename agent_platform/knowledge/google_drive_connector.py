@@ -14,6 +14,7 @@ import json
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import quote, urlsplit
 
+from agent_platform.connectors.base import BaseConnector, ConnectorAuthenticator
 from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
 from agent_platform.knowledge.contracts import Document
 
@@ -29,7 +30,7 @@ class GoogleDriveCredentialResolver(Protocol):
 DocumentFactory = Callable[[str, Mapping[str, Any], str], Document]
 
 
-class GoogleDriveKnowledgeConnector:
+class GoogleDriveKnowledgeConnector(BaseConnector):
     """Incremental Google Drive connector using initial listing plus Changes API."""
 
     connector_id = "google-drive"
@@ -59,11 +60,13 @@ class GoogleDriveKnowledgeConnector:
         self,
         *,
         client: Any,
-        credentials: GoogleDriveCredentialResolver,
+        credentials: GoogleDriveCredentialResolver | None = None,
         credential_ref: str,
         document_factory: DocumentFactory,
         max_file_bytes: int = 25 * 1024 * 1024,
         page_size: int = 100,
+        authenticator: ConnectorAuthenticator | None = None,
+        auth_scopes: tuple[str, ...] = ("drive.readonly",),
     ) -> None:
         if not credential_ref.startswith("secret://"):
             raise ValueError("Google Drive credentials must use a secret:// reference")
@@ -73,18 +76,20 @@ class GoogleDriveKnowledgeConnector:
             or not isinstance(page_size, int) or not 1 <= page_size <= 1000
         ):
             raise ValueError("invalid Google Drive size or page limit")
+        super().__init__(
+            connector_id=self.connector_id, credential_ref=credential_ref,
+            credentials=credentials, authenticator=authenticator, auth_scopes=auth_scopes,
+        )
         self.client = client
-        self.credentials = credentials
-        self.credential_ref = credential_ref
         self.document_factory = document_factory
         self.max_file_bytes = max_file_bytes
         self.page_size = page_size
 
-    async def _token(self) -> str:
-        token = await self.credentials.resolve(self.credential_ref)
-        if not isinstance(token, str) or not token.strip():
-            raise GoogleDriveConnectorError("Google Drive OAuth credential is unavailable")
-        return token
+    async def _token(self, tenant_id: str) -> str:
+        try:
+            return await self.authenticate(tenant_id=tenant_id)
+        except Exception as exc:
+            raise GoogleDriveConnectorError("Google Drive OAuth credential is unavailable") from exc
 
     @staticmethod
     def _json(response: Any) -> dict[str, Any]:
@@ -237,7 +242,7 @@ class GoogleDriveKnowledgeConnector:
     ) -> ConnectorPage:
         if not tenant_id.strip() or not 1 <= limit <= 500:
             raise ValueError("tenant_id and a page limit between 1 and 500 are required")
-        token = await self._token()
+        token = await self._token(tenant_id)
         state = self._decode_cursor(cursor) if cursor is not None else None
         if state is None:
             start = self._json(await self._api_get(
