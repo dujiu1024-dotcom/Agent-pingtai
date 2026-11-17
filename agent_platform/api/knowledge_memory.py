@@ -388,7 +388,7 @@ def create_knowledge_memory_router(
             )
             hits=await knowledge.retrieve(principal=principal,query=q,limit=limit,filters=filters,strategy=strategy)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
-        return {"items":[{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":h.retrieval_trace} for h in hits]}
+        return {"items":[{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"source_locator":{"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset},"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":h.retrieval_trace} for h in hits]}
     @router.post("/knowledge/evaluate")
     async def evaluate_knowledge(request: Request):
         principal = await resolve_knowledge_principal(request)
