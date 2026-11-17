@@ -8,6 +8,7 @@ from agent_platform.graph.governance import (
     GraphEntityStatus,
     GraphGovernanceConflict,
     GraphGovernanceService,
+    GraphInvalidationWorker,
     GovernedGraphEntity,
     GovernedGraphRelation,
     InMemoryGraphGovernanceRepository,
@@ -283,6 +284,101 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.repository.complete_invalidation_job(
             job_id=job.job_id, worker_id="worker-a",
         ))
+
+
+    async def test_invalidation_worker_applies_entity_relation_and_cache_deletes(self):
+        await self.repository.add_entity(_entity("doc-a"))
+        await self.repository.add_entity(_entity("doc-b"))
+        await self.repository.add_relation(GovernedGraphRelation(
+            "tenant-a", "edge-1", "references", "doc-a", "doc-b",
+        ))
+        await self.service.delete_entity(
+            principal=self.principal, entity_id="doc-a", expected_version=1,
+        )
+        applied = []
+        async def record(job):
+            applied.append((job.object_kind, job.object_id, job.operation))
+        worker = GraphInvalidationWorker(
+            self.repository,
+            handlers={
+                ("entity", "delete"): record,
+                ("relation", "delete"): record,
+                ("cache", "invalidate"): record,
+            },
+        )
+        completed, retried = await worker.run_once(worker_id="worker-a")
+        self.assertEqual((completed, retried), (3, 0))
+        self.assertEqual(set(applied), {
+            ("entity", "doc-a", "delete"),
+            ("relation", "edge-1", "delete"),
+            ("cache", "doc-a", "invalidate"),
+        })
+        self.assertTrue(all(
+            job.status == "completed"
+            for job in await self.repository.invalidation_jobs("tenant-a")
+        ))
+
+    async def test_invalidation_worker_retries_failed_handler_after_delay(self):
+        await self.repository.add_entity(_entity("doc-a"))
+        await self.service.delete_entity(
+            principal=self.principal, entity_id="doc-a", expected_version=1,
+        )
+        attempts = []
+        async def flaky(job):
+            attempts.append(job.job_id)
+            if len(attempts) == 1:
+                raise RuntimeError("index temporarily unavailable")
+        worker = GraphInvalidationWorker(
+            self.repository,
+            handlers={
+                ("entity", "delete"): flaky,
+                ("cache", "invalidate"): flaky,
+            },
+        )
+        now = datetime.now(timezone.utc)
+        completed, retried = await worker.run_once(
+            worker_id="worker-a", limit=1, now=now, retry_delay_seconds=5,
+        )
+        self.assertEqual((completed, retried), (0, 1))
+        jobs = await self.repository.invalidation_jobs("tenant-a")
+        self.assertEqual(jobs[0].status, "pending")
+        self.assertEqual(jobs[0].attempts, 1)
+        completed, retried = await worker.run_once(
+            worker_id="worker-a", limit=2, now=now + timedelta(seconds=6),
+        )
+        self.assertEqual((completed, retried), (2, 0))
+        self.assertEqual(attempts[0], jobs[0].job_id)
+        self.assertEqual(attempts[-1], jobs[0].job_id)
+        self.assertEqual(len(attempts), 3)
+
+    async def test_concurrent_delete_and_correction_cannot_resurrect_entity(self):
+        await self.repository.add_entity(_entity("doc-a"))
+        async def delete():
+            try:
+                return await self.service.delete_entity(
+                    principal=self.principal, entity_id="doc-a", expected_version=1,
+                )
+            except GraphGovernanceConflict:
+                return None
+        async def correct():
+            try:
+                return await self.service.correct_entity(
+                    principal=self.principal, entity_id="doc-a",
+                    expected_version=1, attributes={"title": "racing update"},
+                )
+            except GraphGovernanceConflict:
+                return None
+        results = await asyncio.gather(delete(), correct())
+        current = await self.repository.get_entity("tenant-a", "doc-a")
+        if current.status is not GraphEntityStatus.DELETED:
+            current = await self.service.delete_entity(
+                principal=self.principal, entity_id="doc-a",
+                expected_version=current.version,
+            )
+        self.assertIs(current.status, GraphEntityStatus.DELETED)
+        self.assertEqual(current.version, 2 if results[0] is not None else 3)
+        audit = await self.repository.audit_events("tenant-a", "doc-a")
+        self.assertEqual(audit[-1].action, "deleted")
 
 
 if __name__ == "__main__":

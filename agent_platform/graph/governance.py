@@ -660,3 +660,55 @@ class GraphGovernanceService:
         if not callable(expiry):
             raise RuntimeError("repository does not support expiry sweeps")
         return await expiry(now=now or datetime.now(timezone.utc))
+
+
+
+class GraphInvalidationWorker:
+    """Apply claimed graph index/cache invalidations with lease-safe retries.
+
+    Handlers must be idempotent: a worker may crash after applying a side effect
+    but before acknowledging the job, in which case the lease expiry replays it.
+    Keys are (object_kind, operation), for example ("entity", "delete").
+    """
+
+    def __init__(
+        self,
+        repository: InMemoryGraphGovernanceRepository,
+        *,
+        handlers: Mapping[tuple[str, str], Callable[[GraphInvalidationJob], Any]],
+    ) -> None:
+        self.repository = repository
+        self.handlers = dict(handlers)
+
+    async def run_once(
+        self, *, worker_id: str, limit: int = 20,
+        lease_seconds: int = 60, retry_delay_seconds: int = 5,
+        now: datetime | None = None,
+    ) -> tuple[int, int]:
+        jobs = await self.repository.claim_invalidation_jobs(
+            worker_id=worker_id, limit=limit, lease_seconds=lease_seconds, now=now,
+        )
+        completed = 0
+        retried = 0
+        for job in jobs:
+            handler = self.handlers.get((job.object_kind, job.operation))
+            try:
+                if handler is None:
+                    raise LookupError(
+                        f"no graph invalidation handler for {job.object_kind}/{job.operation}"
+                    )
+                result = handler(job)
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception:
+                if await self.repository.retry_invalidation_job(
+                    job_id=job.job_id, worker_id=worker_id,
+                    delay_seconds=retry_delay_seconds, now=now,
+                ):
+                    retried += 1
+                continue
+            if await self.repository.complete_invalidation_job(
+                job_id=job.job_id, worker_id=worker_id,
+            ):
+                completed += 1
+        return completed, retried
