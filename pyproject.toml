@@ -113,6 +113,8 @@ include = [
   "tests/test_subject_export_coordinator.py",
   "tests/test_runs_interventions_api.py",
   "tests/test_task_center_interventions_postgres_integration.py",
+  "scripts/ops_runbook.py",
+  "tests/test_ops_runbook.py",
 ]
 
 [tool.ruff.lint]
