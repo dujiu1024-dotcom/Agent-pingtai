@@ -223,3 +223,21 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    async def test_list_sessions_and_assets_are_owner_scoped(self):
+        first = await self.service.create_session(
+            tenant_id="tenant-a", owner_id="user-a", title="My session",
+        )
+        await self.service.create_session(
+            tenant_id="tenant-a", owner_id="user-b", title="Other user's session",
+        )
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="notes.txt",
+            media_type="text/plain", content=b"notes", session_id=first.session_id,
+        )
+        sessions = await self.repository.list_sessions("tenant-a", "user-a")
+        assets = await self.repository.list_assets("tenant-a", "user-a")
+        self.assertEqual([item.session_id for item in sessions], [first.session_id])
+        self.assertEqual([item.asset_id for item in assets], [asset.asset_id])
+        self.assertEqual(await self.repository.list_sessions("tenant-b", "user-a"), ())
