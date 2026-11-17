@@ -17,7 +17,15 @@ def _jsonb(value: Any)->Any:
     except ImportError as exc:raise RuntimeError("Install psycopg[binary,pool]") from exc
     return Jsonb(value)
 class PostgresKnowledgeRepository:
-    def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default")->None:self._connect=connection_factory;self.embedding_model=embedding_model
+    def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=1536)->None:
+        if not embedding_model.strip() or not embedding_model_version.strip():
+            raise ValueError("embedding model and version are required")
+        if embedding_dimensions != 1536:
+            raise ValueError("PostgreSQL knowledge_embeddings currently requires 1536 dimensions")
+        self._connect=connection_factory
+        self.embedding_model=embedding_model
+        self.embedding_model_version=embedding_model_version
+        self.embedding_dimensions=embedding_dimensions
     async def save_document(self,document: Document,chunks: Sequence[DocumentChunk])->bool:
         conn=await self._connect()
         async with conn:
@@ -35,7 +43,16 @@ class PostgresKnowledgeRepository:
             async with conn.transaction():
                 for chunk,vector in zip(chunks,vectors):
                     literal="["+",".join(str(float(x)) for x in vector)+"]"
-                    await conn.execute("""INSERT INTO knowledge_embeddings(tenant_id,chunk_id,embedding_model,embedding) VALUES(%s,%s,%s,%s::vector) ON CONFLICT(tenant_id,chunk_id,embedding_model) DO UPDATE SET embedding=EXCLUDED.embedding,created_at=now()""",(tenant_id,chunk.chunk_id,self.embedding_model,literal))
+                    if len(vector) != self.embedding_dimensions:
+                        raise ValueError("embedding dimension mismatch")
+                    await conn.execute("""INSERT INTO knowledge_embedding_models(embedding_model,model_version,dimensions)
+                    VALUES(%s,%s,%s) ON CONFLICT(embedding_model,model_version) DO UPDATE SET dimensions=EXCLUDED.dimensions""",
+                    (self.embedding_model,self.embedding_model_version,self.embedding_dimensions))
+                    await conn.execute("""INSERT INTO knowledge_embeddings(tenant_id,chunk_id,embedding_model,embedding,model_version,dimensions)
+                    VALUES(%s,%s,%s,%s::vector,%s,%s)
+                    ON CONFLICT(tenant_id,chunk_id,embedding_model) DO UPDATE SET embedding=EXCLUDED.embedding,
+                    model_version=EXCLUDED.model_version,dimensions=EXCLUDED.dimensions,created_at=now()""",
+                    (tenant_id,chunk.chunk_id,self.embedding_model,literal,self.embedding_model_version,self.embedding_dimensions))
     async def get_document(self,tenant_id: str,document_id: str,version: int|None=None)->Document|None:
         conn=await self._connect()
         async with conn:
