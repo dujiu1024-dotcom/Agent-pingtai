@@ -2,11 +2,11 @@
 
 from agent_platform.memory.boundaries import (
     MEMORY_BOUNDARIES,
-    MemoryBoundaryPolicy,
+    MEMORY_SCOPE_BY_LAYER,
     MemoryLayer,
     MemoryLayerBoundary,
-    MemorySourceDomain,
-    MemorySourceReference,
+    durable_scope_value,
+    is_durable_memory_layer,
     memory_boundary,
 )
 from agent_platform.memory.conflicts import (
@@ -39,13 +39,13 @@ from agent_platform.memory.service import (
 )
 
 __all__ = [
-    "MEMORY_BOUNDARIES",
-    "MemoryBoundaryPolicy",
     "MemoryLayer",
     "MemoryLayerBoundary",
-    "MemorySourceDomain",
-    "MemorySourceReference",
+    "MEMORY_BOUNDARIES",
+    "MEMORY_SCOPE_BY_LAYER",
     "memory_boundary",
+    "durable_scope_value",
+    "is_durable_memory_layer",
     "MemoryCitation",
     "MemoryRecall",
     "MemoryRecallPolicy",
