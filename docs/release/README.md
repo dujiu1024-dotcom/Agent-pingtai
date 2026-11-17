@@ -31,3 +31,10 @@ GitHub Actions 的 `workflow_dispatch` 生产验收入口要求传入 `release_e
 ## 人工/生产环境边界
 
 CI 无法替代真实生产凭据、真实模型供应商、对象存储故障演练、实际备份恢复、生产流量性能验证及发布后观察。上述证据必须由执行人上传并对结果负责；在完成前，总控 #21 和工作包 G 保持开放。
+
+
+## 发布结论与阻断条件（强制）
+
+证据 JSON 除逐项检查外，还必须包含 `release_owner`、`evidence_archive_ref`、`decision_reason`、`blocking_conditions` 和 `release_decision`。仅当所有必需检查均为 passed、责任人和归档引用非占位值、结论为 `approved` 且阻断条件列表为空时，脚本才返回通过。任何开放阻断项、待定/拒绝结论或缺失归档位置均 fail closed。
+
+`evidence_archive_ref` 应指向组织认可的不可变发布证据归档位置；每个检查的 `evidence_ref` 应能定位到原始 CI run、演练报告或迁移/回滚记录。审批人应是对本次生产发布负责的具名责任人，`decision_reason` 记录批准依据。模板默认 pending，不可直接用于放行。

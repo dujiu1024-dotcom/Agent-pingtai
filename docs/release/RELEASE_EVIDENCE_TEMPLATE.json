@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "release_id": "replace-with-release-id",
   "environment": "production",
   "commit_sha": "0000000000000000000000000000000000000000",
@@ -52,14 +52,13 @@
       "owner": "replace-with-owner",
       "verified_at_utc": "2026-11-16T00:00:00Z",
       "evidence_ref": "replace-with-rollback-plan-and-restore-drill-report"
-    },
-    "deployment_preflight": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-deployment-preflight-report"
     }
   },
-  "release_owner": "replace-with-accountable-release-owner",
-  "release_decision": "pending"
+  "release_decision": "pending",
+  "release_owner": "replace-with-release-owner",
+  "evidence_archive_ref": "replace-with-durable-evidence-archive-reference",
+  "decision_reason": "replace-with-release-decision-rationale",
+  "blocking_conditions": [
+    "replace-with-open-blocker-or-empty-list"
+  ]
 }

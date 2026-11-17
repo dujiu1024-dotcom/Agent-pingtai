@@ -18,6 +18,11 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
             "release_decision": "go",
             "commit_sha": "a" * 40,
             "generated_at_utc": verified,
+            "release_decision": "approved",
+            "release_owner": "release-operator",
+            "evidence_archive_ref": "artifacts/releases/release-2026-11-16.1/",
+            "decision_reason": "All required production checks passed.",
+            "blocking_conditions": [],
             "checks": {
                 name: {
                     "status": "passed",
@@ -141,6 +146,23 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
         errors = validate_evidence(self.document, now=self.now)
         self.assertIn("checks.migration.owner: required non-empty string", errors)
         self.assertIn("checks.rollback.evidence_ref: required non-empty string", errors)
+
+    def test_pending_or_rejected_decision_blocks_release(self):
+        self.document["release_decision"] = "pending"
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("release_decision: must equal approved", errors)
+
+    def test_open_blockers_block_approved_release(self):
+        self.document["blocking_conditions"] = ["rollback drill not completed"]
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("blocking_conditions: must be empty before release approval", errors)
+
+    def test_missing_archive_or_owner_blocks_release(self):
+        self.document["evidence_archive_ref"] = "replace-with-archive"
+        self.document["release_owner"] = ""
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("evidence_archive_ref: must not contain a template placeholder", errors)
+        self.assertIn("release_owner: required non-empty string", errors)
 
     def test_invalid_document_shape_is_rejected(self):
         self.assertEqual(validate_evidence([], now=self.now), ["evidence document must be a JSON object"])
