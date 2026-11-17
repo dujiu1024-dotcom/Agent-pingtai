@@ -94,5 +94,82 @@ class LangGraphGatewayContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gateway.calls, [])
 
 
+    async def test_gateway_node_requires_trusted_tenant_and_run_before_handler(self):
+        gateway = FakeGateway()
+        invoked = []
+        node = GatewayToolNode(
+            handler=lambda state, tools: invoked.append(True),
+            gateway=gateway, allowed_tools=("search",),
+            identity_resolver=lambda _: {
+                "tenant_id": "tenant-a", "actor_id": "agent-a", "actor_roles": ("agent",),
+            },
+        )
+        invalid_configs = (
+            {},
+            {"configurable": {"platform_run_id": "run-a"}},
+            {"configurable": {"platform_tenant_id": "tenant-a"}},
+            {"configurable": None},
+        )
+        for config in invalid_configs:
+            with self.subTest(config=config):
+                with self.assertRaises(PermissionError):
+                    await node({}, config)
+        self.assertEqual(invoked, [])
+        self.assertEqual(gateway.calls, [])
+
+    async def test_gateway_node_rejects_malformed_trusted_identity_before_handler(self):
+        gateway = FakeGateway()
+        invoked = []
+        identities = (
+            {"tenant_id": "tenant-a", "actor_id": "agent-a"},
+            {"tenant_id": "tenant-a", "actor_id": "agent-a", "actor_roles": "admin"},
+        )
+        for identity in identities:
+            node = GatewayToolNode(
+                handler=lambda state, tools: invoked.append(True),
+                gateway=gateway, allowed_tools=("search",),
+                identity_resolver=lambda _config, identity=identity: identity,
+            )
+            with self.subTest(identity=identity):
+                with self.assertRaises(PermissionError):
+                    await node({}, {"configurable": {
+                        "platform_tenant_id": "tenant-a", "platform_run_id": "run-a",
+                    }})
+        self.assertEqual(invoked, [])
+        self.assertEqual(gateway.calls, [])
+
+    async def test_gateway_client_passes_correlation_and_trusted_identity_separately(self):
+        gateway = FakeGateway()
+        client = GatewayToolClient(
+            gateway=gateway, allowed_tools=("search",),
+            identity={"tenant_id": "tenant-a", "actor_id": "agent-a",
+                      "actor_roles": ("agent",), "agent_id": "researcher"},
+            run_id="run-a", correlation_id="corr-a",
+        )
+        await client.call("search", {"query": "x", "tenant_id": "spoofed"})
+        call = gateway.calls[0]
+        self.assertEqual(call["tenant_id"], "tenant-a")
+        self.assertEqual(call["actor_id"], "agent-a")
+        self.assertEqual(call["run_id"], "run-a")
+        self.assertEqual(call["correlation_id"], "corr-a")
+        self.assertEqual(call["arguments"]["tenant_id"], "spoofed")
+
+    async def test_gateway_dependency_failure_propagates_without_fallback_execution(self):
+        class UnavailableGateway:
+            async def call_resolved(self, **_kwargs):
+                raise ConnectionError("tool gateway unavailable")
+
+        invoked = []
+        client = GatewayToolClient(
+            gateway=UnavailableGateway(), allowed_tools=("search",),
+            identity={"tenant_id": "tenant-a", "actor_id": "agent-a",
+                      "actor_roles": ("agent",)},
+            run_id="run-a",
+        )
+        with self.assertRaisesRegex(ConnectionError, "unavailable"):
+            await client.call("search", {"query": "x"})
+        self.assertEqual(invoked, [])
+
+
 if __name__ == "__main__":
     unittest.main()
