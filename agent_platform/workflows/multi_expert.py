@@ -125,21 +125,6 @@ def build_multi_expert_workflow(
         })
         return context
 
-    def expert_dispatch_payloads(state: MultiExpertState) -> list[dict[str, Any]]:
-        """Build isolated branch payloads so concurrent experts cannot mutate siblings' context."""
-        assignments = state.get("expert_assignments", [])
-        payloads = []
-        for assignment in assignments:
-            payloads.append({
-                "tenant_id": state["tenant_id"],
-                "task_id": state.get("task_id"),
-                "run_id": state["run_id"],
-                "objective": state["objective"],
-                "run_context": workflow_context(state),
-                "assignment": copy.deepcopy(dict(assignment)),
-            })
-        return payloads
-
     async def plan(state: MultiExpertState) -> dict[str, Any]:
         assignments = await services.plan_experts(
             objective=state["objective"],
