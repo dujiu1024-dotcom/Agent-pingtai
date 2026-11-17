@@ -20,7 +20,7 @@ def create_graph_router(
     resolve_query_service: QueryServiceResolver,
     authorize_read: GraphReadAuthorizer,
     resolve_governance: GovernanceResolver | None = None,
-    resolve_knowledge_principal: Callable[[Principal], Awaitable[Any]] | None = None,
+    resolve_knowledge_principal: Callable[[Request], Awaitable[Any]] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/graph", tags=["knowledge-graph"])
 
@@ -189,7 +189,7 @@ def create_graph_router(
         if type(version) is not int or version < 1 or not isinstance(attributes, dict):
             raise HTTPException(400, "expected_version and attributes are required")
         service = await resolve_governance(principal)
-        knowledge_principal = await resolve_knowledge_principal(principal)
+        knowledge_principal = await resolve_knowledge_principal(request)
         try:
             entity = await service.correct_entity(
                 principal=knowledge_principal, entity_id=entity_id,
