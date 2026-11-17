@@ -239,6 +239,33 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item.version for item in history], [1, 2])
         self.assertEqual(history[-1].source_entity_id, "target")
 
+
+    async def test_history_and_audit_payloads_are_deeply_immutable(self):
+        entity = GovernedGraphEntity(
+            tenant_id="tenant-a", entity_id="nested", entity_type="document",
+            attributes={"title": "A", "metadata": {"labels": ["one"]}},
+        )
+        await self.repository.add_entity(entity)
+        history = await self.repository.entity_history("tenant-a", "nested")
+        with self.assertRaises(AttributeError):
+            history[0].attributes["metadata"]["labels"].append("two")
+        with self.assertRaises(TypeError):
+            history[0].attributes["metadata"]["new"] = "value"
+
+    async def test_delete_supersedes_pending_index_upsert(self):
+        await self.repository.add_entity(_entity("doc-a"))
+        await self.service.correct_entity(
+            principal=self.principal, entity_id="doc-a",
+            expected_version=1, attributes={"title": "updated"},
+        )
+        await self.service.delete_entity(
+            principal=self.principal, entity_id="doc-a", expected_version=2,
+        )
+        jobs = await self.repository.invalidation_jobs("tenant-a")
+        entity_job = next(job for job in jobs if job.object_kind == "entity")
+        self.assertEqual(entity_job.operation, "delete")
+        self.assertIn(":v3", entity_job.idempotency_key)
+
     async def test_invalidation_jobs_require_current_lease_owner(self):
         await self.repository.add_entity(_entity("doc-a"))
         await self.service.delete_entity(
