@@ -273,6 +273,17 @@ class InMemoryObjectStorage:
 
 
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
+_MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$")
+
+
+def _normalize_media_type(value: str) -> str:
+    """Validate and canonicalize an HTTP media type before storing asset metadata."""
+    if not isinstance(value, str) or not value or len(value) > 127 or value != value.strip():
+        raise SessionError("invalid media type")
+    normalized = value.lower()
+    if not _MEDIA_TYPE.fullmatch(normalized):
+        raise SessionError("invalid media type")
+    return normalized
 
 
 class SessionAssetService:
@@ -336,7 +347,10 @@ class SessionAssetService:
             raise SessionError("tenant_id and owner_id are required")
         if not content or len(content) > self.max_upload_bytes:
             raise SessionError("file is empty or exceeds upload size limit")
-        if self.allowed_media_types is not None and media_type not in self.allowed_media_types:
+        media_type = _normalize_media_type(media_type)
+        if self.allowed_media_types is not None and media_type not in {
+            item.lower() for item in self.allowed_media_types
+        }:
             raise SessionError("media type is not allowed")
         if session_id is not None:
             session = await self.repository.get_session(tenant_id, session_id)
@@ -406,8 +420,10 @@ class SessionAssetService:
         clean_name = _SAFE_FILENAME.sub("_", (filename or asset.filename).replace(chr(92), "/").rsplit("/", 1)[-1])[:180]
         if not clean_name or clean_name in {".", ".."}:
             raise SessionError("invalid filename")
-        selected_type = media_type or asset.media_type
-        if self.allowed_media_types is not None and selected_type not in self.allowed_media_types:
+        selected_type = _normalize_media_type(media_type or asset.media_type)
+        if self.allowed_media_types is not None and selected_type not in {
+            item.lower() for item in self.allowed_media_types
+        }:
             raise SessionError("media type is not allowed")
         digest = hashlib.sha256(content).hexdigest()
         next_version = asset.version + 1
