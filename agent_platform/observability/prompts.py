@@ -11,6 +11,16 @@ _VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 @dataclass(frozen=True)
+class PromptVariant:
+    prompt_id: str
+    name: str
+    current_version: int
+    status: str
+    created_by: str
+    updated_by: str
+
+
+@dataclass(frozen=True)
 class PromptVersion:
     prompt_id: str
     version: int
@@ -26,6 +36,8 @@ class PromptRegistry:
         self._versions: dict[str, dict[int, PromptVersion]] = {}
         self._active: dict[str, int] = {}
         self._canary: dict[str, tuple[int, float]] = {}
+        self._variants: dict[str, dict[str, PromptVariant]] = {}
+        self._variant_history: dict[tuple[str, str], list[int]] = {}
 
     @staticmethod
     def _variables(template: str) -> tuple[str, ...]:
@@ -51,6 +63,82 @@ class PromptRegistry:
         record = PromptVersion(prompt_id, version, template, variables, content_hash)
         versions[version] = record
         return record
+
+    @staticmethod
+    def _validate_variant_name(name: str) -> str:
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name):
+            raise ValueError("variant name must be a lowercase identifier")
+        return name
+
+    def create_variant(
+        self, prompt_id: str, name: str, version: int, *, created_by: str,
+    ) -> PromptVariant:
+        name = self._validate_variant_name(name)
+        if not isinstance(created_by, str) or not created_by.strip():
+            raise ValueError("created_by is required")
+        if version not in self._versions.get(prompt_id, {}):
+            raise KeyError("prompt version does not exist")
+        variants = self._variants.setdefault(prompt_id, {})
+        if name in variants:
+            raise ValueError("prompt variant already exists")
+        variant = PromptVariant(prompt_id, name, version, "active", created_by, created_by)
+        variants[name] = variant
+        self._variant_history[(prompt_id, name)] = [version]
+        return variant
+
+    def assign_variant(
+        self, prompt_id: str, name: str, version: int, *, updated_by: str,
+    ) -> PromptVariant:
+        name = self._validate_variant_name(name)
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
+        variants = self._variants.get(prompt_id, {})
+        variant = variants.get(name)
+        if variant is None:
+            raise KeyError("prompt variant does not exist")
+        if variant.status != "active":
+            raise ValueError("deprecated prompt variant cannot be changed")
+        if version not in self._versions.get(prompt_id, {}):
+            raise KeyError("prompt version does not exist")
+        updated = PromptVariant(
+            prompt_id, name, version, variant.status, variant.created_by, updated_by,
+        )
+        variants[name] = updated
+        history = self._variant_history[(prompt_id, name)]
+        if not history or history[-1] != version:
+            history.append(version)
+        return updated
+
+    def deprecate_variant(
+        self, prompt_id: str, name: str, *, updated_by: str,
+    ) -> PromptVariant:
+        name = self._validate_variant_name(name)
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
+        variants = self._variants.get(prompt_id, {})
+        variant = variants.get(name)
+        if variant is None:
+            raise KeyError("prompt variant does not exist")
+        if variant.status == "deprecated":
+            return variant
+        updated = PromptVariant(
+            prompt_id, name, variant.current_version, "deprecated",
+            variant.created_by, updated_by,
+        )
+        variants[name] = updated
+        return updated
+
+    def list_variants(self, prompt_id: str) -> tuple[PromptVariant, ...]:
+        return tuple(
+            self._variants.get(prompt_id, {})[name]
+            for name in sorted(self._variants.get(prompt_id, {}))
+        )
+
+    def variant_history(self, prompt_id: str, name: str) -> tuple[int, ...]:
+        name = self._validate_variant_name(name)
+        if name not in self._variants.get(prompt_id, {}):
+            raise KeyError("prompt variant does not exist")
+        return tuple(self._variant_history[(prompt_id, name)])
 
     def activate(self, prompt_id: str, version: int) -> None:
         if version not in self._versions.get(prompt_id, {}):
