@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -174,6 +175,25 @@ class AdminResourceGovernanceAcceptanceTests(unittest.TestCase):
             headers={"x-permissions": "knowledge.manage"},
         )
         self.assertEqual(foreign.status_code, 404)
+
+
+    def test_workbench_exposes_admin_registry_versions_and_knowledge_catalog_controls(self):
+        root = Path(__file__).resolve().parents[1] / "agent_platform" / "web" / "static"
+        html = (root / "index.html").read_text()
+        script = (root / "app.js").read_text()
+        self.assertIn('data-view="registry"', html)
+        self.assertIn('data-view="governance"', html)
+        for kind in ("model_provider", "model_template", "tool"):
+            self.assertIn('"' + kind + '"', script)
+        self.assertIn("data-reg-versions", script)
+        self.assertIn("/versions", script)
+        self.assertIn("/publish", script)
+        self.assertIn('id="knowledge-collection-create"', script)
+        self.assertIn('id="knowledge-index-create"', script)
+        self.assertIn("/knowledge/collections", script)
+        self.assertIn("/indexes", script)
+        self.assertIn("X-CSRF-Token", script)
+
 
 
 if __name__ == "__main__":
