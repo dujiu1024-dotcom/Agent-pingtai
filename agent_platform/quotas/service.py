@@ -170,6 +170,8 @@ class UsageEvent:
     def __post_init__(self) -> None:
         if not self.event_id or not self.tenant_id or not self.run_id or not self.model_key:
             raise ValueError("usage event identifiers and model_key are required")
+        if self.root_run_id is not None and not self.root_run_id:
+            raise ValueError("root_run_id must be a non-empty string when supplied")
         counters = (
             self.input_tokens, self.output_tokens, self.tool_calls,
             self.runtime_ms, self.storage_bytes,
