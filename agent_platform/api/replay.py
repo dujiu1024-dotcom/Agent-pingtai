@@ -37,6 +37,12 @@ def create_run_replay_router(*, resolve_principal: PrincipalResolver,
             return await method(tenant_id=principal.tenant_id, run_id=run_id,
                 session_id=session_id, **kwargs)
         except Exception as exc: raise translate(exc) from exc
+    @router.get("/{session_id}/events")
+    async def list_events(run_id: str, session_id: str, request: Request, limit: int = 500):
+        if not 1 <= limit <= 2000:
+            raise HTTPException(400, "limit must be between 1 and 2000")
+        return await action(request, run_id, session_id, "list_events", limit=limit)
+
     @router.post("/{session_id}/step")
     async def step(run_id: str, session_id: str, request: Request):
         return await action(request, run_id, session_id, "step")
