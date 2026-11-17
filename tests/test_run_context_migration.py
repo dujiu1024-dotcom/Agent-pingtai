@@ -19,8 +19,8 @@ class RunContextSnapshotMigrationTests(unittest.TestCase):
         )
         self.assertIn("alter column context_payload set not null", normalized)
         self.assertIn("alter column references_payload set not null", normalized)
+        self.assertIn("digest text not null check (length(digest) = 64), created_at", normalized)
         self.assertTrue(normalized.rstrip().endswith("commit;"))
-        self.assertNotIn("), created_at", normalized)
 
     def test_migration_keeps_adapter_payload_column_names(self):
         migration = (
