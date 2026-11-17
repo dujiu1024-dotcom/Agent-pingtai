@@ -50,16 +50,19 @@ class RunScopedModelClient:
         snapshot = await self.snapshots.get(
             tenant_id=self.tenant_id, run_id=self.run_id,
         )
+        from agent_platform.streaming.context import current_token_callback
+        token_callback = current_token_callback()
         return await self.router.complete(
             snapshot=snapshot, tenant_id=self.tenant_id, run_id=self.run_id,
             template_id=self.template_id, messages=messages, request_id=request_id,
             required_capabilities=required_capabilities, data_level=data_level,
             fallback_template_ids=fallback_template_ids,
             request_parameters=request_parameters,
+            on_token=token_callback,
         )
 
 
-@dataclass(frozen=True)
+@dataclass/(frozen=True)
 class RunRegistryRuntime:
     tenant_id: str
     run_id: str
