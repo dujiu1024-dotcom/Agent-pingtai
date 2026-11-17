@@ -139,6 +139,9 @@ jobs:
       - name: Run production Runtime composition acceptance tests
         run: python -m unittest tests.test_issue_614_runtime_composition -v
 
+      - name: Verify legacy v1 archive and compatibility launchers
+        run: python -m unittest tests.test_issue_666_s_666_03_legacy_archive -v
+
   production-release-evidence:
     needs:
       - e2e-security-integration

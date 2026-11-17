@@ -25,8 +25,6 @@ include = [
   "tests/test_issue_20_a_20_01_public_api_contract.py",
   "scripts/inventory_legacy_system.py",
   "scripts/run_legacy_migration.py",
-  "scripts/migrate_sqlite_to_pg.py",
-  "tests/test_issue_666_s_666_02_sqlite_postgres_import.py",
   "tests/test_release_gate_evidence.py",
   "tests/test_release_upgrade.py",
   "tests/test_backup_integrity_verification.py",
@@ -167,7 +165,6 @@ include = [
   "tests/test_runs_interventions_api.py",
   "tests/test_task_center_interventions_postgres_integration.py",
   "tests/test_production_deployment_contract.py",
-  "tests/test_issue_614_runtime_composition.py",
   "tests/test_operational_health.py",
   "tests/test_operational_health_api.py",
   "tests/test_runtime_self_monitor.py",
@@ -196,10 +193,8 @@ include = [
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_665_s_665_01_e2e.py",
-  "scripts/rollback_cutover.py",
-  "tests/test_issue_666_s_666_04_rollback_orchestrator.py",
   "tests/test_api_v1_compatibility_middleware.py",
-  "tests/test_issue_667_s_667_01_legacy_route_contract.py",
+  "tests/test_issue_666_s_666_03_legacy_archive.py",
 ]
 
 [tool.ruff.lint]

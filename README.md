@@ -176,3 +176,8 @@ python3 agency.py init && python3 agency.py doctor
 - MCP Server 不直连外部业务系统，所有执行回到 `SupervisedToolGateway`。
 - Strands 通过官方 `MCPClient` 连接当前 Run 的 HTTPS MCP endpoint；短期 Bearer Token 由可信控制面按 Run 签发，服务端将 Token 映射到不可变的 tenant/actor/role/run/agent/审批上下文。Provider 使用精确工具过滤，并校验发现集合与 Run 白名单完全一致；缺少 Provider 或 endpoint 时拒绝工具调用。L2 审批 ID 按动作摘要绑定，不按工具名宽泛复用。
 - 已通过 MCP SDK 内存传输验证 ClientSession 工具发现和调用；已实现 Strands 官方 MCPClient 的 HTTPS/短期 Token 连接 Provider，并增加连接生命周期、白名单和失败关闭测试。Gateway endpoint 的生产服务化、Token 签发/撤销及真实网络联调仍需完成。
+
+
+## Legacy v1 archive
+
+The original single-file Python implementation is preserved under `legacy/v1-archive/`. The root-level `agency.py`, `console.py` and `listener.py` paths remain compatibility launchers; `console.html` remains at the root for the gateway's explicit legacy UI fallback. See [legacy archive inventory and rollback notes](legacy/v1-archive/README.md).
