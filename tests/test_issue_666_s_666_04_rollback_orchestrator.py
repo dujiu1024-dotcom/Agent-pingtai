@@ -94,6 +94,7 @@ class CutoverRollbackOrchestratorTests(unittest.TestCase):
             evidence.write_text("{}", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "must be new"):
                 run_plan(plan, evidence)
+            self.assertFalse((directory / "commands.log").exists())
 
 
 if __name__ == "__main__":
