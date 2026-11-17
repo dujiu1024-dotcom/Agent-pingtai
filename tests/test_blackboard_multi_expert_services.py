@@ -583,6 +583,85 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+
+    async def test_registered_expert_profile_is_bound_and_revalidated_at_execution(self):
+        class CapabilityCallbacks(WorkflowCallbacks):
+            def __init__(self):
+                self.received_assignment = None
+
+            async def plan_experts(self, *, objective, run_context):
+                return [{
+                    "expert_id": "researcher",
+                    "required_capabilities": ["market_research"],
+                }]
+
+            async def run_expert(self, *, assignment, objective, run_context):
+                self.received_assignment = dict(assignment)
+                return {"claim": "verified"}
+
+        callbacks = CapabilityCallbacks()
+        registry = InMemoryExpertRegistry((
+            ExpertProfile(
+                "researcher", "Researcher", "Market evidence specialist",
+                {"market_research", "source_review"},
+            ),
+        ))
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=callbacks, expert_registry=registry,
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "run-profile"}
+        assignment = (await services.plan_experts(
+            objective="analyze", run_context=context,
+        ))[0]
+        self.assertEqual(assignment["expert_name"], "Researcher")
+        self.assertEqual(assignment["expert_description"], "Market evidence specialist")
+        self.assertEqual(assignment["expert_capabilities"], ["market_research", "source_review"])
+
+        registry.register(ExpertProfile(
+            "researcher", "Researcher", "Revoked", {"market_research"}, enabled=False,
+        ))
+        with self.assertRaisesRegex(PermissionError, "not registered or enabled"):
+            await services.run_expert(
+                assignment=assignment, objective="analyze", run_context=context,
+            )
+        self.assertIsNone(callbacks.received_assignment)
+
+    async def test_expert_execution_receives_isolated_context_and_assignment(self):
+        class MutatingCallbacks(WorkflowCallbacks):
+            async def run_expert(self, *, assignment, objective, run_context):
+                assignment["local_only"] = True
+                run_context["nested"]["value"] = "changed"
+                return {"claim": "isolated"}
+
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=MutatingCallbacks(),
+        )
+        original_assignment = {"expert_id": "researcher"}
+        original_context = {
+            "tenant_id": "tenant-a", "run_id": "run-isolated",
+            "nested": {"value": "original"},
+        }
+        await services.run_expert(
+            assignment=original_assignment, objective="isolate",
+            run_context=original_context,
+        )
+        self.assertEqual(original_assignment, {"expert_id": "researcher"})
+        self.assertEqual(original_context["nested"]["value"], "original")
+
+    async def test_expert_profile_rejects_malformed_descriptors(self):
+        malformed = (
+            {"expert_id": 1, "name": "Expert", "description": "", "capabilities": frozenset()},
+            {"expert_id": "expert", "name": "", "description": "", "capabilities": frozenset()},
+            {"expert_id": "expert", "name": "Expert", "description": "", "capabilities": {" "}},
+            {"expert_id": "expert", "name": "Expert", "description": "", "capabilities": frozenset(), "enabled": "yes"},
+        )
+        for kwargs in malformed:
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ValueError):
+                    ExpertProfile(**kwargs)
+
     async def test_archive_rejects_cross_task_blackboard_sources(self):
         repository = InMemoryBlackboard()
         foreign_entry = BlackboardEntry(
@@ -609,6 +688,35 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(PermissionError, "crosses the active workflow scope"):
             await services.archive(state=context)
         self.assertEqual(len(repository.entries), 1)
+
+    async def test_planner_rejects_duplicate_experts_and_fanout_overflow(self):
+        class DuplicateCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher"}, {"expert_id": "researcher"}]
+
+        duplicate_services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=DuplicateCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "dispatch-duplicate"}
+        with self.assertRaisesRegex(ValueError, "duplicate expert assignment"):
+            await duplicate_services.plan_experts(
+                objective="analyze", run_context=context,
+            )
+
+        class FanoutCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": f"expert-{index}"} for index in range(3)]
+
+        bounded_services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=FanoutCallbacks(), max_experts=2,
+        )
+        with self.assertRaisesRegex(ValueError, "fan-out exceeds"):
+            await bounded_services.plan_experts(
+                objective="analyze",
+                run_context={**context, "run_id": "dispatch-overflow"},
+            )
 
 
 if __name__ == "__main__":
