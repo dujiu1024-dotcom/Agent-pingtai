@@ -81,7 +81,9 @@ class MemoryCandidateWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def test_conflict_requires_explicit_selection_not_simple_confirmation(self):
         original = await self._candidate(conflict_key="preference")
         await self.service.confirm(
-            tenant_id="tenant-a", memory_id=original.memory_id, confirmer_id="user-a"
+            tenant_id="tenant-a",
+            memory_id=original.memory_id,
+            confirmer_id="user-a",
         )
         conflicting = MemoryCandidate(
             tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",

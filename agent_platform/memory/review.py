@@ -132,7 +132,8 @@ class MemoryCandidateWorkflow:
             )
         else:
             result = await self.memory.reject(
-                tenant_id=principal.tenant_id, memory_id=memory_id
+                tenant_id=principal.tenant_id,
+                memory_id=memory_id,
             )
         await self.audit.append(event)
         return result
