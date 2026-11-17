@@ -13,6 +13,11 @@ from agent_platform.observability.prompt_experiments import (
     PromptExperimentDataset,
     PromptExperimentReport,
 )
+from agent_platform.observability.prompt_rollouts import (
+    InMemoryPromptRolloutRepository,
+    PostgresPromptRolloutRepository,
+    PromptRolloutService,
+)
 from agent_platform.observability.prompts import PromptRegistry, PromptVariant
 from agent_platform.observability.telemetry import PlatformTelemetry, StructuredEventLogger
 
@@ -25,6 +30,9 @@ __all__ = [
     "ObservedHarnessAdapter",
     "PromptRegistry",
     "PromptVariant",
+    "PromptRolloutService",
+    "InMemoryPromptRolloutRepository",
+    "PostgresPromptRolloutRepository",
     "PromptABTestService",
     "PromptExperimentCase",
     "PromptExperimentDataset",
