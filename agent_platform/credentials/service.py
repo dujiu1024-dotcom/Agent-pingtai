@@ -114,6 +114,10 @@ class CredentialService:
     def _secret_ref(tenant_id: str, credential_id: str) -> str:
         _required_id(tenant_id, "tenant_id")
         _required_id(credential_id, "credential_id")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", tenant_id):
+            raise CredentialError("tenant_id cannot be represented by the platform secret reference")
+        if not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", credential_id):
+            raise CredentialError("credential_id cannot be represented by the platform secret reference")
         return f"secret://{tenant_id}/credentials/{credential_id}"
 
     async def create(

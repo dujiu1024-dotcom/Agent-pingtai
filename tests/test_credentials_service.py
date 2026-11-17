@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
 
-from agent_platform.credentials.service import (
-    Credential, CredentialGrant, CredentialService, CredentialError,
-)
+from agent_platform.credentials.service import CredentialService, CredentialError
 
 
 class FakeSecretManager:
@@ -56,11 +53,11 @@ class FakeCredentialRepository:
         return self.grant_rows.get((tenant_id, credential_id, grantee_type, grantee_id))
 
     async def revoke(self, tenant_id, credential_id, at):
+        from dataclasses import replace
         key = (tenant_id, credential_id)
         item = self.credentials.get(key)
         if item is None or item.status != "active":
             return False
-        from dataclasses import replace
         self.credentials[key] = replace(item, status="revoked", revoked_at=at)
         for grant_key, grant in list(self.grant_rows.items()):
             if grant_key[:2] == key:
@@ -95,7 +92,7 @@ class CredentialServiceTests(unittest.IsolatedAsyncioTestCase):
             scopes=("files.read", "files.write"), actor_id="user-a",
         )
 
-    async def test_secret_value_never_appears_in_metadata_or_api_record(self):
+    async def test_secret_value_never_appears_in_metadata_or_audit(self):
         item = await self.create()
         self.assertEqual(item.secret_ref, "secret://tenant-a/credentials/drive-main")
         self.assertNotIn("private-token", repr(item))
@@ -179,14 +176,12 @@ class CredentialServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.repository.credentials, {})
 
     async def test_metadata_failure_compensates_secret_write(self):
-        original = self.repository.create
         async def fail_create(item):
             raise RuntimeError("metadata unavailable")
         self.repository.create = fail_create
         with self.assertRaisesRegex(RuntimeError, "metadata unavailable"):
             await self.create()
         self.assertEqual(self.secrets.values, {})
-        self.repository.create = original
 
     async def test_listing_is_tenant_scoped_and_bounded(self):
         await self.create()
@@ -194,6 +189,13 @@ class CredentialServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.service.list(tenant_id="tenant-b"), [])
         with self.assertRaises(CredentialError):
             await self.service.list(tenant_id="tenant-a", limit=201)
+
+    async def test_reference_rejects_unsafe_path_components(self):
+        with self.assertRaises(CredentialError):
+            await self.service.create(
+                tenant_id="tenant:a", credential_id="drive/main", provider="google_drive",
+                display_name="Drive", value="token", scopes=("files.read",), actor_id="user-a",
+            )
 
 
 if __name__ == "__main__":

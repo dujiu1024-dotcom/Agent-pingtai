@@ -191,6 +191,7 @@ files = [
   "agent_platform/blackboard/postgres_repository.py",
   "agent_platform/approval/postgres.py",
   "agent_platform/security/*.py",
+  "agent_platform/credentials/*.py",
   "agent_platform/events/outbox.py",
   "agent_platform/events/receipts.py",
   "agent_platform/events/consumer.py",
