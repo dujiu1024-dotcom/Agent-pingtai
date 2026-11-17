@@ -64,6 +64,13 @@ class PromptRegistry:
         versions[version] = record
         return record
 
+    def list_versions(self, prompt_id: str) -> tuple[PromptVersion, ...]:
+        """Return immutable versions in ascending version order."""
+        return tuple(
+            self._versions.get(prompt_id, {})[number]
+            for number in sorted(self._versions.get(prompt_id, {}))
+        )
+
     @staticmethod
     def _validate_variant_name(name: str) -> str:
         if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name):
