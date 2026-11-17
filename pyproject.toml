@@ -123,6 +123,8 @@ include = [
   "tests/test_runs_interventions_api.py",
   "tests/test_task_center_interventions_postgres_integration.py",
   "tests/test_production_deployment_contract.py",
+  "tests/test_operational_health.py",
+  "tests/test_operational_health_api.py",
   "agent_platform/api/health.py",
 ]
 
