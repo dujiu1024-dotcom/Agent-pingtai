@@ -33,7 +33,8 @@ from agent_platform.production import create_production_app
 from agent_platform.runtime.production_composition import build_production_run_execution
 
 def build_run_execution(*, run_store, lifecycle, quota_service,
-                        quota_store, connection_factory, redis_client, settings):
+                        quota_store, identity_service, identity_repository,
+                        audit_writer, connection_factory, redis_client, settings):
     # These constructors belong to the reviewed deployment integration package.
     # They must use the approved Vault secret resolver, model router, reviewed
     # Skill dependency store and trusted Tool handler catalog.
@@ -53,7 +54,7 @@ def build_run_execution(*, run_store, lifecycle, quota_service,
         registry_resolver=registry_for_principal,
         snapshot_resolver=lambda _principal: snapshots,
         executor_resolver=executor_resolver,
-        task_authorizer=authorize_task_from_principal,
+        task_authorizer=build_task_authorizer(identity_service),
         concurrency_limiter=build_shared_quota_limiter(quota_service),
         worker_pool_scope_id="production",
         queue_scope_resolver=resolve_queue_scope,
