@@ -68,6 +68,8 @@ class PostgresOutboxStore:
                         WHERE published_at IS NULL
                           AND (lease_until IS NULL OR lease_until < now())
                           AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+                          AND attempts < max_attempts
+                          AND dead_lettered_at IS NULL
                         ORDER BY created_at
                         LIMIT %s
                         FOR UPDATE SKIP LOCKED
@@ -159,7 +161,7 @@ class PostgresOutboxStore:
                     """
                     UPDATE platform_outbox
                     SET published_at = now(), lease_token = NULL, lease_until = NULL,
-                        last_error = NULL, next_attempt_at = NULL
+                        last_error = NULL, next_attempt_at = NULL, dead_lettered_at = NULL
                     WHERE tenant_id = %s AND outbox_id = %s
                       AND lease_token = %s AND published_at IS NULL
                     RETURNING outbox_id
@@ -176,9 +178,11 @@ class PostgresOutboxStore:
                     """
                     UPDATE platform_outbox
                     SET lease_token = NULL, lease_until = NULL, last_error = %s,
-                        next_attempt_at = now() + make_interval(
+                        dead_lettered_at = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
+                        next_attempt_at = CASE WHEN attempts >= max_attempts THEN NULL
+                          ELSE now() + make_interval(
                             secs => LEAST(300, power(2, LEAST(attempts, 8)))::int
-                        )
+                          ) END
                     WHERE tenant_id = %s AND outbox_id = %s AND lease_token = %s
                     """,
                     (

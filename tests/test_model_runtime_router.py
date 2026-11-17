@@ -7,6 +7,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from agent_platform.models.registry_resolver import RegistryModelResolver
+from agent_platform.models.circuit_breaker import ModelCircuitBreaker
 from agent_platform.models.runtime_router import (
     ModelRoutingError,
     ModelTransportError,
@@ -187,6 +188,28 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 request_id="request-a", data_level="restricted",
             )
         self.assertEqual(transport.calls, [])
+
+
+    async def test_open_model_circuit_blocks_provider_before_quota_or_dispatch(self):
+        breaker = ModelCircuitBreaker(failure_threshold=1, reset_timeout_seconds=60)
+        await breaker.record_failure("tenant-a:primary:model-a")
+        transport = FallbackTransport()
+        audit = AuditRecorder()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit,
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport,
+            circuit_breaker=breaker,
+        )
+        with self.assertRaisesRegex(ModelRoutingError, "all pinned model routes failed"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-breaker",
+                template_id="primary", messages=({"role": "user", "content": "hello"},),
+                request_id="request-breaker",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(audit.events[-1]["outcome"], "denied")
+        self.assertEqual(audit.events[-1]["detail"]["reason"], "model_circuit_open")
 
     async def test_http_transport_rejects_route_control_overrides(self):
         config = await RegistryModelResolver(Secrets()).resolve(
