@@ -35,3 +35,24 @@ python scripts/release_gate.py --evidence path/to/release-evidence.json --commit
 ## 现场边界
 
 本仓库验证器不连接生产、不执行迁移/回滚、不切流量。真实备份恢复、迁移演练、生产冒烟、供应商/对象存储验证及观察窗口必须由授权责任人在目标环境执行并归档。本次开发不申请服务器或外部资源；未执行的真机/生产项必须保持 blocker，不能用 mock 或 CI 替代。
+
+
+## Generated production acceptance report
+
+Use `scripts/release_acceptance_report.py` to render an auditable Markdown
+summary from the schema-v2 evidence document. The report lists all nine checks,
+per-check owner/timestamp/evidence references, deployment preflight, migration
+and rollback controls, blockers, validation errors, and a computed GO/NO-GO.
+It always emits NO-GO when evidence validation fails and exits non-zero:
+
+```bash
+python scripts/release_acceptance_report.py \\
+  --evidence release-evidence.json \\
+  --output release-acceptance-report.md \\
+  --commit-sha "$(git rev-parse HEAD)"
+```
+
+See [ACCEPTANCE_REPORT.md](ACCEPTANCE_REPORT.md) for report contents and
+[PRODUCTION_RELEASE_ACCEPTANCE.md](PRODUCTION_RELEASE_ACCEPTANCE.md) for the
+production sign-off procedure. Report generation is offline and does not
+perform production operations.
