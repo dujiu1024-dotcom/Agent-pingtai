@@ -220,7 +220,8 @@ class HarnessBenchmarkRunner:
                     final_result: HarnessResult | None = None
                     async for event in stream_method(request):
                         streamed_events += 1
-                        if getattr(event, "event_type", None) == "text_delta":
+                        event_type = getattr(event, "event_type", None)
+                        if event_type == "text_delta":
                             delta = getattr(event, "text_delta", None)
                             if isinstance(delta, str) and delta:
                                 if first_token_ms is None:
@@ -228,14 +229,22 @@ class HarnessBenchmarkRunner:
                                         (time.perf_counter() - attempt_started) * 1000
                                     )
                                 chunks.append(delta)
-                        elif (
-                            getattr(event, "event_type", None) == "completed"
-                            and isinstance(getattr(event, "result", None), HarnessResult)
-                        ):
-                            final_result = event.result
+                        elif event_type == "completed":
+                            event_result = getattr(event, "result", None)
+                            if not isinstance(event_result, HarnessResult):
+                                raise RuntimeError(
+                                    "Harness completion event must include a normalized result"
+                                )
+                            if final_result is not None:
+                                raise RuntimeError(
+                                    "Harness stream emitted more than one completion event"
+                                )
+                            final_result = event_result
                     if final_result is None:
-                        final_result = HarnessResult(output_text="".join(chunks))
-                    elif not final_result.output_text and chunks:
+                        raise RuntimeError(
+                            "Harness stream ended without a completion event"
+                        )
+                    if not final_result.output_text and chunks:
                         final_result = replace(final_result, output_text="".join(chunks))
                     return final_result, first_token_ms, streamed_events
 
