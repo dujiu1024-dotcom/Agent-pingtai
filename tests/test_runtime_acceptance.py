@@ -58,6 +58,16 @@ class RuntimeAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             RunStatus.CANCELLED, RunStatus.TIMED_OUT,
         })
 
+    async def test_timeout_rejects_non_finite_and_non_positive_deadlines(self):
+        _store, manager, run_id = await self._running_run("run-invalid-timeout")
+        for timeout in (0, -1, True, float("nan"), float("inf")):
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                await manager.run_with_timeout(
+                    "tenant-a", run_id,
+                    asyncio.get_running_loop().create_future(),
+                    timeout=timeout,
+                )
+
     async def test_timeout_cancels_operation_and_publishes_timed_out_state(self):
         store, manager, run_id = await self._running_run("run-timeout")
         cancelled = asyncio.Event()
