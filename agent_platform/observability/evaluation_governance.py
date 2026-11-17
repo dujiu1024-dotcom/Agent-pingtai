@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
@@ -24,12 +25,12 @@ class EvaluationThresholdPolicy:
     maximums: Mapping[str, float]
 
     def __post_init__(self) -> None:
-        if not self.policy_id.strip() or isinstance(self.version, bool) or self.version < 1:
+        if not self.policy_id.strip() or isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
             raise ValueError("policy id and positive integer version are required")
         for name, value in (*self.minimums.items(), *self.maximums.items()):
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("metric names must be non-empty strings")
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value:
                 raise ValueError("thresholds must be non-negative numbers")
         if set(self.minimums) & set(self.maximums):
             raise ValueError("a metric cannot have both minimum and maximum thresholds")
@@ -84,9 +85,11 @@ def compare_metric_reports(
 ) -> RegressionComparison:
     if not baseline_run_id.strip() or not candidate_run_id.strip() or baseline_run_id == candidate_run_id:
         raise ValueError("distinct baseline and candidate run IDs are required")
+    if not baseline or set(baseline) != set(candidate):
+        raise ValueError("baseline and candidate must contain the same non-empty metric set")
     deltas: list[MetricDelta] = []
     regressions: list[str] = []
-    for metric in sorted(set(baseline) & set(candidate)):
+    for metric in sorted(baseline):
         before = _finite_metric(baseline[metric], metric)
         after = _finite_metric(candidate[metric], metric)
         delta = after - before
