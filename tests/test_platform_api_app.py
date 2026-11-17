@@ -328,6 +328,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
             alert_manage_authorizer=lambda principal: principal.tenant_id == "tenant-a",
             evaluation_repository=evaluations,
             evaluation_manage_authorizer=lambda principal: principal.tenant_id == "tenant-a",
+            evaluation_review_authorizer=lambda principal: principal.tenant_id == "tenant-a",
         )
         client = TestClient(app, base_url="https://testserver")
         headers = {"Authorization": "Bearer valid-session"}
