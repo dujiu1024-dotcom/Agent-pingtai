@@ -126,3 +126,5 @@ const capabilityBaseRefresh=refresh;
 refresh=async function(){await capabilityBaseRefresh();if(S.me){applyCapabilityGate()}};
 const capabilityBaseNav=nav;
 nav=function(view){if(!viewCapabilityEnabled(view)){toast("该工作台能力当前未启用");return}return capabilityBaseNav(view)};
+
+refresh().then(()=>{if(S.me){applyCapabilityGate();if(!viewCapabilityEnabled(S.view))nav("overview")}});
