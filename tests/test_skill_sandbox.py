@@ -22,9 +22,11 @@ class Scanner:
 
 
 class Runner:
-    def __init__(self, *, result=None):
+    def __init__(self, *, result=None, max_stdin_bytes=None):
         self.result = result
         self.calls = []
+        if max_stdin_bytes is not None:
+            self.config = type("Config", (), {"max_stdin_bytes": max_stdin_bytes})()
     async def run(self, command, *, stdin=b"", environment=None, timeout_seconds=30):
         self.calls.append((command, stdin, environment, timeout_seconds))
         if self.result is not None:
@@ -91,6 +93,23 @@ class SkillSandboxRuntimeTests(unittest.IsolatedAsyncioTestCase):
             await self.runtime.load(skill_id="summarize", version=1, principal=foreign)
         with self.assertRaises(LookupError):
             await self.runtime.load(skill_id="summarize", version=1, principal=self.principal)
+
+    async def test_install_rejects_bundle_larger_than_oci_stdin_limit(self):
+        limited_runner = Runner(max_stdin_bytes=1024)
+        runtime = SkillSandboxRuntime(
+            tenant_id="tenant-a", artifact_store=self.store, scanner=self.scanner,
+            sandbox_runner=limited_runner, available_tools={"knowledge.search"},
+        )
+        large_document = (
+            "---\nname: summarize\ndescription: Summarize reports.\n"
+            "allowed-tools: [knowledge.search]\n---\n" + "".join(f"{index:08x}" for index in range(1500))
+        )
+        with self.assertRaisesRegex(SkillSandboxError, "OCI sandbox input limit"):
+            await runtime.install(
+                skill_id="summarize", version=1, archive=archive(large_document), actor="admin",
+            )
+        self.assertEqual(self.scanner.calls, [])
+        self.assertIsNone(await self.store.get("tenant-a", "summarize", 1))
 
     async def test_load_rescans_and_blocks_newly_detected_malware(self):
         await self.runtime.install(skill_id="summarize", version=1, archive=archive(), actor="admin")
