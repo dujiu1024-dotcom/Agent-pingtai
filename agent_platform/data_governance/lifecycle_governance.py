@@ -101,6 +101,9 @@ class DataLifecycleService:
         self._authorize(tenant_id, actor_id, "data.delete")
         if not resource_type.strip() or not resource_id.strip() or not reason.strip():
             raise ValueError("resource_type, resource_id and reason are required")
+        policy = await self.repository.get_policy(tenant_id, resource_type)
+        if policy is not None and policy.legal_hold:
+            raise PermissionError("legal hold prevents deletion")
         destinations = tuple(dict.fromkeys(sinks))
         if not destinations or set(destinations) - {"search_index", "cache", "object_storage"}:
             raise ValueError("unsupported lifecycle sink")
