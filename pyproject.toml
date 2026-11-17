@@ -48,7 +48,6 @@ include = [
   "tests/test_knowledge_service.py",
   "tests/test_knowledge_memory_api.py",
   "tests/test_memory_service.py",
-  "tests/test_memory_boundaries.py",
   "tests/test_memory_retrieval_versioned.py",
   "tests/test_memory_candidate_workflow.py",
   "tests/test_structured_output.py",
@@ -159,7 +158,6 @@ files = [
   "agent_platform/quotas/*.py",
   "agent_platform/identity/*.py",
   "agent_platform/memory/review.py",
-  "agent_platform/memory/boundaries.py",
   "tests/test_identity.py",
 ]
 ignore_missing_imports = true

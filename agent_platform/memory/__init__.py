@@ -1,11 +1,5 @@
-"""Governed cross-session memory, review, retrieval, and ownership boundaries."""
+"""Governed cross-session memory and candidate review."""
 
-from agent_platform.memory.boundaries import (
-    MEMORY_BOUNDARIES,
-    MemoryBoundary,
-    MemoryLayer,
-    memory_boundary,
-)
 from agent_platform.memory.retrieval import (
     MemoryCitation,
     MemoryRecallStrategy,
@@ -30,10 +24,6 @@ from agent_platform.memory.service import (
 )
 
 __all__ = [
-    "MEMORY_BOUNDARIES",
-    "MemoryBoundary",
-    "MemoryLayer",
-    "memory_boundary",
     "MemoryCitation",
     "MemoryRecallStrategy",
     "MemoryRetrievalHit",
