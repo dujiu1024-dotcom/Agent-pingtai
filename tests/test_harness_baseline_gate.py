@@ -6,7 +6,7 @@ from agent_platform.runtime.harness_benchmark import HarnessBenchmarkObservation
 
 def observation(*, passed=True, duration=100, quality=1.0, cost=0.001, skipped=False):
     return HarnessBenchmarkObservation(
-        runtime="candidate", case_id="case", passed=passed, duration_ms=duration,
+        runtime="candidate", case_id=f"case-{duration}", passed=passed, duration_ms=duration,
         finish_reason="completed", usage={"input_tokens": 10}, matched_expectations=("ok",),
         missing_expectations=(), output_text="ok", quality_score=quality,
         estimated_cost_usd=cost, skipped=skipped,
