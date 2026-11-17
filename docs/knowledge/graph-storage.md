@@ -1,17 +1,47 @@
-# Tenant-scoped graph storage
+# PostgreSQL graph storage and indexes (C-22-02)
 
-C-22-02 adds a PostgreSQL graph record store. The graph is a derived, indexed projection: Knowledge documents, Memory records and Blackboard entries remain canonical in their owning domains. Graph records carry source references/metadata and attributes, not copied canonical bodies.
+## Backend choice
 
-## Storage contract
+PostgreSQL is the initial graph backend. Nodes and directed edges are stored in
+`graph_entities` and `graph_relations`; relation rows are the adjacency list.
+This avoids adding an operational graph database before workload and deployment
+requirements justify one. The repository API is isolated so a later Neo4j,
+Neptune, or embedded adapter can implement the same contract.
 
-Apply `agent_platform/storage/postgres/090_graph_storage.sql` after platform core. Entity and relation primary keys include tenant_id. Relations have composite foreign keys to both endpoint entities, cascading when an endpoint is deleted. Indexes support tenant/type lookup, optional project/type filtering, canonical source lookup, and outgoing/incoming adjacency traversal.
+## Tenant and project boundaries
 
-## Repository
+Every primary key and lookup is tenant-scoped. Relation endpoint foreign keys
+include tenant_id, so an edge cannot connect nodes across tenants. Every
+project-scoped read/write accepts the project IDs already authorized by the host;
+tenant-wide records (`project_id IS NULL`) remain visible within that tenant.
+This repository is not an authorization service: callers must derive tenant and
+project allow-lists from the authenticated principal, never model output.
 
-Construct `PostgresGraphRepository(tenant_id=..., schema=..., connection_factory=...)` or use `from_dsn` with psycopg. Every read/write is bound to the repository tenant. Entity writes validate attributes against the supplied tenant schema and cannot change an existing entity ID to a different type. Relation writes validate the declared endpoint types and verify the persisted endpoints have those types. `list_relations` returns bounded incident edges.
+## Index strategy
 
-The supplied GraphSchema remains the validation authority for this repository instance. Runtime schema extension persistence/version coordination is separate from this record-store slice; callers must load the correct tenant schema before constructing the repository.
+- B-tree: tenant + entity type + normalized entity name (prefix lookup).
+- B-tree: tenant + project + entity type.
+- Partial unique B-tree: tenant + canonical source domain/type/id/version, preventing
+  duplicate graph nodes for one source revision.
+- GIN `jsonb_path_ops`: entity and relation attributes.
+- B-tree: tenant + source/target entity + relation type + creation time.
 
-## Authorization boundary
+PostgreSQL maintains these indexes transactionally with each write; no separate
+asynchronous indexer can lag the canonical tables. Source-version changes are
+upserts with a new source reference version; older revisions remain addressable.
 
-Tenant scoping is enforced in SQL, but project membership and source-object ACL checks still belong to the trusted host/service layer before calling the repository. A tenant match alone is not proof of project access. The graph is not a replacement for Knowledge, Memory or Blackboard records.
+## Write and deletion semantics
+
+`PostgresGraphRepository.upsert_entity` validates the tenant schema and source
+mapping before an idempotent tenant/entity-key upsert. `upsert_relation` locks
+both endpoint rows for key-share, verifies stored endpoint types and project
+scope, then writes the edge in the same transaction. Deleting a node cascades to
+its incident edges. Canonical Knowledge/Memory/Blackboard records remain the
+source of truth; this graph store keeps references, not copies of source payloads.
+
+## Operational boundary
+
+Apply migration `082_graph_storage.sql` before constructing the repository.
+The adapter uses psycopg 3 async connections. Production connection pooling,
+authenticated principal resolution, project ACL decisions, source-record
+existence checks and any future external graph service remain host responsibilities.
