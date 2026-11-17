@@ -23,6 +23,7 @@ from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
+from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
@@ -68,6 +69,8 @@ def create_platform_app(
     allowed_origins: Sequence[str],
     service_identity: Any | None = None,
     rag: RAGService | None = None,
+    rag_playground_resolver: Any | None = None,
+    rag_playground_embedding_models: Sequence[str] = (),
     memory_extraction: MemoryExtractionService | None = None,
     memory_expiry_worker: Any | None = None,
     registry_service_resolver: Any | None = None,
@@ -275,6 +278,18 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
+    rag_playground_configured = rag_playground_resolver is not None
+    if rag_playground_configured:
+        if not rag_playground_embedding_models:
+            raise ValueError("RAG playground requires configured embedding model IDs")
+        knowledge_principal_resolver = IdentityContextResolver(identity_repository).knowledge
+        app.include_router(create_rag_playground_router(
+            resolve_principal=knowledge_principal_resolver,
+            resolve_rag=rag_playground_resolver,
+            embedding_models=rag_playground_embedding_models,
+        ))
+    elif rag_playground_embedding_models:
+        raise ValueError("RAG playground embedding models require a RAG resolver")
     publisher_keys_configured = any(value is not None for value in (
         publisher_key_registry, publisher_key_authorizer,
     ))
@@ -400,6 +415,7 @@ def create_platform_app(
         features={
             "knowledge": True,
             "rag": rag is not None,
+            "rag_query": rag_playground_configured,
             "memory": True,
             "sessions": sessions_configured,
             "registry": registry_configured,
