@@ -115,3 +115,24 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
             await self.resolver.history(
                 principal=stranger, memory_id=conflict.candidate.memory_id
             )
+
+    async def test_audit_failure_fails_closed_before_memory_mutation(self):
+        active, conflict = await self._conflict()
+
+        class FailingAudit:
+            async def append(self, decision):
+                raise RuntimeError("audit unavailable")
+
+            async def list_for_conflict(self, tenant_id, conflict_key):
+                return ()
+
+        resolver = MemoryConflictResolver(memory=self.memory, audit=FailingAudit())
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await resolver.resolve(
+                principal=self.owner, conflict_key="writing-style",
+                selected_memory_id=conflict.candidate.memory_id,
+            )
+        current_active = await self.repository.get("tenant-a", active.candidate.memory_id)
+        current_conflict = await self.repository.get("tenant-a", conflict.candidate.memory_id)
+        self.assertIs(current_active.status, MemoryStatus.ACTIVE)
+        self.assertIs(current_conflict.status, MemoryStatus.CONFLICT)
