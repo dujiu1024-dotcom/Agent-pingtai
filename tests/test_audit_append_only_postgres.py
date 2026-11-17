@@ -19,6 +19,40 @@ class AuditAppendOnlyPostgresTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id, "Audit Integration"),
             )
 
+    async def test_runtime_role_is_not_owner_and_has_no_audit_mutation_privileges(self):
+        runtime_role = os.environ.get("AGENT_PLATFORM_AUDIT_RUNTIME_ROLE")
+        if not runtime_role:
+            self.skipTest("AGENT_PLATFORM_AUDIT_RUNTIME_ROLE is not configured")
+
+        async with await AsyncConnection.connect(DSN) as conn:
+            for table in ("platform_tool_audit", "platform_identity_audit"):
+                cursor = await conn.execute(
+                    """
+                    SELECT pg_get_userbyid(c.relowner),
+                           has_table_privilege(%s, %s, 'SELECT'),
+                           has_table_privilege(%s, %s, 'INSERT'),
+                           has_table_privilege(%s, %s, 'UPDATE'),
+                           has_table_privilege(%s, %s, 'DELETE'),
+                           has_table_privilege(%s, %s, 'TRUNCATE')
+                    FROM pg_class c
+                    WHERE c.oid = %s::regclass
+                    """,
+                    (
+                        runtime_role, table, runtime_role, table,
+                        runtime_role, table, runtime_role, table,
+                        runtime_role, table, table,
+                    ),
+                )
+                row = await cursor.fetchone()
+                self.assertIsNotNone(row, table)
+                owner, can_select, can_insert, can_update, can_delete, can_truncate = row
+                self.assertNotEqual(owner, runtime_role, f"{runtime_role} must not own {table}")
+                self.assertTrue(can_select, f"{runtime_role} must read {table}")
+                self.assertTrue(can_insert, f"{runtime_role} must append to {table}")
+                self.assertFalse(can_update, f"{runtime_role} must not update {table}")
+                self.assertFalse(can_delete, f"{runtime_role} must not delete {table}")
+                self.assertFalse(can_truncate, f"{runtime_role} must not truncate {table}")
+
     async def test_audit_rows_reject_update_delete_and_truncate(self):
         async with await AsyncConnection.connect(DSN) as conn:
             await conn.execute(
