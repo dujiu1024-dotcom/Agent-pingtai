@@ -74,6 +74,24 @@ class LangGraphRunExecutor:
   )
   return {"session_id":session_id,"actor_id":actor_id},history
 
+ async def _invoke_graph(self,payload:Any,config:Any,*,tenant_id:str,run_id:str,session:Any)->Any:
+  stream=getattr(self.graph,"astream",None)
+  if session is None or not callable(stream):
+   return await self.graph.ainvoke(payload,config=config)
+  latest=None
+  async for state in stream(payload,config=config,stream_mode="values"):
+   if isinstance(state,dict):
+    await self.session_persistence.append_progress(
+     tenant_id=tenant_id,session_id=session["session_id"],run_id=run_id,
+     actor_id=session["actor_id"],state=state,
+    )
+   # LangGraph persists its own node checkpoint before yielding the values update.
+   await self._session_checkpoint(tenant_id,run_id,config,session)
+   latest=state
+  if latest is None:
+   raise RuntimeError("LangGraph stream completed without a state update")
+  return latest
+
  async def _session_checkpoint(self,tenant_id:str,run_id:str,config:Any,session:Any)->None:
   if session is None or self.session_persistence is None:return
   try:
@@ -180,7 +198,7 @@ class LangGraphRunExecutor:
      )
      runtime_prepared=True
     with trace_span("run.execute", component="run", tenant_id=tenant_id, run_id=run_id):
-     result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
+     result=await self._run_leased(tenant_id,run_id,self._invoke_graph(input,config,tenant_id=tenant_id,run_id=run_id,session=session),
       timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
       already_claimed=acquired)
    except asyncio.TimeoutError:raise
@@ -284,7 +302,7 @@ class LangGraphRunExecutor:
     recovery_config=await self._run_config(tenant_id,run_id,session_history=session_history)
    result=await self._run_leased(
      tenant_id,run_id,
-     self.graph.ainvoke(payload,config=recovery_config),
+     self._invoke_graph(payload,recovery_config,tenant_id=tenant_id,run_id=run_id,session=session),
      timeout=self.timeout_seconds,already_claimed=True,
     )
    ref=await self._checkpoint_ref(tenant_id,run_id)
