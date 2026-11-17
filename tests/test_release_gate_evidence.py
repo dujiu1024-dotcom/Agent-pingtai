@@ -92,6 +92,37 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
         self.assertIn("environment: must equal production",
                       validate_evidence(self.document, now=self.now))
 
+    def test_deployment_preflight_requires_environment_config_dependencies_and_digest(self):
+        deployment = self.document["checks"]["deployment_preflight"]
+        deployment.update({
+            "preflight_passed": True,
+            "environment_verified": True,
+            "configuration_validated": True,
+            "dependencies_healthy": True,
+            "change_window_approved": True,
+            "rollback_ready": True,
+            "artifact_digest": "sha256:" + "b" * 64,
+        })
+        self.assertEqual(validate_evidence(self.document, now=self.now), [])
+
+        for field in (
+            "preflight_passed", "environment_verified", "configuration_validated",
+            "dependencies_healthy", "change_window_approved", "rollback_ready",
+        ):
+            deployment[field] = False
+            errors = validate_evidence(self.document, now=self.now)
+            self.assertTrue(any(f"checks.deployment_preflight.{field}: must be true" == e for e in errors))
+            deployment[field] = True
+
+        deployment["artifact_digest"] = "sha256:invalid"
+        self.assertTrue(any("checks.deployment_preflight.artifact_digest" in e
+                            for e in validate_evidence(self.document, now=self.now)))
+
+    def test_deployment_preflight_missing_check_blocks_release(self):
+        del self.document["checks"]["deployment_preflight"]
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertTrue(any("checks.deployment_preflight: missing required check" == e for e in errors))
+
     def test_migration_preflight_and_compatibility_are_mandatory(self):
         self.document["checks"]["migration"]["preflight_passed"] = False
         self.document["checks"]["migration"]["compatibility_window_confirmed"] = False
