@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from agent_platform.observability.evaluation_worker import EvaluationSchedule
@@ -71,8 +71,7 @@ class PostgresEvaluationScheduleLeaseStore:
                        RETURNING schedule_id""",
                     (
                         schedule.tenant_id, schedule.schedule_id, _fingerprint(schedule),
-                        now, owner_id, now.replace(microsecond=now.microsecond) +
-                        __import__("datetime").timedelta(seconds=lease_seconds), now, now, now,
+                        now, owner_id, now + timedelta(seconds=lease_seconds), now, now, now,
                     ),
                 )
                 return await cursor.fetchone() is not None
@@ -90,7 +89,6 @@ class PostgresEvaluationScheduleLeaseStore:
             raise ValueError("owner_id is required")
         if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, (int, float)) or not 3 <= lease_seconds <= 3600:
             raise ValueError("lease_seconds must be between 3 and 3600")
-        from datetime import timedelta
         connection = await self._connect()
         async with connection:
             cursor = await connection.execute(
