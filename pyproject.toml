@@ -180,6 +180,7 @@ include = [
   "tests/test_evaluation_comparison.py",
   "tests/test_evaluation_comparison_api.py",
   "tests/test_issue_27_a_27_01_credential_acceptance.py",
+  "tests/test_connector_framework.py",
   "tests/test_issue_10_a_10_04_legacy_vectors_strategy.py",
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
 ]
