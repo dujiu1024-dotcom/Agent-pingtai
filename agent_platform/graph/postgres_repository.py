@@ -288,17 +288,15 @@ class PostgresGraphRepository:
                     ),
                 )
                 endpoints = {row["entity_id"]: row for row in await cursor.fetchall()}
-                if len(endpoints) != 2:
+                source_endpoint = endpoints.get(relation.source_entity_id)
+                target_endpoint = endpoints.get(relation.target_entity_id)
+                if source_endpoint is None or target_endpoint is None:
                     raise ValueError("both relation endpoints must exist in the same tenant")
-                for entity_id in (relation.source_entity_id, relation.target_entity_id):
-                    endpoint = endpoints[entity_id]
-                    expected_type = (
-                        relation.source_entity_type
-                        if entity_id == relation.source_entity_id
-                        else relation.target_entity_type
-                    )
-                    if endpoint["entity_type"] != expected_type:
-                        raise ValueError("relation endpoint type does not match stored entity")
+                if source_endpoint["entity_type"] != relation.source_entity_type:
+                    raise ValueError("source endpoint type does not match stored entity")
+                if target_endpoint["entity_type"] != relation.target_entity_type:
+                    raise ValueError("target endpoint type does not match stored entity")
+                for endpoint in (source_endpoint, target_endpoint):
                     if endpoint["project_id"] not in (None, relation.project_id):
                         raise PermissionError("relation crosses project scope")
                 cursor = await connection.execute(
