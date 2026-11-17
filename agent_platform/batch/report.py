@@ -102,11 +102,17 @@ def _metric(output: Any, key: str) -> Any:
     return output.get(key) if isinstance(output, Mapping) else getattr(output, key, None)
 
 
-def _number(value: Any, name: str, *, minimum: float | None = None) -> float:
+def _number(
+    value: Any, name: str, *, minimum: float | None = None, maximum: float | None = None,
+) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         raise ValueError(f"{name} must be a finite number")
     result = float(value)
-    if not math.isfinite(result) or (minimum is not None and result < minimum):
+    if (
+        not math.isfinite(result)
+        or (minimum is not None and result < minimum)
+        or (maximum is not None and result > maximum)
+    ):
         raise ValueError(f"{name} must be a finite number >= {minimum}")
     return result
 
@@ -155,7 +161,9 @@ def build_batch_report(result: BatchExecutionResult) -> BatchReport:
             raise ValueError(f"task {task.task_id} passed metric must be boolean")
         task_passed = task.succeeded and explicit_pass is not False
         score_value = _metric(output, "score") if task.succeeded else None
-        score = None if score_value is None else _number(score_value, "score", minimum=0)
+        score = None if score_value is None else _number(
+            score_value, "score", minimum=0, maximum=1,
+        )
         if score is not None:
             scores.append(score)
         cost_value = _metric(output, "cost") if task.succeeded else None
