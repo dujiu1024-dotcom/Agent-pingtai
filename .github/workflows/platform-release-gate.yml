@@ -70,6 +70,7 @@ jobs:
             tests.test_platform_e2e_release_gate \
             tests.test_core_business_journey_e2e \
             tests.test_release_gate_evidence \
+            tests.test_migration_batches \
             tests.test_identity_api \
             tests.test_identity_http \
             tests.test_knowledge_memory_api \\

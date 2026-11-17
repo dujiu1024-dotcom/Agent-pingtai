@@ -112,6 +112,33 @@ class MigrationBatchTests(unittest.TestCase):
                                 batch_id="batch-7")
         self.assertEqual(self.source.read_bytes(), before)
 
+    def test_diff_report_detects_extra_target_rows_and_requires_completed_batch(self):
+        state = run_migration_batch(self.source, self.target, self.mapping,
+                                    batch_id="batch-extra", batch_size=10)
+        self.assertEqual(state["state"], "completed")
+        with sqlite3.connect(self.target) as db:
+            db.execute("INSERT INTO users VALUES(99, 'orphan-target-row', 1)")
+        report = migration_diff_report(self.source, self.target, self.mapping,
+                                       batch_id="batch-extra")
+        table = report["tables"][0]
+        self.assertEqual(table["source_rows"], 7)
+        self.assertEqual(table["target_rows"], 8)
+        self.assertEqual(table["extra_target_rows"], 1)
+        self.assertEqual(table["missing_target_rows"], 0)
+        self.assertEqual(table["mismatched_rows"], 0)
+        self.assertFalse(table["consistent"])
+        self.assertFalse(report["consistent"])
+        self.assertLess(report["consistency_rate"], 1.0)
+
+    def test_diff_report_marks_paused_batch_inconsistent_even_when_rows_match(self):
+        run_migration_batch(self.source, self.target, self.mapping,
+                            batch_id="batch-paused-diff", batch_size=10, max_chunks=1)
+        report = migration_diff_report(self.source, self.target, self.mapping,
+                                       batch_id="batch-paused-diff")
+        self.assertEqual(report["totals"]["matched_rows"], 7)
+        self.assertEqual(report["totals"]["extra_target_rows"], 0)
+        self.assertFalse(report["consistent"])
+
     def test_missing_target_row_is_reported_after_partial_batch(self):
         paused = run_migration_batch(self.source, self.target, self.mapping,
                                      batch_id="batch-8", batch_size=2, max_chunks=1)

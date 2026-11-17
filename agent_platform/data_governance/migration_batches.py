@@ -299,7 +299,14 @@ def migration_diff_report(
     source_path: str | Path, target_path: str | Path, mappings: list[TableMapping],
     *, batch_id: str,
 ) -> dict[str, Any]:
-    """Compare transformed source rows with target rows for a batch, without exposing values."""
+    """Compare every mapped source row and target row without exposing values.
+
+    A migration is consistent only when the batch completed and every mapped
+    target table has exactly the transformed source key set and row contents.
+    Extra target rows are reported as well as missing or changed source rows.
+    """
+    if not mappings:
+        raise ValueError("mappings must not be empty")
     source = _open_source(source_path)
     target = sqlite3.connect(str(Path(target_path).expanduser()))
     source.row_factory = sqlite3.Row
@@ -314,31 +321,61 @@ def migration_diff_report(
             source_rows = source.execute(
                 f"SELECT * FROM {_ident(mapping.source_table)} ORDER BY {_ident(pk)}"
             ).fetchall()
+            target_rows = target.execute(
+                f"SELECT * FROM {_ident(mapping.target_table)} ORDER BY {_ident(target_pk)}"
+            ).fetchall()
+            source_keys: set[str] = set()
+            target_by_key: dict[str, sqlite3.Row] = {
+                _canonical(row[target_pk]): row for row in target_rows
+            }
             missing = 0
             mismatched = 0
             for source_row in source_rows:
                 values = _transform(source_row, mapping)
-                target_row = target.execute(
-                    f"SELECT * FROM {_ident(mapping.target_table)} WHERE {_ident(target_pk)}=?",
-                    (values[target_pk],),
-                ).fetchone()
+                key = _canonical(values[target_pk])
+                source_keys.add(key)
+                target_row = target_by_key.get(key)
                 if target_row is None:
                     missing += 1
                 elif _row_digest(values) != _row_digest(
-                    {key: target_row[key] for key in values}
+                    {column: target_row[column] for column in values}
                 ):
                     mismatched += 1
-            tables.append({"source_table": mapping.source_table,
-                           "target_table": mapping.target_table,
-                           "source_rows": len(source_rows),
-                           "missing_target_rows": missing,
-                           "mismatched_rows": mismatched,
-                           "matched_rows": len(source_rows) - missing - mismatched})
-        return {"batch_id": batch_id, "state": batch["state"], "tables": tables,
-                "totals": {key: sum(item[key] for item in tables)
-                           for key in ("source_rows", "missing_target_rows",
-                                       "mismatched_rows", "matched_rows")},
-                "values_included": False}
+            extra = len(set(target_by_key) - source_keys)
+            matched = len(source_rows) - missing - mismatched
+            tables.append({
+                "source_table": mapping.source_table,
+                "target_table": mapping.target_table,
+                "source_rows": len(source_rows),
+                "target_rows": len(target_rows),
+                "missing_target_rows": missing,
+                "extra_target_rows": extra,
+                "mismatched_rows": mismatched,
+                "matched_rows": matched,
+                "consistent": not (missing or extra or mismatched),
+            })
+        totals = {
+            key: sum(item[key] for item in tables)
+            for key in ("source_rows", "target_rows", "missing_target_rows",
+                        "extra_target_rows", "mismatched_rows", "matched_rows")
+        }
+        consistent = batch["state"] == "completed" and all(
+            item["consistent"] for item in tables
+        )
+        return {
+            "batch_id": batch_id,
+            "state": batch["state"],
+            "tables": tables,
+            "totals": totals,
+            "consistent": consistent,
+            "consistency_rate": (
+                1.0 if consistent and totals["source_rows"] == totals["target_rows"]
+                else (totals["matched_rows"] / max(
+                    totals["source_rows"], totals["target_rows"]
+                ) if max(totals["source_rows"], totals["target_rows"]) else 0.0)
+            ),
+            "values_included": False,
+        }
     finally:
         source.close()
         target.close()
