@@ -317,6 +317,15 @@ class InMemorySessionRepository:
         key = (message.tenant_id, message.session_id)
         if key not in self.sessions:
             raise SessionNotFound("session not found")
+        existing = next((
+            item for (tenant_id, _), rows in self.messages.items()
+            if tenant_id == message.tenant_id
+            for item in rows if item.message_id == message.message_id
+        ), None)
+        if existing is not None:
+            if existing != message:
+                raise SessionError("message id already belongs to different content")
+            return
         self.messages.setdefault(key, []).append(message)
 
     async def list_messages(
