@@ -14,6 +14,7 @@ from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
@@ -62,6 +63,8 @@ def create_platform_app(
     session_authorizer: Any | None = None,
     connector_service_resolver: Any | None = None,
     connector_authorizer: Any | None = None,
+    connector_sync_worker: Any | None = None,
+    connector_cleanup_worker: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_authorizer: Any | None = None,
     run_intervention_resolver: Any | None = None,
@@ -74,15 +77,21 @@ def create_platform_app(
     alert_store: Any | None = None,
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
+    evaluation_run_service: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
+    prompt_registry: Any | None = None,
+    prompt_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
+    alert_evaluation_worker: Any | None = None,
     audit_reader: Any | None = None,
     audit_authorizer: Any | None = None,
     audit_request_sink: Any | None = None,
     audit_actor_resolver: Any | None = None,
+    resource_audit_writer: Any | None = None,
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
     quota_service: Any | None = None,
+    quota_reservation_worker: Any | None = None,
     quota_manage_authorizer: Any | None = None,
     quota_scope_authorizer: Any | None = None,
     webhook_admin_service: WebhookSubscriptionService | None = None,
@@ -153,7 +162,7 @@ def create_platform_app(
     app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
     evaluation_configured = any(value is not None for value in (
-        evaluation_repository, evaluation_manage_authorizer,
+        evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
     ))
     if evaluation_configured and any(value is None for value in (
         evaluation_repository, evaluation_manage_authorizer,
@@ -162,7 +171,7 @@ def create_platform_app(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, alert_store, evaluation_repository,
+        metrics_exporter, alert_store, evaluation_repository, evaluation_run_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
@@ -170,7 +179,19 @@ def create_platform_app(
             alert_store=alert_store,
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
+            evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
+        ))
+    prompt_registry_configured = any(value is not None for value in (
+        prompt_registry, prompt_manage_authorizer,
+    ))
+    if prompt_registry_configured:
+        if prompt_registry is None or prompt_manage_authorizer is None:
+            raise ValueError(
+                "prompt registry and prompt manager authorizer must be configured together"
+            )
+        app.include_router(create_prompt_registry_router(
+            registry=prompt_registry, authorize=prompt_manage_authorizer,
         ))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
@@ -201,6 +222,7 @@ def create_platform_app(
             resolve_memory_principal=(
                 memory_context_resolver.memory if memory_extraction is not None else None
             ),
+            audit_writer=resource_audit_writer or audit_request_sink,
         ))
     task_center_configured = any(value is not None for value in (
         task_service_resolver, task_authorizer, task_worker,
@@ -225,6 +247,13 @@ def create_platform_app(
             raise ValueError("memory_expiry_worker must expose async start() and stop()")
         app.router.on_startup.append(memory_expiry_worker.start)
         app.router.on_shutdown.append(memory_expiry_worker.stop)
+    if quota_reservation_worker is not None:
+        if not callable(getattr(quota_reservation_worker, "start", None)) or not callable(
+            getattr(quota_reservation_worker, "stop", None)
+        ):
+            raise ValueError("quota_reservation_worker must expose async start() and stop()")
+        app.router.on_startup.append(quota_reservation_worker.start)
+        app.router.on_shutdown.append(quota_reservation_worker.stop)
     if alert_dispatch_worker is not None:
         if not callable(getattr(alert_dispatch_worker, "start", None)) or not callable(
             getattr(alert_dispatch_worker, "stop", None)
@@ -232,6 +261,13 @@ def create_platform_app(
             raise ValueError("alert_dispatch_worker must expose async start() and stop()")
         app.router.on_startup.append(alert_dispatch_worker.start)
         app.router.on_shutdown.append(alert_dispatch_worker.stop)
+    if alert_evaluation_worker is not None:
+        if not callable(getattr(alert_evaluation_worker, "start", None)) or not callable(
+            getattr(alert_evaluation_worker, "stop", None)
+        ):
+            raise ValueError("alert_evaluation_worker must expose async start() and stop()")
+        app.router.on_startup.append(alert_evaluation_worker.start)
+        app.router.on_shutdown.append(alert_evaluation_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
         blackboard_evidence_verifier,
@@ -336,6 +372,8 @@ def create_platform_app(
         app.router.on_startup.append(outbox_relay_worker.start)
         app.router.on_shutdown.append(outbox_relay_worker.stop)
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
+    if any(worker is not None for worker in (connector_sync_worker, connector_cleanup_worker)) and not connectors_configured:
+        raise ValueError("connector workers require connector routes to be configured")
     if connectors_configured:
         if connector_service_resolver is None or connector_authorizer is None:
             raise ValueError("connector service resolver and authorizer must be configured together")
@@ -343,7 +381,19 @@ def create_platform_app(
             resolve_principal=_principal_from_request,
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
+            audit_writer=resource_audit_writer,
         ))
+    for worker, name in (
+        (connector_sync_worker, "connector_sync_worker"),
+        (connector_cleanup_worker, "connector_cleanup_worker"),
+    ):
+        if worker is not None:
+            if not callable(getattr(worker, "start", None)) or not callable(
+                getattr(worker, "stop", None)
+            ):
+                raise ValueError(f"{name} must expose async start() and stop()")
+            app.router.on_startup.append(worker.start)
+            app.router.on_shutdown.append(worker.stop)
     runs_configured = any(value is not None for value in (
         run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
     ))

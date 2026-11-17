@@ -12,10 +12,12 @@ class HarnessCompositionTests(unittest.TestCase):
             inner, quota_service=quota_service,
             estimate_request=lambda request: (10, Decimal("0.01")),
             estimate_actual_cost=lambda request, result: Decimal("0.02"),
+            price_card_version_resolver=lambda request: "catalog-v1",
         )
         self.assertIsInstance(adapter, QuotaEnforcedHarnessAdapter)
         self.assertIs(adapter.inner, inner)
         self.assertIs(adapter.quota_service, quota_service)
+        self.assertEqual(adapter.price_card_version_resolver(None), "catalog-v1")
         self.assertEqual(adapter.context_window_tokens, 8192)
         self.assertIsNone(adapter.release_reservation_on_error)
 

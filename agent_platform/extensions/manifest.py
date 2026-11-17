@@ -41,7 +41,13 @@ class ExtensionManifest:
             raise ValueError("every extension dependency must have an exact version pin")
         if any(not _SEMVER.fullmatch(version) for version in self.dependency_versions.values()):
             raise ValueError("dependency versions must be exact semantic x.y.z versions")
-        if not self.entrypoint or ".." in self.entrypoint.split("/") or self.entrypoint.startswith("/"):
+        if (
+            not self.entrypoint
+            or "\\" in self.entrypoint
+            or self.entrypoint.startswith("/")
+            or any(part in {"", ".", ".."} for part in self.entrypoint.split("/"))
+            or ":" in self.entrypoint.split("/")[0]
+        ):
             raise ValueError("entrypoint must be a safe relative path")
 
 

@@ -25,11 +25,14 @@ class QuotaEnforcedHarnessAdapter:
         quota_service: QuotaService,
         estimate_request: Callable[[Any], tuple[int, Decimal] | tuple[int, int, Decimal]],
         estimate_actual_cost: Callable[[Any, Any], Decimal],
+        price_card_version_resolver: Callable[[Any], str | None] | None = None,
         scope_resolver: Callable[[Any], tuple[str, str]] | None = None,
         context_window_tokens: int | Callable[[Any], int] = 8192,
         estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
         measure_storage_bytes: Callable[[Any, Any], int] | None = None,
         release_reservation_on_error: Callable[[BaseException], bool] | None = None,
+        reservation_lease_seconds: int = 300,
+        reservation_heartbeat_interval_seconds: float = 60.0,
     ) -> None:
         if not callable(context_window_tokens) and (
             not isinstance(context_window_tokens, int)
@@ -37,11 +40,20 @@ class QuotaEnforcedHarnessAdapter:
             or context_window_tokens < 1
         ):
             raise ValueError("context_window_tokens must be a positive integer or resolver")
+        if not 15 <= reservation_lease_seconds <= 3600:
+            raise ValueError("reservation_lease_seconds must be between 15 and 3600")
+        if not 0 < reservation_heartbeat_interval_seconds < reservation_lease_seconds:
+            raise ValueError("reservation heartbeat interval must be positive and shorter than lease")
+        self.reservation_lease_seconds = reservation_lease_seconds
+        self.reservation_heartbeat_interval_seconds = float(
+            reservation_heartbeat_interval_seconds
+        )
         self.context_window_tokens = context_window_tokens
         self.inner = inner
         self.quota_service = quota_service
         self.estimate_request = estimate_request
         self.estimate_actual_cost = estimate_actual_cost
+        self.price_card_version_resolver = price_card_version_resolver
         self.scope_resolver = scope_resolver or self._tenant_scope
         self.estimate_tool_cost_usd = estimate_tool_cost_usd
         self.measure_storage_bytes = measure_storage_bytes
@@ -126,10 +138,19 @@ class QuotaEnforcedHarnessAdapter:
             estimated_cost_usd=estimated_cost,
             estimated_input_tokens=estimated_input_tokens,
             estimated_output_tokens=estimated_output_tokens,
+            root_run_id=(
+                getattr(context, "root_run_id", None)
+                or (getattr(context, "metadata", None) or {}).get("root_run_id")
+                or context.run_id
+            ),
         )
         started = monotonic()
         try:
-            result = await self.inner.run(request)
+            async with self.quota_service.reservation_lease(
+                reservation, lease_seconds=self.reservation_lease_seconds,
+                heartbeat_interval_seconds=self.reservation_heartbeat_interval_seconds,
+            ):
+                result = await self.inner.run(request)
         except BaseException as exc:
             # A Harness may fail after the provider accepted a billable request.
             # Retain the reservation unless a trusted host classifier can prove
@@ -169,12 +190,21 @@ class QuotaEnforcedHarnessAdapter:
         model_key = (
             f"{context.model_template.template_id}@{context.model_template.version}"
         )
+        price_card_version = (
+            self.price_card_version_resolver(request)
+            if self.price_card_version_resolver is not None else None
+        )
+        if price_card_version is not None and (
+            not isinstance(price_card_version, str) or not price_card_version.strip()
+        ):
+            raise ValueError("price card version must be non-empty text")
         await self.quota_service.settle_run(
             reservation,
             model_key=model_key,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=actual_cost,
+            price_card_version=price_card_version,
             project_id=context.project_id,
             agent_id=context.agent_id,
             tool_calls=tool_calls,

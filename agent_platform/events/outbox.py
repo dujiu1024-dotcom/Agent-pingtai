@@ -189,28 +189,88 @@ class PostgresOutboxStore:
 
 
 class OutboxRelay:
-    def __init__(self, *, store: OutboxStore, transport: EventTransport) -> None:
+    SYSTEM_ACTOR_ID = "system:outbox-relay"
+
+    def __init__(
+        self, *, store: OutboxStore, transport: EventTransport, audit_sink: Any,
+    ) -> None:
+        if not callable(getattr(audit_sink, "record", None)):
+            raise TypeError("outbox relay requires an audit sink with record()")
         self.store = store
         self.transport = transport
+        self.audit_sink = audit_sink
 
     async def publish_pending(self, *, limit: int = 50) -> dict[str, int]:
         records = await self.store.claim_batch(limit=limit)
         result = {"claimed": len(records), "published": 0, "failed": 0}
         for record in records:
+            detail = {
+                "outbox_id": record.outbox_id,
+                "event_id": record.event_id,
+                "topic": record.topic,
+            }
+            # Persist intent before publishing to Redis. If audit storage is
+            # unavailable, release the lease for retry and do not publish.
             try:
-                await self.transport.publish(
+                await self.audit_sink.record(
+                    tenant_id=record.tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="outbox.event.publish.attempt",
+                    subject_id=record.event_id,
+                    outcome="succeeded",
+                    detail=detail,
+                )
+            except Exception:
+                await self.store.mark_failed(record, "AuditUnavailable")
+                result["failed"] += 1
+                continue
+
+            try:
+                stream_id = await self.transport.publish(
                     tenant_id=record.tenant_id,
                     topic=record.topic,
                     event_id=record.event_id,
                     payload=record.payload,
                 )
-                if await self.store.mark_published(record):
-                    result["published"] += 1
-                else:
-                    # The lease was lost after publish. A duplicate is possible;
-                    # downstream consumers must deduplicate on event_id.
-                    result["failed"] += 1
             except Exception as exc:
                 await self.store.mark_failed(record, type(exc).__name__)
+                await self.audit_sink.record(
+                    tenant_id=record.tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="outbox.event.publish",
+                    subject_id=record.event_id,
+                    outcome="failed",
+                    detail={**detail, "error_type": type(exc).__name__},
+                )
+                result["failed"] += 1
+                continue
+
+            # Publishing succeeded even if the lease was lost before the
+            # PostgreSQL acknowledgement. Record the external side effect and
+            # its persistence outcome separately; consumers dedupe by event_id.
+            try:
+                marked_published = await self.store.mark_published(record)
+                mark_error_type = None
+            except Exception as exc:
+                marked_published = False
+                mark_error_type = type(exc).__name__
+            await self.audit_sink.record(
+                tenant_id=record.tenant_id,
+                actor_id=self.SYSTEM_ACTOR_ID,
+                action="outbox.event.publish",
+                subject_id=record.event_id,
+                outcome="succeeded",
+                detail={
+                    **detail,
+                    "stream_id": stream_id,
+                    "lease_marked_published": marked_published,
+                    "mark_error_type": mark_error_type,
+                },
+            )
+            if marked_published:
+                result["published"] += 1
+            else:
+                # The lease was lost or DB acknowledgement failed after
+                # publish. A duplicate is possible; consumers dedupe event_id.
                 result["failed"] += 1
         return result

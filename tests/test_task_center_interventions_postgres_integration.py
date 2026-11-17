@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import os
 import unittest
 from pathlib import Path
@@ -105,6 +107,7 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         cancelled_runs = []
         async def cancel_run(tenant_id, run_id):
             cancelled_runs.append((tenant_id, run_id))
+            return {"status": "cancelled"}
         service = PostgresTaskCenterService(
             tenant_id=self.tenant_id, connection_factory=self.connect,
             cancel_run=cancel_run,
@@ -120,6 +123,52 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         )
         self.assertEqual(result["status"], "cancelled")
         self.assertEqual(cancelled_runs, [(self.tenant_id, str(self.run_id))])
+
+    async def test_running_task_waits_for_run_cancellation_acknowledgement(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService
+        async def cancel_run(tenant_id, run_id):
+            return {"status": "cancelling"}
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+            cancel_run=cancel_run,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "cancel safely"},
+        )
+        lease = await service.claim_next(worker_id="worker-cancel-pending")
+        await service.set_run_id(lease, str(self.run_id))
+        result = await service.cancel_task(
+            tenant_id=self.tenant_id, task_id=task["task_id"], actor_id="user-a",
+        )
+        self.assertEqual(result["status"], "cancelling")
+
+    async def test_expired_cancelling_task_is_reclaimed_only_to_acknowledge(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskQueueWorker
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "cancel after crash"},
+        )
+        await service.claim_next(worker_id="worker-before-crash")
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_tasks SET status='cancelling',
+                   lease_expires_at=now()-interval '1 second'
+                   WHERE tenant_id=%s AND task_id=%s""",
+                (self.tenant_id, task["task_id"]),
+            )
+        async def must_not_execute(_lease):
+            raise AssertionError("a cancelling task must not be executed again")
+        worker = TaskQueueWorker(
+            service=service, worker_id="worker-after-crash",
+            execute_task=must_not_execute,
+        )
+        self.assertTrue(await worker.run_once())
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
+        self.assertEqual(saved["status"], "cancelled")
 
     async def test_running_task_cancellation_requires_handler_and_restores_state(self):
         from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskCenterError
@@ -212,6 +261,38 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         self.assertEqual(saved["status"], "failed")
         self.assertEqual(saved["last_error"], "permanent")
 
+    async def test_expired_cancelling_task_waits_for_run_terminal_state(self):
+        from agent_platform.control_plane.tasks import PostgresTaskCenterService, TaskQueueWorker
+        async def cancel_run(tenant_id, run_id):
+            return {"status": "cancelling"}
+        service = PostgresTaskCenterService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+            cancel_run=cancel_run,
+        )
+        task = await service.submit_task(
+            tenant_id=self.tenant_id, actor_id="user-a", agent_id=self.agent_id,
+            project_id=None, session_id=None, input={"goal": "wait for Run stop"},
+        )
+        lease = await service.claim_next(worker_id="worker-before-crash")
+        await service.set_run_id(lease, str(self.run_id))
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_tasks SET status='cancelling',
+                   lease_expires_at=now()-interval '1 second'
+                   WHERE tenant_id=%s AND task_id=%s""",
+                (self.tenant_id, task["task_id"]),
+            )
+        async def must_not_execute(_lease):
+            raise AssertionError("a cancelling task must not be executed again")
+        worker = TaskQueueWorker(
+            service=service, worker_id="worker-after-crash",
+            execute_task=must_not_execute,
+        )
+        self.assertTrue(await worker.run_once())
+        saved = await service.get_task(tenant_id=self.tenant_id, task_id=task["task_id"])
+        self.assertEqual(saved["status"], "cancelling")
+        self.assertIsNone(saved["finished_at"])
+
     async def test_intervention_timeline_and_checkpoint_gated_resume(self):
         from agent_platform.runtime.interventions import (
             PostgresRunDetailService,
@@ -255,6 +336,170 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         )
         detail = await details.get(tenant_id=self.tenant_id, run_id=str(self.run_id))
         self.assertEqual(detail["checkpoint_ref"], "checkpoint-1")
+
+    async def test_postgres_checkpoint_survives_worker_restart_and_resumes(self):
+        try:
+            from langgraph.graph import END, START, StateGraph
+            if importlib.util.find_spec("langgraph.checkpoint.postgres.aio") is None:
+                self.skipTest("LangGraph PostgreSQL checkpointer extra is unavailable")
+            from typing import TypedDict
+
+            from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus
+            from agent_platform.runtime.postgres_checkpointer import postgres_run_executor
+            from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+        except ImportError as exc:
+            self.skipTest(f"LangGraph PostgreSQL runtime dependencies are unavailable: {exc}")
+
+        run_id = uuid4()
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id,run_id,agent_id,template_id,template_version,status,input)
+                   VALUES (%s,%s,%s,%s,1,'queued','{}'::jsonb)""",
+                (self.tenant_id, run_id, self.agent_id, self.template_id),
+            )
+            await conn.commit()
+
+        store = PostgresRunStateStore(self.connect)
+        lifecycle = RunLifecycleManager(store)
+        step_one_calls = 0
+        step_two_calls = 0
+        fail_first_step_two = True
+
+        class RecoveryState(TypedDict, total=False):
+            value: int
+            done: bool
+
+        def build_graph():
+            graph = StateGraph(RecoveryState)
+
+            async def step_one(state):
+                nonlocal step_one_calls
+                step_one_calls += 1
+                return {"value": state.get("value", 0) + 1}
+
+            async def step_two(state):
+                nonlocal step_two_calls, fail_first_step_two
+                step_two_calls += 1
+                if fail_first_step_two:
+                    fail_first_step_two = False
+                    raise asyncio.CancelledError()
+                return {"done": True}
+
+            graph.add_node("step_one", step_one)
+            graph.add_node("step_two", step_two)
+            graph.add_edge(START, "step_one")
+            graph.add_edge("step_one", "step_two")
+            graph.add_edge("step_two", END)
+            return graph
+
+        async with postgres_run_executor(
+            build_graph(), DSN, lifecycle=lifecycle, worker_id="worker-before-restart",
+        ) as executor:
+            with self.assertRaises(asyncio.CancelledError):
+                await executor.execute(
+                    tenant_id=self.tenant_id, run_id=str(run_id), input={"value": 0},
+                )
+
+        interrupted = await store.get(self.tenant_id, str(run_id))
+        self.assertIsNotNone(interrupted)
+        self.assertEqual(interrupted.status, RunStatus.INTERRUPTED)
+        self.assertTrue(interrupted.checkpoint_ref)
+        self.assertEqual(step_one_calls, 1)
+        self.assertEqual(step_two_calls, 1)
+
+        self.assertTrue(await store.acquire_lease(
+            self.tenant_id, str(run_id), "worker-after-restart",
+        ))
+        async with postgres_run_executor(
+            build_graph(), DSN, lifecycle=lifecycle, worker_id="worker-after-restart",
+        ) as executor:
+            result = await executor.resume_claimed(
+                snapshot=interrupted, input={"value": 0},
+            )
+
+        completed = await store.get(self.tenant_id, str(run_id))
+        self.assertIsNotNone(completed)
+        self.assertEqual(completed.status, RunStatus.SUCCEEDED)
+        self.assertEqual(step_one_calls, 1, "recovery must not replay the completed checkpointed node")
+        self.assertEqual(step_two_calls, 2)
+        self.assertTrue(result["done"])
+
+    async def test_run_detail_timeline_records_steps_logs_artifacts_and_redacts_secrets(self):
+        from agent_platform.runtime.interventions import (
+            PostgresRunDetailService,
+            RunInterventionService,
+        )
+        events = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.step.started", actor_id="worker-a",
+            payload={"step_id": "retrieve", "input": {"query": "safe"}},
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.log", actor_id="worker-a",
+            payload={"level": "info", "message": "Authorization: Bearer abc.def.secret"},
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.artifact.created", actor_id="worker-a",
+            payload={"artifact_id": "artifact-1", "name": "report.pdf"},
+        )
+        await events.record_event(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+            event_type="run.step.failed", actor_id="worker-a",
+            payload={"step_id": "publish", "error": "upstream unavailable"},
+        )
+        approval_id = uuid4()
+        async with await self.connect() as conn:
+            await conn.execute(
+                """INSERT INTO platform_approvals
+                   (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
+                    requested_by,status,expires_at)
+                   VALUES (%s,%s,%s,'publish','report.pdf',3,'digest-1',
+                           'requester-a','approved',now()+interval '10 minutes')""",
+                (self.tenant_id, approval_id, self.run_id),
+            )
+            await conn.execute(
+                "UPDATE platform_runs SET last_error='step publish failed' WHERE tenant_id=%s AND run_id=%s",
+                (self.tenant_id, self.run_id),
+            )
+            await conn.commit()
+        details = PostgresRunDetailService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        detail = await details.get(tenant_id=self.tenant_id, run_id=str(self.run_id))
+        self.assertEqual(detail["input"], {})
+        self.assertEqual(detail["checkpoint_ref"], "checkpoint-1")
+        self.assertEqual(
+            [item["event_type"] for item in detail["steps"]],
+            ["run.step.started", "run.step.failed"],
+        )
+        self.assertEqual(detail["logs"][0]["payload"]["message"], "Authorization: Bearer [REDACTED]")
+        self.assertEqual(detail["artifacts"][0]["payload"]["artifact_id"], "artifact-1")
+        self.assertEqual(detail["last_error"], "step publish failed")
+        self.assertEqual(detail["approvals"][0]["approval_id"], str(approval_id))
+        self.assertEqual(detail["approvals"][0]["status"], "approved")
+        self.assertEqual(len(detail["events"]), 4)
+
+    async def test_run_event_rejects_cross_tenant_and_invalid_shapes(self):
+        from agent_platform.runtime.interventions import RunInterventionService
+        events = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        with self.assertRaises(PermissionError):
+            await events.record_event(
+                tenant_id="other-tenant", run_id=str(self.run_id),
+                event_type="run.log", payload={"level": "info", "message": "x"},
+            )
+        with self.assertRaises(ValueError):
+            await events.record_event(
+                tenant_id=self.tenant_id, run_id=str(self.run_id),
+                event_type="run.log", payload={"level": "trace", "message": "x"},
+            )
 
     async def test_intervention_is_rejected_for_non_paused_run(self):
         from agent_platform.runtime.interventions import RunInterventionService

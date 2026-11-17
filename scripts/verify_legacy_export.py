@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Verify a legacy SQLite JSONL export against its manifest without modifying it."""
 from __future__ import annotations
 
@@ -10,15 +9,27 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 
+def _regular_file(path: Path, description: str) -> None:
+    """Reject symlinks and non-regular files before reading export artifacts."""
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{description} must be a regular, non-symlink file")
+
+
 def verify_export(output_dir: Path) -> dict[str, Any]:
+    if output_dir.is_symlink() or not output_dir.is_dir():
+        raise ValueError("export directory must be a real directory, not a symlink")
     manifest_path = output_dir / "manifest.json"
+    _regular_file(manifest_path, "manifest")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest must be a JSON object")
     if manifest.get("format") != "legacy-sqlite-jsonl-v1":
         raise ValueError("unsupported export manifest format")
     tables = manifest.get("tables")
     if not isinstance(tables, list):
         raise ValueError("manifest tables must be a list")
     names: set[str] = set()
+    filenames: set[str] = set()
     total_rows = 0
     results = []
     for table in tables:
@@ -33,7 +44,11 @@ def verify_export(output_dir: Path) -> dict[str, Any]:
         relative = PurePosixPath(filename)
         if relative.is_absolute() or len(relative.parts) != 1 or relative.name in {"", ".", ".."}:
             raise ValueError(f"unsafe export filename for table {name}")
+        if relative.name == manifest_path.name or relative.name in filenames:
+            raise ValueError(f"duplicate or reserved export filename for table {name}")
+        filenames.add(relative.name)
         path = output_dir / relative.name
+        _regular_file(path, f"export file {filename}")
         digest = hashlib.sha256()
         count = 0
         with path.open("rb") as stream:
@@ -43,7 +58,7 @@ def verify_export(output_dir: Path) -> dict[str, Any]:
                     row = json.loads(raw)
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise ValueError(f"invalid JSONL row in {filename} at line {count + 1}") from exc
-                if row.get("table") != name or not isinstance(row.get("row"), dict):
+                if not isinstance(row, dict) or row.get("table") != name or not isinstance(row.get("row"), dict):
                     raise ValueError(f"row/table mismatch in {filename} at line {count + 1}")
                 count += 1
         if digest.hexdigest() != table.get("sha256"):
@@ -52,8 +67,8 @@ def verify_export(output_dir: Path) -> dict[str, Any]:
             raise ValueError(f"row count mismatch for {filename}")
         total_rows += count
         results.append({"table": name, "rows": count, "sha256": digest.hexdigest()})
-    expected_files = {manifest_path.name, *(item["file"] for item in tables)}
-    actual_files = {item.name for item in output_dir.iterdir() if item.is_file()}
+    expected_files = {manifest_path.name, *filenames}
+    actual_files = {item.name for item in output_dir.iterdir() if item.is_file() or item.is_symlink()}
     unexpected = sorted(actual_files - expected_files)
     missing = sorted(expected_files - actual_files)
     if unexpected or missing:

@@ -20,7 +20,7 @@ class FakeIdentityRepository:
             user_id=user_id,
             tenant_roles=frozenset({"tenant_admin"}),
             effective_role_ids=frozenset({"tenant_admin"}),
-            tenant_permissions=frozenset({"project.read", "knowledge.manage"}),
+            tenant_permissions=frozenset({"project.read", "knowledge.manage", "knowledge.read", "memory.read"}),
             project_ids=frozenset({"project-a"}),
             knowledge_manage_project_ids=frozenset({"project-a"}),
             memory_manage_project_ids=frozenset({"project-a"}),
@@ -62,7 +62,7 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.roles, frozenset({"tenant_admin"}))
         self.assertEqual(
             resolved.permissions,
-            frozenset({"project.read", "knowledge.manage"}),
+            frozenset({"project.read", "knowledge.manage", "knowledge.read", "memory.read"}),
         )
 
     async def test_memory_principal_includes_only_granted_agents(self):
@@ -77,15 +77,26 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.manage_agent_ids, frozenset({"agent-a"}))
         self.assertEqual(
             resolved.permissions,
-            frozenset({"project.read", "knowledge.manage"}),
+            frozenset({"project.read", "knowledge.manage", "knowledge.read", "memory.read"}),
         )
 
-    async def test_api_credential_is_denied_until_route_scopes_are_enforced(self):
+    async def test_api_credential_is_narrowed_to_scope_and_rbac_intersection(self):
         credential = AuthenticatedApiCredential(
             credential_id="credential-a",
             tenant_id="tenant-a",
             user_id="user-a",
-            scopes=("project.read",),
+            scopes=("project.read", "knowledge.read"),
+        )
+        resolved = await self.resolver.knowledge(make_request(credential))
+        self.assertEqual(resolved.permissions, frozenset({"project.read", "knowledge.read"}))
+        self.assertEqual(resolved.manage_project_ids, frozenset())
+
+    async def test_api_credential_without_matching_permission_is_denied(self):
+        credential = AuthenticatedApiCredential(
+            credential_id="credential-a",
+            tenant_id="tenant-a",
+            user_id="user-a",
+            scopes=("admin.root",),
         )
         with self.assertRaises(Exception) as raised:
             await self.resolver.knowledge(make_request(credential))

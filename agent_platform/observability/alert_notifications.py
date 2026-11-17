@@ -108,12 +108,18 @@ class AlertNotificationDispatcher:
     written to the notification ledger.
     """
 
+    SYSTEM_ACTOR_ID = "system:alert-notification-dispatcher"
+
     def __init__(
         self, *, store: AlertDeliveryStore, provider: AlertNotificationProvider,
+        audit_sink: Any,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        if not callable(getattr(audit_sink, "record", None)):
+            raise TypeError("alert notification dispatcher requires an audit sink with record()")
         self.store = store
         self.provider = provider
+        self.audit_sink = audit_sink
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def retry_pending(
@@ -124,12 +130,46 @@ class AlertNotificationDispatcher:
         rows = await self.store.claim_pending_deliveries(limit=limit, event_id=event_id)
         result = {"claimed": len(rows), "sent": 0, "failed": 0}
         for row in rows:
+            tenant_id = row.get("scope_key")
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                await self.store.mark_delivery(
+                    row["event_id"], success=False, now=self.clock(),
+                    error="MissingTenantScope",
+                )
+                result["failed"] += 1
+                continue
             alert = AlertEvent(
                 rule_id=row["rule_id"], metric_name=row["metric_name"],
                 observed_value=row["observed_value"], threshold=row["threshold"],
                 severity=row["severity"], fired_at=row["fired_at"],
                 description=row["description"],
             )
+            audit_detail = {
+                "event_id": row["event_id"],
+                "rule_id": row["rule_id"],
+                "metric_name": row["metric_name"],
+                "severity": row["severity"],
+                "delivery_attempts": row.get("delivery_attempts"),
+            }
+            # Scope key is tenant_id for this store/API contract. Keep the
+            # worker actor explicit; never impersonate the alert rule author.
+            try:
+                await self.audit_sink.record(
+                    tenant_id=tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="alert.notification.send.attempt",
+                    subject_id=row["event_id"],
+                    outcome="succeeded",
+                    detail=audit_detail,
+                )
+            except Exception:
+                await self.store.mark_delivery(
+                    row["event_id"], success=False, now=self.clock(),
+                    error="AuditUnavailable",
+                )
+                result["failed"] += 1
+                continue
+
             try:
                 await self.provider.send(alert)
             except Exception as exc:
@@ -137,10 +177,26 @@ class AlertNotificationDispatcher:
                     row["event_id"], success=False, now=self.clock(),
                     error=type(exc).__name__,
                 )
+                await self.audit_sink.record(
+                    tenant_id=tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="alert.notification.send",
+                    subject_id=row["event_id"],
+                    outcome="failed",
+                    detail={**audit_detail, "error_type": type(exc).__name__},
+                )
                 result["failed"] += 1
             else:
                 await self.store.mark_delivery(
                     row["event_id"], success=True, now=self.clock(),
+                )
+                await self.audit_sink.record(
+                    tenant_id=tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="alert.notification.send",
+                    subject_id=row["event_id"],
+                    outcome="succeeded",
+                    detail=audit_detail,
                 )
                 result["sent"] += 1
         return result

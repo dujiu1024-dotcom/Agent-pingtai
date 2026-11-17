@@ -49,6 +49,8 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "project_id": row.get("project_id"),
         "session_id": row.get("session_id"),
         "status": row["status"],
+        "priority": row.get("priority", 100),
+        "retry_of_run_id": str(row["retry_of_run_id"]) if row.get("retry_of_run_id") else None,
         "input": _json_value(row.get("input") or {}),
         "output": _json_value(row.get("output")),
         "usage": _json_value(row.get("usage") or {}),
@@ -287,13 +289,15 @@ class RegistryBackedTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
-        run_id: str | None = None,
+        run_id: str | None = None, priority: int = 100,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
             raise PermissionError("authenticated actor is required")
         if not isinstance(input, Mapping) or not input:
             raise WorkbenchTaskError("task input must be a non-empty object")
+        if type(priority) is not int or not 0 <= priority <= 1000:
+            raise WorkbenchTaskError("priority must be an integer between 0 and 1000")
         if idempotency_key is not None and (
             not isinstance(idempotency_key, str)
             or not idempotency_key.strip() or len(idempotency_key) > 200
@@ -310,8 +314,10 @@ class RegistryBackedTaskCenterService:
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
         }
-        # Preserve the pre-existing idempotency digest for ordinary submissions;
-        # deterministic child Run IDs are included only when explicitly supplied.
+        # Keep default-priority request digests compatible with existing idempotency keys.
+        if priority != 100:
+            request_body["priority"] = priority
+        # Deterministic child Run IDs are included only when explicitly supplied.
         if run_id is not None:
             request_body["requested_run_id"] = run_id
         canonical = json.dumps(
@@ -358,7 +364,7 @@ class RegistryBackedTaskCenterService:
             agent_id=agent_id, agent_version=agent.version,
             template_id=template_id, template_version=template_version,
             input=dict(input), preparation_owner=preparation_owner,
-            project_id=project_id, session_id=session_id,
+            priority=priority, project_id=project_id, session_id=session_id,
             workflow_id=workflow.item_id if workflow is not None else None,
             idempotency_key=idempotency_key, request_digest=digest,
             registry_snapshot=[
@@ -412,6 +418,44 @@ class RegistryBackedTaskCenterService:
             tenant_id, task_id, actor_id=actor_id,
         )
         return _task_view(row) if row is not None else None
+
+    async def retry_task(
+        self, *, tenant_id: str, task_id: str, actor_id: str,
+        idempotency_key: str,
+    ) -> Mapping[str, Any] | None:
+        self._check_tenant(tenant_id)
+        if not actor_id.strip():
+            raise PermissionError("authenticated actor is required")
+        if (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key.strip() or len(idempotency_key) > 150
+        ):
+            raise WorkbenchTaskError("idempotency_key must contain 1 to 150 characters")
+        source = await self.run_store.get_task_record(
+            tenant_id, task_id, actor_id=actor_id,
+        )
+        if source is None:
+            return None
+        if source["status"] not in {"failed", "timed_out"}:
+            raise WorkbenchTaskError("only failed or timed_out tasks can be retried")
+        source_run_id = str(source["run_id"])
+        retry_key = f"retry:{source_run_id}:{idempotency_key}"
+        digest_body = {
+            "tenant_id": tenant_id, "actor_id": actor_id,
+            "retry_of_run_id": source_run_id,
+        }
+        digest = hashlib.sha256(json.dumps(
+            digest_body, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        new_run_id = str(uuid4())
+        retried_run_id = await self.run_store.create_retry_task_run(
+            tenant_id=tenant_id, task_id=task_id, actor_id=actor_id,
+            run_id=new_run_id, idempotency_key=retry_key, request_digest=digest,
+        )
+        retried = await self.run_store.get_task_record(
+            tenant_id, retried_run_id, actor_id=actor_id,
+        )
+        return _task_view(retried) if retried is not None else None
 
     async def cancel_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
@@ -468,11 +512,13 @@ class RegistryLangGraphExecutorResolver:
         lifecycle_resolver: Callable[[str], Any],
         runtime_provider_resolver: Callable[[str], Any],
         graph_factory: Callable[..., Any],
+        run_context_resolver: Callable[[str], Any] | None = None,
     ) -> None:
         self.snapshots = snapshots
         self.lifecycle_resolver = lifecycle_resolver
         self.runtime_provider_resolver = runtime_provider_resolver
         self.graph_factory = graph_factory
+        self.run_context_resolver = run_context_resolver
 
     async def _resolve(self, callback: Callable[..., Any], *args: Any) -> Any:
         value = callback(*args)
@@ -555,6 +601,11 @@ class RegistryLangGraphExecutorResolver:
         runtime_provider = await self._resolve(
             self.runtime_provider_resolver, tenant_id,
         )
+        run_context_service = None
+        if self.run_context_resolver is not None:
+            run_context_service = await self._resolve(
+                self.run_context_resolver, tenant_id,
+            )
         if lifecycle.store is None or runtime_provider is None:
             raise RuntimeError("durable Run lifecycle and registry runtime provider are required")
         graph = self.graph_factory(
@@ -573,6 +624,7 @@ class RegistryLangGraphExecutorResolver:
                 registry_runtime_provider=runtime_provider,
                 model_template_id=template_id,
                 required_tools=tuple(tool_ids),
+                run_context_service=run_context_service,
             )
 
         if callable(getattr(graph, "__aenter__", None)) and callable(
@@ -593,25 +645,29 @@ class RunExecutionWorker:
         self, *, run_store: Any, executor_resolver: Callable[..., Any],
         lifecycle_resolver: Callable[[str], Any], worker_id: str,
         poll_interval: float = 1.0, batch_size: int = 10, lease_seconds: int = 60,
-        concurrency_limiter: Any | None = None,
-        worker_pool_scope_id: str | None = None,
-        queue_scope_resolver: Callable[[Mapping[str, Any]], str] | None = None,
+        concurrency_limiter: Any,
+        worker_pool_scope_id: str,
+        queue_scope_resolver: Callable[[Mapping[str, Any]], str],
     ) -> None:
         if not worker_id.strip() or poll_interval <= 0:
             raise ValueError("worker_id and positive poll_interval are required")
         if not 1 <= batch_size <= 200 or lease_seconds < 5:
             raise ValueError("invalid worker batch or lease configuration")
+        if not callable(getattr(concurrency_limiter, "slot", None)):
+            raise ValueError("a shared concurrency limiter with slot() is required")
+        if not isinstance(worker_pool_scope_id, str) or not worker_pool_scope_id.strip():
+            raise ValueError("worker_pool_scope_id is required")
+        if not callable(queue_scope_resolver):
+            raise ValueError("queue_scope_resolver is required for tenant queue quota enforcement")
         self.run_store = run_store
         self.executor_resolver = executor_resolver
         self.lifecycle_resolver = lifecycle_resolver
         self.worker_id = worker_id
         self.poll_interval = poll_interval
         self.batch_size = batch_size
-        if concurrency_limiter is not None and not (worker_pool_scope_id or "").strip():
-            raise ValueError("worker_pool_scope_id is required with concurrency_limiter")
         self.concurrency_limiter = concurrency_limiter
         self.worker_pool_scope_id = worker_pool_scope_id
-        self.queue_scope_resolver = queue_scope_resolver or (lambda _record: "default")
+        self.queue_scope_resolver = queue_scope_resolver
         self.lease_seconds = lease_seconds
         self._stop = asyncio.Event()
         self._task: asyncio.Task[Any] | None = None
@@ -661,6 +717,51 @@ class RunExecutionWorker:
             return "failed"
         return "skipped"
 
+    async def _heartbeat_until_done(self, tenant_id: str, run_id: str) -> None:
+        heartbeat = getattr(self.run_store, "heartbeat", None)
+        if not callable(heartbeat):
+            raise RuntimeError("RunStateStore must implement worker lease heartbeat")
+        interval = max(1.0, self.lease_seconds / 3)
+        while True:
+            await asyncio.sleep(interval)
+            owned = await heartbeat(
+                tenant_id, run_id, self.worker_id,
+                lease_seconds=self.lease_seconds,
+            )
+            if not owned:
+                raise WorkerLeaseLost(
+                    f"worker lease lost while executing Run {run_id}"
+                )
+
+    async def _with_heartbeat(self, snapshot: Any, operation: Any) -> str:
+        """Keep the lease alive across the entire claimed operation, including slot waits."""
+        execution = asyncio.create_task(operation)
+        heartbeat = asyncio.create_task(
+            self._heartbeat_until_done(snapshot.tenant_id, snapshot.run_id)
+        )
+        try:
+            done, _pending = await asyncio.wait(
+                {execution, heartbeat},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            # A fast execution may finish and release its lease in the same
+            # event-loop turn in which the heartbeat observes the terminal state.
+            # Prefer the completed execution result when both tasks are done.
+            if execution in done:
+                return await execution
+            if heartbeat in done:
+                error = heartbeat.exception()
+                if error is not None:
+                    execution.cancel()
+                    await asyncio.gather(execution, return_exceptions=True)
+                    raise error
+            return await execution
+        finally:
+            for task in (heartbeat, execution):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(heartbeat, execution, return_exceptions=True)
+
     async def run_once(self) -> dict[str, int]:
         claimed = await self.run_store.claim_workbench_tasks(
             self.worker_id, limit=self.batch_size,
@@ -674,28 +775,31 @@ class RunExecutionWorker:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
                 return "skipped"
             try:
-                async with AsyncExitStack() as slots:
-                    if self.concurrency_limiter is not None:
-                        queue_id = self.queue_scope_resolver(record)
-                        if not isinstance(queue_id, str) or not queue_id.strip():
-                            raise ValueError("queue scope resolver must return a non-empty string")
-                        await slots.enter_async_context(self.concurrency_limiter.slot(
-                            tenant_id=tenant_id, run_id=run_id,
-                            scope_type="queue", scope_id=queue_id,
-                        ))
-                        await slots.enter_async_context(self.concurrency_limiter.slot(
-                            tenant_id=tenant_id, run_id=run_id,
-                            scope_type="worker_pool", scope_id=self.worker_pool_scope_id,
-                        ))
-                    resolved = await self._resolve(
-                        self.executor_resolver, record, self.worker_id,
-                    )
-                    if callable(getattr(resolved, "__aenter__", None)) and callable(
-                        getattr(resolved, "__aexit__", None)
-                    ):
-                        async with resolved as executor:
-                            return await self._execute_claimed(snapshot, executor, record)
-                    return await self._execute_claimed(snapshot, resolved, record)
+                async def execute_claimed() -> str:
+                    async with AsyncExitStack() as slots:
+                        if self.concurrency_limiter is not None:
+                            queue_id = self.queue_scope_resolver(record)
+                            if not isinstance(queue_id, str) or not queue_id.strip():
+                                raise ValueError("queue scope resolver must return a non-empty string")
+                            await slots.enter_async_context(self.concurrency_limiter.slot(
+                                tenant_id=tenant_id, run_id=run_id,
+                                scope_type="queue", scope_id=queue_id,
+                            ))
+                            await slots.enter_async_context(self.concurrency_limiter.slot(
+                                tenant_id=tenant_id, run_id=run_id,
+                                scope_type="worker_pool", scope_id=self.worker_pool_scope_id,
+                            ))
+                        resolved = await self._resolve(
+                            self.executor_resolver, record, self.worker_id,
+                        )
+                        if callable(getattr(resolved, "__aenter__", None)) and callable(
+                            getattr(resolved, "__aexit__", None)
+                        ):
+                            async with resolved as executor:
+                                return await self._execute_claimed(snapshot, executor, record)
+                        return await self._execute_claimed(snapshot, resolved, record)
+
+                return await self._with_heartbeat(snapshot, execute_claimed())
             except asyncio.CancelledError:
                 raise
             except BudgetExceeded:
@@ -712,10 +816,19 @@ class RunExecutionWorker:
                 elif current and current.status not in {
                     RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.TIMED_OUT,
                 }:
-                    await lifecycle.finish(
-                        tenant_id, run_id, RunStatus.FAILED,
-                        error=f"workbench worker failed: {str(exc)[:400]}",
+                    record_failure = getattr(
+                        self.run_store, "record_workbench_failure", None,
                     )
+                    if callable(record_failure):
+                        await record_failure(
+                            tenant_id, run_id, self.worker_id,
+                            error=f"workbench worker failed: {str(exc)[:400]}",
+                        )
+                    else:
+                        await lifecycle.finish(
+                            tenant_id, run_id, RunStatus.FAILED,
+                            error=f"workbench worker failed: {str(exc)[:400]}",
+                        )
                 return "failed"
             finally:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)

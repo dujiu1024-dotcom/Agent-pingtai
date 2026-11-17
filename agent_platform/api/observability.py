@@ -38,6 +38,7 @@ def create_observability_router(
     alert_store: Any | None = None,
     authorize_alert_manage: Callable[[Principal], Any] | None = None,
     evaluation_repository: Any | None = None,
+    evaluation_run_service: Any | None = None,
     authorize_eval_manage: Callable[[Principal], Any] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/observability", tags=["observability"])
@@ -88,6 +89,62 @@ def create_observability_router(
             raise HTTPException(404, "unresolved alert not found")
         return {"event_id": event_id, "status": "resolved"}
 
+
+    @router.post("/evaluations/run", status_code=201)
+    async def run_evaluation(request: Request):
+        actor = _principal(request)
+        if evaluation_run_service is None:
+            raise HTTPException(503, "evaluation run service is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation run permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON object required")
+            dataset_id = body.get("dataset_id")
+            dataset_version = body.get("dataset_version")
+            model_key = body.get("model_key")
+            if not isinstance(dataset_id, str) or not isinstance(model_key, str):
+                raise ValueError("dataset_id and model_key must be strings")
+            result = await evaluation_run_service.run(
+                tenant_id=actor.tenant_id, dataset_id=dataset_id,
+                dataset_version=dataset_version, model_key=model_key,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation dataset version not found") from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(502, "evaluation runner failed") from exc
+        return {
+            "eval_run_id": result.eval_run_id,
+            "dataset_id": result.report.dataset_id,
+            "dataset_version": result.report.dataset_version,
+            "model_key": model_key,
+            "gate_passed": result.gate_passed,
+            "gate_failures": list(result.gate_failures),
+            "pass_rate": result.report.pass_rate,
+            "average_score": result.report.average_score,
+            "average_recall_at_k": result.report.average_recall_at_k,
+        }
+
+    @router.get("/evaluations")
+    async def list_evaluation_reports(
+        request: Request, dataset_id: str = Query(min_length=1),
+        limit: int = Query(default=20, ge=1, le=100),
+    ):
+        actor = _principal(request)
+        if evaluation_repository is None:
+            raise HTTPException(503, "evaluation repository is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation review permission required")
+        list_reports = getattr(evaluation_repository, "latest_reports", None)
+        if not callable(list_reports):
+            raise HTTPException(501, "evaluation report history is not supported")
+        rows = await list_reports(
+            dataset_id, tenant_id=actor.tenant_id, limit=limit,
+        )
+        return {"items": rows, "count": len(rows)}
 
     @router.post("/evaluations/{eval_run_id}/scores", status_code=201)
     async def save_human_evaluation_score(eval_run_id: str, request: Request):

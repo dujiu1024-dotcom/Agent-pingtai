@@ -17,6 +17,14 @@ from agent_platform.runtime.workbench_tasks import (
 )
 
 
+class TestConcurrencyLimiter:
+    """No-op shared-slot test double; production uses the Redis-backed limiter."""
+
+    @asynccontextmanager
+    async def slot(self, **_kwargs):
+        yield object()
+
+
 class TaskRunStore(InMemoryRunStateStore):
     def __init__(self):
         super().__init__()
@@ -27,6 +35,7 @@ class TaskRunStore(InMemoryRunStateStore):
         self, *, tenant_id, run_id, actor_id, agent_id, agent_version, template_id,
         template_version, input, preparation_owner, project_id=None, session_id=None,
         workflow_id=None, idempotency_key=None, request_digest=None, registry_snapshot=None,
+        priority=100,
     ):
         key = (tenant_id, actor_id, idempotency_key) if idempotency_key else None
         if key and key in self.idempotency:
@@ -40,7 +49,8 @@ class TaskRunStore(InMemoryRunStateStore):
             "tenant_id": tenant_id, "run_id": run_id, "task_id": run_id,
             "project_id": project_id, "session_id": session_id, "agent_id": agent_id,
             "agent_version": agent_version, "template_id": template_id, "template_version": template_version,
-            "workflow_id": workflow_id, "status": "queued", "input": dict(input),
+            "workflow_id": workflow_id, "status": "queued", "priority": priority,
+            "input": dict(input),
             "output": None, "usage": {}, "trace_id": None, "created_by": actor_id,
             "request_digest": request_digest, "registry_snapshot": list(registry_snapshot or []),
             "preparation_owner": preparation_owner,
@@ -51,6 +61,36 @@ class TaskRunStore(InMemoryRunStateStore):
         if key:
             self.idempotency[key] = run_id
         return True
+
+    async def create_retry_task_run(
+        self, *, tenant_id, task_id, actor_id, run_id, idempotency_key, request_digest,
+    ):
+        key = (tenant_id, actor_id, idempotency_key)
+        if key in self.idempotency:
+            existing = self.records[self.idempotency[key]]
+            if existing["request_digest"] != request_digest:
+                raise ValueError("idempotency_key was already used with a different retry request")
+            return existing["run_id"]
+        source = self.records.get(task_id)
+        if source is None or source["tenant_id"] != tenant_id or source["created_by"] != actor_id:
+            raise KeyError("task not found")
+        snapshot = await self.get(tenant_id, task_id)
+        if snapshot is None or snapshot.status.value not in {"failed", "timed_out"}:
+            raise ValueError("only failed or timed_out tasks can be retried")
+        if not source.get("registry_snapshot_digest"):
+            raise ValueError("task has no immutable registry snapshot and cannot be retried")
+        await self.create(tenant_id, run_id)
+        now = datetime.now(timezone.utc)
+        self.records[run_id] = {
+            **source, "run_id": run_id, "task_id": run_id, "status": "queued",
+            "retry_of_run_id": task_id, "request_digest": request_digest,
+            "idempotency_key": idempotency_key, "output": None, "usage": {},
+            "trace_id": None, "started_at": None, "finished_at": None,
+            "created_at": now, "updated_at": now, "checkpoint_ref": None,
+            "last_error": None, "dispatch_ready": True, "preparation_owner": None,
+        }
+        self.idempotency[key] = run_id
+        return run_id
 
     async def get_task_record(self, tenant_id, task_id, *, actor_id=None):
         row = self.records.get(task_id)
@@ -101,13 +141,20 @@ class TaskRunStore(InMemoryRunStateStore):
         self.records[run_id]["usage"] = dict(usage or {})
         self.records[run_id]["trace_id"] = trace_id
 
-    async def claim_workbench_tasks(self, worker_id, *, limit=20, lease_seconds=60):
+    async def claim_workbench_tasks(self, worker_id, *, tenant_id=None, limit=20, lease_seconds=60):
         rows = []
-        for run_id, row in list(self.records.items()):
+        ordered = sorted(
+            self.records.items(),
+            key=lambda item: (-item[1].get("priority", 100), item[1]["created_at"]),
+        )
+        for run_id, row in ordered:
             current = await self.get(row["tenant_id"], run_id)
-            if row.get("dispatch_ready") and current and current.status in {
-                RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELLING,
-            }:
+            if (
+                (tenant_id is None or row["tenant_id"] == tenant_id)
+                and row.get("dispatch_ready") and current and current.status in {
+                    RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELLING,
+                }
+            ):
                 rows.append(current)
             if len(rows) >= limit:
                 break
@@ -217,6 +264,58 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
             ("skill", "summarize"),
         })
 
+    async def test_failed_task_retry_creates_new_run_with_same_pinned_snapshot(self):
+        original = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "retry me"},
+            priority=700,
+        )
+        original_row = self.run_store.records[original["run_id"]]
+        original_row["registry_snapshot_digest"] = "a" * 64
+        original_row["dispatch_ready"] = True
+        await self.lifecycle.finish(
+            "tenant-a", original["run_id"], RunStatus.FAILED, error="provider unavailable",
+        )
+        retried = await self.service.retry_task(
+            tenant_id="tenant-a", task_id=original["task_id"], actor_id="user-a",
+            idempotency_key="retry-1",
+        )
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["priority"], 700)
+        self.assertEqual(retried["retry_of_run_id"], original["run_id"])
+        self.assertEqual(retried["input"], original["input"])
+        self.assertEqual(
+            self.run_store.records[retried["run_id"]]["registry_snapshot"],
+            original_row["registry_snapshot"],
+        )
+        same_retry = await self.service.retry_task(
+            tenant_id="tenant-a", task_id=original["task_id"], actor_id="user-a",
+            idempotency_key="retry-1",
+        )
+        self.assertEqual(same_retry["run_id"], retried["run_id"])
+
+    async def test_task_priority_is_persisted_and_bound_to_idempotency(self):
+        normal = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "normal"},
+            idempotency_key="priority-normal",
+        )
+        urgent = await self.service.submit_task(
+            tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+            project_id=None, session_id=None, input={"text": "urgent"},
+            idempotency_key="priority-urgent", priority=900,
+        )
+        self.assertEqual(normal["priority"], 100)
+        self.assertEqual(urgent["priority"], 900)
+        with self.assertRaisesRegex(WorkbenchTaskError, "different task request"):
+            await self.service.submit_task(
+                tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
+                project_id=None, session_id=None, input={"text": "urgent"},
+                idempotency_key="priority-urgent", priority=100,
+            )
+        claimed = await self.run_store.claim_workbench_tasks("worker-priority", limit=2)
+        self.assertEqual([row.run_id for row in claimed], [urgent["run_id"], normal["run_id"]])
+
     async def test_idempotency_returns_original_task_and_rejects_payload_reuse(self):
         first = await self.service.submit_task(
             tenant_id="tenant-a", actor_id="user-a", agent_id="researcher",
@@ -309,6 +408,8 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         worker = RunExecutionWorker(
             run_store=self.run_store, executor_resolver=executor_resolver,
             lifecycle_resolver=lifecycle_resolver, worker_id="worker-a",
+            concurrency_limiter=TestConcurrencyLimiter(), worker_pool_scope_id="test",
+            queue_scope_resolver=lambda record: "interactive",
         )
         result = await worker.run_once()
         self.assertEqual(result["succeeded"], 1)
@@ -370,6 +471,8 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
         worker = RunExecutionWorker(
             run_store=self.run_store, executor_resolver=executor_resolver,
             lifecycle_resolver=lifecycle_resolver, worker_id="worker-scoped",
+            concurrency_limiter=TestConcurrencyLimiter(), worker_pool_scope_id="test",
+            queue_scope_resolver=lambda record: "interactive",
         )
         result = await worker.run_once()
         self.assertEqual(result["succeeded"], 1)
@@ -452,6 +555,7 @@ class WorkbenchTaskRuntimeTests(unittest.IsolatedAsyncioTestCase):
             run_store=self.run_store, executor_resolver=executor_resolver,
             lifecycle_resolver=lifecycle_resolver, worker_id="worker-full",
             concurrency_limiter=FullLimiter(), worker_pool_scope_id="gpu",
+            queue_scope_resolver=lambda record: "interactive",
         )
         result = await worker.run_once()
         self.assertEqual(result["skipped"], 1)

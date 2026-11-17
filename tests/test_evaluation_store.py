@@ -84,9 +84,12 @@ class FakeEvalConnection:
             rows = [row for row in self.db.scores.values()
                     if row["tenant_id"] == tenant_id and row["eval_run_id"] == run_id]
             return FakeCursor(rows=rows)
-        if sql.startswith("SELECT eval_run_id,dataset_id"):
-            dataset_id, limit = params
-            rows = [row for row in self.db.runs if row["dataset_id"] == dataset_id]
+        if sql.startswith("SELECT eval_run_id,tenant_id,dataset_id"):
+            dataset_id, tenant_id, limit = params
+            rows = [
+                row for row in self.db.runs
+                if row["dataset_id"] == dataset_id and row["tenant_id"] == tenant_id
+            ]
             return FakeCursor(rows=list(reversed(rows))[:limit])
         raise AssertionError(f"unhandled SQL: {sql}")
 
@@ -125,11 +128,15 @@ class PersistentEvaluationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failures, ())
         await repository.save_report(
             report, model_key="general@1", gate_passed=passed, gate_failures=failures,
+            tenant_id="tenant-a",
         )
-        history = await repository.latest_reports("rag-smoke")
+        history = await repository.latest_reports("rag-smoke", tenant_id="tenant-a")
         self.assertEqual(len(history), 1)
         self.assertTrue(history[0]["gate_passed"])
         self.assertEqual(history[0]["report"]["dataset_version"], 1)
+        self.assertEqual(
+            await repository.latest_reports("rag-smoke", tenant_id="tenant-b"), [],
+        )
 
     async def test_unknown_dataset_version_fails_closed(self):
         repository = PostgresEvaluationRepository(FakeEvalDb().connect)

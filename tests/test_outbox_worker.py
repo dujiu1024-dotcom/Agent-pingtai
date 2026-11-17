@@ -103,9 +103,16 @@ class OutboxRelayWorkerTests(unittest.IsolatedAsyncioTestCase):
                 self.events.append(event)
                 return "1-0"
 
+        class Audit:
+            async def record(self, **_event):
+                return None
+
         store, redis = DurableStore(), Redis()
         worker = OutboxRelayWorker(
-            relay=OutboxRelay(store=store, transport=redis), interval_seconds=0.1,
+            relay=OutboxRelay(
+                store=store, transport=redis, audit_sink=Audit(),
+            ),
+            interval_seconds=0.1,
         )
         await worker.start()
         for _ in range(20):

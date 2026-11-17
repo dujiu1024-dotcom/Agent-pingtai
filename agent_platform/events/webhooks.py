@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import inspect
 import ipaddress
 import json
 import socket
@@ -130,8 +131,18 @@ def verify_signature(secret: bytes, timestamp: str, body: bytes, supplied: str, 
 
 
 class WebhookDispatcher:
+    """Deliver tenant events with a durable system-actor audit trail.
+
+    The write-ahead audit record is persisted before the external HTTP request;
+    audit storage failure therefore prevents delivery rather than creating an
+    untraceable side effect.
+    """
+
+    SYSTEM_ACTOR_ID = "system:webhook-dispatcher"
+
     def __init__(self, *, store: WebhookStore, transport: WebhookTransport,
-                 resolve_secret: Callable[[str], bytes], egress_policy: WebhookEgressPolicy,
+                 resolve_secret: Callable[[str], Any], egress_policy: WebhookEgressPolicy,
+                 audit_sink: Any,
                  max_attempts: int = 8, timeout_seconds: float = 10.0,
                  clock: Callable[[], datetime] | None = None) -> None:
         if not 1 <= max_attempts <= 20 or not 0 < timeout_seconds <= 60:
@@ -139,7 +150,10 @@ class WebhookDispatcher:
         self.store = store
         self.transport = transport
         self.resolve_secret = resolve_secret
+        if not callable(getattr(audit_sink, "record", None)):
+            raise TypeError("webhook dispatcher requires an audit sink with record()")
         self.egress_policy = egress_policy
+        self.audit_sink = audit_sink
         self.max_attempts = max_attempts
         self.timeout_seconds = timeout_seconds
         self.clock = clock or (lambda: datetime.now(timezone.utc))
@@ -156,8 +170,26 @@ class WebhookDispatcher:
                 ensure_ascii=False, sort_keys=True, separators=(",", ":"),
             ).encode("utf-8")
             timestamp = str(int(self.clock().timestamp()))
+            # System identity is explicit: delivery is asynchronous and must
+            # not impersonate the user who originally emitted the event.
+            await self.audit_sink.record(
+                tenant_id=attempt.tenant_id,
+                actor_id=self.SYSTEM_ACTOR_ID,
+                action="webhook.delivery.attempt",
+                subject_id=attempt.delivery_id,
+                outcome="succeeded",
+                detail={
+                    "event_id": payload.event_id,
+                    "subscription_id": subscription.subscription_id,
+                    "topic": payload.topic,
+                    "attempt": attempt.attempt,
+                },
+            )
+            failure_type: str | None = None
             try:
                 secret = self.resolve_secret(subscription.secret_ref)
+                if inspect.isawaitable(secret):
+                    secret = await secret
                 if not isinstance(secret, bytes) or len(secret) < 32:
                     raise ValueError("webhook signing secret must contain at least 32 bytes")
                 resolved_addresses = await self.egress_policy.resolve_public_addresses(
@@ -174,12 +206,29 @@ class WebhookDispatcher:
                     },
                     timeout_seconds=self.timeout_seconds,
                 )
-                if 200 <= code < 300:
-                    await self.store.complete(attempt.tenant_id, attempt.delivery_id, response_code=code)
-                    result["delivered"] += 1
-                    continue
-            except Exception:
+            except Exception as exc:
+                failure_type = type(exc).__name__
                 code = None
+            if code is not None and 200 <= code < 300:
+                # Do not reinterpret an audit persistence failure after a
+                # successful remote delivery as a transport failure/retry.
+                await self.store.complete(attempt.tenant_id, attempt.delivery_id, response_code=code)
+                await self.audit_sink.record(
+                    tenant_id=attempt.tenant_id,
+                    actor_id=self.SYSTEM_ACTOR_ID,
+                    action="webhook.delivery",
+                    subject_id=attempt.delivery_id,
+                    outcome="succeeded",
+                    detail={
+                        "event_id": payload.event_id,
+                        "subscription_id": subscription.subscription_id,
+                        "topic": payload.topic,
+                        "attempt": attempt.attempt,
+                        "response_code": code,
+                    },
+                )
+                result["delivered"] += 1
+                continue
             if attempt.attempt >= self.max_attempts:
                 await self.store.dead_letter(attempt.tenant_id, attempt.delivery_id, response_code=code)
                 result["dead_lettered"] += 1
@@ -190,6 +239,22 @@ class WebhookDispatcher:
                     response_code=code,
                 )
                 result["retrying"] += 1
+            await self.audit_sink.record(
+                tenant_id=attempt.tenant_id,
+                actor_id=self.SYSTEM_ACTOR_ID,
+                action="webhook.delivery",
+                subject_id=attempt.delivery_id,
+                outcome="failed",
+                detail={
+                    "event_id": payload.event_id,
+                    "subscription_id": subscription.subscription_id,
+                    "topic": payload.topic,
+                    "attempt": attempt.attempt,
+                    "response_code": code,
+                    "error_type": failure_type or "non_success_response",
+                    "dead_lettered": attempt.attempt >= self.max_attempts,
+                },
+            )
         return result
 
 

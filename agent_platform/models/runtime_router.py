@@ -35,6 +35,14 @@ class ModelUsageRecordingError(RuntimeError):
     """The model ran but its usage could not be durably recorded."""
 
 
+class ModelAuditSink(Protocol):
+    async def record(
+        self, *, tenant_id: str, actor_id: str, action: str,
+        subject_id: str, outcome: str = "succeeded",
+        detail: Mapping[str, Any] | None = None,
+    ) -> None: ...
+
+
 class OpenAICompatibleTransport(Protocol):
     async def complete(
         self, *, config: ResolvedModelConfig,
@@ -193,6 +201,7 @@ class OpenAICompatibleModelRouter:
         self, *, resolver: RegistryModelResolver,
         transport: OpenAICompatibleTransport,
         usage_recorder: UsageRecorder | None = None,
+        audit_sink: ModelAuditSink | None = None,
         timeout_seconds: float = 60,
         observer: Any | None = None,
         metrics: Any | None = None,
@@ -206,6 +215,7 @@ class OpenAICompatibleModelRouter:
         self.resolver = resolver
         self.transport = transport
         self.usage_recorder = usage_recorder
+        self.audit_sink = audit_sink
         self.timeout_seconds = timeout_seconds
         self.observer = observer
         self.metrics = metrics
@@ -230,6 +240,30 @@ class OpenAICompatibleModelRouter:
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
+        audit_sink = self.audit_sink
+        if audit_sink is None or not callable(getattr(audit_sink, "record", None)):
+            raise ModelUsageRecordingError("model routing requires a durable audit sink")
+
+        async def record_preflight_failure(
+            *, candidate_id: str, reason: str, outcome: str = "denied",
+            error_type: str | None = None,
+        ) -> None:
+            detail: dict[str, Any] = {
+                "phase": "preflight", "run_id": run_id,
+                "template_id": candidate_id, "reason": reason,
+            }
+            if error_type is not None:
+                detail["error_type"] = error_type
+            try:
+                await audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.response", subject_id=request_id,
+                    outcome=outcome, detail=detail,
+                )
+            except Exception as exc:
+                raise ModelUsageRecordingError(
+                    "model preflight result could not be durably audited"
+                ) from exc
         parameters = request_parameters or {}
         reserved = {
             "model", "messages", "stream", "tools", "tool_choice",
@@ -242,15 +276,41 @@ class OpenAICompatibleModelRouter:
             raise ValueError("model route candidates must be unique")
         last_error: Exception | None = None
         for index, candidate in enumerate(candidates):
+            # Write-ahead audit before registry resolution and quota checks so
+            # rejected attempts are visible and no Provider can run unaudited.
+            try:
+                await audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.request", subject_id=request_id,
+                    outcome="started",
+                    detail={
+                        "phase": "started", "run_id": run_id,
+                        "template_id": candidate, "fallback_attempt": index > 0,
+                    },
+                )
+            except Exception as exc:
+                raise ModelUsageRecordingError(
+                    "model request was not dispatched because write-ahead audit failed"
+                ) from exc
             try:
                 config = await self.resolver.resolve(snapshot=snapshot, template_id=candidate)
             except ModelRegistryError as exc:
+                await record_preflight_failure(
+                    candidate_id=candidate, reason="pinned_model_configuration_invalid",
+                    outcome="failed", error_type=type(exc).__name__,
+                )
                 # A malformed or absent pinned definition is configuration failure,
                 # not a provider outage; never silently route around it.
                 raise ModelRoutingError("pinned model configuration is invalid") from exc
             if not set(required_capabilities).issubset(config.capabilities):
+                await record_preflight_failure(
+                    candidate_id=candidate, reason="required_capability_missing",
+                )
                 raise ModelRoutingError("pinned model lacks required capabilities")
             if data_level not in config.allowed_data_levels:
+                await record_preflight_failure(
+                    candidate_id=candidate, reason="data_level_not_allowed",
+                )
                 raise ModelRoutingError("model is not approved for the requested data level")
             started = monotonic()
             status = "failed"
@@ -289,12 +349,45 @@ class OpenAICompatibleModelRouter:
             # every routed request must pass it before provider dispatch.
             estimate = None
             if self.token_estimator is not None:
-                estimate = self.token_estimator.estimate(
-                    model_id=config.model_id,
-                    messages=messages,
-                    request_parameters=parameters,
-                    context_window_tokens=config.context_window_tokens,
-                )
+                # Estimate the exact effective parameter set sent by the transport:
+                # template defaults are merged first and per-call values override them.
+                effective_parameters = {**dict(config.parameters), **dict(parameters)}
+                try:
+                    estimate = self.token_estimator.estimate(
+                        model_id=config.model_id,
+                        messages=messages,
+                        request_parameters=effective_parameters,
+                        context_window_tokens=config.context_window_tokens,
+                    )
+                except Exception as exc:
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason="token_estimation_failed",
+                        error_type=type(exc).__name__,
+                    )
+                    # Preserve the estimator's typed failure for callers while
+                    # guaranteeing no provider dispatch or fallback can occur.
+                    raise
+                input_estimate = getattr(estimate, "input_tokens", None)
+                output_estimate = getattr(estimate, "output_tokens", None)
+                total_estimate = getattr(estimate, "total_tokens", None)
+                if (
+                    not isinstance(input_estimate, int) or isinstance(input_estimate, bool)
+                    or input_estimate < 0
+                    or not isinstance(output_estimate, int) or isinstance(output_estimate, bool)
+                    or output_estimate < 1
+                    or not isinstance(total_estimate, int) or isinstance(total_estimate, bool)
+                    or total_estimate != input_estimate + output_estimate
+                    or total_estimate > config.context_window_tokens
+                ):
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason="token_estimate_invalid_or_context_window_exceeded",
+                        error_type="InvalidTokenEstimate",
+                    )
+                    raise ModelRoutingError(
+                        "model token estimate is invalid or exceeds the pinned context window"
+                    )
             if self.quota_service is not None:
                 if estimate is None:
                     raise ModelRoutingError(
@@ -348,6 +441,21 @@ class OpenAICompatibleModelRouter:
                         safe_update(span, output={
                             "status": "failed", "error_type": type(exc).__name__,
                         })
+                        try:
+                            await self.audit_sink.record(
+                                tenant_id=tenant_id, actor_id="system:model-router",
+                                action="model.response", subject_id=request_id,
+                                outcome="failed",
+                                detail={
+                                    "run_id": run_id, "provider_id": config.provider_id,
+                                    "model_id": config.model_id,
+                                    "error_type": type(exc).__name__,
+                                },
+                            )
+                        except Exception as audit_exc:
+                            raise ModelUsageRecordingError(
+                                "model transport failed and failure audit could not be persisted"
+                            ) from audit_exc
                         raise
                     status = "response_received"
                     safe_update(span, output={"status": status})
@@ -409,6 +517,17 @@ class OpenAICompatibleModelRouter:
                         or actual_micros < 0
                     ):
                         raise ValueError("actual model cost is unavailable")
+                    price_card_version_resolver = getattr(
+                        self.quota_cost_estimator, "price_card_version", None,
+                    )
+                    price_card_version = (
+                        price_card_version_resolver(config.model_id)
+                        if callable(price_card_version_resolver) else None
+                    )
+                    if price_card_version is not None and (
+                        not isinstance(price_card_version, str) or not price_card_version.strip()
+                    ):
+                        raise ValueError("model price card version must be non-empty text")
                     await self.quota_service.settle_run(
                         quota_reservation,
                         model_key=f"{config.template_id}@{config.template_version}",
@@ -416,6 +535,7 @@ class OpenAICompatibleModelRouter:
                         cost_usd=Decimal(actual_micros) / Decimal(1_000_000),
                         project_id=getattr(snapshot, "project_id", None),
                         agent_id=getattr(snapshot, "agent_id", None),
+                        price_card_version=price_card_version,
                         source="provider_reported",
                     )
                 except Exception as exc:
@@ -448,6 +568,26 @@ class OpenAICompatibleModelRouter:
                     raise ModelUsageRecordingError(
                         "model response succeeded but usage recording failed"
                     ) from exc
+            try:
+                await self.audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.response", subject_id=request_id,
+                    outcome="succeeded",
+                    detail={
+                        "run_id": run_id, "provider_id": config.provider_id,
+                        "provider_version": config.provider_version,
+                        "model_id": config.model_id,
+                        "template_id": config.template_id,
+                        "template_version": config.template_version,
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                    },
+                )
+            except Exception as exc:
+                # Provider work may already be billable. Do not fallback or retry.
+                raise ModelUsageRecordingError(
+                    "model response succeeded but result audit could not be persisted"
+                ) from exc
             if index > 0:
                 safe_metric(
                     self.metrics, "increment", "model_fallbacks_total",

@@ -100,6 +100,16 @@ class SupervisedToolGateway:
         names = [tool.name for tool in tools]
         if len(names) != len(set(names)):
             raise ValueError("tool names must be unique")
+        for tool in tools:
+            if (
+                not callable(tool.resource_resolver)
+                or not callable(tool.resource_authorizer)
+            ):
+                raise ValueError(
+                    f"tool {tool.name!r} must declare a trusted resource_resolver "
+                    "and resource_authorizer; global tools must use an explicit "
+                    "allow-all authorization policy"
+                )
         self._tools = {tool.name: tool for tool in tools}
         self._policy = SupervisedPolicy({tool.name: tool.risk for tool in tools})
         self._approval_verifier = approval_verifier
@@ -121,6 +131,40 @@ class SupervisedToolGateway:
     def registered_tools(self) -> tuple[ToolDefinition, ...]:
         """Return immutable tool definitions for trusted composition code."""
         return tuple(self._tools.values())
+
+    async def call_resolved(
+        self,
+        *,
+        tenant_id: str,
+        actor_id: str,
+        actor_roles: tuple[str, ...],
+        tool_name: str,
+        arguments: Mapping[str, Any],
+        approval_id: str | None = None,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        call_id: str | None = None,
+        correlation_id: str | None = None,
+    ) -> Any:
+        """Resolve the resource inside the trusted Gateway before authorization."""
+        definition = self._tools.get(tool_name)
+        if definition is None:
+            raise ToolExecutionDenied("tool is not registered")
+        resolver = definition.resource_resolver
+        if resolver is None:
+            raise ToolExecutionDenied("tool has no trusted resource ACL policy")
+        try:
+            resource = resolver(arguments)
+        except Exception as exc:
+            raise ToolExecutionDenied("tool resource could not be resolved") from exc
+        if not isinstance(resource, str) or not resource.strip():
+            raise ToolExecutionDenied("tool resource could not be resolved")
+        return await self.call(
+            tenant_id=tenant_id, actor_id=actor_id, actor_roles=actor_roles,
+            tool_name=tool_name, resource=resource, arguments=arguments,
+            approval_id=approval_id, run_id=run_id, agent_id=agent_id,
+            call_id=call_id, correlation_id=correlation_id,
+        )
 
     async def call(
         self,
@@ -146,6 +190,40 @@ class SupervisedToolGateway:
         ):
             raise ToolExecutionDenied("actor role is not allowed to call this tool")
 
+        # Narrow the optional annotations as well as fail closed at runtime;
+        # composition-time validation alone is not visible to static typing.
+        resource_resolver = definition.resource_resolver
+        resource_authorizer = definition.resource_authorizer
+        if resource_resolver is None or resource_authorizer is None:
+            raise ToolExecutionDenied("tool has no trusted resource ACL policy")
+
+        # The resource identifier is derived from trusted server-side policy,
+        # never accepted from an untrusted caller as the ACL authority.
+        try:
+            resolved_resource = resource_resolver(arguments)
+        except Exception as exc:
+            raise ToolExecutionDenied("tool resource could not be resolved") from exc
+        if (
+            not isinstance(resolved_resource, str)
+            or not resolved_resource.strip()
+            or resource != resolved_resource
+        ):
+            attempted_request = ActionRequest(
+                action=tool_name,
+                resource=str(resource)[:256],
+                parameters=arguments,
+                actor_id=actor_id,
+                approval_id=approval_id,
+            )
+            await self._audit_sink.record(
+                tenant_id=tenant_id, actor_id=actor_id, action=tool_name,
+                resource=str(resource)[:256],
+                action_digest=attempted_request.digest(),
+                outcome="denied", run_id=run_id, agent_id=agent_id,
+                detail="resource_resolution_mismatch",
+            )
+            raise ToolExecutionDenied("caller resource does not match trusted resource resolution")
+        resource = resolved_resource
         request = ActionRequest(
             action=tool_name,
             resource=resource,
@@ -175,29 +253,26 @@ class SupervisedToolGateway:
             resource=resource,
             correlation_id=correlation_id,
         )
-        if definition.resource_authorizer is not None:
-            try:
-                resource_allowed = await definition.resource_authorizer(
-                    execution_context, arguments
-                )
-            except Exception as exc:
-                resource_allowed = False
-                authorization_detail = type(exc).__name__
-            else:
-                authorization_detail = "resource access denied"
-            if not resource_allowed:
-                await self._audit_sink.record(
-                    tenant_id=tenant_id,
-                    actor_id=actor_id,
-                    action=tool_name,
-                    resource=resource,
-                    action_digest=request.digest(),
-                    outcome="denied",
-                    run_id=run_id,
-                    agent_id=agent_id,
-                    detail=authorization_detail,
-                )
-                raise ToolExecutionDenied("resource access is not authorized")
+        try:
+            resource_allowed = await resource_authorizer(execution_context, arguments)
+        except Exception as exc:
+            resource_allowed = False
+            authorization_detail = type(exc).__name__
+        else:
+            authorization_detail = "resource access denied"
+        if not resource_allowed:
+            await self._audit_sink.record(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                action=tool_name,
+                resource=resource,
+                action_digest=request.digest(),
+                outcome="denied",
+                run_id=run_id,
+                agent_id=agent_id,
+                detail=authorization_detail,
+            )
+            raise ToolExecutionDenied("resource access is not authorized")
 
         requires_idempotency = definition.risk in {
             RiskLevel.EXTERNAL_OR_IRREVERSIBLE,

@@ -102,6 +102,10 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         self.assertEqual(adapter.capabilities.input_modalities, frozenset({"text"}))
         self.assertEqual(adapter.capabilities.output_modalities, frozenset({"text"}))
+        self.assertEqual(adapter.descriptor.adapter_id, "deepseek_harness")
+        self.assertEqual(adapter.descriptor.contract_version, "1.0.0")
+        self.assertFalse(adapter.descriptor.capabilities.cancellation)
+        self.assertFalse(adapter.descriptor.capabilities.tool_gateway)
         result = await adapter.run(self.request)
         self.assertEqual(result.output_text, "analysis complete")
         self.assertEqual(result.finish_reason, "completed")
@@ -110,6 +114,16 @@ class DeepSeekHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options["cwd"], str(self.workspace.resolve()))
         self.assertEqual(options["dsh_home"], str(self.home.resolve()))
         self.assertEqual(options["env"]["DSH_PERMISSION_MODE"], "read-only")
+
+    async def test_per_request_timeout_overrides_template_timeout(self):
+        request = HarnessRequest(
+            context=self.context,
+            instructions="Be precise.",
+            input_text="Analyze the issue.",
+            timeout_seconds=3.5,
+        )
+        await self.adapter().run(request)
+        self.assertEqual(self.instances[0].options["request_timeout_seconds"], 3.5)
 
     async def test_rejects_undeclared_media_inputs(self):
         request = HarnessRequest(

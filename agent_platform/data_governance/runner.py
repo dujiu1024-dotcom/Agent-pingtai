@@ -55,16 +55,11 @@ class MigrationRunner:
     ) -> MigrationExecutionReport:
         if not key_field.strip():
             raise ValueError("key_field is required")
-        if not await self.ledger.start_batch(batch.tenant_id, batch.batch_id):
-            raise ValueError("migration batch is not in a runnable state")
 
+        # Complete all source-shape checks before changing durable batch state.
+        # Invalid input must not strand a planned batch in the running state.
         source = [dict(row) for row in source_rows]
         source_keys: list[str] = []
-        imported = 0
-        failed: dict[str, str] = {}
-        target_keys: dict[str, str | None] = {}
-
-        # Validate key uniqueness before the first target write.
         seen: set[str] = set()
         for row in source:
             if key_field not in row or row[key_field] is None:
@@ -74,6 +69,13 @@ class MigrationRunner:
                 raise ValueError(f"missing or duplicate migration key: {key}")
             seen.add(key)
             source_keys.append(key)
+
+        if not await self.ledger.start_batch(batch.tenant_id, batch.batch_id):
+            raise ValueError("migration batch is not in a runnable state")
+
+        imported = 0
+        failed: dict[str, str] = {}
+        target_keys: dict[str, str | None] = {}
 
         for source_row, source_key in zip(source, source_keys, strict=True):
             try:

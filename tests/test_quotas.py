@@ -79,16 +79,57 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.store.list_usage("tenant-b", self.start, self.end), [],
         )
 
-    async def test_unconfigured_scope_and_tenant_mismatch_rejected(self) -> None:
-        with self.assertRaises(BudgetExceeded):
-            await self.service.reserve_run(
-                tenant_id="tenant-b", run_id="run-1", scope_type="tenant", scope_id="tenant-b",
-                estimated_tokens=1, estimated_cost_usd=Decimal("0.01"),
+    async def test_unconfigured_scope_uses_persisted_safe_default(self) -> None:
+        reservation, _ = await self.service.reserve_run(
+            tenant_id="tenant-b", run_id="run-default-tenant", scope_type="tenant", scope_id="tenant-b",
+            estimated_tokens=100, estimated_cost_usd=Decimal("0.01"),
+            estimated_input_tokens=80, estimated_output_tokens=20,
+        )
+        self.assertEqual(reservation.tenant_id, "tenant-b")
+        budget = await self.store.get_budget(
+            "tenant-b", "tenant", "tenant-b", datetime.now(timezone.utc),
+        )
+        self.assertIsNotNone(budget)
+        self.assertEqual(budget.hard_input_tokens, 500_000)
+        self.assertEqual(budget.hard_context_window_tokens, 32_768)
+        self.assertEqual(budget.hard_output_tokens, 100_000)
+        self.assertEqual(budget.hard_cost_usd, Decimal("25.00"))
+
+    async def test_agent_project_and_run_scopes_have_distinct_safe_defaults(self) -> None:
+        from agent_platform.quotas.service import safe_default_budget
+
+        now = datetime(2026, 11, 16, 12, tzinfo=timezone.utc)
+        expected = {
+            "project": (250_000, 32_768, 50_000, Decimal("10.00")),
+            "agent": (100_000, 16_384, 25_000, Decimal("5.00")),
+            "run": (50_000, 16_384, 12_000, Decimal("1.00")),
+        }
+        for scope_type, values in expected.items():
+            budget = safe_default_budget(
+                tenant_id="tenant-a", scope_type=scope_type,
+                scope_id=f"{scope_type}-a", now=now,
             )
-        with self.assertRaises(BudgetExceeded):
-            await self.service.reserve_run(
-                tenant_id="tenant-a", run_id="run-1", scope_type="agent", scope_id="agent-x",
-                estimated_tokens=1, estimated_cost_usd=Decimal("0.01"),
+            self.assertIsNotNone(budget)
+            self.assertEqual((
+                budget.hard_input_tokens, budget.hard_context_window_tokens,
+                budget.hard_output_tokens, budget.hard_cost_usd,
+            ), values)
+            self.assertEqual(budget.period_start, datetime(2026, 11, 1, tzinfo=timezone.utc))
+            self.assertEqual(budget.period_end, datetime(2026, 12, 1, tzinfo=timezone.utc))
+
+    async def test_safe_defaults_do_not_apply_to_unapproved_scope_types(self) -> None:
+        from agent_platform.quotas.service import safe_default_budget
+
+        self.assertIsNone(safe_default_budget(
+            tenant_id="tenant-a", scope_type="queue", scope_id="default",
+        ))
+
+    async def test_context_window_budget_rejects_invalid_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-negative integers"):
+            Budget(
+                tenant_id="tenant-a", scope_type="tenant", scope_id="tenant-a",
+                period_start=self.start, period_end=self.end,
+                hard_context_window_tokens=True,
             )
 
     async def test_harness_adapter_reserves_then_settles_actual_usage(self) -> None:
@@ -171,6 +212,19 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             )
             with self.subTest(estimate=estimate), self.assertRaises(ValueError):
                 await adapter.run(request)
+
+    async def test_explicit_context_window_budget_round_trips(self) -> None:
+        configured = Budget(
+            tenant_id="tenant-a", scope_type="project", scope_id="project-a",
+            period_start=self.start, period_end=self.end,
+            hard_input_tokens=12_000, hard_context_window_tokens=8_192,
+            hard_output_tokens=2_000, hard_cost_usd=Decimal("3.00"),
+        )
+        await self.service.configure(configured)
+        loaded = await self.store.get_budget(
+            "tenant-a", "project", "project-a", datetime.now(timezone.utc),
+        )
+        self.assertEqual(loaded, configured)
 
     async def test_negative_usage_rejected(self) -> None:
         reservation, _ = await self.reserve("run-1", 10, "0.10")
@@ -270,3 +324,31 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         with self.assertRaisesRegex(ValueError, "tenant_id"):
             await postgres.list_usage(" ", self.start, self.end)
+
+    async def test_root_run_budget_aggregates_child_run_usage(self) -> None:
+        root_run_id = "root-run-1"
+        child_run_id = "child-run-1"
+        await self.service.configure(Budget(
+            tenant_id="tenant-a", scope_type="run", scope_id=root_run_id,
+            period_start=self.start, period_end=self.end, hard_tokens=100,
+        ))
+        reservation, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id=child_run_id, root_run_id=root_run_id,
+            scope_type="run", scope_id=root_run_id, estimated_tokens=80,
+            estimated_cost_usd=Decimal("0.20"),
+        )
+        event = await self.service.settle_run(
+            reservation, model_key="model-child", input_tokens=30, output_tokens=20,
+            cost_usd=Decimal("0.10"),
+        )
+        self.assertEqual(event.root_run_id, root_run_id)
+        tokens, cost, concurrency = await self.store.usage(
+            "tenant-a", "run", root_run_id, self.start, self.end,
+        )
+        self.assertEqual((tokens, cost, concurrency), (50, Decimal("0.10"), 0))
+        with self.assertRaises(BudgetExceeded):
+            await self.service.reserve_run(
+                tenant_id="tenant-a", run_id="child-run-2", root_run_id=root_run_id,
+                scope_type="run", scope_id=root_run_id, estimated_tokens=51,
+                estimated_cost_usd=Decimal("0.10"),
+            )

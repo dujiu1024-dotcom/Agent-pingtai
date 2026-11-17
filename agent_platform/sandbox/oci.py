@@ -22,12 +22,14 @@ class SandboxExecutionError(RuntimeError):
 class OciSandboxConfig:
     image: str
     runtime: str = "docker"
+    docker_userns_remap_verified: bool = False
     memory_limit: str = "512m"
     cpu_limit: str = "1.0"
     pids_limit: int = 64
     tmpfs_size: str = "64m"
     max_timeout_seconds: float = 120.0
     max_output_bytes: int = 256_000
+    max_stdin_bytes: int = 1_048_576
     allowed_environment_keys: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
@@ -35,20 +37,26 @@ class OciSandboxConfig:
             raise ValueError("sandbox image must be pinned by sha256 digest")
         if self.runtime not in {"docker", "podman"}:
             raise ValueError("runtime must be docker or podman")
+        if self.runtime == "docker" and not self.docker_userns_remap_verified:
+            raise ValueError(
+                "Docker sandbox requires verified rootless mode or daemon userns-remap"
+            )
         if not re.fullmatch(r"[1-9][0-9]*(?:m|g)", self.memory_limit.lower()):
             raise ValueError("memory_limit must be a positive value such as 512m or 1g")
         if not re.fullmatch(r"(?:[0-9]+)(?:\.[0-9]+)?", self.cpu_limit):
             raise ValueError("cpu_limit must be a positive CPU quantity")
         if float(self.cpu_limit) <= 0:
             raise ValueError("cpu_limit must be positive")
-        if self.pids_limit < 1 or self.pids_limit > 4096:
-            raise ValueError("pids_limit must be between 1 and 4096")
+        if isinstance(self.pids_limit, bool) or not isinstance(self.pids_limit, int) or not 1 <= self.pids_limit <= 4096:
+            raise ValueError("pids_limit must be an integer between 1 and 4096")
         if not re.fullmatch(r"[1-9][0-9]*(?:m|g)", self.tmpfs_size.lower()):
             raise ValueError("tmpfs_size must be a positive value such as 64m")
-        if not 0 < self.max_timeout_seconds <= 3600:
+        if isinstance(self.max_timeout_seconds, bool) or not isinstance(self.max_timeout_seconds, (int, float)) or not 0 < self.max_timeout_seconds <= 3600:
             raise ValueError("max_timeout_seconds must be in (0, 3600]")
-        if not 1024 <= self.max_output_bytes <= 10_000_000:
-            raise ValueError("max_output_bytes must be between 1 KiB and 10 MB")
+        if isinstance(self.max_output_bytes, bool) or not isinstance(self.max_output_bytes, int) or not 1024 <= self.max_output_bytes <= 10_000_000:
+            raise ValueError("max_output_bytes must be an integer between 1 KiB and 10 MB")
+        if isinstance(self.max_stdin_bytes, bool) or not isinstance(self.max_stdin_bytes, int) or not 0 <= self.max_stdin_bytes <= 10_000_000:
+            raise ValueError("max_stdin_bytes must be an integer between 0 and 10 MB")
         for key in self.allowed_environment_keys:
             if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", key):
                 raise ValueError("invalid environment key in allowlist")
@@ -82,8 +90,8 @@ class OciSandboxRunner:
         *,
         environment: Mapping[str, str] | None = None,
     ) -> tuple[str, ...]:
-        if not command or any(not isinstance(arg, str) or not arg or "\x00" in arg for arg in command):
-            raise ValueError("command must contain non-empty NUL-free arguments")
+        if isinstance(command, (str, bytes)) or not command or any(not isinstance(arg, str) or not arg or "\x00" in arg for arg in command):
+            raise ValueError("command must be a non-empty argv sequence of NUL-free strings")
         env = dict(environment or {})
         unknown = set(env) - self.config.allowed_environment_keys
         if unknown:
@@ -91,12 +99,18 @@ class OciSandboxRunner:
         args: list[str] = [
             self.config.runtime, "run", "--rm", "--pull=never", "--network=none",
             "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges:true",
-            "--pids-limit", str(self.config.pids_limit), "--memory", self.config.memory_limit,
-            "--cpus", self.config.cpu_limit, "--user", "65532:65532",
+            "--ipc=private",
+            "--pids-limit", str(self.config.pids_limit),
+            "--memory", self.config.memory_limit, "--memory-swap", self.config.memory_limit,
+            "--cpus", self.config.cpu_limit,
+            "--ulimit", "nofile=1024:1024", "--ulimit", "fsize=16777216:16777216",
+            "--ulimit", "core=0:0", "--user", "65532:65532",
             "--workdir", "/workspace", "--tmpfs",
             f"/tmp:rw,noexec,nosuid,nodev,size={self.config.tmpfs_size}",
             "--tmpfs", f"/workspace:rw,noexec,nosuid,nodev,size={self.config.tmpfs_size}",
         ]
+        if self.config.runtime == "podman":
+            args.extend(("--userns=private", "--pid=private"))
         for key, value in sorted(env.items()):
             if not isinstance(value, str) or "\x00" in value or len(value) > 4096:
                 raise ValueError("environment values must be short NUL-free strings")
@@ -113,7 +127,16 @@ class OciSandboxRunner:
         environment: Mapping[str, str] | None = None,
         timeout_seconds: float = 30.0,
     ) -> SandboxResult:
-        if timeout_seconds <= 0 or timeout_seconds > self.config.max_timeout_seconds:
+        if isinstance(stdin, str) or not isinstance(stdin, bytes):
+            raise ValueError("stdin must be bytes")
+        if len(stdin) > self.config.max_stdin_bytes:
+            raise ValueError("stdin exceeds the configured sandbox input limit")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or timeout_seconds <= 0
+            or timeout_seconds > self.config.max_timeout_seconds
+        ):
             raise ValueError("timeout_seconds exceeds the configured sandbox limit")
         args = self.build_command(command, environment=environment)
         try:

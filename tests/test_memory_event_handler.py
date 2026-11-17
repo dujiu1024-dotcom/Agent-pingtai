@@ -75,6 +75,17 @@ class FakeRunStore:
         return self.record if tenant_id == TENANT and run_id == RUN else None
 
 
+class FakeAuditSink:
+    def __init__(self, fail=False):
+        self.events = []
+        self.fail = fail
+
+    async def record(self, **event):
+        if self.fail:
+            raise RuntimeError("audit unavailable")
+        self.events.append(event)
+
+
 class FakeExtraction:
     def __init__(self):
         self.turns = []
@@ -101,6 +112,7 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.repository = FakeRepository()
         self.service = SimpleNamespace(repository=self.repository)
         self.extraction = FakeExtraction()
+        self.audit = FakeAuditSink()
         self.principal = MemoryPrincipal(
             tenant_id=TENANT, user_id=ACTOR,
             project_ids=frozenset({"project-a"}),
@@ -114,6 +126,7 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
             session_service_resolver=lambda tenant: service,
             memory_principal_resolver=lambda tenant, actor: principal or self.principal,
             extraction=self.extraction,
+            audit_sink=self.audit,
             policy_enabled=lambda tenant, project, agent: policy,
         )
 
@@ -126,6 +139,25 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(turn.assistant_message, "I will remember")
         self.assertIn("run-user", turn.source_ref)
         self.assertIn("run-assistant", turn.source_ref)
+        self.assertEqual([event["action"] for event in self.audit.events], [
+            "memory.extraction.propose.attempt", "memory.extraction.propose",
+        ])
+        self.assertEqual(self.audit.events[0]["actor_id"], "system:memory-extraction-worker")
+        self.assertEqual(self.audit.events[1]["outcome"], "succeeded")
+        self.assertEqual(self.audit.events[1]["detail"]["candidate_count"], 0)
+
+    async def test_audit_unavailable_prevents_memory_extraction_side_effect(self):
+        handler = MemoryExtractionEventHandler(
+            run_store=FakeRunStore(),
+            session_service_resolver=lambda tenant: self.service,
+            memory_principal_resolver=lambda tenant, actor: self.principal,
+            extraction=self.extraction,
+            audit_sink=FakeAuditSink(fail=True),
+            policy_enabled=lambda tenant, project, agent: True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await handler(make_event())
+        self.assertEqual(self.extraction.turns, [])
 
     async def test_policy_is_fail_closed_by_default(self):
         handler = MemoryExtractionEventHandler(
@@ -133,6 +165,7 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
             session_service_resolver=lambda tenant: self.service,
             memory_principal_resolver=lambda tenant, actor: self.principal,
             extraction=self.extraction,
+            audit_sink=self.audit,
         )
         await handler(make_event())
         self.assertEqual(self.extraction.turns, [])
@@ -196,6 +229,7 @@ class MemoryExtractionEventHandlerTests(unittest.IsolatedAsyncioTestCase):
             session_service_resolver=lambda tenant: self.service,
             memory_principal_resolver=lambda tenant, actor: self.principal,
             extraction=self.extraction,
+            audit_sink=self.audit,
             policy_enabled=lambda tenant, project, agent: True,
         )
         self.assertEqual(worker.consumer.tenant_id, TENANT)

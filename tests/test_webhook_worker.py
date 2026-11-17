@@ -6,10 +6,18 @@ import unittest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent_platform.events.webhook_worker import WebhookDeliveryWorker
+from agent_platform.events.webhook_worker import (
+    build_production_webhook_delivery_worker,
+    WebhookDeliveryWorker,
+)
 from agent_platform.events.webhook_operations import create_webhook_delivery_admin_router
 from agent_platform.events.webhook_replay import WebhookDeadLetterReplayService
 from agent_platform.identity.models import Principal
+
+
+class FakeAuditSink:
+    async def record(self, **_event):
+        return None
 
 
 class FakeDispatcher:
@@ -37,6 +45,17 @@ class FakeOperations:
 
 
 class WebhookWorkerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_production_factory_uses_pinned_transport_and_egress_policy(self):
+        audit = FakeAuditSink()
+        worker = build_production_webhook_delivery_worker(
+            store=object(), resolve_secret=lambda _ref: b"s" * 32,
+            audit_sink=audit,
+        )
+        self.assertIsInstance(worker, WebhookDeliveryWorker)
+        self.assertEqual(type(worker.dispatcher.transport).__name__, "PinnedWebhookHttpTransport")
+        self.assertEqual(type(worker.dispatcher.egress_policy).__name__, "WebhookEgressPolicy")
+        self.assertIs(worker.dispatcher.audit_sink, audit)
+
     async def test_worker_starts_stops_and_dispatches(self):
         started = asyncio.Event()
         dispatcher = FakeDispatcher(started)
