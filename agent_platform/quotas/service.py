@@ -7,11 +7,12 @@ must use a shared transactional store implementing QuotaStore (see migration 012
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import MappingProxyType
-from typing import Mapping, Protocol
+from typing import AsyncIterator, Mapping, Protocol
 from uuid import uuid4
 
 
@@ -498,9 +499,6 @@ class QuotaService:
 
     async def release_run(self, reservation: QuotaReservation) -> bool:
         return await self.store.release(reservation.reservation_id)
-from contextlib import asynccontextmanager
-from typing import AsyncIterator, Protocol
-
     async def heartbeat_reservation(
         self, reservation: QuotaReservation, *, lease_seconds: int = 300,
     ) -> bool:
