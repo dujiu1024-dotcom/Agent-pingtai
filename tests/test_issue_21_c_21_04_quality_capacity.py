@@ -115,5 +115,5 @@ class QualityCapacityBaselineTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
-if ___name__ == "__main__":
+if __name__ == "__main__":
     unittest.main()
