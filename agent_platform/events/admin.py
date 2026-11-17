@@ -89,7 +89,7 @@ class WebhookSubscriptionService:
         if old_ref != new_ref:
             # The old reference is already durable in the revocation table.
             # All revocation side effects go through the leased worker path.
-            await self.retry_pending_secret_revocations(limit=100)
+            await self.retry_pending_secret_revocations(limit=100, raise_on_failure=True)
         return True
 
     async def _claim_pending_secret_revocations(self, *, limit: int) -> list[dict[str, str]]:
@@ -149,7 +149,7 @@ class WebhookSubscriptionService:
                 )
                 return await cursor.fetchone() is not None
 
-    async def retry_pending_secret_revocations(self, *, limit: int = 100) -> dict[str, int]:
+    async def retry_pending_secret_revocations(self, *, limit: int = 100,\n                                              raise_on_failure: bool = False) -> dict[str, int]:
         if isinstance(limit, bool) or not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         pending = await self._claim_pending_secret_revocations(limit=limit)
