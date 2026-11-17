@@ -179,7 +179,7 @@ class DataConnectorService:
     async def _resolve_provider_credential(
         self, connection: DataConnection, provider: ConnectorProvider,
     ) -> str:
-        if isinstance(provider, BaseConnector):
+        if isinstance(provider, BaseConnector) and provider.authenticator is not None:
             return await provider.authenticate(
                 tenant_id=connection.tenant_id, required_scopes=connection.scopes,
             )
