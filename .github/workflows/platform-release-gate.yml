@@ -138,6 +138,8 @@ jobs:
         run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
       - name: Run production Runtime composition acceptance tests
         run: python -m unittest tests.test_issue_614_runtime_composition -v
+      - name: Verify S-666-03 legacy archive layout
+        run: python -m unittest tests.test_issue_666_s_666_03_legacy_archive -v
 
   production-release-evidence:
     needs:
