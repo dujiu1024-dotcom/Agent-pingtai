@@ -4,6 +4,7 @@ import unittest
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+from agent_platform.runtime.workbench_tasks import RunExecutionWorker
 from agent_platform.runtime.production_composition import (
     ProductionRunExecution,
     build_production_run_execution,
@@ -13,6 +14,22 @@ from agent_platform.runtime.production_composition import (
 class FakeRunStore:
     async def claim_workbench_tasks(self, *_args, **_kwargs):
         return []
+
+
+class ClaimedTaskDisappearsStore(FakeRunStore):
+    def __init__(self):
+        self.released = []
+        self.claim_args = None
+
+    async def claim_workbench_tasks(self, worker_id, *, limit, lease_seconds):
+        self.claim_args = (worker_id, limit, lease_seconds)
+        return [SimpleNamespace(tenant_id="tenant-a", run_id="run-1")]
+
+    async def get_task_record(self, tenant_id, run_id):
+        return None
+
+    async def release_lease(self, tenant_id, run_id, worker_id):
+        self.released.append((tenant_id, run_id, worker_id))
 
 
 class FakeLifecycle:
@@ -82,6 +99,32 @@ class ProductionRunCompositionTests(unittest.IsolatedAsyncioTestCase):
             self.build(task_authorizer=None)
         with self.assertRaisesRegex(ValueError, "queue_scope_resolver"):
             self.build(queue_scope_resolver=None)
+
+
+class RunWorkerDispatchContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_task_record_releases_claimed_lease_without_resolving_executor(self):
+        store = ClaimedTaskDisappearsStore()
+        executor_calls = []
+        worker = RunExecutionWorker(
+            run_store=store,
+            executor_resolver=lambda record, worker_id: executor_calls.append((record, worker_id)),
+            lifecycle_resolver=lambda _tenant_id: FakeLifecycle(store),
+            worker_id="worker-test-2",
+            poll_interval=0.01,
+            concurrency_limiter=FakeLimiter(),
+            worker_pool_scope_id="production-workers",
+            queue_scope_resolver=lambda _record: "default",
+        )
+
+        counts = await worker.run_once()
+
+        self.assertEqual(counts, {
+            "claimed": 1, "succeeded": 0, "failed": 0,
+            "cancelled": 0, "skipped": 1,
+        })
+        self.assertEqual(store.claim_args, ("worker-test-2", 10, 60))
+        self.assertEqual(store.released, [("tenant-a", "run-1", "worker-test-2")])
+        self.assertEqual(executor_calls, [])
 
 
 class TrustedBuilderDiscoveryTests(unittest.TestCase):
