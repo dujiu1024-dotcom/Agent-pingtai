@@ -76,6 +76,11 @@ class SessionManagementApiTests(unittest.TestCase):
         )
         self.assertEqual(archived.status_code, 200)
         self.assertEqual(archived.json()["status"], "archived")
+        blocked_write = self.client.post(
+            f"/api/platform/v1/sessions/{session.session_id}/messages",
+            json={"role": "user", "content": "must not append while archived"},
+        )
+        self.assertEqual(blocked_write.status_code, 409)
         self.assertEqual(self.client.get("/api/platform/v1/sessions").json()["items"], [])
         self.assertEqual(
             len(self.client.get("/api/platform/v1/sessions?include_archived=true").json()["items"]),
