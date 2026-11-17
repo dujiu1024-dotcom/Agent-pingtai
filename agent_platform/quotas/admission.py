@@ -146,6 +146,15 @@ class TenantFairQuotaAdmissionController:
         if not queue:
             queues.pop(tenant_id, None)
 
+    async def notify_capacity_changed(self, scope_type: str, scope_id: str) -> None:
+        """Wake queued callers after lease expiry or an external capacity change."""
+        key = AdmissionKey(scope_type, scope_id)
+        condition = self._conditions.get(key)
+        if condition is not None:
+            async with condition:
+                self._attempted_tenants.pop(key, None)
+                condition.notify_all()
+
     async def release(self, reservation: QuotaReservation) -> bool:
         released = await self.limiter.release(reservation)
         # Wake waiters after capacity has actually been returned.
