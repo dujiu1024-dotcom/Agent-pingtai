@@ -310,5 +310,14 @@ class QuotaReportingApiTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 403)
 
+    def test_reconciliation_route_is_registered_once(self):
+        router = create_quota_reporting_router(quota_store=self.store)
+        routes = [
+            route for route in router.routes
+            if getattr(route, "path", None) == "/api/platform/v1/quotas/reconciliation"
+            and "POST" in getattr(route, "methods", set())
+        ]
+        self.assertEqual(len(routes), 1)
+
 if __name__ == "__main__":
     unittest.main()
