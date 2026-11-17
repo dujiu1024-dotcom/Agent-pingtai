@@ -35,7 +35,11 @@ class KnowledgeService:
             raise ValueError("max_upload_bytes must be an integer of at least 1024")
         self.repository=repository;self.parsers=parsers or ParserRegistry();self.embedder=embedder;self.reranker=reranker;self.query_rewriter=query_rewriter;self.max_upload_bytes=max_upload_bytes;self.observer=observer;self.metrics=metrics
         if embedder is not None and hasattr(repository,"embedding_model"):
-            repository.embedding_model=embedder.model_id
+            repository.embedding_model=getattr(embedder,"storage_key",embedder.model_id)
+            if hasattr(repository,"embedding_model_version"):
+                repository.embedding_model_version=getattr(embedder,"model_version","1")
+            if hasattr(repository,"embedding_dimensions"):
+                repository.embedding_dimensions=getattr(embedder,"dimensions",1536)
     async def ingest(self,*,document: Document,content: bytes,max_chars: int=1200,overlap: int=160)->IngestResult:
         if not isinstance(content, bytes):
             raise TypeError("content must be bytes")
@@ -76,6 +80,9 @@ class KnowledgeService:
             if save_embeddings is None:raise RuntimeError("repository does not support embedding persistence")
             vectors=await self.embedder.embed_documents([chunk.text for chunk in chunks])
             if len(vectors)!=len(chunks):raise ValueError("embedding count must match chunks")
+            dimensions=getattr(self.embedder,"dimensions",None)
+            if dimensions is not None and any(len(vector)!=dimensions for vector in vectors):
+                raise ValueError("embedding dimension mismatch")
             await save_embeddings(tenant_id=document.tenant_id,chunks=chunks,vectors=vectors)
         return IngestResult(document=document,chunks=chunks,skipped_unchanged=not created)
     async def list_documents(self,*,principal: KnowledgePrincipal,limit: int=100):
@@ -285,6 +292,9 @@ class KnowledgeService:
                 rewritten=await self.query_rewriter.rewrite(query) if self.query_rewriter else query
                 if not rewritten.strip():raise ValueError("query rewriter returned an empty query")
                 vector=await self.embedder.embed_query(rewritten) if self.embedder else None
+                dimensions=getattr(self.embedder,"dimensions",None) if self.embedder else None
+                if vector is not None and dimensions is not None and len(vector)!=dimensions:
+                    raise ValueError("embedding dimension mismatch")
                 # Tenant and resource ACLs are applied inside the repository query before chunk bodies leave storage.
                 hits=await self.repository.search(principal=principal,query=rewritten,query_vector=vector,limit=max(limit*4,20))
                 if self.reranker and hits:hits=list(await self.reranker.rerank(query,hits))
