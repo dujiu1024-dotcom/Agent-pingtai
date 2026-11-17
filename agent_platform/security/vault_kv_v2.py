@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Callable
+from typing import Awaitable, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
@@ -19,7 +19,7 @@ class VaultKvV2SecretBackend:
     """
 
     def __init__(
-        self, *, address: str, token: str, mount: str = "secret",
+        self, *, address: str, token: str | None = None, token_provider: Callable[[], Awaitable[str]] | None = None, mount: str = "secret",
         namespace: str | None = None, timeout_seconds: float = 5.0,
         allow_http: bool = False, request_func: Callable[..., tuple[int, bytes]] | None = None,
     ) -> None:
@@ -29,8 +29,12 @@ class VaultKvV2SecretBackend:
                 or parsed.password is not None or parsed.query or parsed.fragment
                 or parsed.path not in ("", "/")):
             raise ValueError("Vault address must be a secure origin without credentials or path")
-        if not isinstance(token, str) or not token or any(ch in token for ch in "\r\n\x00"):
-            raise ValueError("Vault token must be a non-empty single-line value")
+        if token_provider is None and (
+            not isinstance(token, str) or not token or any(ch in token for ch in "\r\n\x00")
+        ):
+            raise ValueError("a static Vault token or token provider is required")
+        if token_provider is not None and token is not None:
+            raise ValueError("configure either token or token_provider, not both")
         if not isinstance(mount, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", mount):
             raise ValueError("Vault KV mount path is invalid")
         if namespace is not None and (not namespace or any(ch in namespace for ch in "\r\n\x00")):
@@ -39,6 +43,7 @@ class VaultKvV2SecretBackend:
             raise ValueError("Vault timeout must be in (0, 30] seconds")
         self._base = address.rstrip("/")
         self._token = token
+        self._token_provider = token_provider
         self._mount = mount
         self._namespace = namespace
         self._timeout = timeout_seconds
@@ -66,7 +71,10 @@ class VaultKvV2SecretBackend:
 
     async def _call(self, method: str, endpoint: str,
                     payload: dict[str, object] | None = None) -> tuple[int, bytes]:
-        headers = {"X-Vault-Token": self._token, "Accept": "application/json"}
+        token = await self._token_provider() if self._token_provider is not None else self._token
+        if not isinstance(token, str) or not token:
+            raise RuntimeError("Vault token provider returned no token")
+        headers = {"X-Vault-Token": token, "Accept": "application/json"}
         if self._namespace:
             headers["X-Vault-Namespace"] = self._namespace
         body = None
