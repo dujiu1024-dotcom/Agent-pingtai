@@ -11,7 +11,7 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
         self.now = datetime(2026, 11, 16, 6, 0, tzinfo=timezone.utc)
         verified = self.now.isoformat().replace("+00:00", "Z")
         self.document = {
-            "schema_version": 1,
+            "schema_version": 2,
             "release_id": "release-2026-11-16.1",
             "environment": "production",
             "release_owner": "release-manager",
@@ -67,7 +67,8 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
 
     def test_boolean_schema_version_is_rejected(self):
         self.document["schema_version"] = True
-        self.assertIn("schema_version must be the integer 1", validate_evidence(self.document, now=self.now))
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("schema_version must be the integer 2", errors)
 
     def test_missing_check_fails_closed(self):
         del self.document["checks"]["fault_injection"]
