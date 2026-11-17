@@ -16,6 +16,7 @@ from agent_platform.api.contract import (
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
   )
 from agent_platform.api.health import create_health_router
+from agent_platform.api.graph import create_graph_query_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
@@ -66,6 +67,9 @@ def create_platform_app(
     allowed_origins: Sequence[str],
     service_identity: Any | None = None,
     rag: RAGService | None = None,
+    graph_query_service: Any | None = None,
+    graph_query_principal_resolver: Any | None = None,
+    graph_query_authorizer: Any | None = None,
     memory_extraction: MemoryExtractionService | None = None,
     memory_expiry_worker: Any | None = None,
     registry_service_resolver: Any | None = None,
@@ -268,6 +272,21 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
+    graph_query_configured = any(value is not None for value in (
+        graph_query_service, graph_query_principal_resolver, graph_query_authorizer,
+    ))
+    if graph_query_configured:
+        if any(value is None for value in (
+            graph_query_service, graph_query_principal_resolver, graph_query_authorizer,
+        )):
+            raise ValueError(
+                "graph query service, principal resolver and authorizer must be configured together"
+            )
+        app.include_router(create_graph_query_router(
+            service=graph_query_service,
+            resolve_principal=graph_query_principal_resolver,
+            authorize_query=graph_query_authorizer,
+        ))
     publisher_keys_configured = any(value is not None for value in (
         publisher_key_registry, publisher_key_authorizer,
     ))
