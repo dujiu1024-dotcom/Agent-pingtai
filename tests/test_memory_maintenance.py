@@ -7,6 +7,7 @@ from agent_platform.memory.maintenance import MemoryExpiryWorker
 from agent_platform.memory.service import (
     InMemoryMemoryRepository,
     MemoryCandidate,
+    MemoryPrincipal,
     MemoryScope,
     MemoryService,
 )
@@ -26,8 +27,8 @@ class MemoryExpiryWorkerTests(unittest.IsolatedAsyncioTestCase):
             )
             await service.propose(candidate)
             await service.confirm(
-                tenant_id=tenant_id, memory_id=candidate.memory_id,
-                confirmer_id="user-1",
+                principal=MemoryPrincipal(tenant_id=tenant_id, user_id="user-1"),
+                memory_id=candidate.memory_id,
             )
 
         async def list_tenants():
