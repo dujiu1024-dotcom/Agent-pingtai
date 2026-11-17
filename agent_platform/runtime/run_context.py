@@ -208,7 +208,6 @@ class RunContextSnapshotService:
         }
 
 
-
 class PostgresRunContextSnapshotStore:
     """Append-only PostgreSQL storage for tenant-scoped Run context snapshots."""
 
