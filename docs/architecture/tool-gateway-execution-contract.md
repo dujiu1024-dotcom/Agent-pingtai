@@ -16,7 +16,7 @@
 
 ## 审计
 
-Gateway 自身在授权/审批后、执行前写入 write-ahead audit；审计不可用时不得执行。执行结果/失败由 Gateway 记录。执行契约另记录认证/Run 拒绝、超时和取消事件，包含 tenant、actor、Run、tool、call_id 和原因/截止时间，不记录 Bearer token、原始工具参数或工具结果正文。审计 sink 必须持久化且不可变；审计写入失败应 fail closed。
+Gateway 自身在授权/审批后、执行前写入 write-ahead audit；审计不可用时不得执行。执行结果/失败由 Gateway 记录。执行契约另记录认证/Run 拒绝、超时和取消事件（超时/取消使用审计动作 `tool.call.timed_out` / `tool.call.cancelled`，结果枚举使用兼容的 `failed`），包含 tenant、actor、Run、tool、call_id 和原因/截止时间，不记录 Bearer token、原始工具参数或工具结果正文。审计 sink 必须持久化且不可变；审计写入失败应 fail closed。
 
 ## 验证边界
 
