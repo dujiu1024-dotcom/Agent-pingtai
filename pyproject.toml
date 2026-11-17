@@ -76,7 +76,7 @@ include = [
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
   "tests/test_prompt_experiments.py",
-  "tests/test_prompt_operations.py",\n  "tests/test_prompt_management_api.py",
+  "tests/test_prompt_operations.py",
   "tests/test_evaluation_store.py",
   "tests/test_evaluation_governance.py",
   "tests/test_sandbox_oci.py",
@@ -148,7 +148,7 @@ include = [
   "tests/test_graph_schema.py",
   "tests/test_session_data_model.py",
   "tests/test_session_conversation_migration.py",
-  "tests/test_batch_report.py",
+  "tests/test_sse_protocol.py",
 ]
 
 [tool.ruff.lint]
@@ -198,6 +198,7 @@ files = [
   "agent_platform/memory/review.py",
   "agent_platform/memory/retrieval.py",
   "tests/test_identity.py",
+  "agent_platform/streaming/sse.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
