@@ -26,7 +26,7 @@ The helper rejects a missing executor resolver, task authorizer, queue scope res
 
 The deployment-owned package should register a trusted builder in its package metadata and can also pass it directly to create_production_app for non-Compose deployments:
 
-\`\`\`python
+```python
 from uuid import uuid4
 
 from agent_platform.production import create_production_app
@@ -61,7 +61,7 @@ def build_run_execution(*, run_store, lifecycle, quota_service,
     )
 
 app = create_production_app(run_execution_builder=build_run_execution)\n\n# For the default agent_platform.production:app entrypoint, register the same\n# callable as the 'builder' entry in group\n# 'agent_platform.production_run_execution'.
-\`\`\`
+```
 
 The build_registry_ports, build_approved_executor_resolver, quota limiter and authorization functions above are deployment integration functions, not repository defaults. They must be implemented using the approved services and reviewed Tool catalog; this repository intentionally does not guess production secret references, provider credentials, executable tools or model graph semantics.
 
