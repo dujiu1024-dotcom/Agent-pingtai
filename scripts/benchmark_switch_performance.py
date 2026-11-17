@@ -180,7 +180,7 @@ async def run_redis_queue_probe(url: str, *, workers: int, operations: int) -> d
             while not received and time.perf_counter() < deadline:
                 received = await transport.read_group(
                     tenant_id=tenant, topic=topic, group=group,
-                    consumer=consumer, count=min(100, operations), block_ms=100,
+                    consumer=consumer, count=1, block_ms=100,
                 )
             if not received:
                 raise TimeoutError("Redis stream message was not delivered within 10 seconds")
