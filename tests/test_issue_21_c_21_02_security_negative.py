@@ -220,7 +220,7 @@ class SecurityNegativeRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("--userns=private", runtime_options)
         self.assertIn("--pid=private", runtime_options)
 
-    def test_prompt_injection_nested_control_metadata_is_rejected_by_schema(self):
+    async def test_prompt_injection_nested_control_metadata_is_rejected_by_schema(self):
         hostile = {
             "query": "summarize this document",
             "resource": "tenant:tenant-a:kb",
