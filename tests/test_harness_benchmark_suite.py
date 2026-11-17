@@ -95,6 +95,20 @@ class HarnessBenchmarkSuiteTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("Cancellation" in item for item in payload["limitations"]))
         self.assertEqual(payload["summary"]["candidate-b"]["passed"], 6)
 
+    async def test_runs_explicit_cancellation_probe_and_records_evidence(self):
+        candidate = CandidateAdapter()
+        async def probe(adapter):
+            self.assertIs(adapter, candidate)
+            return True
+        scorecards, report = await run_fixed_harness_benchmark(
+            adapters={"candidate": candidate},
+            request_factory=self.request_factory,
+            cancellation_probes={"candidate": probe},
+        )
+        self.assertTrue(scorecards[0].cancellation_probe_passed)
+        payload = benchmark_evidence_payload(scorecards, report)
+        self.assertTrue(payload["candidate_capabilities"][0]["cancellation_probe_passed"])
+
 
 if __name__ == "__main__":
     unittest.main()
