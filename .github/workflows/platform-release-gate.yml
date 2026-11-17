@@ -113,6 +113,7 @@ jobs:
             tests.test_model_runtime_router \
             tests.test_platform_api_app \
             tests.test_run_budget_ledger \
+            tests.test_run_budget_governance_postgres_integration \
             tests.test_session_data_model \
             tests.test_session_conversation_migration \
             tests.test_session_assets \
