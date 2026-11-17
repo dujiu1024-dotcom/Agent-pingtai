@@ -414,5 +414,76 @@ class LegacyAdapterContractTests(unittest.TestCase):
             )
 
 
+class SessionFileVersionAuditTests(unittest.TestCase):
+    def test_file_version_lifecycle_is_audited_without_content_and_routes_are_unique(self):
+        repository = InMemorySessionRepository()
+        storage = InMemoryObjectStorage()
+        service = SessionAssetService(repository, storage)
+        audit = _AuditWriter()
+
+        async def resolve_principal(_request):
+            return SimpleNamespace(tenant_id="tenant-a", user_id="user-a")
+
+        async def resolve_service(_principal):
+            return service
+
+        async def authorize(_principal, _resource_type, _resource_id, _action):
+            return True
+
+        asset = asyncio_run(service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="base.txt",
+            media_type="text/plain", content=b"base-secret",
+        ))
+        app = FastAPI()
+        app.include_router(create_sessions_router(
+            resolve_principal=resolve_principal, resolve_service=resolve_service,
+            authorize=authorize, audit_writer=audit,
+        ))
+        client = TestClient(app)
+
+        created = client.post(
+            f"/api/platform/v1/files/{asset.asset_id}/versions?expected_version=1",
+            content=b"replacement-secret",
+            headers={"content-type": "text/plain", "x-filename": "next.txt"},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["version"], 2)
+
+        listed = client.get(f"/api/platform/v1/files/{asset.asset_id}/versions")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(len(listed.json()["items"]), 2)
+
+        downloaded = client.get(
+            f"/api/platform/v1/files/{asset.asset_id}/versions/2",
+        )
+        self.assertEqual(downloaded.status_code, 200, downloaded.text)
+        self.assertEqual(downloaded.content, b"replacement-secret")
+
+        restored = client.post(
+            f"/api/platform/v1/files/{asset.asset_id}/versions/1/restore?expected_version=2",
+        )
+        self.assertEqual(restored.status_code, 201, restored.text)
+        self.assertEqual(restored.json()["version"], 3)
+
+        actions = [event["action"] for event in audit.events]
+        self.assertEqual(actions.count("file.version_created"), 1)
+        self.assertEqual(actions.count("file.versions_listed"), 1)
+        self.assertEqual(actions.count("file.version_downloaded"), 1)
+        self.assertEqual(actions.count("file.version_restored"), 1)
+        self.assertNotIn("replacement-secret", str(audit.events))
+        self.assertTrue(all(event["tenant_id"] == "tenant-a" for event in audit.events))
+        self.assertTrue(all(event["actor_id"] == "user-a" for event in audit.events))
+
+        route_counts = {}
+        for route in app.routes:
+            path = getattr(route, "path", None)
+            methods = getattr(route, "methods", set()) or set()
+            for method in methods:
+                if path and path.startswith("/api/platform/v1/files/"):
+                    route_counts[(method, path)] = route_counts.get((method, path), 0) + 1
+        self.assertTrue(route_counts)
+        self.assertTrue(all(count == 1 for count in route_counts.values()), route_counts)
+
+
 if __name__ == "__main__":
     unittest.main()
