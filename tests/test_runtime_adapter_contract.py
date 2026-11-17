@@ -394,5 +394,24 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event[0] for event in lifecycle.events], ["started", "timed_out"])
 
 
+    def test_media_reference_rejects_header_injection_and_unsafe_identifiers(self):
+        invalid = (
+            MediaInput("image", "asset\nX-Injected: yes", "image/png", 1, "a" * 64),
+            MediaInput("image", "asset-1", "image/png\r\nX-Injected: yes", 1, "a" * 64),
+            MediaInput("image", "asset-1", "image/png", 1, "a" * 64, "photo.png\r\nX-Test: yes"),
+            MediaInput("image", "asset-1", "image/png", 1, "a" * 64, ".."),
+            MediaInput("image", "asset with space", "image/png", 1, "a" * 64),
+        )
+        for item in invalid:
+            with self.subTest(item=item), self.assertRaises(ValueError):
+                _ = item
+
+    def test_media_reference_accepts_safe_unicode_filename_and_mime_parameters(self):
+        item = MediaInput(
+            "image", "asset_123", "image/png; charset=binary",
+            1, "b" * 64, "图像-01.png",
+        )
+        self.assertEqual(item.filename, "图像-01.png")
+
 if __name__ == "__main__":
     unittest.main()

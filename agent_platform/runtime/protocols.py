@@ -44,17 +44,21 @@ def _validate_media_reference(
     *, modality: str, resource_id: str, mime_type: str,
     size_bytes: int, sha256: str, filename: str | None,
 ) -> None:
-    if modality not in _SUPPORTED_MODALITIES - {"text"}:
+    if not isinstance(modality, str) or modality not in _SUPPORTED_MODALITIES - {"text"}:
         raise ValueError("media modality must be image, pdf, audio or video")
     if not isinstance(resource_id, str) or not resource_id.strip():
         raise ValueError("media resource_id is required")
     if (
-        "://" in resource_id or "/" in resource_id or "\\" in resource_id
+        any(ord(char) < 32 or ord(char) == 127 for char in resource_id)
+        or any(char.isspace() for char in resource_id)
+        or "://" in resource_id or "/" in resource_id or "\\" in resource_id
         or ".." in resource_id
     ):
         raise ValueError("media resource_id must be an opaque authorized resource identifier")
     if not isinstance(mime_type, str) or not mime_type.strip():
         raise ValueError("media mime_type is required")
+    if any(ord(char) < 32 or ord(char) == 127 for char in mime_type):
+        raise ValueError("media mime_type must not contain control characters")
     normalized = mime_type.lower().split(";", 1)[0].strip()
     valid_mime = {
         "image": re.fullmatch(r"image/[a-z0-9.+-]+", normalized) is not None,
@@ -71,7 +75,9 @@ def _validate_media_reference(
     if filename is not None:
         if (
             not isinstance(filename, str) or not filename.strip()
-            or len(filename) > 255 or "/" in filename or "\\" in filename
+            or len(filename) > 255 or filename in {".", ".."}
+            or "/" in filename or "\\" in filename
+            or any(ord(char) < 32 or ord(char) == 127 for char in filename)
         ):
             raise ValueError("media filename must be a safe basename of at most 255 characters")
 
