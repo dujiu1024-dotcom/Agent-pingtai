@@ -96,6 +96,15 @@ class KnowledgeCatalogApiTests(unittest.TestCase):
             "index_name": "semantic", "embedding_model": "model-v1", "dimensions": 0,
         }, headers={"x-permissions": "knowledge.manage"})
         self.assertEqual(bad.status_code, 400)
+        bool_dimensions = self.client.post(index_url, json={
+            "index_name": "bool-dimensions", "embedding_model": "model-v1", "dimensions": True,
+        }, headers={"x-permissions": "knowledge.manage"})
+        self.assertEqual(bool_dimensions.status_code, 400)
+        bool_schema = self.client.post(index_url, json={
+            "index_name": "bool-schema", "embedding_model": "model-v1",
+            "dimensions": 1536, "schema_version": True,
+        }, headers={"x-permissions": "knowledge.manage"})
+        self.assertEqual(bool_schema.status_code, 400)
         good = self.client.post(index_url, json={
             "index_name": "semantic", "embedding_model": "model-v1", "dimensions": 1536,
         }, headers={"x-permissions": "knowledge.manage"})
