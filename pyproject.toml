@@ -19,7 +19,6 @@ include = [
   "scripts/release_upgrade.py",
   "scripts/verify_platform_backups.py",
   "scripts/disaster_recovery.py",
-  "scripts/platform_ops.sh",
   "tests/test_legacy_inventory.py",
   "scripts/inventory_legacy_system.py",
   "scripts/run_legacy_migration.py",
