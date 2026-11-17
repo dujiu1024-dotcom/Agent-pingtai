@@ -15,7 +15,7 @@ from agent_platform.identity.models import Principal
 from agent_platform.quotas.service import Budget, QuotaService
 
 
-def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None) -> APIRouter:
+def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None, audit_writer: Any | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/quotas", tags=["quotas"])
 
     def actor(request: Request) -> Principal:
@@ -97,6 +97,27 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
                 hard_output_tokens=optional_integer("hard_output_tokens"),
                 hard_context_window_tokens=optional_integer("hard_context_window_tokens"),
             )
+            if audit_writer is not None:
+                writer = getattr(audit_writer, "write", None) or getattr(audit_writer, "append", None)
+                if writer is None and callable(audit_writer):
+                    writer = audit_writer
+                if writer is None:
+                    raise RuntimeError("quota audit writer is unavailable")
+                event = {
+                    "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
+                    "action": "quota.budget.updated", "resource_type": "quota_budget",
+                    "resource_id": f"{budget.scope_type}:{budget.scope_id}",
+                    "period_start": budget.period_start.isoformat(),
+                    "period_end": budget.period_end.isoformat(),
+                    "hard_tokens": budget.hard_tokens,
+                    "hard_cost_usd": str(budget.hard_cost_usd) if budget.hard_cost_usd is not None else None,
+                    "hard_concurrency": budget.hard_concurrency,
+                    "soft_tokens": budget.soft_tokens,
+                    "soft_cost_usd": str(budget.soft_cost_usd) if budget.soft_cost_usd is not None else None,
+                }
+                audit_result = writer(event)
+                if inspect.isawaitable(audit_result):
+                    await audit_result
             await quota_service.configure(budget)
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
