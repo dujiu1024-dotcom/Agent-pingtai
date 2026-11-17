@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from agent_platform.identity.models import Principal
 
@@ -38,6 +38,7 @@ def create_observability_router(
     alert_store: Any | None = None,
     authorize_alert_manage: Callable[[Principal], Any] | None = None,
     evaluation_repository: Any | None = None,
+    evaluation_dataset_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
     authorize_eval_manage: Callable[[Principal], Any] | None = None,
     authorize_eval_review: Callable[[Principal], Any] | None = None,
@@ -114,6 +115,105 @@ def create_observability_router(
             raise HTTPException(404, "unresolved alert not found")
         return {"event_id": event_id, "status": "resolved"}
 
+
+    @router.post("/evaluations/datasets/import", status_code=201)
+    async def import_evaluation_dataset(request: Request):
+        actor = _principal(request)
+        if evaluation_dataset_repository is None:
+            raise HTTPException(503, "evaluation dataset repository is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation dataset management permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON object required")
+            dataset_id = body.get("dataset_id")
+            import_format = body.get("format")
+            content = body.get("content")
+            if dataset_id is None:
+                from agent_platform.observability.evaluation_datasets import new_dataset_id
+                dataset_id = new_dataset_id()
+            if not isinstance(dataset_id, str) or not isinstance(import_format, str) or not isinstance(content, str):
+                raise ValueError("dataset_id, format and content must be strings")
+            from agent_platform.observability.evaluation_datasets import parse_dataset_import
+            cases = parse_dataset_import(content, format=import_format)
+            record = await evaluation_dataset_repository.create_version(
+                tenant_id=actor.tenant_id, dataset_id=dataset_id, cases=cases,
+                created_by=actor.user_id,
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "dataset_id": record.dataset_id, "version": record.version,
+            "case_count": len(record.cases), "tenant_id": record.tenant_id,
+        }
+
+    @router.get("/evaluations/datasets/{dataset_id}/versions")
+    async def list_evaluation_dataset_versions(dataset_id: str, request: Request):
+        actor = _principal(request)
+        if evaluation_dataset_repository is None:
+            raise HTTPException(503, "evaluation dataset repository is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation dataset management permission required")
+        if not dataset_id.strip():
+            raise HTTPException(400, "dataset_id is required")
+        rows = await evaluation_dataset_repository.list_versions(
+            tenant_id=actor.tenant_id, dataset_id=dataset_id,
+        )
+        return {"items": [
+            {"dataset_id": row.dataset_id, "version": row.version,
+             "case_count": len(row.cases), "created_by": row.created_by,
+             "created_at": row.created_at}
+            for row in rows
+        ], "count": len(rows)}
+
+    @router.get("/evaluations/datasets/{dataset_id}/versions/{version}")
+    async def get_evaluation_dataset_version(dataset_id: str, version: int, request: Request):
+        actor = _principal(request)
+        if evaluation_dataset_repository is None:
+            raise HTTPException(503, "evaluation dataset repository is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation dataset management permission required")
+        try:
+            record = await evaluation_dataset_repository.get_version(
+                tenant_id=actor.tenant_id, dataset_id=dataset_id, version=version,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation dataset version not found") from exc
+        return {
+            "dataset_id": record.dataset_id, "version": record.version,
+            "case_count": len(record.cases),
+            "cases": [
+                {"case_id": case.case_id, "input": case.input,
+                 "expected_output": case.expected_output, "rubric": case.rubric,
+                 "source_ref": case.source_ref}
+                for case in record.cases
+            ],
+        }
+
+    @router.get("/evaluations/datasets/{dataset_id}/versions/{version}/export",
+                response_class=PlainTextResponse)
+    async def export_evaluation_dataset_version(
+        dataset_id: str, version: int, request: Request,
+        format: str = Query(default="jsonl", pattern="^(csv|jsonl)$"),
+    ):
+        actor = _principal(request)
+        if evaluation_dataset_repository is None:
+            raise HTTPException(503, "evaluation dataset repository is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation dataset management permission required")
+        try:
+            record = await evaluation_dataset_repository.get_version(
+                tenant_id=actor.tenant_id, dataset_id=dataset_id, version=version,
+            )
+            from agent_platform.observability.evaluation_datasets import export_dataset
+            exported = export_dataset(record, format=format)
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation dataset version not found") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        media_type = "text/csv; charset=utf-8" if format == "csv" else "application/x-ndjson"
+        return PlainTextResponse(exported, media_type=media_type)
 
     @router.post("/evaluations/run", status_code=201)
     async def run_evaluation(request: Request):
