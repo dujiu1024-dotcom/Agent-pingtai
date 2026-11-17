@@ -160,6 +160,7 @@ include = [
   "tests/test_run_event_streaming.py",
   "tests/test_agent_streaming.py",
   "tests/test_run_stream_api.py",
+  "tests/test_streaming_workbench_ui.py",
   "tests/test_model_runtime_router.py",
 ]
 
