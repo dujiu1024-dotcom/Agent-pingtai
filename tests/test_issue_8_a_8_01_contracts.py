@@ -414,9 +414,6 @@ class LegacyAdapterContractTests(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 class SessionFileVersionAuditTests(unittest.TestCase):
     def test_file_version_lifecycle_is_audited_without_content_and_routes_are_unique(self):
         repository = InMemorySessionRepository()
@@ -487,3 +484,6 @@ class SessionFileVersionAuditTests(unittest.TestCase):
         self.assertTrue(route_counts)
         self.assertTrue(all(count == 1 for count in route_counts.values()), route_counts)
 
+
+if __name__ == "__main__":
+    unittest.main()
