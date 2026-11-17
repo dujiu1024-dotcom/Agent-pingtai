@@ -7,11 +7,16 @@ No source-domain payload is copied into graph attributes.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Protocol, Sequence
+
+from agent_platform.memory.service import (
+    MemoryCandidate, MemoryRecord, MemoryScope, MemoryService, MemoryStatus,
+)
 
 from agent_platform.graph.schema import (
     EntityTypeDefinition,
@@ -57,12 +62,22 @@ class GraphSource:
             raise ValueError("source_kind must be a GraphSourceKind")
         if isinstance(self.source_version, bool) or not isinstance(self.source_version, int) or self.source_version < 1:
             raise ValueError("source_version must be a positive integer")
-        if not isinstance(self.content, str) or not self.content.strip():
-            raise ValueError("source content must not be empty")
+        if not isinstance(self.content, str):
+            raise ValueError("source content must be a string")
         if len(self.content) > MAX_SOURCE_CHARS:
             raise ValueError("source content exceeds the extraction size limit")
         if self.project_id is not None and (not isinstance(self.project_id, str) or not self.project_id.strip()):
             raise ValueError("project_id must be a non-empty string")
+
+
+@dataclass(frozen=True)
+class GraphSourceReference:
+    """Canonical source reference accepted by graph storage adapters."""
+
+    domain: GraphSourceDomain
+    source_type: str
+    source_id: str
+    source_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -242,6 +257,140 @@ def _candidate_id(source: GraphSource) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+
+class MemoryServiceGraphCandidateRepository:
+    """Durable candidate adapter over the platform MemoryCandidate repository.
+
+    Candidate payloads contain extracted proposals and source references only;
+    raw source text is deliberately omitted from persisted Memory records.
+    """
+
+    def __init__(self, *, memory: MemoryService) -> None:
+        self.memory = memory
+
+    @staticmethod
+    def _encode(candidate: GraphCandidate) -> str:
+        payload = {
+            "candidate_id": candidate.candidate_id,
+            "tenant_id": candidate.tenant_id,
+            "project_id": candidate.project_id,
+            "source": {
+                "tenant_id": candidate.source.tenant_id,
+                "source_kind": candidate.source.source_kind.value,
+                "source_id": candidate.source.source_id,
+                "source_version": candidate.source.source_version,
+                "project_id": candidate.source.project_id,
+            },
+            "entities": [asdict(item) for item in candidate.entities],
+            "relations": [asdict(item) for item in candidate.relations],
+            "extractor_name": candidate.extractor_name,
+            "extractor_version": candidate.extractor_version,
+            "status": candidate.status.value,
+            "version": candidate.version,
+            "conflict_keys": list(candidate.conflict_keys),
+            "reviewed_by": candidate.reviewed_by,
+            "created_at": candidate.created_at.isoformat(),
+            "updated_at": candidate.updated_at.isoformat(),
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    @staticmethod
+    def _decode(record: MemoryRecord) -> GraphCandidate:
+        payload = json.loads(record.candidate.content)
+        source = payload["source"]
+        return GraphCandidate(
+            candidate_id=payload["candidate_id"], tenant_id=payload["tenant_id"],
+            project_id=payload["project_id"],
+            source=GraphSource(
+                tenant_id=source["tenant_id"],
+                source_kind=GraphSourceKind(source["source_kind"]),
+                source_id=source["source_id"], source_version=source["source_version"],
+                content="", project_id=source["project_id"],
+            ),
+            entities=tuple(ExtractedEntity(**item) for item in payload["entities"]),
+            relations=tuple(ExtractedRelation(**item) for item in payload["relations"]),
+            extractor_name=payload["extractor_name"],
+            extractor_version=payload["extractor_version"],
+            status=CandidateStatus(payload["status"]), version=payload["version"],
+            conflict_keys=tuple(payload["conflict_keys"]),
+            reviewed_by=payload["reviewed_by"],
+            created_at=datetime.fromisoformat(payload["created_at"]),
+            updated_at=datetime.fromisoformat(payload["updated_at"]),
+        )
+
+    @staticmethod
+    def _memory_status(status: CandidateStatus) -> MemoryStatus:
+        return {
+            CandidateStatus.PENDING: MemoryStatus.CANDIDATE,
+            CandidateStatus.CONFLICT: MemoryStatus.CONFLICT,
+            CandidateStatus.APPROVED: MemoryStatus.ACTIVE,
+            CandidateStatus.REJECTED: MemoryStatus.DELETED,
+        }[status]
+
+    async def get(self, tenant_id: str, candidate_id: str) -> GraphCandidate | None:
+        record = await self.memory.repository.get(tenant_id, candidate_id)
+        if record is None or record.candidate.metadata.get("kind") != "graph_candidate":
+            return None
+        return self._decode(record)
+
+    async def find_source_revision(self, tenant_id: str, source_kind: str, source_id: str, source_version: int) -> GraphCandidate | None:
+        records = await self.memory.repository.list(tenant_id, limit=5000)
+        for record in records:
+            if record.candidate.metadata.get("kind") != "graph_candidate":
+                continue
+            candidate = self._decode(record)
+            if (candidate.source.source_kind.value == source_kind
+                and candidate.source.source_id == source_id
+                and candidate.source.source_version == source_version):
+                return candidate
+        return None
+
+    async def find_conflicts(self, tenant_id: str, project_id: str | None, keys: Sequence[str]) -> Sequence[GraphCandidate]:
+        records = await self.memory.repository.list(tenant_id, limit=5000)
+        wanted = set(keys)
+        return tuple(
+            candidate for record in records
+            if record.candidate.metadata.get("kind") == "graph_candidate"
+            for candidate in (self._decode(record),)
+            if candidate.project_id == project_id
+            and candidate.status in {CandidateStatus.PENDING, CandidateStatus.CONFLICT, CandidateStatus.APPROVED}
+            and wanted.intersection(candidate.conflict_keys)
+        )
+
+    async def put(self, candidate: GraphCandidate) -> None:
+        payload = self._encode(candidate)
+        existing = await self.memory.repository.get(candidate.tenant_id, candidate.candidate_id)
+        if existing is None:
+            scope = MemoryScope.PROJECT if candidate.project_id is not None else MemoryScope.TENANT
+            scope_id = candidate.project_id or candidate.tenant_id
+            confidence_values = [item.confidence for item in candidate.entities]
+            confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0.0
+            memory_candidate = MemoryCandidate(
+                tenant_id=candidate.tenant_id, scope=scope, scope_id=scope_id,
+                content=payload,
+                source_ref=(f"graph-candidate://{candidate.tenant_id}/"
+                            f"{candidate.source.source_kind.value}/{candidate.source.source_id}/"
+                            f"{candidate.source.source_version}"),
+                confidence=confidence, created_by="system:graph-extractor",
+                memory_id=candidate.candidate_id,
+                metadata={"kind": "graph_candidate", "source_kind": candidate.source.source_kind.value},
+            )
+            await self.memory.propose(memory_candidate)
+            existing = await self.memory.repository.get(candidate.tenant_id, candidate.candidate_id)
+            if existing is None:
+                raise RuntimeError("MemoryCandidate repository did not persist graph candidate")
+        updated_candidate = replace(existing.candidate, content=payload)
+        target_status = self._memory_status(candidate.status)
+        changed = existing.candidate.content != payload or existing.status is not target_status
+        updated = replace(
+            existing, candidate=updated_candidate, status=target_status,
+            confirmed_by=candidate.reviewed_by, updated_at=candidate.updated_at,
+            version=existing.version + (1 if changed else 0),
+        )
+        if changed:
+            await self.memory.repository.put(updated)
+
+
 class GraphBuildPipeline:
     def __init__(
         self, *, schema: GraphSchema, extractor: GraphExtractor,
@@ -251,6 +400,8 @@ class GraphBuildPipeline:
         self.candidates, self.graph = candidates, graph
 
     async def propose(self, *, source: GraphSource, allowed_project_ids: Sequence[str] = ()) -> GraphCandidate:
+        if not source.content.strip():
+            raise ValueError("source content must not be empty")
         if source.tenant_id != self.schema.tenant_id:
             raise PermissionError("source tenant does not match graph schema")
         if source.project_id is not None and source.project_id not in set(allowed_project_ids):
@@ -391,18 +542,11 @@ class GraphBuildPipeline:
                 entity_type=item.entity_type, attributes=dict(item.attributes),
                 project_id=candidate.project_id,
             )
-            # GraphSourceReference is accepted by the PostgreSQL adapter via its
-            # structural fields; imports are delayed to keep storage optional.
-            source_ref = None
-            try:
-                from agent_platform.graph.postgres_repository import GraphSourceReference
-                source_ref = GraphSourceReference(
-                    domain=source_domain, source_type=source_type,
-                    source_id=candidate.source.source_id,
-                    source_version=candidate.source.source_version,
-                )
-            except ImportError:
-                pass
+            source_ref = GraphSourceReference(
+                domain=source_domain, source_type=source_type,
+                source_id=candidate.source.source_id,
+                source_version=candidate.source.source_version,
+            )
             await self.graph.upsert_entity(
                 entity, name=item.name, source_ref=source_ref,
                 allowed_project_ids=project_ids,
