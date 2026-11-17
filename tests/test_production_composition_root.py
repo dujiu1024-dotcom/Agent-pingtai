@@ -70,7 +70,7 @@ class ProductionConfigurationTests(unittest.TestCase):
                 })
 
     def test_non_https_and_wildcard_origins_are_rejected(self):
-        for origin in ("http://platform.example.com", "https://*.example.com"):
+        for origin in ("http://platform.example.com", "https://*.example.com", "https://platform.example.com/path", "https://user@platform.example.com"):
             with self.subTest(origin=origin), self.assertRaisesRegex(
                 ProductionConfigurationError, "exact HTTPS"
             ):
