@@ -348,6 +348,7 @@ class InMemoryKnowledgeRepository:
         if key not in grants:
             return False
         grants.remove(key)
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "acl_changed"})
         return True
 
     async def replace_document_access(
@@ -367,6 +368,7 @@ class InMemoryKnowledgeRepository:
         key = (tenant_id, document_id)
         self.document_acl_enforced.add(key)
         self.document_acl[key] = normalized
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "acl_changed"})
 
     async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]:
         return list(self.chunks.get((tenant_id, document_id, version), []))
@@ -443,11 +445,21 @@ class InMemoryKnowledgeRepository:
         from datetime import datetime, timezone
 
         found = False
+        chunk_ids: set[str] = set()
         for key, document in list(self.documents.items()):
             if key[0] == tenant_id and key[1] == document_id and document.deleted_at is None:
                 self.documents[key] = replace(
                     document, deleted_at=datetime.now(timezone.utc)
                 )
-                self.chunks.pop(key, None)
+                chunk_ids.update(chunk.chunk_id for chunk in self.chunks.pop(key, []))
                 found = True
+        if found:
+            self.document_acl.pop((tenant_id, document_id), None)
+            self.document_acl_enforced.discard((tenant_id, document_id))
+            for chunk_id in chunk_ids:
+                acl_key = (tenant_id, chunk_id)
+                self.chunk_acl.pop(acl_key, None)
+                self.chunk_acl_enforced.discard(acl_key)
+                self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "chunk", "resource_id": chunk_id, "reason": "deleted"})
+            self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "deleted"})
         return found
