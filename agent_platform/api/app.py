@@ -19,13 +19,11 @@ from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
-from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
-from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.localization import create_locale_preferences_router
+from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
-from agent_platform.api.prompt_operations import create_prompt_operations_router
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
@@ -64,7 +62,6 @@ def create_platform_app(
     identity_repository: Any,
     knowledge: KnowledgeService,
     memory: MemoryService,
-    knowledge_catalog: Any | None = None,
     redis: Any,
     allowed_origins: Sequence[str],
     service_identity: Any | None = None,
@@ -96,8 +93,6 @@ def create_platform_app(
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
-    evaluation_governance_service: Any | None = None,
-    evaluation_gate_manage_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
     prompt_evaluation_gate: Any | None = None,
@@ -240,18 +235,8 @@ def create_platform_app(
         raise ValueError(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
-    evaluation_governance_configured = any(value is not None for value in (
-        evaluation_governance_service, evaluation_gate_manage_authorizer,
-    ))
-    if evaluation_governance_configured and any(value is None for value in (
-        evaluation_governance_service, evaluation_gate_manage_authorizer,
-    )):
-        raise ValueError(
-            "evaluation governance service and gate manager authorizer must be configured together"
-        )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
-        evaluation_run_service, evaluation_governance_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
@@ -263,11 +248,9 @@ def create_platform_app(
             evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
-            evaluation_governance_service=evaluation_governance_service,
-            authorize_eval_gate_manage=evaluation_gate_manage_authorizer,
         ))
     prompt_registry_configured = any(value is not None for value in (
-        prompt_registry, prompt_manage_authorizer,
+        prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
     ))
     if prompt_registry_configured:
         if prompt_registry is None or prompt_manage_authorizer is None:
@@ -276,32 +259,7 @@ def create_platform_app(
             )
         app.include_router(create_prompt_registry_router(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
-        ))
-    prompt_operations_configured = prompt_evaluation_gate is not None
-    if prompt_operations_configured:
-        if any(value is None for value in (
-            prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
-            resource_audit_writer,
-        )):
-            raise ValueError(
-                "prompt operations require registry, authorizer, evaluation gate and audit writer"
-            )
-        app.include_router(create_prompt_operations_router(
-            registry=prompt_registry,
-            authorize=prompt_manage_authorizer,
-            evaluate_candidate=prompt_evaluation_gate,
-            audit_writer=resource_audit_writer,
-        ))
-    prompt_registry_configured = any(value is not None for value in (
-        prompt_registry, prompt_manage_authorizer,
-    ))
-    if prompt_registry_configured:
-        if prompt_registry is None or prompt_manage_authorizer is None:
-            raise ValueError(
-                "prompt registry and prompt manager authorizer must be configured together"
-            )
-        app.include_router(create_prompt_registry_router(
-            registry=prompt_registry, authorize=prompt_manage_authorizer,
+            evaluate_gate=prompt_evaluation_gate,
         ))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
@@ -310,13 +268,6 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
-    if knowledge_catalog is not None:
-        knowledge_context_resolver = IdentityContextResolver(identity_repository)
-        app.include_router(create_knowledge_catalog_router(
-            catalog=knowledge_catalog,
-            knowledge=knowledge,
-            resolve_principal=knowledge_context_resolver.knowledge,
-        ))
     publisher_keys_configured = any(value is not None for value in (
         publisher_key_registry, publisher_key_authorizer,
     ))
