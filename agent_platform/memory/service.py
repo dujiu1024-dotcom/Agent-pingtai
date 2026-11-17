@@ -229,8 +229,31 @@ class MemoryService:
         visible.sort(key=lambda record: (
             record.updated_at, record.candidate.memory_id,
         ), reverse=True)
-        return [
-            {
+        exported: list[dict[str, object]] = []
+        for record in visible:
+            versions = await self.repository.list_versions(
+                principal.tenant_id, record.candidate.memory_id,
+            )
+            history = [
+                {
+                    "version": version.version,
+                    "content": version.candidate.content,
+                    "source_ref": version.candidate.source_ref,
+                    "confidence": version.candidate.confidence,
+                    "status": version.status.value,
+                    "created_by": version.candidate.created_by,
+                    "confirmed_by": version.confirmed_by,
+                    "metadata": dict(version.candidate.metadata),
+                    "created_at": version.created_at.isoformat(),
+                    "updated_at": version.updated_at.isoformat(),
+                    "deleted_at": (
+                        version.deleted_at.isoformat()
+                        if version.deleted_at else None
+                    ),
+                }
+                for version in versions
+            ]
+            exported.append({
                 "memory_id": record.candidate.memory_id,
                 "scope": record.candidate.scope.value,
                 "scope_id": record.candidate.scope_id,
@@ -256,9 +279,9 @@ class MemoryService:
                 ),
                 "created_at": record.created_at.isoformat(),
                 "updated_at": record.updated_at.isoformat(),
-            }
-            for record in visible
-        ]
+                "history": history,
+            })
+        return exported
     async def history(self,*,principal: MemoryPrincipal,memory_id: str)->list[MemoryRecord]:
         record=await self.repository.get(principal.tenant_id,memory_id)
         if record is None:
