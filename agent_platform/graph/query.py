@@ -161,8 +161,11 @@ class GraphQueryService:
         if isinstance(relation_types, (str, bytes)):
             raise ValueError("relation_types must be a sequence of relation type names")
         allowed_types = frozenset(relation_types)
-        if any(not isinstance(item, str) or not item.strip() for item in allowed_types):
-            raise ValueError("relation_types must contain non-empty strings")
+        if (
+            len(allowed_types) > 128
+            or any(not isinstance(item, str) or not item.strip() for item in allowed_types)
+        ):
+            raise ValueError("relation_types must contain at most 128 non-empty strings")
 
         async def run() -> GraphQueryResult:
             root = await self.repository.get_entity(entity_id, allowed_project_ids=scope)
