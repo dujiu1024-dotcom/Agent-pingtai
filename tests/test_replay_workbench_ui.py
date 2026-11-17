@@ -11,7 +11,7 @@ def test_workbench_exposes_replay_navigation_and_persisted_run_view() -> None:
 
     assert 'data-view="replay"' in index
     assert 'id="replay-open-form"' in script
-    assert '"/events?limit=200"' in script
+    assert '"/events?limit=500"' in script
     assert '"/blackboard/entries?scope=run&scope_id="' in script
     assert "blackboard_snapshot" in script
     assert "replayMessage" in script
