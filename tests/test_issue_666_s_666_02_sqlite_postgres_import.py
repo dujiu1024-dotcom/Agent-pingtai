@@ -22,8 +22,10 @@ class Cursor:
 
 
 class FakeConnection:
-    def __init__(self, *, target_columns=("id", "name", "payload"), nonempty=False, fail_insert=False):
+    def __init__(self, *, target_columns=("id", "name", "payload"),
+                 target_primary_key=("id",), nonempty=False, fail_insert=False):
         self.target_columns = target_columns
+        self.target_primary_key = target_primary_key
         self.nonempty = nonempty
         self.fail_insert = fail_insert
         self.commands = []
@@ -34,6 +36,8 @@ class FakeConnection:
         self.commands.append((query, params))
         if "information_schema.columns" in query:
             return Cursor([(column,) for column in self.target_columns])
+        if "information_schema.table_constraints" in query:
+            return Cursor([(column,) for column in self.target_primary_key])
         if "SELECT EXISTS" in query:
             return Cursor(one=(self.nonempty,))
         if query.startswith("INSERT") and self.fail_insert:
@@ -114,6 +118,17 @@ class SQLitePostgresImportTests(unittest.TestCase):
             self.assertEqual(report["status"], "committed")
             self.assertTrue(connection.committed)
             self.assertFalse(connection.rolled_back)
+
+    def test_target_primary_key_must_match_mapped_source_key(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            mapping_path = self._export(directory)
+            manifest, rows = load_export(directory)
+            connection = FakeConnection(target_primary_key=("name",))
+            with self.assertRaisesRegex(ValueError, "primary key"):
+                migrate(connection, rows, load_mapping(mapping_path, manifest), dry_run=False)
+            self.assertFalse(any(query.startswith("INSERT") for query, _ in connection.commands))
+            self.assertTrue(connection.rolled_back)
 
     def test_nonempty_target_fails_before_insert(self):
         with tempfile.TemporaryDirectory() as temp:
