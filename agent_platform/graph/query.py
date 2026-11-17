@@ -69,6 +69,9 @@ class GraphQueryService:
             or not 0 < default_timeout_seconds <= 30
         ):
             raise ValueError("default_timeout_seconds must be in (0, 30]")
+        repository_tenant = getattr(repository, "tenant_id", tenant_id)
+        if repository_tenant != tenant_id:
+            raise ValueError("graph repository tenant does not match query service tenant")
         self.tenant_id = tenant_id
         self.repository = repository
         self.default_timeout_seconds = float(default_timeout_seconds)
@@ -211,7 +214,8 @@ class GraphQueryService:
                 (source_entity_id, (source_entity_id,), ())
             ]
             visited = {source_entity_id}
-            while queue:
+            visit_budget = 5000
+            while queue and len(visited) <= visit_budget:
                 current, path_nodes, path_edges = queue.pop(0)
                 if len(path_edges) >= max_depth:
                     continue
@@ -228,6 +232,8 @@ class GraphQueryService:
                     if end not in visited:
                         visited.add(end)
                         queue.append((end, path_nodes + (end,), path_edges + (relation_id,)))
+                        if len(visited) > visit_budget:
+                            return None
             return None
 
         return await asyncio.wait_for(run(), timeout=self._timeout(timeout_seconds))
