@@ -21,11 +21,14 @@ explicit canary percentage; the policy does not infer or silently ramp it.
 
 ## Consistency and rollback
 
-Every decision evaluates sampled-row count, row mismatch ratio, source/target
-checksums, replication lag, and write-error rate. Defaults require at least
+Every decision evaluates evidence freshness, sampled-row count, row mismatch ratio,
+source/target checksums, replication lag, and write-error rate. Defaults require at least
 100 sampled rows, exact checksums, zero row mismatches, at most 5 seconds of
 replication lag, and at most 0.1% write errors. Missing/insufficient evidence
-fails closed.
+fails closed. Evidence older than 60 seconds is stale by default and cannot
+advance a phase; stale evidence in an active dual-write/canary/target-primary
+phase produces a rollback decision. Operators can tune the freshness bound
+with `max_evidence_age_seconds` for their measurement pipeline.
 
 A consistency failure while dual-writing, canarying, or serving target-primary
 traffic returns a rollback decision. The caller must execute the rollback
@@ -51,7 +54,7 @@ business criticality before enabling a production cutover.
 ## Verification
 
 `tests/test_migration_cutover.py` covers deterministic canary assignment,
-dual-write authority, checksum/lag/error drift, automatic rollback, observation
+dual-write authority, checksum/lag/error drift, stale-evidence rejection and rollback, observation
 window enforcement, invalid phase transitions, and legacy retirement gates.
 Production traffic switching and real-system rollback are intentionally not
 simulated or claimed by these unit tests.
