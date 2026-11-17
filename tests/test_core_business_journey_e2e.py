@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import FastAPI
 
@@ -19,7 +18,7 @@ from agent_platform.memory.service import InMemoryMemoryRepository, MemoryServic
 from agent_platform.workflows.expert_registry import ControlPlaneExpertRegistry
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 from agent_platform.workflows.multi_expert import build_multi_expert_workflow
-from agent_platform.contracts import BlackboardEntry, EntryKind, Scope
+from agent_platform.contracts import BlackboardEntry, EntryKind
 
 
 class JourneyIdentity:
@@ -198,7 +197,6 @@ class CoreBusinessJourneyE2ETests(unittest.TestCase):
         # Configure and publish two tenant-scoped Agent definitions.
         registry = RegistryService(InMemoryRegistryRepository())
         for agent_id, capability in (("researcher", "knowledge.search"), ("reviewer", "artifact.review")):
-            draft = awaitable = None
             import asyncio
             draft = asyncio.run(registry.create_draft(
                 tenant_id="tenant-e2e", kind="agent", item_id=agent_id,
