@@ -117,6 +117,8 @@ class Issue9RecoveryPostgresTests(unittest.IsolatedAsyncioTestCase):
         lifecycle_after_restart = RunLifecycleManager(self.store)
         resumed = []
 
+        tenant_id = self.tenant_id
+
         class RestartedExecutor:
             worker_id = "worker-after-restart"
 
@@ -129,7 +131,7 @@ class Issue9RecoveryPostgresTests(unittest.IsolatedAsyncioTestCase):
             async def resume_claimed(self, *, snapshot, input, session_context=None):
                 resumed.append((snapshot.checkpoint_ref, input, session_context))
                 await self.lifecycle.finish(
-                    self.tenant_id, run_id, RunStatus.SUCCEEDED,
+                    tenant_id, run_id, RunStatus.SUCCEEDED,
                     checkpoint_ref=snapshot.checkpoint_ref,
                 )
                 return {"answer": "resumed", "usage": {"total_tokens": 3}}
