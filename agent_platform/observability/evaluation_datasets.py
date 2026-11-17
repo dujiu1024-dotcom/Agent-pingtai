@@ -25,7 +25,10 @@ class EvaluationDatasetCase:
     source_ref: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.case_id, str) or not self.case_id.strip() or len(self.case_id) > 128:
+        if (
+            not isinstance(self.case_id, str) or not self.case_id.strip()
+            or len(self.case_id) > 128
+        ):
             raise ValueError("case_id must be a non-empty string of at most 128 characters")
         if not isinstance(self.input, str) or not self.input.strip():
             raise ValueError("input must be a non-empty string")
@@ -54,9 +57,12 @@ class EvaluationDatasetVersion:
     created_at: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.tenant_id, str) or not self.tenant_id.strip() or not isinstance(self.created_by, str) or not self.created_by.strip():
+        if (
+            not isinstance(self.tenant_id, str) or not self.tenant_id.strip()
+            or not isinstance(self.created_by, str) or not self.created_by.strip()
+        ):
             raise ValueError("tenant_id and created_by are required")
-        if not _DATASET_ID.fullmatch(self.dataset_id):
+        if not isinstance(self.dataset_id, str) or not _DATASET_ID.fullmatch(self.dataset_id):
             raise ValueError("dataset_id has an invalid format")
         if isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
             raise ValueError("version must be a positive integer")
@@ -92,9 +98,12 @@ class InMemoryEvaluationDatasetRepository:
         self, *, tenant_id: str, dataset_id: str, cases: tuple[EvaluationDatasetCase, ...],
         created_by: str,
     ) -> EvaluationDatasetVersion:
-        if not tenant_id.strip() or not created_by.strip():
+        if (
+            not isinstance(tenant_id, str) or not tenant_id.strip()
+            or not isinstance(created_by, str) or not created_by.strip()
+        ):
             raise ValueError("tenant_id and created_by are required")
-        if not _DATASET_ID.fullmatch(dataset_id):
+        if not isinstance(dataset_id, str) or not _DATASET_ID.fullmatch(dataset_id):
             raise ValueError("dataset_id has an invalid format")
         if not cases or len(cases) > MAX_CASES:
             raise ValueError("dataset must contain between 1 and 2000 cases")
