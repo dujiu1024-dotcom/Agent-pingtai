@@ -31,4 +31,5 @@ jobs:
             tests.test_identity_audit_contract \
             tests.test_secret_manager \
             tests.test_approval_workbench_ui \
-            tests.test_sandbox_oci -v
+            tests.test_sandbox_oci \
+            tests.test_emergency_isolation -v
