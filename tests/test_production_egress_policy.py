@@ -25,7 +25,7 @@ class ProductionEgressPolicyTests(unittest.TestCase):
 
     def test_plain_http_proxy_is_rejected(self):
         values = dict(self.valid, EGRESS_PROXY_URL="http://proxy.example.internal:8080")
-        self.assertTrue(any("HTTPS URL" in item for item in validate_egress_config(values)))
+        self.assertTrue(any("EGRESS_PROXY_URL" in item for item in validate_egress_config(values)))
 
     def test_proxy_credentials_and_paths_are_rejected(self):
         for proxy in (
