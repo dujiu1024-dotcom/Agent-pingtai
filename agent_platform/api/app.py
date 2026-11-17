@@ -20,8 +20,8 @@ from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.localization import create_locale_preferences_router
-from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
+from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
