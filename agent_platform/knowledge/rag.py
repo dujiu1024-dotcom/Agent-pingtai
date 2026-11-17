@@ -9,6 +9,8 @@ from agent_platform.knowledge.citations import citation_context
 from agent_platform.knowledge.contracts import KnowledgePrincipal, RetrievalHit
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
+from agent_platform.observability.trace_spans import trace_span
+from uuid import uuid4
 
 
 class RAGGenerator(Protocol):
@@ -54,14 +56,26 @@ class RAGService:
         metadata = self._trace_metadata(principal, trace_context)
         started = monotonic()
         status = "failed"
-        with safe_observation(
+        with trace_span(
+            "rag.answer", component="retrieval", tenant_id=principal.tenant_id,
+            run_id=metadata.get("run_id"), request_id=metadata.get("request_id"),
+            agent_id=metadata.get("agent_id"),
+            correlation_id=(trace_context or {}).get("correlation_id"),
+        ), safe_observation(
             self.observer, name="rag.answer",
             input={"query_chars": len(query), "retrieval_limit": limit},
             metadata=metadata,
         ) as root_span:
             try:
                 retrieval_started = monotonic()
-                with safe_observation(
+                with trace_span(
+                    "knowledge.retrieve", component="knowledge",
+                    tenant_id=principal.tenant_id, run_id=metadata.get("run_id"),
+                    request_id=metadata.get("request_id"), agent_id=metadata.get("agent_id"),
+                    retrieval_id=str(uuid4()),
+                    knowledge_collection_id=(trace_context or {}).get("knowledge_collection_id"),
+                    attributes={"query_chars": len(query), "limit": limit},
+                ), safe_observation(
                     self.observer, name="rag.retrieve",
                     input={"query_chars": len(query), "limit": limit},
                     metadata=metadata,
@@ -90,7 +104,13 @@ class RAGService:
                 context = citation_context(hits)
                 context_chars = sum(len(str(item.get("text", ""))) for item in context)
                 generation_started = monotonic()
-                with safe_observation(
+                with trace_span(
+                    "rag.generate", component="agent", tenant_id=principal.tenant_id,
+                    run_id=metadata.get("run_id"), request_id=metadata.get("request_id"),
+                    agent_id=metadata.get("agent_id"),
+                    attributes={"context_document_count": len(context),
+                                "context_chars": context_chars},
+                ), safe_observation(
                     self.observer, name="rag.generate",
                     input={
                         "context_document_count": len(context),
