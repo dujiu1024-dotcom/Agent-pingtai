@@ -17,6 +17,7 @@ DetailResolver = Callable[[Principal], Awaitable[Any]]
 ExecutorResolver = Callable[[Principal], Awaitable[Any]]
 ToolEffectResolver = Callable[[Principal], Awaitable[Any]]
 EventBrokerResolver = Callable[[str], Awaitable[Any]]
+BudgetLedgerResolver = Callable[[Principal], Awaitable[Any]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
 
@@ -29,7 +30,7 @@ def create_runs_router(
     resolve_executor: ExecutorResolver | None = None,
     resolve_tool_effects: ToolEffectResolver | None = None,
     resolve_event_broker: EventBrokerResolver | None = None,
-    resolve_run_budget_ledger: DetailResolver | None = None,
+    resolve_budget_ledger: BudgetLedgerResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/runs", tags=["runs"])
 
@@ -59,8 +60,30 @@ def create_runs_router(
             detail = await details.get(tenant_id=principal.tenant_id, run_id=run_id)
             if detail is None:
                 raise HTTPException(404, "Run not found")
-            return dict(detail)
-        return serialize(run)
+            result = dict(detail)
+        else:
+            result = serialize(run)
+        if resolve_budget_ledger is not None:
+            ledger = await resolve_budget_ledger(principal)
+            try:
+                snapshot = await ledger.snapshot(principal.tenant_id, run_id)
+                result["budget"] = {
+                    "max_tokens": snapshot.max_tokens,
+                    "max_cost_usd": str(snapshot.max_cost_usd),
+                    "reserved_tokens": snapshot.reserved_tokens,
+                    "reserved_cost_usd": str(snapshot.reserved_cost_usd),
+                    "actual_tokens": snapshot.actual_tokens,
+                    "actual_cost_usd": str(snapshot.actual_cost_usd),
+                    "remaining_tokens": snapshot.remaining_tokens,
+                    "remaining_cost_usd": str(snapshot.remaining_cost_usd),
+                    "overrun_reason": snapshot.overrun_reason,
+                }
+            except KeyError:
+                result["budget"] = None
+            result["model_call_usage"] = await ledger.list_model_calls(
+                tenant_id=principal.tenant_id, run_id=run_id, limit=200,
+            )
+        return result
 
     @router.post("/{run_id}/cancel")
     async def cancel_run(run_id: str, request: Request):
@@ -228,20 +251,6 @@ def create_runs_router(
             return {"items": items}
 
 
-
-    if resolve_run_budget_ledger is not None:
-        @router.get("/{run_id}/budget-usage")
-        async def get_run_budget_usage(run_id: str, request: Request):
-            principal, lifecycle = await context(request, run_id, "read")
-            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
-                raise HTTPException(404, "Run not found")
-            ledger = await resolve_run_budget_ledger(principal)
-            try:
-                return await ledger.get_run_budget_report(principal.tenant_id, run_id)
-            except KeyError as exc:
-                raise HTTPException(404, "Run budget record not found") from exc
-            except ValueError as exc:
-                raise HTTPException(400, str(exc)) from exc
 
     if resolve_event_broker is not None:
         @router.get("/{run_id}/stream")

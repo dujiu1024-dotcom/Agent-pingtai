@@ -321,6 +321,52 @@ class PostgresRunBudgetLedger:
         async with connection:
             return await self._snapshot(connection, tenant_id, run_id)
 
+    async def list_model_calls(
+        self, *, tenant_id: str, run_id: str, limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Read the estimate/actual audit trail for one tenant-owned Run."""
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        run_uuid = UUID(run_id)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be an integer between 1 and 500")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT call_id,tenant_id,run_id,model_key,
+                          estimated_input_tokens,estimated_output_tokens,estimated_cost_usd,
+                          actual_input_tokens,actual_output_tokens,actual_cost_usd,
+                          token_delta,cost_delta_usd,remaining_tokens,remaining_cost_usd,
+                          status,overrun_reason,created_at,settled_at
+                   FROM platform_model_call_budget_ledger
+                   WHERE tenant_id=%s AND run_id=%s
+                   ORDER BY created_at DESC,call_id DESC LIMIT %s""",
+                (tenant_id, run_uuid, limit),
+            )
+            rows = await cursor.fetchall()
+        return [{
+            "call_id": str(row["call_id"]), "tenant_id": row["tenant_id"],
+            "run_id": str(row["run_id"]), "model_key": row["model_key"],
+            "estimated_input_tokens": row["estimated_input_tokens"],
+            "estimated_output_tokens": row["estimated_output_tokens"],
+            "estimated_total_tokens": row["estimated_input_tokens"] + row["estimated_output_tokens"],
+            "estimated_cost_usd": str(Decimal(row["estimated_cost_usd"])),
+            "actual_input_tokens": row["actual_input_tokens"],
+            "actual_output_tokens": row["actual_output_tokens"],
+            "actual_total_tokens": (
+                row["actual_input_tokens"] + row["actual_output_tokens"]
+                if row["actual_input_tokens"] is not None and row["actual_output_tokens"] is not None else None
+            ),
+            "actual_cost_usd": str(Decimal(row["actual_cost_usd"])) if row["actual_cost_usd"] is not None else None,
+            "token_delta": row["token_delta"],
+            "cost_delta_usd": str(Decimal(row["cost_delta_usd"])) if row["cost_delta_usd"] is not None else None,
+            "remaining_tokens": row["remaining_tokens"],
+            "remaining_cost_usd": str(Decimal(row["remaining_cost_usd"])) if row["remaining_cost_usd"] is not None else None,
+            "status": row["status"], "overrun_reason": row["overrun_reason"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "settled_at": row["settled_at"].isoformat() if row["settled_at"] else None,
+        } for row in rows]
+
     async def _snapshot(
         self, connection: Any, tenant_id: str, run_id: str, *, lock: bool = False,
     ) -> RunBudgetSnapshot:

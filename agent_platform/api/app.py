@@ -89,6 +89,8 @@ def create_platform_app(
     run_authorizer: Any | None = None,
     run_intervention_resolver: Any | None = None,
     run_detail_resolver: Any | None = None,
+    run_budget_ledger_resolver: Any | None = None,
+    run_budget_audit_reader: Any | None = None,
     run_executor_resolver: Any | None = None,
     tool_effect_reconciliation_resolver: Any | None = None,
     approval_service: Any | None = None,
@@ -499,13 +501,14 @@ def create_platform_app(
         app.include_router(create_approval_router(
             service=approval_service, authorize_approver=approval_authorizer,
         ))
-    audit_configured = any(value is not None for value in (audit_reader, audit_authorizer))
+    audit_configured = any(value is not None for value in (audit_reader, audit_authorizer, run_budget_audit_reader))
     if audit_configured:
         if audit_reader is None or audit_authorizer is None:
             raise ValueError("audit reader and audit authorizer must be configured together")
         app.include_router(create_audit_router(
             reader=audit_reader, identity_reader=identity_audit_reader,
             authorize_read=audit_authorizer,
+            budget_reader=run_budget_audit_reader,
         ))
     quota_configured = any(value is not None for value in (
         quota_reporting_store, quota_service, quota_manage_authorizer, quota_scope_authorizer,
@@ -595,6 +598,7 @@ def create_platform_app(
             app.router.on_shutdown.append(worker.stop)
     runs_configured = any(value is not None for value in (
         run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
+        run_budget_ledger_resolver,
     ))
     if runs_configured:
         if run_lifecycle_resolver is None or run_authorizer is None:
@@ -605,6 +609,7 @@ def create_platform_app(
             authorize=run_authorizer,
             resolve_interventions=run_intervention_resolver,
             resolve_details=run_detail_resolver,
+            resolve_budget_ledger=run_budget_ledger_resolver,
             resolve_executor=run_executor_resolver,
             resolve_tool_effects=tool_effect_reconciliation_resolver,
         ))

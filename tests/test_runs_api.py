@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from decimal import Decimal
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -20,6 +22,35 @@ class RunsApiTests(unittest.TestCase):
         self.effects = InMemoryToolEffectStore()
         self.allow_reconcile = True
         self.audit_records = []
+        self.budget_calls = []
+
+        class BudgetReader:
+            async def snapshot(inner, tenant_id, run_id):
+                if tenant_id != "tenant-a":
+                    raise KeyError(run_id)
+                return SimpleNamespace(
+                    max_tokens=1000, max_cost_usd=Decimal("5.00"),
+                    reserved_tokens=20, reserved_cost_usd=Decimal("0.10"),
+                    actual_tokens=50, actual_cost_usd=Decimal("0.25"),
+                    remaining_tokens=930, remaining_cost_usd=Decimal("4.65"),
+                    overrun_reason=None,
+                )
+
+            async def list_model_calls(inner, *, tenant_id, run_id, limit=200):
+                self.budget_calls.append((tenant_id, run_id, limit))
+                return [{
+                    "call_id": "call-budget-1", "tenant_id": tenant_id,
+                    "run_id": run_id, "model_key": "model-a",
+                    "estimated_input_tokens": 40, "estimated_output_tokens": 20,
+                    "estimated_total_tokens": 60, "estimated_cost_usd": "0.30",
+                    "actual_input_tokens": 30, "actual_output_tokens": 20,
+                    "actual_total_tokens": 50, "actual_cost_usd": "0.25",
+                    "token_delta": -10, "cost_delta_usd": "-0.05",
+                    "remaining_tokens": 930, "remaining_cost_usd": "4.65",
+                    "status": "settled", "overrun_reason": None,
+                }]
+
+        self.budget_reader = BudgetReader()
 
         async def principal(request):
             return Principal(
@@ -35,6 +66,9 @@ class RunsApiTests(unittest.TestCase):
             return resource_type == "run" and (
                 action in {"read", "cancel"} or (action == "reconcile" and self.allow_reconcile)
             )
+
+        async def resolve_budget_ledger(p):
+            return self.budget_reader
 
         async def resolve_tool_effects(p):
             async def authorize_operator(operator_id, tenant_id, run_id, call_id):
@@ -56,6 +90,7 @@ class RunsApiTests(unittest.TestCase):
         app.include_router(create_runs_router(
             resolve_principal=principal, resolve_lifecycle=lifecycle, authorize=authorize,
             resolve_tool_effects=resolve_tool_effects,
+            resolve_budget_ledger=resolve_budget_ledger,
         ))
         self.client = TestClient(app)
 
@@ -68,6 +103,20 @@ class RunsApiTests(unittest.TestCase):
         cancelled = self.client.post("/api/platform/v1/runs/run-1/cancel")
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(cancelled.json()["status"], "cancelled")
+
+    def test_run_details_include_budget_snapshot_and_estimated_actual_call_usage(self):
+        import asyncio
+        store = self.stores.setdefault("tenant-a", InMemoryRunStateStore())
+        asyncio.run(store.create("tenant-a", "run-budget"))
+        response = self.client.get("/api/platform/v1/runs/run-budget")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["budget"]["max_tokens"], 1000)
+        self.assertEqual(body["budget"]["actual_tokens"], 50)
+        self.assertEqual(body["budget"]["remaining_tokens"], 930)
+        self.assertEqual(body["model_call_usage"][0]["estimated_total_tokens"], 60)
+        self.assertEqual(body["model_call_usage"][0]["actual_total_tokens"], 50)
+        self.assertEqual(self.budget_calls, [("tenant-a", "run-budget", 200)])
 
     def test_cross_tenant_run_is_not_visible(self):
         store = self.stores.setdefault("tenant-a", InMemoryRunStateStore())

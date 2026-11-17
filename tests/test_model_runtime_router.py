@@ -449,6 +449,41 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual((tokens, concurrency), (12, 1))
 
+    async def test_token_estimation_failure_is_audited_and_never_tries_provider_or_fallback(self):
+        class FailingEstimator:
+            def estimate(self, **kwargs):
+                raise RuntimeError("tokenizer unavailable")
+
+        class NeverDispatchTransport:
+            def __init__(self):
+                self.calls = []
+
+            async def complete(self, *, config, **kwargs):
+                self.calls.append(config.provider_id)
+                raise AssertionError("Provider dispatch must not occur")
+
+        audit = AuditRecorder()
+        transport = NeverDispatchTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit, resolver=RegistryModelResolver(Secrets()),
+            transport=transport, token_estimator=FailingEstimator(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "tokenizer unavailable"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-estimate-fail",
+                template_id="primary", fallback_template_ids=("fallback",),
+                messages=({"role": "user", "content": "private prompt"},),
+                request_id="request-estimate-fail",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(
+            [(event["action"], event["outcome"]) for event in audit.events],
+            [("model.request", "started"), ("model.response", "failed")],
+        )
+        self.assertEqual(audit.events[-1]["detail"]["reason"], "token_estimation_failed")
+        self.assertEqual(audit.events[-1]["detail"]["error_type"], "RuntimeError")
+        self.assertNotIn("private prompt", str(audit.events))
+
     async def test_context_estimation_is_enforced_without_configured_quota_budget(self):
         class RejectingEstimator:
             def __init__(self):
