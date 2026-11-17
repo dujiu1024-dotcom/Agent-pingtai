@@ -60,8 +60,16 @@ class OciSandboxConfig:
         for key in self.allowed_environment_keys:
             if not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", key):
                 raise ValueError("invalid environment key in allowlist")
-            if any(part in key for part in ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "CREDENTIAL")):
-                raise ValueError("secret-bearing environment keys are forbidden in the sandbox")
+            components = set(key.split("_"))
+            sensitive_components = {
+                "KEY", "KEYS", "APIKEY", "ACCESSKEY", "PRIVATEKEY",
+                "SECRET", "SECRETS", "TOKEN", "TOKENS", "PASSWORD", "PASSWD",
+                "CREDENTIAL", "CREDENTIALS", "AUTH", "AUTHORIZATION", "BEARER",
+                "COOKIE", "COOKIES", "SESSION", "SESSIONS", "SOCK", "SOCKET",
+                "CERT", "CERTIFICATE", "PRIVATE", "SSH", "DOCKER",
+            }
+            if components & sensitive_components:
+                raise ValueError("credential-bearing environment keys are forbidden in the sandbox")
 
 
 @dataclass(frozen=True)

@@ -10,12 +10,18 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "sha256 digest"):
             OciSandboxConfig(image="registry.example/agent-sandbox:latest")
 
-    def test_rejects_secret_environment_allowlist(self):
-        with self.assertRaisesRegex(ValueError, "secret-bearing"):
-            OciSandboxConfig(
-                image=IMAGE, runtime="podman",
-                allowed_environment_keys=frozenset({"MODEL_API_KEY"}),
-            )
+    def test_rejects_secret_and_host_credential_environment_allowlists(self):
+        for key in (
+            "MODEL_API_KEY", "AWS_ACCESS_KEY_ID", "GITHUB_TOKEN",
+            "AUTHORIZATION", "SSH_AUTH_SOCK", "DATABASE_PASSWORD",
+            "TLS_PRIVATE_KEY", "SESSION_COOKIE", "DOCKER_HOST",
+        ):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "credential-bearing"):
+                    OciSandboxConfig(
+                        image=IMAGE, runtime="podman",
+                        allowed_environment_keys=frozenset({key}),
+                    )
 
     def test_command_has_required_isolation_and_no_host_mounts(self):
         runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE, runtime="podman"))
