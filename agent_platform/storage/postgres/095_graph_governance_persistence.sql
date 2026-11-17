@@ -112,3 +112,29 @@ CREATE TABLE IF NOT EXISTS platform_graph_invalidation_jobs (
 );
 CREATE INDEX IF NOT EXISTS ix_graph_invalidation_claim
     ON platform_graph_invalidation_jobs (tenant_id, status, available_at, job_id);
+
+-- Governance history and audit are append-only evidence.
+CREATE OR REPLACE FUNCTION reject_graph_governance_history_mutation()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'graph governance history and audit are append-only';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_graph_entity_history_append_only
+    ON platform_graph_governed_entity_history;
+CREATE TRIGGER trg_graph_entity_history_append_only
+    BEFORE UPDATE OR DELETE ON platform_graph_governed_entity_history
+    FOR EACH ROW EXECUTE FUNCTION reject_graph_governance_history_mutation();
+
+DROP TRIGGER IF EXISTS trg_graph_relation_history_append_only
+    ON platform_graph_governed_relation_history;
+CREATE TRIGGER trg_graph_relation_history_append_only
+    BEFORE UPDATE OR DELETE ON platform_graph_governed_relation_history
+    FOR EACH ROW EXECUTE FUNCTION reject_graph_governance_history_mutation();
+
+DROP TRIGGER IF EXISTS trg_graph_governance_audit_append_only
+    ON platform_graph_governance_audit;
+CREATE TRIGGER trg_graph_governance_audit_append_only
+    BEFORE UPDATE OR DELETE ON platform_graph_governance_audit
+    FOR EACH ROW EXECUTE FUNCTION reject_graph_governance_history_mutation();
