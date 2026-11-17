@@ -5,15 +5,18 @@ import unittest
 from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.observability.prompt_adapter import PromptTemplateHarnessAdapter
 from agent_platform.observability.prompts import PromptRegistry
+from agent_platform.observability.trace_spans import current_trace_span
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
 
 class CapturingHarness:
     def __init__(self):
         self.request = None
+        self.trace_span = None
 
     async def run(self, request):
         self.request = request
+        self.trace_span = current_trace_span()
         return HarnessResult(output_text="ok")
 
 
@@ -41,6 +44,9 @@ class PromptTemplateHarnessAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inner.request.metadata["prompt_id"], "agent-instructions")
         self.assertEqual(inner.request.metadata["prompt_version"], 1)
         self.assertEqual(inner.request.metadata["prompt_content_hash"], first.content_hash)
+        self.assertEqual(inner.trace_span.component, "prompt")
+        self.assertEqual(inner.trace_span.prompt_id, "agent-instructions")
+        self.assertEqual(inner.trace_span.prompt_version, "1")
         self.assertEqual(request.instructions, "stale instruction")
 
     async def test_variable_mismatch_fails_before_model_execution(self):
