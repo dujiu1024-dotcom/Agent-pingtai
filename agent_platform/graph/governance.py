@@ -253,15 +253,7 @@ class InMemoryGraphGovernanceRepository:
             self._enqueue(tenant_id, "cache", entity_id, "invalidate", updated.version)
             affected_relations: list[str] = []
             if status is GraphEntityStatus.DELETED:
-                ordered_relations = sorted(
-                self._relations.items(),
-                key=lambda item: (
-                    item[1].source_entity_id == source_id
-                    or item[1].target_entity_id == source_id,
-                    item[1].relation_id,
-                ),
-            )
-            for relation_key, relation in ordered_relations:
+                for relation_key, relation in tuple(self._relations.items()):
                     if relation.tenant_id != tenant_id or (
                         relation.source_entity_id != entity_id
                         and relation.target_entity_id != entity_id
@@ -311,7 +303,15 @@ class InMemoryGraphGovernanceRepository:
             self._save_entity(target_key, merged)
             self._save_entity(source_key, superseded)
             seen_edges: set[tuple[str, str, str, str | None]] = set()
-            for relation_key, relation in tuple(self._relations.items()):
+            ordered_relations = sorted(
+                self._relations.items(),
+                key=lambda item: (
+                    item[1].source_entity_id == source_id
+                    or item[1].target_entity_id == source_id,
+                    item[1].relation_id,
+                ),
+            )
+            for relation_key, relation in ordered_relations:
                 if relation.tenant_id != tenant_id or relation.status is not GraphEntityStatus.ACTIVE:
                     continue
                 new_source = target_id if relation.source_entity_id == source_id else relation.source_entity_id
@@ -400,7 +400,7 @@ class InMemoryGraphGovernanceRepository:
         if not isinstance(instant, datetime) or instant.tzinfo is None:
             raise ValueError("now must be timezone-aware")
         async with self._lock:
-            claimed: list[GraphInvalidationJob] = 
+            claimed: list[GraphInvalidationJob] = []
             for key, job in sorted(self._jobs.items(), key=lambda item: item[1].available_at):
                 expired = job.status == "processing" and job.lease_until is not None and job.lease_until <= instant
                 ready = job.status == "pending" and job.available_at <= instant
