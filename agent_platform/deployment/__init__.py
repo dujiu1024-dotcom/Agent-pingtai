@@ -1,4 +1,18 @@
 """Deployment, backup and disaster recovery primitives."""
+
+__all__ = [
+    "BackupArtifact",
+    "BackupCatalog",
+    "BackupCoordinator",
+    "BackupKind",
+    "BackupPolicy",
+    "BackupScheduler",
+    "RestoreDrill",
+    "RestoreDrillState",
+    "RestoreDrillResult",
+    "RecoveryPointAge",
+]
+
 from agent_platform.deployment.backups import (
     BackupArtifact,
     BackupCatalog,
