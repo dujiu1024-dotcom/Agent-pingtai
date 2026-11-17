@@ -13,6 +13,7 @@ from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
+from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.prompts import create_prompt_registry_router
@@ -115,6 +116,8 @@ def create_platform_app(
     blackboard_authorizer: Any | None = None,
     blackboard_evidence_verifier: Any | None = None,
     readiness_checks: Any | None = None,
+    locale_preference_service: Any | None = None,
+    locale_manage_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -436,5 +439,20 @@ def create_platform_app(
             resolve_details=run_detail_resolver,
             resolve_executor=run_executor_resolver,
             resolve_tool_effects=tool_effect_reconciliation_resolver,
+        ))
+    locale_configured = any(value is not None for value in (
+        locale_preference_service, locale_manage_authorizer,
+    ))
+    if locale_configured:
+        if any(value is None for value in (
+            locale_preference_service, locale_manage_authorizer, resource_audit_writer,
+        )):
+            raise ValueError(
+                "locale preference service, authorizer and audit writer must be configured together"
+            )
+        app.include_router(create_locale_preferences_router(
+            service=locale_preference_service,
+            authorize_manage=locale_manage_authorizer,
+            audit_writer=resource_audit_writer,
         ))
     return app
