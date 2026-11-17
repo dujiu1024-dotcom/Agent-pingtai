@@ -5,53 +5,14 @@
   "commit_sha": "0000000000000000000000000000000000000000",
   "generated_at_utc": "2026-11-16T00:00:00Z",
   "checks": {
-    "e2e": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-ci-run-or-report-url"
-    },
-    "fault_injection": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-fault-drill-report"
-    },
-    "performance": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-performance-report"
-    },
-    "security": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-security-regression-report"
-    },
-    "backup_restore": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-backup-restore-report"
-    },
-    "production_smoke": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-production-smoke-report"
-    },
-    "migration": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-migration-preflight-and-compatibility-report"
-    },
-    "rollback": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-rollback-plan-and-restore-drill-report"
-    }
+    "e2e": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-ci-run-or-report-url"},
+    "fault_injection": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-fault-drill-report"},
+    "performance": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-performance-report"},
+    "security": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-security-regression-report"},
+    "backup_restore": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-backup-restore-report"},
+    "production_smoke": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-production-smoke-report"},
+    "migration": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-migration-preflight-and-compatibility-report"},
+    "rollback": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-rollback-plan-and-restore-drill-report"},
+    "egress_policy": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-egress-firewall-and-proxy-verification"}
   }
 }
