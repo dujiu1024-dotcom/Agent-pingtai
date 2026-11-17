@@ -7,6 +7,8 @@ import hashlib
 import hmac
 import re
 import time
+from datetime import datetime, timezone
+from email.utils import format_datetime
 from dataclasses import dataclass
 from typing import Any, Mapping
 from uuid import uuid4
@@ -134,6 +136,39 @@ def idempotency_scope(*, tenant_id: str, principal_id: str, method: str,
                (tenant_id, principal_id, method, route)):
         raise ValueError("tenant, principal, method and route are required")
     return tenant_id, principal_id, method.upper(), route, validate_idempotency_key(key)
+
+
+
+def api_version_lifecycle_headers(*, deprecated_at: datetime | None = None,
+                                  sunset_at: datetime | None = None,
+                                  successor_url: str | None = None) -> dict[str, str]:
+    """Build standards-based lifecycle headers for an explicitly deprecated API version.
+
+    The helper is opt-in per route/version: merely deploying a newer version never
+    silently changes the lifecycle of an older version.
+    """
+    if deprecated_at is None and (sunset_at is not None or successor_url is not None):
+        raise ValueError("sunset and successor metadata require deprecated_at")
+    headers: dict[str, str] = {}
+    for name, value in (("deprecated_at", deprecated_at), ("sunset_at", sunset_at)):
+        if value is not None and (not isinstance(value, datetime) or value.tzinfo is None
+                                  or value.utcoffset() is None):
+            raise ValueError(f"{name} must be timezone-aware")
+    if deprecated_at is not None:
+        timestamp = int(deprecated_at.astimezone(timezone.utc).timestamp())
+        if timestamp < 0:
+            raise ValueError("deprecated_at must not be before the Unix epoch")
+        headers["Deprecation"] = f"@{timestamp}"
+    if sunset_at is not None:
+        headers["Sunset"] = format_datetime(sunset_at.astimezone(timezone.utc), usegmt=True)
+        if deprecated_at is not None and sunset_at <= deprecated_at:
+            raise ValueError("sunset_at must be later than deprecated_at")
+    if successor_url is not None:
+        if (not isinstance(successor_url, str) or not successor_url.startswith("/")
+                or successor_url.startswith("//") or any(ch in successor_url for ch in "<>\\r\\n")):
+            raise ValueError("successor_url must be a safe absolute-path reference")
+        headers["Link"] = f'<{successor_url}>; rel="successor-version"'
+    return headers
 
 
 def validate_api_version(version: str) -> str:

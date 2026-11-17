@@ -20,3 +20,18 @@ Stable error shape: `{"error":{"code":"...","message":"...","details":{}},"reque
 
 ## OpenAPI and evolution
 FastAPI's generated OpenAPI document is the machine-readable endpoint schema. Keep examples and response envelopes aligned. Deprecations require a migration window and documented replacement; never silently repurpose fields or routes.
+
+## Version deprecation and sunset policy
+
+A new major version does not by itself deprecate an existing version. When an operator
+explicitly schedules retirement for a version, route owners may attach
+`api_version_lifecycle_headers` to responses:
+
+- `Deprecation` uses the RFC 9745 structured date form.
+- `Sunset` uses the RFC 8594 HTTP-date form and must be later than the deprecation instant.
+- `Link: rel="successor-version"` points to a same-origin absolute-path successor.
+- Sunset/successor metadata cannot be emitted without a deprecation instant. Naive timestamps
+  and unsafe link values are rejected.
+
+The helper is deliberately opt-in; it does not silently change the lifecycle of v1
+or advertise a successor that has not been configured by the API owner.

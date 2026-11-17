@@ -4,6 +4,7 @@ import unittest
 
 from agent_platform.api.contract import (
     API_V1_PREFIX,
+    api_version_lifecycle_headers,
     ApiError,
     PublicApiContractASGIMiddleware,
     error_for_http_status,
@@ -17,6 +18,33 @@ from agent_platform.api.contract import (
 
 
 class PublicApiContractTests(unittest.TestCase):
+    def test_deprecation_lifecycle_headers_are_explicit_and_rfc_formatted(self):
+        from datetime import datetime, timezone
+        deprecated = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        sunset = datetime(2027, 1, 1, tzinfo=timezone.utc)
+        headers = api_version_lifecycle_headers(
+            deprecated_at=deprecated, sunset_at=sunset,
+            successor_url="/api/platform/v2",
+        )
+        self.assertEqual(headers["Deprecation"], "@1767225600")
+        self.assertEqual(headers["Sunset"], "Fri, 01 Jan 2027 00:00:00 GMT")
+        self.assertEqual(headers["Link"], '</api/platform/v2>; rel="successor-version"')
+
+    def test_deprecation_metadata_rejects_unsafe_or_inconsistent_values(self):
+        from datetime import datetime, timezone
+        aware = datetime(2027, 1, 1, tzinfo=timezone.utc)
+        naive = datetime(2026, 1, 1)
+        with self.assertRaises(ValueError):
+            api_version_lifecycle_headers(sunset_at=aware)
+        with self.assertRaises(ValueError):
+            api_version_lifecycle_headers(deprecated_at=naive)
+        with self.assertRaises(ValueError):
+            api_version_lifecycle_headers(deprecated_at=aware, sunset_at=aware)
+        with self.assertRaises(ValueError):
+            api_version_lifecycle_headers(deprecated_at=aware, successor_url="//evil.example/v2")
+        with self.assertRaises(ValueError):
+            api_version_lifecycle_headers(deprecated_at=aware, successor_url="/v2\\r\\nX-Evil: yes")
+
     def test_version_is_explicit_and_v1_is_supported(self):
         self.assertEqual(API_V1_PREFIX, "/api/platform/v1")
         self.assertEqual(validate_api_version("v1"), "v1")
