@@ -62,6 +62,13 @@ class Budget:
                 not isinstance(cost, Decimal) or not cost.is_finite() or cost < 0
             ):
                 raise ValueError("cost limits must be finite non-negative Decimals")
+        if self.scope_type in {"queue", "worker"} and (
+            self.hard_concurrency is None or self.hard_tokens is not None
+            or self.hard_cost_usd is not None or self.soft_tokens is not None
+            or self.soft_cost_usd is not None or self.hard_input_tokens is not None
+            or self.hard_output_tokens is not None
+        ):
+            raise ValueError("queue/worker scopes support hard_concurrency limits only")
 
 
 @dataclass(frozen=True)
