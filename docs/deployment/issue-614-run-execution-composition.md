@@ -71,3 +71,10 @@ The build_registry_ports, build_approved_executor_resolver, quota limiter and au
 When a ProductionRunExecution is supplied, the Workbench task service, Run executor API resolver and RunExecutionWorker are installed together. The worker is started/stopped by the existing FastAPI application lifecycle. Each ASGI worker process must receive a unique worker ID and use shared PostgreSQL/Redis-backed quota dependencies.
 
 Focused tests cover composition, tenant-bound task service resolution, exact shared Run store identity, mandatory quota/authorization/executor ports and worker start/stop. They do not prove live Vault, model Provider, PostgreSQL checkpoint migration, production Tool handlers or multi-process execution. Those require deployment evidence and remain separate acceptance items.
+
+
+## Production entrypoint wiring regression
+
+`tests.test_issue_614_runtime_composition` now also exercises `create_production_app()` with a trusted builder and isolated dependency doubles. It asserts that the builder receives the exact PostgreSQL Run store and lifecycle created by the production root, and that the resulting task service resolver, task authorizer, executor resolver and worker are all passed into `create_platform_app()` together. This guards against a deployment root that constructs a worker but silently omits one of the API/worker integration slots.
+
+The test is registered in the `platform-release-gate` focused-unit job. It validates repository-level composition wiring only; the deployment package's real graph, Vault, provider, PostgreSQL checkpoint and multi-process worker behavior still require deployment acceptance.
