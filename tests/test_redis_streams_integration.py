@@ -2,11 +2,18 @@
 
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from uuid import uuid4
 
+DSN = os.environ.get("AGENT_PLATFORM_TEST_DSN")
 REDIS_URL = os.environ.get("AGENT_PLATFORM_TEST_REDIS_URL")
 if REDIS_URL:
     from agent_platform.events.redis_streams import RedisStreamsTransport
+if DSN and REDIS_URL:
+    from psycopg import AsyncConnection
+    from agent_platform.events.outbox import PostgresOutboxStore
+    from agent_platform.events.outbox_replay import PostgresOutboxReplayStore
 
 
 @unittest.skipUnless(REDIS_URL, "AGENT_PLATFORM_TEST_REDIS_URL is not configured")
@@ -255,6 +262,98 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, topic=self.topic, group=self.group,
             message_id=message_id,
         ), 1)
+
+
+    @unittest.skipUnless(
+        DSN and REDIS_URL,
+        "PostgreSQL and Redis integration services are required",
+    )
+    async def test_redis_stream_loss_is_recovered_from_postgres_outbox(self):
+        """Redis is disposable: replay the same durable event identity from PostgreSQL."""
+        tenant_id = f"outbox-replay-{uuid4().hex}"
+        topic = "integration.outbox-recovery"
+        event_id = str(uuid4())
+        payload = {"business_fact": "durable-in-postgres", "revision": 7}
+        stream_prefix = f"platform-outbox-recovery-{uuid4().hex}"
+        transport = RedisStreamsTransport(REDIS_URL, stream_prefix=stream_prefix)
+        await transport.connect()
+        try:
+            async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
+                migration_dir = Path("agent_platform/storage/postgres")
+                for migration_path in sorted(migration_dir.glob("*.sql")):
+                    await conn.execute(migration_path.read_text(), prepare=False)
+                await conn.execute(
+                    "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                    (tenant_id, "Outbox Redis Loss Recovery"),
+                )
+                await conn.execute(
+                    """INSERT INTO platform_outbox
+                       (tenant_id, event_id, topic, payload, published_at)
+                       VALUES (%s, %s, %s, %s::jsonb, now())""",
+                    (tenant_id, event_id, topic, __import__("json").dumps(payload)),
+                )
+
+            async def connect():
+                return await AsyncConnection.connect(DSN, row_factory=__import__(
+                    "psycopg.rows", fromlist=["dict_row"]
+                ).dict_row)
+
+            await transport.ensure_group(
+                tenant_id=tenant_id, topic=topic, group="recovery-group"
+            )
+            # Model a successful original publish followed by total Redis stream loss.
+            await transport.publish(
+                tenant_id=tenant_id, topic=topic, event_id=event_id, payload=payload
+            )
+            stream = transport._stream(tenant_id, topic)
+            self.assertEqual(await transport._client.xlen(stream), 1)
+            await transport._client.delete(stream)
+            self.assertEqual(await transport._client.exists(stream), 0)
+
+            replay_store = PostgresOutboxReplayStore(connect)
+            replayed = await replay_store.requeue_published(
+                tenant_id=tenant_id,
+                event_ids=[event_id],
+                actor_id="integration-operator",
+                confirmation=f"REPLAY-OUTBOX:{tenant_id}",
+            )
+            self.assertEqual(replayed, (event_id,))
+
+            outbox = PostgresOutboxStore(connection_factory=connect)
+            claimed = await outbox.claim_batch(limit=10)
+            self.assertEqual(len(claimed), 1)
+            record = claimed[0]
+            self.assertEqual(record.event_id, event_id)
+            self.assertEqual(record.payload, payload)
+            message_id = await transport.publish(
+                tenant_id=record.tenant_id,
+                topic=record.topic,
+                event_id=record.event_id,
+                payload=record.payload,
+            )
+            self.assertTrue(message_id)
+            self.assertTrue(await outbox.mark_published(record))
+
+            recovered = await transport.read_group(
+                tenant_id=tenant_id, topic=topic, group="recovery-group",
+                consumer="recovery-worker", count=10, block_ms=100,
+            )
+            self.assertEqual(len(recovered), 1)
+            _recovered_message_id, fields = recovered[0]
+            self.assertEqual(fields["event_id"], event_id)
+            self.assertEqual(__import__("json").loads(fields["payload"]), payload)
+
+            async with await connect() as conn:
+                row = await (await conn.execute(
+                    """SELECT event_id, payload, published_at
+                       FROM platform_outbox WHERE tenant_id=%s AND event_id=%s""",
+                    (tenant_id, event_id),
+                )).fetchone()
+            self.assertEqual(str(row["event_id"]), event_id)
+            self.assertEqual(row["payload"], payload)
+            self.assertIsNotNone(row["published_at"])
+        finally:
+            await transport.close()
 
 
 if __name__ == "__main__":
