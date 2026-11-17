@@ -233,7 +233,7 @@ class PostgresSessionRepository:
                 )
                 if await cursor.fetchone() is None:
                     raise SessionNotFound("session not found or inactive")
-                await connection.execute(
+                cursor = await connection.execute(
                     """INSERT INTO platform_messages
                        (tenant_id,message_id,session_id,role,content,actor_id,task_id,run_id,
                         asset_ids,metadata,token_usage,created_at)
