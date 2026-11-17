@@ -180,3 +180,64 @@ class MultiExpertWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultiExpertBusinessJourneyContractTests(unittest.TestCase):
+    def test_expert_dispatch_context_isolated_per_expert_and_tenant_bound(self):
+        from agent_platform.workflows.multi_expert import expert_dispatch_payloads
+
+        state = {
+            "tenant_id": "tenant-a",
+            "task_id": "task-21",
+            "run_id": "run-21",
+            "objective": "Prepare a reviewed delivery artifact",
+            "run_context": {"constraints": ["no external side effects"]},
+            "expert_assignments": [
+                {"expert_id": "researcher", "focus": "evidence"},
+                {"expert_id": "reviewer", "focus": "quality"},
+            ],
+        }
+        payloads = expert_dispatch_payloads(state)
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual({item["tenant_id"] for item in payloads}, {"tenant-a"})
+        self.assertEqual({item["run_id"] for item in payloads}, {"run-21"})
+        payloads[0]["run_context"]["constraints"].append("mutated")
+        payloads[0]["assignment"]["focus"] = "mutated"
+        self.assertEqual(
+            payloads[1]["run_context"]["constraints"],
+            ["no external side effects"],
+        )
+        self.assertEqual(payloads[1]["assignment"]["focus"], "quality")
+        self.assertEqual(
+            state["run_context"]["constraints"],
+            ["no external side effects"],
+        )
+
+    def test_contribution_order_is_deterministic_and_does_not_mutate_input(self):
+        from agent_platform.workflows.multi_expert import ordered_expert_contributions
+
+        source = [
+            {"expert_id": "zeta", "blackboard_entry_id": "b-2", "evidence": ["z"]},
+            {"expert_id": "alpha", "blackboard_entry_id": "a-1", "evidence": ["a"]},
+            {"expert_id": "alpha", "blackboard_entry_id": "a-0", "evidence": ["b"]},
+        ]
+        ordered = ordered_expert_contributions(source)
+        self.assertEqual(
+            [(item["expert_id"], item["blackboard_entry_id"]) for item in ordered],
+            [("alpha", "a-0"), ("alpha", "a-1"), ("zeta", "b-2")],
+        )
+        ordered[0]["evidence"].append("changed")
+        self.assertEqual(source[2]["evidence"], ["a"])
+
+    def test_approval_route_never_archives_unapproved_result(self):
+        from agent_platform.workflows.multi_expert import route_after_approval
+
+        self.assertEqual(
+            route_after_approval({"approval_result": {"approved": True}}),
+            "archive",
+        )
+        self.assertEqual(
+            route_after_approval({"approval_result": {"approved": False}}),
+            "reject",
+        )
+        self.assertEqual(route_after_approval({"approval_result": {}}), "reject")
