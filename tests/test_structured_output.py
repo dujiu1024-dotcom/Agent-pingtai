@@ -282,6 +282,68 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "without a schema registry"):
             await SchemaValidatedHarnessAdapter(adapter).run(request)
 
+    async def test_versioned_schema_registry_resolves_pinned_version(self):
+        registry = StructuredOutputSchemaRegistry()
+        schema = {"type": "object", "required": ["answer"], "properties": {
+            "answer": {"type": "string"}
+        }}
+        registry.register("agent.answer", 1, schema)
+        schema["properties"]["answer"]["type"] = "integer"
+        self.assertEqual(
+            registry.resolve("agent.answer", 1)["properties"]["answer"]["type"],
+            "string",
+        )
+        adapter = FakeAdapter(['{"answer":"ok"}'])
+        request = HarnessRequest(
+            context=self.request.context,
+            instructions="Return answer",
+            input_text="Question",
+            metadata={"output_schema_id": "agent.answer", "output_schema_version": 1},
+        )
+        result = await SchemaValidatedHarnessAdapter(
+            adapter, schema_registry=registry,
+        ).run(request)
+        self.assertTrue(result.metadata["structured_output_valid"])
+        self.assertEqual(result.metadata["output_schema_id"], "agent.answer")
+        self.assertEqual(result.metadata["output_schema_version"], 1)
+        self.assertEqual(adapter.requests[0].output_schema["type"], "object")
+
+    async def test_schema_versions_are_immutable_and_unknown_versions_fail_closed(self):
+        registry = StructuredOutputSchemaRegistry()
+        registry.register("agent.answer", 1, {"type": "string"})
+        with self.assertRaisesRegex(ValueError, "immutable"):
+            registry.register("agent.answer", 1, {"type": "integer"})
+        with self.assertRaisesRegex(KeyError, "unknown structured output schema"):
+            registry.resolve("agent.answer", 2)
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            registry.resolve("agent.answer", True)
+
+    async def test_registry_rejects_schema_keywords_it_cannot_validate(self):
+        registry = StructuredOutputSchemaRegistry()
+        with self.assertRaisesRegex(ValueError, "unsupported schema keywords"):
+            registry.register("unsafe.schema", 1, {"type": "object", "$ref": "#/definitions/secret"})
+        with self.assertRaisesRegex(ValueError, "properties must be an object"):
+            registry.register("malformed.schema", 1, {"type": "object", "properties": []})
+
+    async def test_versioned_schema_requires_registry_and_explicit_version(self):
+        adapter = FakeAdapter(['{"answer":"ok"}'])
+        request = HarnessRequest(
+            context=self.request.context,
+            instructions="Return answer",
+            input_text="Question",
+            metadata={"output_schema_id": "agent.answer"},
+        )
+        with self.assertRaisesRegex(ValueError, "version"):
+            await SchemaValidatedHarnessAdapter(adapter).run(request)
+        request = HarnessRequest(
+            context=self.request.context,
+            instructions="Return answer",
+            input_text="Question",
+            metadata={"output_schema_id": "agent.answer", "output_schema_version": 1},
+        )
+        with self.assertRaisesRegex(RuntimeError, "without a schema registry"):
+            await SchemaValidatedHarnessAdapter(adapter).run(request)
+
     async def test_retry_budget_is_bounded(self):
         for retries in (4, True, -1):
             with self.subTest(retries=retries), self.assertRaises(ValueError):
