@@ -44,7 +44,9 @@ class PlatformOpsEntrypointTests(unittest.TestCase):
         # Static contract: the guard is evaluated before any Docker command.
         content = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("image:.*:latest", content)
-        self.assertLess(content.index("grep -Eq"), content.index('compose config --quiet', content.index('upgrade)'))
+        guard_index = content.index("grep -Eq")
+        config_index = content.index("compose config --quiet", content.index("upgrade)"))
+        self.assertLess(guard_index, config_index)
 
 
 if __name__ == "__main__":
