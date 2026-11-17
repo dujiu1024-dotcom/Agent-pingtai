@@ -100,6 +100,14 @@ class PostgresBlackboardRepository(BlackboardRepository):
             return
         await connection.execute(
             """
+            INSERT INTO blackboard_event_deliveries (tenant_id, event_id)
+            VALUES (%s, %s)
+            ON CONFLICT (tenant_id, event_id) DO NOTHING
+            """,
+            (self.tenant_id, UUID(event.event_id)),
+        )
+        await connection.execute(
+            """
             INSERT INTO platform_outbox (tenant_id, event_id, topic, payload)
             VALUES (%s, %s, %s, %s)
             """,
