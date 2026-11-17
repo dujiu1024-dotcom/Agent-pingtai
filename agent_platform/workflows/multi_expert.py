@@ -6,6 +6,7 @@ blackboard persistence, Harness execution, conflict resolution, and approvals.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, Sequence
 from operator import add
 from typing import Annotated, Any, Protocol, TypedDict
