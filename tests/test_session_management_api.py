@@ -115,8 +115,48 @@ class SessionManagementApiTests(unittest.TestCase):
             404,
         )
 
-    def test_session_permissions_and_tenant_isolation_fail_closed(self):
+    def test_session_delete_propagates_to_linked_assets_and_blocks_file_routes(self):
+        import asyncio
         session = self._create_session()
+        asset = asyncio.run(self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="session-private.txt",
+            media_type="text/plain", content=b"private session attachment",
+            session_id=session.session_id,
+        ))
+        asyncio.run(self.service.append_message(
+            tenant_id="tenant-a", actor_id="user-a", session_id=session.session_id,
+            role=self.MessageRole.USER, content="attached evidence",
+            asset_ids=(asset.asset_id,),
+        ))
+
+        deleted = self.client.delete(f"/api/platform/v1/sessions/{session.session_id}")
+        self.assertEqual(deleted.status_code, 204)
+        saved_asset = asyncio.run(self.repository.get_asset("tenant-a", asset.asset_id))
+        self.assertEqual(saved_asset.status.value, "deleted")
+        self.assertNotIn(asset.object_key, self.service.storage.objects)
+        self.assertEqual(
+            self.client.get(f"/api/platform/v1/files/{asset.asset_id}/metadata").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/api/platform/v1/files/{asset.asset_id}/download-url").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/platform/v1/sessions/{session.session_id}/messages",
+            ).status_code,
+            404,
+        )
+
+    def test_session_permissions_and_tenant_isolation_fail_closed(self):
+        import asyncio
+        session = self._create_session()
+        asset = asyncio.run(self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="tenant-private.txt",
+            media_type="text/plain", content=b"tenant-a only",
+            session_id=session.session_id,
+        ))
         self.denied_actions.add("read")
         self.assertEqual(
             self.client.get(f"/api/platform/v1/sessions/{session.session_id}").status_code,
@@ -128,3 +168,16 @@ class SessionManagementApiTests(unittest.TestCase):
             self.client.get(f"/api/platform/v1/sessions/{session.session_id}").status_code,
             404,
         )
+        self.assertEqual(
+            self.client.delete(f"/api/platform/v1/sessions/{session.session_id}").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/api/platform/v1/files/{asset.asset_id}/metadata").status_code,
+            404,
+        )
+        self.assertEqual(
+            (awaitable := asyncio.run(self.repository.get_asset("tenant-a", asset.asset_id))).status.value,
+            "available",
+        )
+        self.assertIn(asset.object_key, self.service.storage.objects)
