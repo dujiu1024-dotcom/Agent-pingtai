@@ -13,6 +13,8 @@ class WebhookAdminStore(Protocol):
     async def list_subscriptions(self, tenant_id: str) -> list[dict[str, Any]]: ...
     async def update_secret_ref(self, tenant_id: str, subscription_id: str, *, secret_ref: str) -> str | None: ...
     async def disable_subscription(self, tenant_id: str, subscription_id: str) -> str | None: ...
+    async def list_pending_secret_revocations(self, *, limit: int = 100) -> list[dict[str, str]]: ...
+    async def complete_secret_revocation(self, tenant_id: str, subscription_id: str, *, secret_ref: str) -> bool: ...
 
 
 class WebhookSecretManager(Protocol):
@@ -81,12 +83,40 @@ class WebhookSubscriptionService:
             await _await(self.secrets.revoke(secret_ref=new_ref))
             return False
         if old_ref != new_ref:
+            # The store durably queues old_ref in the same transaction as rotation.
+            # If Secret Manager is unavailable, the pending row survives for retry.
             await _await(self.secrets.revoke(secret_ref=old_ref))
+            await self.store.complete_secret_revocation(
+                tenant_id, subscription_id, secret_ref=old_ref,
+            )
         return True
+
+    async def retry_pending_secret_revocations(self, *, limit: int = 100) -> dict[str, int]:
+        if isinstance(limit, bool) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        pending = await self.store.list_pending_secret_revocations(limit=limit)
+        result = {"claimed": len(pending), "revoked": 0, "failed": 0}
+        for item in pending:
+            tenant_id = item["tenant_id"]
+            subscription_id = item["subscription_id"]
+            secret_ref = item["secret_ref"]
+            try:
+                await _await(self.secrets.revoke(secret_ref=secret_ref))
+                await self.store.complete_secret_revocation(
+                    tenant_id, subscription_id, secret_ref=secret_ref,
+                )
+            except Exception:
+                result["failed"] += 1
+                continue
+            result["revoked"] += 1
+        return result
 
     async def disable(self, *, tenant_id: str, subscription_id: str) -> bool:
         old_ref = await self.store.disable_subscription(tenant_id, subscription_id)
         if old_ref is None:
             return False
         await _await(self.secrets.revoke(secret_ref=old_ref))
+        await self.store.complete_secret_revocation(
+            tenant_id, subscription_id, secret_ref=old_ref,
+        )
         return True

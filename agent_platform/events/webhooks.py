@@ -398,6 +398,13 @@ class PostgresWebhookStore:
                 if row is None:
                     return None
                 old_secret_ref = row["secret_ref"]
+                if old_secret_ref != secret_ref:
+                    await connection.execute(
+                        """INSERT INTO platform_webhook_secret_revocations
+                           (tenant_id,subscription_id,secret_ref)
+                           VALUES (%s,%s,%s) ON CONFLICT DO NOTHING""",
+                        (tenant_id, UUID(subscription_id), old_secret_ref),
+                    )
                 await connection.execute(
                     """UPDATE platform_webhook_subscriptions
                        SET secret_ref=%s,updated_at=now()
@@ -406,19 +413,68 @@ class PostgresWebhookStore:
                 )
         return old_secret_ref
 
-    async def disable_subscription(self, tenant_id: str, subscription_id: str) -> bool:
+    async def disable_subscription(self, tenant_id: str, subscription_id: str) -> str | None:
+        """Disable once but return the secret reference on retries until it is revoked.
+
+        Secret revocation is an external side effect and cannot share the database
+        transaction. Returning the reference for an already-disabled subscription
+        lets the service retry a failed revocation without re-enabling delivery.
+        SecretManager.revoke must therefore be idempotent.
+        """
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
-                    """UPDATE platform_webhook_subscriptions
-                       SET status='disabled',updated_at=now()
-                       WHERE tenant_id=%s AND subscription_id=%s AND status='active'
-                       RETURNING secret_ref""",
+                    """SELECT secret_ref,status FROM platform_webhook_subscriptions
+                       WHERE tenant_id=%s AND subscription_id=%s FOR UPDATE""",
                     (tenant_id, UUID(subscription_id)),
                 )
                 row = await cursor.fetchone()
-                return row["secret_ref"] if row else None
+                if row is None:
+                    return None
+                await connection.execute(
+                    """INSERT INTO platform_webhook_secret_revocations
+                       (tenant_id,subscription_id,secret_ref)
+                       VALUES (%s,%s,%s) ON CONFLICT DO NOTHING""",
+                    (tenant_id, UUID(subscription_id), row["secret_ref"]),
+                )
+                if row["status"] == "active":
+                    await connection.execute(
+                        """UPDATE platform_webhook_subscriptions
+                           SET status='disabled',updated_at=now()
+                           WHERE tenant_id=%s AND subscription_id=%s AND status='active'""",
+                        (tenant_id, UUID(subscription_id)),
+                    )
+                return row["secret_ref"]
+
+    async def list_pending_secret_revocations(self, *, limit: int = 100) -> list[dict[str, str]]:
+        if isinstance(limit, bool) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT tenant_id,subscription_id,secret_ref
+                   FROM platform_webhook_secret_revocations
+                   ORDER BY created_at LIMIT %s""", (limit,),
+            )
+            rows = await cursor.fetchall()
+        return [{
+            "tenant_id": row["tenant_id"],
+            "subscription_id": str(row["subscription_id"]),
+            "secret_ref": row["secret_ref"],
+        } for row in rows]
+
+    async def complete_secret_revocation(self, tenant_id: str, subscription_id: str, *, secret_ref: str) -> bool:
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """DELETE FROM platform_webhook_secret_revocations
+                       WHERE tenant_id=%s AND subscription_id=%s AND secret_ref=%s
+                       RETURNING secret_ref""",
+                    (tenant_id, UUID(subscription_id), secret_ref),
+                )
+                return await cursor.fetchone() is not None
 
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]:
         if not 1 <= limit <= 500:
