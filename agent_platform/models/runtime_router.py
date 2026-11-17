@@ -15,6 +15,7 @@ from time import monotonic
 from types import SimpleNamespace
 from typing import Any, Mapping, Protocol, Sequence
 
+from agent_platform.models.circuit_breaker import CircuitOpenError
 from agent_platform.models.context_overflow import (
     ContextOverflowError,
     HumanInterventionRequired,
@@ -216,6 +217,7 @@ class OpenAICompatibleModelRouter:
         token_estimator: Any | None = None,
         quota_cost_estimator: ModelCostEstimator | None = None,
         quota_scope_resolver: Any | None = None,
+        circuit_breaker: Any | None = None,
         context_overflow_policy: str = "reject",
         context_summarizer: Any | None = None,
         context_intervention_handler: Any | None = None,
@@ -239,6 +241,7 @@ class OpenAICompatibleModelRouter:
         self.token_estimator = token_estimator
         self.quota_cost_estimator = quota_cost_estimator
         self.quota_scope_resolver = quota_scope_resolver
+        self.circuit_breaker = circuit_breaker
         if context_overflow_policy not in {"reject", "truncate", "summarize", "human_intervention"}:
             raise ValueError("unsupported context overflow policy")
         self.context_overflow_policy = context_overflow_policy
@@ -328,6 +331,19 @@ class OpenAICompatibleModelRouter:
                     candidate_id=candidate, reason="data_level_not_allowed",
                 )
                 raise ModelRoutingError("model is not approved for the requested data level")
+            breaker_key = f"{tenant_id}:{config.provider_id}:{config.model_id}"
+            if self.circuit_breaker is not None:
+                try:
+                    allowed = await self.circuit_breaker.allow_request(breaker_key)
+                except Exception as exc:
+                    raise ModelRoutingError("model circuit breaker could not authorize dispatch") from exc
+                if not allowed:
+                    await record_preflight_failure(
+                        candidate_id=candidate, reason="model_circuit_open",
+                        outcome="denied", error_type="CircuitOpenError",
+                    )
+                    last_error = CircuitOpenError("model provider circuit is open")
+                    continue
             started = monotonic()
             status = "failed"
             labels = {
@@ -526,6 +542,8 @@ class OpenAICompatibleModelRouter:
                             timeout_seconds=self.timeout_seconds,
                         )
                     except ModelTransportError as exc:
+                        if self.circuit_breaker is not None:
+                            await self.circuit_breaker.record_failure(breaker_key)
                         safe_update(span, output={
                             "status": "failed", "error_type": type(exc).__name__,
                         })
@@ -545,6 +563,8 @@ class OpenAICompatibleModelRouter:
                                 "model transport failed and failure audit could not be persisted"
                             ) from audit_exc
                         raise
+                    if self.circuit_breaker is not None:
+                        await self.circuit_breaker.record_success(breaker_key)
                     status = "response_received"
                     safe_update(span, output={"status": status})
             except ModelTransportError as exc:
