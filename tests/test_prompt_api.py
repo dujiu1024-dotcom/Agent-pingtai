@@ -73,6 +73,13 @@ class PromptRegistryApiTests(unittest.TestCase):
         self.assertEqual(created.json()["prompt_id"], "support")
         self.assertEqual(created.json()["version"], 1)
 
+        second = client.post(
+            "/api/platform/v1/prompts/support/versions",
+            json={"template": "Respond carefully to {question}"},
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.json()["version"], 2)
+
         activated = client.post(
             "/api/platform/v1/prompts/support/activate", json={"version": 1},
         )
@@ -81,9 +88,10 @@ class PromptRegistryApiTests(unittest.TestCase):
 
         canary = client.post(
             "/api/platform/v1/prompts/support/canary",
-            json={"version": 1, "percentage": 10},
+            json={"version": 2, "percentage": 10},
         )
-        self.assertEqual(canary.status_code, 400)  # cannot canary the active version
+        self.assertEqual(canary.status_code, 200)
+        self.assertEqual(canary.json()["eval_run_id"], "eval-123")
 
         rollback = client.post(
             "/api/platform/v1/prompts/support/rollback", json={"version": 1},
@@ -102,7 +110,8 @@ class PromptRegistryApiTests(unittest.TestCase):
         self.assertEqual(rendered.json()["rendered"], "Answer why")
         self.assertTrue(all(key.startswith("tenant:8:tenant-a:") for key in registry.keys))
         self.assertEqual(
-            [action for _, _, action in authorized], ["write", "publish", "publish", "read_audit", "read"],
+            [action for _, _, action in authorized],
+            ["write", "write", "publish", "publish", "publish", "read_audit", "read"],
         )
 
     def test_prompt_write_requires_authorization(self):
