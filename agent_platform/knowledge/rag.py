@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from agent_platform.knowledge.citations import citation_context
 from agent_platform.knowledge.contracts import KnowledgePrincipal, RetrievalHit
+from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 from agent_platform.observability.trace_spans import trace_span
@@ -52,6 +53,8 @@ class RAGService:
     async def answer(
         self, *, principal: KnowledgePrincipal, query: str, limit: int = 8,
         trace_context: Mapping[str, str] | None = None,
+        filters: RetrievalFilters | None = None,
+        strategy: RetrievalStrategy | str = RetrievalStrategy.HYBRID,
     ) -> RAGAnswer:
         metadata = self._trace_metadata(principal, trace_context)
         started = monotonic()
@@ -81,7 +84,8 @@ class RAGService:
                     metadata=metadata,
                 ) as retrieve_span:
                     hits = await self.knowledge.retrieve(
-                        principal=principal, query=query, limit=limit
+                        principal=principal, query=query, limit=limit,
+                        filters=filters, strategy=strategy,
                     )
                     safe_update(retrieve_span, output={"hit_count": len(hits)})
                 safe_metric(
