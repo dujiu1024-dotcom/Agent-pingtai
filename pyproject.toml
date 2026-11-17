@@ -76,7 +76,7 @@ include = [
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
   "tests/test_prompt_experiments.py",
-  "tests/test_prompt_operations.py",
+  "tests/test_prompt_operations.py",\n  "tests/test_prompt_management_api.py",
   "tests/test_evaluation_store.py",
   "tests/test_evaluation_governance.py",
   "tests/test_sandbox_oci.py",
