@@ -83,7 +83,7 @@ class BatchReport:
             "latency_ms", "output", "error_type", "error_message",
             "started_at", "finished_at", "duration_ms",
         )
-        writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\\n")
+        writer = csv.DictWriter(buffer, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         for task in self.tasks:
             writer.writerow({
