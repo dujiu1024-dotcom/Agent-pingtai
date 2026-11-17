@@ -160,7 +160,7 @@ class S66503FaultDrillTests(unittest.IsolatedAsyncioTestCase):
         )
         request = SimpleNamespace(context=SimpleNamespace(
             tenant_id="tenant-fault",
-            run_id="run-pg-failover",
+            run_id="a7f9e0d1-1c6b-4b4d-9f0d-665030000001",
             model_template=SimpleNamespace(template_id="test-model", version=1),
             project_id=None,
             agent_id="agent-fault",
