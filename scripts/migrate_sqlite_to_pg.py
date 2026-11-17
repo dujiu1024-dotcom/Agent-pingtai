@@ -176,6 +176,21 @@ def migrate(connection: Any, rows_by_table: Mapping[str, list[dict[str, Any]]],
             missing_columns = set(mapping["columns"].values()) - target_columns
             if missing_columns:
                 raise ValueError(f"{source}: target columns missing: {', '.join(sorted(missing_columns))}")
+            cursor = connection.execute(
+                "SELECT kcu.column_name FROM information_schema.table_constraints tc "
+                "JOIN information_schema.key_column_usage kcu "
+                "ON tc.constraint_catalog=kcu.constraint_catalog "
+                "AND tc.constraint_schema=kcu.constraint_schema "
+                "AND tc.constraint_name=kcu.constraint_name "
+                "WHERE tc.constraint_type='PRIMARY KEY' "
+                "AND tc.table_schema=%s AND tc.table_name=%s "
+                "ORDER BY kcu.ordinal_position",
+                (mapping["target_schema"], mapping["target"]),
+            )
+            target_primary_key = [row[0] for row in cursor.fetchall()]
+            mapped_primary_key = [mapping["columns"][column] for column in mapping["primary_key"]]
+            if target_primary_key != mapped_primary_key:
+                raise ValueError(f"{source}: target primary key does not match mapped source primary key")
             cursor = connection.execute(f"SELECT EXISTS (SELECT 1 FROM {target_sql} LIMIT 1)")
             if cursor.fetchone()[0]:
                 raise ValueError(f"{source}: target table must be empty before migration")
