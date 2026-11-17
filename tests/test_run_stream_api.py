@@ -21,14 +21,18 @@ class _Broker:
     async def subscribe(self, *, tenant_id, run_id, last_event_id=None):
         assert tenant_id == "tenant-a"
         assert run_id == "run-a"
-        yield SSEEvent(
-            event="token_stream", event_id="run-a:1",
-            data={"run_id": run_id, "sequence": 1, "event_type": "TOKEN_STREAM", "token": "live"},
-        )
-        yield SSEEvent(
-            event="run_complete", event_id="run-a:2",
-            data={"run_id": run_id, "sequence": 2, "event_type": "COMPLETE"},
-        )
+
+        async def events():
+            yield SSEEvent(
+                event="token_stream", event_id="run-a:1",
+                data={"run_id": run_id, "sequence": 1, "event_type": "TOKEN_STREAM", "token": "live"},
+            )
+            yield SSEEvent(
+                event="run_complete", event_id="run-a:2",
+                data={"run_id": run_id, "sequence": 2, "event_type": "COMPLETE"},
+            )
+
+        return events()
 
 
 class RunEventStreamingApiTests(unittest.TestCase):
