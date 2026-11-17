@@ -34,4 +34,4 @@ jobs:
             tests.test_secret_supply_chain \
             tests.test_approval_workbench_ui \
             tests.test_sandbox_oci \
-            tests.test_runtime_permission_guard -v
+            tests.test_runtime_permission_guard \\\n            tests.test_runtime_security_auto_response -v
