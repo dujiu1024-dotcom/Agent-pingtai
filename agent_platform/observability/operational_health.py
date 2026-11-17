@@ -62,7 +62,7 @@ class OperationalHealthMonitor:
             isinstance(used, bool) or not isinstance(used, (int, float))
             or isinstance(capacity, bool) or not isinstance(capacity, (int, float))
             or not math.isfinite(used) or not math.isfinite(capacity)
-            or used < 0 or capacity <= 0 or used > capacity
+            or used < 0 or capacity <= 0
         ):
             raise ValueError("capacity probe returned invalid bounds")
         return float(used), float(capacity)
