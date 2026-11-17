@@ -61,7 +61,8 @@ def create_platform_web_router() -> APIRouter:
         """
         path = request.url.path
         if (
-            path.startswith(_RESERVED_PREFIXES)
+            path == "/api"
+            or path.startswith(_RESERVED_PREFIXES)
             or path in {"/", "/docs", "/redoc", "/openapi.json"}
             or Path(legacy_path).suffix
             or "text/html" not in request.headers.get("accept", "").lower()
