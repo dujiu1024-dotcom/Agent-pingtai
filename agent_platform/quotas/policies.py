@@ -102,6 +102,11 @@ class InMemoryQuotaPolicyRepository:
     """Deterministic adapter for tests; production should use PostgresQuotaPolicyRepository."""
     def __init__(self, defaults: Mapping[str, int | float] | None = None) -> None:
         self.defaults = dict(defaults or {})
+        if self.defaults:
+            QuotaPolicy(
+                policy_id="system-default", scope_type="default", scope_id="*",
+                limits=self.defaults,
+            )
         self.policies: dict[tuple[str | None, str, str, str], QuotaPolicy] = {}
         self.audit_events: list[QuotaPolicyAudit] = []
 
@@ -200,6 +205,14 @@ class QuotaPolicyService:
                     limits[resource] = limit
                     sources[resource] = policy.policy_id
                     versions[resource] = policy.version
+        # Constructor defaults are the final fallback for dimensions not
+        # supplied by any enabled persisted policy. Partial scoped overrides
+        # therefore cannot erase unrelated platform baseline limits.
+        for resource, limit in getattr(self.repository, "defaults", {}).items():
+            if resource not in limits:
+                limits[resource] = limit
+                sources[resource] = "system-default"
+                versions[resource] = 0
         return ResolvedQuotaPolicy(
             tenant_id=context.tenant_id, limits=limits, sources=sources,
             policy_versions=versions, resolved_at=datetime.now(timezone.utc),
