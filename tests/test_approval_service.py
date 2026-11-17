@@ -108,6 +108,7 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         app = FastAPI()
         app.include_router(create_approval_router(
             service=service, authorize_approver=lambda actor, action, resource: actor.user_id == "approver" and action == "external.write" and resource.startswith("account:"),
+            resolve_risk_level=lambda actor, action, resource: RiskLevel.EXTERNAL_OR_IRREVERSIBLE,
         ))
 
         @app.middleware("http")
