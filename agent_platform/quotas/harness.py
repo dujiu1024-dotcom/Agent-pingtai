@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from decimal import Decimal
 from time import monotonic
 from typing import Any, Callable, cast
@@ -33,6 +34,7 @@ class QuotaEnforcedHarnessAdapter:
         release_reservation_on_error: Callable[[BaseException], bool] | None = None,
         reservation_lease_seconds: int = 300,
         reservation_heartbeat_interval_seconds: float = 60.0,
+        on_quota_warning: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         if not callable(context_window_tokens) and (
             not isinstance(context_window_tokens, int)
@@ -58,6 +60,7 @@ class QuotaEnforcedHarnessAdapter:
         self.estimate_tool_cost_usd = estimate_tool_cost_usd
         self.measure_storage_bytes = measure_storage_bytes
         self.release_reservation_on_error = release_reservation_on_error
+        self.on_quota_warning = on_quota_warning
 
     @staticmethod
     def _tenant_scope(request: Any) -> tuple[str, str]:
@@ -129,7 +132,7 @@ class QuotaEnforcedHarnessAdapter:
         if estimated_tokens > context_window_tokens:
             from agent_platform.quotas.service import BudgetExceeded
             raise BudgetExceeded("estimated Run context exceeds the configured model context window")
-        reservation, _warnings = await self.quota_service.reserve_run(
+        reservation, warnings = await self.quota_service.reserve_run(
             tenant_id=context.tenant_id,
             run_id=context.run_id,
             scope_type=scope_type,
@@ -144,6 +147,21 @@ class QuotaEnforcedHarnessAdapter:
                 or context.run_id
             ),
         )
+        if warnings and self.on_quota_warning is not None:
+            # Alert delivery happens before provider dispatch. If the configured
+            # alert path is unavailable, release this undispatched reservation
+            # and fail closed rather than silently dropping a quota warning.
+            try:
+                alert_result = self.on_quota_warning({
+                    "tenant_id": context.tenant_id, "run_id": context.run_id,
+                    "scope_type": scope_type, "scope_id": scope_id,
+                    "warnings": list(warnings), "occurred_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                })
+                if inspect.isawaitable(alert_result):
+                    await alert_result
+            except Exception:
+                await self.quota_service.release_run(reservation)
+                raise
         started = monotonic()
         try:
             async with self.quota_service.reservation_lease(
