@@ -10,12 +10,11 @@ from typing import Any, Awaitable, Callable, Sequence
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from agent_platform.blackboard.protocol import BlackboardRepository, VersionConflict
 from agent_platform.blackboard.sse import (
     decode_blackboard_cursor,
     stream_blackboard_events,
 )
-
-from agent_platform.blackboard.protocol import BlackboardRepository, VersionConflict
 from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
 from agent_platform.identity.models import Principal
 from agent_platform.streaming.sse import sse_response
