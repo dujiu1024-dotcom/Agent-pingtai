@@ -9,8 +9,16 @@ __all__ = [
     "BackupScheduler",
     "RestoreDrill",
     "RestoreDrillState",
-    "RestoreDrillResult",
-    "RecoveryPointAge",
+    "begin_restore_drill",
+    "meets_rpo",
+    "recovery_point_age",
+    "Deployment",
+    "DeploymentState",
+    "DeploymentStrategy",
+    "HealthSnapshot",
+    "MaintenanceWindow",
+    "RolloutPolicy",
+    "build_rollout_policy",
 ]
 
 from agent_platform.deployment.backups import (
