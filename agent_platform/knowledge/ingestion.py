@@ -90,22 +90,19 @@ class OCRParserAdapter:
         *,
         max_output_chars: int = 2_000_000,
     ) -> None:
+        allowed = "abcdefghijklmnopqrstuvwxyz0123456789!$&^_.+-"
         if (
             not isinstance(media_types, tuple)
             or not media_types
             or any(
                 not isinstance(item, str)
-                or not item
                 or item != item.strip()
                 or item != item.lower()
-                or re.fullmatch(
-                    r"[a-z0-9][a-z0-9!#                or item != item.strip()
-                or "/" not in item
-^_.+-]*/[a-z0-9][a-z0-9!#                or item != item.strip()
-                or "/" not in item
-^_.+-]*",
-                    item,
-                ) is None
+                or len(item.split("/")) != 2
+                or any(
+                    not part or any(char not in allowed for char in part)
+                    for part in item.split("/")
+                )
                 for item in media_types
             )
             or len(set(media_types)) != len(media_types)
