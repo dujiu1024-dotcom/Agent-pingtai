@@ -27,9 +27,29 @@ class GateEvidence:
         self.evidence_id = "gate-evidence-1"
 
 
+class AsyncRegistry:
+    def __init__(self):
+        self.inner = PromptRegistry()
+
+    def register(self, prompt_id, template):
+        return self.inner.register(prompt_id, template)
+
+    async def resolve(self, prompt_id, *, version=None, rollout_key=""):
+        return self.inner.resolve(prompt_id, version=version, rollout_key=rollout_key)
+
+    async def render(self, prompt_id, variables, *, version=None, rollout_key=""):
+        return self.inner.render(prompt_id, variables, version=version, rollout_key=rollout_key)
+
+    async def activate(self, prompt_id, version, *, updated_by):
+        self.inner.activate(prompt_id, version)
+
+    async def set_canary(self, prompt_id, version, percentage, *, updated_by):
+        self.inner.set_canary(prompt_id, version, percentage)
+
+
 class PromptOperationsTests(unittest.TestCase):
     def setUp(self):
-        self.registry = PromptRegistry()
+        self.registry = AsyncRegistry()
         self.key = "tenant:8:tenant-a:assistant"
         self.first = self.registry.register(self.key, "Answer {question}")
         self.second = self.registry.register(self.key, "Carefully answer {question}")
