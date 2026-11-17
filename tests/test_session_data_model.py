@@ -155,6 +155,25 @@ class ContextSnapshotRepositoryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(SessionError, "already exists"):
             await self.repository.create_context_snapshot(duplicate_id)
 
+    async def test_snapshot_ids_are_unique_within_tenant_not_globally(self):
+        await self.repository.create_session(ConversationSession(
+            tenant_id="tenant-b", session_id="session-a", owner_id="user-b",
+        ))
+        tenant_a = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="shared-id",
+            version=1, snapshot={}, token_count=0, max_tokens=100, created_by="user-a",
+        )
+        tenant_b = ContextWindowSnapshot(
+            tenant_id="tenant-b", session_id="session-a", snapshot_id="shared-id",
+            version=1, snapshot={}, token_count=0, max_tokens=100, created_by="user-b",
+        )
+        await self.repository.create_context_snapshot(tenant_a)
+        await self.repository.create_context_snapshot(tenant_b)
+        self.assertEqual(
+            await self.repository.get_context_snapshot("tenant-b", "session-a", "shared-id"),
+            tenant_b,
+        )
+
     async def test_snapshot_message_cursor_must_belong_to_same_tenant_and_session(self):
         await self.repository.append_message(ConversationMessage(
             tenant_id="tenant-a", message_id="message-a", session_id="session-a",
