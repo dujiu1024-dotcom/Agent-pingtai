@@ -146,5 +146,27 @@ class PublicApiMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(b"password", response[1]["body"])
 
 
+class PublicApiSdkVersionHeaderTests(unittest.TestCase):
+    def test_sdk_sends_the_version_token_expected_by_http_contract(self):
+        class CaptureTransport:
+            def __init__(self):
+                self.version_header = None
+
+            def send(self, request, *, timeout):
+                self.version_header = request.get_header("X-api-version")
+                from agent_platform.sdk.client import ApiResponse
+                return ApiResponse(200, {}, {"ok": True})
+
+        transport = CaptureTransport()
+        client = PlatformClient(
+            base_url="https://platform.example.test",
+            token="test-token",
+            transport=transport,
+            retry_attempts=0,
+        )
+        self.assertEqual(client.get("/runs"), {"ok": True})
+        self.assertEqual(transport.version_header, "v1")
+
+
 if __name__ == "__main__":
     unittest.main()
