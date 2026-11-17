@@ -1,5 +1,6 @@
 """PostgreSQL integration coverage for atomic multi-scope quota groups."""
 
+import asyncio
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -109,8 +110,10 @@ class QuotaReservationGroupPostgresTests(unittest.IsolatedAsyncioTestCase):
             estimated_input_tokens=60, estimated_output_tokens=20,
             idempotency_key="provider-attempt-1",
         )
-        group, _ = await service.reserve_run(**kwargs)
-        replay, _ = await service.reserve_run(**kwargs)
+        first_result, second_result = await asyncio.gather(
+            service.reserve_run(**kwargs), service.reserve_run(**kwargs),
+        )
+        group, replay = first_result[0], second_result[0]
         self.assertEqual(group.group_id, replay.group_id)
         self.assertEqual(
             await store.usage(tenant_id, "tenant", tenant_id, start, end),
@@ -133,6 +136,65 @@ class QuotaReservationGroupPostgresTests(unittest.IsolatedAsyncioTestCase):
                 replay, model_key="model-group-replay", input_tokens=31, output_tokens=20,
                 cost_usd=Decimal("0.25"),
             )
+
+    async def test_concurrent_distinct_attempts_cannot_overdraw_shared_budgets(self):
+        from agent_platform.quotas import (
+            Budget, BudgetExceeded, PostgresQuotaStore,
+            QuotaReservationGroupService, QuotaScope,
+        )
+
+        tenant_id = f"quota-group-concurrency-it-{uuid4().hex}"
+        root_run_id, child_a, child_b = uuid4(), uuid4(), uuid4()
+        await self._seed(tenant_id, root_run_id, child_a)
+        # Seed the second child Run under the same tenant and Agent.
+        async with await AsyncConnection.connect(DSN) as conn:
+            cursor = await conn.execute(
+                "SELECT agent_id, template_id FROM platform_runs WHERE tenant_id=%s AND run_id=%s",
+                (tenant_id, child_a),
+            )
+            row = await cursor.fetchone()
+            await conn.execute(
+                """INSERT INTO platform_runs
+                   (tenant_id, run_id, agent_id, template_id, template_version, status)
+                   VALUES (%s, %s, %s, %s, 1, 'queued')""",
+                (tenant_id, child_b, row["agent_id"], row["template_id"]),
+            )
+        start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        end = start + timedelta(hours=1)
+        store = PostgresQuotaStore.from_dsn(DSN)
+        service = QuotaReservationGroupService(store)
+        for scope_type, scope_id in (("tenant", tenant_id), ("run", str(root_run_id))):
+            await store.put_budget(Budget(
+                tenant_id=tenant_id, scope_type=scope_type, scope_id=scope_id,
+                period_start=start, period_end=end, hard_tokens=100,
+                hard_cost_usd=Decimal("2.00"),
+            ))
+
+        async def reserve(run_id, attempt):
+            try:
+                return await service.reserve_run(
+                    tenant_id=tenant_id, run_id=str(run_id), root_run_id=str(root_run_id),
+                    scopes=(QuotaScope("tenant", tenant_id), QuotaScope("run", str(root_run_id))),
+                    estimated_tokens=60, estimated_cost_usd=Decimal("0.60"),
+                    idempotency_key=attempt,
+                )
+            except BudgetExceeded:
+                return None
+
+        results = await asyncio.gather(
+            reserve(child_a, "attempt-a"), reserve(child_b, "attempt-b"),
+        )
+        accepted = [result for result in results if result is not None]
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(
+            await store.usage(tenant_id, "tenant", tenant_id, start, end),
+            (60, Decimal("0.60"), 1),
+        )
+        self.assertEqual(
+            await store.usage(tenant_id, "run", str(root_run_id), start, end),
+            (60, Decimal("0.60"), 1),
+        )
+        await service.release(accepted[0][0])
 
     async def test_second_scope_failure_rolls_back_first_scope_reservation(self):
         from agent_platform.quotas import (
