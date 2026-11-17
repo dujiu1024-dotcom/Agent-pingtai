@@ -130,7 +130,14 @@ class A2501KillRestartAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         ))
         await asyncio.wait_for(reached_checkpoint.wait(), timeout=2)
 
-        # Simulate the worker being killed after LangGraph persisted a checkpoint.
+        # Model abrupt process loss: the recovery/lease monitor marks the durable
+        # Run interrupted without relying on the worker's graceful cancellation path.
+        await lifecycle.mark_interrupted(
+            "tenant-a",
+            "run-a",
+            checkpoint_ref="checkpoint-after-partial-response",
+            reason="worker process lost after checkpoint persistence",
+        )
         worker_task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await worker_task
