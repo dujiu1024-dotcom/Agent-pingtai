@@ -5,10 +5,12 @@ on:
     paths:
       - "agent_platform/runtime/harness_benchmark.py"
       - "agent_platform/runtime/harness_benchmark_suite.py"
+      - "agent_platform/runtime/harness_baseline_gate.py"
       - "tests/test_harness_benchmark.py"
       - "tests/test_harness_benchmark_suite.py"
       - "tests/test_harness_benchmark_metrics.py"
       - "tests/test_harness_benchmark_deadline.py"
+      - "tests/test_harness_baseline_gate.py"
       - ".github/workflows/harness-benchmark-poc.yml"
       - "pyproject.toml"
 
@@ -32,8 +34,8 @@ jobs:
       - name: Install test and quality tools
         run: python -m pip install -U pip ruff mypy && python -m pip install -r requirements-platform.txt
       - name: Run focused Harness benchmark tests
-        run: python -m unittest tests.test_harness_benchmark tests.test_harness_benchmark_suite tests.test_harness_benchmark_metrics tests.test_harness_benchmark_deadline -v
+        run: python -m unittest tests.test_harness_benchmark tests.test_harness_benchmark_suite tests.test_harness_benchmark_metrics tests.test_harness_benchmark_deadline tests.test_harness_baseline_gate -v
       - name: Lint changed Harness benchmark files
-        run: ruff check agent_platform/runtime/harness_benchmark.py agent_platform/runtime/harness_benchmark_suite.py tests/test_harness_benchmark.py tests/test_harness_benchmark_suite.py tests/test_harness_benchmark_metrics.py tests/test_harness_benchmark_deadline.py
+        run: ruff check agent_platform/runtime/harness_benchmark.py agent_platform/runtime/harness_benchmark_suite.py tests/test_harness_benchmark.py tests/test_harness_benchmark_suite.py tests/test_harness_benchmark_metrics.py tests/test_harness_benchmark_deadline.py tests/test_harness_baseline_gate.py
       - name: Type-check Harness benchmark suite
-        run: mypy agent_platform/runtime/harness_benchmark_suite.py
+        run: mypy agent_platform/runtime/harness_benchmark_suite.py agent_platform/runtime/harness_baseline_gate.py
