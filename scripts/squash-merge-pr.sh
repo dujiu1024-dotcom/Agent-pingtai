@@ -164,6 +164,14 @@ done
 git checkout main 2>/dev/null
 git pull "$REMOTE" main 2>/dev/null || true
 
+# Auto-prune zombie runs from squash-merged branches
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -x "$SCRIPT_DIR/prune-zombie-runs.sh" ]; then
+  echo ""
+  echo "🧹 Pruning zombie runs from merged branches..."
+  bash "$SCRIPT_DIR/prune-zombie-runs.sh" 2>/dev/null || true
+fi
+
 if [ $STASHED -eq 1 ]; then
   git stash pop -q 2>/dev/null || true
 fi
