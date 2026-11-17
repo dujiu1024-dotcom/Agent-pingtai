@@ -71,6 +71,13 @@ class PromptRolloutTests(unittest.IsolatedAsyncioTestCase):
             await self.service.configure(tenant_id="tenant-a", prompt_id="assistant",
                 weights={"retired": 100}, actor="operator")
 
+    async def test_boolean_weight_is_rejected(self):
+        with self.assertRaises(ValueError):
+            await self.service.configure(
+                tenant_id="tenant-a", prompt_id="assistant",
+                weights={"stable": True}, actor="operator",
+            )
+
     async def test_invalid_weights_and_promotion_threshold_fail_closed(self):
         with self.assertRaises(ValueError):
             await self.service.configure(tenant_id="tenant-a", prompt_id="assistant",
