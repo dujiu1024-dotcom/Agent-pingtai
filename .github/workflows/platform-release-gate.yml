@@ -139,6 +139,10 @@ jobs:
       - name: Run S-34-07 offline legacy fallback acceptance
         run: python -m unittest tests.test_issue_667_s_34_07_offline_fallback -v
 
+  
+      - name: Verify legacy console API route compatibility contract
+        run: python -m unittest tests.test_issue_667_s_667_01_legacy_route_contract -v
+
   production-release-evidence:
     needs:
       - e2e-security-integration
