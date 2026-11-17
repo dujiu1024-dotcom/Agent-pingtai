@@ -15,9 +15,10 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_CHECKS = (
-    "e2e", "fault_injection", "performance", "security",
+    "deployment_preflight", "e2e", "fault_injection", "performance", "security",
     "backup_restore", "production_smoke", "migration", "rollback",
 )
+ARTIFACT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PLACEHOLDER_RE = re.compile(
     r"(?:^|[\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\s/_-])",
@@ -129,6 +130,19 @@ def validate_evidence(
         )
         _fresh(verified, f"checks.{name}.verified_at_utc", current=current,
                max_age_hours=max_age_hours, errors=errors)
+    deployment = checks.get("deployment_preflight")
+    if isinstance(deployment, dict):
+        if deployment.get("preflight_passed") is not True:
+            errors.append("checks.deployment_preflight.preflight_passed: must be true")
+        for field in (
+            "environment_verified", "configuration_validated",
+            "dependencies_healthy", "change_window_approved", "rollback_ready",
+        ):
+            if deployment.get(field) is not True:
+                errors.append(f"checks.deployment_preflight.{field}: must be true")
+        artifact_digest = deployment.get("artifact_digest")
+        if not isinstance(artifact_digest, str) or not ARTIFACT_DIGEST_RE.fullmatch(artifact_digest):
+            errors.append("checks.deployment_preflight.artifact_digest: must be sha256:<64 lowercase hex characters>")
     migration = checks.get("migration")
     if isinstance(migration, dict):
         if migration.get("preflight_passed") is not True:
