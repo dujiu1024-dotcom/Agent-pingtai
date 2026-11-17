@@ -163,6 +163,41 @@ class FileAssetContractTests(unittest.IsolatedAsyncioTestCase):
                 filename="image.png", media_type="image/png", content=b"x",
             )
 
+    async def test_upload_rejects_malformed_media_types_and_normalizes_valid_values(self):
+        repository = InMemorySessionRepository()
+        storage = InMemoryObjectStorage()
+        service = SessionAssetService(repository, storage)
+        for invalid in ("", "text", "text/plain\\nX-Injected: yes", " text/plain", "text/plain "):
+            with self.subTest(media_type=invalid), self.assertRaisesRegex(SessionError, "invalid media type"):
+                await service.upload_asset(
+                    tenant_id="tenant-a", owner_id="user-a", filename="bad.txt",
+                    media_type=invalid, content=b"body",
+                )
+        asset = await service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="good.txt",
+            media_type="Text/Plain", content=b"body",
+        )
+        self.assertEqual(asset.media_type, "text/plain")
+
+    async def test_new_version_rejects_malformed_media_type_without_changing_current(self):
+        repository = InMemorySessionRepository()
+        storage = InMemoryObjectStorage()
+        service = SessionAssetService(repository, storage)
+        asset = await service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="base.txt",
+            media_type="text/plain", content=b"base",
+        )
+        for invalid in ("text", "text/plain\\r\\nX: injected"):
+            with self.subTest(media_type=invalid), self.assertRaisesRegex(SessionError, "invalid media type"):
+                await service.create_asset_version(
+                    tenant_id="tenant-a", asset_id=asset.asset_id,
+                    content=b"replacement", media_type=invalid, expected_version=1,
+                )
+        current = await repository.get_asset("tenant-a", asset.asset_id)
+        self.assertEqual(current.version, 1)
+        self.assertEqual(current.sha256, asset.sha256)
+        self.assertEqual(storage.objects, {asset.object_key: b"base"})
+
     async def test_corrupt_storage_and_invalid_download_ttl_fail_closed(self):
         repository = InMemorySessionRepository()
         storage = _PresignStorage()
