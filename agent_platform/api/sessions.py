@@ -276,6 +276,12 @@ def create_sessions_router(
             except (SessionError, SessionNotFound) as exc:
                 raise HTTPException(404, str(exc)) from exc
 
+            # Only the newest persisted message can close the turn. If a newer
+            # user message or partial interaction exists, never extract an older turn.
+            if not messages or messages[-1].role is not MessageRole.ASSISTANT:
+                raise HTTPException(
+                    409, "memory extraction requires a completed assistant turn at the end of the session",
+                )
             assistant_index = next(
                 (index for index in range(len(messages) - 1, -1, -1)
                  if messages[index].role is MessageRole.ASSISTANT),
@@ -298,14 +304,13 @@ def create_sessions_router(
             turn = MemoryTurn(
                 tenant_id=principal.tenant_id,
                 user_id=principal.user_id,
-                source_ref=(
-                    f"session:{session_id}:user:{user_message.message_id}:"
-                    f"assistant:{assistant_message.message_id}"
-                ),
+                # The assistant message is the canonical turn-completion anchor.
+                source_ref=f"session://{principal.tenant_id}/{assistant_message.message_id}@1",
                 user_message=user_message.content,
                 assistant_message=assistant_message.content,
                 agent_id=agent_id,
                 project_id=session.project_id,
+                completed=True,
             )
             try:
                 existing_records = await memory_extraction.memory.repository.list(
