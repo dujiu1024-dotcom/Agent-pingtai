@@ -101,6 +101,13 @@ class MemoryExtractionService:
 
         # Preflight the complete batch before the first write. A malformed or
         # unauthorized later draft must not leave earlier candidates persisted.
+        source_texts = {
+            " ".join(text.casefold().split())
+            for text in (turn.user_message, turn.assistant_message)
+        }
+        source_texts.add(
+            " ".join((turn.user_message + "\\n" + turn.assistant_message).casefold().split())
+        )
         candidates: list[MemoryCandidate] = []
         for index, draft in enumerate(drafts):
             if not isinstance(draft, MemoryDraft):
@@ -109,6 +116,11 @@ class MemoryExtractionService:
                 raise ValueError("memory candidate content must be non-empty")
             if len(draft.content) > MAX_CANDIDATE_CONTENT_CHARS:
                 raise ValueError("memory candidate content exceeds the size limit")
+            normalized_content = " ".join(draft.content.casefold().split())
+            if normalized_content in source_texts:
+                raise ValueError(
+                    "memory candidate must be distilled, not a verbatim interaction message"
+                )
             if draft.scope is MemoryScope.USER:
                 if draft.scope_id != principal.user_id:
                     raise PermissionError("user memory scope must match the principal")

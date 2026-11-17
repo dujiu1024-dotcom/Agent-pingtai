@@ -120,6 +120,52 @@ class MemoryDistillationAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history[0].source_ref, turn.source_ref)
         self.assertEqual(history[0].reviewer_id, self.principal.user_id)
 
+    async def test_verbatim_turn_content_is_rejected_before_any_candidate_is_persisted(self) -> None:
+        turn = MemoryTurn(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            source_ref="session://tenant-a/session-verbatim@3",
+            user_message="My full message includes work, travel, and family details.",
+            assistant_message="I will answer each topic in detail.",
+            completed=True,
+        )
+        extractor = RecordingExtractor([
+            MemoryDraft(
+                scope=MemoryScope.USER,
+                scope_id="user-a",
+                content="My full message includes work, travel, and family details.",
+                confidence=0.99,
+            ),
+        ])
+        extraction = MemoryExtractionService(memory=self.memory, extractor=extractor)
+
+        with self.assertRaisesRegex(ValueError, "must be distilled"):
+            await extraction.propose_from_turn(principal=self.principal, turn=turn)
+        self.assertEqual(await self.repository.list("tenant-a"), [])
+
+    async def test_combined_chat_turn_is_rejected_even_with_whitespace_variation(self) -> None:
+        turn = MemoryTurn(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            source_ref="session://tenant-a/session-combined@3",
+            user_message="I need concise reports.",
+            assistant_message="I will prepare concise reports.",
+            completed=True,
+        )
+        extractor = RecordingExtractor([
+            MemoryDraft(
+                scope=MemoryScope.USER,
+                scope_id="user-a",
+                content="I need concise reports.\\n  I will prepare concise reports.",
+                confidence=0.99,
+            ),
+        ])
+        extraction = MemoryExtractionService(memory=self.memory, extractor=extractor)
+
+        with self.assertRaisesRegex(ValueError, "must be distilled"):
+            await extraction.propose_from_turn(principal=self.principal, turn=turn)
+        self.assertEqual(await self.repository.list("tenant-a"), [])
+
     async def test_conflicting_extracted_fact_requires_explicit_audited_resolution(self) -> None:
         original = MemoryCandidate(
             tenant_id="tenant-a",
