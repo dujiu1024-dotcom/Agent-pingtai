@@ -5,7 +5,6 @@ import unittest
 from agent_platform.data_governance.cutover import CutoverPhase, plan_write
 from agent_platform.data_governance.legacy_inventory import (
     DEFAULT_LEGACY_ASSETS,
-    MigrationDecision,
     inventory_report,
     validate_business_mappings,
 )
@@ -42,12 +41,12 @@ class Issue19A1901SingleWriterMappingTests(unittest.TestCase):
 
     def test_each_business_data_mapping_has_unique_source_target_and_owner(self):
         mappings = (
-            {"source": "legacy:users", "target": "platform:identity", "owner": "identity"},
-            {"source": "legacy:tasks", "target": "platform:tasks", "owner": "runtime"},
+            {"source": "legacy:users", "target": "platform:identity", "mapping": "principal mapping", "owner": "identity"},
+            {"source": "legacy:tasks", "target": "platform:tasks", "mapping": "task normalization", "owner": "runtime"},
         )
         self.assertEqual(validate_business_mappings(mappings), mappings)
         with self.assertRaisesRegex(ValueError, "owner is required"):
-            validate_business_mappings(({"source": "legacy:users", "target": "platform:identity"},))
+            validate_business_mappings(({"source": "legacy:users", "target": "platform:identity", "mapping": "principal mapping"},))
         with self.assertRaisesRegex(ValueError, "sources must be unique"):
             validate_business_mappings((mappings[0], mappings[0]))
 
@@ -55,7 +54,7 @@ class Issue19A1901SingleWriterMappingTests(unittest.TestCase):
         from agent_platform.data_governance.legacy_inventory import _BUSINESS_MAPPINGS
         mappings = validate_business_mappings(_BUSINESS_MAPPINGS)
         self.assertGreaterEqual(len(mappings), 1)
-        self.assertTrue(all(item["source"] and item["target"] and item["owner"] for item in mappings))
+        self.assertTrue(all(item["source"] and item["target"] and item["mapping"] and item["owner"] for item in mappings))
         self.assertTrue(any(item["status"] == "gap_requires_domain_design" for item in mappings))
 
 
