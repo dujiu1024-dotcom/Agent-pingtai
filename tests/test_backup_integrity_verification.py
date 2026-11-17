@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.verify_platform_backups import verify_artifact
+from scripts.verify_platform_backups import component_for, verify_artifact
 
 
 class BackupIntegrityVerificationTests(unittest.TestCase):
@@ -29,6 +29,9 @@ class BackupIntegrityVerificationTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_config_prefix_is_not_misclassified_as_postgres(self):
+        self.assertEqual(component_for(Path("platform-config-20261117.tar.gz.age")), "platform-config-tar-age-v1")
 
     def test_valid_checksum_and_manifest_pass(self):
         self.assertEqual(verify_artifact(self.artifact), [])
