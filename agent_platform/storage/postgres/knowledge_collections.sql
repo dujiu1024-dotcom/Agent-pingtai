@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS knowledge_collections (
     UNIQUE (tenant_id, project_id, name)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS knowledge_collections_scoped_name_uidx
+    ON knowledge_collections (tenant_id, COALESCE(project_id, ''), lower(name))
+    WHERE deleted_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS knowledge_collections_tenant_project_idx
     ON knowledge_collections (tenant_id, project_id)
     WHERE deleted_at IS NULL;
