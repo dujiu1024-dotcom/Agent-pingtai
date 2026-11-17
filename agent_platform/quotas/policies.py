@@ -208,7 +208,7 @@ class QuotaPolicyService:
         # Constructor defaults are the final fallback for dimensions not
         # supplied by any enabled persisted policy. Partial scoped overrides
         # therefore cannot erase unrelated platform baseline limits.
-        for resource, limit in self.repository.defaults.items():
+        for resource, limit in getattr(self.repository, "defaults", {}).items():
             if resource not in limits:
                 limits[resource] = limit
                 sources[resource] = "system-default"
