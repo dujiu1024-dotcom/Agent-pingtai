@@ -1,10 +1,10 @@
 """Context-local callbacks used by Run-scoped model clients."""
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Any, Iterator
+from typing import Iterator
 
 TokenCallback = Callable[[str], Awaitable[None]]
 RunEventCallback = Callable[..., Awaitable[None]]
