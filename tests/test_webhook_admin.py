@@ -66,13 +66,14 @@ class FakeSecrets:
         self.revoked = []
         self.counter = 0
         self.fail_revoke_once = False
+        self.fail_revoke_always = False
     async def store(self, *, tenant_id: str, secret: bytes):
         self.counter += 1
         ref = f"secret://{tenant_id}/{self.counter}"
         self.values[ref] = secret
         return ref
     async def revoke(self, *, secret_ref: str):
-        if self.fail_revoke_once:
+        if self.fail_revoke_always or self.fail_revoke_once:
             self.fail_revoke_once = False
             raise RuntimeError("secret manager temporarily unavailable")
         self.revoked.append(secret_ref)
@@ -156,6 +157,29 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(secret_ref, secrets.values)
         self.assertNotIn(("tenant-a", subscription_id, secret_ref), store.pending_revocations)
         self.assertEqual(secrets.revoked, [secret_ref])
+
+    async def test_failed_background_revocation_keeps_durable_queue_entry(self):
+        store, secrets = FakeWebhookAdminStore(), FakeSecrets()
+        service = WebhookSubscriptionService(store=store, secrets=secrets)
+        subscription_id = await service.create(
+            tenant_id="tenant-a", actor_id="user-a",
+            url="https://hooks.example.test/agent", topics=("run.completed",),
+            signing_secret=b"a" * 32,
+        )
+        secret_ref = "secret://tenant-a/1"
+        secrets.fail_revoke_always = True
+        with self.assertRaisesRegex(RuntimeError, "temporarily unavailable"):
+            await service.disable(tenant_id="tenant-a", subscription_id=subscription_id)
+
+        result = await service.retry_pending_secret_revocations()
+        self.assertEqual(result, {"claimed": 1, "revoked": 0, "failed": 1})
+        self.assertIn(("tenant-a", subscription_id, secret_ref), store.pending_revocations)
+        self.assertIn(secret_ref, secrets.values)
+
+        secrets.fail_revoke_always = False
+        retried = await service.retry_pending_secret_revocations()
+        self.assertEqual(retried, {"claimed": 1, "revoked": 1, "failed": 0})
+        self.assertNotIn(("tenant-a", subscription_id, secret_ref), store.pending_revocations)
 
     async def test_rotation_persists_failed_old_secret_revocation_for_retry(self):
         store, secrets = FakeWebhookAdminStore(), FakeSecrets()
