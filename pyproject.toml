@@ -25,6 +25,8 @@ include = [
   "tests/test_issue_20_a_20_01_public_api_contract.py",
   "scripts/inventory_legacy_system.py",
   "scripts/run_legacy_migration.py",
+  "scripts/migrate_sqlite_to_pg.py",
+  "tests/test_issue_666_s_666_02_sqlite_postgres_import.py",
   "tests/test_release_gate_evidence.py",
   "tests/test_release_upgrade.py",
   "tests/test_backup_integrity_verification.py",
