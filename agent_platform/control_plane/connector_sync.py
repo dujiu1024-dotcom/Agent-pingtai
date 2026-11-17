@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Protocol
 from uuid import UUID
 
 from agent_platform.control_plane.data_connectors import DataConnectorService
@@ -13,6 +14,23 @@ logger = logging.getLogger(__name__)
 
 ConnectionFactory = Callable[[], Any]
 TenantServiceResolver = Callable[[str], Awaitable[DataConnectorService]]
+
+
+@dataclass(frozen=True)
+class ConnectorSyncAuditEvent:
+    event_type: str
+    tenant_id: str
+    actor_id: str
+    job_id: str
+    connection_id: str
+    attempt: int
+    outcome: str
+    occurred_at: datetime
+    error_type: str | None = None
+
+
+class ConnectorSyncAuditSink(Protocol):
+    async def append(self, event: ConnectorSyncAuditEvent) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -135,6 +153,7 @@ class ConnectorSyncWorker:
         self, *, queue: PostgresConnectorSyncQueue,
         worker_id: str, service: DataConnectorService | None = None,
         resolve_service: TenantServiceResolver | None = None,
+        audit_sink: ConnectorSyncAuditSink,
         lease_seconds: int = 120,
     ) -> None:
         if not worker_id.strip() or lease_seconds < 5:
@@ -144,6 +163,7 @@ class ConnectorSyncWorker:
         self.queue = queue
         self.service = service
         self.resolve_service = resolve_service
+        self.audit_sink = audit_sink
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self._stop_event = asyncio.Event()
@@ -181,7 +201,23 @@ class ConnectorSyncWorker:
         if job is None:
             return False
 
+        audit_started = False
+
+        async def append_audit(outcome: str, *, error_type: str | None = None) -> None:
+            await self.audit_sink.append(ConnectorSyncAuditEvent(
+                event_type="connector.sync",
+                tenant_id=job.tenant_id,
+                actor_id="system:connector-sync-worker",
+                job_id=job.job_id,
+                connection_id=job.connection_id,
+                attempt=job.attempts,
+                outcome=outcome,
+                occurred_at=datetime.now(timezone.utc),
+                error_type=error_type,
+            ))
+
         async def synchronize() -> None:
+            nonlocal audit_started
             service = self.service
             if self.resolve_service is not None:
                 service = await self.resolve_service(job.tenant_id)
@@ -190,7 +226,11 @@ class ConnectorSyncWorker:
             connection = await service.repository.get(job.tenant_id, job.connection_id)
             # Revocation is terminal for pending sync work; never revive credentials.
             if connection is None or connection.status != "active":
+                await append_audit("skipped", error_type="connection_inactive")
                 return
+            # Write-ahead audit is mandatory before provider/network side effects.
+            await append_audit("started")
+            audit_started = True
             await service.sync_once(
                 tenant_id=job.tenant_id, connection_id=job.connection_id,
             )
@@ -213,11 +253,24 @@ class ConnectorSyncWorker:
                 await beat
             await processing
             await self.queue.complete(job)
+            if audit_started:
+                try:
+                    await append_audit("succeeded")
+                except Exception:
+                    # The provider side effect and durable queue completion already
+                    # succeeded. Never retry it merely because result-audit storage
+                    # is temporarily unavailable.
+                    logger.exception("connector sync success audit append failed")
         except asyncio.CancelledError:
             processing.cancel()
             await asyncio.gather(processing, return_exceptions=True)
             raise
         except Exception as exc:
+            if audit_started:
+                try:
+                    await append_audit("failed", error_type=type(exc).__name__)
+                except Exception:
+                    logger.exception("connector sync failure audit append failed")
             try:
                 await self.queue.fail(job, error_code=type(exc).__name__.lower())
             except RuntimeError:
