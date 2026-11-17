@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
+
 from agent_platform.identity.models import AuthenticatedApiCredential, Principal, ResourceRef
 from agent_platform.identity.service import AuthorizationDenied, IdentityService
 from agent_platform.identity.service_accounts import (
