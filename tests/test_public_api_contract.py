@@ -3,9 +3,15 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.api.contract import (
-    API_V1_PREFIX, ApiError, error_for_http_status, idempotency_scope,
-    PublicApiContractASGIMiddleware, rate_limit_headers, validate_api_version,
-    validate_idempotency_key, validate_page,
+    API_V1_PREFIX,
+    ApiError,
+    PublicApiContractASGIMiddleware,
+    error_for_http_status,
+    idempotency_scope,
+    rate_limit_headers,
+    validate_api_version,
+    validate_idempotency_key,
+    validate_page,
 )
 
 
