@@ -41,6 +41,31 @@ class PostgresBlackboardEventReplay:
         self.tenant_id = tenant_id
         self._connection_factory = connection_factory
 
+    async def latest_cursor(
+        self, *, scope: Scope, scope_id: str,
+    ) -> BlackboardReplayCursor | None:
+        """Return the newest durable event cursor for a new live subscription."""
+        if not scope_id.strip():
+            raise ValueError("scope_id must not be empty")
+        connection = await self._connection_factory()
+        async with connection:
+            result = await connection.execute(
+                """
+                SELECT event_id, occurred_at
+                FROM blackboard_events
+                WHERE tenant_id = %s AND scope = %s AND scope_id = %s
+                ORDER BY occurred_at DESC, event_id DESC
+                LIMIT 1
+                """,
+                (self.tenant_id, scope.value, scope_id),
+            )
+            row = await result.fetchone()
+        if row is None:
+            return None
+        return BlackboardReplayCursor(
+            occurred_at=row["occurred_at"], event_id=str(row["event_id"]),
+        )
+
     async def list_after(
         self,
         *,
