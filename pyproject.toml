@@ -187,6 +187,7 @@ files = [
   "agent_platform/sandbox/oci.py",
   "agent_platform/sandbox/lifecycle.py",
   "agent_platform/tools/gateway_mcp.py",
+  "agent_platform/tools/connector_catalog.py",
   "agent_platform/blackboard/postgres_repository.py",
   "agent_platform/approval/postgres.py",
   "agent_platform/security/*.py",
