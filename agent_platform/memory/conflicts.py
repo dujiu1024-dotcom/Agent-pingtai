@@ -139,21 +139,21 @@ class MemoryConflictResolver:
         )
         decision_id = str(uuid4())
         resulting_id = selected_memory_id
+        merged_candidate: MemoryCandidate | None = None
         if resolution is MemoryConflictResolution.MERGE:
             metadata = dict(selected.candidate.metadata)
             metadata["conflict_decision_id"] = decision_id
             metadata["merged_from"] = ",".join(
                 f"{item.memory_id}@{item.version}" for item in sources
             )
-            merged = replace(
+            resulting_id = str(uuid4())
+            merged_candidate = replace(
                 selected.candidate,
-                memory_id=str(uuid4()),
+                memory_id=resulting_id,
                 content=merged_content.strip(),
                 source_ref=f"memory-conflict-merge:{decision_id}",
                 metadata=metadata,
             )
-            proposed = await self.memory.propose(merged)
-            resulting_id = proposed.candidate.memory_id
 
         # Write-ahead decision: if audit is unavailable, do not mutate memory state.
         decision = MemoryConflictDecision(
@@ -166,10 +166,12 @@ class MemoryConflictResolver:
             sources=sources,
             selected_memory_id=selected_memory_id,
             resulting_memory_id=resulting_id,
-            resulting_version=(proposed.version if resolution is MemoryConflictResolution.MERGE else selected.version + 1),
+            resulting_version=(2 if resolution is MemoryConflictResolution.MERGE else selected.version + 1),
             actor_id=principal.user_id,
         )
         await self.audit.append(decision)
+        if merged_candidate is not None:
+            await self.memory.propose(merged_candidate)
         result = await self.memory.resolve_conflict(
             principal=principal,
             conflict_key=conflict_key,
