@@ -376,10 +376,8 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIs(current.status, GraphEntityStatus.DELETED)
         self.assertEqual(current.version, 2 if results[0] is not None else 3)
-        self.assertFalse(any(
-            event.action == "correct"
-            for event in await self.repository.audit_events("tenant-a", "doc-a")
-        ))
+        audit = await self.repository.audit_events("tenant-a", "doc-a")
+        self.assertEqual(audit[-1].action, "deleted")
 
 
 if __name__ == "__main__":
