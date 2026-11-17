@@ -8,15 +8,75 @@
   "release_approver": "replace-with-independent-approver",
   "evidence_archive_ref": "replace-with-immutable-evidence-archive-uri",
   "release_decision": "no_go",
-  "blockers": ["replace-with-open-blocker-or-use-empty-array-after-resolution"],
+  "blockers": [
+    "replace-with-open-blocker-or-use-empty-array-after-resolution"
+  ],
   "checks": {
-    "e2e": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-e2e-report"},
-    "fault_injection": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-fault-drill-report"},
-    "performance": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-performance-report"},
-    "security": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-security-report"},
-    "backup_restore": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-backup-restore-report"},
-    "production_smoke": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-production-smoke-report"},
-    "migration": {"status": "pending", "owner": "replace-with-migration-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-migration-preflight-report", "preflight_passed": false, "compatibility_window_confirmed": false, "strategy": "expand_contract"},
-    "rollback": {"status": "pending", "owner": "replace-with-rollback-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-rollback-drill-report", "drill_passed": false, "strategy": "backup_restore"}
+    "deployment_preflight": {
+      "status": "pending",
+      "owner": "replace-with-deployment-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-deployment-preflight-report",
+      "preflight_passed": false,
+      "environment_verified": false,
+      "configuration_validated": false,
+      "dependencies_healthy": false,
+      "change_window_approved": false,
+      "rollback_ready": false,
+      "artifact_digest": "sha256:replace-with-64-character-artifact-digest"
+    },
+    "e2e": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-e2e-report"
+    },
+    "fault_injection": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-fault-drill-report"
+    },
+    "performance": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-performance-report"
+    },
+    "security": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-security-report"
+    },
+    "backup_restore": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-backup-restore-report"
+    },
+    "production_smoke": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-production-smoke-report"
+    },
+    "migration": {
+      "status": "pending",
+      "owner": "replace-with-migration-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-migration-preflight-report",
+      "preflight_passed": false,
+      "compatibility_window_confirmed": false,
+      "strategy": "expand_contract"
+    },
+    "rollback": {
+      "status": "pending",
+      "owner": "replace-with-rollback-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-rollback-drill-report",
+      "drill_passed": false,
+      "strategy": "backup_restore"
+    }
   }
 }
