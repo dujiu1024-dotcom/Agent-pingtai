@@ -14,6 +14,7 @@ from math import log2
 from statistics import mean
 from typing import Sequence
 
+from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.evaluation_dataset import RAGEvaluationDataset
 from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 from agent_platform.knowledge.service import KnowledgeService
