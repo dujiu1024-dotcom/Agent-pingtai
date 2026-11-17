@@ -12,6 +12,21 @@ from typing import Any, Mapping, Protocol, Sequence
 from agent_platform.contracts import ModelTemplateRef, RunContext
 
 _SUPPORTED_MODALITIES = frozenset({"text", "image", "pdf", "audio", "video"})
+_DEFAULT_MEDIA_MAX_BYTES = {
+    "image": 20 * 1024 * 1024,
+    "pdf": 50 * 1024 * 1024,
+    "audio": 100 * 1024 * 1024,
+    "video": 250 * 1024 * 1024,
+}
+_DEFAULT_MEDIA_MIME_TYPES = {
+    "image": frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"}),
+    "pdf": frozenset({"application/pdf"}),
+    "audio": frozenset({
+        "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
+        "audio/ogg", "audio/webm", "audio/mp4",
+    }),
+    "video": frozenset({"video/mp4", "video/webm", "video/quicktime"}),
+}
 RUNTIME_ADAPTER_CONTRACT_VERSION = "1.0.0"
 _SEMVER = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
@@ -111,12 +126,33 @@ class HarnessCapabilities:
     timeout: bool = False
     resume: bool = False
     tool_gateway: bool = False
+    input_media_max_bytes: Mapping[str, int] = field(default_factory=dict)
+    output_media_max_bytes: Mapping[str, int] = field(default_factory=dict)
+    input_media_mime_types: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    output_media_mime_types: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.input_modalities.issubset(_SUPPORTED_MODALITIES):
             raise ValueError("Harness declares an unsupported input modality")
         if not self.output_modalities.issubset(_SUPPORTED_MODALITIES):
             raise ValueError("Harness declares an unsupported output modality")
+        for direction, declared, limits, mime_types in (
+            ("input", self.input_modalities, self.input_media_max_bytes, self.input_media_mime_types),
+            ("output", self.output_modalities, self.output_media_max_bytes, self.output_media_mime_types),
+        ):
+            media_declared = declared - {"text"}
+            if set(limits) - media_declared or set(mime_types) - media_declared:
+                raise ValueError(f"Harness {direction} media policy references an undeclared modality")
+            for modality, maximum in limits.items():
+                if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum <= 0:
+                    raise ValueError(f"Harness {direction} {modality} max bytes must be a positive integer")
+            for modality, allowed in mime_types.items():
+                if not allowed or any(
+                    not isinstance(value, str)
+                    or value.lower().split(";", 1)[0].strip() not in _DEFAULT_MEDIA_MIME_TYPES[modality]
+                    for value in allowed
+                ):
+                    raise ValueError(f"Harness {direction} {modality} MIME allowlist is invalid")
 
 
 @dataclass(frozen=True)
@@ -183,6 +219,11 @@ class CapabilityAwareHarnessAdapter:
             raise UnsupportedHarnessCapability(
                 "Harness does not declare input modalities: " + ", ".join(sorted(unsupported))
             )
+        self._validate_media_items(
+            request.media_inputs, direction="input",
+            max_bytes=self.capabilities.input_media_max_bytes,
+            mime_types=self.capabilities.input_media_mime_types,
+        )
         if request.output_schema is not None and not self.capabilities.structured_output:
             raise UnsupportedHarnessCapability("Harness does not declare structured output support")
         if request.allowed_tools and not self.capabilities.tool_gateway:
@@ -201,6 +242,25 @@ class CapabilityAwareHarnessAdapter:
                 "Harness does not declare output modalities: "
                 + ", ".join(sorted(unsupported))
             )
+        self._validate_media_items(
+            result.media_outputs, direction="output",
+            max_bytes=self.capabilities.output_media_max_bytes,
+            mime_types=self.capabilities.output_media_mime_types,
+        )
+
+    def _validate_media_items(self, items, *, direction, max_bytes, mime_types) -> None:
+        for item in items:
+            maximum = max_bytes.get(item.modality, _DEFAULT_MEDIA_MAX_BYTES[item.modality])
+            if item.size_bytes > maximum:
+                raise UnsupportedHarnessCapability(
+                    f"Harness {direction} {item.modality} exceeds max size of {maximum} bytes"
+                )
+            allowed = mime_types.get(item.modality, _DEFAULT_MEDIA_MIME_TYPES[item.modality])
+            normalized = item.mime_type.lower().split(";", 1)[0].strip()
+            if normalized not in allowed:
+                raise UnsupportedHarnessCapability(
+                    f"Harness {direction} {item.modality} MIME type {normalized} is not supported"
+                )
 
     async def run(self, request: "HarnessRequest") -> "HarnessResult":
         self._validate_request(request)
