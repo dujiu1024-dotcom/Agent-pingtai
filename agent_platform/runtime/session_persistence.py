@@ -170,6 +170,7 @@ class SessionRunPersistence:
     ) -> ConversationMessage | None:
         if result is None:
             return None
+        usage_data = result.get("usage") if isinstance(result, Mapping) else None
         if isinstance(result, Mapping) and isinstance(result.get("messages"), (list, tuple)):
             for item in reversed(result["messages"]):
                 role = (item.get("role") or item.get("type")) if isinstance(item, Mapping) else (
@@ -194,7 +195,6 @@ class SessionRunPersistence:
         ), None)
         if existing is not None:
             return existing
-        usage_data = result.get("usage") if isinstance(result, Mapping) else None
         usage = None
         if isinstance(usage_data, Mapping):
             prompt = usage_data.get("prompt_tokens", 0)
