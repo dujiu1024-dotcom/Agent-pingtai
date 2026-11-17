@@ -5,7 +5,7 @@ import so an incorrectly configured process never becomes a healthy API.
 """
 from __future__ import annotations
 
-from functools import partial
+import os
 from typing import Any, Callable
 
 from fastapi import FastAPI
@@ -21,10 +21,13 @@ from agent_platform.memory.service import MemoryService
 from agent_platform.production_config import ProductionSettings, load_production_settings
 from agent_platform.runtime.lifecycle import RunLifecycleManager
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+from agent_platform.runtime.production_composition import (
+    ProductionRunExecution,
+    load_trusted_run_execution_builder,
+)
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
-from agent_platform.quotas.production_worker import build_production_run_execution_worker
 from agent_platform.quotas.service import QuotaService
 from agent_platform.security.audit import PostgresAuditWriter
 
@@ -67,6 +70,7 @@ def create_production_app(
     settings: ProductionSettings | None = None,
     connection_factory: Any | None = None,
     redis_client: Any | None = None,
+    run_execution_builder: Callable[..., ProductionRunExecution] | None = None,
 ) -> FastAPI:
     """Build the production API graph; optional arguments are test seams only."""
     configured = settings or load_production_settings()
@@ -101,7 +105,28 @@ def create_production_app(
     quota_policy_repository = PostgresQuotaPolicyRepository(connection_factory)
     quota_policy_service = QuotaPolicyService(quota_policy_repository)
     quota_maintenance_worker = QuotaReservationMaintenanceWorker(quota_service)
-    quota_audit_writer = _QuotaAuditAdapter(PostgresAuditWriter(connection_factory))
+    audit_writer = PostgresAuditWriter(connection_factory)
+    quota_audit_writer = _QuotaAuditAdapter(audit_writer)
+    run_execution = None
+    if run_execution_builder is not None:
+        if not callable(run_execution_builder):
+            raise ValueError("run_execution_builder must be a trusted callable")
+        run_execution = run_execution_builder(
+            run_store=run_store,
+            lifecycle=run_lifecycle,
+            quota_store=quota_store,
+            quota_service=quota_service,
+            identity_service=identity_service,
+            identity_repository=identity_repository,
+            audit_writer=audit_writer,
+            connection_factory=connection_factory,
+            redis_client=redis_client,
+            settings=configured,
+        )
+        if not isinstance(run_execution, ProductionRunExecution):
+            raise TypeError("run_execution_builder must return ProductionRunExecution")
+        if run_execution.run_store is not run_store:
+            raise ValueError("production Run execution must share the API PostgreSQL RunStateStore")
 
     async def resolve_run_lifecycle(_principal: Any) -> RunLifecycleManager:
         return run_lifecycle
@@ -169,6 +194,10 @@ def create_production_app(
         allowed_origins=configured.allowed_origins,
         run_lifecycle_resolver=resolve_run_lifecycle,
         run_authorizer=authorize_run,
+        run_executor_resolver=(run_execution.run_executor_resolver if run_execution else None),
+        task_service_resolver=(run_execution.task_service_resolver if run_execution else None),
+        task_authorizer=(run_execution.task_authorizer if run_execution else None),
+        task_worker=(run_execution.task_worker if run_execution else None),
         quota_reporting_store=quota_store,
         quota_service=quota_service,
         quota_manage_authorizer=authorize_quota_manage,
@@ -186,20 +215,13 @@ def create_production_app(
     app.state.memory_service = memory_service
     app.state.run_state_store = run_store
     app.state.run_lifecycle = run_lifecycle
+    app.state.run_execution = run_execution
     app.state.quota_store = quota_store
     app.state.quota_service = quota_service
     app.state.quota_policy_repository = quota_policy_repository
     app.state.quota_policy_service = quota_policy_service
     app.state.quota_reservation_worker = quota_maintenance_worker
     app.state.quota_audit_writer = quota_audit_writer
-    # Worker hosts provide trusted registry/runtime callbacks, but receive a
-    # factory pinned to this process's shared PostgreSQL quota service and Run store.
-    app.state.run_execution_worker_factory = partial(
-        build_production_run_execution_worker,
-        run_store=run_store,
-        quota_service=quota_service,
-        lifecycle_resolver=resolve_run_lifecycle,
-    )
     if close_redis_on_shutdown:
         async def close_production_resources() -> None:
             await redis_client.aclose()
@@ -207,4 +229,13 @@ def create_production_app(
     return app
 
 
-app = create_production_app()
+def _production_app() -> FastAPI:
+    required_value = os.environ.get("AGENT_PLATFORM_REQUIRE_RUN_EXECUTION", "false").strip().lower()
+    if required_value not in {"true", "false", "1", "0", "yes", "no"}:
+        raise RuntimeError("AGENT_PLATFORM_REQUIRE_RUN_EXECUTION must be a boolean")
+    required = required_value in {"true", "1", "yes"}
+    builder = load_trusted_run_execution_builder(required=required)
+    return create_production_app(run_execution_builder=builder)
+
+
+app = _production_app()
