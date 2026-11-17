@@ -200,6 +200,13 @@ class PostgresGraphRepository:
                         source_id=EXCLUDED.source_id,
                         source_version=EXCLUDED.source_version,
                         updated_at=now()
+                    WHERE graph_entities.project_id IS NOT DISTINCT FROM EXCLUDED.project_id
+                       OR NOT EXISTS (
+                           SELECT 1 FROM graph_relations
+                           WHERE tenant_id=EXCLUDED.tenant_id
+                             AND (source_entity_id=EXCLUDED.entity_id
+                                  OR target_entity_id=EXCLUDED.entity_id)
+                       )
                     RETURNING *
                     """,
                     (
@@ -212,6 +219,8 @@ class PostgresGraphRepository:
                     ),
                 )
                 row = await cursor.fetchone()
+                if row is None:
+                    raise ValueError("cannot move an entity across project scope while relations exist")
         return self._entity_record(row)
 
     async def get_entity(
