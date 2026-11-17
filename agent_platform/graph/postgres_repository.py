@@ -296,7 +296,7 @@ class PostgresGraphRepository:
                             OR (status='processing' AND lease_until<=now())
                         )
                         ORDER BY available_at,job_id
-                        FOR UPDATE SKIP LOCKED LIMIT %s
+                        LIMIT %s FOR UPDATE SKIP LOCKED
                     )
                     UPDATE platform_graph_index_jobs AS job
                     SET status='processing',lease_owner=%s,
