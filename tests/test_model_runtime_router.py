@@ -16,7 +16,7 @@ from agent_platform.models.runtime_router import (
     PostgresModelUsageRecorder,
 )
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
-from agent_platform.quotas.service import Budget, InMemoryQuotaStore, QuotaService
+from agent_platform.quotas.service import Budget, BudgetExceeded, InMemoryQuotaStore, QuotaService
 
 
 class Secrets:
@@ -683,6 +683,103 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls, [])
         self.assertEqual(audit.events[-1]["detail"]["reason"], "human_intervention_required")
 
+
+
+    async def test_quota_cost_estimation_failure_is_audited_before_provider_dispatch(self):
+        class TokenEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=4, output_tokens=8, total_tokens=12)
+
+        class BrokenCostEstimator:
+            async def estimate_micros(self, **kwargs):
+                raise TimeoutError("pricing backend unavailable")
+
+        class NeverReserve:
+            async def reserve_run(self, **kwargs):
+                raise AssertionError("reservation must not be attempted")
+
+        audit = AuditRecorder()
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit, resolver=RegistryModelResolver(Secrets()),
+            transport=transport, quota_service=NeverReserve(),
+            token_estimator=TokenEstimator(), quota_cost_estimator=BrokenCostEstimator(),
+        )
+        with self.assertRaises(TimeoutError):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-price-fail",
+                template_id="primary", messages=({"role": "user", "content": "hello"},),
+                request_id="request-price-fail",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(audit.events[-1]["action"], "model.response")
+        self.assertEqual(audit.events[-1]["outcome"], "failed")
+        self.assertEqual(audit.events[-1]["detail"]["reason"], "quota_cost_estimation_failed")
+        self.assertEqual(audit.events[-1]["detail"]["error_type"], "TimeoutError")
+
+    async def test_quota_scope_resolution_failure_is_audited_before_provider_dispatch(self):
+        class TokenEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=4, output_tokens=8, total_tokens=12)
+
+        class CostEstimator:
+            async def estimate_micros(self, **kwargs):
+                return 1000
+
+        class NeverReserve:
+            async def reserve_run(self, **kwargs):
+                raise AssertionError("reservation must not be attempted")
+
+        def broken_scope(_snapshot, _config):
+            raise PermissionError("scope resolver unavailable")
+
+        audit = AuditRecorder()
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit, resolver=RegistryModelResolver(Secrets()),
+            transport=transport, quota_service=NeverReserve(),
+            token_estimator=TokenEstimator(), quota_cost_estimator=CostEstimator(),
+            quota_scope_resolver=broken_scope,
+        )
+        with self.assertRaises(PermissionError):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-scope-fail",
+                template_id="primary", messages=({"role": "user", "content": "hello"},),
+                request_id="request-scope-fail",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(audit.events[-1]["outcome"], "failed")
+        self.assertEqual(audit.events[-1]["detail"]["reason"], "quota_scope_resolution_failed")
+
+    async def test_quota_reservation_denial_is_audited_and_blocks_provider_dispatch(self):
+        class TokenEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=4, output_tokens=8, total_tokens=12)
+
+        class CostEstimator:
+            async def estimate_micros(self, **kwargs):
+                return 1000
+
+        class RejectingQuotaService:
+            async def reserve_run(self, **kwargs):
+                raise BudgetExceeded("hard quota exceeded")
+
+        audit = AuditRecorder()
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit, resolver=RegistryModelResolver(Secrets()),
+            transport=transport, quota_service=RejectingQuotaService(),
+            token_estimator=TokenEstimator(), quota_cost_estimator=CostEstimator(),
+        )
+        with self.assertRaises(BudgetExceeded):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-quota-denied",
+                template_id="primary", messages=({"role": "user", "content": "hello"},),
+                request_id="request-quota-denied",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(audit.events[-1]["outcome"], "denied")
+        self.assertEqual(audit.events[-1]["detail"]["reason"], "quota_reservation_denied")
 
 if __name__ == "__main__":
     unittest.main()
