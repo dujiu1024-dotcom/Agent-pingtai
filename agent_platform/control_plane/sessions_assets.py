@@ -6,6 +6,7 @@ This module deliberately does not reuse legacy conversation tables as authority.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -139,6 +140,10 @@ class ConversationMessage:
             raise ValueError("asset_ids must be a tuple of non-empty strings")
         if not isinstance(self.metadata, Mapping):
             raise ValueError("message metadata must be a mapping")
+        try:
+            json.dumps(dict(self.metadata), allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("message metadata must contain JSON-compatible values") from exc
         if self.token_usage is not None and not isinstance(self.token_usage, MessageTokenUsage):
             raise ValueError("token_usage must be a MessageTokenUsage")
         if not isinstance(self.created_at, datetime) or self.created_at.tzinfo is None:
@@ -176,6 +181,10 @@ class ContextWindowSnapshot:
             raise ValueError("snapshot token_count exceeds max_tokens")
         if not isinstance(self.snapshot, Mapping):
             raise ValueError("snapshot payload must be a mapping")
+        try:
+            json.dumps(dict(self.snapshot), allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("snapshot payload must contain JSON-compatible values") from exc
         if self.run_id is not None and (not isinstance(self.run_id, str) or not self.run_id.strip()):
             raise ValueError("run_id must be a non-empty string when provided")
         if self.last_message_id is not None and (
@@ -290,6 +299,13 @@ class InMemorySessionRepository:
         key = (message.tenant_id, message.session_id)
         if key not in self.sessions:
             raise SessionNotFound("session not found")
+        if any(
+            existing.message_id == message.message_id
+            for (tenant_id, _), rows in self.messages.items()
+            if tenant_id == message.tenant_id
+            for existing in rows
+        ):
+            raise SessionError("message already exists")
         self.messages.setdefault(key, []).append(message)
 
     async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None:
