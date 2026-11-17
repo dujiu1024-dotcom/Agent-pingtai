@@ -16,6 +16,7 @@ from agent_platform.quotas.concurrency import QuotaConcurrencyLimiter
 from agent_platform.quotas.policies import (
     InMemoryQuotaPolicyRepository,
     QuotaPolicy,
+    QuotaPolicyContext,
     QuotaPolicyService,
 )
 from agent_platform.quotas.pricing import (
@@ -44,9 +45,7 @@ class Issue17A1701ContractTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a", version=2,
         )
         await service.configure(second, actor_id="admin-b", authorize=lambda _: True)
-        resolved = await service.resolve(
-            __import__("agent_platform.quotas.policies", fromlist=["QuotaPolicyContext"]).QuotaPolicyContext("tenant-a")
-        )
+        resolved = await service.resolve(QuotaPolicyContext("tenant-a"))
         self.assertEqual(resolved.limits, {"tokens": 400, "requests": 100})
         self.assertEqual(resolved.sources["tokens"], "tenant-policy")
         self.assertEqual(len(repository.audit_events), 2)
