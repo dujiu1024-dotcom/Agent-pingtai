@@ -89,7 +89,10 @@ class PromptRegistry:
     def register(
         self, prompt_id: str, template: str, *, created_by: str = "system",
     ) -> PromptVersion:
-        if not prompt_id.strip() or not template.strip():
+        if (
+            not isinstance(prompt_id, str) or not prompt_id.strip()
+            or not isinstance(template, str) or not template.strip()
+        ):
             raise ValueError("prompt_id and template are required")
         if not isinstance(created_by, str) or not created_by.strip():
             raise ValueError("created_by is required")
