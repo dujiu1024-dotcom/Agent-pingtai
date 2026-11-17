@@ -319,7 +319,6 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
         ))
 
     async def test_invalidation_worker_retries_failed_handler_after_delay(self):
-        from datetime import datetime, timedelta, timezone
         await self.repository.add_entity(_entity("doc-a"))
         await self.service.delete_entity(
             principal=self.principal, entity_id="doc-a", expected_version=1,
