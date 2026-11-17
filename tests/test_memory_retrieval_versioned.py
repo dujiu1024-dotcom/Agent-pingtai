@@ -16,6 +16,7 @@ from agent_platform.memory.service import (
     MemoryService,
 )
 
+
 class MemoryRetrievalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.repository = InMemoryMemoryRepository()
