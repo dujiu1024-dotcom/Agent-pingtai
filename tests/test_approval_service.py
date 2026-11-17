@@ -122,7 +122,7 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         client = TestClient(app)
         created = client.post("/api/platform/v1/approvals", json={
             "action": "external.write", "resource": "account:7",
-            "risk_level": 2, "parameters": {"amount": 10},
+            "risk_level": 0, "parameters": {"amount": 10},
             "tenant_id": "tenant-attacker", "requested_by": "attacker",
         })
         self.assertEqual(created.status_code, 201)
