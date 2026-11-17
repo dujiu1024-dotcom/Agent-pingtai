@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from typing import Any
 from agent_platform.identity.models import AuthenticatedApiCredential, Principal, ResourceRef
 from agent_platform.identity.service import AuthorizationDenied, IdentityService
-from agent_platform.identity.service_accounts import ServiceIdentityError, ServiceIdentityService, ServicePrincipal
+from agent_platform.identity.service_accounts import (
+    ServiceIdentityError,
+    ServiceIdentityService,
+    ServicePrincipal,
+)
 
 @dataclass(frozen=True)
 class ResourceScope:
