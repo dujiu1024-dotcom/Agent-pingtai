@@ -194,11 +194,13 @@ class PostgresEvaluationRepository:
         if isinstance(payload, str):
             payload = json.loads(payload)
         metrics = {
-            "pass_rate": payload.get("pass_rate"),
-            "average_score": payload.get("average_score"),
-            "average_recall_at_k": payload.get("average_recall_at_k"),
+            key: value for key, value in {
+                "pass_rate": payload.get("pass_rate"),
+                "average_score": payload.get("average_score"),
+                "average_recall_at_k": payload.get("average_recall_at_k"),
+            }.items() if value is not None
         }
-        metrics.update(payload.get("metrics", {}))
+        metrics.update({key: value for key, value in payload.get("metrics", {}).items() if value is not None})
         return {
             "eval_run_id": str(row["eval_run_id"]), "tenant_id": row["tenant_id"],
             "dataset_id": row["dataset_id"], "dataset_version": row["dataset_version"],
@@ -234,14 +236,15 @@ class PostgresEvaluationRepository:
             cursor = await connection.execute(
                 """INSERT INTO platform_eval_gate_evidence
                    (evidence_id,tenant_id,candidate_run_id,baseline_run_id,policy_id,
-                    policy_version,passed,failures,comparison_id,evidence_refs,
+                    policy_version,policy_snapshot,passed,failures,comparison_id,evidence_refs,
                     evaluated_at_utc,content_sha256)
-                   SELECT %s,%s,candidate.eval_run_id,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                   SELECT %s,%s,candidate.eval_run_id,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s,%s
                    FROM platform_eval_runs candidate
                    WHERE candidate.eval_run_id=%s AND candidate.tenant_id=%s
                    RETURNING evidence_id""",
                 (evidence.evidence_id,evidence.tenant_id,evidence.baseline_run_id,
-                 evidence.policy_id,evidence.policy_version,evidence.passed,
+                 evidence.policy_id,evidence.policy_version,
+                 json.dumps(dict(evidence.policy_snapshot),ensure_ascii=False),evidence.passed,
                  list(evidence.failures),evidence.comparison_id,list(evidence.evidence_refs),
                  evidence.evaluated_at_utc,evidence.content_sha256,
                  evidence.candidate_run_id,evidence.tenant_id),
