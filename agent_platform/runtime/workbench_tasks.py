@@ -695,6 +695,15 @@ class RunExecutionWorker:
         self, snapshot: Any, resolved: Any, record: Mapping[str, Any],
     ) -> str:
         tenant_id, run_id = snapshot.tenant_id, snapshot.run_id
+        session_id = record.get("session_id")
+        actor_id = record.get("created_by") or record.get("actor_id")
+        session_context = None
+        if session_id is not None:
+            if not isinstance(session_id, str) or not session_id.strip():
+                raise WorkbenchTaskError("persisted session_id is invalid")
+            if not isinstance(actor_id, str) or not actor_id.strip():
+                raise WorkbenchTaskError("session-backed Run is missing its actor identity")
+            session_context = {"session_id": session_id, "actor_id": actor_id}
         if not isinstance(resolved, LangGraphRunExecutor):
             raise TypeError("executor_resolver must return LangGraphRunExecutor or an async context manager")
         if resolved.worker_id != self.worker_id:
@@ -704,10 +713,12 @@ class RunExecutionWorker:
         if snapshot.status == RunStatus.QUEUED:
             result = await resolved.execute(
                 tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
+                session_context=session_context,
             )
         else:
             result = await resolved.resume_claimed(
                 snapshot=snapshot, input=record.get("input") or {},
+                session_context=session_context,
             )
         current = await self.run_store.get(tenant_id, run_id)
         if current is not None and current.status == RunStatus.SUCCEEDED and result is not None:
