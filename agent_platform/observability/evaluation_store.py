@@ -174,3 +174,81 @@ class PostgresEvaluationRepository:
             "model_key": row["model_key"], "report": row["report"],
             "gate_passed": row["gate_passed"], "created_at": row["created_at"],
         } for row in rows]
+
+
+    async def load_report_for_tenant(self, *, tenant_id: str, eval_run_id: str) -> dict[str, Any]:
+        if not tenant_id.strip() or not eval_run_id.strip():
+            raise ValueError("tenant_id and eval_run_id are required")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT eval_run_id,tenant_id,dataset_id,dataset_version,model_key,report,
+                          gate_passed,created_at
+                   FROM platform_eval_runs WHERE eval_run_id=%s AND tenant_id=%s""",
+                (eval_run_id,tenant_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise KeyError("evaluation run not found in this tenant")
+        payload = row["report"]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        metrics = {
+            "pass_rate": payload.get("pass_rate"),
+            "average_score": payload.get("average_score"),
+            "average_recall_at_k": payload.get("average_recall_at_k"),
+        }
+        metrics.update(payload.get("metrics", {}))
+        return {
+            "eval_run_id": str(row["eval_run_id"]), "tenant_id": row["tenant_id"],
+            "dataset_id": row["dataset_id"], "dataset_version": row["dataset_version"],
+            "model_key": row["model_key"], "metrics": metrics, "report": payload,
+            "gate_passed": row["gate_passed"],
+        }
+
+    async def save_comparison(self, *, tenant_id: str, comparison) -> None:
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        payload = {
+            "deltas": [asdict(item) for item in comparison.deltas],
+            "regressions": list(comparison.regressions),
+        }
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_eval_comparisons
+                   (comparison_id,tenant_id,baseline_run_id,candidate_run_id,comparison)
+                   SELECT %s,%s,base.eval_run_id,candidate.eval_run_id,%s::jsonb
+                   FROM platform_eval_runs base
+                   JOIN platform_eval_runs candidate
+                     ON candidate.eval_run_id=%s AND candidate.tenant_id=%s
+                   WHERE base.eval_run_id=%s AND base.tenant_id=%s""",
+                (comparison.comparison_id,tenant_id,
+                 json.dumps(payload,ensure_ascii=False),comparison.candidate_run_id,
+                 tenant_id,comparison.baseline_run_id,tenant_id),
+            )
+
+    async def save_gate_evidence(self, evidence) -> None:
+        connection = await self._connect()
+        payload = asdict(evidence)
+        payload["failures"] = list(evidence.failures)
+        payload["evidence_refs"] = list(evidence.evidence_refs)
+        async with connection:
+            cursor = await connection.execute(
+                """INSERT INTO platform_eval_gate_evidence
+                   (evidence_id,tenant_id,candidate_run_id,baseline_run_id,policy_id,
+                    policy_version,passed,failures,comparison_id,evidence_refs,
+                    evaluated_at_utc,content_sha256)
+                   SELECT %s,%s,candidate.eval_run_id,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                   FROM platform_eval_runs candidate
+                   WHERE candidate.eval_run_id=%s AND candidate.tenant_id=%s
+                   RETURNING evidence_id""",
+                (evidence.evidence_id,evidence.tenant_id,evidence.baseline_run_id,
+                 evidence.policy_id,evidence.policy_version,evidence.passed,
+                 list(evidence.failures),evidence.comparison_id,list(evidence.evidence_refs),
+                 evidence.evaluated_at_utc,evidence.content_sha256,
+                 evidence.candidate_run_id,evidence.tenant_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise KeyError("candidate evaluation run not found in this tenant")
