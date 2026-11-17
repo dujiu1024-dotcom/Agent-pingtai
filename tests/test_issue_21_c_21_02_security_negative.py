@@ -56,8 +56,6 @@ class SecurityNegativeRegressionTests(unittest.IsolatedAsyncioTestCase):
             return {"changed": True}
 
         async def tenant_resource_authorizer(context, _arguments):
-            # A resource is only visible to the tenant encoded in its trusted
-            # server-side execution context; caller arguments cannot override it.
             return context.resource.startswith(f"tenant:{context.tenant_id}:")
 
         def resolve_resource(arguments):
@@ -69,8 +67,11 @@ class SecurityNegativeRegressionTests(unittest.IsolatedAsyncioTestCase):
                     "search", RiskLevel.READ_ONLY, read,
                     input_schema={
                         "type": "object",
-                        "properties": {"query": {"type": "string", "maxLength": 200}},
-                        "required": ["query"],
+                        "properties": {
+                            "query": {"type": "string", "maxLength": 200},
+                            "resource": {"type": "string", "maxLength": 200},
+                        },
+                        "required": ["query", "resource"],
                         "additionalProperties": False,
                     },
                     resource_resolver=resolve_resource,
@@ -134,27 +135,31 @@ class SecurityNegativeRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.audit.records[-1]["outcome"], "denied")
 
     async def test_agent_cannot_invoke_privileged_tool_or_forge_approval(self):
-        arguments = {"resource": "tenant:tenant-a:records"}
         with self.assertRaises(ToolExecutionDenied):
             await self._call(
-                tool="admin.delete", arguments=arguments, actor_roles=("agent",),
+                tool="admin.delete",
+                arguments={"resource": "tenant:tenant-a:records"},
+                actor_roles=("agent",),
                 approval_id="model-invented-approval",
             )
         self.assertEqual(self.executed, [])
 
     async def test_unknown_tool_and_unapproved_sensitive_action_fail_closed(self):
         with self.assertRaises(ToolExecutionDenied):
-            await self._call(tool="shell.exec", arguments={"resource": "tenant:tenant-a:host"})
+            await self._call(
+                tool="shell.exec", arguments={"resource": "tenant:tenant-a:host"}
+            )
         with self.assertRaises(ToolExecutionDenied):
             await self._call(
-                tool="admin.delete", arguments={"resource": "tenant:tenant-a:records"},
-                actor_roles=("admin",), approval_id="not-a-real-approval",
+                tool="admin.delete",
+                arguments={"resource": "tenant:tenant-a:records"},
+                actor_roles=("admin",),
+                approval_id="not-a-real-approval",
             )
         self.assertEqual(self.executed, [])
 
     async def test_sensitive_arguments_are_not_copied_into_audit_or_trace(self):
         secret = "TOP-SECRET-PROMPT-CONTENT"
-        # An unknown key is rejected; neither audit nor trace may retain it.
         with self.assertRaises(ToolExecutionDenied):
             await self._call(arguments={
                 "query": secret,
