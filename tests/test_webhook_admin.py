@@ -149,7 +149,7 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
 
         with client_for("user-a") as client:
             created = client.post("/api/platform/v1/webhooks", json={
-                "url": "https://hooks.example.test/agent",
+                "url": "https://hooks.example.test/agent?token=destination-secret",
                 "topics": ["run.completed"],
                 "signing_secret": "s" * 32,
                 "tenant_id": "tenant-attacker",
@@ -166,15 +166,27 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
                 json={"signing_secret": "r" * 32},
             )
             self.assertEqual(rotated.status_code, 200)
+            disabled = client.post(f"/api/platform/v1/webhooks/{subscription_id}/disable")
+            self.assertEqual(disabled.status_code, 200)
             self.assertEqual(
                 [event["action"] for event in audit.events],
-                ["webhook.subscription.create.requested", "webhook.subscription.secret_rotate.requested"],
+                [
+                    "webhook.subscription.create.requested",
+                    "webhook.subscription.secret_rotate.requested",
+                    "webhook.subscription.disable.requested",
+                ],
             )
+            self.assertNotIn("destination-secret", repr(audit.events))
+            self.assertNotIn("signing_secret", repr(audit.events))
+            self.assertEqual(audit.events[0]["detail"]["destination_host"], "hooks.example.test")
+            self.assertEqual(audit.events[0]["subject_id"], "webhook-subscription")
 
         with client_for("user-b") as denied:
             self.assertEqual(
                 denied.get("/api/platform/v1/webhooks").status_code, 403,
             )
+            self.assertEqual(audit.events[-1]["action"], "webhook.subscription.list.denied")
+            self.assertEqual(audit.events[-1]["outcome"], "denied")
 
 
 if __name__ == "__main__":
