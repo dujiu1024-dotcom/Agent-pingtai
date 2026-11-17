@@ -146,12 +146,15 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.items[("tenant-a", subscription_id)]["status"], "disabled")
         self.assertIn(secret_ref, secrets.values)
 
-        # Retrying disable must still return the outstanding reference so the
-        # failed external revocation can complete without reactivating delivery.
-        self.assertTrue(await service.disable(
-            tenant_id="tenant-a", subscription_id=subscription_id,
-        ))
+        self.assertIn(("tenant-a", subscription_id, secret_ref), store.pending_revocations)
+
+        # The durable revocation queue is retried independently of subscription
+        # state; a disabled subscription must not need to be re-enabled or
+        # disabled again to finish secret cleanup.
+        result = await service.retry_pending_secret_revocations()
+        self.assertEqual(result, {"claimed": 1, "revoked": 1, "failed": 0})
         self.assertNotIn(secret_ref, secrets.values)
+        self.assertNotIn(("tenant-a", subscription_id, secret_ref), store.pending_revocations)
         self.assertEqual(secrets.revoked, [secret_ref])
 
     async def test_rotation_persists_failed_old_secret_revocation_for_retry(self):
