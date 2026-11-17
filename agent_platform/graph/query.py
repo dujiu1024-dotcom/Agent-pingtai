@@ -29,11 +29,13 @@ class GraphQueryRepository(Protocol):
 
 
 class AclAwareDocumentRetriever(Protocol):
+    """Vector-capable RAG adapter constrained to graph-derived document candidates."""
+
     async def retrieve(
         self, *, query: str, candidate_document_ids: Sequence[str],
         allowed_project_ids: Sequence[str], limit: int,
     ) -> Sequence[Any]:
-        """Must re-check canonical document/chunk ACLs; graph scope is not authorization."""
+        """Vector-rerank only candidate documents and re-check canonical ACLs before disclosure."""
         ...
 
 
@@ -233,8 +235,11 @@ class GraphQueryService:
         if isinstance(relation_types, (str, bytes)):
             raise ValueError("relation_types must be a sequence of relation type names")
         allowed_types = frozenset(relation_types)
-        if any(not isinstance(item, str) or not item.strip() for item in allowed_types):
-            raise ValueError("relation_types must contain non-empty strings")
+        if (
+            len(allowed_types) > 128
+            or any(not isinstance(item, str) or not item.strip() for item in allowed_types)
+        ):
+            raise ValueError("relation_types must contain at most 128 non-empty strings")
 
         async def run() -> GraphPath | None:
             source = await self.repository.get_entity(source_entity_id, allowed_project_ids=scope)
@@ -337,8 +342,8 @@ class GraphQueryService:
         allowed_project_ids: Sequence[str] = (), graph_seed_limit: int = 50,
         result_limit: int = 20, timeout_seconds: float | None = None,
     ) -> GraphHybridResult:
-        if not isinstance(query, str) or not query.strip() or len(query) > 4096:
-            raise ValueError("query must contain 1-4096 non-whitespace characters")
+        if not isinstance(query, str) or not query.strip() or len(query) > 200:
+            raise ValueError("query must contain 1-200 non-whitespace characters")
         self._positive_int(graph_seed_limit, "graph_seed_limit", 200)
         self._positive_int(result_limit, "result_limit", 100)
         scope = self._scope(allowed_project_ids)
