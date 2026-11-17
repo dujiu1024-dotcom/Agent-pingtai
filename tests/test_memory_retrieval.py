@@ -38,7 +38,8 @@ class MemoryRetrievalTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.memory.propose(candidate)
         await self.memory.confirm(
-            tenant_id="tenant-a", memory_id=candidate.memory_id, confirmer_id="user-a",
+            principal=self.owner,
+            memory_id=candidate.memory_id,
         )
         return candidate.memory_id
 
