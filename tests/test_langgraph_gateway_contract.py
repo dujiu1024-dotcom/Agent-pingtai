@@ -125,8 +125,12 @@ class LangGraphGatewayContractTests(unittest.IsolatedAsyncioTestCase):
             {"tenant_id": "tenant-a", "actor_id": "agent-a", "actor_roles": "admin"},
         )
         for identity in identities:
+            async def handler(_state, tools):
+                invoked.append(True)
+                return await tools.call("search", {})
+
             node = GatewayToolNode(
-                handler=lambda state, tools: invoked.append(True),
+                handler=handler,
                 gateway=gateway, allowed_tools=("search",),
                 identity_resolver=lambda _config, identity=identity: identity,
             )
