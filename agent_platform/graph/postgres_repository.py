@@ -36,13 +36,10 @@ class PostgresGraphRepository:
             try:
                 from psycopg import AsyncConnection
                 from psycopg.rows import dict_row
-                from psycopg.types.json import Jsonb as PsycopgJsonb
             except ImportError as exc:
                 raise RuntimeError(
                     "Install psycopg[binary,pool] for PostgreSQL storage"
                 ) from exc
-            # Resolve Jsonb lazily in _jsonb; importing it here validates the extra.
-            del PsycopgJsonb
             return await AsyncConnection.connect(dsn, row_factory=dict_row)
 
         return cls(tenant_id=tenant_id, schema=schema, connection_factory=connect)
