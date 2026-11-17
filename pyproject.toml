@@ -143,6 +143,7 @@ include = [
   "agent_platform/api/health.py",
   "tests/test_core_business_journey_e2e.py",
   "tests/test_graph_query.py",
+  "tests/test_graph_query_api.py",
   "tests/test_graph_schema.py",
 ]
 
@@ -189,6 +190,7 @@ files = [
   "agent_platform/quotas/*.py",
   "agent_platform/identity/*.py",
   "agent_platform/api/contract.py",
+  "agent_platform/api/graph.py",
   "agent_platform/graph/*.py",
   "agent_platform/memory/review.py",
   "agent_platform/memory/retrieval.py",
