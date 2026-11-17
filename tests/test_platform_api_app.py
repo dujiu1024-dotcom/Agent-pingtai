@@ -540,6 +540,30 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"tenant_id": "tenant-a", "items": []})
 
+    def test_version_header_is_emitted_and_unknown_version_is_rejected(self):
+        success = self.client.get(
+            "/api/platform/v1/knowledge/documents",
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(success.status_code, 200)
+        self.assertEqual(success.headers["x-api-version"], "v1")
+
+        rejected = self.client.get(
+            "/api/platform/v1/knowledge/documents",
+            headers={"Authorization": "Bearer valid-session", "X-API-Version": "v2"},
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(rejected.headers["x-api-version"], "v1")
+        self.assertEqual(rejected.json()["error"]["code"], "INVALID_REQUEST")
+
+    def test_public_api_http_errors_use_stable_error_envelope(self):
+        response = self.client.get(
+            "/api/platform/v1/no-such-resource",
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"]["code"], "NOT_FOUND")
+        self.assertNotIn("detail", response.json())
 
 if __name__ == "__main__":
     unittest.main()
