@@ -12,12 +12,12 @@ Memory is a governed cross-session projection, not a second document store, coll
 
 ## Canonical reference format
 
-Canonical references use the form DOMAIN://TENANT/RECORD@VERSION, where DOMAIN is knowledge, blackboard, or session. Version is mandatory and positive. Query strings, fragments, copied payloads, and memory self-references are rejected. Blackboard references are accepted only for approved decisions.
+Canonical references use the form `DOMAIN://TENANT/RECORD@VERSION`, where DOMAIN is `knowledge`, `blackboard`, or `session`. Tenant and record identifiers are restricted to letters, digits, dots, underscores, and hyphens. Version is mandatory, positive, and has no leading zeroes. Query strings, fragments, user-info, ports, encoded path separators, copied payloads, and memory self-references are rejected. Blackboard references are accepted only for approved decisions.
 
-Examples: knowledge://tenant-a/doc-17@3, blackboard://tenant-a/decision-8@2, session://tenant-a/message-91@1.
+Examples: `knowledge://tenant-a/doc-17@3`, `blackboard://tenant-a/decision-8@2`, `session://tenant-a/message-91@1`.
 
-The version pin prevents a citation from silently changing when the source record is revised. Consumers must resolve the reference through the owning domain and re-apply that domain current authorization; possession of a memory record or reference is not an access grant.
+The version pin prevents a citation from silently changing when the source record is revised. Consumers must resolve the reference through the owning domain and re-apply that domain's current authorization; possession of a memory record or reference is not an access grant.
 
 ## Enforcement boundary
 
-agent_platform.memory.boundaries provides the typed reference parser and policy contract. It stores identifiers and versions only. It does not copy canonical payloads, replace source-domain repositories, or bypass their ACL/deletion checks. Existing legacy source_ref values remain readable; new integrations should validate and persist canonical references before proposing a memory candidate.
+`agent_platform.memory.boundaries` provides the typed reference parser and policy contract. It stores identifiers and versions only. It does not copy canonical payloads, replace source-domain repositories, or bypass their ACL/deletion checks. Existing legacy `source_ref` values remain readable; new integrations should validate and persist canonical references before proposing memory candidates.
