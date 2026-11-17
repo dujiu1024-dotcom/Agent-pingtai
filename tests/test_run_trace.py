@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -148,9 +148,9 @@ class _FakeConnection:
         return self
     async def __aexit__(self, *_args):
         return None
-    @contextmanager
-    def _unused(self):
-        yield
+    @asynccontextmanager
+    async def transaction(self):
+        yield self
     async def execute(self, query, params=()):
         self.sql.append(query)
         if "CREATE TABLE" in query or "CREATE INDEX" in query or "pg_advisory_xact_lock" in query:
