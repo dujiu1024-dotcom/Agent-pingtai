@@ -150,10 +150,10 @@ def benchmark_evidence_payload(
         "summary": report.summary(),
         "observations": [asdict(row) for row in report.observations],
         "limitations": [
-            "Cancellation is reported as a declared capability; a provider-backed "
-            "cancellation probe must be run separately before claiming process termination.",
-            "Tool Gateway is capability-gated; use a run-scoped Gateway verifier for "
-            "tool-enabled benchmark requests.",
+            "Cancellation capability and cancellation_probe_passed are separate: only a supplied "
+            "provider-backed probe can verify that cancellation terminates work.",
+            "The gateway-tool-call case requires a request factory to expose exactly "
+            "knowledge.search and a run-scoped Gateway verifier; tool_calls counts actual normalized calls.",
             "Estimated cost is computed only when explicit per-candidate token pricing is supplied.",
             "Exact-match quality anchors are deterministic screening metrics, not human preference evaluation.",
         ],
