@@ -14,7 +14,7 @@ concurrency:
   # Never cancel in-progress runs: a dense push burst would otherwise create a
   # cancel-loop where every new workflow tears down the previous one before
   # the runner even starts, leaving everything queued forever.
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   pip-audit:

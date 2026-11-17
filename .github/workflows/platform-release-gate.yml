@@ -17,11 +17,9 @@ permissions:
 
 concurrency:
   group: platform-release-gate-${{ github.event.pull_request.number || github.ref }}
-  # Never cancel in-progress runs: a dense push burst would otherwise create a
-  # cancel-loop where every new workflow tears down the previous one before
-  # the runner even starts, leaving everything queued forever.  Instead, runs
-  # for the same PR queue up and complete in arrival order.
-  cancel-in-progress: false
+  # Cancel stale runs for the same branch/PR so squash-merged branches don't
+  # leave zombie runners blocking new CI indefinitely.
+  cancel-in-progress: true
 
 jobs:
   e2e-security-integration:
