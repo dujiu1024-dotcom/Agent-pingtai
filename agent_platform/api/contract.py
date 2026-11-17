@@ -95,7 +95,8 @@ def decode_secure_cursor(cursor: str, *, secret: bytes, tenant_id: str,
     if not isinstance(cursor, str) or len(cursor) > 4096 or cursor.count(".") != 1:
         raise ValueError("invalid pagination cursor")
     encoded, supplied_signature = cursor.split(".", 1)
-    if not encoded or not re.fullmatch(r"[0-9a-f]{64}", supplied_signature):
+    if (not re.fullmatch(r"[A-Za-z0-9_-]+", encoded)
+            or not re.fullmatch(r"[0-9a-f]{64}", supplied_signature)):
         raise ValueError("invalid pagination cursor")
     expected = hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, supplied_signature):
@@ -108,6 +109,8 @@ def decode_secure_cursor(cursor: str, *, secret: bytes, tenant_id: str,
     if not isinstance(payload, dict) or set(payload) != {"v", "tenant", "query", "exp", "values"}:
         raise ValueError("invalid pagination cursor")
     current = int(time.time()) if now is None else now
+    if isinstance(current, bool) or not isinstance(current, int) or current < 0:
+        raise ValueError("cursor clock must be a non-negative integer")
     expiry = payload.get("exp")
     if (payload.get("v") != 1 or payload.get("tenant") != tenant_id
             or payload.get("query") != query_fingerprint
