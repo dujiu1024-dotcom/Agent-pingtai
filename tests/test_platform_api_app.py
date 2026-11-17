@@ -552,6 +552,70 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertTrue(worker.stopped)
 
 
+    def test_run_budget_details_and_audit_are_wired_into_production_api(self):
+        import asyncio
+        from decimal import Decimal
+        from types import SimpleNamespace
+        from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager
+
+        run_id = "4c8b2f31-ec5b-48b6-b5bb-5f77d8b93f23"
+        store = InMemoryRunStateStore()
+        asyncio.run(store.create("tenant-a", run_id))
+
+        class BudgetLedger:
+            async def snapshot(self, tenant_id, requested_run_id):
+                return SimpleNamespace(
+                    max_tokens=1000, max_cost_usd=Decimal("5.00"),
+                    reserved_tokens=10, reserved_cost_usd=Decimal("0.05"),
+                    actual_tokens=40, actual_cost_usd=Decimal("0.20"),
+                    remaining_tokens=950, remaining_cost_usd=Decimal("4.75"),
+                    overrun_reason=None,
+                )
+
+            async def list_model_calls(self, *, tenant_id, run_id, limit=200):
+                return [{
+                    "tenant_id": tenant_id, "run_id": run_id, "call_id": "call-1",
+                    "estimated_input_tokens": 50, "estimated_output_tokens": 10,
+                    "estimated_cost_usd": "0.25", "actual_input_tokens": 30,
+                    "actual_output_tokens": 10, "actual_cost_usd": "0.20",
+                    "token_delta": -20, "cost_delta_usd": "-0.05", "status": "settled",
+                }]
+
+        ledger = BudgetLedger()
+
+        async def resolve_lifecycle(principal):
+            return RunLifecycleManager(store)
+
+        async def authorize_run(principal, resource_type, resource_id, action):
+            return principal.tenant_id == "tenant-a" and resource_type == "run"
+
+        async def resolve_ledger(principal):
+            return ledger
+
+        app = create_platform_app(
+            identity=self.identity, identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            run_lifecycle_resolver=resolve_lifecycle,
+            run_authorizer=authorize_run,
+            run_budget_ledger_resolver=resolve_ledger,
+            run_budget_audit_reader=ledger,
+            audit_reader=object(),
+            audit_authorizer=lambda principal: principal.tenant_id == "tenant-a",
+        )
+        client = TestClient(app, base_url="https://testserver")
+        headers = {"Authorization": "Bearer valid-session"}
+        detail = client.get(f"/api/platform/v1/runs/{run_id}", headers=headers)
+        self.assertEqual(detail.status_code, 200, detail.text)
+        self.assertEqual(detail.json()["budget"]["actual_tokens"], 40)
+        self.assertEqual(detail.json()["model_call_usage"][0]["estimated_input_tokens"], 50)
+        audit = client.get(
+            "/api/platform/v1/audit/run-budget-events",
+            params={"run_id": run_id}, headers=headers,
+        )
+        self.assertEqual(audit.status_code, 200, audit.text)
+        self.assertEqual(audit.json()["items"][0]["actual_input_tokens"], 30)
+
     def test_identity_audit_reader_is_wired_into_production_api(self):
         class AuditReader:
             async def list_events(self, **kwargs):
