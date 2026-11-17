@@ -16,6 +16,25 @@ MAX_METADATA_CHARS = 8_000
 
 
 @dataclass(frozen=True)
+class GraphEvidenceSpan:
+    """A verifiable source-document fragment locator carried into graph candidates."""
+
+    chunk_id: str
+    start_offset: int
+    end_offset: int
+    text: str
+    page_number: int | None = None
+
+    def reference(self) -> str:
+        digest = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
+        page = f"&page={self.page_number}" if self.page_number is not None else ""
+        return (
+            f"chunk://{self.chunk_id}?start={self.start_offset}"
+            f"&end={self.end_offset}&sha256={digest}{page}"
+        )
+
+
+@dataclass(frozen=True)
 class GraphSourceRecord:
     tenant_id: str
     domain: GraphSourceDomain
@@ -25,6 +44,7 @@ class GraphSourceRecord:
     source_ref: str
     content: str
     project_id: str | None = None
+    evidence_spans: tuple[GraphEvidenceSpan, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,7 +122,7 @@ class GraphExtractionService:
         self.candidate_store = candidate_store
 
     async def extract_source(self, *, source: GraphSourceRecord) -> tuple[GraphExtractionCandidate, ...]:
-        self._validate_source(source)
+        evidence_catalog = self._validate_source(source)
         schema = self.schema_provider(source.tenant_id)
         if schema.tenant_id != source.tenant_id:
             raise ValueError("graph schema tenant does not match source tenant")
@@ -131,7 +151,7 @@ class GraphExtractionService:
                 schema.entity_type(entity.entity_type).properties, entity.attributes
             )
             self._validate_confidence(entity.confidence)
-            evidence = self._validate_evidence(entity.evidence_refs, source.source_ref)
+            evidence = self._validate_evidence(entity.evidence_refs, source.source_ref, evidence_catalog)
             entities[entity.local_id] = entity
             candidates.append(self._candidate(
                 source=source, kind="entity", local_id=entity.local_id,
@@ -159,7 +179,7 @@ class GraphExtractionService:
                 raise ValueError("relation target entity type is not allowed")
             schema.validate_attributes(definition.properties, relation.attributes)
             self._validate_confidence(relation.confidence)
-            evidence = self._validate_evidence(relation.evidence_refs, source.source_ref)
+            evidence = self._validate_evidence(relation.evidence_refs, source.source_ref, evidence_catalog)
             candidates.append(self._candidate(
                 source=source, kind="relation", local_id=relation.local_id,
                 payload={
@@ -179,7 +199,7 @@ class GraphExtractionService:
         return tuple(candidates)
 
     @staticmethod
-    def _validate_source(source: GraphSourceRecord) -> None:
+    def _validate_source(source: GraphSourceRecord) -> frozenset[str]:
         if not isinstance(source, GraphSourceRecord):
             raise ValueError("source must be a GraphSourceRecord")
         if not isinstance(source.tenant_id, str) or not source.tenant_id.strip():
@@ -198,6 +218,43 @@ class GraphExtractionService:
             not isinstance(source.project_id, str) or not source.project_id.strip()
         ):
             raise ValueError("project_id must not be empty")
+        if (
+            not isinstance(source.evidence_spans, tuple)
+            or len(source.evidence_spans) > MAX_DRAFTS_PER_SOURCE
+        ):
+            raise ValueError("evidence_spans must be a tuple of at most 200 source fragments")
+        references: set[str] = set()
+        for span in source.evidence_spans:
+            if not isinstance(span, GraphEvidenceSpan):
+                raise ValueError("evidence_spans must contain GraphEvidenceSpan values")
+            if (
+                not isinstance(span.chunk_id, str) or not span.chunk_id.strip()
+                or len(span.chunk_id) > 200
+            ):
+                raise ValueError("evidence chunk_id must contain 1-200 characters")
+            for name in ("start_offset", "end_offset"):
+                value = getattr(span, name)
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise ValueError(f"evidence {name} must be an integer")
+            if not 0 <= span.start_offset < span.end_offset <= len(source.content):
+                raise ValueError("evidence offsets are outside the canonical source content")
+            if (
+                not isinstance(span.text, str) or not span.text
+                or len(span.text) != span.end_offset - span.start_offset
+                or source.content[span.start_offset:span.end_offset] != span.text
+            ):
+                raise ValueError("evidence text does not match its canonical source offsets")
+            if span.page_number is not None and (
+                isinstance(span.page_number, bool)
+                or not isinstance(span.page_number, int)
+                or span.page_number < 1
+            ):
+                raise ValueError("evidence page_number must be a positive integer")
+            reference = span.reference()
+            if reference in references:
+                raise ValueError("evidence span references must be unique")
+            references.add(reference)
+        return frozenset(references)
 
     @staticmethod
     def _validate_local_id(value: str) -> None:
@@ -213,7 +270,9 @@ class GraphExtractionService:
             raise ValueError("confidence must be a finite number between 0 and 1")
 
     @staticmethod
-    def _validate_evidence(refs: tuple[str, ...], source_ref: str) -> tuple[str, ...]:
+    def _validate_evidence(
+        refs: tuple[str, ...], source_ref: str, evidence_catalog: frozenset[str],
+    ) -> tuple[str, ...]:
         if not isinstance(refs, tuple) or not refs or len(refs) > MAX_EVIDENCE_REFS:
             raise ValueError("evidence_refs must contain 1-32 references")
         if any(not isinstance(ref, str) or not ref.strip() or len(ref) > 512 for ref in refs):
@@ -222,6 +281,12 @@ class GraphExtractionService:
             raise ValueError("evidence_refs must include the canonical source reference")
         if len(set(refs)) != len(refs):
             raise ValueError("evidence_refs must be unique")
+        if evidence_catalog:
+            fragments = set(refs) - {source_ref}
+            if not fragments:
+                raise ValueError("evidence_refs must include at least one source fragment reference")
+            if not fragments <= evidence_catalog:
+                raise ValueError("evidence reference does not resolve to a verified source fragment")
         return refs
 
     @staticmethod
