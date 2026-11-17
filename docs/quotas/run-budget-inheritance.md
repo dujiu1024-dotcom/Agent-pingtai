@@ -16,3 +16,12 @@
 ## 验证边界
 
 单测覆盖 root scope 强制、child 归集、重复 call_id 防双扣、缺失谱系 fail-closed。PostgreSQL trigger/migration 需由 CI 数据库集成检查；不执行真机或外部 Provider 验证。
+
+
+## A-72-02 并发、失败与重试扣减补充
+
+- Tenant + root Run 预留在单个数据库事务中完成，并按稳定 scope 顺序锁预算行；任一 scope 超限时整组回滚。进程内适配器在同一把锁下校验并插入整组。
+- `idempotency_key` 在同一 Run attempt 内派生稳定 group/reservation ID。相同 key 与相同预算参数重放返回原组，不再重复占用；同 key 参数不一致、组不完整或状态不一致时 fail-closed。
+- 结算事件 ID 从 reservation group 派生。Provider 成功后若结算响应丢失，重放相同用量返回原账本事件；不同用量重放拒绝，避免重复计费或覆盖账本。
+- 可证明 Provider 未 dispatch 的失败可释放整组；dispatch 结果未知时保留预留，由 lease heartbeat / stale-reservation recovery 管理，不能乐观释放已可能产生费用的请求。真正的新 retry attempt 必须使用新的幂等键，但继续使用相同 root Run 预算。
+- PostgreSQL 集成测试覆盖跨 scope 原子回滚、并发争抢和组结算；本轮新增内存重放测试。生产多 worker 的真实数据库压力验证仍由 CI 集成环境负责，未执行真机/外部 Provider。
