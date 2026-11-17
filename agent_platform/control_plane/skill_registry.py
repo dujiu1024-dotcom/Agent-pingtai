@@ -129,7 +129,6 @@ class SkillArtifactRegistry(Protocol):
 
 class AgentSkillStore(Protocol):
     async def get(self, tenant_id: str, agent_id: str, skill_id: str) -> "AgentSkillInstallation | None": ...
-    async def list(self, tenant_id: str, agent_id: str, *, limit: int = 100) -> tuple["AgentSkillInstallation", ...]: ...
     async def put(self, item: "AgentSkillInstallation") -> None: ...
     async def remove(self, tenant_id: str, agent_id: str, skill_id: str) -> None: ...
 
@@ -157,15 +156,6 @@ class InMemoryAgentSkillStore:
 
     async def get(self, tenant_id: str, agent_id: str, skill_id: str) -> AgentSkillInstallation | None:
         return self._items.get((tenant_id, agent_id, skill_id))
-
-    async def list(self, tenant_id: str, agent_id: str, *, limit: int = 100) -> tuple[AgentSkillInstallation, ...]:
-        if not 1 <= limit <= 200:
-            raise ValueError("limit must be between 1 and 200")
-        return tuple(sorted(
-            (item for (tenant, agent, _), item in self._items.items()
-             if tenant == tenant_id and agent == agent_id),
-            key=lambda item: item.skill_id,
-        )[:limit])
 
     async def put(self, item: AgentSkillInstallation) -> None:
         self._items[(item.tenant_id, item.agent_id, item.skill_id)] = item
