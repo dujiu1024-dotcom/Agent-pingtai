@@ -58,14 +58,14 @@ const caches = {
     return {
       addAll: async (keys) => keys.forEach((key) => entries.set(key, {marker: key})),
       match: async (key) => entries.get(cacheKey(key)),
-      put: async (key, value) => entries.set(typeof key === "string" ? key : key.url, value)
+      put: async (key, value) => entries.set(cacheKey(key), value)
     };
   },
   keys: async () => Array.from(cachesByName.keys()),
   delete: async (name) => cachesByName.delete(name),
   match: async (key) => {
     for (const entries of cachesByName.values()) {
-      const value = entries.get(typeof key === "string" ? key : key.url);
+      const value = entries.get(cacheKey(key));
       if (value) return value;
     }
     return undefined;
