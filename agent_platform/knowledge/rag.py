@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import uuid4
 from time import monotonic
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -10,7 +11,6 @@ from agent_platform.knowledge.contracts import KnowledgePrincipal, RetrievalHit
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 from agent_platform.observability.trace_spans import trace_span
-from uuid import uuid4
 
 
 class RAGGenerator(Protocol):
