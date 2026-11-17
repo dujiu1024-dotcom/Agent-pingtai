@@ -36,3 +36,8 @@ Dead-letter listing and replay are tenant scoped and require webhook-management 
 ## 密钥轮换撤销恢复
 
 轮换签名密钥时，必须在同一数据库事务中切换订阅当前 secret reference，并将旧 reference 写入 `platform_webhook_secret_revocations` 待处理表。外部 Secret Manager 撤销成功后才删除待处理记录；撤销失败时记录保留，由后台任务调用 `retry_pending_secret_revocations` 重试。禁用订阅同样先持久化待撤销引用，再执行外部撤销。Secret Manager 的 revoke 必须幂等，多个 Worker 并发重试不得影响订阅状态。
+
+
+## Secret revocation worker leases
+
+Pending secret revocations are claimed in a single PostgreSQL transaction using `FOR UPDATE SKIP LOCKED`. Each claim rotates a UUID fencing token and sets a bounded lease expiry. A worker may delete a queue row only when its token still matches and the lease has not expired. Expired work becomes claimable by another worker; a stale worker cannot acknowledge a reclaimed row. Secret Manager revocation remains idempotent because an external revoke may succeed immediately before a worker loses its lease.
