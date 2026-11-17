@@ -158,6 +158,11 @@ class SessionManagementApiTests(unittest.TestCase):
         key = ("tenant-a", session.session_id)
         self.assertNotIn(key, self.repository.messages)
         self.assertNotIn(key, self.repository.context_snapshots)
+        # Repeated DELETE retries cleanup for already-tombstoned assets safely.
+        self.assertEqual(
+            self.client.delete(f"/api/platform/v1/sessions/{session.session_id}").status_code,
+            204,
+        )
 
     def test_session_permissions_and_tenant_isolation_fail_closed(self):
         import asyncio
