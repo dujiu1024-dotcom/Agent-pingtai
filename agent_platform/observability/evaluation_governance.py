@@ -200,7 +200,18 @@ class EvaluationGovernanceService:
             json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
         ).hexdigest()
         evidence = EvaluationGateEvidence(
-            **{**payload, "failures": tuple(failures), "evidence_refs": tuple(evidence_refs)},
+            evidence_id=str(payload["evidence_id"]),
+            tenant_id=tenant_id,
+            candidate_run_id=candidate_run_id,
+            baseline_run_id=baseline_run_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            policy_snapshot={"minimums": dict(policy.minimums), "maximums": dict(policy.maximums)},
+            passed=passed,
+            failures=tuple(failures),
+            comparison_id=comparison.comparison_id if comparison else None,
+            evidence_refs=tuple(evidence_refs),
+            evaluated_at_utc=str(payload["evaluated_at_utc"]),
             content_sha256=digest,
         )
         await self.repository.save_gate_evidence(evidence)
