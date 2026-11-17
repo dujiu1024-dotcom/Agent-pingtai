@@ -178,8 +178,8 @@ class ToolGateway:
         self.authorizer = authorizer or ScopeToolAuthorizer()
         self.max_timeout_seconds = max_timeout_seconds
         self._tools: dict[str, ToolDefinition] = {}
-        self._active: dict[tuple[str, str], asyncio.Task] = {}
-        self._cancelled: set[tuple[str, str]] = set()
+        self._active: dict[tuple[str, str, str], asyncio.Task] = {}
+        self._cancelled: set[tuple[str, str, str]] = set()
 
     def register(self, definition: ToolDefinition) -> None:
         if definition.name in self._tools:
@@ -224,7 +224,7 @@ class ToolGateway:
             if isinstance(requested_timeout, bool) or not isinstance(requested_timeout, (int, float)) or not math.isfinite(requested_timeout) or requested_timeout <= 0:
                 raise ValueError("timeout_seconds must be finite and positive")
             effective_timeout = min(float(requested_timeout), definition.timeout_seconds, self.max_timeout_seconds)
-            key = (run_context.run_id, call_id)
+            key = (run_context.tenant_id, run_context.run_id, call_id)
             if key in self._active:
                 raise ToolGatewayError("duplicate active tool call_id")
             context = ToolExecutionContext(
@@ -276,7 +276,7 @@ class ToolGateway:
             raise ToolRunBindingError("cannot cancel tools for an unbound or inactive Run")
         tasks = [
             (key, task) for key, task in tuple(self._active.items())
-            if key[0] == run_id and not task.done()
+            if key[:2] == (tenant_id, run_id) and not task.done()
         ]
         for key, task in tasks:
             self._cancelled.add(key)
