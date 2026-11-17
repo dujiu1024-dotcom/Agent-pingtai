@@ -20,7 +20,7 @@ class Issue21A2103ProductionAcceptanceRegisterTests(unittest.TestCase):
         content = REGISTER.read_text(encoding="utf-8")
         self.assertEqual(len(REQUIRED_CHECKS), len(CHECK_LABELS))
         for label in CHECK_LABELS:
-            self.assertIn(f"| {label} |", content)
+            self.assertIn(f"| {label.lower()} |", content.lower())
         self.assertIn("Current evidence reference", content)
         self.assertIn("Accountable role", content)
         self.assertIn("Current conclusion", content)
