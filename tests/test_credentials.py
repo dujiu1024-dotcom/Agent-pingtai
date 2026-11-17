@@ -78,6 +78,9 @@ class FakeCredentialRepository:
     async def get_grant(self, *, tenant_id, credential_id, consumer_type, consumer_id):
         return self.grants.get((tenant_id, credential_id, consumer_type, consumer_id))
 
+    async def revoke_grant(self, *, tenant_id, credential_id, consumer_type, consumer_id):
+        self.grants.pop((tenant_id, credential_id, consumer_type, consumer_id), None)
+
     async def revoke(self, *, tenant_id, credential_id):
         from dataclasses import replace
         key = (tenant_id, credential_id)
