@@ -13,6 +13,7 @@ from agent_platform.api.audit import create_audit_router
 from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
+from agent_platform.api.credentials import create_credentials_router
 from agent_platform.api.contract import (
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
   )
@@ -82,6 +83,8 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     connector_sync_worker: Any | None = None,
     connector_cleanup_worker: Any | None = None,
+    credential_service_resolver: Any | None = None,
+    credential_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_replay_resolver: Any | None = None,
     run_authorizer: Any | None = None,
@@ -541,6 +544,16 @@ def create_platform_app(
             raise ValueError("outbox_relay_worker must expose async start() and stop()")
         app.router.on_startup.append(outbox_relay_worker.start)
         app.router.on_shutdown.append(outbox_relay_worker.stop)
+    credential_api_configured = any(value is not None for value in (
+        credential_service_resolver, credential_authorizer,
+    ))
+    if credential_api_configured:
+        if credential_service_resolver is None or credential_authorizer is None:
+            raise ValueError("credential service resolver and authorizer must be configured together")
+        app.include_router(create_credentials_router(
+            resolve_service=credential_service_resolver,
+            authorize=credential_authorizer,
+        ))
     connectors_configured = any(value is not None for value in (connector_service_resolver, connector_authorizer))
     if any(worker is not None for worker in (connector_sync_worker, connector_cleanup_worker)) and not connectors_configured:
         raise ValueError("connector workers require connector routes to be configured")
