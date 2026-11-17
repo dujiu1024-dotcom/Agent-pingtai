@@ -9,6 +9,7 @@ import asyncio
 import math
 import time
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
@@ -41,7 +42,7 @@ class PromptExperimentCase:
             raise ValueError("rubric terms must be non-empty strings")
         if not isinstance(self.rubric, str) or len(self.rubric) > 4_000:
             raise ValueError("rubric must be a string of at most 4000 characters")
-        object.__setattr__(self, "variables", dict(self.variables))
+        object.__setattr__(self, "variables", MappingProxyType(dict(self.variables)))
 
 
 @dataclass(frozen=True)
@@ -227,6 +228,10 @@ class PromptABTestService:
         async def execute_one(case: PromptExperimentCase, variant: str) -> PromptCaseScore:
             prompt = snapshots[variant]
             try:
+                expected = set(prompt.variables)
+                supplied = set(case.variables)
+                if expected != supplied:
+                    raise ValueError("experiment variables do not match the prompt version")
                 rendered = prompt.template.format_map(dict(case.variables))
                 async with semaphore:
                     started = time.perf_counter()
