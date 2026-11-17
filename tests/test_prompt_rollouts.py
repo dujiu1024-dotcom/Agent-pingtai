@@ -71,6 +71,73 @@ class PromptRolloutTests(unittest.IsolatedAsyncioTestCase):
             await self.service.configure(tenant_id="tenant-a", prompt_id="assistant",
                 weights={"retired": 100}, actor="operator")
 
+
+    async def test_canary_policy_does_not_mutate_sibling_prompt_or_other_variants(self):
+        # Two prompts in the same tenant have independent policies and variant sets.
+        self.registry.add("tenant-a", "billing", "billing-stable")
+        self.registry.add("tenant-a", "billing", "billing-candidate")
+        await self.service.configure(
+            tenant_id="tenant-a", prompt_id="assistant",
+            weights={"stable": 100}, actor="operator",
+        )
+        sibling_before = await self.service.configure(
+            tenant_id="tenant-a", prompt_id="billing",
+            weights={"billing-stable": 100}, actor="operator",
+        )
+        assistant_variants_before = {
+            item.name for item in self.registry.list_variants(tenant_prompt_key("tenant-a", "assistant"))
+        }
+        billing_variants_before = {
+            item.name for item in self.registry.list_variants(tenant_prompt_key("tenant-a", "billing"))
+        }
+
+        canary = await self.service.configure(
+            tenant_id="tenant-a", prompt_id="assistant",
+            weights={"stable": 90, "candidate": 10}, actor="release-operator",
+        )
+
+        sibling_after = await self.repository.get_policy("tenant-a", "billing")
+        assistant_variants_after = {
+            item.name for item in self.registry.list_variants(tenant_prompt_key("tenant-a", "assistant"))
+        }
+        billing_variants_after = {
+            item.name for item in self.registry.list_variants(tenant_prompt_key("tenant-a", "billing"))
+        }
+        self.assertEqual(canary.weights, (("candidate", 10.0), ("stable", 90.0)))
+        self.assertEqual(sibling_after, sibling_before)
+        self.assertEqual(assistant_variants_after, assistant_variants_before)
+        self.assertEqual(billing_variants_after, billing_variants_before)
+        self.assertEqual(
+            {item.name for item in self.registry.list_variants(tenant_prompt_key("tenant-a", "assistant"))},
+            {"stable", "candidate", "tagged"},
+        )
+        # The sibling prompt still routes to its original 100% stable variant.
+        sibling_decision = await self.service.route(
+            tenant_id="tenant-a", prompt_id="billing", routing_key="billing-user-1",
+        )
+        self.assertEqual((sibling_decision.variant, sibling_decision.rule), ("billing-stable", "percentage"))
+
+    async def test_route_audit_is_replayable_without_raw_subject_identifier(self):
+        await self.service.configure(
+            tenant_id="tenant-a", prompt_id="assistant",
+            weights={"stable": 70, "candidate": 30}, actor="release-operator",
+        )
+        routing_key = "customer-private-id-987"
+        decision = await self.service.route(
+            tenant_id="tenant-a", prompt_id="assistant", routing_key=routing_key,
+        )
+        rows = await self.service.audit(tenant_id="tenant-a", prompt_id="assistant")
+        self.assertEqual(len(rows), 1)
+        recorded = rows[0]
+        self.assertEqual(recorded, decision)
+        self.assertIn(recorded.variant, {"stable", "candidate"})
+        self.assertEqual(recorded.rule, "percentage")
+        self.assertEqual(recorded.policy_revision, 1)
+        self.assertEqual(len(recorded.subject_hash), 64)
+        self.assertNotEqual(recorded.subject_hash, routing_key)
+        self.assertNotIn(routing_key, repr(recorded))
+        self.assertGreater(recorded.decided_at_epoch_ms, 0)
+
     async def test_boolean_weight_is_rejected(self):
         with self.assertRaises(ValueError):
             await self.service.configure(
