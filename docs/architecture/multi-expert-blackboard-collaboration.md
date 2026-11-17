@@ -28,3 +28,16 @@ Parallel expert branches are collected by the additive reducer, whose completion
 ## Evidence validation and immutable conflict decisions
 
 Conflict resolution is fail-closed for Blackboard-owned evidence: every conflict must point to a persisted CONFLICT entry and its persisted CHALLENGE entry in the active workflow scope. UUID-shaped Blackboard evidence references supplied by a decision must resolve to existing entries in that same scope; opaque connector/document references remain delegated to their owning evidence service. Each decision records both the conflict and challenge IDs plus its evidence references. Idempotent writes compare decision status and immutable metadata as well as semantic payload, so a retry cannot rewrite an accepted decision as rejected or otherwise mutate its audit record.
+
+
+## At-least-once delivery and external-effect idempotency (A-13-03)
+
+Redis Streams delivery and worker execution remain **at least once**; neither a stream message ID nor a consumer receipt alone can guarantee exactly-once external effects. Every handler that can cause an external effect must use `IdempotentEventHandler` (or an equivalent adapter) and pass its stable key to the downstream system:
+
+`tenant:<tenant_id>:event:<canonical UUID event_id>`
+
+The key is deliberately independent of Redis message ID, consumer name, worker instance, and retry attempt. The downstream adapter must durably bind that key to a request fingerprint and its result, atomically with the effect where the provider supports it. A repeated key with a different request must be rejected, not silently treated as a replay. If a remote provider offers native idempotency keys, forward this key; otherwise use a provider-specific durable operation ledger/outbox and reconcile ambiguous outcomes before retrying. A caller-side receipt cannot close the crash window between a successful external effect and receipt completion.
+
+The acceptance test `tests/test_issue_13_a_13_03_at_least_once_effects.py` models the critical ambiguous-response window: the downstream commits once, the first worker loses the response, and a restarted worker receives the same event under a different stream message ID. It verifies one effect, stable tenant/event identity, and rejection of payload mutation under a reused key. This is a deterministic contract test, not evidence of a live provider or multi-instance Redis deployment.
+
+**Hybrid Blackboard decision is unchanged:** PostgreSQL remains the authoritative, versioned Blackboard/event/outbox store; Redis Streams remains the delivery/projection transport. Decision and evidence records continue through the existing Blackboard repository and immutable decision history. The idempotency key protects downstream effects; it does not replace Blackboard persistence, alter the Hybrid topology, or claim exactly-once message delivery.
