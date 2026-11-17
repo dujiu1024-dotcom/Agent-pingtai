@@ -117,14 +117,15 @@ def build_variant_comparison(run: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def render_variant_report_html(comparison: Mapping[str, Any]) -> str:
-    headers = ("排名", "Variant", "通过率", "平均评分", "成本 USD", "总 Token", "平均延迟 ms", "P95 ms")
+    headers = ("排名", "Variant", "通过率", "平均评分", "成本 USD", "Input Token", "Output Token", "Total Token", "平均延迟 ms", "P95 ms")
     head = "".join(f"<th scope=\"col\">{html.escape(label)}</th>" for label in headers)
     rows = []
     for item in comparison["matrix"]:
         values = (
             str(item["rank"]), item["model_variant"], f"{item['pass_rate']:.1%}",
-            f"{item['average_score']:.3f}", item["cost_usd"] or "未知",
-            str(item["total_tokens"]), f"{item['average_latency_ms']:.1f}", f"{item['p95_latency_ms']:.1f}",
+            f"{item['average_score']:.3f}", item["cost_usd"] if item["cost_usd"] is not None else "未知",
+            str(item["input_tokens"]), str(item["output_tokens"]), str(item["total_tokens"]),
+            f"{item['average_latency_ms']:.1f}", f"{item['p95_latency_ms']:.1f}",
         )
         rows.append("<tr>" + "".join(f"<td>{html.escape(value)}</td>" for value in values) + "</tr>")
     recommendation = comparison["recommendation"]
@@ -155,13 +156,14 @@ def render_variant_report_pdf(comparison: Mapping[str, Any]) -> bytes:
         "Model Eval Variant Report", f"Eval Run: {comparison['eval_run_id']}",
         f"Dataset: {comparison['dataset_id']} v{comparison['dataset_version']}", "",
         f"Recommended: {recommendation['model_variant']}", *recommendation["reason"], "",
-        "Rank | Variant | Pass rate | Avg score | Cost USD | Tokens | Avg ms | P95 ms",
+        "Rank | Variant | Pass rate | Avg score | Cost USD | Input | Output | Total | Avg ms | P95 ms",
     ]
     for item in comparison["matrix"]:
         cost = item["cost_usd"] if item["cost_usd"] is not None else "unknown"
         lines.append(
             f"{item['rank']} | {item['model_variant']} | {item['pass_rate']:.1%} | "
-            f"{item['average_score']:.3f} | {cost} | {item['total_tokens']} | "
+            f"{item['average_score']:.3f} | {cost} | {item['input_tokens']} | "
+            f"{item['output_tokens']} | {item['total_tokens']} | "
             f"{item['average_latency_ms']:.1f} | {item['p95_latency_ms']:.1f}"
         )
     commands = ["BT", "/F1 9 Tf", "48 790 Td", "12 TL"]
