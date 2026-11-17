@@ -1,7 +1,6 @@
 """Safe text extraction adapters; binary formats are optional plug-ins."""
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Protocol
