@@ -9,7 +9,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent_platform.api.blackboard import create_blackboard_router
-from agent_platform.identity.models import Principal
 from agent_platform.blackboard.replay import BlackboardReplayCursor
 from agent_platform.blackboard.sse import (
     decode_blackboard_cursor,
@@ -17,6 +16,7 @@ from agent_platform.blackboard.sse import (
     stream_blackboard_events,
 )
 from agent_platform.contracts import BlackboardEvent, Scope
+from agent_platform.identity.models import Principal
 
 
 class FakeReplay:
