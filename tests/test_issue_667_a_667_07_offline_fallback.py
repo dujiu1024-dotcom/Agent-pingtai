@@ -83,14 +83,18 @@ const context = {
 };
 vm.runInNewContext(fs.readFileSync(process.argv[1], "utf8"), context);
 (async () => {
-  await handlers.install({waitUntil: (promise) => promise});
+  let installPromise;
+  handlers.install({waitUntil: (promise) => { installPromise = promise; }});
+  await installPromise;
   const activeCache = cachesByName.get("platform-ui-shell-v1");
   assert(activeCache.has("/app/"));
   assert(activeCache.has("/app/assets/app.js"));
   assert(activeCache.has("/app/assets/style.css"));
   assert.strictEqual(self.waitingSkipped, true);
 
-  await handlers.activate({waitUntil: (promise) => promise});
+  let activatePromise;
+  handlers.activate({waitUntil: (promise) => { activatePromise = promise; }});
+  await activatePromise;
   assert.strictEqual(cachesByName.has("platform-ui-shell-old"), false);
   assert.strictEqual(self.claimed, true);
 
