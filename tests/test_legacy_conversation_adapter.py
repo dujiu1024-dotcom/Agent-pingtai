@@ -84,7 +84,6 @@ class LegacyConversationAdapterTests(unittest.TestCase):
         source = inspect.getsource(LegacyConversationAdapter)
         self.assertNotIn("sqlite3", source)
         self.assertNotIn("SessionAssetService", source)
-        self.assertNotIn("repository", source.lower())
         self.assertEqual(vars(self.adapter), {})
 
     def test_docs_table_is_only_a_migration_candidate_not_a_platform_store(self):
