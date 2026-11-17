@@ -168,5 +168,48 @@ class SQLitePostgresImportTests(unittest.TestCase):
                 load_mapping(mapping_path, manifest)
 
 
+    def test_redacted_export_values_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            mapping_path = self._export(directory)
+            export_file = directory / "records.jsonl"
+            content = export_file.read_text(encoding="utf-8").replace('"name":"one"', '"name":"[REDACTED]"')
+            export_file.write_text(content, encoding="utf-8")
+            manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            manifest["tables"][0]["sha256"] = hashlib.sha256(export_file.read_bytes()).hexdigest()
+            (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "redacted"):
+                load_export(directory)
+
+    def test_invalid_binary_payload_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self._export(directory)
+            export_file = directory / "records.jsonl"
+            content = export_file.read_text(encoding="utf-8").replace("AQI=", "%%%")
+            export_file.write_text(content, encoding="utf-8")
+            manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            manifest["tables"][0]["sha256"] = hashlib.sha256(export_file.read_bytes()).hexdigest()
+            (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "base64"):
+                load_export(directory)
+
+    def test_read_only_setup_failure_rolls_back(self):
+        class SetupFailureConnection(FakeConnection):
+            def execute(self, query, params=None):
+                self.commands.append((query, params))
+                raise RuntimeError("read-only setup failed")
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            mapping_path = self._export(directory)
+            manifest, rows = load_export(directory)
+            connection = SetupFailureConnection()
+            with self.assertRaisesRegex(RuntimeError, "read-only setup"):
+                migrate(connection, rows, load_mapping(mapping_path, manifest), dry_run=True)
+            self.assertTrue(connection.rolled_back)
+            self.assertFalse(connection.committed)
+
+
 if __name__ == "__main__":
     unittest.main()
