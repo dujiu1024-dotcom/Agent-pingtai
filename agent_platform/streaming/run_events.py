@@ -9,7 +9,6 @@ import asyncio
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Mapping
 from typing import Any
-from uuid import uuid4
 
 from agent_platform.streaming.sse import SSEEvent
 
