@@ -18,6 +18,10 @@ class PostgresAlertEventStore:
     ) -> tuple[str, bool]:
         if not scope_key.strip() or not dedupe_key.strip():
             raise ValueError("scope_key and dedupe_key are required")
+        if on_call_user_id is not None and (not isinstance(on_call_user_id, str) or not on_call_user_id.strip()):
+            raise ValueError("on_call_user_id must be a non-empty string")
+        if ack_due_at is not None and (ack_due_at.tzinfo is None or ack_due_at.utcoffset() is None):
+            raise ValueError("ack_due_at must be timezone-aware")
         event_id = str(uuid4())
         connection = await self._connect()
         async with connection:
@@ -74,7 +78,7 @@ class PostgresAlertEventStore:
                        WHERE event.event_id=candidates.event_id
                        RETURNING event.event_id,event.scope_key,event.rule_id,event.metric_name,
                                  event.observed_value,event.threshold,event.severity,
-                                 event.fired_at,event.description""",
+                                 event.fired_at,event.description,event.delivery_attempts,event.delivery_max_attempts""",
                     (event_id,event_id,limit),
                 )
                 rows = await cursor.fetchall()
@@ -87,11 +91,15 @@ class PostgresAlertEventStore:
         async with connection:
             await connection.execute(
                 """UPDATE platform_alert_events
-                   SET delivery_status=%s,
+                   SET delivery_status=CASE WHEN %s THEN 'sent'
+                         WHEN delivery_attempts >= delivery_max_attempts THEN 'dead'
+                         ELSE 'failed' END,
                        delivered_at=CASE WHEN %s THEN %s ELSE delivered_at END,
+                       next_delivery_at=CASE WHEN %s OR delivery_attempts >= delivery_max_attempts THEN NULL
+                         ELSE %s + (LEAST(3600,5 * power(2,GREATEST(delivery_attempts - 1,0))) * interval '1 second') END,
                        last_delivery_error=%s,delivery_claimed_at=NULL
                    WHERE event_id=%s AND delivery_status='sending'""",
-                ("sent" if success else "failed", success, now,
+                (success, success, now, success, now,
                  None if success else (error or "notification delivery failed")[:1000], event_id),
             )
 

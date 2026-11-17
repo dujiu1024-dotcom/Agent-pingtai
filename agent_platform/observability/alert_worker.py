@@ -104,6 +104,8 @@ class AlertRuleEvaluationWorker:
         event_store: Any,
         scope_key: str,
         poll_interval_seconds: float = 15.0,
+        policy_engine: Any | None = None,
+        on_call_rotation: Any | None = None,
     ) -> None:
         if not isinstance(scope_key, str) or not scope_key.strip():
             raise ValueError("scope_key is required")
@@ -123,6 +125,8 @@ class AlertRuleEvaluationWorker:
         self.metrics_provider = metrics_provider
         self.event_store = event_store
         self.scope_key = scope_key
+        self.policy_engine = policy_engine
+        self.on_call_rotation = on_call_rotation
         self.poll_interval_seconds = float(poll_interval_seconds)
         self._stop = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -142,6 +146,14 @@ class AlertRuleEvaluationWorker:
         if not isinstance(metrics, Mapping):
             raise TypeError("metrics provider must return a metric dictionary")
         candidates = self.manager.evaluate_candidates(metrics)
+        if self.policy_engine is not None:
+            if not callable(getattr(self.policy_engine, "filter_inhibited", None)):
+                raise TypeError("policy_engine must expose filter_inhibited()")
+            candidates = self.policy_engine.filter_inhibited(candidates)
+            aggregate = getattr(self.policy_engine, "aggregate", None)
+            if not callable(aggregate):
+                raise TypeError("policy_engine must expose aggregate()")
+            self.last_digests = aggregate(candidates)
         created = deduplicated = 0
         rules = {rule.rule_id: rule for rule in self.manager.rules}
         for event in candidates:
@@ -150,10 +162,18 @@ class AlertRuleEvaluationWorker:
                 raise ValueError("alert candidate has no configured rule")
             window = max(1, int(rule.cooldown.total_seconds()))
             bucket = int(event.fired_at.timestamp()) // window
+            record_options: dict[str, Any] = {}
+            if self.on_call_rotation is not None:
+                assignment = self.on_call_rotation.assign(event.fired_at)
+                record_options = {
+                    "on_call_user_id": assignment.user_id,
+                    "ack_due_at": assignment.acknowledged_by_deadline,
+                }
             _event_id, inserted = await self.event_store.record_once(
                 event,
                 scope_key=self.scope_key,
                 dedupe_key=f"{event.rule_id}:{bucket}",
+                **record_options,
             )
             if inserted:
                 created += 1
