@@ -354,6 +354,10 @@ class PostgresKnowledgeRepository:
                     (tenant_id, document_id),
                 )
                 await conn.execute(
+                    "DELETE FROM knowledge_chunk_acl WHERE tenant_id=%s AND chunk_id IN (SELECT chunk_id FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s)",
+                    (tenant_id, tenant_id, document_id),
+                )
+                await conn.execute(
                     "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
                     (tenant_id, document_id),
                 )
@@ -436,6 +440,37 @@ class PostgresKnowledgeRepository:
             cur = await conn.execute("SELECT * FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s AND document_version=%s ORDER BY ordinal", (tenant_id, document_id, version))
             rows = await cur.fetchall()
         return [DocumentChunk(tenant_id=r["tenant_id"], document_id=str(r["document_id"]), document_version=r["document_version"], ordinal=r["ordinal"], text=r["body"], content_hash=r["content_hash"], start_offset=r["start_offset"], end_offset=r["end_offset"], page_number=r["page_number"], chunk_id=str(r["chunk_id"]), metadata=dict(r["metadata"] or {})) for r in rows]
+    
+    async def list_visible_chunks(
+        self, principal: KnowledgePrincipal, document_id: str, version: int,
+    ) -> list[DocumentChunk]:
+        """Return only chunks authorized for this principal before exposing bodies."""
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT c.* FROM knowledge_chunks c
+                WHERE c.tenant_id=%s AND c.document_id=%s AND c.document_version=%s
+                AND (NOT c.acl_enforced OR EXISTS (
+                    SELECT 1 FROM knowledge_chunk_acl a
+                    WHERE a.tenant_id=c.tenant_id AND a.chunk_id=c.chunk_id
+                    AND a.permission IN ('read','manage')
+                    AND ((a.principal_type='user' AND a.principal_id=%s)
+                      OR (a.principal_type='role' AND a.principal_id=ANY(%s))
+                      OR (a.principal_type='project' AND a.principal_id=ANY(%s)))
+                ))
+                ORDER BY c.ordinal""",
+                (principal.tenant_id, document_id, version, principal.user_id,
+                 list(principal.roles), list(principal.project_ids)),
+            )
+            rows = await cur.fetchall()
+        return [DocumentChunk(
+            tenant_id=row["tenant_id"], document_id=str(row["document_id"]),
+            document_version=row["document_version"], ordinal=row["ordinal"],
+            text=row["body"], content_hash=row["content_hash"],
+            start_offset=row["start_offset"], end_offset=row["end_offset"],
+            page_number=row["page_number"], chunk_id=str(row["chunk_id"]),
+            metadata=dict(row["metadata"] or {}),
+        ) for row in rows]
 
     async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None:
         if not isinstance(text, str) or not text.strip() or len(text) > 20000:
@@ -448,7 +483,7 @@ class PostgresKnowledgeRepository:
                 row = await cur.fetchone()
                 if row is None: return None
                 await conn.execute("DELETE FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id=%s", (tenant_id, chunk_id))
-                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'content_edited')", (tenant_id, chunk_id))
+                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'updated')", (tenant_id, chunk_id))
         return DocumentChunk(tenant_id=row["tenant_id"], document_id=str(row["document_id"]), document_version=row["document_version"], ordinal=row["ordinal"], text=row["body"], content_hash=row["content_hash"], start_offset=row["start_offset"], end_offset=row["end_offset"], page_number=row["page_number"], chunk_id=str(row["chunk_id"]), metadata=dict(row["metadata"] or {}))
 
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
@@ -459,6 +494,12 @@ class PostgresKnowledgeRepository:
                 if cur.rowcount<1:return False
                 await conn.execute(
                     "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'deleted')",
+                    (tenant_id, document_id),
+                )
+                await conn.execute(
+                    """INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason)
+                    SELECT tenant_id,'chunk',chunk_id,'deleted' FROM knowledge_chunks
+                    WHERE tenant_id=%s AND document_id=%s""",
                     (tenant_id, document_id),
                 )
                 # Remove derived vectors in the same transaction as source chunks.

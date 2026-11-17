@@ -68,6 +68,7 @@ include = [
   "tests/test_memory_retrieval.py",
   "tests/test_structured_output.py",
   "tests/test_knowledge_memory_postgres_integration.py",
+  "tests/test_knowledge_acl_propagation.py",
   "tests/test_platform_contracts.py",
   "tests/test_tool_effect_reconciliation_postgres_integration.py",
   "tests/test_tool_gateway.py",

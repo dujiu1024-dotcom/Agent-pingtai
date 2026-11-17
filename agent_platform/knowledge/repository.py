@@ -52,6 +52,8 @@ class KnowledgeRepository(Protocol):
     async def grant_document_access(self, tenant_id: str, document_id: str, principal_type: str, principal_id: str, permission: str, granted_by: str) -> None: ...
 
     async def revoke_document_access(self, tenant_id: str, document_id: str, principal_type: str, principal_id: str, permission: str) -> bool: ...
+    async def grant_chunk_access(self, tenant_id: str, document_id: str, chunk_id: str, principal_type: str, principal_id: str, permission: str, granted_by: str) -> None: ...
+    async def revoke_chunk_access(self, tenant_id: str, chunk_id: str, principal_type: str, principal_id: str, permission: str) -> bool: ...
 
     async def replace_document_access(
         self, tenant_id: str, document_id: str,
@@ -59,6 +61,7 @@ class KnowledgeRepository(Protocol):
     ) -> None: ...
 
     async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]: ...
+    async def list_visible_chunks(self, principal: KnowledgePrincipal, document_id: str, version: int) -> list[DocumentChunk]: ...
     async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None: ...
 
     async def delete_document(self, tenant_id: str, document_id: str) -> bool: ...
@@ -75,6 +78,9 @@ class InMemoryKnowledgeRepository:
         self.connector_cursors: dict[tuple[str, str], str] = {}
         self.document_acl: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
         self.document_acl_enforced: set[tuple[str, str]] = set()
+        self.chunk_acl: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
+        self.chunk_acl_enforced: set[tuple[str, str]] = set()
+        self.cache_invalidations: list[dict[str, str]] = []
 
     async def create_collection(self, collection: KnowledgeCollection) -> KnowledgeCollection:
         key = (collection.tenant_id, collection.collection_id)
@@ -284,6 +290,18 @@ class InMemoryKnowledgeRepository:
             if acl_key in self.document_acl_enforced and not (owner_access or grant_access):
                 continue
             for chunk in self.chunks.get(key, []):
+                chunk_key = (document.tenant_id, chunk.chunk_id)
+                chunk_grants = self.chunk_acl.get(chunk_key, set())
+                chunk_allowed = any(
+                    permission in {"read", "manage"} and (
+                        (kind == "user" and identifier == principal.user_id)
+                        or (kind == "role" and identifier in principal.roles)
+                        or (kind == "project" and identifier in principal.project_ids)
+                    )
+                    for kind, identifier, permission in chunk_grants
+                )
+                if chunk_key in self.chunk_acl_enforced and not chunk_allowed:
+                    continue
                 body = chunk.text.casefold()
                 score = sum(1 for term in terms if term in body) / max(1, len(terms))
                 if score > 0:
@@ -322,6 +340,7 @@ class InMemoryKnowledgeRepository:
         self.document_acl.setdefault((tenant_id, document_id), set()).add(
             (principal_type, principal_id, permission)
         )
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "acl_changed"})
 
     async def revoke_document_access(
         self, tenant_id: str, document_id: str, principal_type: str,
@@ -332,6 +351,7 @@ class InMemoryKnowledgeRepository:
         if key not in grants:
             return False
         grants.remove(key)
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "acl_changed"})
         return True
 
     async def replace_document_access(
@@ -351,9 +371,64 @@ class InMemoryKnowledgeRepository:
         key = (tenant_id, document_id)
         self.document_acl_enforced.add(key)
         self.document_acl[key] = normalized
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "acl_changed"})
 
     async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]:
         return list(self.chunks.get((tenant_id, document_id, version), []))
+
+    async def list_visible_chunks(
+        self, principal: KnowledgePrincipal, document_id: str, version: int,
+    ) -> list[DocumentChunk]:
+        visible = []
+        for chunk in self.chunks.get((principal.tenant_id, document_id, version), []):
+            key = (principal.tenant_id, chunk.chunk_id)
+            if key not in self.chunk_acl_enforced:
+                visible.append(chunk)
+                continue
+            grants = self.chunk_acl.get(key, set())
+            if any(
+                permission in {"read", "manage"} and (
+                    (kind == "user" and identifier == principal.user_id)
+                    or (kind == "role" and identifier in principal.roles)
+                    or (kind == "project" and identifier in principal.project_ids)
+                )
+                for kind, identifier, permission in grants
+            ):
+                visible.append(chunk)
+        return visible
+
+    async def grant_chunk_access(
+        self, tenant_id: str, document_id: str, chunk_id: str,
+        principal_type: str, principal_id: str, permission: str, granted_by: str,
+    ) -> None:
+        if principal_type not in {"user", "role", "project"} or permission not in {"read", "manage"}:
+            raise ValueError("invalid chunk ACL")
+        if not principal_id.strip() or not granted_by.strip():
+            raise ValueError("chunk ACL principal and grantor are required")
+        found = any(
+            key[0] == tenant_id and key[1] == document_id
+            and any(chunk.chunk_id == chunk_id for chunk in chunks)
+            for key, chunks in self.chunks.items()
+        )
+        if not found:
+            raise ValueError("chunk not found")
+        key = (tenant_id, chunk_id)
+        self.chunk_acl_enforced.add(key)
+        self.chunk_acl.setdefault(key, set()).add((principal_type, principal_id, permission))
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "chunk", "resource_id": chunk_id, "reason": "acl_changed"})
+
+    async def revoke_chunk_access(
+        self, tenant_id: str, chunk_id: str, principal_type: str,
+        principal_id: str, permission: str,
+    ) -> bool:
+        key = (tenant_id, chunk_id)
+        grants = self.chunk_acl.get(key, set())
+        grant = (principal_type, principal_id, permission)
+        if grant not in grants:
+            return False
+        grants.remove(grant)
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "chunk", "resource_id": chunk_id, "reason": "acl_changed"})
+        return True
 
     async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None:
         from dataclasses import replace
@@ -373,11 +448,21 @@ class InMemoryKnowledgeRepository:
         from datetime import datetime, timezone
 
         found = False
+        chunk_ids: set[str] = set()
         for key, document in list(self.documents.items()):
             if key[0] == tenant_id and key[1] == document_id and document.deleted_at is None:
                 self.documents[key] = replace(
                     document, deleted_at=datetime.now(timezone.utc)
                 )
-                self.chunks.pop(key, None)
+                chunk_ids.update(chunk.chunk_id for chunk in self.chunks.pop(key, []))
                 found = True
+        if found:
+            self.document_acl.pop((tenant_id, document_id), None)
+            self.document_acl_enforced.discard((tenant_id, document_id))
+            for chunk_id in chunk_ids:
+                acl_key = (tenant_id, chunk_id)
+                self.chunk_acl.pop(acl_key, None)
+                self.chunk_acl_enforced.discard(acl_key)
+                self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "chunk", "resource_id": chunk_id, "reason": "deleted"})
+            self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "deleted"})
         return found
