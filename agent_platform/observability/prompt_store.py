@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Any, Callable
 
 from agent_platform.observability.prompts import PromptRegistry, PromptVersion
@@ -37,9 +38,36 @@ class PostgresPromptRegistry:
                        VALUES (%s,%s,%s,%s,%s,%s)""",
                     (prompt_id, version, template, list(variables), digest, created_by),
                 )
+                await self._audit(
+                    connection, prompt_id, "version.registered", created_by,
+                    {"version": version, "content_hash": digest, "variables": list(variables)},
+                )
         return PromptVersion(prompt_id, version, template, variables, digest)
 
+    @staticmethod
+    async def _audit(connection: Any, prompt_id: str, action: str,
+                     actor_id: str, details: dict[str, Any]) -> None:
+        await connection.execute(
+            """INSERT INTO platform_prompt_audit_events
+               (prompt_id, action, actor_id, details)
+               VALUES (%s,%s,%s,%s::jsonb)""",
+            (prompt_id, action, actor_id, json.dumps(details, sort_keys=True)),
+        )
+
     async def activate(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+        await self._set_active(prompt_id, version, updated_by=updated_by,
+                               action="version.activated")
+
+    async def rollback(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+        await self._set_active(prompt_id, version, updated_by=updated_by,
+                               action="version.rolled_back")
+
+    async def _set_active(self, prompt_id: str, version: int, *,
+                          updated_by: str, action: str) -> None:
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ValueError("version must be a positive integer")
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
@@ -58,6 +86,8 @@ class PostgresPromptRegistry:
                          canary_percentage=0,updated_by=EXCLUDED.updated_by,updated_at=now()""",
                     (prompt_id, version, updated_by),
                 )
+                await self._audit(connection, prompt_id, action, updated_by,
+                                  {"active_version": version})
 
     async def set_canary(self, prompt_id: str, candidate_version: int,
                          percentage: float, *, updated_by: str) -> None:
@@ -84,6 +114,30 @@ class PostgresPromptRegistry:
                        WHERE prompt_id=%s""",
                     (candidate_version, percentage, updated_by, prompt_id),
                 )
+                await self._audit(
+                    connection, prompt_id, "canary.configured", updated_by,
+                    {"canary_version": candidate_version, "percentage": float(percentage)},
+                )
+
+    async def list_audit(self, prompt_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        if not isinstance(prompt_id, str) or not prompt_id.strip():
+            raise ValueError("prompt_id is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT event_id, prompt_id, action, actor_id, details, created_at
+                   FROM platform_prompt_audit_events
+                   WHERE prompt_id=%s ORDER BY event_id DESC LIMIT %s""",
+                (prompt_id, limit),
+            )
+            rows = await cursor.fetchall()
+        return [{
+            "event_id": str(row["event_id"]), "prompt_id": row["prompt_id"],
+            "action": row["action"], "actor_id": row["actor_id"],
+            "details": row["details"], "created_at": row["created_at"],
+        } for row in rows]
 
     async def resolve(self, prompt_id: str, *, rollout_key: str = "",
                       version: int | None = None) -> PromptVersion:
