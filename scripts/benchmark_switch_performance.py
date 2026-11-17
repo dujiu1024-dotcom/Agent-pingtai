@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""Local, opt-in performance probes for the legacy SQLite and platform backends.
+
+No service is started and no external endpoint is contacted unless its URL/DSN is
+explicitly supplied through an environment variable.
+"""
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sqlite3
+import statistics
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+
+def _summary(samples: list[float], operations: int, elapsed: float) -> dict[str, Any]:
+    ordered = sorted(samples)
+    def percentile(fraction: float) -> float:
+        if not ordered:
+            return 0.0
+        return ordered[min(len(ordered) - 1, int((len(ordered) - 1) * fraction))]
+    return {
+        "operations": operations,
+        "elapsed_seconds": round(elapsed, 6),
+        "ops_per_second": round(operations / elapsed, 2) if elapsed else 0.0,
+        "latency_ms": {
+            "p50": round(statistics.median(ordered), 3) if ordered else 0.0,
+            "p95": round(percentile(0.95), 3),
+            "p99": round(percentile(0.99), 3),
+            "max": round(max(ordered), 3) if ordered else 0.0,
+        },
+    }
+
+
+def _sqlite_worker(db_path: str, worker: int, count: int, kind: str) -> list[float]:
+    connection = sqlite3.connect(db_path, timeout=30)
+    connection.execute("PRAGMA busy_timeout=30000")
+    samples: list[float] = []
+    try:
+        for index in range(count):
+            started = time.perf_counter()
+            if kind == "run":
+                run_id = f"{worker}:{index}"
+                with connection:
+                    connection.execute(
+                        "INSERT INTO legacy_runs(run_id,status,payload) VALUES(?,?,?)",
+                        (run_id, "queued", "{}"),
+                    )
+                    connection.execute(
+                        "UPDATE legacy_runs SET status=? WHERE run_id=?",
+                        ("succeeded", run_id),
+                    )
+                    connection.execute(
+                        "SELECT status FROM legacy_runs WHERE run_id=?", (run_id,)
+                    ).fetchone()
+            else:
+                entry_id = f"{worker}:{index}"
+                with connection:
+                    connection.execute(
+                        "INSERT INTO legacy_blackboard(entry_id,scope_id,content) VALUES(?,?,?)",
+                        (entry_id, "benchmark", "{}"),
+                    )
+                    connection.execute(
+                        "SELECT content FROM legacy_blackboard WHERE entry_id=?",
+                        (entry_id,),
+                    ).fetchone()
+            samples.append((time.perf_counter() - started) * 1000)
+    finally:
+        connection.close()
+    return samples
+
+
+def run_sqlite_baseline(*, workers: int, operations_per_worker: int) -> dict[str, Any]:
+    total = workers * operations_per_worker
+    with tempfile.TemporaryDirectory(prefix="s66502-") as directory:
+        db_path = str(Path(directory) / "legacy-benchmark.sqlite3")
+        connection = sqlite3.connect(db_path)
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=NORMAL")
+        connection.executescript("""
+            CREATE TABLE legacy_runs(
+                run_id TEXT PRIMARY KEY, status TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE TABLE legacy_blackboard(
+                entry_id TEXT PRIMARY KEY, scope_id TEXT NOT NULL, content TEXT NOT NULL
+            );
+        """)
+        connection.close()
+        results: dict[str, Any] = {}
+        for kind in ("run", "blackboard"):
+            started = time.perf_counter()
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [
+                    executor.submit(_sqlite_worker, db_path, worker, operations_per_worker, kind)
+                    for worker in range(workers)
+                ]
+                samples = [sample for future in futures for sample in future.result()]
+            elapsed = time.perf_counter() - started
+            results[kind] = _summary(samples, total, elapsed)
+        return {
+            "backend": "legacy_sqlite_local_file",
+            "workers": workers,
+            "operations_per_worker": operations_per_worker,
+            "run_lifecycle_transaction": results["run"],
+            "blackboard_write_read": results["blackboard"],
+            "notes": [
+                "Synthetic legacy-shaped SQLite tables; not a production snapshot.",
+                "SQLite uses WAL and one connection per worker.",
+                "Run throughput measures insert+transition+read transactions, not LLM execution.",
+            ],
+        }
+
+
+async def run_postgres_pool_probe(dsn: str, *, workers: int, operations: int) -> dict[str, Any]:
+    try:
+        from psycopg_pool import AsyncConnectionPool
+    except ImportError as exc:
+        return {"status": "unavailable", "reason": f"psycopg_pool not installed: {exc}"}
+    pool = AsyncConnectionPool(
+        conninfo=dsn, min_size=1, max_size=max(1, min(workers, 32)),
+        open=False, timeout=30,
+    )
+    await pool.open(wait=True)
+    samples: list[float] = []
+    semaphore = asyncio.Semaphore(workers)
+    async def probe() -> None:
+        async with semaphore:
+            started = time.perf_counter()
+            async with pool.connection() as connection:
+                await connection.execute("SELECT 1")
+            samples.append((time.perf_counter() - started) * 1000)
+    try:
+        started = time.perf_counter()
+        await asyncio.gather(*(probe() for _ in range(operations)))
+        elapsed = time.perf_counter() - started
+        stats = pool.get_stats()
+        return {
+            "status": "measured",
+            "backend": "postgres_connection_pool_select_probe",
+            "pool_max_size": max(1, min(workers, 32)),
+            "workers": workers,
+            "metrics": _summary(samples, operations, elapsed),
+            "pool_stats": stats,
+            "notes": ["SELECT 1 checkout+query latency; not a full Run transaction benchmark."],
+        }
+    finally:
+        await pool.close()
+
+
+async def run_redis_queue_probe(url: str, *, workers: int, operations: int) -> dict[str, Any]:
+    try:
+        from agent_platform.events.redis_streams import RedisStreamsTransport
+    except ImportError as exc:
+        return {"status": "unavailable", "reason": f"Redis transport dependencies unavailable: {exc}"}
+    transport = RedisStreamsTransport(url, stream_prefix=f"s66502-{uuid4().hex[:10]}")
+    tenant = f"bench-{uuid4().hex}"
+    topic = "queue.latency"
+    group = "benchmark"
+    consumer = "benchmark-consumer"
+    await transport.connect()
+    samples: list[float] = []
+    try:
+        await transport.ensure_group(tenant_id=tenant, topic=topic, group=group)
+        for index in range(operations):
+            event_id = str(uuid4())
+            sent = time.perf_counter_ns()
+            await transport.publish(
+                tenant_id=tenant, topic=topic, event_id=event_id,
+                payload={"sent_ns": sent, "index": index},
+            )
+            deadline = time.perf_counter() + 10
+            received = []
+            while not received and time.perf_counter() < deadline:
+                received = await transport.read_group(
+                    tenant_id=tenant, topic=topic, group=group,
+                    consumer=consumer, count=min(100, operations), block_ms=100,
+                )
+            if not received:
+                raise TimeoutError("Redis stream message was not delivered within 10 seconds")
+            for message_id, fields in received:
+                payload = json.loads(fields["payload"])
+                samples.append((time.perf_counter_ns() - int(payload["sent_ns"])) / 1_000_000)
+                await transport.acknowledge(
+                    tenant_id=tenant, topic=topic, group=group, message_id=message_id,
+                )
+        elapsed_ms = max(samples) if samples else 0
+        return {
+            "status": "measured",
+            "backend": "redis_stream_publish_to_consumer_ack",
+            "workers": workers,
+            "metrics": {
+                "messages": len(samples),
+                "latency_ms": {
+                    "p50": round(statistics.median(samples), 3) if samples else 0.0,
+                    "p95": round(sorted(samples)[int((len(samples)-1)*0.95)], 3) if samples else 0.0,
+                    "p99": round(sorted(samples)[int((len(samples)-1)*0.99)], 3) if samples else 0.0,
+                    "max": round(elapsed_ms, 3),
+                },
+            },
+            "notes": ["Sequential publish→consumer-read→ACK latency; not multi-consumer throughput."],
+        }
+    finally:
+        await transport.close()
+
+
+async def async_main(args: argparse.Namespace) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "benchmark": "S-665-02",
+        "schema_version": 1,
+        "configuration": {
+            "workers": args.workers,
+            "operations_per_worker": args.operations,
+        },
+        "legacy_sqlite": run_sqlite_baseline(
+            workers=args.workers, operations_per_worker=args.operations,
+        ),
+        "platform_postgres_pool": {"status": "not_run", "reason": "AGENT_PLATFORM_BENCH_DSN not set"},
+        "platform_redis_queue": {"status": "not_run", "reason": "AGENT_PLATFORM_BENCH_REDIS_URL not set"},
+        "comparison": {
+            "status": "incomplete_without_platform_services",
+            "reason": "SQLite baseline alone cannot establish new-platform parity or performance superiority.",
+        },
+    }
+    dsn = os.environ.get("AGENT_PLATFORM_BENCH_DSN")
+    redis_url = os.environ.get("AGENT_PLATFORM_BENCH_REDIS_URL")
+    if dsn:
+        result["platform_postgres_pool"] = await run_postgres_pool_probe(
+            dsn, workers=args.workers, operations=args.workers * args.operations,
+        )
+    if redis_url:
+        result["platform_redis_queue"] = await run_redis_queue_probe(
+            redis_url, workers=args.workers, operations=args.workers * args.operations,
+        )
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--operations", type=int, default=100)
+    args = parser.parse_args()
+    if args.workers < 1 or args.workers > 128 or args.operations < 1 or args.operations > 100_000:
+        parser.error("workers must be 1..128 and operations must be 1..100000")
+    print(json.dumps(asyncio.run(async_main(args)), ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
