@@ -145,7 +145,7 @@ class GraphAdminApiTests(unittest.TestCase):
             return self.service
 
         async def authorize_read(principal):
-            return ("project-a",)
+            return GraphAccessScope(project_ids=("project-a",))
 
         async def resolve_governance(principal):
             return Governance()
