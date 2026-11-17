@@ -115,6 +115,20 @@ class CutoverGateway:
         self.policy = policy
         self.tenant_resolver = tenant_resolver
 
+    def rollback_to_legacy(self) -> None:
+        """Atomically route new requests to legacy without changing app instances.
+
+        This is a process-local routing switch. Multi-worker deployments must
+        fan out the same disabled policy through their shared control plane and
+        verify every worker before declaring rollback complete.
+        """
+        self.policy = TenantCutoverPolicy(
+            enabled=False,
+            tenant_allowlist=frozenset(),
+            traffic_percentage=0,
+            salt=self.policy.salt,
+        )
+
     async def __call__(self, scope: dict[str, Any], receive: Callable[..., Awaitable[dict[str, Any]]],
                        send: Callable[..., Awaitable[None]]) -> None:
         if scope.get("type") not in {"http", "websocket"}:
