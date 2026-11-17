@@ -45,7 +45,7 @@ class Issue19A1901SingleWriterMappingTests(unittest.TestCase):
             {"source": "legacy:tasks", "target": "platform:tasks", "mapping": "task normalization", "owner": "runtime"},
         )
         self.assertEqual(validate_business_mappings(mappings), mappings)
-        with self.assertRaisesRegex(ValueError, "owner is required"):
+        with self.assertRaisesRegex(ValueError, "mapping is required"):
             validate_business_mappings(({"source": "legacy:users", "target": "platform:identity", "mapping": "principal mapping"},))
         with self.assertRaisesRegex(ValueError, "sources must be unique"):
             validate_business_mappings((mappings[0], mappings[0]))
