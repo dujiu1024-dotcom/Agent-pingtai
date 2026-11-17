@@ -490,6 +490,10 @@ class PostgresWebhookStore:
                       next_attempt_at: datetime | None = None) -> None:
         if not isinstance(lease_token, str) or not lease_token:
             raise ValueError("lease_token is required to finalize a webhook delivery")
+        try:
+            parsed_lease_token = UUID(lease_token)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("lease_token must be a UUID") from exc
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
@@ -501,5 +505,5 @@ class PostgresWebhookStore:
                        WHERE tenant_id=%s AND delivery_id=%s AND status='leased'
                          AND lease_token=%s""",
                     (status,response_code,next_attempt_at,last_error_code,status,
-                     tenant_id,UUID(delivery_id),lease_token),
+                     tenant_id,UUID(delivery_id),parsed_lease_token),
                 )
