@@ -12,10 +12,11 @@
 python scripts/release_gate.py --evidence path/to/release-evidence.json --commit-sha "$(git rev-parse HEAD)"
 ```
 
-必须同时提供：release_id、production 环境、候选 commit SHA、UTC 生成时间、独立的 release_owner/release_approver、不可变 evidence_archive_ref、八类检查及责任人/UTC 时间/证据引用、空 blockers 和 release_decision=go。证据默认 7 天有效；未来时间、过期、占位值、缺项、失败或 SHA 不匹配均阻断。
+必须同时提供：release_id、production 环境、候选 commit SHA、UTC 生成时间、独立的 release_owner/release_approver、不可变 evidence_archive_ref、九类检查及责任人/UTC 时间/证据引用、空 blockers 和 release_decision=go。证据默认 7 天有效；未来时间、过期、占位值、缺项、失败或 SHA 不匹配均阻断。
 
-### 八类必需检查
+### 九类必需检查
 
+- `deployment_preflight`：目标环境与配置校验、依赖健康、制品 SHA-256、变更窗口批准、回滚就绪；全部显式通过。
 - `e2e`：核心业务端到端验收。
 - `fault_injection`：Worker、Redis、PostgreSQL、模型及对象存储故障恢复。
 - `performance`：并发、延迟、成本和质量基线。
