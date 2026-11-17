@@ -147,6 +147,7 @@ include = [
   "tests/test_graph_governance.py",
   "tests/test_graph_schema.py",
   "tests/test_graph_admin_api.py",
+  "tests/test_graph_workbench_ui.py",
   "tests/test_session_data_model.py",
   "tests/test_session_run_persistence.py",
   "tests/test_session_conversation_migration.py",
