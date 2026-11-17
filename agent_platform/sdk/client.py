@@ -188,7 +188,7 @@ class PlatformClient:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
-            "X-API-Version": "1",
+            "X-API-Version": API_VERSION,
             "X-Request-ID": str(uuid4()),
             "User-Agent": "agent-platform-python/0.1",
         }
