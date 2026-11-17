@@ -455,7 +455,7 @@ async function renderBatch(){
    "<form id='batch-submit-form' class='registry-form'>"+
    "<div class='form-grid'><label>模板 ID<input name='template_id' required maxlength='128' placeholder='已授权的 Agent / Workflow 模板'></label>"+
    "<label>最大并发<input name='max_concurrency' type='number' min='1' max='1000' value='8' required></label></div>"+
-   "<label>数据集（JSON 数组；每项为输入对象）<textarea name='dataset' rows='8' required>[{\\\"prompt\\\":\\\"第一项任务\\\"},{\\\"prompt\\\":\\\"第二项任务\\\"}]</textarea></label>"+
+   "<label>数据集（JSON 数组；每项为输入对象）<textarea name='dataset' rows='8' required>[{\"prompt\":\"第一项任务\"},{\"prompt\":\"第二项任务\"}]</textarea></label>"+
    "<p class='subtle'>提交使用服务端 BatchTaskService，tenant/actor 从认证 Principal 派生；请求附带幂等键。数据集上限由 API 执行。</p>"+
    "<button class='button primary'>提交批次</button></form>")+
   detail+
