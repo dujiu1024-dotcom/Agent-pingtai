@@ -14,7 +14,7 @@ class HarnessBaseline:
     min_quality_score: float = 0.95
     max_p95_latency_ms: int = 30_000
     max_cost_usd_per_case: float | None = None
-    min_eligible_cases: int = 1
+    min_eligible_cases: int = 5
     max_skipped_rate: float = 0.25
 
     def __post_init__(self) -> None:
@@ -43,6 +43,7 @@ def evaluate_harness_baseline(
     """Fail closed when evidence is absent or any configured threshold is breached."""
     rows = [row for row in report.observations if row.runtime == runtime]
     eligible = [row for row in rows if not row.skipped]
+    distinct_eligible_cases = len({row.case_id for row in eligible})
     skipped_rate = len(rows) and sum(row.skipped for row in rows) / len(rows) or 0.0
     latencies = sorted(row.duration_ms for row in eligible)
     p95_index = max(0, math.ceil(0.95 * len(latencies)) - 1) if latencies else None
@@ -55,7 +56,7 @@ def evaluate_harness_baseline(
         if costs and all(value is not None for value in costs) else None
     )
     checks = {
-        "minimum_eligible_cases": len(eligible) >= baseline.min_eligible_cases,
+        "minimum_eligible_cases": distinct_eligible_cases >= baseline.min_eligible_cases,
         "pass_rate": pass_rate >= baseline.min_pass_rate,
         "quality": quality >= baseline.min_quality_score,
         "p95_latency": p95 is not None and p95 <= baseline.max_p95_latency_ms,
@@ -71,6 +72,7 @@ def evaluate_harness_baseline(
         "checks": checks,
         "metrics": {
             "eligible_cases": len(eligible),
+            "distinct_eligible_cases": distinct_eligible_cases,
             "skipped_rate": round(skipped_rate, 4),
             "pass_rate": round(pass_rate, 4),
             "average_quality_score": round(quality, 4),
