@@ -181,6 +181,7 @@ include = [
   "tests/test_session_management_api.py",
   "tests/test_session_conversation_migration.py",
   "tests/test_sse_protocol.py",
+  "tests/test_issue_527_a_30_02_streaming_parity.py",
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
   "tests/test_evaluation_rollout.py",
