@@ -53,9 +53,11 @@ def chunk_document(
     while start < len(normalized):
         hard_end = min(len(normalized), start + max_chars)
         end = hard_end
+        page_split = False
         page_boundary = normalized.find("[page:", start + 1, hard_end)
         if page_boundary > start:
             end = page_boundary
+            page_split = True
         elif hard_end < len(normalized):
             boundary = max(
                 normalized.rfind("\n", start, hard_end),
@@ -98,5 +100,5 @@ def chunk_document(
             ))
         if end >= len(normalized):
             break
-        start = max(start + 1, end - overlap)
+        start = end if page_split else max(start + 1, end - overlap)
     return tuple(chunks)
