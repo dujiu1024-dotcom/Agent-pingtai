@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime as format_http_date
@@ -75,9 +76,37 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
     def test_signature_verification_is_constant_contract(self):
         body = b'{"event":"ok"}'
         signed = signature(SECRET, "1794787200", body)
-        self.assertTrue(verify_signature(SECRET, "1794787200", body, signed))
+        self.assertTrue(verify_signature(SECRET, "1794787200", body, signed, now=1794787200))
         self.assertFalse(verify_signature(SECRET, "1794787200", body + b"x", signed))
         self.assertFalse(verify_signature(SECRET, "not-a-time", body, signed))
+
+    def test_signature_verification_rejects_stale_future_and_invalid_windows(self):
+        body = b'{"event":"ok"}'
+        timestamp = 1_794_787_200
+        signed = signature(SECRET, str(timestamp), body)
+        self.assertTrue(verify_signature(
+            SECRET, str(timestamp), body, signed, now=timestamp + 300,
+        ))
+        self.assertFalse(verify_signature(
+            SECRET, str(timestamp), body, signed, now=timestamp + 301,
+        ))
+        self.assertFalse(verify_signature(
+            SECRET, str(timestamp), body, signed, now=timestamp - 301,
+        ))
+        self.assertFalse(verify_signature(
+            SECRET, str(timestamp), body, signed, now=timestamp, tolerance_seconds=0,
+        ))
+        self.assertFalse(verify_signature(
+            SECRET, str(timestamp), body, signed, now=timestamp, tolerance_seconds=901,
+        ))
+        self.assertFalse(verify_signature(
+            SECRET, "١٧٩٤٧٨٧٢٠٠", body, signed, now=timestamp,
+        ))
+
+    def test_signature_verification_uses_current_time_by_default(self):
+        stale = str(int(time.time()) - 301)
+        signed = signature(SECRET, stale, b"payload")
+        self.assertFalse(verify_signature(SECRET, stale, b"payload", signed))
 
     def test_subscription_rejects_non_https_and_local_targets(self):
         for url in ("http://hooks.example.test", "https://localhost/hook",
@@ -126,6 +155,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(verify_signature(
             SECRET, headers["X-Platform-Timestamp"], body,
             headers["X-Platform-Signature"],
+            now=int(headers["X-Platform-Timestamp"]),
         ))
         self.assertEqual(json.loads(body)["id"], "event-1")
         self.assertEqual(store.completed[0][0], "tenant-a")
