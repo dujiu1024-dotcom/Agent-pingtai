@@ -255,9 +255,14 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
             "platform_graph_relations_source_idx",
             "platform_graph_relations_target_idx",
             "platform_graph_index_jobs_claim_idx",
-            "FOR UPDATE SKIP LOCKED",
         ):
-            self.assertIn(required, migration + " FOR UPDATE SKIP LOCKED")
+            self.assertIn(required, migration)
+        repository_source = (
+            Path(__file__).parents[1]
+            / "agent_platform/graph/postgres_repository.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("FOR UPDATE SKIP LOCKED", repository_source)
+        self.assertIn("attempts >= 8", repository_source)
         self.assertIn("CHECK (jsonb_typeof(attributes) = 'object')", migration)
 
     async def test_invalid_worker_bounds_fail_before_database_access(self):
