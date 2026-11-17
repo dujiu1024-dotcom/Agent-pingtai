@@ -27,6 +27,13 @@ services:
       OBJECT_STORAGE_SECRET_KEY_FILE: /run/secrets/minio_root_password
       OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-agent-platform}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set exact HTTPS ALLOWED_ORIGINS}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      http_proxy: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      https_proxy: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:?Set explicit outbound hostname allowlist}
+      NO_PROXY: postgres,redis,minio,localhost,127.0.0.1
+      no_proxy: postgres,redis,minio,localhost,127.0.0.1
     secrets:
       - postgres_password
       - redis_password
