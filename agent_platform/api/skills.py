@@ -19,10 +19,12 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
                         authorize: Authorizer) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/skills", tags=["skills"])
 
-    async def context(request: Request, agent_id: str, action: str):
+    async def context(request: Request, agent_id: str, action: str, skill_id: str | None = None):
         principal = await resolve_principal(request)
-        if not agent_id or not await authorize(principal, agent_id, action):
+        if not agent_id.strip() or not await authorize(principal, agent_id, action):
             raise HTTPException(403, "Skill Agent access denied")
+        if skill_id is not None and not await authorize(principal, skill_id, action):
+            raise HTTPException(403, "Skill resource access denied")
         service = await resolve_service(principal)
         repository = service.registry.repository
         tenant = getattr(repository, "tenant_id", principal.tenant_id)
@@ -83,7 +85,7 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
 
     @router.get("/{skill_id}/status")
     async def skill_status(skill_id: str, request: Request, agent_id: str):
-        principal, service = await context(request, agent_id, "read")
+        principal, service = await context(request, agent_id, "read", skill_id)
         return await status_for(service, principal.tenant_id, agent_id, skill_id)
 
     @router.post("/{skill_id}/install", status_code=201)
@@ -94,7 +96,7 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
             raise HTTPException(400, "JSON object is required") from exc
         if not isinstance(body, dict) or not isinstance(body.get("agent_id"), str):
             raise HTTPException(400, "agent_id is required")
-        principal, service = await context(request, body["agent_id"], "install")
+        principal, service = await context(request, body["agent_id"], "install", skill_id)
         version = body.get("version")
         if type(version) is not int or version < 1:
             raise HTTPException(422, "version must be a positive integer")
@@ -112,7 +114,7 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
 
     @router.delete("/{skill_id}/install")
     async def uninstall_skill(skill_id: str, request: Request, agent_id: str):
-        principal, service = await context(request, agent_id, "uninstall")
+        principal, service = await context(request, agent_id, "uninstall", skill_id)
         try:
             await service.uninstall_from_agent(
                 tenant_id=principal.tenant_id, agent_id=agent_id,
