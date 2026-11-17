@@ -36,6 +36,7 @@ class Hit:
 
 class FakeGraphRepository:
     def __init__(self):
+        self.tenant_id = "tenant-a"
         self.entities = {
             key: EntityRecord(GraphEntity("tenant-a", key, "document", {}, "project-a"), key)
             for key in ("a", "b", "c", "d")
@@ -164,6 +165,12 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.neighbors(
                 "a", direction="sideways", allowed_project_ids=("project-a",)
             )
+
+    async def test_repository_tenant_must_match_service_tenant(self):
+        repository = FakeGraphRepository()
+        repository.tenant_id = "tenant-b"
+        with self.assertRaisesRegex(ValueError, "repository tenant"):
+            GraphQueryService(tenant_id="tenant-a", repository=repository)
 
     async def test_project_scope_is_mandatory_for_project_entities(self):
         result = await self.service.neighbors("a", allowed_project_ids=())
