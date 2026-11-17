@@ -67,7 +67,7 @@ class TenantScopedCancellationTests(unittest.IsolatedAsyncioTestCase):
         ))
         task_b = asyncio.create_task(gateway.invoke(
             credential="credential-b", run_context=context("tenant-b", "agent-b"),
-            tool_name="wait", arguments={}, call_id="call-b",
+            tool_name="wait", arguments={}, call_id="call-a",
         ))
         await asyncio.gather(started["tenant-a"].wait(), started["tenant-b"].wait())
 
