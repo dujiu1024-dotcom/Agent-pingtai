@@ -185,8 +185,8 @@ class GraphSourceReference:
             raise ValueError("source version must be a positive integer")
         if type(self.approved) is not bool:
             raise ValueError("approved must be a boolean")
-        if self.domain is GraphSourceDomain.BLACKBOARD and not self.approved:
-            raise ValueError("only approved Blackboard decisions may enter the graph")
+        if self.domain in (GraphSourceDomain.MEMORY, GraphSourceDomain.BLACKBOARD) and not self.approved:
+            raise ValueError("only approved Memory items and Blackboard decisions may enter the graph")
 
     @property
     def uri(self) -> str:
