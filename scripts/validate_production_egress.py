@@ -24,6 +24,8 @@ def parse_env_file(path: Path) -> dict[str, str]:
         key, value = key.strip(), value.strip().strip('"').strip("'")
         if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
             raise ValueError(f"line {number}: invalid environment key")
+        if key in values:
+            raise ValueError(f"line {number}: duplicate environment key {key}")
         values[key] = value
     return values
 
@@ -31,11 +33,28 @@ def parse_env_file(path: Path) -> dict[str, str]:
 def validate_egress_config(values: dict[str, str]) -> list[str]:
     errors: list[str] = []
     proxy = values.get("EGRESS_PROXY_URL", "")
-    parsed = urlsplit(proxy)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
-        errors.append("EGRESS_PROXY_URL must be an HTTPS URL without embedded credentials")
-    if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-        errors.append("EGRESS_PROXY_URL must not contain a path, query or fragment")
+    try:
+        if not proxy or proxy != proxy.strip() or any(char.isspace() for char in proxy):
+            raise ValueError("proxy URL is empty or contains whitespace")
+        parsed = urlsplit(proxy)
+        hostname = parsed.hostname or ""
+        port = parsed.port  # Accessing .port validates malformed and out-of-range ports.
+        if (
+            parsed.scheme.lower() != "https"
+            or not _HOST.fullmatch(hostname)
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.netloc.endswith(":")
+            or (port is not None and not 1 <= port <= 65535)
+        ):
+            errors.append(
+                "EGRESS_PROXY_URL must use HTTPS with a valid DNS hostname and port, "
+                "without embedded credentials"
+            )
+        if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            errors.append("EGRESS_PROXY_URL must not contain a path, query or fragment")
+    except ValueError:
+        errors.append("EGRESS_PROXY_URL must be a well-formed HTTPS proxy URL")
 
     raw_hosts = values.get("EGRESS_ALLOWED_HOSTS", "")
     hosts = [item.strip().lower() for item in raw_hosts.split(",") if item.strip()]
