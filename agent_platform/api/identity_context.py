@@ -52,7 +52,7 @@ class IdentityContextResolver:
             ),
             manage_agent_ids=(
                 context.memory_manage_agent_ids
-                if not isinstance(request.state.__dict__.get("identity.principal"), AuthenticatedApiCredential)
+                if not isinstance(authenticated, AuthenticatedApiCredential)
                 or "memory.manage" in permissions else frozenset()
             ),
         )
