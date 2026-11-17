@@ -17,6 +17,7 @@ class SecretRedactionTests(unittest.TestCase):
         self.assertNotIn("super-secret-value", result)
         self.assertNotIn("abc.def.ghi", result)
         self.assertNotIn("hvs.abcdefghijklmnop", result)
+        self.assertNotIn("vault_token=", result)
         self.assertIn("[REDACTED]", result)
 
     def test_structured_values_are_redacted_without_mutating_input(self):
@@ -41,7 +42,10 @@ class SecretRedactionTests(unittest.TestCase):
     def test_rejects_short_registry_values_and_supports_revocation(self):
         redactor = SecretRedactor()
         with self.assertRaises(ValueError):
-            redactor.register("abc")
+            redactor.register("")
+        redactor.register("abc")
+        self.assertEqual(redactor.redact_text("value=abc"), "value=[REDACTED]")
+        redactor.unregister("abc")
         redactor.register("long-secret")
         self.assertEqual(redactor.redact_text("long-secret"), "[REDACTED]")
         redactor.unregister("long-secret")
