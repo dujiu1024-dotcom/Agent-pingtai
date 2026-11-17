@@ -168,6 +168,7 @@ class GatewayMCPBridge:
             # MCP 没有业务层面的调用号；用动作摘要在同一 run 内作为稳定幂等键，
             # 重试同一调用会命中缓存，而不是重复产生外部副作用。
             call_id=action_digest,
+            correlation_id=self.session.correlation_id,
         )
 
 
