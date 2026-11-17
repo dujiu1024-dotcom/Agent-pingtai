@@ -110,6 +110,42 @@ class PersistentPromptRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history[0]["actor_id"], "operator")
         self.assertEqual(history[0]["details"], '{"active_version": 1, "evaluation_run_id": "eval-3"}')
 
+    async def test_rollback_clears_full_canary_and_is_available_within_30_seconds(self):
+        import asyncio
+
+        db = FakePromptDb()
+        registry = PostgresPromptRegistry(db.connect)
+        stable = await registry.register("support", "Stable {name}", created_by="admin")
+        candidate = await registry.register("support", "Candidate {name}", created_by="admin")
+        await registry.activate("support", stable.version, updated_by="admin")
+        await registry.set_canary(
+            "support", candidate.version, 100,
+            updated_by="release-manager", evaluation_run_id="eval-canary",
+        )
+
+        _candidate_text, selected_before = await registry.render("support", {"name": "Ada"})
+        self.assertEqual(selected_before.version, candidate.version)
+
+        # The rollback contract is bounded by the 30s acceptance deadline.
+        await asyncio.wait_for(
+            registry.rollback(
+                "support", stable.version,
+                updated_by="incident-operator", evaluation_run_id="eval-rollback",
+            ),
+            timeout=30,
+        )
+
+        deployment = db.deployments["support"]
+        self.assertEqual(deployment["active_version"], stable.version)
+        self.assertIsNone(deployment["canary_version"])
+        self.assertEqual(deployment["canary_percentage"], 0)
+        _stable_text, selected_after = await registry.render("support", {"name": "Ada"})
+        self.assertEqual(selected_after.version, stable.version)
+        rollback_event = db.audit[-1]
+        self.assertEqual(rollback_event["action"], "version.rolled_back")
+        self.assertEqual(rollback_event["actor_id"], "incident-operator")
+        self.assertIn("eval-rollback", rollback_event["details"])
+
     async def test_variable_contract_and_unknown_versions_fail_closed(self):
         db = FakePromptDb()
         registry = PostgresPromptRegistry(db.connect)
