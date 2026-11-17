@@ -127,6 +127,7 @@ class PythonSdkContractTests(unittest.TestCase):
             client.get("/private")
         self.assertEqual(len(transport.requests), 2)
         self.assertEqual(delays, [0.25])
+
     def test_page_iteration(self):
         transport = FakeTransport([
             ApiResponse(200, {}, {"items": [{"id": 1}], "next_cursor": "next", "has_more": True}),
