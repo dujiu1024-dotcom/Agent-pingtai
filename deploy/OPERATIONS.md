@@ -41,6 +41,27 @@ consumer for every event topic or a LangGraph Run executor. Those integrations
 must be enabled and separately acceptance-tested before claiming the complete
 Agent execution journey is production-ready.
 
+### Optional durable alert dispatcher
+
+A separate alert delivery process is available under the Compose alerts profile.
+It drains the PostgreSQL alert outbox, writes mandatory audit records before
+provider delivery, retries failed sends, and stops gracefully on SIGTERM/SIGINT.
+It does not share the generic Outbox-to-Redis worker lifecycle.
+
+Configure ALERT_WEBHOOK_URL and ALERT_WEBHOOK_ALLOWED_HOSTS in the protected
+deployment environment. If the provider requires authorization, mount a
+read-only secret file and set ALERT_WEBHOOK_AUTHORIZATION_FILE to its container
+path. The provider requires HTTPS and an exact hostname allowlist; HTTP redirects
+are disabled. The service is intentionally opt-in:
+
+    docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml --profile alerts up -d platform-alert-dispatcher
+
+The alerts profile is not enabled by default. Do not start it until the endpoint,
+allowlist, secret delivery and outbound proxy policy have been reviewed. This
+process only dispatches existing durable alert events; it does not start an
+alert-rule evaluator or evaluation/Prompt schedulers. Real provider delivery,
+acknowledgement and multi-replica operation still require deployment evidence.
+
 ## First deployment
 
 From the repository root:
