@@ -9,9 +9,9 @@ services:
     user: "10001:10001"
     entrypoint: ["/bin/sh", "-ec"]
     command:
-      - exec uvicorn "$${PLATFORM_ASGI_APP}" --host 0.0.0.0 --port 8080 --workers "$${WEB_CONCURRENCY:-2}"
+      - exec uvicorn "$${PLATFORM_ASGI_APP:-agent_platform.production:app}" --host 0.0.0.0 --port 8080 --workers "$${WEB_CONCURRENCY:-2}"
     environment:
-      PLATFORM_ASGI_APP: ${PLATFORM_ASGI_APP:?Set deployment composition module}
+      PLATFORM_ASGI_APP: ${PLATFORM_ASGI_APP:-agent_platform.production:app}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       PORT: "8080"
       POSTGRES_HOST: postgres
@@ -67,7 +67,6 @@ services:
           cpus: "${API_CPU_LIMIT:-2.0}"
     networks: [platform]
 
-
   platform-worker:
     image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
     restart: unless-stopped
@@ -76,9 +75,9 @@ services:
     user: "10001:10001"
     entrypoint: ["/bin/sh", "-ec"]
     command:
-      - exec python -m "${PLATFORM_WORKER_MODULE}"
+      - exec python -m "$${PLATFORM_WORKER_MODULE:-agent_platform.worker}"
     environment:
-      PLATFORM_WORKER_MODULE: ${PLATFORM_WORKER_MODULE:?Set deployment worker module}
+      PLATFORM_WORKER_MODULE: ${PLATFORM_WORKER_MODULE:-agent_platform.worker}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
@@ -88,6 +87,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set exact HTTPS ALLOWED_ORIGINS}
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
       OBJECT_STORAGE_SECRET_KEY_FILE: /run/secrets/minio_root_password
