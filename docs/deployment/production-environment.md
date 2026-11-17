@@ -11,10 +11,25 @@
 
 All services share a private Compose bridge. Database, Redis and object-store ports are bound to loopback for operator access; do not expose them directly to the public network. For multi-host/high-availability production, move the stateful dependencies to managed PostgreSQL/Redis/S3-compatible services and run multiple stateless API replicas behind an external load balancer. Compose is a single-host reference topology, not a high-availability scheduler.
 
+## Production egress policy (mandatory acceptance)
+
+The API container requires `EGRESS_PROXY_URL` and `EGRESS_ALLOWED_HOSTS`; missing values make Compose configuration fail rather than silently falling back to direct outbound traffic. HTTP(S) proxy variables are injected in both upper- and lower-case forms. `NO_PROXY` is restricted to the internal PostgreSQL, Redis, MinIO and loopback endpoints. The allowlist must contain exact hostnames (no wildcard entries).
+
+**A proxy URL is routing configuration, not a security boundary.** Production firewall/security-group or Kubernetes NetworkPolicy rules must deny direct Internet egress from application workloads and allow outbound connections only to the managed proxy. The proxy must enforce the same destination hostname policy, resolve DNS at connection time, reject loopback/private/link-local/reserved addresses, pin the validated IP for the socket connection, and preserve TLS SNI/certificate verification. Internal service traffic is limited to required private destinations.
+
+Before deployment, run the static configuration check and Compose interpolation check:
+
+```sh
+python scripts/validate_production_egress.py --env-file deploy/.env.production
+docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml config --quiet
+```
+
+Attach firewall/NetworkPolicy and proxy policy verification output to the production release evidence under `checks.egress_policy`. The release gate requires this check to be passed with a named owner, fresh UTC timestamp and durable evidence reference. CI can verify configuration contracts; it cannot attest to the live firewall/proxy state.
+
 ## Configuration and secret injection
 
 1. Copy `.env.production.example` to `.env.production`; replace the example image digest and ASGI import path.
-2. Create the three secret files at the configured paths using the host secret manager. Each file contains only its secret value and a trailing newline. Restrict them to the deployment operator (for example directory mode 0700 and file mode 0400).
+2. Configure the managed egress proxy and exact outbound host allowlist. Create the three secret files at configured paths using the host secret manager. Each file contains only its secret value and a trailing newline. Restrict them to the deployment operator (for example directory mode 0700 and file mode 0400).
 3. Set exact HTTPS origins, immutable image digest, database name/user, resource budgets and secret-file paths. Protect `.env.production` with mode 0600. Never commit it or secret files.
 4. Validate and deploy:
 
