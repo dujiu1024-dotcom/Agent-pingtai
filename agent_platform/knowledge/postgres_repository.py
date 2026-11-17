@@ -179,9 +179,11 @@ class PostgresKnowledgeRepository:
         lexical_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,ts_rank_cd(c.search_vector,plainto_tsquery('simple',%s)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version WHERE """+common+" AND "+chunk_acl+" AND c.search_vector @@ plainto_tsquery('simple',%s) ORDER BY score DESC LIMIT %s"
         lexical_params=(query,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,query,candidate_limit)
         async with conn:
-            cur=await conn.execute(lexical_sql,lexical_params);lexical=await cur.fetchall()
+            lexical=[]
+            if strategy in {"hybrid","lexical"}:
+                cur=await conn.execute(lexical_sql,lexical_params);lexical=await cur.fetchall()
             semantic=[]
-            if query_vector:
+            if query_vector and strategy in {"hybrid","semantic"}:
                 literal="["+",".join(str(float(x)) for x in query_vector)+"]"
                 semantic_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,(1-(e.embedding <=> %s::vector)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version JOIN knowledge_embeddings e ON e.tenant_id=c.tenant_id AND e.chunk_id=c.chunk_id AND e.embedding_model=%s WHERE """+common+" AND "+chunk_acl+" ORDER BY e.embedding <=> %s::vector LIMIT %s"
                 semantic_params=(literal,self.embedding_model,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,literal,candidate_limit)

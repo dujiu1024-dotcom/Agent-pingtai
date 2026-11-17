@@ -38,6 +38,7 @@ class KnowledgeRepository(Protocol):
         query: str,
         query_vector: Sequence[float] | None,
         limit: int,
+        strategy: str = "hybrid",
     ) -> list[RetrievalHit]: ...
 
     async def get_connector_cursor(self, tenant_id: str, connector_id: str) -> str | None: ...
@@ -200,7 +201,12 @@ class InMemoryKnowledgeRepository:
         query: str,
         query_vector: Sequence[float] | None,
         limit: int,
+        strategy: str = "hybrid",
     ) -> list[RetrievalHit]:
+        if strategy not in {"hybrid", "lexical", "semantic"}:
+            raise ValueError("unsupported retrieval strategy")
+        if strategy == "semantic":
+            return []
         terms = {term.casefold() for term in query.split() if term}
         hits: list[RetrievalHit] = []
         for key, document in self.documents.items():

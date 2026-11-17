@@ -306,9 +306,19 @@ def create_knowledge_memory_router(
             except ValueError as exc:raise HTTPException(400,str(exc)) from exc
             return {"answer":result.answer,"citations":list(result.citations),"abstained":result.abstained,"reason":result.reason}
     @router.get("/knowledge/search")
-    async def search_knowledge(request: Request,q: str,limit: int=8):
+    async def search_knowledge(
+        request: Request, q: str, limit: int = 8, strategy: str = "hybrid",
+        document_ids: str | None = None, source_uri_prefix: str | None = None,
+        title_contains: str | None = None, min_score: float | None = None,
+    ):
+        from agent_platform.knowledge.retrieval import RetrievalFilters
         principal=await resolve_knowledge_principal(request)
-        try:hits=await knowledge.retrieve(principal=principal,query=q,limit=limit)
+        try:
+            filters=RetrievalFilters(
+                document_ids=frozenset(item.strip() for item in (document_ids or "").split(",") if item.strip()),
+                source_uri_prefix=source_uri_prefix, title_contains=title_contains, min_score=min_score,
+            )
+            hits=await knowledge.retrieve(principal=principal,query=q,limit=limit,filters=filters,strategy=strategy)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"items":[{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":h.retrieval_trace} for h in hits]}
     @router.post("/knowledge/evaluate")

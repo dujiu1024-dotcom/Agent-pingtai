@@ -16,6 +16,7 @@ from agent_platform.knowledge.contracts import (
 )
 from agent_platform.knowledge.ingestion import ParserRegistry
 from agent_platform.knowledge.repository import KnowledgeRepository
+from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 
 
@@ -356,9 +357,15 @@ class KnowledgeService:
                 raise ValueError("connector must return next_cursor when has_more is true")
         return {"connector_id":connector.connector_id,"pages":page_count,"documents":document_count,"deleted_documents":deleted_count,"cursor":cursor,"has_more":page_count==max_pages and bool(page.has_more)}
 
-    async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8)->list[RetrievalHit]:
+    async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8,filters: RetrievalFilters|None=None,strategy: RetrievalStrategy|str=RetrievalStrategy.HYBRID)->list[RetrievalHit]:
         if not query.strip():raise ValueError("query must not be empty")
         if limit<1 or limit>50:raise ValueError("limit must be between 1 and 50")
+        try:
+            strategy=RetrievalStrategy(strategy)
+        except ValueError as exc:
+            raise ValueError("strategy must be hybrid, lexical or semantic") from exc
+        if filters is not None and not isinstance(filters, RetrievalFilters):
+            raise TypeError("filters must be RetrievalFilters")
         from time import monotonic
         started=monotonic()
         status="failed"
