@@ -86,6 +86,7 @@ class ProductionDeploymentContractTests(unittest.TestCase):
         worker = services["platform-worker"]
         self.assertEqual(worker["image"], api["image"])
         self.assertIn("python -m", " ".join(worker["command"]))
+        self.assertIn("${PLATFORM_WORKER_MODULE}", " ".join(worker["command"]))
         self.assertIn("PLATFORM_WORKER_MODULE", worker["environment"])
         self.assertIn("WORKER_CONCURRENCY", worker["environment"])
         self.assertEqual(set(worker["depends_on"]), {"postgres", "redis", "minio"})
