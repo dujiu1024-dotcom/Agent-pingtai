@@ -30,6 +30,8 @@ def create_connectors_router(
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "connector repository tenant mismatch")
         connection = await service.repository.get(principal.tenant_id, connection_id) if connection_id != "*" else None
+        if connection_id != "*" and connection is None:
+            raise HTTPException(404, "connector not found")
         if connection is not None and connection.project_id and not await authorize(
             principal, "project", connection.project_id, action,
         ):
