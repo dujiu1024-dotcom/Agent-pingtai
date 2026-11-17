@@ -1,3 +1,5 @@
+import unittest
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -60,6 +62,4 @@ class FirstScreenPerformanceBudgetTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    import unittest
-
     unittest.main()
