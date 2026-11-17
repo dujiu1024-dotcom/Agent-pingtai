@@ -84,7 +84,8 @@ include = [
   "tests/test_tool_gateway.py",
   "tests/test_observability.py",
   "tests/test_issue_16_a_16_01_contract_matrix.py",
-  "tests/test_issue_16_a_16_03_delivery_readiness.py",
+  "tests/test_issue_16_a_16_02_reliability.py",
+  "tests/test_issue_16_a_16_02_postgres_integration.py",
   "tests/test_run_trace.py",
   "tests/test_run_replay.py",
   "tests/test_run_replay_api.py",
@@ -189,10 +190,8 @@ include = [
   "tests/test_connector_framework.py",
   "tests/test_issue_10_a_10_04_legacy_vectors_strategy.py",
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
-  "tests/test_issue_18_a_18_01_deployment_acceptance.py",
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
-  "tests/test_issue_18_a_18_02_backup_restore_drill.py",
 ]
 
 [tool.ruff.lint]
