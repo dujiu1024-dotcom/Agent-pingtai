@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "required_components": ["config", "postgres", "redis", "objects"],
+  "objectives": {
+    "postgres": {"rpo_seconds": 3600, "rto_seconds": 14400},
+    "redis": {"rpo_seconds": 21600, "rto_seconds": 3600},
+    "objects": {"rpo_seconds": 86400, "rto_seconds": 14400},
+    "config": {"rpo_seconds": 86400, "rto_seconds": 7200},
+    "full_platform": {"rpo_seconds": 86400, "rto_seconds": 28800},
+    "failover": {"rpo_seconds": 3600, "rto_seconds": 14400},
+    "failback": {"rpo_seconds": 3600, "rto_seconds": 14400}
+  },
+  "recovery_order": [
+    "declare_and_contain",
+    "provision_dependencies",
+    "restore_configuration_and_secrets",
+    "restore_postgres",
+    "restore_redis",
+    "restore_objects",
+    "validate_application_and_reconcile",
+    "resume_traffic_gradually",
+    "close_and_record"
+  ],
+  "consistency_gates": [
+    "database_object_references_reconciled",
+    "outbox_and_event_state_reconciled",
+    "tenant_authorization_smoke_tests_passed"
+  ],
+  "failover_gates": [
+    "former_primary_fenced",
+    "replication_or_backup_recovery_point_recorded",
+    "routing_and_health_checks_validated"
+  ]
+}
