@@ -77,8 +77,6 @@ class MemoryRetrievalService:
             raise ValueError("min_confidence must be between 0 and 1")
         if query.limit < 1 or query.limit > 100:
             raise ValueError("limit must be between 1 and 100")
-        if query.version is not None and query.version < 1:
-            raise ValueError("version must be a positive integer")
         if not isinstance(query.strategy, MemoryRecallStrategy):
             raise ValueError("strategy must be a MemoryRecallStrategy")
         if any(not isinstance(scope, MemoryScope) for scope in query.scopes):
