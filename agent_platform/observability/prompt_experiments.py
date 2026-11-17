@@ -9,13 +9,15 @@ import asyncio
 import inspect
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
 from agent_platform.observability.evaluation import EvalCase, evaluate_case
-from agent_platform.observability.evaluation_governance import compare_metric_reports
+from agent_platform.observability.evaluation_governance import (
+    MetricDelta, RegressionComparison, compare_metric_reports,
+)
 from agent_platform.observability.prompts import PromptVersion, tenant_prompt_key
 
 
@@ -374,7 +376,7 @@ class PostgresPromptExperimentRepository:
                 }
                 for row in report.metrics
             ],
-            "comparison": report.comparison,
+            "comparison": asdict(report.comparison) if is_dataclass(report.comparison) else report.comparison,
             "created_at_epoch_ms": report.created_at_epoch_ms,
         }
         try:
@@ -384,7 +386,10 @@ class PostgresPromptExperimentRepository:
             )
         except (TypeError, ValueError) as exc:
             raise ValueError("experiment report must contain finite JSON values") from exc
-        if not report.tenant_id.strip() or not report.experiment_id.strip():
+        if (
+            not isinstance(report.tenant_id, str) or not report.tenant_id.strip()
+            or not isinstance(report.experiment_id, str) or not report.experiment_id.strip()
+        ):
             raise ValueError("tenant_id and experiment_id are required")
         connection = await self._connect()
         async with connection:
@@ -417,6 +422,15 @@ class PostgresPromptExperimentRepository:
             payload = json.loads(payload)
         if not isinstance(payload, dict):
             raise ValueError("stored prompt experiment report is invalid")
+        comparison = payload["comparison"]
+        if isinstance(comparison, dict) and {"comparison_id", "baseline_run_id", "candidate_run_id", "deltas", "regressions"} <= set(comparison):
+            comparison = RegressionComparison(
+                comparison_id=comparison["comparison_id"],
+                baseline_run_id=comparison["baseline_run_id"],
+                candidate_run_id=comparison["candidate_run_id"],
+                deltas=tuple(MetricDelta(**item) for item in comparison["deltas"]),
+                regressions=tuple(comparison["regressions"]),
+            )
         return PromptExperimentReport(
             experiment_id=payload["experiment_id"], tenant_id=payload["tenant_id"],
             prompt_id=payload["prompt_id"], dataset_id=payload["dataset_id"],
@@ -424,6 +438,6 @@ class PostgresPromptExperimentRepository:
             baseline_variant=payload["baseline_variant"],
             matrix=tuple(PromptCaseScore(**item) for item in payload["matrix"]),
             metrics=tuple(PromptVariantMetrics(**item) for item in payload["metrics"]),
-            comparison=payload["comparison"],
+            comparison=comparison,
             created_at_epoch_ms=payload["created_at_epoch_ms"],
         )
