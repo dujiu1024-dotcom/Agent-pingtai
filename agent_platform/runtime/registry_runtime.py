@@ -50,16 +50,32 @@ class RunScopedModelClient:
         snapshot = await self.snapshots.get(
             tenant_id=self.tenant_id, run_id=self.run_id,
         )
-        from agent_platform.streaming.context import current_token_callback
-        token_callback = current_token_callback()
-        return await self.router.complete(
-            snapshot=snapshot, tenant_id=self.tenant_id, run_id=self.run_id,
-            template_id=self.template_id, messages=messages, request_id=request_id,
-            required_capabilities=required_capabilities, data_level=data_level,
-            fallback_template_ids=fallback_template_ids,
-            request_parameters=request_parameters,
-            on_token=token_callback,
+        from agent_platform.streaming.context import (
+            current_run_event_callback, current_token_callback,
         )
+        token_callback = current_token_callback()
+        event_callback = current_run_event_callback()
+        if event_callback is not None:
+            await event_callback("LLM_REQUEST", model_template=self.template_id)
+        try:
+            result = await self.router.complete(
+                snapshot=snapshot, tenant_id=self.tenant_id, run_id=self.run_id,
+                template_id=self.template_id, messages=messages, request_id=request_id,
+                required_capabilities=required_capabilities, data_level=data_level,
+                fallback_template_ids=fallback_template_ids,
+                request_parameters=request_parameters,
+                on_token=token_callback,
+            )
+        except Exception as exc:
+            if event_callback is not None:
+                await event_callback("ERROR", step="model", message=type(exc).__name__)
+            raise
+        if event_callback is not None:
+            await event_callback(
+                "LLM_RESPONSE", model_id=result.model_id,
+                usage=dict(result.usage),
+            )
+        return result
 
 
 @dataclass/(frozen=True)
