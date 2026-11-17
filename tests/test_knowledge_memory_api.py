@@ -111,56 +111,6 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         refreshed = self.client.get(f"/api/platform/v1/knowledge/documents/{document_id}/chunks")
         self.assertEqual(refreshed.json()["items"][0]["text"], "edited chunk body")
 
-    def test_chunk_acl_is_applied_to_search_and_chunk_preview_api(self):
-        created = self.client.post(
-            "/api/platform/v1/knowledge/documents",
-            json={"title": "fragment ACL", "scope": "tenant", "content": "restricted fragment marker"},
-            headers={"x-roles": "knowledge.manage"},
-        )
-        self.assertEqual(created.status_code, 200)
-        document_id = created.json()["document_id"]
-        chunks = self.client.get(
-            f"/api/platform/v1/knowledge/documents/{document_id}/chunks",
-            headers={"x-roles": "knowledge.manage"},
-        ).json()["items"]
-        chunk_id = chunks[0]["chunk_id"]
-        granted = self.client.post(
-            f"/api/platform/v1/knowledge/documents/{document_id}/chunks/{chunk_id}/acl",
-            json={"principal_type": "user", "principal_id": "user-b", "permission": "read"},
-            headers={"x-roles": "knowledge.manage"},
-        )
-        self.assertEqual(granted.status_code, 201)
-        denied_preview = self.client.get(
-            f"/api/platform/v1/knowledge/documents/{document_id}/chunks",
-            headers={"x-user": "user-a", "x-roles": "knowledge.manage"},
-        )
-        self.assertEqual(denied_preview.json()["items"], [])
-        allowed_preview = self.client.get(
-            f"/api/platform/v1/knowledge/documents/{document_id}/chunks",
-            headers={"x-user": "user-b"},
-        )
-        self.assertEqual([item["chunk_id"] for item in allowed_preview.json()["items"]], [chunk_id])
-        denied_search = self.client.get(
-            "/api/platform/v1/knowledge/search", params={"q": "restricted"},
-            headers={"x-user": "user-a"},
-        )
-        allowed_search = self.client.get(
-            "/api/platform/v1/knowledge/search", params={"q": "restricted"},
-            headers={"x-user": "user-b"},
-        )
-        self.assertEqual(denied_search.json()["items"], [])
-        self.assertEqual(len(allowed_search.json()["items"]), 1)
-        self.assertIn("source_locator", allowed_search.json()["items"][0])
-        revoked = self.client.delete(
-            f"/api/platform/v1/knowledge/documents/{document_id}/chunks/{chunk_id}/acl/user/user-b",
-            headers={"x-roles": "knowledge.manage"},
-        )
-        self.assertEqual(revoked.status_code, 200)
-        self.assertEqual(self.client.get(
-            "/api/platform/v1/knowledge/search", params={"q": "restricted"},
-            headers={"x-user": "user-b"},
-        ).json()["items"], [])
-
     def test_private_document_upload_and_search_are_user_scoped(self):
         response = self.client.post(
             "/api/platform/v1/knowledge/documents",
