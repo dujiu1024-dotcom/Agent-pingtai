@@ -117,7 +117,7 @@ class PublicApiContractASGIMiddleware:
         self.app = app
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
-        if scope.get("type") != "http" or not str(scope.get("path", "")).startswith(API_V1_PREFIX):
+        if scope.get("type") != "http" or not (str(scope.get("path", "")) == API_V1_PREFIX or str(scope.get("path", "")).startswith(API_V1_PREFIX + "/")):
             await self.app(scope, receive, send)
             return
 
