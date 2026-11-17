@@ -39,7 +39,6 @@ include = [
   "tests/test_feishu_config.py",
   "tests/test_conversation.py",
   "agent_platform/**/*.py",
-  "tests/test_batch_executor.py",
   "tests/test_identity.py",
   "tests/test_public_api_contract.py",
   "tests/test_legacy_inventory.py",
@@ -144,7 +143,7 @@ include = [
   "agent_platform/api/health.py",
   "tests/test_core_business_journey_e2e.py",
   "tests/test_graph_schema.py",
-  "tests/test_graph_extraction.py",
+  "tests/test_graph_extraction_pipeline.py",
 ]
 
 [tool.ruff.lint]
