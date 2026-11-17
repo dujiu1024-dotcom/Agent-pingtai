@@ -594,6 +594,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(503, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.deleted", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "session_id": asset.session_id},
+            )
         return Response(status_code=204)
 
     @router.get("/files/{asset_id}/download-url")
