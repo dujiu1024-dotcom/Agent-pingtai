@@ -19,6 +19,20 @@ from agent_platform.control_plane.sessions_assets import (
 )
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(child) for child in value]
+    content = getattr(value, "content", None)
+    kind = getattr(value, "type", None)
+    if isinstance(content, str):
+        return {"type": str(kind or value.__class__.__name__), "content": content}
+    return str(value)
+
+
 class SessionRunPersistence:
     """Load and append session messages around a durable LangGraph Run."""
 
@@ -156,8 +170,18 @@ class SessionRunPersistence:
     ) -> ConversationMessage | None:
         if result is None:
             return None
+        if isinstance(result, Mapping) and isinstance(result.get("messages"), (list, tuple)):
+            for item in reversed(result["messages"]):
+                role = (item.get("role") or item.get("type")) if isinstance(item, Mapping) else (
+                    getattr(item, "type", None) or getattr(item, "role", None)
+                )
+                if str(role).lower() in {"ai", "assistant"}:
+                    candidate = item.get("content") if isinstance(item, Mapping) else getattr(item, "content", None)
+                    if isinstance(candidate, str) and candidate.strip():
+                        result = candidate
+                        break
         content = result if isinstance(result, str) else json.dumps(
-            result, ensure_ascii=False, sort_keys=True, default=str,
+            _json_safe(result), ensure_ascii=False, sort_keys=True, default=str,
         )
         message_id = str(uuid5(NAMESPACE_URL, f"session-run:{tenant_id}:{session_id}:{run_id}:assistant"))
         rows = await self.repository.list_messages(
@@ -207,7 +231,7 @@ class SessionRunPersistence:
             values = {"state": str(values)}
         payload = {
             "checkpoint_id": str(checkpoint_id),
-            "values": dict(values),
+            "values": _json_safe(dict(values)),
             "next": list(getattr(state, "next", ()) or ()),
             "metadata": dict(getattr(state, "metadata", {}) or {}),
         }
