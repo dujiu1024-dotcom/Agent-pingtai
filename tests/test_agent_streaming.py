@@ -120,6 +120,50 @@ class AgentStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["choices"][0]["message"]["content"], "Hi!")
         self.assertEqual(response["usage"]["completion_tokens"], 2)
 
+    async def test_run_scoped_model_client_forwards_token_and_model_lifecycle_callbacks(self):
+        from agent_platform.models.runtime_router import RoutedModelResponse
+        from agent_platform.runtime.registry_runtime import RunScopedModelClient
+        from agent_platform.streaming.context import run_event_context, token_callback_context
+
+        class SnapshotService:
+            async def get(self, *, tenant_id, run_id):
+                return SimpleNamespace(tenant_id=tenant_id, run_id=run_id)
+
+        class Router:
+            async def complete(self, **kwargs):
+                self.kwargs = kwargs
+                await kwargs["on_token"]("delta")
+                return RoutedModelResponse(
+                    content="delta", model_id="model", template_id="template",
+                    template_version=1, provider_id="provider", provider_version=1,
+                    usage={"prompt_tokens": 1, "completion_tokens": 1}, fallback_used=False,
+                )
+
+        router = Router()
+        client = RunScopedModelClient(
+            tenant_id="tenant", run_id="run", template_id="template",
+            snapshots=SnapshotService(), router=router,
+        )
+        tokens = []
+        events = []
+
+        async def on_token(token):
+            tokens.append(token)
+
+        async def on_event(event_type, **data):
+            events.append((event_type, data))
+
+        with token_callback_context(on_token), run_event_context(on_event):
+            result = await client.complete(
+                messages=({"role": "user", "content": "hello"},), request_id="req",
+            )
+        self.assertEqual(tokens, ["delta"])
+        self.assertEqual(result.content, "delta")
+        self.assertEqual(
+            [event_type for event_type, _data in events],
+            ["LLM_REQUEST", "LLM_RESPONSE"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
