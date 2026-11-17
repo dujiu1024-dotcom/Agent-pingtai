@@ -98,6 +98,19 @@ def validate_evidence(
         errors.append("release_decision: must be go after all required checks pass")
     if document.get("environment") != "production":
         errors.append("environment: must equal production")
+    if document.get("release_decision") != "approved":
+        errors.append("release_decision: must equal approved")
+    for field in ("release_owner", "evidence_archive_ref", "decision_reason"):
+        value = document.get(field)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field}: required non-empty string")
+        elif _is_placeholder(value):
+            errors.append(f"{field}: must not contain a template placeholder")
+    blockers = document.get("blocking_conditions")
+    if not isinstance(blockers, list):
+        errors.append("blocking_conditions: required list")
+    elif blockers:
+        errors.append("blocking_conditions: must be empty before release approval")
     commit_sha = document.get("commit_sha")
     if not isinstance(commit_sha, str) or not SHA_RE.fullmatch(commit_sha):
         errors.append("commit_sha: must be a full 40-character lowercase Git SHA")
