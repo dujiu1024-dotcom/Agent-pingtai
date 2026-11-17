@@ -261,9 +261,7 @@ def create_platform_app(
         app.include_router(create_prompt_registry_router(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
         ))
-    prompt_operations_configured = any(value is not None for value in (
-        prompt_evaluation_gate, resource_audit_writer,
-    ))
+    prompt_operations_configured = prompt_evaluation_gate is not None
     if prompt_operations_configured:
         if any(value is None for value in (
             prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
