@@ -330,6 +330,7 @@ def create_platform_app(
             quota_store=quota_reporting_store, quota_service=quota_service,
             authorize_manage=quota_manage_authorizer,
             authorize_scope=quota_scope_authorizer,
+            audit_writer=quota_audit_writer or resource_audit_writer,
         ))
         if quota_service is not None and quota_manage_authorizer is not None:
             app.include_router(create_quota_admin_router(
