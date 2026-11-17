@@ -66,6 +66,25 @@ class PackageArtifacts:
         self.items.pop(artifact_ref, None)
 
 
+class FaultInjectingAgentSkillStore(InMemoryAgentSkillStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_next_put = False
+        self.fail_next_remove = False
+
+    async def put(self, item) -> None:
+        if self.fail_next_put:
+            self.fail_next_put = False
+            raise RuntimeError("injected Agent skill store put failure")
+        await super().put(item)
+
+    async def remove(self, tenant_id: str, agent_id: str, skill_id: str) -> None:
+        if self.fail_next_remove:
+            self.fail_next_remove = False
+            raise RuntimeError("injected Agent skill store remove failure")
+        await super().remove(tenant_id, agent_id, skill_id)
+
+
 class DependencyScanner:
     async def scan(self, package: str, pin: str) -> tuple[str, ...]:
         return ()
@@ -125,7 +144,7 @@ class SandboxBackedAgentRuntime:
 class SkillLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.package_artifacts = PackageArtifacts()
-        self.agent_store = InMemoryAgentSkillStore()
+        self.agent_store = FaultInjectingAgentSkillStore()
         self.sandbox_artifacts = InMemorySkillArtifactStore()
         self.sandbox_runner = RecordingSandboxRunner()
         self.sandbox_audit: list[tuple[str, str, str]] = []
@@ -158,6 +177,77 @@ class SkillLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             agent_store=self.agent_store,
             agent_runtime=self.agent_runtime,
             audit=lambda *event: self.audit.append(event),
+        )
+
+    async def _publish_test_skill(self):
+        draft = await self.service.upload(
+            tenant_id="tenant-a", archive=skill_package(), actor_id="publisher",
+        )
+        return await self.service.publish(
+            tenant_id="tenant-a",
+            skill_id="report-summarizer",
+            draft_version=draft.version,
+            actor_id="publisher",
+        )
+
+    async def test_install_store_failure_compensates_runtime_and_leaves_no_residue(self) -> None:
+        published = await self._publish_test_skill()
+        artifact_ref = published.definition["artifact_ref"]
+        self.agent_store.fail_next_put = True
+
+        with self.assertRaisesRegex(RuntimeError, "injected Agent skill store put failure"):
+            await self.service.install_for_agent(
+                tenant_id="tenant-a",
+                agent_id="agent-rollback",
+                skill_id="report-summarizer",
+                version=published.version,
+                actor_id="agent-admin",
+            )
+
+        key = ("tenant-a", "agent-rollback", "report-summarizer")
+        self.assertIsNone(await self.agent_store.get(*key))
+        self.assertNotIn(key, self.agent_runtime.versions)
+        self.assertIsNone(await self.sandbox_artifacts.get(
+            "tenant-a", "report-summarizer", published.version,
+        ))
+        self.assertIn(artifact_ref, self.package_artifacts.items)
+        self.assertEqual(
+            [event[4] for event in self.audit if event[3] == "install"],
+            ["requested", "compensated"],
+        )
+
+    async def test_uninstall_store_failure_restores_installation_and_runtime(self) -> None:
+        published = await self._publish_test_skill()
+        key = ("tenant-a", "agent-rollback", "report-summarizer")
+        installation = await self.service.install_for_agent(
+            tenant_id=key[0],
+            agent_id=key[1],
+            skill_id=key[2],
+            version=published.version,
+            actor_id="agent-admin",
+        )
+        self.agent_store.fail_next_remove = True
+
+        with self.assertRaisesRegex(RuntimeError, "injected Agent skill store remove failure"):
+            await self.service.uninstall_from_agent(
+                tenant_id=key[0],
+                agent_id=key[1],
+                skill_id=key[2],
+                actor_id="agent-admin",
+            )
+
+        self.assertEqual(await self.agent_store.get(*key), installation)
+        self.assertEqual(self.agent_runtime.versions[key], published.version)
+        self.assertIsNotNone(await self.sandbox_artifacts.get(
+            key[0], key[2], published.version,
+        ))
+        loaded = await self.agent_runtime.load(
+            tenant_id=key[0], agent_id=key[1], skill_id=key[2],
+        )
+        self.assertEqual(loaded.version, published.version)
+        self.assertEqual(
+            [event[4] for event in self.audit if event[3] == "uninstall"],
+            ["requested", "compensated"],
         )
 
     async def test_publish_install_load_uninstall_leaves_no_agent_runtime_residue(self) -> None:
