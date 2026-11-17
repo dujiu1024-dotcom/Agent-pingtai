@@ -270,7 +270,9 @@ class LangGraphRunExecutor:
      result=await self._run_leased(tenant_id,run_id,self._invoke_graph(input,config,tenant_id=tenant_id,run_id=run_id,session=session),
       timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
       already_claimed=acquired)
-   except asyncio.TimeoutError:raise
+   except asyncio.TimeoutError:
+    await self._publish_event(tenant_id,run_id,"ERROR",message="execution timed out")
+    raise
    except WorkerLeaseLost:
     current=await self.lifecycle.store.get(tenant_id,run_id)
     if current and current.status==RunStatus.CANCELLING:
@@ -289,6 +291,7 @@ class LangGraphRunExecutor:
     # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
+    await self._publish_event(tenant_id,run_id,"ERROR",message=str(exc)[:1000])
     ref=await self._checkpoint_ref(tenant_id,run_id)
     if session is not None:
      await self._session_checkpoint(tenant_id,run_id,config,session)
@@ -306,6 +309,7 @@ class LangGraphRunExecutor:
     )
     await self._session_checkpoint(tenant_id,run_id,config,session)
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
+   await self._publish_event(tenant_id,run_id,"COMPLETE",status="succeeded")
    return result
   finally:
    try:
