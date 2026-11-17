@@ -80,6 +80,32 @@ class ProductionDeploymentContractTests(unittest.TestCase):
             "postgres_password", "redis_password", "minio_root_password",
         })
 
+    def test_worker_is_separate_hardened_and_uses_same_immutable_image(self):
+        services = self.compose["services"]
+        api = services["platform-api"]
+        worker = services["platform-worker"]
+        self.assertEqual(worker["image"], api["image"])
+        self.assertIn("python -m", " ".join(worker["command"]))
+        self.assertIn("${PLATFORM_WORKER_MODULE}", " ".join(worker["command"]))
+        self.assertIn("PLATFORM_WORKER_MODULE", worker["environment"])
+        self.assertIn("WORKER_CONCURRENCY", worker["environment"])
+        self.assertEqual(set(worker["depends_on"]), {"postgres", "redis", "minio"})
+        self.assertTrue(all(
+            item["condition"] == "service_healthy"
+            for item in worker["depends_on"].values()
+        ))
+        self.assertNotIn("ports", worker)
+        self.assertEqual(worker["secrets"], api["secrets"])
+        self.assertEqual(worker["user"], "10001:10001")
+        self.assertTrue(worker["read_only"])
+        self.assertEqual(worker["cap_drop"], ["ALL"])
+        self.assertIn("no-new-privileges:true", worker["security_opt"])
+        self.assertEqual(worker["stop_grace_period"], "60s")
+        self.assertTrue(worker["mem_limit"])
+        self.assertTrue(worker["cpus"])
+        self.assertIn("EGRESS_ALLOWED_HOSTS", worker["environment"])
+        self.assertIn("HTTPS_PROXY", worker["environment"])
+
     def test_stateful_dependencies_have_healthchecks_and_persistent_volumes(self):
         services = self.compose["services"]
         for name in ("postgres", "redis", "minio"):

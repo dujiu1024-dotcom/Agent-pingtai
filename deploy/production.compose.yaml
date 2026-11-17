@@ -67,6 +67,64 @@ services:
           cpus: "${API_CPU_LIMIT:-2.0}"
     networks: [platform]
 
+
+  platform-worker:
+    image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - exec python -m "${PLATFORM_WORKER_MODULE}"
+    environment:
+      PLATFORM_WORKER_MODULE: ${PLATFORM_WORKER_MODULE:?Set deployment worker module}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY_FILE: /run/secrets/minio_root_password
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-agent-platform}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      http_proxy: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      https_proxy: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:?Set explicit outbound hostname allowlist}
+      NO_PROXY: postgres,redis,minio,localhost,127.0.0.1
+      no_proxy: postgres,redis,minio,localhost,127.0.0.1
+    secrets:
+      - postgres_password
+      - redis_password
+      - minio_root_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    stop_grace_period: 60s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: ${WORKER_MEMORY_LIMIT:-2g}
+    cpus: ${WORKER_CPU_LIMIT:-2.0}
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-2g}
+          cpus: "${WORKER_CPU_LIMIT:-2.0}"
+    networks: [platform]
+
   postgres:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped

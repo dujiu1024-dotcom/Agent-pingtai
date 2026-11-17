@@ -2,9 +2,10 @@
 
 ## Topology
 
-`production.compose.yaml` describes one API service and three stateful dependencies:
+`production.compose.yaml` describes an API service, a separately supervised background worker, and three stateful dependencies:
 
 - **API:** stateless ASGI replicas; expose only through a TLS reverse proxy/load balancer. The sample publishes its port on loopback for a host proxy.
+- **Worker:** a separate process using the same digest-pinned application image, with a deployment-owned `PLATFORM_WORKER_MODULE`. It receives the same database, Redis, object-storage and egress configuration as the API, but publishes no host ports. The module must handle SIGTERM and drain/stop claiming work before exit; Compose allows 60 seconds for graceful shutdown before force termination. Worker concurrency is configured independently from API web concurrency.
 - **PostgreSQL + pgvector:** durable system of record on a named volume.
 - **Redis:** shared coordination, rate-limit and stream infrastructure; AOF enabled and `noeviction` selected so memory pressure is surfaced rather than silently evicting coordination keys.
 - **MinIO:** private object storage on a named volume.
@@ -28,7 +29,7 @@ Attach firewall/NetworkPolicy and proxy policy verification output to the produc
 
 ## Configuration and secret injection
 
-1. Copy `.env.production.example` to `.env.production`; replace the example image digest and ASGI import path.
+1. Copy `.env.production.example` to `.env.production`; replace the example image digest, ASGI import path and worker module path. The worker module must be importable inside the image and own its durable queue consumers.
 2. Configure the managed egress proxy and exact outbound host allowlist. Create the three secret files at configured paths using the host secret manager. Each file contains only its secret value and a trailing newline. Restrict them to the deployment operator (for example directory mode 0700 and file mode 0400).
 3. Set exact HTTPS origins, immutable image digest, database name/user, resource budgets and secret-file paths. Protect `.env.production` with mode 0600. Never commit it or secret files.
 4. Validate and deploy:
@@ -44,7 +45,7 @@ Compose secrets are mounted under `/run/secrets`. The API receives *_FILE paths;
 
 ## Application image and bootstrap boundary
 
-The repository provides `create_platform_app`, not a universal zero-configuration production ASGI instance: identity, repositories, knowledge/memory services, Redis and authorizers are injected at composition time. Therefore `PLATFORM_ASGI_APP` must name a deployment-owned importable ASGI object (for example `deployment.bootstrap:app`) that wires durable adapters, runs/validates migrations as a separate release step, and supplies readiness checks for **PostgreSQL, Redis and object storage**. The API image must contain the project package, `requirements-platform.txt`, Uvicorn and that bootstrap module. Do not point production at a test fixture or in-memory adapter.
+The repository provides `create_platform_app`, not a universal zero-configuration production ASGI instance: identity, repositories, knowledge/memory services, Redis and authorizers are injected at composition time. Therefore `PLATFORM_ASGI_APP` must name a deployment-owned importable ASGI object (for example `deployment.bootstrap:app`) that wires durable adapters, runs/validates migrations as a separate release step, and supplies readiness checks for **PostgreSQL, Redis and object storage**. The application image must contain the project package, `requirements-platform.txt`, Uvicorn, the ASGI bootstrap module and the worker module. Do not point production at a test fixture or in-memory adapter. The Compose worker invokes `python -m "$PLATFORM_WORKER_MODULE"`; the deployment-owned module is responsible for constructing durable worker services, starting only configured consumers, handling SIGTERM, stopping new claims, and draining in-flight work. The API and worker use the same immutable image digest to prevent code-version skew.
 
 The application factory registers `/health/live` and `/health/ready`. Liveness checks only process responsiveness. Readiness executes injected dependency checks; a missing check or unavailable dependency returns HTTP 503. The default factory readiness check covers Redis only, so a production bootstrap must pass explicit PostgreSQL and object-storage checks as well. The container healthcheck uses readiness and Compose waits for the three dependencies to become healthy before starting the API.
 
@@ -55,6 +56,7 @@ Default container ceilings in the reference overlay:
 | Service | Memory | CPU |
 |---|---:|---:|
 | API | 2 GiB | 2 |
+| Worker | 2 GiB | 2 |
 | PostgreSQL | 4 GiB | 4 |
 | Redis | 1 GiB | 1 |
 | MinIO | 2 GiB | 2 |
@@ -64,7 +66,8 @@ Override via the corresponding *_MEMORY_LIMIT and *_CPU_LIMIT variables after lo
 ## Health, startup and operational boundaries
 
 - PostgreSQL, Redis and MinIO each have a native healthcheck and persistent named volume.
-- API startup depends on all three dependencies being healthy; the API healthcheck uses `/health/ready`.
+- API and Worker startup both depend on all three dependencies being healthy; the API healthcheck uses `/health/ready`.
+- The worker does not publish a host port. Its process is supervised by `restart: unless-stopped`; the deployment-owned worker module must expose meaningful internal telemetry/heartbeat for queue lag and liveness. A running PID is not treated as proof that jobs are being processed.
 - A failed readiness probe must remove an API instance from load-balancer traffic. Liveness and readiness must not be conflated.
 - Apply schema migrations once as a controlled release job before enabling new application replicas; do not run concurrent migrations from every API worker.
 - Configure a TLS reverse proxy, external DNS, certificate renewal, network firewall, off-host backups, monitoring and alert delivery outside this single-host Compose file.
