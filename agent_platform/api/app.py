@@ -25,6 +25,7 @@ from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
@@ -100,6 +101,8 @@ def create_platform_app(
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
+    evaluation_rollout_bridge: Any | None = None,
+    evaluation_rollout_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
     prompt_evaluation_gate: Any | None = None,
@@ -251,6 +254,22 @@ def create_platform_app(
     observability_api_configured = any(value is not None for value in (
         metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
     ))
+    evaluation_rollout_configured = any(value is not None for value in (
+        evaluation_rollout_bridge, evaluation_rollout_authorizer,
+    ))
+    if evaluation_rollout_configured:
+        if (
+            evaluation_rollout_bridge is None or evaluation_rollout_authorizer is None
+            or resource_audit_writer is None
+        ):
+            raise ValueError(
+                "evaluation rollout bridge, authorizer and audit writer must be configured together"
+            )
+        app.include_router(create_evaluation_rollout_router(
+            bridge=evaluation_rollout_bridge,
+            authorize=evaluation_rollout_authorizer,
+            audit_writer=resource_audit_writer,
+        ))
     if observability_api_configured:
         app.include_router(create_observability_router(
             metrics=metrics_exporter,
