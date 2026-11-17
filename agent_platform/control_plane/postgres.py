@@ -14,7 +14,9 @@ from agent_platform.control_plane.sessions_assets import (
     ConversationMessage,
     ConversationSession,
     FileAsset,
+    FileAssetVersion,
     MessageRole,
+    SessionError,
     SessionNotFound,
 )
 
@@ -301,6 +303,14 @@ class PostgresSessionRepository:
                  asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
                  asset.status.value, asset.created_at),
             )
+            await connection.execute(
+                """INSERT INTO platform_file_asset_versions
+                   (tenant_id,asset_id,version,object_key,filename,media_type,size_bytes,sha256,status,created_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (self.tenant_id, _uuid(asset.asset_id), asset.version, asset.object_key,
+                 asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
+                 asset.status.value, asset.created_at),
+            )
 
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None:
         if tenant_id != self.tenant_id:
@@ -313,6 +323,65 @@ class PostgresSessionRepository:
             )
             row = await cursor.fetchone()
         return self._to_asset(row) if row else None
+
+    async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]:
+        if tenant_id != self.tenant_id:
+            raise SessionNotFound("file not found")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT * FROM platform_file_asset_versions
+                   WHERE tenant_id=%s AND asset_id=%s ORDER BY version""",
+                (self.tenant_id, _uuid(asset_id)),
+            )
+            rows = await cursor.fetchall()
+        return tuple(self._to_asset_version(row) for row in rows)
+
+    async def get_asset_version(self, tenant_id: str, asset_id: str, version: int) -> FileAssetVersion | None:
+        if tenant_id != self.tenant_id:
+            return None
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT * FROM platform_file_asset_versions
+                   WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
+                (self.tenant_id, _uuid(asset_id), version),
+            )
+            row = await cursor.fetchone()
+        return self._to_asset_version(row) if row else None
+
+    async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None:
+        self._check_tenant(version.tenant_id)
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT current_version,status FROM platform_file_assets
+                       WHERE tenant_id=%s AND asset_id=%s FOR UPDATE""",
+                    (self.tenant_id, _uuid(version.asset_id)),
+                )
+                row = await cursor.fetchone()
+                if row is None or row["status"] != AssetStatus.AVAILABLE.value:
+                    raise SessionNotFound("asset not found or unavailable")
+                if row["current_version"] != expected_version or version.version != expected_version + 1:
+                    raise SessionError("file asset version changed; retry from the latest version")
+                await connection.execute(
+                    """INSERT INTO platform_file_asset_versions
+                       (tenant_id,asset_id,version,object_key,filename,media_type,size_bytes,sha256,status,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (self.tenant_id, _uuid(version.asset_id), version.version,
+                     version.object_key, version.filename, version.media_type,
+                     version.size_bytes, version.sha256, version.status.value,
+                     version.created_at),
+                )
+                await connection.execute(
+                    """UPDATE platform_file_assets SET current_version=%s,object_key=%s,
+                       filename=%s,media_type=%s,size_bytes=%s,sha256=%s,status=%s,created_at=%s
+                       WHERE tenant_id=%s AND asset_id=%s""",
+                    (version.version, version.object_key, version.filename, version.media_type,
+                     version.size_bytes, version.sha256, version.status.value, version.created_at,
+                     self.tenant_id, _uuid(version.asset_id)),
+                )
 
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100, project_id: str | None = None) -> tuple[FileAsset, ...]:
         if tenant_id != self.tenant_id:
@@ -343,11 +412,24 @@ class PostgresSessionRepository:
         async with connection:
             cursor = await connection.execute(
                 """UPDATE platform_file_assets SET status=%s
-                   WHERE tenant_id=%s AND asset_id=%s RETURNING asset_id""",
+                   WHERE tenant_id=%s AND asset_id=%s RETURNING current_version""",
                 (status.value, self.tenant_id, _uuid(asset_id)),
             )
-            if await cursor.fetchone() is None:
+            row = await cursor.fetchone()
+            if row is None:
                 raise SessionNotFound("asset not found")
+            if status is AssetStatus.DELETED:
+                await connection.execute(
+                    """UPDATE platform_file_asset_versions SET status=%s
+                       WHERE tenant_id=%s AND asset_id=%s""",
+                    (status.value, self.tenant_id, _uuid(asset_id)),
+                )
+            else:
+                await connection.execute(
+                    """UPDATE platform_file_asset_versions SET status=%s
+                       WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
+                    (status.value, self.tenant_id, _uuid(asset_id), row["current_version"]),
+                )
 
 
     async def set_asset_status_if_not_deleted(
@@ -360,10 +442,28 @@ class PostgresSessionRepository:
             cursor = await connection.execute(
                 """UPDATE platform_file_assets SET status=%s
                    WHERE tenant_id=%s AND asset_id=%s AND status <> 'deleted'
-                   RETURNING asset_id""",
+                   RETURNING current_version""",
                 (status.value, self.tenant_id, _uuid(asset_id)),
             )
-            return await cursor.fetchone() is not None
+            row = await cursor.fetchone()
+            if row is None:
+                return False
+            await connection.execute(
+                """UPDATE platform_file_asset_versions SET status=%s
+                   WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
+                (status.value, self.tenant_id, _uuid(asset_id), row["current_version"]),
+            )
+            return True
+
+    @staticmethod
+    def _to_asset_version(row: Any) -> FileAssetVersion:
+        return FileAssetVersion(
+            tenant_id=row["tenant_id"], asset_id=str(row["asset_id"]),
+            version=row["version"], object_key=row["object_key"],
+            filename=row["filename"], media_type=row["media_type"],
+            size_bytes=row["size_bytes"], sha256=row["sha256"],
+            status=AssetStatus(row["status"]), created_at=row["created_at"],
+        )
 
     def _check_tenant(self, tenant_id: str) -> None:
         if tenant_id != self.tenant_id:
@@ -378,5 +478,5 @@ class PostgresSessionRepository:
             size_bytes=row["size_bytes"], sha256=row["sha256"],
             status=AssetStatus(row["status"]), project_id=row["project_id"],
             session_id=str(row["session_id"]) if row["session_id"] else None,
-            created_at=row["created_at"],
+            created_at=row["created_at"], version=row.get("current_version", 1),
         )
