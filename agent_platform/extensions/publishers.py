@@ -1,6 +1,7 @@
 """Trusted publisher key registry contract and validation."""
 from __future__ import annotations
 
+import math
 import re
 from typing import Any, Protocol
 
@@ -55,11 +56,12 @@ class TrustedPublisherKeyRegistry:
                 or b"-----BEGIN PUBLIC KEY-----" not in public_key_pem
                 or b"PRIVATE KEY-----" in public_key_pem):
             raise ValueError("public_key_pem must be a PEM public key of at most 8 KiB")
-        if isinstance(not_before, bool) or not isinstance(not_before, (int, float)):
-            raise ValueError("not_before must be a Unix timestamp")
+        if (isinstance(not_before, bool) or not isinstance(not_before, (int, float))
+                or not math.isfinite(not_before)):
+            raise ValueError("not_before must be a finite Unix timestamp")
         if expires_at is not None and (
             isinstance(expires_at, bool) or not isinstance(expires_at, (int, float))
-            or expires_at <= not_before
+            or not math.isfinite(expires_at) or expires_at <= not_before
         ):
             raise ValueError("expires_at must be later than not_before")
         if not isinstance(created_by, str) or not created_by.strip() or len(created_by) > 128:
