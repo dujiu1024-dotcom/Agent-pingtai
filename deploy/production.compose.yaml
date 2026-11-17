@@ -67,6 +67,7 @@ services:
           cpus: "${API_CPU_LIMIT:-2.0}"
     networks: [platform]
 
+
   platform-worker:
     image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
     restart: unless-stopped
@@ -123,6 +124,7 @@ services:
           memory: ${WORKER_MEMORY_LIMIT:-2g}
           cpus: "${WORKER_CPU_LIMIT:-2.0}"
     networks: [platform]
+
   postgres:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
