@@ -5,6 +5,7 @@ import so an incorrectly configured process never becomes a healthy API.
 """
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Callable
 
 from fastapi import FastAPI
@@ -23,6 +24,7 @@ from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
+from agent_platform.quotas.production_worker import build_production_run_execution_worker
 from agent_platform.quotas.service import QuotaService
 from agent_platform.security.audit import PostgresAuditWriter
 
@@ -190,6 +192,14 @@ def create_production_app(
     app.state.quota_policy_service = quota_policy_service
     app.state.quota_reservation_worker = quota_maintenance_worker
     app.state.quota_audit_writer = quota_audit_writer
+    # Worker hosts provide trusted registry/runtime callbacks, but receive a
+    # factory pinned to this process's shared PostgreSQL quota service and Run store.
+    app.state.run_execution_worker_factory = partial(
+        build_production_run_execution_worker,
+        run_store=run_store,
+        quota_service=quota_service,
+        lifecycle_resolver=resolve_run_lifecycle,
+    )
     if close_redis_on_shutdown:
         async def close_production_resources() -> None:
             await redis_client.aclose()
