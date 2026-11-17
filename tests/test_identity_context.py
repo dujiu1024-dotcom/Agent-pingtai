@@ -77,7 +77,7 @@ class IdentityContextResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.manage_agent_ids, frozenset({"agent-a"}))
         self.assertEqual(
             resolved.permissions,
-            frozenset({"project.read", "knowledge.manage"}),
+            frozenset({"project.read", "knowledge.manage", "knowledge.read", "memory.read"}),
         )
 
     async def test_api_credential_is_narrowed_to_scope_and_rbac_intersection(self):
