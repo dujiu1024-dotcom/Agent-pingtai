@@ -12,8 +12,8 @@ from agent_platform.runtime.protocols import (
     HarnessCapabilities,
     HarnessRequest,
     HarnessResult,
-    ToolCall,
     HarnessStreamEvent,
+    ToolCall,
 )
 
 
