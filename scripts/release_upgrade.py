@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-SEMVER_RE = re.compile(r"^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:[-+][0-9A-Za-z.-]+)?$")
+IMAGE_DIGEST_RE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:[-+][0-9A-Za-z.-]+)?$")
 
 
 @dataclass(frozen=True, order=True)
@@ -48,8 +49,8 @@ def validate_upgrade_manifest(document: Any) -> list[str]:
     for field in ("release_id", "image_digest", "config_revision", "previous_config_revision"):
         if not isinstance(document[field], str) or not document[field].strip():
             errors.append(f"{field}: must be a non-empty string")
-    if document["image_digest"].startswith(("latest", "http://", "https://")):
-        errors.append("image_digest: use an immutable image digest, not a tag or URL")
+    if not isinstance(document["image_digest"], str) or not IMAGE_DIGEST_RE.fullmatch(document["image_digest"]):
+        errors.append("image_digest: must use an immutable sha256 image digest")
     old = Version.parse(document["from_version"], "from_version", errors)
     new = Version.parse(document["to_version"], "to_version", errors)
     if old and new and new <= old:
@@ -108,6 +109,8 @@ def validate_upgrade_manifest(document: Any) -> list[str]:
         for field in ("previous_image_digest", "previous_config_revision"):
             if not isinstance(rollback.get(field), str) or not rollback[field].strip():
                 errors.append(f"rollback.{field}: required")
+        if isinstance(rollback.get("previous_image_digest"), str) and not IMAGE_DIGEST_RE.fullmatch(rollback["previous_image_digest"]):
+            errors.append("rollback.previous_image_digest: must use an immutable sha256 image digest")
         if rollback.get("config_restore_ref") is None or not str(rollback.get("config_restore_ref", "")).strip():
             errors.append("rollback.config_restore_ref: required immutable config snapshot")
         if rollback.get("automatic_on_health_failure") is not True:
