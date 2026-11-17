@@ -41,6 +41,7 @@ def create_graph_router(
     authorize_read: GraphReadAuthorizer,
     resolve_governance: GovernanceResolver | None = None,
     resolve_knowledge_principal: Callable[[Request], Awaitable[Any]] | None = None,
+    visualization_url: str | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/graph", tags=["knowledge-graph"])
 
@@ -89,6 +90,11 @@ def create_graph_router(
             "project_id": relation.project_id,
             "attributes": dict(relation.attributes),
         }
+
+    @router.get("/visualization")
+    async def graph_visualization(request: Request):
+        await context(request)
+        return {"configured": visualization_url is not None, "url": visualization_url}
 
     @router.get("/entities")
     async def search_entities(
