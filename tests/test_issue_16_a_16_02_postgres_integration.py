@@ -83,11 +83,11 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
         self.assertTrue(created)
         self.assertNotIn(other_tenant_id, event_ids)
         self.assertEqual(
-            {row["event_id"] for row in await self.alerts.list_open(scope_key=self.tenant_a)},
+            {str(row["event_id"]) for row in await self.alerts.list_open(scope_key=self.tenant_a)},
             event_ids,
         )
         self.assertEqual(
-            {row["event_id"] for row in await self.alerts.list_open(scope_key=self.tenant_b)},
+            {str(row["event_id"]) for row in await self.alerts.list_open(scope_key=self.tenant_b)},
             {other_tenant_id},
         )
 
@@ -104,7 +104,7 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
         )
         claimed = [row for batch in batches for row in batch]
         self.assertEqual(len(claimed), 1)
-        self.assertEqual(claimed[0]["event_id"], event_id)
+        self.assertEqual(str(claimed[0]["event_id"]), event_id)
         self.assertEqual(claimed[0]["delivery_attempts"], 1)
 
         await self.alerts.mark_delivery(
@@ -123,7 +123,7 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
             event_id, success=True, now=datetime.now(timezone.utc),
         )
         rows = await self.alerts.list_open(scope_key=self.tenant_a)
-        persisted = next(row for row in rows if row["event_id"] == event_id)
+        persisted = next(row for row in rows if str(row["event_id"]) == event_id)
         self.assertEqual(persisted["delivery_status"], "sent")
         self.assertEqual(persisted["delivery_attempts"], 2)
 
@@ -228,7 +228,9 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
         self.assertEqual(sorted(item.version for item in versions), [1, 2, 3, 4, 5])
         stored = await self.prompts.list_versions(prompt_id)
         self.assertEqual([item.version for item in stored], [1, 2, 3, 4, 5])
-        async with await self.connect() as connection:
+        async with await AsyncConnection.connect(
+            DSN, autocommit=True, row_factory=dict_row,
+        ) as connection:
             with self.assertRaises(Exception):
                 await connection.execute(
                     "UPDATE platform_prompt_versions SET template='tampered' "
