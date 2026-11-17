@@ -19,18 +19,18 @@ class AsyncPromptRegistry:
         self.keys.append(prompt_id)
         return self.inner.register(prompt_id, template)
 
-    async def rollback(self, prompt_id, version, *, updated_by):
+    async def rollback(self, prompt_id, version, *, updated_by, evaluation_run_id=None):
         self.keys.append(prompt_id)
         self.inner.activate(prompt_id, version)
 
     async def list_audit(self, prompt_id, *, limit=100):
         return [{"prompt_id": prompt_id, "action": "version.rolled_back"}]
 
-    async def activate(self, prompt_id, version, *, updated_by):
+    async def activate(self, prompt_id, version, *, updated_by, evaluation_run_id=None):
         self.keys.append(prompt_id)
         self.inner.activate(prompt_id, version)
 
-    async def set_canary(self, prompt_id, version, percentage, *, updated_by):
+    async def set_canary(self, prompt_id, version, percentage, *, updated_by, evaluation_run_id=None):
         self.keys.append(prompt_id)
         self.inner.set_canary(prompt_id, version, percentage)
 
