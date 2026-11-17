@@ -96,7 +96,6 @@ class PostgresGraphRepository:
                       AND platform_graph_entities.source_domain=EXCLUDED.source_domain
                       AND platform_graph_entities.source_type=EXCLUDED.source_type
                       AND platform_graph_entities.source_id=EXCLUDED.source_id
-                      AND platform_graph_entities.source_version=EXCLUDED.source_version
                     RETURNING entity_id""",
                     (
                         entity.tenant_id, entity.entity_id, entity.entity_type,
@@ -126,6 +125,24 @@ class PostgresGraphRepository:
         conn = await self._connect()
         async with conn:
             async with conn.transaction():
+                cur = await conn.execute(
+                    """SELECT entity_id,project_id FROM platform_graph_entities
+                    WHERE tenant_id=%s AND entity_id=ANY(%s) FOR KEY SHARE""",
+                    (
+                        relation.tenant_id,
+                        [relation.source_entity_id, relation.target_entity_id],
+                    ),
+                )
+                endpoints = await cur.fetchall()
+                if len(endpoints) != 2:
+                    raise ValueError("both relation endpoints must exist in the same tenant")
+                allowed_projects = {None, relation.project_id}
+                if any(row["project_id"] not in allowed_projects for row in endpoints):
+                    raise ValueError("relation endpoints cross project boundaries")
+                if relation.project_id is None and any(
+                    row["project_id"] is not None for row in endpoints
+                ):
+                    raise ValueError("project-scoped endpoints require a project-scoped relation")
                 cur = await conn.execute(
                     """INSERT INTO platform_graph_relations
                     (tenant_id,relation_id,relation_type,project_id,
