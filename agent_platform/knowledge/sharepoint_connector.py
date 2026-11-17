@@ -48,7 +48,7 @@ class SharePointKnowledgeConnector(BaseConnector):
         self,
         *,
         client: Any,
-        credentials: MicrosoftGraphCredentialResolver,
+        credentials: MicrosoftGraphCredentialResolver | None = None,
         credential_ref: str,
         drive_id: str,
         document_factory: DocumentFactory,
