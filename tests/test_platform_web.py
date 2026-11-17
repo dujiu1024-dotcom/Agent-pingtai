@@ -14,6 +14,28 @@ def test_platform_web_serves_independent_assets():
     assert "workbench/capabilities" in client.get("/app/assets/app.js").text
     assert client.get("/app/assets/style.css").status_code == 200
 
+def test_platform_web_serves_modular_legacy_console_assets_and_preloads_workbench_critical_resources():
+    app = FastAPI()
+    app.include_router(create_platform_web_router())
+    client = TestClient(app)
+
+    legacy = client.get("/app/assets/console.js")
+    config = client.get("/app/assets/console-config.js")
+    assert legacy.status_code == 200
+    assert config.status_code == 200
+    assert "from './console-config.js'" in legacy.text
+    assert "export const ROLE_META" in config.text
+    assert "await import('./console-config.js')" not in legacy.text
+
+    page = client.get("/app/")
+    assert 'rel="preload" href="/app/assets/style.css" as="style" fetchpriority="high"' in page.text
+    assert 'rel="preload" href="/app/assets/app.js" as="script" fetchpriority="high"' in page.text
+
+    legacy_page = client.get("/app/?legacy=1")
+    assert '<script type="module" src="/app/assets/console.js"></script>' in legacy_page.text
+    assert "<script>" not in legacy_page.text
+
+
 def test_platform_web_rejects_unknown_asset():
     app = FastAPI()
     app.include_router(create_platform_web_router())
