@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from datetime import datetime, timezone
 
 from agent_platform.quotas.policies import (
     InMemoryQuotaPolicyRepository,
+    PostgresQuotaPolicyRepository,
     QuotaPolicy,
+    QuotaPolicyAudit,
     QuotaPolicyContext,
     QuotaPolicyService,
 )
@@ -129,11 +132,6 @@ class _FakePostgresConnection:
 
 class PostgresQuotaPolicyAtomicityTests(unittest.IsolatedAsyncioTestCase):
     async def test_policy_and_audit_are_written_in_one_transaction(self):
-        from agent_platform.quotas.policies import (
-            PostgresQuotaPolicyRepository, QuotaPolicyAudit,
-        )
-        from datetime import datetime, timezone
-
         connection = _FakePostgresConnection()
         repository = PostgresQuotaPolicyRepository(lambda: _async_value(connection))
         policy = QuotaPolicy(
