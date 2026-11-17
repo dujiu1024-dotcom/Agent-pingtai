@@ -220,9 +220,6 @@ class PromptABExperimentTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class FakePostgresCursor:
     def __init__(self, row):
@@ -283,7 +280,6 @@ class PromptExperimentPostgresRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(restored.matrix), len(dataset().cases) * 2)
 
     async def test_postgres_repository_rejects_non_finite_report_values(self):
-        from dataclasses import replace
         from agent_platform.observability.prompt_experiments import (
             PostgresPromptExperimentRepository, PromptExperimentReport,
         )
@@ -305,3 +301,7 @@ class PromptExperimentPostgresRepositoryTests(unittest.IsolatedAsyncioTestCase):
         repository = PostgresPromptExperimentRepository(lambda: FakePostgresConnection({}))
         with self.assertRaisesRegex(ValueError, "tenant_id"):
             await repository.get(" ", "8b7b2b75-4f5e-4f3e-a4b8-6a8e67e4f6d1")
+
+
+if __name__ == "__main__":
+    unittest.main()
