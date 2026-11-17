@@ -209,16 +209,26 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         revenue = by_outcome["reject"]
         growth_conflict = next(c for c in review["conflicts"] if c["conflict_key"] == "growth")
         revenue_conflict = next(c for c in review["conflicts"] if c["conflict_key"] == "revenue")
-        self.assertEqual(growth.source_refs, (
-            growth_conflict["blackboard_entry_id"],
-            growth_conflict["blackboard_challenge_entry_id"],
-            "source:growth-decision",
-        ))
-        self.assertEqual(revenue.source_refs, (
-            revenue_conflict["blackboard_entry_id"],
-            revenue_conflict["blackboard_challenge_entry_id"],
-            "source:revenue-decision",
-        ))
+        self.assertEqual(
+            growth.source_refs[:2],
+            (
+                growth_conflict["blackboard_entry_id"],
+                growth_conflict["blackboard_challenge_entry_id"],
+            ),
+        )
+        self.assertIn(contribution["blackboard_entry_id"], growth.source_refs)
+        self.assertIn("source:growth-review", growth.source_refs)
+        self.assertIn("source:growth-decision", growth.source_refs)
+        self.assertEqual(
+            revenue.source_refs[:2],
+            (
+                revenue_conflict["blackboard_entry_id"],
+                revenue_conflict["blackboard_challenge_entry_id"],
+            ),
+        )
+        self.assertIn(contribution["blackboard_entry_id"], revenue.source_refs)
+        self.assertIn("source:revenue-review", revenue.source_refs)
+        self.assertIn("source:revenue-decision", revenue.source_refs)
 
     async def test_approval_requires_a_persisted_request_and_boolean_decision(self):
         services = BlackboardMultiExpertServices(
