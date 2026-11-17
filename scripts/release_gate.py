@@ -24,6 +24,7 @@ REQUIRED_CHECKS = (
     "production_smoke",
     "migration",
     "rollback",
+    "egress_policy",
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PLACEHOLDER_RE = re.compile(
@@ -83,7 +84,6 @@ def validate_evidence(
     errors: list[str] = []
     if not isinstance(document, dict):
         return ["evidence document must be a JSON object"]
-    # bool is a subclass of int in Python; reject JSON true/false explicitly.
     if type(document.get("schema_version")) is not int or document["schema_version"] != 1:
         errors.append("schema_version must be the integer 1")
     for field in ("release_id", "environment"):
@@ -102,11 +102,8 @@ def validate_evidence(
     current = now or datetime.now(timezone.utc)
     generated = _parse_utc(document.get("generated_at_utc"), "generated_at_utc", errors)
     _validate_timestamp_freshness(
-        generated,
-        "generated_at_utc",
-        current=current,
-        max_age_hours=max_age_hours,
-        errors=errors,
+        generated, "generated_at_utc", current=current,
+        max_age_hours=max_age_hours, errors=errors,
     )
 
     checks = document.get("checks")
@@ -127,16 +124,11 @@ def validate_evidence(
             elif _is_placeholder(value):
                 errors.append(f"checks.{name}.{field}: must not contain a template placeholder")
         verified = _parse_utc(
-            result.get("verified_at_utc"),
-            f"checks.{name}.verified_at_utc",
-            errors,
+            result.get("verified_at_utc"), f"checks.{name}.verified_at_utc", errors,
         )
         _validate_timestamp_freshness(
-            verified,
-            f"checks.{name}.verified_at_utc",
-            current=current,
-            max_age_hours=max_age_hours,
-            errors=errors,
+            verified, f"checks.{name}.verified_at_utc", current=current,
+            max_age_hours=max_age_hours, errors=errors,
         )
     return errors
 
