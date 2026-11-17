@@ -93,5 +93,105 @@ class EvaluationScheduleWorkerTests(unittest.IsolatedAsyncioTestCase):
             await worker.run_once()
 
 
+class FakeDistributedLeaseStore:
+    def __init__(self):
+        self.rows = {}
+        self.lock = asyncio.Lock()
+
+    async def claim(self, schedule, *, owner_id, now, lease_seconds):
+        async with self.lock:
+            key = (schedule.tenant_id, schedule.schedule_id)
+            row = self.rows.get(key)
+            if row is not None and (
+                row["next_run_at"] > now
+                or (row["lease_expires_at"] is not None and row["lease_expires_at"] > now)
+            ):
+                return False
+            self.rows[key] = {
+                "owner_id": owner_id,
+                "lease_expires_at": now + timedelta(seconds=lease_seconds),
+                "next_run_at": row["next_run_at"] if row else now,
+            }
+            return True
+
+    async def renew(self, schedule, *, owner_id, now, lease_seconds):
+        async with self.lock:
+            row = self.rows.get((schedule.tenant_id, schedule.schedule_id))
+            if row is None or row["owner_id"] != owner_id or row["lease_expires_at"] <= now:
+                return False
+            row["lease_expires_at"] = now + timedelta(seconds=lease_seconds)
+            return True
+
+    async def complete(self, schedule, *, owner_id, now, succeeded):
+        async with self.lock:
+            row = self.rows.get((schedule.tenant_id, schedule.schedule_id))
+            if row is None or row["owner_id"] != owner_id:
+                return False
+            row["next_run_at"] = now + schedule.interval if succeeded else now
+            row["owner_id"] = None
+            row["lease_expires_at"] = None
+            return True
+
+
+class DistributedEvaluationScheduleLeaseTests(unittest.IsolatedAsyncioTestCase):
+    def schedule(self):
+        return EvaluationSchedule(
+            schedule_id="shared-nightly", tenant_id="tenant-a",
+            dataset_id="rag-regression", dataset_version=7,
+            model_key="model-candidate-v3", interval=timedelta(hours=1),
+        )
+
+    async def test_two_replicas_do_not_run_same_schedule_and_interval_survives_restart(self):
+        now = datetime(2026, 11, 18, 1, tzinfo=timezone.utc)
+        leases = FakeDistributedLeaseStore()
+        service = FakeEvaluationService()
+        first = EvaluationScheduleWorker(
+            service=service, schedules=(self.schedule(),), clock=lambda: now,
+            lease_store=leases, owner_id="replica-a",
+        )
+        second = EvaluationScheduleWorker(
+            service=service, schedules=(self.schedule(),), clock=lambda: now,
+            lease_store=leases, owner_id="replica-b",
+        )
+
+        results = await asyncio.gather(first.run_once(), second.run_once())
+
+        self.assertEqual(sum(item["succeeded"] for item in results), 1)
+        self.assertEqual(sum(item["due"] for item in results), 1)
+        self.assertEqual(len(service.calls), 1)
+        restarted = EvaluationScheduleWorker(
+            service=service, schedules=(self.schedule(),), clock=lambda: now,
+            lease_store=leases, owner_id="replica-c",
+        )
+        self.assertEqual(await restarted.run_once(), {"due": 0, "succeeded": 0, "failed": 0})
+        self.assertEqual(len(service.calls), 1)
+
+    async def test_failed_run_releases_lease_for_next_cycle_retry(self):
+        now = datetime(2026, 11, 18, 1, tzinfo=timezone.utc)
+        leases = FakeDistributedLeaseStore()
+        service = FakeEvaluationService(fail_ids={"rag-regression"})
+        worker = EvaluationScheduleWorker(
+            service=service, schedules=(self.schedule(),), clock=lambda: now,
+            lease_store=leases, owner_id="replica-a",
+        )
+
+        self.assertEqual(await worker.run_once(), {"due": 1, "succeeded": 0, "failed": 1})
+        service.fail_ids.clear()
+        self.assertEqual(await worker.run_once(), {"due": 1, "succeeded": 1, "failed": 0})
+        self.assertEqual(len(service.calls), 2)
+
+    async def test_worker_rejects_invalid_lease_configuration(self):
+        with self.assertRaisesRegex(ValueError, "lease_seconds"):
+            EvaluationScheduleWorker(
+                service=FakeEvaluationService(), schedules=(self.schedule(),),
+                lease_store=FakeDistributedLeaseStore(), lease_seconds=1,
+            )
+        with self.assertRaisesRegex(TypeError, "lease_store"):
+            EvaluationScheduleWorker(
+                service=FakeEvaluationService(), schedules=(self.schedule(),),
+                lease_store=object(),
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
