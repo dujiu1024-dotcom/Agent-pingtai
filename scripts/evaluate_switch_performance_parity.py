@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,12 @@ METRICS = {
 
 
 def _positive_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    )
 
 
 def _missing_fields(report: dict[str, Any], section: str, fields: tuple[str, ...]) -> list[str]:
@@ -50,8 +56,13 @@ def evaluate_parity(
     max_regression_pct: float = 0.0,
 ) -> dict[str, Any]:
     """Compare equivalent reports; return pass/fail/incomplete without guessing."""
-    if max_regression_pct < 0:
-        raise ValueError("max_regression_pct must be a non-negative number")
+    if (
+        isinstance(max_regression_pct, bool)
+        or not isinstance(max_regression_pct, (int, float))
+        or not math.isfinite(max_regression_pct)
+        or not 0 <= max_regression_pct <= 100
+    ):
+        raise ValueError("max_regression_pct must be finite and between 0 and 100")
     missing: list[str] = []
     for label, report in (("legacy", legacy), ("platform", platform)):
         if not isinstance(report, dict):
@@ -124,8 +135,11 @@ def main() -> int:
     parser.add_argument("--platform", required=True, type=Path, help="New platform benchmark JSON")
     parser.add_argument("--max-regression-pct", type=float, default=0.0)
     args = parser.parse_args()
-    if args.max_regression_pct < 0:
-        parser.error("--max-regression-pct must be non-negative")
+    if (
+        not math.isfinite(args.max_regression_pct)
+        or not 0 <= args.max_regression_pct <= 100
+    ):
+        parser.error("--max-regression-pct must be finite and between 0 and 100")
     try:
         legacy = json.loads(args.legacy.read_text(encoding="utf-8"))
         platform = json.loads(args.platform.read_text(encoding="utf-8"))
