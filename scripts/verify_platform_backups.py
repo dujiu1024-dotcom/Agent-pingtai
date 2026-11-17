@@ -21,10 +21,10 @@ from typing import Any
 
 SIDECAR_RE = re.compile(r"^([0-9a-f]{64})  ([^\r\n]+)\n?$")
 EXPECTED_FORMATS = {
+    "platform-config-": "platform-config-tar-age-v1",
     "platform-": "postgres-custom-age-v1",
     "redis-": "redis-rdb-age-v1",
     "object-storage-": "minio-mirror-age-v1",
-    "platform-config-": "platform-config-tar-age-v1",
 }
 
 
