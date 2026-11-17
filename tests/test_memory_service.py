@@ -84,6 +84,57 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(expired,1)
         self.assertEqual(await service.retrieve(principal=principal),[])
 
+    async def test_export_includes_non_active_owned_records_but_not_other_users_or_deleted(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        principal = MemoryPrincipal(tenant_id="t", user_id="u1")
+        manager = MemoryPrincipal(
+            tenant_id="t", user_id="reviewer",
+            permissions=frozenset({"memory.manage"}),
+        )
+
+        active = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u1",
+            content="active fact", source_ref="chat:active",
+            confidence=0.9, created_by="extractor",
+        )
+        archived = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u1",
+            content="archived fact", source_ref="chat:archived",
+            confidence=0.8, created_by="extractor",
+        )
+        pending = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u1",
+            content="pending candidate", source_ref="chat:pending",
+            confidence=0.7, created_by="extractor",
+        )
+        foreign = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u2",
+            content="private other-user fact", source_ref="chat:foreign",
+            confidence=1.0, created_by="u2",
+        )
+        deleted = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="u1",
+            content="deleted fact", source_ref="chat:deleted",
+            confidence=0.6, created_by="extractor",
+        )
+        for candidate in (active, archived, pending, foreign, deleted):
+            await service.propose(candidate)
+        for candidate in (active, archived, foreign, deleted):
+            await service.confirm(principal=manager, memory_id=candidate.memory_id)
+        await service.archive(principal=manager, memory_id=archived.memory_id)
+        await service.forget(principal=manager, memory_id=deleted.memory_id)
+
+        exported = await service.export(principal=principal)
+        by_id = {item["memory_id"]: item for item in exported}
+        self.assertEqual(set(by_id), {
+            active.memory_id, archived.memory_id, pending.memory_id,
+        })
+        self.assertEqual(by_id[active.memory_id]["status"], "active")
+        self.assertEqual(by_id[archived.memory_id]["status"], "archived")
+        self.assertEqual(by_id[pending.memory_id]["status"], "candidate")
+        self.assertNotIn(foreign.memory_id, by_id)
+        self.assertNotIn(deleted.memory_id, by_id)
+
     async def test_conflict_resolution_and_archive(self):
         from agent_platform.memory.service import MemoryStatus
         service=MemoryService(InMemoryMemoryRepository())
@@ -519,4 +570,41 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(selected.status.value, "active")
         self.assertEqual(calls, [previous.memory_id, previous.memory_id])
+
+    async def test_export_includes_immutable_version_history(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        principal = MemoryPrincipal(tenant_id="t", user_id="owner")
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="owner",
+            content="original preference", source_ref="chat:original",
+            confidence=0.7, created_by="extractor",
+            metadata={"origin": "conversation"},
+        )
+        await service.propose(candidate)
+        await service.confirm(principal=principal, memory_id=candidate.memory_id)
+        await service.correct(
+            principal=principal, memory_id=candidate.memory_id,
+            content="corrected preference", source_ref="chat:correction",
+            confidence=0.95,
+        )
+
+        exported = await service.export(principal=principal)
+        self.assertEqual(len(exported), 1)
+        item = exported[0]
+        self.assertEqual(item["version"], 2)
+        self.assertEqual(item["content"], "corrected preference")
+        self.assertEqual(
+            [entry["version"] for entry in item["history"]], [1, 2],
+        )
+        self.assertEqual(
+            [entry["content"] for entry in item["history"]],
+            ["original preference", "corrected preference"],
+        )
+        self.assertEqual(
+            [entry["source_ref"] for entry in item["history"]],
+            ["chat:original", "chat:correction"],
+        )
+        self.assertEqual(item["history"][0]["status"], "active")
+        self.assertEqual(item["history"][1]["confirmed_by"], "owner")
+        self.assertEqual(item["history"][1]["metadata"], {"origin": "conversation"})
 
