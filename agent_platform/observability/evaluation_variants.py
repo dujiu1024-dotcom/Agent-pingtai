@@ -187,7 +187,7 @@ class MultiVariantEvaluationRunService:
                     )
                     if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 1:
                         raise ValueError("judge score must be between 0 and 1")
-                                        threshold = case.rubric.get("pass_threshold", 1.0)
+                    threshold = case.rubric.get("pass_threshold", 1.0)
                     if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
                         raise ValueError("pass_threshold must be between 0 and 1")
                     scored = VariantCaseScore(
