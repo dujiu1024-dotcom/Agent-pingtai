@@ -31,7 +31,7 @@ def create_run_replay_router(*, resolve_principal: PrincipalResolver,
             return replay._state(session)
         except Exception as exc: raise translate(exc) from exc
     async def action(request: Request, run_id: str, session_id: str, name: str, **kwargs: Any):
-        principal, replay = await service(request, run_id, "rerun" if name == "rerun" else "read")
+        principal, replay = await service(request, run_id, "rerun" if name in {"rerun", "update_context"} else "read")
         try:
             method = getattr(replay, name)
             return await method(tenant_id=principal.tenant_id, run_id=run_id,
@@ -52,6 +52,16 @@ def create_run_replay_router(*, resolve_principal: PrincipalResolver,
     @router.post("/{session_id}/resume")
     async def resume(run_id: str, session_id: str, request: Request):
         return await action(request, run_id, session_id, "resume")
+
+    @router.patch("/{session_id}/context")
+    async def update_context(run_id: str, session_id: str, request: Request):
+        try:
+            patch = await request.json()
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise HTTPException(400, "request body must be valid JSON") from exc
+        if not isinstance(patch, dict) or not patch:
+            raise HTTPException(400, "context patch must be a non-empty JSON object")
+        return await action(request, run_id, session_id, "update_context", patch=patch)
     @router.post("/{session_id}/fast-forward")
     async def fast_forward(run_id: str, session_id: str, request: Request):
         return await action(request, run_id, session_id, "fast_forward")
