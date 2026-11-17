@@ -270,9 +270,23 @@ class PostgresKnowledgeCatalog:
                          ON d.tenant_id = m.tenant_id
                         AND d.document_id = m.document_id
                         AND d.deleted_at IS NULL
+                        AND d.version = (
+                            SELECT max(latest.version)
+                            FROM knowledge_documents latest
+                            WHERE latest.tenant_id = d.tenant_id
+                              AND latest.document_id = d.document_id
+                              AND latest.deleted_at IS NULL
+                        )
                        WHERE m.tenant_id = %s
                          AND m.collection_id = %s
-                         AND m.document_id = %s""",
+                         AND m.document_id = %s
+                         AND (
+                             (c.project_id IS NULL AND d.scope = 'tenant')
+                             OR
+                             (c.project_id IS NOT NULL
+                              AND d.scope = 'project'
+                              AND d.project_id = c.project_id)
+                         )""",
                     (tenant_id, collection_id, document_id),
                 )
                 if await cur.fetchone() is not None:
