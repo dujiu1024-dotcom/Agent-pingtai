@@ -366,10 +366,17 @@ async function renderReplay(){
   btn("重新加载","data-replay-reopen='1'");
  const selectedSequence=Number(selected?.sequence||0);
  const canRerun=Boolean(selected?.step_id&&(payload.replay_input!==undefined||payload.replay_input_ref));
+ const editableContext=r.context?.run_context||{};
+ const editablePatch={};
+ for(const key of ["objective","request","constraints","decisions","evidence","todo"]){
+  if(Object.prototype.hasOwnProperty.call(editableContext,key))editablePatch[key]=editableContext[key];
+ }
+ const contextEditor="<form id='replay-context-form'><label>可编辑上下文（JSON）<textarea name='context_patch' rows='8' "+(r.paused?"":"disabled")+">"+esc(JSON.stringify(editablePatch,null,2))+"</textarea></label><button class='button primary' "+(r.paused?"":"disabled")+">保存修改</button><p class='subtle'>仅暂停状态可修改 objective、request、constraints、decisions、evidence、todo；修改仅作用于当前 Replay Session，不覆盖原 Run 快照。</p></form>";
  root.innerHTML=
   panel("Run 回放控制","<p>Run：<code>"+esc(r.runId)+"</code> · Session：<code>"+esc(r.session_id)+"</code></p><p>游标："+cursor+" / "+Number(r.total||events.length)+" · "+(r.paused?"已暂停":"播放就绪")+"</p>"+controls+(canRerun?btn("重跑当前步骤","data-replay-rerun='"+selectedSequence+"'"):"<p class='subtle'>当前事件没有持久化 step_id 与 replay_input/ref，不提供重跑入口。</p>"))+
   panel("Run 时间线",table(["序号","事件","发生时间","Step","操作"],replayTimelineRows(events,cursor)))+
   panel("当前事件与重建上下文","<p>事件："+esc(selected?replayEventType(selected):"尚未定位")+" · Step："+esc(selected?.step_id||"—")+"</p>"+pre({event:selected,context:r.context||{}}))+
+  panel("暂停时修改回放上下文",contextEditor)+
   panel("Blackboard 快照",blackboardSnapshot!==null?pre(blackboardSnapshot):
    (r.blackboardError?"<p class='error'>Blackboard 数据不可用："+esc(r.blackboardError)+"</p>":pre(snapshot)))+
   panel("Agent / Tool 消息流转",messages.length?messages.map(m=>"<article class='message'><header><b>"+esc(m.role)+" · "+esc(m.type)+"</b><small>"+esc(m.name)+"</small></header>"+pre(m.content)+"</article>").join(""):"<p class='subtle'>当前 Run 事件中没有可识别的 Agent/LLM/Tool 消息载荷。</p>");
@@ -380,6 +387,21 @@ render=async function(){
  return replayBaseRender();
 };
 document.addEventListener("submit",async e=>{
+ const form=e.target;
+ if(form.id==="replay-context-form"){
+  e.preventDefault();
+  if(!S.replay?.paused){toast("请先暂停 Replay 再修改上下文");return}
+  try{
+   const patch=JSON.parse(String(new FormData(form).get("context_patch")||""));
+   if(!patch||typeof patch!=="object"||Array.isArray(patch)||!Object.keys(patch).length)throw Error("请输入非空 JSON 对象");
+   const result=await api(replayEndpoint(S.replay.runId)+"/"+encodeURIComponent(S.replay.session_id)+"/context",
+    {method:"PATCH",body:JSON.stringify(patch)});
+   S.replay={...S.replay,...result,currentEvent:S.replay.currentEvent};
+   toast("Replay 上下文已更新（仅当前 Session）");
+   await renderReplay();
+  }catch(error){toast(error.message)}
+  return;
+ }
  const f=e.target;if(f.id!=="replay-open-form")return;e.preventDefault();
  const runId=String(new FormData(f).get("run_id")||"").trim();if(!runId){toast("请输入 Run ID");return}
  try{await openReplay(runId)}catch(x){toast(x.message)}
