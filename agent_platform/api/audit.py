@@ -62,6 +62,6 @@ def create_audit_router(*, reader: Any, authorize_read: Callable[[Principal], An
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"tenant_id": principal.tenant_id, "items": list(items)}
+        return {"tenant_id": principal.tenant_id, "items": [redact_payload(dict(item)) for item in items]}
 
     return router
