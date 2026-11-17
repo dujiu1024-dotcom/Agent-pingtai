@@ -114,7 +114,6 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         tenant, projects, spec = repo.calls[0]
         self.assertEqual(tenant, "tenant-a")
         self.assertEqual(projects, frozenset({"project-read", "project-manage"}))
-        self.assertIs(spec, _spec()) if False else None
         self.assertEqual([item["entity_id"] for item in result.items], ["e1", "e2"])
         self.assertFalse(result.truncated)
 
@@ -139,6 +138,24 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
                     await GraphQueryService(_Repository([row])).query(
                         principal=_principal(), spec=_spec()
                     )
+
+
+    async def test_paths_reject_unauthorized_intermediate_nodes(self):
+        repo = _Repository([
+            {
+                "tenant_id": "tenant-a", "project_id": None, "entity_id": "end",
+                "result_id": "path-1",
+                "path": [
+                    {"tenant_id": "tenant-a", "project_id": None, "entity_id": "start"},
+                    {"tenant_id": "tenant-a", "project_id": "project-secret", "entity_id": "middle"},
+                    {"tenant_id": "tenant-a", "project_id": None, "entity_id": "end"},
+                ],
+            }
+        ])
+        with self.assertRaises(GraphQueryAuthorizationError):
+            await GraphQueryService(repo).query(
+                principal=_principal(), spec=_spec(mode=GraphQueryMode.PATHS)
+            )
 
     async def test_query_timeout_is_fail_closed(self):
         repo = _Repository(delay=0.2)
