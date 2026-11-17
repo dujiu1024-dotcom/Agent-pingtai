@@ -23,7 +23,9 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                          'platform_quota_reserve',
                          'platform_quota_reserve_split',
                          'platform_quota_settle',
-                         'platform_quota_release'
+                         'platform_quota_release',
+                         'platform_quota_renew',
+                         'platform_quota_expire'
                        )"""
                 )
             ).fetchall()
@@ -41,7 +43,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             columns = await (
                 await conn.execute(
                     """SELECT column_name FROM information_schema.columns
-                       WHERE table_name='platform_usage_ledger' AND column_name='reservation_id'"""
+                       WHERE table_name='platform_quota_reservations' AND column_name IN ('heartbeat_at', 'expires_at')"""
                 )
             ).fetchall()
             context_columns = await (
@@ -54,6 +56,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({row[0] for row in rows}, {
             "platform_quota_reserve", "platform_quota_reserve_split",
             "platform_quota_settle", "platform_quota_release",
+            "platform_quota_renew", "platform_quota_expire",
         })
         self.assertEqual({row[0] for row in tables}, {
             "platform_quota_budgets", "platform_quota_reservations",
