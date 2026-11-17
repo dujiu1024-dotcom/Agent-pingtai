@@ -843,6 +843,38 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(audit.events[-1]["action"], "model.response")
         self.assertEqual(audit.events[-1]["outcome"], "succeeded")
 
+    async def test_partial_stream_failure_never_falls_back_after_visible_tokens(self):
+        class PartialFailureTransport:
+            def __init__(self):
+                self.calls = 0
+
+            async def complete(self, *, config, messages, request_parameters,
+                               timeout_seconds, on_token=None):
+                self.calls += 1
+                if on_token is not None:
+                    await on_token("already-visible")
+                raise ModelTransportError("connection lost after first delta")
+
+        transport = PartialFailureTransport()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport, audit_sink=AuditRecorder(),
+        )
+        tokens = []
+
+        async def on_token(token):
+            tokens.append(token)
+
+        with self.assertRaisesRegex(ModelUsageRecordingError, "fallback is prohibited"):
+            await router.complete(
+                snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-partial",
+                template_id="primary", fallback_template_ids=("fallback",),
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-partial", on_token=on_token,
+            )
+        self.assertEqual(tokens, ["already-visible"])
+        self.assertEqual(transport.calls, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
