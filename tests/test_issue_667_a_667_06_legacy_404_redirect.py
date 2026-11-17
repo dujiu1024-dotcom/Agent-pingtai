@@ -20,13 +20,12 @@ def test_unknown_browser_page_redirects_to_legacy_console() -> None:
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_unknown_api_path_remains_404_even_for_html_accept() -> None:
-    response = _client().get(
-        "/api/v1/legacy/unknown",
-        headers={"accept": "text/html"},
-    )
-    assert response.status_code == 404
-    assert "location" not in response.headers
+def test_unknown_api_paths_remain_404_even_for_html_accept() -> None:
+    client = _client()
+    for path in ("/api", "/api/v1/legacy/unknown"):
+        response = client.get(path, headers={"accept": "text/html"})
+        assert response.status_code == 404
+        assert "location" not in response.headers
 
 
 def test_unknown_file_and_non_browser_requests_remain_404() -> None:
