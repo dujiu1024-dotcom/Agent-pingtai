@@ -6,20 +6,30 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Generic, Iterator, Mapping, Protocol, TypeVar
 from urllib.error import HTTPError, URLError
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlencode, unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 API_VERSION = "v1"
 _ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 
+T = TypeVar("T")
+
+
 @dataclass(frozen=True)
-class ApiResponse:
+class ApiResponse(Generic[T]):
     status_code: int
     headers: Mapping[str, str]
-    body: Any
+    body: T
+
+
+@dataclass(frozen=True)
+class Page(Generic[T]):
+    items: tuple[T, ...]
+    next_cursor: str | None
+    has_more: bool
 
 
 class Transport(Protocol):
@@ -59,7 +69,35 @@ class PlatformApiError(RuntimeError):
         self.status_code = status_code
         self.body = body
         self.headers = dict(headers or {})
-        super().__init__(f"platform API returned HTTP {status_code}")
+        error = body.get("error", {}) if isinstance(body, dict) else {}
+        self.code = str(error.get("code") or "http_error")
+        self.message = str(error.get("message") or f"platform API returned HTTP {status_code}")
+        self.details = error.get("details")
+        self.request_id = body.get("request_id") if isinstance(body, dict) else None
+        self.request_id = self.request_id or next(
+            (value for key, value in self.headers.items() if key.lower() == "x-request-id"), None,
+        )
+        super().__init__(self.message)
+
+
+class AuthenticationError(PlatformApiError):
+    pass
+
+
+class AuthorizationError(PlatformApiError):
+    pass
+
+
+class RateLimitError(PlatformApiError):
+    pass
+
+
+class ConflictError(PlatformApiError):
+    pass
+
+
+class ServerError(PlatformApiError):
+    pass
 
 
 class PlatformClient:
@@ -149,6 +187,9 @@ class PlatformClient:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
+            "X-API-Version": "1",
+            "X-Request-ID": __import__("uuid").uuid4().hex,
+            "User-Agent": "agent-platform-python/0.1",
         }
         data = None
         if body is not None:
@@ -179,7 +220,11 @@ class PlatformClient:
                 raise RuntimeError("platform transport returned an invalid HTTP status")
             if 200 <= response.status_code < 300:
                 return response.body
-            error = PlatformApiError(response.status_code, response.body, response.headers)
+            error_type: type[PlatformApiError] = {
+                401: AuthenticationError, 403: AuthorizationError,
+                409: ConflictError, 429: RateLimitError,
+            }.get(response.status_code, ServerError if response.status_code >= 500 else PlatformApiError)
+            error = error_type(response.status_code, response.body, response.headers)
             if response.status_code not in retryable_statuses or attempt >= attempts:
                 raise error
             retry_after = next(
@@ -215,3 +260,35 @@ class PlatformClient:
         idempotency_key: str | None = None,
     ) -> Any:
         return self.request("POST", path, body=body, idempotency_key=idempotency_key)
+
+    def get_page(
+        self, path: str, *, limit: int = 100, cursor: str | None = None,
+    ) -> Page[Any]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("page limit must be between 1 and 200")
+        query = {"limit": limit}
+        if cursor is not None:
+            if not isinstance(cursor, str) or not cursor or len(cursor) > 2048:
+                raise ValueError("cursor must be a non-empty string up to 2048 characters")
+            query["cursor"] = cursor
+        separator = "&" if "?" in path else "?"
+        result = self.get(path + separator + urlencode(query))
+        if not isinstance(result, Mapping) or not isinstance(result.get("items"), list):
+            raise ValueError("paginated response must contain an items array")
+        next_cursor = result.get("next_cursor")
+        if next_cursor is not None and not isinstance(next_cursor, str):
+            raise ValueError("next_cursor must be a string or null")
+        return Page(
+            items=tuple(result["items"]),
+            next_cursor=next_cursor,
+            has_more=bool(result.get("has_more", bool(next_cursor))),
+        )
+
+    def iter_pages(self, path: str, *, limit: int = 100) -> Iterator[Any]:
+        cursor = None
+        while True:
+            page = self.get_page(path, limit=limit, cursor=cursor)
+            yield from page.items
+            if not page.has_more or not page.next_cursor:
+                break
+            cursor = page.next_cursor
