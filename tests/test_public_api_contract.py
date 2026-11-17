@@ -31,6 +31,32 @@ class PublicApiContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_page(cursor=" ")
 
+    def test_signed_cursor_is_tamper_evident_expiring_and_context_bound(self):
+        secret = b"k" * 32
+        token = encode_secure_cursor(
+            {"created_at": "2026-11-17T00:00:00Z", "id": "row-7"},
+            secret=secret, tenant_id="tenant-a", query_fingerprint="status=open", now=100,
+        )
+        self.assertEqual(
+            decode_secure_cursor(token, secret=secret, tenant_id="tenant-a",
+                                 query_fingerprint="status=open", now=101),
+            {"created_at": "2026-11-17T00:00:00Z", "id": "row-7"},
+        )
+        for kwargs in (
+            {"tenant_id": "tenant-b", "query_fingerprint": "status=open", "now": 101},
+            {"tenant_id": "tenant-a", "query_fingerprint": "status=closed", "now": 101},
+            {"tenant_id": "tenant-a", "query_fingerprint": "status=open", "now": 3700},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                decode_secure_cursor(token, secret=secret, **kwargs)
+        altered = token[:-1] + ("0" if token[-1] != "0" else "1")
+        with self.assertRaises(ValueError):
+            decode_secure_cursor(altered, secret=secret, tenant_id="tenant-a",
+                                 query_fingerprint="status=open", now=101)
+        with self.assertRaises(ValueError):
+            encode_secure_cursor({"id": 1}, secret=b"weak", tenant_id="tenant-a",
+                                query_fingerprint="all")
+
     def test_idempotency_key_and_scope_are_tenant_principal_route_bound(self):
         key = validate_idempotency_key("client:request-001")
         scope = idempotency_scope(
