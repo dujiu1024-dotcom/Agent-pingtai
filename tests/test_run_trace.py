@@ -42,9 +42,7 @@ class RunTraceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([event.event_id for event in page], [first.event_id])
         tail = await self.repository.list_events("tenant-a", "run-1", after_sequence=1)
         self.assertEqual([event.event_type for event in tail], [RunTraceEventType.STEP_START])
-        self.assertEqual(await self.repository.list_events("tenant-b", "run-1"), [
-            (await self.repository.list_events("tenant-b", "run-1"))[0]
-        ])
+        self.assertEqual(len(await self.repository.list_events("tenant-b", "run-1")), 1)
 
     async def test_payload_redaction_prevents_secrets_from_being_persisted(self):
         event = await self.service.emit(
@@ -99,6 +97,62 @@ class RunTraceTests(unittest.IsolatedAsyncioTestCase):
             await self.service.emit_blackboard_event(
                 tenant_id="tenant-a", run_id="run-bb", event=blackboard,
             )
+
+    async def test_blackboard_replay_import_is_idempotent_and_preserves_source_id(self):
+        from datetime import datetime, timezone
+        from agent_platform.contracts import Scope
+
+        event = SimpleNamespace(
+            event_id="bb-uuid", event_type="blackboard.entry_proposed",
+            scope=Scope.RUN, scope_id="run-import", entry_id="entry-x",
+            entry_version=1, actor_id="agent-a", correlation_id="corr-x",
+            occurred_at=datetime.now(timezone.utc),
+        )
+        class Replay:
+            async def list_after(self, *, cursor, scope, scope_id, limit):
+                self.assertions = (scope, scope_id, limit)
+                return [event] if cursor is None else []
+            @staticmethod
+            def cursor_for(item):
+                return item.event_id
+
+        replay = Replay()
+        service = RunTraceService(repository=self.repository, blackboard_replay=replay)
+        self.assertEqual(await service.capture_blackboard_events(tenant_id="tenant-a", run_id="run-import"), 1)
+        self.assertEqual(await service.capture_blackboard_events(tenant_id="tenant-a", run_id="run-import"), 1)
+        events = await self.repository.list_events("tenant-a", "run-import")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_id, "bb-uuid")
+        self.assertEqual(events[0].occurred_at, event.occurred_at)
+
+    async def test_executor_emits_run_start_step_and_complete(self):
+        from types import SimpleNamespace
+        from agent_platform.runtime.execution import LangGraphRunExecutor
+        from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager
+
+        class Graph:
+            checkpointer = object()
+            async def ainvoke(self, payload, *, config):
+                handler = config["callbacks"][0]
+                await handler.on_chain_start({"name": "workflow"}, payload, run_id="step-root")
+                await handler.on_chain_end({"result": "ok"}, run_id="step-root")
+                return {"result": payload}
+            async def aget_state(self, config):
+                return SimpleNamespace(config={"configurable": {"checkpoint_id": "cp-final"}})
+
+        store = InMemoryRunStateStore()
+        await store.create("tenant-a", "run-exec")
+        trace = RunTraceService(repository=self.repository)
+        executor = LangGraphRunExecutor(
+            graph=Graph(), lifecycle=RunLifecycleManager(store), trace_service=trace,
+        )
+        await executor.execute(tenant_id="tenant-a", run_id="run-exec", input={"prompt": "hi"})
+        events = await self.repository.list_events("tenant-a", "run-exec")
+        self.assertEqual(
+            [event.event_type for event in events],
+            [RunTraceEventType.RUN_START, RunTraceEventType.STEP_START,
+             RunTraceEventType.STEP_FINISH, RunTraceEventType.COMPLETE],
+        )
 
     async def test_langfuse_export_is_a_projection_of_persisted_events(self):
         class FakeObservation:
