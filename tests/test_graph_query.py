@@ -253,5 +253,55 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(retriever.assertion[2], ("project-a",))
 
 
+    async def test_subgraph_match_returns_only_internal_authorized_edges(self):
+        result = await self.service.match_subgraph(
+            ("a", "b", "c"), relation_types=("references",),
+            allowed_project_ids=("project-a",), require_connected=True,
+        )
+        self.assertEqual(
+            {item.entity_id for item in result.entities}, {"a", "b", "c"}
+        )
+        self.assertEqual(
+            {item.relation.relation_id for item in result.relations}, {"ab", "bc"}
+        )
+        self.assertFalse(result.truncated)
+
+    async def test_subgraph_match_rejects_disconnected_pattern_when_requested(self):
+        result = await self.service.match_subgraph(
+            ("a", "c"), allowed_project_ids=("project-a",), require_connected=True,
+        )
+        self.assertEqual(result.entities, ())
+        self.assertEqual(result.relations, ())
+
+    async def test_subgraph_match_enforces_node_and_relation_scope(self):
+        with self.assertRaisesRegex(ValueError, "1-50"):
+            await self.service.match_subgraph(
+                (), allowed_project_ids=("project-a",)
+            )
+        result = await self.service.match_subgraph(
+            ("a", "b"), allowed_project_ids=(),
+        )
+        self.assertEqual(result.entities, ())
+
+    async def test_neighbors_rejects_hidden_intermediate_entity(self):
+        class HiddenNeighborRepository(FakeGraphRepository):
+            async def get_entity(self, entity_id, *, allowed_project_ids=()):
+                if entity_id == "b":
+                    return EntityRecord(
+                        GraphEntity("tenant-a", "b", "document", {}, "secret-project"), "b"
+                    )
+                return await super().get_entity(
+                    entity_id, allowed_project_ids=allowed_project_ids
+                )
+
+        service = GraphQueryService(
+            tenant_id="tenant-a", repository=HiddenNeighborRepository()
+        )
+        with self.assertRaisesRegex(PermissionError, "outside project scope"):
+            await service.neighbors(
+                "a", direction="out", allowed_project_ids=("project-a",)
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
