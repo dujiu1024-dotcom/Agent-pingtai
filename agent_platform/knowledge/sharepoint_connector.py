@@ -13,6 +13,7 @@ import json
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import quote, urlsplit
 
+from agent_platform.connectors.base import BaseConnector, ConnectorAuthenticator
 from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
 from agent_platform.knowledge.contracts import Document
 
@@ -29,7 +30,7 @@ DocumentFactory = Callable[[str, str, Mapping[str, Any], str], Document]
 CredentialRevoker = Callable[[str], Any]
 
 
-class SharePointKnowledgeConnector:
+class SharePointKnowledgeConnector(BaseConnector):
     """Incremental SharePoint/OneDrive for Business connector using Graph delta."""
 
     connector_id = "sharepoint"
@@ -54,6 +55,8 @@ class SharePointKnowledgeConnector:
         credential_revoker: CredentialRevoker,
         max_file_bytes: int = 25 * 1024 * 1024,
         page_size: int = 100,
+        authenticator: ConnectorAuthenticator | None = None,
+        auth_scopes: tuple[str, ...] = ("files.read",),
     ) -> None:
         if not credential_ref.startswith("secret://"):
             raise ValueError("SharePoint credentials must use a secret:// reference")
@@ -65,20 +68,22 @@ class SharePointKnowledgeConnector:
             raise ValueError("invalid SharePoint page limit")
         if not callable(credential_revoker):
             raise ValueError("a host-owned Microsoft OAuth grant revoker is required")
+        super().__init__(
+            connector_id=self.connector_id, credential_ref=credential_ref,
+            credentials=credentials, authenticator=authenticator, auth_scopes=auth_scopes,
+        )
         self.client = client
-        self.credentials = credentials
-        self.credential_ref = credential_ref
         self.drive_id = drive_id
         self.document_factory = document_factory
         self.credential_revoker = credential_revoker
         self.max_file_bytes = max_file_bytes
         self.page_size = page_size
 
-    async def _token(self) -> str:
-        token = await self.credentials.resolve(self.credential_ref)
-        if not isinstance(token, str) or not token.strip():
-            raise MicrosoftGraphConnectorError("Microsoft Graph OAuth credential is unavailable")
-        return token
+    async def _token(self, tenant_id: str) -> str:
+        try:
+            return await self.authenticate(tenant_id=tenant_id)
+        except Exception as exc:
+            raise MicrosoftGraphConnectorError("Microsoft Graph OAuth credential is unavailable") from exc
 
     @staticmethod
     def _json(response: Any) -> dict[str, Any]:
@@ -258,7 +263,7 @@ class SharePointKnowledgeConnector:
             raise ValueError("tenant_id is required")
         if isinstance(limit, bool) or not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
-        token = await self._token()
+        token = await self._token(tenant_id)
         if cursor is None:
             url = (
                 f"{self._GRAPH}/drives/{quote(self.drive_id, safe='')}"
