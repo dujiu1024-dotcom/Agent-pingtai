@@ -8,7 +8,6 @@ from __future__ import annotations
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI
