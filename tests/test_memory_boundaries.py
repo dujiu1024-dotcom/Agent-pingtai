@@ -238,7 +238,7 @@ class SessionMemoryBoundaryTests:
         first = await service.propose_from_turn(principal=principal, turn=turn)
         second = await service.propose_from_turn(principal=principal, turn=turn)
         assert [item.candidate.memory_id for item in first] == [item.candidate.memory_id for item in second]
-        assert extractor.calls == 2
+        assert extractor.calls == 1
         assert len(await repository.list("tenant-a")) == 1
 
     @pytest.mark.asyncio
