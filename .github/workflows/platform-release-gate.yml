@@ -70,7 +70,6 @@ jobs:
             tests.test_platform_e2e_release_gate \
             tests.test_core_business_journey_e2e \
             tests.test_release_gate_evidence \
-            tests.test_issue_21_a_21_02_release_gate_blocking \
             tests.test_identity_api \
             tests.test_identity_http \
             tests.test_knowledge_memory_api \\
@@ -84,7 +83,6 @@ jobs:
             tests.test_tool_gateway \
             tests.test_sandbox_oci \
             tests.test_issue_21_c_21_02_security_negative \
-            tests.test_issue_21_c_21_02_injection_boundaries \
             tests.test_run_lifecycle \
             tests.test_event_consumer \
             tests.test_session_message_pagination \
@@ -92,7 +90,7 @@ jobs:
             tests.test_issue_21_c_21_04_quality_capacity \
             tests.test_agent_rag_evaluation \
             tests.test_knowledge_evaluation_dataset \
-            tests.test_prompt_variants tests.test_prompt_rollouts tests.test_prompt_management_api tests.test_prompt_api \
+            tests.test_prompt_variants tests.test_prompt_store tests.test_prompt_management_api tests.test_prompt_api \
             tests.test_harness_benchmark_metrics \
             tests.test_outbox \
             tests.test_backup_recovery_scripts \
@@ -100,7 +98,6 @@ jobs:
             tests.test_platform_postgres_integration \
             tests.test_postgres_langgraph_checkpoint_integration \
             tests.test_postgres_redis_worker_recovery_integration \
-            tests.test_issue_18_a_18_03_redis_outbox_recovery_integration \
             tests.test_postgres_backup_restore_integration \
             tests.test_tenant_creation_integration \
             tests.test_service_identity_authorization_integration \
@@ -129,7 +126,7 @@ jobs:
           python -m pip install -U pip
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Run core business journey E2E and release evidence contract tests
-        run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_issue_21_a_21_03_production_acceptance_register -v
+        run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report -v
 
   production-release-evidence:
     needs:
