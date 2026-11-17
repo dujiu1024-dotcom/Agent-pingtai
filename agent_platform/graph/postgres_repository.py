@@ -109,6 +109,14 @@ class PostgresGraphRepository:
 
         return cls(tenant_id=tenant_id, connection_factory=connect, schema=schema)
 
+    async def _lock_entity_ids(self, connection: Any, entity_ids: Sequence[str]) -> None:
+        """Serialize graph writes/deletes for endpoint IDs in deterministic order."""
+        for entity_id in sorted(set(entity_ids)):
+            await connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (f"{self.tenant_id}:{entity_id}",),
+            )
+
     def _check_project_write(self, project_id: str | None, allowed_project_ids: Sequence[str]) -> None:
         if project_id is not None and project_id not in set(allowed_project_ids):
             raise PermissionError("project is outside the authorized graph write scope")
@@ -184,6 +192,7 @@ class PostgresGraphRepository:
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
+                await self._lock_entity_ids(connection, (entity.entity_id,))
                 cursor = await connection.execute(
                     """
                     INSERT INTO graph_entities (
@@ -284,6 +293,9 @@ class PostgresGraphRepository:
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
+                await self._lock_entity_ids(
+                    connection, (relation.source_entity_id, relation.target_entity_id)
+                )
                 cursor = await connection.execute(
                     """
                     SELECT entity_id, entity_type, project_id
@@ -371,16 +383,117 @@ class PostgresGraphRepository:
         return [self._relation_record(row) for row in rows]
 
     async def delete_entity(self, entity_id: str, *, allowed_project_ids: Sequence[str] = ()) -> bool:
+        """Delete one entity atomically and enqueue durable derived-data invalidations.
+
+        The transaction-scoped advisory lock is shared with entity/relation writes.
+        Therefore a relation writer either commits before the relation snapshot below
+        (and is included in the outbox) or observes the missing endpoint after delete.
+        """
+        if not isinstance(entity_id, str) or not entity_id.strip():
+            raise ValueError("entity_id is required")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await self._lock_entity_ids(connection, (entity_id,))
+                cursor = await connection.execute(
+                    """
+                    SELECT entity_id FROM graph_entities
+                    WHERE tenant_id=%s AND entity_id=%s
+                      AND (project_id IS NULL OR project_id=ANY(%s))
+                    FOR UPDATE
+                    """,
+                    (self.tenant_id, entity_id, list(allowed_project_ids)),
+                )
+                if await cursor.fetchone() is None:
+                    return False
+                cursor = await connection.execute(
+                    """
+                    SELECT relation_id FROM graph_relations
+                    WHERE tenant_id=%s
+                      AND (source_entity_id=%s OR target_entity_id=%s)
+                    ORDER BY relation_id
+                    FOR UPDATE
+                    """,
+                    (self.tenant_id, entity_id, entity_id),
+                )
+                relation_ids = [row["relation_id"] for row in await cursor.fetchall()]
+                cursor = await connection.execute(
+                    """
+                    DELETE FROM graph_entities
+                    WHERE tenant_id=%s AND entity_id=%s
+                    RETURNING entity_id
+                    """,
+                    (self.tenant_id, entity_id),
+                )
+                if await cursor.fetchone() is None:
+                    return False
+                invalidations = [
+                    ("entity", entity_id, "delete"),
+                    ("cache", entity_id, "invalidate"),
+                    *(("relation", relation_id, "delete") for relation_id in relation_ids),
+                ]
+                for object_kind, object_id, operation in invalidations:
+                    await connection.execute(
+                        """
+                        INSERT INTO graph_invalidation_outbox (
+                            tenant_id, object_kind, object_id, operation, idempotency_key
+                        ) VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
+                        """,
+                        (
+                            self.tenant_id, object_kind, object_id, operation,
+                            f"delete:{entity_id}:{object_kind}:{object_id}",
+                        ),
+                    )
+                return True
+
+    async def claim_invalidation_jobs(
+        self, *, worker_id: str, limit: int = 50, lease_seconds: int = 60,
+    ) -> list[dict[str, Any]]:
+        if not isinstance(worker_id, str) or not worker_id.strip():
+            raise ValueError("worker_id is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        if isinstance(lease_seconds, bool) or not isinstance(lease_seconds, int) or not 5 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 5 and 3600")
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """
-                    DELETE FROM graph_entities
-                    WHERE tenant_id=%s AND entity_id=%s
-                      AND (project_id IS NULL OR project_id=ANY(%s))
-                    RETURNING entity_id
+                    WITH candidates AS (
+                        SELECT job_id FROM graph_invalidation_outbox
+                        WHERE tenant_id=%s
+                          AND ((status='pending' AND available_at<=now())
+                            OR (status='processing' AND lease_until<=now()))
+                          AND attempts < 8
+                        ORDER BY available_at, job_id
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT %s
+                    )
+                    UPDATE graph_invalidation_outbox AS job
+                    SET status='processing', attempts=job.attempts+1,
+                        lease_owner=%s, lease_until=now() + (%s * interval '1 second')
+                    FROM candidates
+                    WHERE job.job_id=candidates.job_id
+                    RETURNING job.*
                     """,
-                    (self.tenant_id, entity_id, list(allowed_project_ids)),
+                    (self.tenant_id, limit, worker_id, lease_seconds),
                 )
-                return await cursor.fetchone() is not None
+                return list(await cursor.fetchall())
+
+    async def complete_invalidation_job(self, *, job_id: str, worker_id: str) -> bool:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """
+                UPDATE graph_invalidation_outbox
+                SET status='completed', lease_owner=NULL, lease_until=NULL,
+                    completed_at=now()
+                WHERE tenant_id=%s AND job_id=%s AND status='processing'
+                  AND lease_owner=%s AND lease_until>now()
+                RETURNING job_id
+                """,
+                (self.tenant_id, job_id, worker_id),
+            )
+            return await cursor.fetchone() is not None
