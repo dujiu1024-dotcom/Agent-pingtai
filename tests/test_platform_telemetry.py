@@ -28,7 +28,15 @@ class PlatformTelemetryTests(unittest.TestCase):
         self.assertTrue(any(key.startswith("operation_retries_total") for key in snapshot["counters"]))
         self.assertTrue(any(key.startswith("tool_failures_total") for key in snapshot["counters"]))
         self.assertTrue(any(key.startswith("operation_rejections_total") for key in snapshot["counters"]))
-        self.assertTrue(any(key.startswith('queue_depth{component="queue",operation="poll",queue="background"}') for key in snapshot["observation_counts"]))
+        self.assertEqual(
+            snapshot["gauges"]['queue_depth{component="queue",operation="poll",queue="background"}'],
+            17.0,
+        )
+        telemetry.queue_depth(depth=9, queue="background")
+        self.assertEqual(
+            metrics.snapshot()["gauges"]['queue_depth{component="queue",operation="poll",queue="background"}'],
+            9.0,
+        )
 
     def test_high_cardinality_and_invalid_values_rejected(self):
         metrics = InMemoryMetricsRecorder()

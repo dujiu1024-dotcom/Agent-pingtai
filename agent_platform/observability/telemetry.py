@@ -79,8 +79,8 @@ class PlatformTelemetry:
                                labels=bounded_labels(component="tool", operation=operation, status="failed"))
 
     def queue_depth(self, *, depth: int, queue: str = "default") -> None:
-        self.metrics.observe("queue_depth", _number(depth, "depth"),
-                             labels=bounded_labels(component="queue", operation="poll", queue=queue))
+        self.metrics.set_gauge("queue_depth", _number(depth, "depth"),
+                               labels=bounded_labels(component="queue", operation="poll", queue=queue))
 
 
 class StructuredEventLogger:

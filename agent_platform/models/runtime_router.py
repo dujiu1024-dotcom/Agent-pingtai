@@ -640,6 +640,10 @@ class OpenAICompatibleModelRouter:
                     raise ModelUsageRecordingError(
                         "model response succeeded but quota settlement failed"
                     ) from exc
+            safe_metric(
+                self.metrics, "increment", "model_tokens_total",
+                input_tokens + output_tokens, labels=labels,
+            )
             if input_tokens > 0:
                 safe_metric(
                     self.metrics, "increment", "model_input_tokens_total", input_tokens,

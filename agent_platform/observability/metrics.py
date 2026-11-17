@@ -39,6 +39,7 @@ class InMemoryMetricsRecorder:
     def __init__(self) -> None:
         self._counters: dict[tuple[str, tuple[tuple[str, str], ...]], float] = defaultdict(float)
         self._observations: dict[tuple[str, tuple[tuple[str, str], ...]], list[float]] = defaultdict(list)
+        self._gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
         self._lock = threading.Lock()
 
     def increment(self, name: str, value: float = 1.0, *, labels: Mapping[str, str] | None = None) -> None:
@@ -53,6 +54,12 @@ class InMemoryMetricsRecorder:
         with self._lock:
             self._observations[key].append(normalized_value)
 
+    def set_gauge(self, name: str, value: float, *, labels: Mapping[str, str] | None = None) -> None:
+        normalized_value = _validate_value(value, kind="gauge")
+        key = _normalize(name, labels)
+        with self._lock:
+            self._gauges[key] = normalized_value
+
     def snapshot(self) -> dict[str, dict[str, float | int]]:
         with self._lock:
             counters: dict[str, float | int] = {
@@ -62,7 +69,10 @@ class InMemoryMetricsRecorder:
                 self._format_key(key): len(values)
                 for key, values in self._observations.items()
             }
-            return {"counters": counters, "observation_counts": observations}
+            gauges: dict[str, float | int] = {
+                self._format_key(key): value for key, value in self._gauges.items()
+            }
+            return {"counters": counters, "observation_counts": observations, "gauges": gauges}
 
     @staticmethod
     def _format_key(key: tuple[str, tuple[tuple[str, str], ...]]) -> str:
@@ -85,4 +95,6 @@ class InMemoryMetricsRecorder:
                 sum_key = self._format_key((name + "_sum", labels))
                 lines.append(f"{count_key} {len(values)}")
                 lines.append(f"{sum_key} {sum(values)}")
+            for key, value in sorted(self._gauges.items(), key=lambda item: item[0][0]):
+                lines.append(f"{self._format_key(key)} {value}")
             return "\n".join(lines) + ("\n" if lines else "")

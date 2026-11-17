@@ -66,6 +66,12 @@ class PrometheusClientMetricsRecorder:
                 name, f"Platform counter: {name}", labelnames=label_names,
                 registry=self._registry,
             )
+        elif kind == "gauge":
+            from prometheus_client import Gauge
+            metric = Gauge(
+                name, f"Platform gauge: {name}", labelnames=label_names,
+                registry=self._registry,
+            )
         else:
             metric = Histogram(
                 name, f"Platform observation: {name}", labelnames=label_names,
@@ -97,6 +103,14 @@ class PrometheusClientMetricsRecorder:
         with self._lock:
             metric = self._metric(name, "histogram", label_names)
             self._child(metric, normalized).observe(amount)
+
+    def set_gauge(
+        self, name: str, value: float, *, labels: Mapping[str, str] | None = None
+    ) -> None:
+        amount, normalized, label_names = self._validate(name, value, labels)
+        with self._lock:
+            metric = self._metric(name, "gauge", label_names)
+            self._child(metric, normalized).set(amount)
 
     def render_prometheus(self) -> str:
         from prometheus_client import generate_latest
