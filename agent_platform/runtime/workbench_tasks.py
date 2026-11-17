@@ -528,12 +528,14 @@ class RegistryLangGraphExecutorResolver:
         runtime_provider_resolver: Callable[[str], Any],
         graph_factory: Callable[..., Any],
         run_context_resolver: Callable[[str], Any] | None = None,
+        event_broker_resolver: Callable[[str], Any] | None = None,
     ) -> None:
         self.snapshots = snapshots
         self.lifecycle_resolver = lifecycle_resolver
         self.runtime_provider_resolver = runtime_provider_resolver
         self.graph_factory = graph_factory
-        self.run_context_resolver = run_context_resolver\n        self.event_broker_resolver = event_broker_resolver
+        self.run_context_resolver = run_context_resolver
+        self.event_broker_resolver = event_broker_resolver
 
     async def _resolve(self, callback: Callable[..., Any], *args: Any) -> Any:
         value = callback(*args)
@@ -632,6 +634,10 @@ class RegistryLangGraphExecutorResolver:
         if inspect.isawaitable(graph):
             graph = await graph
 
+        event_broker = None
+        if self.event_broker_resolver is not None:
+            event_broker = await self._resolve(self.event_broker_resolver, tenant_id)
+
         def build_executor(compiled_graph: Any) -> LangGraphRunExecutor:
             return LangGraphRunExecutor(
                 graph=compiled_graph, lifecycle=lifecycle, worker_id=worker_id,
@@ -640,6 +646,7 @@ class RegistryLangGraphExecutorResolver:
                 model_template_id=template_id,
                 required_tools=tuple(tool_ids),
                 run_context_service=run_context_service,
+                event_broker=event_broker,
             )
 
         if callable(getattr(graph, "__aenter__", None)) and callable(
