@@ -253,10 +253,13 @@ class Issue21C2103FaultInjectionTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ConnectionError, "commit outage"):
             await consumer.consume_batch(block_ms=0)
         self.assertEqual(len(effects.effects), 1)
-        # The receipt lease is still active, so a concurrent/replayed delivery is busy.
+        # Simulate lease expiry after the crashed worker; the replacement worker
+        # reclaims the event and the downstream idempotency key suppresses a repeat.
+        receipts.active.discard(("tenant-a", "worker-a", row[1]["event_id"]))
         result = await consumer.consume_batch(block_ms=0)
-        self.assertEqual(result["busy"], 1)
+        self.assertEqual(result["processed"], 1)
         self.assertEqual(len(effects.effects), 1)
+        self.assertEqual(redis.acked, [row[0]])
 
     async def fail_if_called(self, _event):
         self.fail("handler must not run when receipt storage is unavailable")
