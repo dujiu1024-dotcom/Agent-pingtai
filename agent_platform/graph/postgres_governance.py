@@ -13,6 +13,7 @@ from typing import Any, Callable, Mapping, Sequence
 from agent_platform.graph.governance import (
     GraphEntityStatus,
     GraphGovernanceConflict,
+    GraphInvalidationJob,
     GovernedGraphEntity,
     GovernedGraphRelation,
 )
@@ -499,7 +500,15 @@ class PostgresGraphGovernanceRepository:
                        FROM picked WHERE j.job_id=picked.job_id RETURNING j.*""",
                     (self.tenant_id, limit, worker_id, lease_seconds),
                 )
-                return tuple(await cursor.fetchall())
+                rows = await cursor.fetchall()
+                return tuple(GraphInvalidationJob(
+                    job_id=str(row["job_id"]), tenant_id=row["tenant_id"],
+                    object_kind=row["object_kind"], object_id=row["object_id"],
+                    operation=row["operation"], idempotency_key=row["idempotency_key"],
+                    status=row["status"], attempts=row["attempts"],
+                    available_at=row["available_at"], lease_owner=row["lease_owner"],
+                    lease_until=row["lease_until"],
+                ) for row in rows)
 
     async def complete_invalidation_job(self, *, job_id: str, worker_id: str) -> bool:
         connection = await self._connect()
