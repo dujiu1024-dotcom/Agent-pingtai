@@ -224,6 +224,7 @@ class GraphExtractionService:
         ):
             raise ValueError("evidence_spans must be a tuple of at most 200 source fragments")
         references: set[str] = set()
+        chunk_ids: set[str] = set()
         for span in source.evidence_spans:
             if not isinstance(span, GraphEvidenceSpan):
                 raise ValueError("evidence_spans must contain GraphEvidenceSpan values")
@@ -232,6 +233,9 @@ class GraphExtractionService:
                 or len(span.chunk_id) > 200
             ):
                 raise ValueError("evidence chunk_id must contain 1-200 characters")
+            if span.chunk_id in chunk_ids:
+                raise ValueError("evidence chunk IDs must be unique")
+            chunk_ids.add(span.chunk_id)
             for name in ("start_offset", "end_offset"):
                 value = getattr(span, name)
                 if isinstance(value, bool) or not isinstance(value, int):
