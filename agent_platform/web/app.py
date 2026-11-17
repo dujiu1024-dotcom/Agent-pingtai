@@ -5,7 +5,12 @@ from fastapi.responses import FileResponse
 
 STATIC = Path(__file__).with_name("static")
 LEGACY_CONSOLE = Path(__file__).resolve().parents[2] / "console.html"
-ASSETS = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8"}
+ASSETS = {
+    "app.js": "text/javascript; charset=utf-8",
+    "style.css": "text/css; charset=utf-8",
+    "console.js": "text/javascript; charset=utf-8",
+    "console-config.js": "text/javascript; charset=utf-8",
+}
 
 
 def _legacy_console_response() -> FileResponse:
