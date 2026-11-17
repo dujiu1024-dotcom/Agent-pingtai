@@ -153,7 +153,7 @@ class OpenAICompatibleHTTPTransport:
     ) -> Mapping[str, Any]:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        reserved = {"model", "messages", "stream", "tools", "tool_choice", "api_key", "authorization", "base_url"}
+        reserved = {"model", "messages", "stream", "stream_options", "tools", "tool_choice", "api_key", "authorization", "base_url"}
         if reserved.intersection(request_parameters):
             raise ModelTransportError("request parameters cannot override model routing or credentials")
         if on_token is None:
@@ -177,7 +177,7 @@ class OpenAICompatibleHTTPTransport:
         timeout_seconds: float,
         emit_token: Callable[[str], None] | None = None,
     ) -> Mapping[str, Any]:
-        reserved = {"model", "messages", "stream", "tools", "tool_choice", "api_key", "authorization", "base_url"}
+        reserved = {"model", "messages", "stream", "stream_options", "tools", "tool_choice", "api_key", "authorization", "base_url"}
         if reserved.intersection(config.parameters) or reserved.intersection(request_parameters):
             raise ModelTransportError("model parameters cannot override routing or tool controls")
         streaming = emit_token is not None
