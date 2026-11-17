@@ -79,6 +79,7 @@ def create_platform_app(
     evaluation_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
+    evaluation_review_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
@@ -182,6 +183,7 @@ def create_platform_app(
             evaluation_repository=evaluation_repository,
             evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
+            authorize_eval_review=evaluation_review_authorizer,
         ))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer,
