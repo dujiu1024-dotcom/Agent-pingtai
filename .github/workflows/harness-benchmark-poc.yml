@@ -1,0 +1,32 @@
+name: harness-benchmark-poc
+
+on:
+  pull_request:
+    paths:
+      - "agent_platform/runtime/harness_benchmark.py"
+      - "agent_platform/runtime/harness_benchmark_suite.py"
+      - "tests/test_harness_benchmark.py"
+      - "tests/test_harness_benchmark_suite.py"
+      - ".github/workflows/harness-benchmark-poc.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  harness-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test and quality tools
+        run: python -m pip install -U pip ruff mypy && python -m pip install -r requirements-platform.txt
+      - name: Run focused Harness benchmark tests
+        run: python -m unittest tests.test_harness_benchmark tests.test_harness_benchmark_suite -v
+      - name: Lint changed Harness benchmark files
+        run: ruff check agent_platform/runtime/harness_benchmark.py agent_platform/runtime/harness_benchmark_suite.py tests/test_harness_benchmark.py tests/test_harness_benchmark_suite.py
+      - name: Type-check Harness benchmark suite
+        run: mypy agent_platform/runtime/harness_benchmark_suite.py
