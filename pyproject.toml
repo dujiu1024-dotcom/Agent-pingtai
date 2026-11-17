@@ -43,6 +43,7 @@ include = [
   "tests/test_conversation.py",
   "agent_platform/**/*.py",
   "tests/test_identity.py",
+  "tests/test_issue_667_a_667_08_first_paint.py",
   "tests/test_public_api_contract.py",
   "tests/test_legacy_inventory.py",
   "scripts/inventory_legacy_system.py",
