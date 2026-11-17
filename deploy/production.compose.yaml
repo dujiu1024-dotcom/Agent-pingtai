@@ -72,6 +72,8 @@ services:
       NO_PROXY: postgres,redis,localhost,127.0.0.1
       no_proxy: postgres,redis,localhost,127.0.0.1
     secrets: [postgres_password, redis_password]
+    volumes:
+      - ${ALERT_WEBHOOK_AUTHORIZATION_HOST_PATH:-/dev/null}:/run/secrets/alert_webhook_authorization:ro
     depends_on:
       postgres:
         condition: service_healthy
