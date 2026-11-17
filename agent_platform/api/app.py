@@ -15,6 +15,7 @@ from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.prompts import create_prompt_registry_router
+from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
@@ -95,6 +96,7 @@ def create_platform_app(
     quota_reservation_worker: Any | None = None,
     quota_manage_authorizer: Any | None = None,
     quota_scope_authorizer: Any | None = None,
+    quota_audit_writer: Any | None = None,
     webhook_admin_service: WebhookSubscriptionService | None = None,
     webhook_admin_authorizer: Any | None = None,
     webhook_delivery_store: Any | None = None,
@@ -328,7 +330,14 @@ def create_platform_app(
             quota_store=quota_reporting_store, quota_service=quota_service,
             authorize_manage=quota_manage_authorizer,
             authorize_scope=quota_scope_authorizer,
+            audit_writer=quota_audit_writer or resource_audit_writer,
         ))
+        if quota_service is not None and quota_manage_authorizer is not None:
+            app.include_router(create_quota_admin_router(
+                service=quota_service, authorize_manage=quota_manage_authorizer,
+                authorize_scope=quota_scope_authorizer,
+                audit_writer=quota_audit_writer or resource_audit_writer,
+            ))
     elif quota_store is not None:
         app.include_router(create_quota_reporting_router(quota_store=quota_store))
     webhooks_configured = any(value is not None for value in (webhook_admin_service, webhook_admin_authorizer))
