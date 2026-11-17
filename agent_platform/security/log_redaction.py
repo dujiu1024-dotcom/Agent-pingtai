@@ -14,11 +14,11 @@ from typing import Any
 
 _REDACTED = "[REDACTED]"
 _PATTERNS = (
-    (re.compile(r"(?i)(\\b(?:password|passwd|client_secret|secret_id|api[_-]?key|access[_-]?token|refresh[_-]?token|vault[_-]?token)\\b\\s*[:=]\\s*)([^\\s,;]+)"), r"\\1[REDACTED]"),
-    (re.compile(r"(?i)(\\bBearer\\s+)[A-Za-z0-9._~+/=-]+"), r"\\1[REDACTED]"),
-    (re.compile(r"\\b(?:hvs|s)\\.[A-Za-z0-9_-]{12,}\\b"), "[REDACTED]"),
-    (re.compile(r"\\bAKIA[0-9A-Z]{16}\\b"), "[REDACTED]"),
-    (re.compile(r"(?i)(://[^:/\\s]+:)[^@/\\s]+(@)"), r"\\1[REDACTED]\\2"),
+    (re.compile(r"(?i)(\b(?:password|passwd|client_secret|secret_id|api[_-]?key|access[_-]?token|refresh[_-]?token|vault[_-]?token)\b\s*[:=]\s*)([^\s,;]+)"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+"), r"\1[REDACTED]"),
+    (re.compile(r"\b(?:hvs|s)\.[A-Za-z0-9_-]{12,}\b"), "[REDACTED]"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "[REDACTED]"),
+    (re.compile(r"(?i)(://[^:/\s]+:)[^@/\s]+(@)"), r"\1[REDACTED]\2"),
 )
 
 
