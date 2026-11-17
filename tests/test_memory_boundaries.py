@@ -197,7 +197,7 @@ class SessionMemoryBoundaryTests:
             return self.drafts
 
     @pytest.mark.asyncio
-    async def test_completed_turn_creates_candidate_not_active_memory():
+    async def test_completed_turn_creates_candidate_not_active_memory(self):
         from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
         from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
         repository = InMemoryMemoryRepository()
@@ -213,7 +213,7 @@ class SessionMemoryBoundaryTests:
         assert extractor.calls == 1
 
     @pytest.mark.asyncio
-    async def test_incomplete_turn_is_rejected_before_extractor_or_write():
+    async def test_incomplete_turn_is_rejected_before_extractor_or_write(self):
         from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
         from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
         repository = InMemoryMemoryRepository()
@@ -227,7 +227,7 @@ class SessionMemoryBoundaryTests:
         assert await repository.list("tenant-a") == []
 
     @pytest.mark.asyncio
-    async def test_session_source_reference_is_tenant_pinned_and_idempotent():
+    async def test_session_source_reference_is_tenant_pinned_and_idempotent(self):
         from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
         from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
         repository = InMemoryMemoryRepository()
@@ -242,7 +242,7 @@ class SessionMemoryBoundaryTests:
         assert len(await repository.list("tenant-a")) == 1
 
     @pytest.mark.asyncio
-    async def test_cross_tenant_source_reference_is_rejected_before_extraction():
+    async def test_cross_tenant_source_reference_is_rejected_before_extraction(self):
         from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
         from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
         extractor = self.Extractor([])
