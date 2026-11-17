@@ -33,7 +33,7 @@ class Issue665A66507FaultDegradationTests(unittest.IsolatedAsyncioTestCase):
         requests = []
 
         def unavailable_vault(method, url, headers, body, timeout):
-            requests.append((method, url, headers, body, timeout))
+            requests.append((method, url))
             return 503, b'{"errors":["vault unavailable"]}'
 
         backend = VaultKvV2SecretBackend(
@@ -43,14 +43,14 @@ class Issue665A66507FaultDegradationTests(unittest.IsolatedAsyncioTestCase):
         )
         manager = SecretManager(backend=backend, metadata=_ActiveSecretMetadata())
 
-        with self.assertRaisesRegex(RuntimeError, "Vault secret read failed"):
+        with self.assertRaisesRegex(RuntimeError, "Vault secret read failed") as raised:
             await manager.resolve(secret_ref="secret://tenant-a/provider/key")
 
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0][0], "GET")
         # The backend reports only the HTTP status, not Vault response body/token.
-        self.assertNotIn("test-token-not-a-real-credential", str(requests[0][1:]))
-        self.assertNotIn("vault unavailable", str(requests[0][1:]))
+        self.assertNotIn("test-token-not-a-real-credential", str(raised.exception))
+        self.assertNotIn("vault unavailable", str(raised.exception))
 
     async def test_postgres_quota_store_outage_blocks_model_dispatch(self):
         async def postgres_primary_unavailable():
