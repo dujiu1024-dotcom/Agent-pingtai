@@ -78,5 +78,6 @@
       "drill_passed": false,
       "strategy": "backup_restore"
     }
-  }
+  },
+  "evidence_archive_sha256": "sha256:replace-with-64-character-archive-digest"
 }
