@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import unittest
 
 from scripts.release_upgrade import build_plan, build_rollback, validate_upgrade_manifest
