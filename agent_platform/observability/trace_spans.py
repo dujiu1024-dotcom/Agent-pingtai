@@ -9,7 +9,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from time import monotonic
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Literal, Mapping
 from uuid import uuid4
 
 from agent_platform.observability.redaction import redact_payload
@@ -141,7 +141,7 @@ class TraceSpanScope:
         self._token = _current_span.set(self.span)
         return self.span
 
-    def __exit__(self, exc_type: Any, exc: BaseException | None, tb: Any) -> bool:
+    def __exit__(self, exc_type: Any, exc: BaseException | None, tb: Any) -> Literal[False]:
         status = "cancelled" if exc_type is not None and exc_type.__name__ == "CancelledError" else (
             "error" if exc is not None else "ok"
         )
