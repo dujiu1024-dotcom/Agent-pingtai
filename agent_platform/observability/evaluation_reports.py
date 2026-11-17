@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import math
+import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
@@ -70,8 +71,8 @@ def build_variant_comparison(run: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(run, Mapping):
         raise ValueError("evaluation run must be an object")
     run_id, dataset_id, dataset_version = run.get("eval_run_id"), run.get("dataset_id"), run.get("dataset_version")
-    if not isinstance(run_id, str) or not run_id:
-        raise ValueError("eval_run_id is required")
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,128}", run_id):
+        raise ValueError("eval_run_id has an invalid format")
     if not isinstance(dataset_id, str) or not dataset_id:
         raise ValueError("dataset_id is required")
     if isinstance(dataset_version, bool) or not isinstance(dataset_version, int) or dataset_version < 1:
@@ -168,7 +169,8 @@ def render_variant_report_pdf(comparison: Mapping[str, Any]) -> bytes:
         )
     commands = ["BT", "/F1 9 Tf", "48 790 Td", "12 TL"]
     for line in lines[:55]:
-        text = line.encode("latin-1", "replace").decode("latin-1")
+        text = "".join(char if char.isprintable() else " " for char in line)
+        text = text.encode("latin-1", "replace").decode("latin-1")
         escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         commands.extend((f"({escaped}) Tj", "T*"))
     commands.append("ET")
