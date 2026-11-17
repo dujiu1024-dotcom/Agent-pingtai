@@ -39,21 +39,50 @@ snapshot_env() {
   stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   snapshot="$STATE_DIR/release-env-$stamp"
   cp "$ENV_FILE" "$snapshot"; chmod 600 "$snapshot"
-  printf '%s\n' "$snapshot" > "$STATE_DIR/latest-success"; chmod 600 "$STATE_DIR/latest-success"
+  printf '%s\n' "$snapshot"
 }
-restore_previous() {
-  [[ -f "$STATE_DIR/latest-success" && ! -L "$STATE_DIR/latest-success" ]] || { echo "no successful release snapshot is available" >&2; return 1; }
-  local snapshot
-  IFS= read -r snapshot < "$STATE_DIR/latest-success"
+read_snapshot() {
+  local pointer="$1" snapshot
+  [[ -f "$pointer" && ! -L "$pointer" ]] || { echo "successful release snapshot pointer is missing or unsafe: $pointer" >&2; return 1; }
+  IFS= read -r snapshot < "$pointer"
   case "$(realpath "$snapshot")" in "$(realpath "$STATE_DIR")"/release-env-*) ;; *) echo "release snapshot points outside state directory" >&2; return 1 ;; esac
   [[ -f "$snapshot" && ! -L "$snapshot" ]] || { echo "release snapshot is missing or unsafe" >&2; return 1; }
+  printf '%s\n' "$snapshot"
+}
+restore_snapshot() {
+  local snapshot="$1"
   cp "$snapshot" "$ENV_FILE.tmp"; chmod 600 "$ENV_FILE.tmp"; mv "$ENV_FILE.tmp" "$ENV_FILE"
 }
+restore_previous() {
+  local snapshot
+  snapshot="$(read_snapshot "$STATE_DIR/latest-success")" || return 1
+  restore_snapshot "$snapshot"
+}
+publish_success() {
+  local snapshot="$1" previous
+  if [[ -f "$STATE_DIR/latest-success" && ! -L "$STATE_DIR/latest-success" ]]; then
+    previous="$(read_snapshot "$STATE_DIR/latest-success")" || return 1
+    printf '%s\n' "$previous" > "$STATE_DIR/previous-success.tmp"
+    chmod 600 "$STATE_DIR/previous-success.tmp"
+    mv "$STATE_DIR/previous-success.tmp" "$STATE_DIR/previous-success"
+  fi
+  printf '%s\n' "$snapshot" > "$STATE_DIR/latest-success.tmp"
+  chmod 600 "$STATE_DIR/latest-success.tmp"
+  mv "$STATE_DIR/latest-success.tmp" "$STATE_DIR/latest-success"
+}
 if [[ "$MODE" == "--rollback" ]]; then
-  restore_previous
+  ROLLBACK_TARGET="$(read_snapshot "$STATE_DIR/previous-success")"
+  CURRENT_SUCCESS="$(read_snapshot "$STATE_DIR/latest-success")"
+  restore_snapshot "$ROLLBACK_TARGET"
   "${COMPOSE[@]}" config --quiet
   load_services
   for service in "${SERVICES[@]}"; do "${COMPOSE[@]}" up -d --no-deps --wait "$service"; done
+  printf '%s\n' "$CURRENT_SUCCESS" > "$STATE_DIR/previous-success.tmp"
+  chmod 600 "$STATE_DIR/previous-success.tmp"
+  mv "$STATE_DIR/previous-success.tmp" "$STATE_DIR/previous-success"
+  printf '%s\n' "$ROLLBACK_TARGET" > "$STATE_DIR/latest-success.tmp"
+  chmod 600 "$STATE_DIR/latest-success.tmp"
+  mv "$STATE_DIR/latest-success.tmp" "$STATE_DIR/latest-success"
   echo "Configuration restored and services rolled back; database migrations were not reversed."
   exit 0
 fi
@@ -72,9 +101,19 @@ load_services
 "$ROOT/scripts/check_migrations.sh"
 if [[ "$MODE" == "--check" ]]; then echo "Release preflight passed for $CURRENT_RELEASE_VERSION -> $RELEASE_VERSION; no services changed."; exit 0; fi
 : "${PRE_UPGRADE_BACKUP_COMMAND:?PRE_UPGRADE_BACKUP_COMMAND is required before applying an upgrade}"
+# Do not begin an upgrade until a last-known-good release is available.
+read_snapshot "$STATE_DIR/latest-success" >/dev/null
 bash -euo pipefail -c "$PRE_UPGRADE_BACKUP_COMMAND"
-snapshot_env
-if [[ -n "${MIGRATION_COMMAND:-}" ]]; then bash -euo pipefail -c "$MIGRATION_COMMAND"; fi
+SNAPSHOT="$(snapshot_env)"
+if [[ -n "${MIGRATION_COMMAND:-}" ]] && ! bash -euo pipefail -c "$MIGRATION_COMMAND"; then
+  echo "migration command failed; restoring prior release configuration (database changes, if any, require manual recovery)" >&2
+  restore_previous || exit 1
+  "${COMPOSE[@]}" config --quiet
+  for rollback_service in "${SERVICES[@]}"; do
+    "${COMPOSE[@]}" up -d --no-deps --wait "$rollback_service" || { echo "service recovery failed at $rollback_service; manual recovery required" >&2; exit 1; }
+  done
+  exit 1
+fi
 for service in "${SERVICES[@]}"; do
   if ! "${COMPOSE[@]}" up -d --no-deps --wait "$service"; then
     echo "upgrade failed at service $service; restoring prior configuration and rolling services back" >&2
@@ -87,4 +126,5 @@ for service in "${SERVICES[@]}"; do
     exit 1
   fi
 done
+publish_success "$SNAPSHOT"
 printf 'Release %s upgraded successfully.\n' "$RELEASE_VERSION"
