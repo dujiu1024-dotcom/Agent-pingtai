@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Mapping
 
 _METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*\Z")
-_ALLOWED_LABELS = frozenset({"component", "status", "model_template", "finish_reason", "operation"})
+_ALLOWED_LABELS = frozenset({"component", "status", "model_template", "finish_reason", "operation", "queue"})
 
 
 def _normalize(name: str, labels: Mapping[str, str] | None) -> tuple[str, tuple[tuple[str, str], ...]]:
