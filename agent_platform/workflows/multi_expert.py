@@ -178,7 +178,7 @@ def build_multi_expert_workflow(
     async def synthesize(state: MultiExpertState) -> dict[str, Any]:
         result = await services.synthesize(
             objective=state["objective"],
-            contributions=state.get("contributions", []),
+            contributions=ordered_expert_contributions(state.get("contributions", [])),
             run_context=workflow_context(state),
         )
         return {"synthesis": dict(result)}
@@ -186,7 +186,7 @@ def build_multi_expert_workflow(
     async def review(state: MultiExpertState) -> dict[str, Any]:
         result = await services.review(
             synthesis=state["synthesis"],
-            contributions=state.get("contributions", []),
+            contributions=ordered_expert_contributions(state.get("contributions", [])),
             run_context=workflow_context(state),
         )
         return {
