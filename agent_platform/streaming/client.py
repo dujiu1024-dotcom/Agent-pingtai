@@ -17,7 +17,8 @@ class SSEClient:
     """
 
     def __init__(self, *, default_retry_ms: int = 3000) -> None:
-        if isinstance(default_retry_ms, bool) or default_retry_ms < 0:
+        if (isinstance(default_retry_ms, bool) or not isinstance(default_retry_ms, int)
+                or default_retry_ms < 0):
             raise ValueError("default_retry_ms must be a non-negative integer")
         self._decoder = codecs.getincrementaldecoder("utf-8")()
         self._buffer = ""
@@ -95,7 +96,7 @@ class SSEClient:
             SSEEvent(
                 event=event_name,  # type: ignore[arg-type]
                 data=payload,
-                event_id=self._event_id or self._last_event_id,
+                event_id=self._last_event_id or None,
                 retry_ms=self._retry_ms,
             )
         )
