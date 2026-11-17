@@ -89,6 +89,7 @@ include = [
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
+  "tests/test_prompt_rollouts.py",
   "tests/test_prompt_experiments.py",
   "tests/test_prompt_operations.py",
   "tests/test_evaluation_store.py",
