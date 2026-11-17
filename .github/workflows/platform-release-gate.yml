@@ -87,7 +87,7 @@ jobs:
             tests.test_issue_21_c_21_04_quality_capacity \
             tests.test_agent_rag_evaluation \
             tests.test_knowledge_evaluation_dataset \
-            tests.test_prompt_variants tests.test_prompt_rollouts \
+            tests.test_prompt_variants tests.test_prompt_management_api tests.test_prompt_api \
             tests.test_harness_benchmark_metrics \
             tests.test_outbox \
             tests.test_backup_recovery_scripts \

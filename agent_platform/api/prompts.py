@@ -1,6 +1,7 @@
 """Tenant-scoped authenticated Prompt Registry management API."""
 from __future__ import annotations
 
+import difflib
 import inspect
 import math
 from typing import Any, Callable
@@ -96,6 +97,135 @@ def create_prompt_registry_router(
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return _version_view(prompt_id, version)
+
+    async def invoke(method: Any, *args: Any, **kwargs: Any) -> Any:
+        result = method(*args, **kwargs)
+        return await result if inspect.isawaitable(result) else result
+
+    def _variant_view(variant: Any) -> dict[str, Any]:
+        return {
+            "prompt_id": variant.prompt_id,
+            "name": variant.name,
+            "current_version": variant.current_version,
+            "status": variant.status,
+            "created_by": variant.created_by,
+            "updated_by": variant.updated_by,
+        }
+
+    @router.get("/{prompt_id}/versions")
+    async def list_versions(prompt_id: str, request: Request):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        method = getattr(registry, "list_versions", None)
+        if not callable(method):
+            raise HTTPException(501, "prompt version listing is not supported by this registry")
+        try:
+            versions = await invoke(method, storage_key)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"items": [_version_view(prompt_id, item) for item in versions],
+                "count": len(versions)}
+
+    @router.get("/{prompt_id}/versions/{version}")
+    async def get_version(prompt_id: str, version: int, request: Request):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        if version < 1:
+            raise HTTPException(400, "version must be a positive integer")
+        try:
+            item = await invoke(registry.resolve, storage_key, version=version)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {**_version_view(prompt_id, item), "template": item.template}
+
+    @router.get("/{prompt_id}/versions/{version}/diff")
+    async def diff_versions(prompt_id: str, version: int, request: Request, base_version: int):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        if version < 1 or base_version < 1 or version == base_version:
+            raise HTTPException(400, "two distinct positive versions are required")
+        try:
+            before = await invoke(registry.resolve, storage_key, version=base_version)
+            after = await invoke(registry.resolve, storage_key, version=version)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        diff = "\n".join(difflib.unified_diff(
+            before.template.splitlines(), after.template.splitlines(),
+            fromfile=f"v{base_version}", tofile=f"v{version}", lineterm="",
+        ))
+        return {"prompt_id": prompt_id, "base_version": base_version,
+                "version": version, "diff": diff}
+
+    @router.get("/{prompt_id}/variants")
+    async def list_variants(prompt_id: str, request: Request):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        method = getattr(registry, "list_variants", None)
+        if not callable(method):
+            raise HTTPException(501, "prompt variants are not supported by this registry")
+        variants = await invoke(method, storage_key)
+        return {"items": [_variant_view(item) for item in variants], "count": len(variants)}
+
+    @router.post("/{prompt_id}/variants", status_code=201)
+    async def create_variant(prompt_id: str, request: Request):
+        actor, storage_key = await context(request, prompt_id, "write")
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "JSON object is required") from exc
+        name = body.get("name") if isinstance(body, dict) else None
+        version = body.get("version") if isinstance(body, dict) else None
+        if not isinstance(name, str) or not name.strip():
+            raise HTTPException(400, "variant name is required")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise HTTPException(400, "version must be a positive integer")
+        try:
+            variant = await invoke(
+                registry.create_variant, storage_key, name, version, created_by=actor.user_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return _variant_view(variant)
+
+    @router.post("/{prompt_id}/variants/{name}/versions")
+    async def assign_variant_version(prompt_id: str, name: str, request: Request):
+        actor, storage_key = await context(request, prompt_id, "write")
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "JSON object is required") from exc
+        version = body.get("version") if isinstance(body, dict) else None
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise HTTPException(400, "version must be a positive integer")
+        try:
+            variant = await invoke(
+                registry.assign_variant, storage_key, name, version, updated_by=actor.user_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return _variant_view(variant)
+
+    @router.post("/{prompt_id}/variants/{name}/deprecate")
+    async def deprecate_variant(prompt_id: str, name: str, request: Request):
+        actor, storage_key = await context(request, prompt_id, "publish")
+        try:
+            variant = await invoke(
+                registry.deprecate_variant, storage_key, name, updated_by=actor.user_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return _variant_view(variant)
+
+    @router.get("/{prompt_id}/variants/{name}/history")
+    async def variant_history(prompt_id: str, name: str, request: Request):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        try:
+            items = await invoke(registry.variant_history, storage_key, name)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"items": list(items), "count": len(items)}
 
     @router.post("/{prompt_id}/activate")
     async def activate_version(prompt_id: str, request: Request):
