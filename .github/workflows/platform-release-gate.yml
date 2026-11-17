@@ -77,6 +77,7 @@ jobs:
             tests.test_memory_boundaries \
             tests.test_issue_11_a_11_02_memory_access_lifecycle \
             tests.test_graph_governance \
+            tests.test_issue_22_a_22_05_benchmark_contract \
             tests.test_graph_admin_api \
             tests.test_graph_workbench_ui \
             tests.test_memory_extraction_preflight \
