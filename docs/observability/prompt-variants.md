@@ -12,6 +12,6 @@ Prompt versions remain immutable records identified by `(prompt_id, version)` an
 
 ## Persistence and isolation
 
-Migration `082_prompt_variants.sql` adds tenant-key-compatible variant identity, foreign keys to immutable prompt versions, assignment history, and an index for prompt/status lookup. The existing Prompt Registry API derives its storage key from the authenticated tenant; callers must not accept tenant IDs from request bodies.
+Migration `083_prompt_variants.sql` adds tenant-key-compatible variant identity, foreign keys to immutable prompt versions, assignment history, and an index for prompt/status lookup. The existing Prompt Registry API derives its storage key from the authenticated tenant; callers must not accept tenant IDs from request bodies.
 
 This change supplies the domain and persistence contract for C-23-01. Version-management HTTP endpoints and workbench integration remain C-23-04; A/B execution and traffic routing remain C-23-02/C-23-03.
