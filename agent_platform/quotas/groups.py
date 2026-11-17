@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
