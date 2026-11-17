@@ -223,10 +223,10 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         service = GraphQueryService(
             tenant_id="tenant-a", repository=HiddenIntermediateRepository()
         )
-        path = await service.shortest_path(
-            "a", "c", allowed_project_ids=("project-a",)
-        )
-        self.assertIsNone(path)
+        with self.assertRaisesRegex(PermissionError, "outside project scope"):
+            await service.shortest_path(
+                "a", "c", allowed_project_ids=("project-a",)
+            )
 
     async def test_hybrid_retrieval_rechecks_acl_and_filters_unrelated_hits(self):
         record = self.repository.entities["a"]
