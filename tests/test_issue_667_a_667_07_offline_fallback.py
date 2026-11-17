@@ -44,6 +44,7 @@ const vm = require("vm");
 const assert = require("assert");
 const handlers = {};
 const cachesByName = new Map();
+const cacheKey = (key) => typeof key === "string" ? key : new URL(key.url).pathname;
 const cacheNames = ["platform-ui-shell-old"];
 const oldCache = new Map([["/app/", {marker: "old-shell"}]]);
 cachesByName.set("platform-ui-shell-old", oldCache);
@@ -56,7 +57,7 @@ const caches = {
     const entries = cachesByName.get(name);
     return {
       addAll: async (keys) => keys.forEach((key) => entries.set(key, {marker: key})),
-      match: async (key) => entries.get(typeof key === "string" ? key : key.url),
+      match: async (key) => entries.get(cacheKey(key)),
       put: async (key, value) => entries.set(typeof key === "string" ? key : key.url, value)
     };
   },
