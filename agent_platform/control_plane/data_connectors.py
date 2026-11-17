@@ -311,17 +311,30 @@ class DataConnectorService:
                 disposition=revocation_disposition,
             )
             return True
+        cleanup_error: str | None = None
         provider = self.providers.get(connection.provider)
         if provider is not None:
             try:
                 credential = await self.secrets.resolve(connection.secret_ref)
                 await provider.revoke(credential=credential)
             except Exception as exc:
-                await self.repository.mark_error(
-                    tenant_id=tenant_id, connection_id=connection_id,
-                    job_type="revoke_cleanup", disposition=revocation_disposition,
-                )
-            raise ConnectorError("connector is revoked locally; cleanup is pending") from exc
+                # Never persist provider responses or credential material.
+                cleanup_error = f"remote revoke failed: {type(exc).__name__}"
+
+        # Local access is revoked before either remote operation. Always attempt
+        # downstream disposition even if the provider's revoke endpoint is down.
+        try:
+            await self.sink.revoke_connection(
+                tenant_id=tenant_id, connection_id=connection_id,
+                disposition=revocation_disposition,
+            )
+        except Exception as exc:
+            await self.repository.mark_error(
+                tenant_id=tenant_id, connection_id=connection_id,
+                error=f"downstream cleanup failed: {type(exc).__name__}",
+            )
+            raise
+
         if cleanup_error is not None:
             await self.repository.mark_error(
                 tenant_id=tenant_id, connection_id=connection_id, error=cleanup_error,
