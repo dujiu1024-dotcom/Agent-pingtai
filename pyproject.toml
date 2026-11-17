@@ -125,6 +125,7 @@ include = [
   "tests/test_run_lifecycle.py",
   "tests/test_issue_12_a_12_03_runtime_acceptance.py",
   "tests/test_issue_9_a_9_02_run_access_resume.py",
+  "tests/test_run_context.py",
   "tests/test_run_context_postgres.py",
   "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
