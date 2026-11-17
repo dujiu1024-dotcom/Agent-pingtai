@@ -153,7 +153,7 @@ def test_prompt_lab_is_integrated_into_existing_workbench_shell():
     assert 'data-view="prompt-lab"' in html
     assert '"prompt-lab":["prompt_management"]' in script
     for route in (
-        '"/prompts/"', "/versions", "/variants", "/audit?limit=50",
+        'API+"/prompts/"', "/versions", "/variants", "/audit?limit=50",
     ):
         assert route in script
     assert "X-CSRF-Token" in script
