@@ -13,7 +13,8 @@ from agent_platform.identity.models import Principal
 class FakeIdentityAuditReader:
     async def list_events(self, *, tenant_id, limit, actor_id=None, action=None):
         return ({"tenant_id": tenant_id, "actor_id": actor_id or "actor-a",
-                 "action": action or "identity.login", "outcome": "succeeded"},)
+                 "action": action or "identity.login", "outcome": "succeeded",
+                 "detail": {"password": "do-not-return", "safe": "visible"}},)
 
 
 class FakeAuditReader:
@@ -55,6 +56,9 @@ class AuditApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["tenant_id"], "tenant-a")
         self.assertEqual(response.json()["items"][0]["action"], "identity.login")
+        detail = response.json()["items"][0]["detail"]
+        self.assertNotIn("do-not-return", str(detail))
+        self.assertEqual(detail["safe"], "visible")
 
     def test_identity_audit_query_requires_permission(self):
         response = self.client(False).get("/api/platform/v1/audit/identity-events")
