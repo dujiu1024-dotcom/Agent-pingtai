@@ -13,6 +13,7 @@ from fastapi.responses import PlainTextResponse
 
 from agent_platform.identity.models import Principal
 from agent_platform.quotas.service import Budget, QuotaService
+from agent_platform.quotas.usage_reporting import build_usage_report
 
 
 def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None) -> APIRouter:
@@ -159,6 +160,20 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             "price_card_version": event.price_card_version,
             "source": event.source, "occurred_at": event.occurred_at.isoformat(),
         } for event in events]}
+
+    @router.get("/usage/summary")
+    async def usage_summary(request: Request, start: datetime, end: datetime,
+                            run_id: str | None = None, model_key: str | None = None,
+                            limit: int = 10000):
+        """Return tenant-isolated totals and cost variance, grouped by attribution."""
+        principal = actor(request)
+        events = await rows(principal, start, end, run_id, model_key, limit)
+        return {
+            "tenant_id": principal.tenant_id,
+            "period_start": start.isoformat(),
+            "period_end": end.isoformat(),
+            **build_usage_report(events),
+        }
 
     @router.get("/usage.csv", response_class=PlainTextResponse)
     async def usage_csv(request: Request, start: datetime, end: datetime,
