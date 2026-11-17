@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
 from agent_platform.runtime.lifecycle import RunLifecycleManager
-from agent_platform.tools.idempotency import EffectConflict\nfrom agent_platform.streaming.sse import sse_response
+from agent_platform.tools.idempotency import EffectConflict
+from agent_platform.streaming.sse import sse_response
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
