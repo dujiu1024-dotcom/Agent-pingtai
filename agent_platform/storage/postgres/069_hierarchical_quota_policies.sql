@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS platform_quota_policies (
     policy_id text NOT NULL,
-    tenant_id text,
+    tenant_id text NOT NULL DEFAULT '',
     scope_type text NOT NULL CHECK (scope_type IN ('default','tenant','project','subject')),
     scope_id text NOT NULL,
     limits jsonb NOT NULL CHECK (jsonb_typeof(limits) = 'object' AND limits <> '{}'::jsonb),
@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS platform_quota_policies (
     updated_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (scope_type, tenant_id, scope_id, policy_id),
     CHECK (
-      (scope_type = 'default' AND tenant_id IS NULL AND scope_id = '*')
-      OR (scope_type <> 'default' AND tenant_id IS NOT NULL AND length(tenant_id) > 0
+      (scope_type = 'default' AND tenant_id = '' AND scope_id = '*')
+      OR (scope_type <> 'default' AND length(tenant_id) > 0
           AND length(scope_id) > 0)
     )
 );
