@@ -98,28 +98,34 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
                 hard_output_tokens=optional_integer("hard_output_tokens"),
                 hard_context_window_tokens=optional_integer("hard_context_window_tokens"),
             )
-            if audit_writer is not None:
-                writer = getattr(audit_writer, "write", None) or getattr(audit_writer, "append", None)
-                if writer is None and callable(audit_writer):
-                    writer = audit_writer
-                if writer is None:
-                    raise RuntimeError("quota audit writer is unavailable")
-                event = {
-                    "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
-                    "action": "quota.budget.updated", "resource_type": "quota_budget",
-                    "resource_id": f"{budget.scope_type}:{budget.scope_id}",
-                    "period_start": budget.period_start.isoformat(),
-                    "period_end": budget.period_end.isoformat(),
-                    "hard_tokens": budget.hard_tokens,
-                    "hard_cost_usd": str(budget.hard_cost_usd) if budget.hard_cost_usd is not None else None,
-                    "hard_concurrency": budget.hard_concurrency,
-                    "soft_tokens": budget.soft_tokens,
-                    "soft_cost_usd": str(budget.soft_cost_usd) if budget.soft_cost_usd is not None else None,
-                }
+            if audit_writer is None:
+                raise HTTPException(503, "quota audit writer is not configured")
+            writer = getattr(audit_writer, "write", None) or getattr(audit_writer, "append", None)
+            if writer is None and callable(audit_writer):
+                writer = audit_writer
+            if writer is None:
+                raise HTTPException(503, "quota audit writer is unavailable")
+            event = {
+                "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
+                "action": "quota.budget.updated", "resource_type": "quota_budget",
+                "resource_id": f"{budget.scope_type}:{budget.scope_id}",
+                "period_start": budget.period_start.isoformat(),
+                "period_end": budget.period_end.isoformat(),
+                "hard_tokens": budget.hard_tokens,
+                "hard_cost_usd": str(budget.hard_cost_usd) if budget.hard_cost_usd is not None else None,
+                "hard_concurrency": budget.hard_concurrency,
+                "soft_tokens": budget.soft_tokens,
+                "soft_cost_usd": str(budget.soft_cost_usd) if budget.soft_cost_usd is not None else None,
+            }
+            try:
                 audit_result = writer(event)
                 if inspect.isawaitable(audit_result):
                     await audit_result
+            except Exception as exc:
+                raise HTTPException(503, "quota audit write failed; change was not applied") from exc
             await quota_service.configure(budget)
+        except HTTPException:
+            raise
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
         except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
