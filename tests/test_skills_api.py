@@ -30,7 +30,11 @@ class SkillApiTests(unittest.TestCase):
                 self.agent_store = SimpleNamespace(get=self.get)
                 self.calls = []
             async def get(self, tenant, agent, skill):
-                return None
+                if not self.calls:
+                    return None
+                version = self.calls[-1][1].get("version", 3)
+                return SimpleNamespace(skill_id=skill, agent_id=agent,
+                    registry_version=version, package_version="1.2.0")
             async def install_for_agent(self, **kwargs):
                 self.calls.append(("install", kwargs))
                 return SimpleNamespace(skill_id=kwargs["skill_id"], agent_id=kwargs["agent_id"],
@@ -57,7 +61,7 @@ class SkillApiTests(unittest.TestCase):
             json={"agent_id": "agent-1", "version": 3})
         self.assertEqual(installed.status_code, 201)
         upgraded = client.post("/api/platform/v1/skills/summarizer/upgrade",
-            json={"agent_id": "agent-1", "version": 3})
+            json={"agent_id": "agent-1", "version": 4})
         self.assertEqual(upgraded.status_code, 200)
         removed = client.delete("/api/platform/v1/skills/summarizer/install?agent_id=agent-1")
         self.assertEqual(removed.status_code, 200)
