@@ -330,3 +330,28 @@ class PostgresGraphCandidateStore:
                     if await cursor.fetchone() is not None:
                         inserted += 1
         return inserted
+
+    async def review_candidate(
+        self, *, candidate_id: str, reviewer_id: str, decision: str, reason: str,
+    ) -> bool:
+        if not isinstance(candidate_id, str) or len(candidate_id) != 64:
+            raise ValueError("candidate_id must be a 64-character SHA-256 digest")
+        if not isinstance(reviewer_id, str) or not reviewer_id.strip():
+            raise ValueError("reviewer_id is required")
+        if decision not in {"accepted", "rejected"}:
+            raise ValueError("decision must be accepted or rejected")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000:
+            raise ValueError("review reason must contain 1-1000 characters")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_graph_extraction_candidates
+                       SET status = %s, reviewed_by = %s, review_reason = %s,
+                           reviewed_at = now()
+                       WHERE tenant_id = %s AND candidate_id = %s
+                         AND status IN ('candidate', 'conflict')
+                       RETURNING candidate_id""",
+                    (decision, reviewer_id, reason.strip(), self.tenant_id, candidate_id),
+                )
+                return await cursor.fetchone() is not None
