@@ -84,5 +84,40 @@ class ProductionRunCompositionTests(unittest.IsolatedAsyncioTestCase):
             self.build(queue_scope_resolver=None)
 
 
+class TrustedBuilderDiscoveryTests(unittest.TestCase):
+    def test_optional_missing_builder_keeps_task_execution_disabled(self):
+        from unittest.mock import patch
+
+        with patch("importlib.metadata.entry_points", return_value=[]):
+            from agent_platform.runtime.production_composition import (
+                load_trusted_run_execution_builder,
+            )
+            self.assertIsNone(load_trusted_run_execution_builder(required=False))
+
+    def test_required_missing_builder_fails_closed(self):
+        from unittest.mock import patch
+
+        with patch("importlib.metadata.entry_points", return_value=[]):
+            from agent_platform.runtime.production_composition import (
+                load_trusted_run_execution_builder,
+            )
+            with self.assertRaisesRegex(RuntimeError, "no trusted"):
+                load_trusted_run_execution_builder(required=True)
+
+    def test_multiple_or_non_callable_builders_are_rejected(self):
+        from unittest.mock import patch
+
+        from agent_platform.runtime.production_composition import (
+            load_trusted_run_execution_builder,
+        )
+        entry = SimpleNamespace(name="builder", load=lambda: object())
+        with patch("importlib.metadata.entry_points", return_value=[entry, entry]):
+            with self.assertRaisesRegex(RuntimeError, "multiple"):
+                load_trusted_run_execution_builder(required=True)
+        with patch("importlib.metadata.entry_points", return_value=[entry]):
+            with self.assertRaisesRegex(TypeError, "callable"):
+                load_trusted_run_execution_builder(required=True)
+
+
 if __name__ == "__main__":
     unittest.main()
