@@ -18,6 +18,10 @@ from agent_platform.memory.service import (
     MemoryService,
 )
 
+MAX_TURN_CHARS = 20_000
+MAX_CANDIDATES_PER_TURN = 50
+MAX_CANDIDATE_CONTENT_CHARS = 4_000
+
 
 @dataclass(frozen=True)
 class MemoryTurn:
@@ -54,11 +58,13 @@ class MemoryExtractionService:
     ) -> list[MemoryRecord]:
         if turn.tenant_id != principal.tenant_id or turn.user_id != principal.user_id:
             raise PermissionError("memory turn does not belong to the authenticated principal")
-        if not turn.source_ref.strip():
+        if not isinstance(turn.source_ref, str) or not turn.source_ref.strip():
             raise ValueError("source_ref is required for memory provenance")
+        if not isinstance(turn.user_message, str) or not isinstance(turn.assistant_message, str):
+            raise ValueError("interaction messages must be strings")
         if not turn.user_message.strip() and not turn.assistant_message.strip():
             raise ValueError("memory extraction requires a non-empty interaction turn")
-        if len(turn.user_message) + len(turn.assistant_message) > 20000:
+        if len(turn.user_message) + len(turn.assistant_message) > MAX_TURN_CHARS:
             raise ValueError("interaction turn exceeds the extraction size limit")
         if turn.agent_id and turn.agent_id not in principal.agent_ids:
             raise PermissionError("agent context is not authorized")
@@ -66,10 +72,21 @@ class MemoryExtractionService:
             raise PermissionError("project context is not authorized")
 
         drafts = await self.extractor.extract(turn=turn)
-        if len(drafts) > 50:
+        if not isinstance(drafts, Sequence):
+            raise ValueError("extractor must return a sequence of memory candidates")
+        if len(drafts) > MAX_CANDIDATES_PER_TURN:
             raise ValueError("extractor returned too many memory candidates")
-        records = []
+
+        # Preflight the complete batch before the first write. A malformed or
+        # unauthorized later draft must not leave earlier candidates persisted.
+        candidates: list[MemoryCandidate] = []
         for index, draft in enumerate(drafts):
+            if not isinstance(draft, MemoryDraft):
+                raise ValueError("extractor returned an invalid memory draft")
+            if not isinstance(draft.content, str) or not draft.content.strip():
+                raise ValueError("memory candidate content must be non-empty")
+            if len(draft.content) > MAX_CANDIDATE_CONTENT_CHARS:
+                raise ValueError("memory candidate content exceeds the size limit")
             if draft.scope is MemoryScope.USER:
                 if draft.scope_id != principal.user_id:
                     raise PermissionError("user memory scope must match the principal")
@@ -88,9 +105,15 @@ class MemoryExtractionService:
             elif draft.scope is MemoryScope.TENANT:
                 if "memory.manage" not in principal.permissions:
                     raise PermissionError("tenant memory requires memory.manage")
-            candidate = MemoryCandidate(
+            else:
+                raise ValueError("memory draft has an unsupported scope")
+
+            candidates.append(MemoryCandidate(
                 tenant_id=principal.tenant_id,
-                memory_id=str(uuid5(NAMESPACE_URL, principal.tenant_id + ':' + turn.source_ref + ':single-turn:' + str(index))),
+                memory_id=str(uuid5(
+                    NAMESPACE_URL,
+                    principal.tenant_id + ":" + turn.source_ref + ":single-turn:" + str(index),
+                )),
                 scope=draft.scope,
                 scope_id=draft.scope_id,
                 content=draft.content,
@@ -105,6 +128,6 @@ class MemoryExtractionService:
                     "agent_id": turn.agent_id or "",
                     "project_id": turn.project_id or "",
                 },
-            )
-            records.append(await self.memory.propose(candidate))
-        return records
+            ))
+
+        return [await self.memory.propose(candidate) for candidate in candidates]
