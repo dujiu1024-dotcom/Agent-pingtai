@@ -1,6 +1,7 @@
 """Tenant-scoped authenticated Prompt Registry management API."""
 from __future__ import annotations
 
+import difflib
 import inspect
 import math
 from typing import Any, Callable
