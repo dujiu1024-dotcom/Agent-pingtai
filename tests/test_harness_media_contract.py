@@ -152,5 +152,56 @@ class HarnessMediaContractTests(unittest.IsolatedAsyncioTestCase):
             HarnessCapabilities(input_modalities=frozenset({"text", "3d"}))
 
 
+    async def test_capability_guard_rejects_output_media_over_declared_size(self):
+        adapter = FakeHarness(result=HarnessResult(
+            output_text="",
+            media_outputs=(
+                MediaOutput(
+                    modality="image", resource_id="artifact-image",
+                    mime_type="image/png", size_bytes=11, sha256=DIGEST,
+                ),
+            ),
+        ))
+        guarded = CapabilityAwareHarnessAdapter(
+            adapter=adapter,
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text", "image"}),
+                output_media_max_bytes={"image": 10},
+            ),
+        )
+        request = HarnessRequest(
+            context=self.context, instructions="Generate image", input_text="",
+        )
+        with self.assertRaisesRegex(UnsupportedHarnessCapability, "exceeds max size"):
+            await guarded.run(request)
+        self.assertEqual(adapter.calls, 1)
+
+    async def test_capability_guard_rejects_output_media_outside_declared_mime_allowlist(self):
+        adapter = FakeHarness(result=HarnessResult(
+            output_text="",
+            media_outputs=(
+                MediaOutput(
+                    modality="image", resource_id="artifact-image",
+                    mime_type="image/jpeg", size_bytes=10, sha256=DIGEST,
+                ),
+            ),
+        ))
+        guarded = CapabilityAwareHarnessAdapter(
+            adapter=adapter,
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text", "image"}),
+                output_media_mime_types={"image": frozenset({"image/png"})},
+            ),
+        )
+        request = HarnessRequest(
+            context=self.context, instructions="Generate image", input_text="",
+        )
+        with self.assertRaisesRegex(UnsupportedHarnessCapability, "MIME type"):
+            await guarded.run(request)
+        self.assertEqual(adapter.calls, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
