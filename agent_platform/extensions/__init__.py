@@ -3,8 +3,14 @@ from agent_platform.extensions.manager import (
     ExtensionLifecycleManager, InMemoryExtensionStateStore, InstalledExtension,
 )
 from agent_platform.extensions.manifest import ExtensionManifest, validate_platform_compatibility
+from agent_platform.extensions.publishers import TrustedPublisherKeyRegistry
+from agent_platform.extensions.postgres import (
+    PostgresExtensionStateStore, PostgresTrustedPublisherKeyRepository,
+)
 
 __all__ = [
     "ExtensionLifecycleManager", "InMemoryExtensionStateStore",
     "InstalledExtension", "ExtensionManifest", "validate_platform_compatibility",
+    "TrustedPublisherKeyRegistry", "PostgresExtensionStateStore",
+    "PostgresTrustedPublisherKeyRepository",
 ]
