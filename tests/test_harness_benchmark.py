@@ -57,7 +57,7 @@ class HarnessBenchmarkTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.summary()["deepseek-harness"]["pass_rate"], 0.5)
         self.assertEqual(len(dsh.requests), 2)
         self.assertEqual(len(strands.requests), 2)
-        self.assertIn("| Runtime | Pass rate |", report.to_markdown())
+        self.assertIn("| Runtime | Pass rate (eligible) |", report.to_markdown())
         self.assertEqual(len(report.to_dict()["observations"]), 4)
 
     async def test_benchmark_never_allows_platform_tools(self):
