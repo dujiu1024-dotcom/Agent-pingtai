@@ -74,6 +74,7 @@ class _FakeConnection:
 class PostgresRunContextSnapshotStoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.database = []
+
         async def connect():
             return _FakeConnection(self.database)
         self.store = PostgresRunContextSnapshotStore(connection_factory=connect)
