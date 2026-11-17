@@ -218,3 +218,37 @@ def memory_boundary(layer: MemoryLayer) -> MemoryLayerBoundary:
     if not isinstance(layer, MemoryLayer):
         raise TypeError("layer must be a MemoryLayer")
     return next(item for item in MEMORY_BOUNDARIES if item.layer is layer)
+
+
+# String values intentionally mirror MemoryScope without importing service.py:
+# service.py imports this module to validate source references, so importing its
+# enum here would create a circular dependency.
+MEMORY_SCOPE_BY_LAYER: dict[MemoryLayer, str] = {
+    MemoryLayer.USER: "user",
+    MemoryLayer.AGENT: "agent",
+    MemoryLayer.PROJECT: "project",
+    MemoryLayer.ORGANIZATION: "tenant",
+}
+
+
+def durable_scope_value(layer: MemoryLayer) -> str:
+    """Return the MemoryScope value for a durable layer.
+
+    RUN and SESSION are deliberately ephemeral and cannot be persisted as
+    cross-session MemoryScope records.
+    """
+    if not isinstance(layer, MemoryLayer):
+        raise TypeError("layer must be a MemoryLayer")
+    try:
+        return MEMORY_SCOPE_BY_LAYER[layer]
+    except KeyError as exc:
+        raise ValueError(
+            f"{layer.value} context is ephemeral and has no durable MemoryScope"
+        ) from exc
+
+
+def is_durable_memory_layer(layer: MemoryLayer) -> bool:
+    """Whether a logical layer is eligible for durable MemoryService storage."""
+    if not isinstance(layer, MemoryLayer):
+        raise TypeError("layer must be a MemoryLayer")
+    return layer in MEMORY_SCOPE_BY_LAYER
