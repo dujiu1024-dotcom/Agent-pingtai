@@ -3,7 +3,7 @@ import logging
 import unittest
 
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
-from agent_platform.observability.telemetry import PlatformTelemetry, StructuredEventLogger, bounded_labels
+from agent_platform.observability.telemetry import PlatformTelemetry, StructuredEventLogger
 
 
 class PlatformTelemetryTests(unittest.TestCase):
@@ -31,9 +31,9 @@ class PlatformTelemetryTests(unittest.TestCase):
         self.assertTrue(any(key.startswith('queue_depth{component="queue",operation="poll",queue="background"}') for key in snapshot["observation_counts"]))
 
     def test_high_cardinality_and_invalid_values_rejected(self):
-        with self.assertRaises(ValueError):
-            bounded_labels(component="run", operation="execute", status="succeeded", model_template="run-123")
         metrics = InMemoryMetricsRecorder()
+        with self.assertRaisesRegex(ValueError, "high-cardinality"):
+            metrics.increment("agent_runs_total", labels={"run_id": "run-123"})
         with self.assertRaises(ValueError):
             PlatformTelemetry(metrics).model_usage(input_tokens=-1, output_tokens=0)
         with self.assertRaises(ValueError):
