@@ -5,7 +5,7 @@ import hashlib
 import json
 from typing import Any, Callable
 
-from agent_platform.observability.prompts import PromptRegistry, PromptVersion
+from agent_platform.observability.prompts import PromptRegistry, PromptVariant, PromptVersion
 
 
 class PostgresPromptRegistry:
@@ -43,6 +43,170 @@ class PostgresPromptRegistry:
                     {"version": version, "content_hash": digest, "variables": list(variables)},
                 )
         return PromptVersion(prompt_id, version, template, variables, digest)
+
+    async def create_variant(
+        self, prompt_id: str, name: str, version: int, *, created_by: str,
+    ) -> PromptVariant:
+        name = PromptRegistry._validate_variant_name(name)
+        if not isinstance(created_by, str) or not created_by.strip():
+            raise ValueError("created_by is required")
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ValueError("version must be a positive integer")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT 1 FROM platform_prompt_versions WHERE prompt_id=%s AND version=%s",
+                    (prompt_id, version),
+                )
+                if await cursor.fetchone() is None:
+                    raise KeyError("prompt version does not exist")
+                await connection.execute(
+                    """INSERT INTO platform_prompt_variants
+                       (prompt_id, variant_name, current_version, status, created_by, updated_by)
+                       VALUES (%s,%s,%s,'active',%s,%s)""",
+                    (prompt_id, name, version, created_by, created_by),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_prompt_variant_versions
+                       (prompt_id, variant_name, version, changed_by)
+                       VALUES (%s,%s,%s,%s)""",
+                    (prompt_id, name, version, created_by),
+                )
+                await self._audit(
+                    connection, prompt_id, "variant.created", created_by,
+                    {"variant": name, "version": version},
+                )
+        return PromptVariant(prompt_id, name, version, "active", created_by, created_by)
+
+    async def assign_variant(
+        self, prompt_id: str, name: str, version: int, *, updated_by: str,
+    ) -> PromptVariant:
+        name = PromptRegistry._validate_variant_name(name)
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            raise ValueError("version must be a positive integer")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT status, created_by FROM platform_prompt_variants
+                       WHERE prompt_id=%s AND variant_name=%s FOR UPDATE""",
+                    (prompt_id, name),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    raise KeyError("prompt variant does not exist")
+                if row["status"] != "active":
+                    raise ValueError("deprecated prompt variant cannot be changed")
+                version_cursor = await connection.execute(
+                    "SELECT 1 FROM platform_prompt_versions WHERE prompt_id=%s AND version=%s",
+                    (prompt_id, version),
+                )
+                if await version_cursor.fetchone() is None:
+                    raise KeyError("prompt version does not exist")
+                await connection.execute(
+                    """UPDATE platform_prompt_variants
+                       SET current_version=%s,updated_by=%s,updated_at=now()
+                       WHERE prompt_id=%s AND variant_name=%s""",
+                    (version, updated_by, prompt_id, name),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_prompt_variant_versions
+                       (prompt_id, variant_name, version, changed_by)
+                       VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (prompt_id, variant_name, version) DO NOTHING""",
+                    (prompt_id, name, version, updated_by),
+                )
+                await self._audit(
+                    connection, prompt_id, "variant.version_assigned", updated_by,
+                    {"variant": name, "version": version},
+                )
+                return PromptVariant(
+                    prompt_id, name, version, "active", row["created_by"], updated_by,
+                )
+
+    async def deprecate_variant(
+        self, prompt_id: str, name: str, *, updated_by: str,
+    ) -> PromptVariant:
+        name = PromptRegistry._validate_variant_name(name)
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """SELECT current_version,status,created_by
+                       FROM platform_prompt_variants
+                       WHERE prompt_id=%s AND variant_name=%s FOR UPDATE""",
+                    (prompt_id, name),
+                )
+                row = await cursor.fetchone()
+                if row is None:
+                    raise KeyError("prompt variant does not exist")
+                if row["status"] == "deprecated":
+                    return PromptVariant(
+                        prompt_id, name, int(row["current_version"]), "deprecated",
+                        row["created_by"], updated_by,
+                    )
+                deployment_cursor = await connection.execute(
+                    """SELECT 1 FROM platform_prompt_deployments
+                       WHERE prompt_id=%s
+                         AND (active_version=%s OR canary_version=%s)
+                       LIMIT 1""",
+                    (prompt_id, row["current_version"], row["current_version"]),
+                )
+                if await deployment_cursor.fetchone() is not None:
+                    raise ValueError("deployed prompt variant cannot be deprecated")
+                await connection.execute(
+                    """UPDATE platform_prompt_variants
+                       SET status='deprecated',updated_by=%s,updated_at=now()
+                       WHERE prompt_id=%s AND variant_name=%s""",
+                    (updated_by, prompt_id, name),
+                )
+                await self._audit(
+                    connection, prompt_id, "variant.deprecated", updated_by,
+                    {"variant": name, "version": int(row["current_version"])},
+                )
+        return PromptVariant(
+            prompt_id, name, int(row["current_version"]), "deprecated",
+            row["created_by"], updated_by,
+        )
+
+    async def list_variants(self, prompt_id: str) -> list[PromptVariant]:
+        if not isinstance(prompt_id, str) or not prompt_id.strip():
+            raise ValueError("prompt_id is required")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT prompt_id,variant_name,current_version,status,created_by,updated_by
+                   FROM platform_prompt_variants WHERE prompt_id=%s
+                   ORDER BY variant_name""",
+                (prompt_id,),
+            )
+            rows = await cursor.fetchall()
+        return [PromptVariant(
+            row["prompt_id"], row["variant_name"], int(row["current_version"]),
+            row["status"], row["created_by"], row["updated_by"],
+        ) for row in rows]
+
+    async def variant_history(self, prompt_id: str, name: str) -> list[dict[str, Any]]:
+        name = PromptRegistry._validate_variant_name(name)
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT version,changed_by,created_at
+                   FROM platform_prompt_variant_versions
+                   WHERE prompt_id=%s AND variant_name=%s
+                   ORDER BY created_at,event_id""",
+                (prompt_id, name),
+            )
+            rows = await cursor.fetchall()
+        return [{
+            "version": int(row["version"]), "changed_by": row["changed_by"],
+            "created_at": row["created_at"],
+        } for row in rows]
 
     @staticmethod
     async def _audit(connection: Any, prompt_id: str, action: str,
