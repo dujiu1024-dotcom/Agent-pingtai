@@ -153,13 +153,18 @@ class PostgresIdempotencyBackend:
                                now() + (%s * interval '1 second'),
                                now() + (%s * interval '1 second'))
                        ON CONFLICT (tenant_id,principal_id,http_method,route,idempotency_key)
-                       DO NOTHING""",
+                       DO NOTHING
+                       RETURNING owner_token""",
                     (*self._scope(tenant_id, principal_id, method, route, key),
                      request_hash, owner_token, self.lease_seconds, ttl_seconds),
                 )
+                inserted = await cursor.fetchone()
+                if inserted is not None:
+                    return IdempotencyClaim("owner", owner_token=owner_token)
                 cursor = await connection.execute(
                     """SELECT request_hash,state,owner_token,lease_expires_at,
-                              response_status,response_headers,response_body,expires_at
+                              response_status,response_headers,response_body,
+                              (expires_at <= now()) AS expired
                        FROM platform_api_idempotency
                        WHERE tenant_id=%s AND principal_id=%s AND http_method=%s
                          AND route=%s AND idempotency_key=%s
@@ -169,11 +174,7 @@ class PostgresIdempotencyBackend:
                 row = await cursor.fetchone()
                 if row is None:
                     raise RuntimeError("idempotency claim disappeared inside transaction")
-                if row["expires_at"] <= row.get("now", row["expires_at"]):
-                    # Expiry is checked in SQL below; this branch is intentionally
-                    # not used because row timestamps are database-clock values.
-                    pass
-                if row["request_hash"] != request_hash:
+                if not row["expired"] and row["request_hash"] != request_hash:
                     return IdempotencyClaim("conflict")
                 if row["state"] == "completed":
                     if row["response_status"] is None or row["response_body"] is None:
@@ -185,14 +186,17 @@ class PostgresIdempotencyBackend:
                     ))
                 cursor = await connection.execute(
                     """UPDATE platform_api_idempotency
-                       SET owner_token=%s,
+                       SET request_hash=%s, state='pending', owner_token=%s,
                            lease_expires_at=now() + (%s * interval '1 second'),
-                           expires_at=GREATEST(expires_at, now() + (%s * interval '1 second'))
+                           expires_at=now() + (%s * interval '1 second'),
+                           response_status=NULL, response_headers=NULL,
+                           response_body=NULL, completed_at=NULL
                        WHERE tenant_id=%s AND principal_id=%s AND http_method=%s
                          AND route=%s AND idempotency_key=%s
-                         AND state='pending' AND lease_expires_at <= now()
+                         AND (expires_at <= now()
+                              OR (state='pending' AND lease_expires_at <= now()))
                        RETURNING owner_token""",
-                    (owner_token, self.lease_seconds, ttl_seconds,
+                    (request_hash, owner_token, self.lease_seconds, ttl_seconds,
                      *self._scope(tenant_id, principal_id, method, route, key)),
                 )
                 taken = await cursor.fetchone()
