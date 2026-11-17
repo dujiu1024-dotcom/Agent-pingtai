@@ -56,7 +56,20 @@ class SecretRedactor:
         if isinstance(value, bytes):
             return self.redact_text(value.decode("utf-8", errors="replace"))
         if isinstance(value, Mapping):
-            return {self.redact(key): self.redact(item) for key, item in value.items()}
+            cleaned = {}
+            sensitive_key = re.compile(
+                r"(?i)(?:password|passwd|client[_-]?secret|secret[_-]?id|"
+                r"api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|"
+                r"vault[_-]?token|credential)"
+            )
+            for key, item in value.items():
+                safe_key = self.redact(key)
+                cleaned[safe_key] = (
+                    _REDACTED
+                    if isinstance(key, str) and sensitive_key.search(key)
+                    else self.redact(item)
+                )
+            return cleaned
         if isinstance(value, tuple):
             return tuple(self.redact(item) for item in value)
         if isinstance(value, list):
