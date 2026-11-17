@@ -147,10 +147,14 @@ class QuotaEnforcedHarnessAdapter:
                 or context.run_id
             ),
         )
-        if warnings and self.on_quota_warning is not None:
-            # Alert delivery happens before provider dispatch. If the configured
-            # alert path is unavailable, release this undispatched reservation
-            # and fail closed rather than silently dropping a quota warning.
+        if warnings:
+            # A warning is an operational signal, not best-effort telemetry.
+            # Missing or unavailable delivery must stop provider dispatch.
+            if self.on_quota_warning is None:
+                await self.quota_service.release_run(reservation)
+                raise RuntimeError(
+                    "quota warning sink is not configured; refusing provider dispatch"
+                )
             try:
                 alert_result = self.on_quota_warning({
                     "tenant_id": context.tenant_id, "run_id": context.run_id,
