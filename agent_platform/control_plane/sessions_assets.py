@@ -222,6 +222,13 @@ class SessionRepository(Protocol):
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None: ...
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
+    async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None: ...
+    async def get_context_snapshot(
+        self, tenant_id: str, session_id: str, snapshot_id: str,
+    ) -> ContextWindowSnapshot | None: ...
+    async def list_context_snapshots(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+    ) -> tuple[ContextWindowSnapshot, ...]: ...
     async def list_messages(
         self, tenant_id: str, session_id: str, limit: int = 100,
         before_message_id: str | None = None,
@@ -258,6 +265,7 @@ class InMemorySessionRepository:
     def __init__(self) -> None:
         self.sessions: dict[tuple[str, str], ConversationSession] = {}
         self.messages: dict[tuple[str, str], list[ConversationMessage]] = {}
+        self.context_snapshots: dict[tuple[str, str], list[ContextWindowSnapshot]] = {}
         self.assets: dict[tuple[str, str], FileAsset] = {}
         self.asset_versions: dict[tuple[str, str], list[FileAssetVersion]] = {}
 
@@ -283,6 +291,42 @@ class InMemorySessionRepository:
         if key not in self.sessions:
             raise SessionNotFound("session not found")
         self.messages.setdefault(key, []).append(message)
+
+    async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None:
+        key = (snapshot.tenant_id, snapshot.session_id)
+        if key not in self.sessions:
+            raise SessionNotFound("session not found")
+        if snapshot.last_message_id is not None and not any(
+            item.message_id == snapshot.last_message_id
+            for item in self.messages.get(key, ())
+        ):
+            raise ValueError("snapshot message cursor does not belong to this session")
+        rows = self.context_snapshots.setdefault(key, [])
+        if any(item.snapshot_id == snapshot.snapshot_id for items in self.context_snapshots.values()
+               for item in items):
+            raise SessionError("context snapshot already exists")
+        if any(item.version == snapshot.version for item in rows):
+            raise SessionError("context snapshot version already exists")
+        rows.append(snapshot)
+
+    async def get_context_snapshot(
+        self, tenant_id: str, session_id: str, snapshot_id: str,
+    ) -> ContextWindowSnapshot | None:
+        return next(
+            (item for item in self.context_snapshots.get((tenant_id, session_id), ())
+             if item.snapshot_id == snapshot_id),
+            None,
+        )
+
+    async def list_context_snapshots(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+    ) -> tuple[ContextWindowSnapshot, ...]:
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        if (tenant_id, session_id) not in self.sessions:
+            raise SessionNotFound("session not found")
+        rows = self.context_snapshots.get((tenant_id, session_id), ())
+        return tuple(sorted(rows, key=lambda item: item.version, reverse=True)[:limit])
 
     async def list_messages(
         self, tenant_id: str, session_id: str, limit: int = 100,
