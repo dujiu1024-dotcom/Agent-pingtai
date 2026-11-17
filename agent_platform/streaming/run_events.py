@@ -10,6 +10,7 @@ from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Mapping
 from typing import Any, cast
 
+from agent_platform.security.log_redaction import SecretRedactor
 from agent_platform.streaming.sse import SSEEvent, SSEEventType
 
 RUN_EVENT_NAMES = frozenset({
@@ -21,11 +22,12 @@ RUN_EVENT_NAMES = frozenset({
 class RunEventBroker:
     """Tenant/run-scoped event fan-out with bounded replay for reconnecting clients."""
 
-    def __init__(self, *, history_limit: int = 1000, subscriber_limit: int = 128) -> None:
+    def __init__(self, *, history_limit: int = 1000, subscriber_limit: int = 128, redactor: Any | None = None) -> None:
         if history_limit < 1 or subscriber_limit < 1:
             raise ValueError("event broker limits must be positive")
         self.history_limit = history_limit
         self.subscriber_limit = subscriber_limit
+        self.redactor = redactor or SecretRedactor()
         self._history: dict[tuple[str, str], deque[SSEEvent]] = defaultdict(
             lambda: deque(maxlen=history_limit)
         )
@@ -45,7 +47,12 @@ class RunEventBroker:
             sequence = self._sequence[key]
             payload = {"run_id": run_id, "sequence": sequence, "event_type": event_type}
             if data:
-                payload.update(dict(data))
+                safe_data = self.redactor.redact(dict(data))
+                if isinstance(safe_data, Mapping):
+                    payload.update({
+                        key: value for key, value in safe_data.items()
+                        if key not in {"run_id", "sequence", "event_type"}
+                    })
             event_name = (
                 "token_stream" if event_type == "TOKEN_STREAM"
                 else "tool_output" if event_type == "TOOL_OUTPUT"
