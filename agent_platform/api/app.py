@@ -249,6 +249,8 @@ def create_platform_app(
         raise ValueError(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
+    if evaluation_comparison_service is not None and evaluation_manage_authorizer is None:
+        raise ValueError("evaluation comparison service requires the evaluation manager authorizer")
     observability_api_configured = any(value is not None for value in (
         metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
         evaluation_run_service, evaluation_comparison_service,

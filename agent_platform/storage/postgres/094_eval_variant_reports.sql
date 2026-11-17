@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS platform_eval_variant_reports (
     FOREIGN KEY (tenant_id,dataset_id,dataset_version)
       REFERENCES platform_eval_dataset_versions(tenant_id,dataset_id,version)
       ON DELETE CASCADE,
-    CHECK (length(created_by) > 0)
+    CHECK (length(created_by) > 0),
+    FOREIGN KEY (recommended_run_id) REFERENCES platform_eval_runs(eval_run_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_eval_variant_reports_tenant_dataset_recent
