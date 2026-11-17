@@ -5,7 +5,6 @@ import hashlib
 import inspect
 import json
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any, Callable, Protocol
 from uuid import uuid4
 
@@ -111,12 +110,9 @@ class ApiIdempotencyService:
                 raise RuntimeError("idempotency claim lease was lost after operation")
             return response, False
         except BaseException:
-            # The backend must compare owner_token so a stale worker cannot delete
-            # a newer worker's claim after lease expiry/takeover.
-            await self.backend.release(
-                tenant_id=tenant_id, principal_id=principal_id, method=method,
-                route=route, key=key, owner_token=owner,
-            )
+            # The operation may have committed its side effect before failing or
+            # being cancelled. Keep the claim pending until its lease expires;
+            # releasing it here could allow a duplicate side effect immediately.
             raise
 
 
