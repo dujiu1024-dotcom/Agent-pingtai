@@ -15,6 +15,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: harness-benchmark-poc-${{ github.event.pull_request.number || github.ref }}
+  # Never cancel in-progress runs: dense push bursts create cancel-loops.
+  cancel-in-progress: false
+
 jobs:
   harness-benchmark:
     runs-on: ubuntu-latest

@@ -11,8 +11,11 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Preserve main-branch validation runs; only superseded PR runs are cancelled.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Never cancel in-progress runs: a dense push burst would otherwise create a
+  # cancel-loop where every new workflow tears down the previous one before
+  # the runner even starts, leaving everything queued forever.  Instead, runs
+  # for the same PR queue up and complete in arrival order.
+  cancel-in-progress: false
 
 jobs:
   identity-focused:
