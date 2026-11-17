@@ -159,7 +159,7 @@ class QuotaPolicyService:
         ).encode()).hexdigest()
         event = QuotaPolicyAudit(
             audit_id=audit_id, tenant_id=policy.tenant_id, actor_id=actor_id,
-            action=payload["action"], policy_id=policy.policy_id,
+            action=str(payload["action"]), policy_id=policy.policy_id,
             policy_version=policy.version, before=before, after=after,
             occurred_at=datetime.now(timezone.utc), payload_sha256=digest,
         )
