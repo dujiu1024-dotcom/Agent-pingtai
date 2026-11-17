@@ -5,14 +5,14 @@ import asyncio
 from typing import Any, Callable
 from uuid import uuid4
 
-from agent_platform.observability.trace_spans import trace_span
-
 from agent_platform.runtime.lifecycle import (
  RunLifecycleManager,
  RunSnapshot,
  RunStatus,
  WorkerLeaseLost,
 )
+
+from agent_platform.observability.trace_spans import trace_span
 
 
 class LangGraphRunExecutor:
