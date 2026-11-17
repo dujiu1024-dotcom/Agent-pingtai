@@ -15,7 +15,8 @@ LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
 InterventionResolver = Callable[[Principal], Awaitable[Any]]
 DetailResolver = Callable[[Principal], Awaitable[Any]]
 ExecutorResolver = Callable[[Principal], Awaitable[Any]]
-ToolEffectResolver = Callable[[Principal], Awaitable[Any]]\nEventBrokerResolver = Callable[[str], Awaitable[Any]]
+ToolEffectResolver = Callable[[Principal], Awaitable[Any]]
+EventBrokerResolver = Callable[[str], Awaitable[Any]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
 
@@ -27,6 +28,7 @@ def create_runs_router(
     resolve_details: DetailResolver | None = None,
     resolve_executor: ExecutorResolver | None = None,
     resolve_tool_effects: ToolEffectResolver | None = None,
+    resolve_event_broker: EventBrokerResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/runs", tags=["runs"])
 
