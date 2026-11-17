@@ -92,6 +92,12 @@ class TenantFairQuotaAdmissionController:
                             except BudgetExceeded:
                                 if request.strategy == "reject":
                                     raise
+                                # A saturated tenant must not block other tenants
+                                # sharing this queue. Rotate it and let the next
+                                # tenant use its independently scoped capacity.
+                                if request.tenant_id in queues:
+                                    queues.move_to_end(request.tenant_id)
+                                condition.notify_all()
                                 await condition.wait()
                                 continue
                             self._pop(queues, request.tenant_id, ticket)
