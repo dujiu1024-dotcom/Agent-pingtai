@@ -694,3 +694,69 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.ingest(document=document, content=b"threaded parser")
         self.assertNotEqual(parser.thread_id, main_thread)
+
+
+    async def test_cleaning_is_canonical_before_hashing_and_chunking(self):
+        from agent_platform.knowledge.chunking import clean_document_text, sha256_text
+
+        composed = "Cafe\u0301\r\n\talpha\x00\ufeff  beta\n\n\n gamma "
+        canonical = "Café\nalpha beta\n\ngamma"
+        self.assertEqual(clean_document_text(composed), canonical)
+        self.assertEqual(sha256_text(clean_document_text(composed)), sha256_text(canonical))
+        with self.assertRaises(TypeError):
+            clean_document_text(None)
+
+    async def test_chunk_provenance_tracks_page_and_exact_cleaned_offsets(self):
+        from agent_platform.knowledge.chunking import chunk_document, clean_document_text
+
+        document = Document(
+            tenant_id="tenant-c10-03", title="paged source",
+            source_uri="s3://bucket/report.pdf", content_hash="pending",
+            document_id="report-1",
+        )
+        source = "[page:1] " + ("first page evidence " * 8) + "\n[page:2] " + ("second page evidence " * 8)
+        normalized = clean_document_text(source)
+        chunks = chunk_document(document, source, max_chars=120, overlap=12)
+
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertEqual(chunks[0].page_number, 1)
+        self.assertTrue(any(chunk.page_number == 2 for chunk in chunks))
+        for chunk in chunks:
+            self.assertEqual(
+                normalized[chunk.start_offset:chunk.end_offset],
+                chunk.text,
+            )
+            self.assertEqual(chunk.metadata["source_uri"], document.source_uri)
+            self.assertEqual(chunk.metadata["cleaning_version"], "knowledge-clean-v1")
+            self.assertEqual(
+                chunk.metadata["source_locator"],
+                {
+                    "kind": "text_offset",
+                    "start_offset": chunk.start_offset,
+                    "end_offset": chunk.end_offset,
+                    "page_number": chunk.page_number,
+                },
+            )
+
+    async def test_chunk_ids_and_hashes_are_repeatable_but_version_scoped(self):
+        from dataclasses import replace
+
+        from agent_platform.knowledge.chunking import chunk_document, sha256_text
+
+        document = Document(
+            tenant_id="tenant-c10-03", title="stable source",
+            source_uri="file://stable", content_hash="pending",
+            document_id="stable-1",
+        )
+        text = "stable paragraph. " * 30
+        first = chunk_document(document, text, max_chars=140, overlap=20)
+        retry = chunk_document(document, text, max_chars=140, overlap=20)
+        next_version = chunk_document(
+            replace(document, version=2), text, max_chars=140, overlap=20,
+        )
+        self.assertEqual([item.chunk_id for item in first], [item.chunk_id for item in retry])
+        self.assertEqual([item.content_hash for item in first], [sha256_text(item.text) for item in first])
+        self.assertNotEqual(
+            [item.chunk_id for item in first],
+            [item.chunk_id for item in next_version],
+        )
