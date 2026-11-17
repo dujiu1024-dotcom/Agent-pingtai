@@ -62,6 +62,7 @@ class EvaluationGateEvidence:
     baseline_run_id: str | None
     policy_id: str
     policy_version: int
+    policy_snapshot: Mapping[str, Any]
     passed: bool
     failures: tuple[str, ...]
     comparison_id: str | None
@@ -189,6 +190,7 @@ class EvaluationGovernanceService:
             "evidence_id": str(uuid4()), "tenant_id": tenant_id,
             "candidate_run_id": candidate_run_id, "baseline_run_id": baseline_run_id,
             "policy_id": policy.policy_id, "policy_version": policy.version,
+            "policy_snapshot": {"minimums": dict(policy.minimums), "maximums": dict(policy.maximums)},
             "passed": passed, "failures": list(failures),
             "comparison_id": comparison.comparison_id if comparison else None,
             "evidence_refs": list(evidence_refs),
