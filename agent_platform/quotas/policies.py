@@ -170,6 +170,8 @@ class QuotaPolicyService:
             item.policy_id == policy.policy_id and item.scope_type == policy.scope_type
             and item.scope_id == policy.scope_id
         )), None)
+        if previous is not None and policy.version <= previous.version:
+            raise ValueError("policy version must increase monotonically")
         before = self._policy_payload(previous) if previous else None
         after = self._policy_payload(policy)
         audit_id = str(uuid4())
