@@ -180,6 +180,8 @@ class DataConnectorService:
         self, connection: DataConnection, provider: ConnectorProvider,
     ) -> str:
         if isinstance(provider, BaseConnector) and provider.authenticator is not None:
+            if provider.credential_ref != connection.secret_ref:
+                raise ConnectorError("provider credential reference does not match connection")
             return await provider.authenticate(
                 tenant_id=connection.tenant_id, required_scopes=connection.scopes,
             )
