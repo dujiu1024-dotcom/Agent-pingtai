@@ -111,6 +111,7 @@ include = [
   "tests/test_postgres_checkpointer.py",
   "tests/test_quota_token_estimator.py",
   "tests/test_quotas.py",
+  "tests/test_quota_admission_bounds.py",
   "tests/test_quota_reporting_api.py",
   "tests/test_quota_harness_enforcement.py",
   "tests/test_quota_postgres_integration.py",
