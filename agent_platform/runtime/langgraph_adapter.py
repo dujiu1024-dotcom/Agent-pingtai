@@ -77,8 +77,16 @@ class GatewayToolNode:
         if not isinstance(tenant_id, str) or not tenant_id or not isinstance(run_id, str) or not run_id:
             raise PermissionError("tenant and Run identity are required for Gateway tool nodes")
         identity = self.identity_resolver(configurable)
+        if not isinstance(identity, Mapping):
+            raise PermissionError("trusted tool identity is invalid")
         if identity.get("tenant_id") != tenant_id:
             raise PermissionError("tool identity tenant does not match the active Run")
+        actor_id = identity.get("actor_id")
+        actor_roles = identity.get("actor_roles")
+        if not isinstance(actor_id, str) or not actor_id.strip():
+            raise PermissionError("trusted tool actor identity is required")
+        if isinstance(actor_roles, str) or not isinstance(actor_roles, Sequence):
+            raise PermissionError("trusted tool roles must be a sequence")
         client = GatewayToolClient(
             gateway=self.gateway, allowed_tools=self.allowed_tools, identity=identity,
             run_id=run_id, correlation_id=str(configurable.get("platform_correlation_id") or ""),
