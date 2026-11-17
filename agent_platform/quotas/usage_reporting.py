@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from decimal import Decimal
-from typing import Iterable
+from typing import Any, Iterable, cast
 
 from agent_platform.quotas.service import UsageEvent
 
@@ -35,10 +35,10 @@ def build_usage_report(events: Iterable[UsageEvent]) -> dict[str, object]:
             "tool_calls": 0, "runtime_ms": 0, "storage_bytes": 0,
             "cost_usd": Decimal("0"),
         })
-        item["events"] = int(item["events"]) + 1
+        item["events"] = int(cast(Any, item["events"])) + 1
         for field in ("input_tokens", "output_tokens", "tool_calls", "runtime_ms", "storage_bytes"):
-            item[field] = int(item[field]) + int(getattr(event, field))
-        item["cost_usd"] = Decimal(item["cost_usd"]) + event.cost_usd
+            item[field] = int(cast(Any, item[field])) + int(getattr(event, field))
+        item["cost_usd"] = Decimal(cast(Any, item["cost_usd"])) + event.cost_usd
 
     for event in events:
         if not isinstance(event, UsageEvent):
