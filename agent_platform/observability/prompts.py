@@ -83,6 +83,8 @@ class PromptRegistry:
         name = self._validate_variant_name(name)
         if not isinstance(created_by, str) or not created_by.strip():
             raise ValueError("created_by is required")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("version must be a positive integer")
         if version not in self._versions.get(prompt_id, {}):
             raise KeyError("prompt version does not exist")
         variants = self._variants.setdefault(prompt_id, {})
@@ -99,6 +101,8 @@ class PromptRegistry:
         name = self._validate_variant_name(name)
         if not isinstance(updated_by, str) or not updated_by.strip():
             raise ValueError("updated_by is required")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("version must be a positive integer")
         variants = self._variants.get(prompt_id, {})
         variant = variants.get(name)
         if variant is None:
@@ -128,6 +132,12 @@ class PromptRegistry:
             raise KeyError("prompt variant does not exist")
         if variant.status == "deprecated":
             return variant
+        canary = self._canary.get(prompt_id)
+        if (
+            variant.current_version == self._active.get(prompt_id)
+            or (canary is not None and variant.current_version == canary[0])
+        ):
+            raise ValueError("deployed prompt variant cannot be deprecated")
         updated = PromptVariant(
             prompt_id, name, variant.current_version, "deprecated",
             variant.created_by, updated_by,
