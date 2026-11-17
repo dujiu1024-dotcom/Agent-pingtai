@@ -42,6 +42,7 @@ include = [
   "tests/test_feishu_config.py",
   "tests/test_conversation.py",
   "agent_platform/**/*.py",
+  "tests/test_issue_666_a_666_06_migration_parity.py",
   "tests/test_identity.py",
   "tests/test_public_api_contract.py",
   "tests/test_legacy_inventory.py",
