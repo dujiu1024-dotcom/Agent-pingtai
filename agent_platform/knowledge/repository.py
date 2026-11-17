@@ -25,6 +25,11 @@ class KnowledgeRepository(Protocol):
         self, document: Document, chunks: Sequence[DocumentChunk]
     ) -> bool: ...
 
+    async def save_embeddings(
+        self, *, tenant_id: str, chunks: Sequence[DocumentChunk],
+        vectors: Sequence[Sequence[float]],
+    ) -> None: ...
+
     async def get_document(
         self, tenant_id: str, document_id: str, version: int | None = None
     ) -> Document | None: ...
@@ -81,6 +86,7 @@ class InMemoryKnowledgeRepository:
         self.chunk_acl: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
         self.chunk_acl_enforced: set[tuple[str, str]] = set()
         self.cache_invalidations: list[dict[str, str]] = []
+        self.embeddings: dict[tuple[str, str], tuple[float, ...]] = {}
 
     async def create_collection(self, collection: KnowledgeCollection) -> KnowledgeCollection:
         key = (collection.tenant_id, collection.collection_id)
@@ -191,6 +197,17 @@ class InMemoryKnowledgeRepository:
         self.documents[key] = document
         self.chunks[key] = list(chunks)
         return True
+
+    async def save_embeddings(
+        self, *, tenant_id: str, chunks: Sequence[DocumentChunk],
+        vectors: Sequence[Sequence[float]],
+    ) -> None:
+        if len(chunks) != len(vectors):
+            raise ValueError("embedding count must match chunks")
+        for chunk, vector in zip(chunks, vectors):
+            if chunk.tenant_id != tenant_id:
+                raise ValueError("embedding tenant must match chunk tenant")
+            self.embeddings[(tenant_id, chunk.chunk_id)] = tuple(float(value) for value in vector)
 
     async def get_document(
         self, tenant_id: str, document_id: str, version: int | None = None
