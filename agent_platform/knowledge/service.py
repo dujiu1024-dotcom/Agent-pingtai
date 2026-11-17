@@ -9,6 +9,8 @@ from agent_platform.knowledge.connectors import KnowledgeConnector
 from agent_platform.knowledge.contracts import (
     Document,
     IngestResult,
+    KnowledgeCollection,
+    KnowledgeIndex,
     KnowledgePrincipal,
     RetrievalHit,
 )
@@ -40,6 +42,39 @@ class KnowledgeService:
                 repository.embedding_model_version=getattr(embedder,"model_version","1")
             if hasattr(repository,"embedding_dimensions"):
                 repository.embedding_dimensions=getattr(embedder,"dimensions",1536)
+    async def create_collection(
+        self, *, principal: KnowledgePrincipal, name: str,
+        description: str = "", project_id: str | None = None,
+        metadata: dict | None = None,
+    ) -> KnowledgeCollection:
+        if not isinstance(name, str) or not name.strip() or len(name) > 200:
+            raise ValueError("collection name must contain 1-200 characters")
+        if project_id is not None and project_id not in principal.manage_project_ids:
+            raise PermissionError("project knowledge.manage permission required")
+        if project_id is None and "knowledge.manage" not in principal.permissions:
+            raise PermissionError("knowledge.manage permission required")
+        collection = KnowledgeCollection(
+            tenant_id=principal.tenant_id, name=name.strip(),
+            description=description, project_id=project_id,
+            metadata=dict(metadata or {}),
+        )
+        return await self.repository.create_collection(collection)
+
+    async def list_collections(
+        self, *, principal: KnowledgePrincipal, limit: int = 100,
+    ) -> list[KnowledgeCollection]:
+        return await self.repository.list_collections(principal, limit=limit)
+
+    async def list_collection_indexes(
+        self, *, principal: KnowledgePrincipal, collection_id: str,
+    ) -> list[KnowledgeIndex]:
+        collection = await self.repository.get_collection(principal.tenant_id, collection_id)
+        if collection is None:
+            raise ValueError("collection not found")
+        if collection.project_id is not None and collection.project_id not in principal.project_ids and collection.project_id not in principal.manage_project_ids:
+            raise PermissionError("collection access denied")
+        return await self.repository.list_indexes(principal.tenant_id, collection_id)
+
     async def ingest(self,*,document: Document,content: bytes,max_chars: int=1200,overlap: int=160)->IngestResult:
         if not isinstance(content, bytes):
             raise TypeError("content must be bytes")
@@ -55,6 +90,15 @@ class KnowledgeService:
         # Parser adapters are synchronous by contract; keep remote OCR polling off the event loop.
         text=await asyncio.to_thread(self.parsers.parse,content,document.media_type)
         digest=sha256_text(text)
+        if document.collection_id is not None:
+            collection = await self.repository.get_collection(document.tenant_id, document.collection_id)
+            if collection is None:
+                raise ValueError("collection not found in tenant")
+            if collection.project_id is not None and (
+                collection.project_id != document.project_id
+                or document.scope.value != "project"
+            ):
+                raise ValueError("project collections require project-scoped documents in the same project")
         existing=await self.repository.get_document(document.tenant_id,document.document_id)
         if existing is not None:
             unchanged=(
@@ -66,6 +110,7 @@ class KnowledgeService:
                 and existing.owner_user_id==document.owner_user_id
                 and existing.media_type==document.media_type
                 and existing.metadata==document.metadata
+                and existing.collection_id==document.collection_id
             )
             if unchanged:
                 document=existing

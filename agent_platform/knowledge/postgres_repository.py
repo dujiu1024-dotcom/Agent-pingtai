@@ -6,6 +6,8 @@ from typing import Any, Callable, Sequence
 from agent_platform.knowledge.contracts import (
     Document,
     DocumentChunk,
+    KnowledgeCollection,
+    KnowledgeIndex,
     KnowledgePrincipal,
     KnowledgeScope,
     RetrievalHit,
@@ -26,13 +28,110 @@ class PostgresKnowledgeRepository:
         self.embedding_model=embedding_model
         self.embedding_model_version=embedding_model_version
         self.embedding_dimensions=embedding_dimensions
+    async def create_collection(self, collection: KnowledgeCollection) -> KnowledgeCollection:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """INSERT INTO knowledge_collections
+                    (tenant_id,collection_id,name,description,project_id,metadata)
+                    VALUES(%s,%s,%s,%s,%s,%s)""",
+                    (collection.tenant_id, collection.collection_id, collection.name,
+                     collection.description, collection.project_id, _jsonb(collection.metadata)),
+                )
+                index = KnowledgeIndex(
+                    tenant_id=collection.tenant_id, collection_id=collection.collection_id,
+                )
+                await conn.execute(
+                    """INSERT INTO knowledge_indexes
+                    (tenant_id,index_id,collection_id,name,index_type,embedding_model,dimensions,status)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (index.tenant_id,index.index_id,index.collection_id,index.name,
+                     index.index_type,index.embedding_model,index.dimensions,index.status),
+                )
+        return collection
+
+    async def get_collection(self, tenant_id: str, collection_id: str) -> KnowledgeCollection | None:
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT * FROM knowledge_collections
+                WHERE tenant_id=%s AND collection_id=%s AND deleted_at IS NULL""",
+                (tenant_id, collection_id),
+            )
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        return KnowledgeCollection(
+            tenant_id=row["tenant_id"], collection_id=str(row["collection_id"]),
+            name=row["name"], description=row["description"],
+            project_id=row["project_id"], metadata=dict(row["metadata"] or {}),
+            created_at=row["created_at"], updated_at=row["updated_at"],
+            deleted_at=row["deleted_at"],
+        )
+
+    async def list_collections(self, principal: KnowledgePrincipal, limit: int = 100) -> list[KnowledgeCollection]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT * FROM knowledge_collections
+                WHERE tenant_id=%s AND deleted_at IS NULL
+                AND (project_id IS NULL OR project_id=ANY(%s))
+                ORDER BY created_at DESC LIMIT %s""",
+                (principal.tenant_id, list(principal.project_ids | principal.manage_project_ids), limit),
+            )
+            rows = await cur.fetchall()
+        return [KnowledgeCollection(
+            tenant_id=row["tenant_id"], collection_id=str(row["collection_id"]),
+            name=row["name"], description=row["description"],
+            project_id=row["project_id"], metadata=dict(row["metadata"] or {}),
+            created_at=row["created_at"], updated_at=row["updated_at"],
+            deleted_at=row["deleted_at"],
+        ) for row in rows]
+
+    async def create_index(self, index: KnowledgeIndex) -> KnowledgeIndex:
+        if await self.get_collection(index.tenant_id, index.collection_id) is None:
+            raise ValueError("collection not found")
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """INSERT INTO knowledge_indexes
+                    (tenant_id,index_id,collection_id,name,index_type,embedding_model,dimensions,status)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (index.tenant_id,index.index_id,index.collection_id,index.name,
+                     index.index_type,index.embedding_model,index.dimensions,index.status),
+                )
+        return index
+
+    async def list_indexes(self, tenant_id: str, collection_id: str) -> list[KnowledgeIndex]:
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute(
+                """SELECT i.* FROM knowledge_indexes i
+                JOIN knowledge_collections c ON c.tenant_id=i.tenant_id
+                AND c.collection_id=i.collection_id
+                WHERE i.tenant_id=%s AND i.collection_id=%s AND c.deleted_at IS NULL
+                ORDER BY i.created_at""",
+                (tenant_id, collection_id),
+            )
+            rows = await cur.fetchall()
+        return [KnowledgeIndex(
+            tenant_id=row["tenant_id"], collection_id=str(row["collection_id"]),
+            index_id=str(row["index_id"]), name=row["name"],
+            index_type=row["index_type"], embedding_model=row["embedding_model"],
+            dimensions=row["dimensions"], status=row["status"], created_at=row["created_at"],
+        ) for row in rows]
+
     async def save_document(self,document: Document,chunks: Sequence[DocumentChunk])->bool:
         conn=await self._connect()
         async with conn:
             async with conn.transaction():
                 cur=await conn.execute("SELECT 1 FROM knowledge_documents WHERE tenant_id=%s AND document_id=%s AND version=%s",(document.tenant_id,document.document_id,document.version))
                 if await cur.fetchone():return False
-                await conn.execute("""INSERT INTO knowledge_documents(tenant_id,document_id,version,title,source_uri,content_hash,scope,project_id,owner_user_id,media_type,metadata) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",(document.tenant_id,document.document_id,document.version,document.title,document.source_uri,document.content_hash,document.scope.value,document.project_id,document.owner_user_id,document.media_type,_jsonb(document.metadata)))
+                await conn.execute("""INSERT INTO knowledge_documents(tenant_id,document_id,version,title,source_uri,content_hash,scope,project_id,owner_user_id,media_type,metadata,collection_id) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",(document.tenant_id,document.document_id,document.version,document.title,document.source_uri,document.content_hash,document.scope.value,document.project_id,document.owner_user_id,document.media_type,_jsonb(document.metadata),document.collection_id))
                 for c in chunks:
                     await conn.execute("""INSERT INTO knowledge_chunks(tenant_id,document_id,document_version,chunk_id,ordinal,body,content_hash,start_offset,end_offset,page_number,metadata) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",(c.tenant_id,c.document_id,c.document_version,c.chunk_id,c.ordinal,c.text,c.content_hash,c.start_offset,c.end_offset,c.page_number,_jsonb(c.metadata)))
         return True
@@ -60,15 +159,15 @@ class PostgresKnowledgeRepository:
             if version is not None:sql+=" AND version=%s";params.append(version)
             sql+=" ORDER BY version DESC LIMIT 1";cur=await conn.execute(sql,tuple(params));row=await cur.fetchone()
         if not row:return None
-        return Document(tenant_id=row["tenant_id"],document_id=str(row["document_id"]),version=row["version"],title=row["title"],source_uri=row["source_uri"],content_hash=row["content_hash"],scope=KnowledgeScope(row["scope"]),project_id=row["project_id"],owner_user_id=row["owner_user_id"],media_type=row["media_type"],metadata=dict(row["metadata"] or {}),created_at=row["created_at"],deleted_at=row["deleted_at"])
+        return Document(tenant_id=row["tenant_id"],document_id=str(row["document_id"]),version=row["version"],title=row["title"],source_uri=row["source_uri"],content_hash=row["content_hash"],scope=KnowledgeScope(row["scope"]),project_id=row["project_id"],owner_user_id=row["owner_user_id"],media_type=row["media_type"],metadata=dict(row["metadata"] or {}),collection_id=str(row["collection_id"]) if row.get("collection_id") else None,created_at=row["created_at"],deleted_at=row["deleted_at"])
     async def list_documents(self,principal: KnowledgePrincipal,limit: int=100)->list[Document]:
         if limit<1 or limit>500:
             raise ValueError("limit must be between 1 and 500")
         conn=await self._connect()
         async with conn:
-            cur=await conn.execute("""SELECT d.* FROM knowledge_documents d WHERE d.tenant_id=%s AND d.deleted_at IS NULL AND d.version=(SELECT max(v.version) FROM knowledge_documents v WHERE v.tenant_id=d.tenant_id AND v.document_id=d.document_id AND v.deleted_at IS NULL) AND ((d.scope='tenant') OR (d.scope='project' AND d.project_id=ANY(%s)) OR (d.scope='private' AND (d.owner_user_id=%s OR d.acl_enforced OR EXISTS(SELECT 1 FROM knowledge_document_acl ap WHERE ap.tenant_id=d.tenant_id AND ap.document_id=d.document_id)))) AND ((NOT d.acl_enforced AND NOT EXISTS(SELECT 1 FROM knowledge_document_acl ax WHERE ax.tenant_id=d.tenant_id AND ax.document_id=d.document_id)) OR (d.scope='private' AND d.owner_user_id=%s) OR EXISTS(SELECT 1 FROM knowledge_document_acl a WHERE a.tenant_id=d.tenant_id AND a.document_id=d.document_id AND a.permission IN ('read','manage') AND ((a.principal_type='user' AND a.principal_id=%s) OR (a.principal_type='role' AND a.principal_id=ANY(%s)) OR (a.principal_type='project' AND a.principal_id=ANY(%s))))) ORDER BY d.created_at DESC LIMIT %s""",(principal.tenant_id,list(principal.project_ids),principal.user_id,principal.user_id,principal.user_id,list(principal.roles),list(principal.project_ids),limit))
+            cur=await conn.execute("""SELECT d.* FROM knowledge_documents d WHERE d.tenant_id=%s AND d.deleted_at IS NULL AND d.version=(SELECT max(v.version) FROM knowledge_documents v WHERE v.tenant_id=d.tenant_id AND v.document_id=d.document_id AND v.deleted_at IS NULL) AND ((d.scope='tenant') OR (d.scope='project' AND d.project_id=ANY(%s)) OR (d.scope='private' AND (d.owner_user_id=%s OR d.acl_enforced OR EXISTS(SELECT 1 FROM knowledge_document_acl ap WHERE ap.tenant_id=d.tenant_id AND ap.document_id=d.document_id)))) AND (d.collection_id IS NULL OR EXISTS(SELECT 1 FROM knowledge_collections kc WHERE kc.tenant_id=d.tenant_id AND kc.collection_id=d.collection_id AND kc.deleted_at IS NULL AND (kc.project_id IS NULL OR (d.scope='project' AND kc.project_id=d.project_id))))  AND (d.collection_id IS NULL OR EXISTS(SELECT 1 FROM knowledge_collections kc WHERE kc.tenant_id=d.tenant_id AND kc.collection_id=d.collection_id AND kc.deleted_at IS NULL AND (kc.project_id IS NULL OR (d.scope='project' AND kc.project_id=d.project_id)))) AND ((NOT d.acl_enforced AND NOT EXISTS(SELECT 1 FROM knowledge_document_acl ax WHERE ax.tenant_id=d.tenant_id AND ax.document_id=d.document_id)) OR (d.scope='private' AND d.owner_user_id=%s) OR EXISTS(SELECT 1 FROM knowledge_document_acl a WHERE a.tenant_id=d.tenant_id AND a.document_id=d.document_id AND a.permission IN ('read','manage') AND ((a.principal_type='user' AND a.principal_id=%s) OR (a.principal_type='role' AND a.principal_id=ANY(%s)) OR (a.principal_type='project' AND a.principal_id=ANY(%s))))) ORDER BY d.created_at DESC LIMIT %s""",(principal.tenant_id,list(principal.project_ids),principal.user_id,principal.user_id,principal.user_id,list(principal.roles),list(principal.project_ids),limit))
             rows=await cur.fetchall()
-        return [Document(tenant_id=row["tenant_id"],document_id=str(row["document_id"]),version=row["version"],title=row["title"],source_uri=row["source_uri"],content_hash=row["content_hash"],scope=KnowledgeScope(row["scope"]),project_id=row["project_id"],owner_user_id=row["owner_user_id"],media_type=row["media_type"],metadata=dict(row["metadata"] or {}),created_at=row["created_at"],deleted_at=row["deleted_at"]) for row in rows]
+        return [Document(tenant_id=row["tenant_id"],document_id=str(row["document_id"]),version=row["version"],title=row["title"],source_uri=row["source_uri"],content_hash=row["content_hash"],scope=KnowledgeScope(row["scope"]),project_id=row["project_id"],owner_user_id=row["owner_user_id"],media_type=row["media_type"],metadata=dict(row["metadata"] or {}),collection_id=str(row["collection_id"]) if row.get("collection_id") else None,created_at=row["created_at"],deleted_at=row["deleted_at"]) for row in rows]
     @staticmethod
     def _hit(row: dict[str,Any],strategy: str)->RetrievalHit:
         return RetrievalHit(document_id=str(row["document_id"]),document_version=row["version"],chunk_id=str(row["chunk_id"]),text=row["body"],source_uri=row["source_uri"],title=row["title"],score=float(row["score"] or 0),page_number=row["page_number"],start_offset=row["start_offset"],end_offset=row["end_offset"],retrieval_trace={"strategy":strategy,"tenant_scoped":True,"acl_filtered_in_sql":True,"citation":{"document_id":str(row["document_id"]),"document_version":row["version"],"chunk_id":str(row["chunk_id"]),"source_uri":row["source_uri"],"title":row["title"],"page_number":row["page_number"],"start_offset":row["start_offset"],"end_offset":row["end_offset"]}})
