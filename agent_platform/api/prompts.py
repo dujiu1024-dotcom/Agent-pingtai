@@ -145,7 +145,7 @@ def create_prompt_registry_router(
             after = await invoke(registry.resolve, storage_key, version=version)
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
-        diff = "\\n".join(difflib.unified_diff(
+        diff = "\n".join(difflib.unified_diff(
             before.template.splitlines(), after.template.splitlines(),
             fromfile=f"v{base_version}", tofile=f"v{version}", lineterm="",
         ))
