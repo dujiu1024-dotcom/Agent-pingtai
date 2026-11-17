@@ -501,6 +501,12 @@ class GraphBuildPipeline:
         conflict = await self.candidates.get(principal.tenant_id, conflict_candidate_id)
         if selected is None or conflict is None or selected.status not in {CandidateStatus.CONFLICT, CandidateStatus.PENDING}:
             raise ValueError("selected candidate is not part of an open conflict")
+        if selected.candidate_id == conflict.candidate_id:
+            raise ValueError("conflict resolution requires two distinct candidates")
+        if selected.project_id != conflict.project_id:
+            raise ValueError("conflicting candidates must share the same project scope")
+        if conflict.status not in {CandidateStatus.PENDING, CandidateStatus.CONFLICT}:
+            raise ValueError("conflict candidate is no longer open")
         if not set(selected.conflict_keys).intersection(conflict.conflict_keys):
             raise ValueError("candidates do not share a conflict key")
         if (
@@ -525,7 +531,10 @@ class GraphBuildPipeline:
         return approved
 
     async def _publish(self, candidate: GraphCandidate, principal: GraphReviewer) -> None:
-        project_ids = tuple(principal.project_ids)
+        authorized_projects = set(principal.project_ids)
+        if candidate.project_id is not None and "graph.manage" in principal.permissions:
+            authorized_projects.add(candidate.project_id)
+        project_ids = tuple(sorted(authorized_projects))
         entity_ids: dict[str, str] = {}
         source_type = {
             GraphSourceKind.KNOWLEDGE_DOCUMENT: "document",
