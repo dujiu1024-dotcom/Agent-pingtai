@@ -14,9 +14,11 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
+    API_V1_PREFIX,
     ApiV1CompatibilityMiddleware,
-    API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
-  )
+    PublicApiContractASGIMiddleware,
+    error_for_http_status,
+)
 from agent_platform.api.graph import create_graph_router
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
