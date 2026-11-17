@@ -55,9 +55,10 @@ class KnowledgeIndex:
     updated_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
-        if not all(value.strip() for value in (
+        identity = (
             self.tenant_id, self.collection_id, self.index_name, self.embedding_model,
-        )):
+        )
+        if any(not isinstance(value, str) or not value.strip() for value in identity):
             raise ValueError("index identity fields are required")
         if (
             isinstance(self.dimensions, bool)
@@ -290,7 +291,7 @@ class PostgresKnowledgeCatalog:
                        FROM knowledge_collections c
                        WHERE c.tenant_id = %s AND c.collection_id = %s
                          AND c.deleted_at IS NULL
-                       ON CONFLICT (tenant_id, collection_id, index_name) DO NOTHING
+                       ON CONFLICT DO NOTHING
                        RETURNING index_id""",
                     (index.index_id, index.index_name, index.embedding_model,
                      index.dimensions, index.schema_version, index.status.value,
