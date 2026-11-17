@@ -36,11 +36,13 @@ class FileDownloadApiAuthorizationTests(unittest.TestCase):
         repository = InMemorySessionRepository()
         storage = TrackingObjectStorage()
         service = SessionAssetService(repository, storage)
-        principal = SimpleNamespace(tenant_id="tenant-a", user_id="user-a")
         denied = denied if denied is not None else set()
 
-        async def resolve_principal(_request):
-            return principal
+        async def resolve_principal(request):
+            return SimpleNamespace(
+                tenant_id=request.headers.get("x-tenant", "tenant-a"),
+                user_id="user-a",
+            )
 
         async def resolve_service(_principal):
             return service
@@ -112,6 +114,24 @@ class FileDownloadApiAuthorizationTests(unittest.TestCase):
         self.assertEqual(response.json()["expires_in"], 120)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(storage.presign_calls, [(asset.object_key, 120)])
+
+    def test_file_resource_is_not_visible_across_tenants(self):
+        client, service, _repository, storage, _denied = self._client()
+        _session, asset = self._seed(service)
+
+        response = client.get(
+            f"/api/platform/v1/files/{asset.asset_id}",
+            headers={"x-tenant": "tenant-b"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(storage.get_calls, [])
+
+        signed = client.get(
+            f"/api/platform/v1/files/{asset.asset_id}/download-url",
+            headers={"x-tenant": "tenant-b"},
+        )
+        self.assertEqual(signed.status_code, 404)
+        self.assertEqual(storage.presign_calls, [])
 
     def test_unavailable_file_cannot_be_downloaded_or_presigned(self):
         client, service, repository, storage, _denied = self._client()

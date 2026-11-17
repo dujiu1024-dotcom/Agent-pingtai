@@ -30,6 +30,8 @@ def create_connectors_router(
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "connector repository tenant mismatch")
         connection = await service.repository.get(principal.tenant_id, connection_id) if connection_id != "*" else None
+        if connection_id != "*" and connection is None:
+            raise HTTPException(404, "connector not found")
         if connection is not None and connection.project_id and not await authorize(
             principal, "project", connection.project_id, action,
         ):
@@ -89,12 +91,16 @@ def create_connectors_router(
         return {"connection_id": connection_id, "status": "queued"}
 
     @router.post("/{connection_id}/revoke")
-    async def revoke_connection(connection_id: str, request: Request):
+    async def revoke_connection(
+        connection_id: str, request: Request, disposition: str = "retain",
+    ):
         principal, service = await context(request, connection_id, "revoke")
+        if disposition not in {"retain", "delete"}:
+            raise HTTPException(422, "disposition must be retain or delete")
         try:
             revoked = await service.revoke(
                 tenant_id=principal.tenant_id, connection_id=connection_id,
-                revocation_disposition="retain",
+                revocation_disposition=disposition,
             )
         except ConnectorError as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -105,8 +111,14 @@ def create_connectors_router(
             await audit_writer.record(
                 tenant_id=principal.tenant_id, actor_id=principal.user_id,
                 action="connector.revoked", subject_id=connection_id,
-                detail={"project_id": connection.project_id if connection else None},
+                detail={
+                    "project_id": connection.project_id if connection else None,
+                    "disposition": disposition,
+                },
             )
-        return {"connection_id": connection_id, "status": "revoked"}
+        return {
+            "connection_id": connection_id, "status": "revoked",
+            "disposition": disposition,
+        }
 
     return router
