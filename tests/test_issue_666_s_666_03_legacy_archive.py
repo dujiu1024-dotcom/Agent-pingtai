@@ -30,7 +30,7 @@ def test_all_legacy_sources_are_archived_byte_for_byte():
     assert len(LEGACY_BLOB_SHAS) == 19
     for filename, expected_sha in LEGACY_BLOB_SHAS.items():
         data = (ARCHIVE / filename).read_bytes()
-        header = f"blob {len(data)}\\0".encode("ascii")
+        header = b"blob " + str(len(data)).encode("ascii") + bytes([0])
         actual_sha = hashlib.sha1(header + data).hexdigest()
         assert actual_sha == expected_sha, f"archived source changed: {filename}"
 
