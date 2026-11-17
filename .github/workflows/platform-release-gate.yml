@@ -76,6 +76,7 @@ jobs:
             tests.test_identity_http \
             tests.test_knowledge_memory_api \
             tests.test_memory_boundaries \
+            tests.test_graph_schema \
             tests.test_multi_expert_workflow_integration \
             tests.test_tool_gateway \
             tests.test_sandbox_oci \
