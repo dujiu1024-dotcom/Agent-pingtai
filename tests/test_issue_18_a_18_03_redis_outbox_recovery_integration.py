@@ -20,12 +20,12 @@ REDIS_URL = os.environ.get("AGENT_PLATFORM_TEST_REDIS_URL")
 if DSN and REDIS_URL:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
-    from psycopg.types.json import Jsonb
-
     from agent_platform.events.consumer import RedisStreamsConsumer
     from agent_platform.events.outbox import OutboxRelay, PostgresOutboxStore
     from agent_platform.events.receipts import PostgresEventReceiptStore
     from agent_platform.events.redis_streams import RedisStreamsTransport
+    from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
+    from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
 
 
 @unittest.skipUnless(
@@ -37,9 +37,7 @@ class RedisOutboxLossRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.tenant_id = f"outbox-loss-{uuid4().hex}"
         self.topic = "integration.redis-loss-replay"
         self.stream_prefix = f"platform-outbox-loss-{uuid4().hex}"
-        self.event_id = str(uuid4())
         self.entry_id = str(uuid4())
-        self.correlation_id = str(uuid4())
 
         async with await AsyncConnection.connect(DSN, autocommit=True) as conn:
             migration_dir = Path("agent_platform/storage/postgres")
@@ -73,39 +71,36 @@ class RedisOutboxLossRecoveryTests(unittest.IsolatedAsyncioTestCase):
             "business_reference": "approval-redis-loss",
             "amount": 125,
         }
-        payload = {
-            "event_id": self.event_id,
-            "event_type": self.topic,
-            "entry_id": self.entry_id,
-            "entry_version": 1,
-            "payload": {"kind": "fact", "status": "accepted"},
-        }
+        repository = PostgresBlackboardRepository(
+            tenant_id=self.tenant_id,
+            connection_factory=self.connect,
+        )
+        entry = BlackboardEntry(
+            entry_id=self.entry_id,
+            scope=Scope.TASK,
+            scope_id="redis-loss-task",
+            kind=EntryKind.FACT,
+            content=fact,
+            author_id="integration-test",
+            status=EntryStatus.ACCEPTED,
+        )
+        # Use the production repository path: entry, durable Blackboard event,
+        # delivery record and Outbox row are committed atomically.
+        await repository.propose(entry)
         async with await self.connect() as conn:
-            async with conn.transaction():
+            outbox_row = await (
                 await conn.execute(
                     """
-                    INSERT INTO blackboard_entries (
-                        tenant_id, entry_id, scope, scope_id, kind, version,
-                        status, content, source_refs, author_id, correlation_id
-                    ) VALUES (%s, %s, 'task', 'redis-loss-task', 'fact', 1,
-                              'accepted', %s, '[]'::jsonb, 'integration-test', %s)
+                    SELECT event_id, topic, payload FROM platform_outbox
+                    WHERE tenant_id=%s AND topic='blackboard.entry_proposed'
+                      AND payload->>'entry_id'=%s
                     """,
-                    (
-                        self.tenant_id,
-                        self.entry_id,
-                        Jsonb(fact),
-                        self.correlation_id,
-                    ),
+                    (self.tenant_id, self.entry_id),
                 )
-                await conn.execute(
-                    """
-                    INSERT INTO platform_outbox (tenant_id, event_id, topic, payload)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    (self.tenant_id, self.event_id, self.topic, Jsonb(payload)),
-                )
-        return fact, payload
-
+            ).fetchone()
+        self.assertIsNotNone(outbox_row)
+        self.event_id = str(outbox_row["event_id"])
+        return fact, dict(outbox_row["payload"])
     async def test_deleted_redis_stream_is_rebuilt_from_postgres_outbox(self):
         fact, payload = await self._insert_durable_business_fact_and_outbox()
         replay_window_start = datetime.now(timezone.utc) - timedelta(minutes=1)
