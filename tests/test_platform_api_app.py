@@ -1,5 +1,6 @@
 """Tests for production HTTP API composition."""
 import unittest
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -71,6 +72,70 @@ class PlatformApiCompositionTests(unittest.TestCase):
             allowed_origins=("https://console.example.com",),
         )
         self.client = TestClient(self.app, base_url="https://testserver")
+
+    def test_evaluation_gate_is_wired_through_platform_composition(self):
+        class Governance:
+            async def decide_release(self, **kwargs):
+                self.kwargs = kwargs
+                return SimpleNamespace(
+                    evidence_id="evidence-1", passed=True, failures=(),
+                    policy_id="production", policy_version=2,
+                    comparison_id="comparison-1", content_sha256="a" * 64,
+                )
+
+        governance = Governance()
+        app = create_platform_app(
+            identity=self.identity, identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            evaluation_governance_service=governance,
+            evaluation_gate_manage_authorizer=lambda principal: True,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.post(
+            "/api/platform/v1/observability/evaluations/run-1/gate",
+            headers={"Authorization": "Bearer valid-session"},
+            json={
+                "policy_id": "production", "policy_version": 2,
+                "minimums": {"answer_term_f1": 0.9},
+                "maximums": {"latency_ms": 500},
+                "evidence_refs": ["ci://run/123"],
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["evidence_id"], "evidence-1")
+        self.assertEqual(governance.kwargs["tenant_id"], "tenant-a")
+        self.assertEqual(governance.kwargs["candidate_run_id"], "run-1")
+
+    def test_evaluation_gate_rejects_actor_without_gate_permission(self):
+        class Governance:
+            async def decide_release(self, **kwargs):
+                raise AssertionError("unauthorized actor must not reach governance service")
+
+        app = create_platform_app(
+            identity=self.identity, identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            evaluation_governance_service=Governance(),
+            evaluation_gate_manage_authorizer=lambda principal: False,
+        )
+        response = TestClient(app, base_url="https://testserver").post(
+            "/api/platform/v1/observability/evaluations/run-1/gate",
+            headers={"Authorization": "Bearer valid-session"},
+            json={"policy_id": "production", "policy_version": 1,
+                  "minimums": {"answer_term_f1": 0.9},
+                  "evidence_refs": ["ci://run/123"]},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_evaluation_gate_requires_explicit_gate_authorizer(self):
+        with self.assertRaisesRegex(ValueError, "gate manager authorizer"):
+            create_platform_app(
+                identity=self.identity, identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                evaluation_governance_service=object(),
+            )
 
     def test_business_routes_require_authenticated_session(self):
         response = self.client.get("/api/platform/v1/knowledge/documents")

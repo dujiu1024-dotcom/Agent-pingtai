@@ -93,6 +93,8 @@ def create_platform_app(
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
+    evaluation_governance_service: Any | None = None,
+    evaluation_gate_manage_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
     alert_dispatch_worker: Any | None = None,
@@ -234,8 +236,18 @@ def create_platform_app(
         raise ValueError(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
+    evaluation_governance_configured = any(value is not None for value in (
+        evaluation_governance_service, evaluation_gate_manage_authorizer,
+    ))
+    if evaluation_governance_configured and any(value is None for value in (
+        evaluation_governance_service, evaluation_gate_manage_authorizer,
+    )):
+        raise ValueError(
+            "evaluation governance service and gate manager authorizer must be configured together"
+        )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
+        evaluation_run_service, evaluation_governance_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
@@ -247,6 +259,8 @@ def create_platform_app(
             evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
+            evaluation_governance_service=evaluation_governance_service,
+            authorize_eval_gate_manage=evaluation_gate_manage_authorizer,
         ))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer,
