@@ -8,16 +8,23 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Awaitable, Callable, Sequence
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
+
+from agent_platform.blackboard.sse import (
+    decode_blackboard_cursor,
+    stream_blackboard_events,
+)
 
 from agent_platform.blackboard.protocol import BlackboardRepository, VersionConflict
 from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
 from agent_platform.identity.models import Principal
+from agent_platform.streaming.sse import sse_response
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 RepositoryResolver = Callable[[Principal], Awaitable[BlackboardRepository]]
 ScopeAuthorizer = Callable[[Principal, Scope, str, str], Awaitable[bool]]
 EvidenceReferenceVerifier = Callable[[Principal, Scope, str, Sequence[str]], Awaitable[bool]]
+EventReplayResolver = Callable[[Principal], Awaitable[Any]]
 
 
 def create_blackboard_router(
@@ -26,6 +33,7 @@ def create_blackboard_router(
     resolve_repository: RepositoryResolver,
     authorize_scope: ScopeAuthorizer,
     verify_evidence_refs: EvidenceReferenceVerifier | None = None,
+    resolve_event_replay: EventReplayResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/blackboard", tags=["blackboard"])
 
@@ -86,6 +94,31 @@ def create_blackboard_router(
             "created_at": entry.created_at.isoformat(),
             "correlation_id": entry.correlation_id,
         }
+
+    @router.get("/events/stream")
+    async def stream_events(
+        request: Request,
+        scope: Scope,
+        scope_id: str,
+        last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    ):
+        if not scope_id.strip():
+            raise HTTPException(400, "scope_id is required")
+        principal, _ = await scope_context(request, scope, scope_id, "read")
+        if resolve_event_replay is None:
+            raise HTTPException(503, "Blackboard event replay is not configured")
+        replay = await resolve_event_replay(principal)
+        if getattr(replay, "tenant_id", None) != principal.tenant_id:
+            raise HTTPException(403, "Blackboard event replay tenant mismatch")
+        try:
+            cursor = decode_blackboard_cursor(last_event_id)
+        except ValueError as exc:
+            raise HTTPException(400, "Last-Event-ID is invalid") from exc
+        return sse_response(
+            stream_blackboard_events(
+                replay=replay, scope=scope, scope_id=scope_id, cursor=cursor,
+            )
+        )
 
     @router.get("/entries")
     async def list_entries(request: Request, scope: Scope, scope_id: str, kinds: str = "", limit: int = 100):
