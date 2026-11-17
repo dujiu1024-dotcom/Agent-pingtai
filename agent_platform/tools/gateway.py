@@ -316,6 +316,7 @@ class SupervisedToolGateway:
                 approval_id=approval_id,
                 action_digest=request.digest(),
                 policy_version=definition.policy_version,
+                run_id=run_id,
             )
             if consumed:
                 approved_hash = request.digest()
