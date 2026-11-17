@@ -150,11 +150,6 @@ class PostgresQuotaPolicyAtomicityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(connection.audit_rows), 1)
 
     async def test_audit_failure_rolls_back_policy_write(self):
-        from agent_platform.quotas.policies import (
-            PostgresQuotaPolicyRepository, QuotaPolicyAudit,
-        )
-        from datetime import datetime, timezone
-
         connection = _FakePostgresConnection(fail_audit=True)
         repository = PostgresQuotaPolicyRepository(lambda: _async_value(connection))
         policy = QuotaPolicy(
@@ -173,11 +168,6 @@ class PostgresQuotaPolicyAtomicityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(connection.audit_rows, [])
 
     async def test_stale_version_does_not_append_audit(self):
-        from agent_platform.quotas.policies import (
-            PostgresQuotaPolicyRepository, QuotaPolicyAudit,
-        )
-        from datetime import datetime, timezone
-
         connection = _FakePostgresConnection(policy_rowcount=0)
         repository = PostgresQuotaPolicyRepository(lambda: _async_value(connection))
         policy = QuotaPolicy(
