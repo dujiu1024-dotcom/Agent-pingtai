@@ -58,7 +58,7 @@ class KnowledgeIndex:
         if self.index_type not in {"lexical", "vector", "hybrid"}:
             raise ValueError("index_type must be lexical, vector or hybrid")
         if self.dimensions is not None and (
-            isinstance(self.dimensions, bool) or self.dimensions < 1
+            isinstance(self.dimensions, bool) or not isinstance(self.dimensions, int) or self.dimensions < 1
         ):
             raise ValueError("dimensions must be a positive integer")
 
@@ -89,6 +89,8 @@ class Document:
             raise ValueError("project-scoped documents require project_id")
         if self.scope is KnowledgeScope.PRIVATE and not self.owner_user_id:
             raise ValueError("private documents require owner_user_id")
+        if self.collection_id is not None and (not isinstance(self.collection_id, str) or not self.collection_id.strip()):
+            raise ValueError("collection_id must not be empty when provided")
 
 @dataclass(frozen=True)
 class DocumentChunk:
