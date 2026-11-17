@@ -37,8 +37,25 @@ class KnowledgeCollection:
     deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        if not self.tenant_id.strip() or not self.name.strip():
-            raise ValueError("tenant_id and collection name are required")
+        for field_name, value in (
+            ("tenant_id", self.tenant_id),
+            ("name", self.name),
+            ("description", self.description),
+            ("collection_id", self.collection_id),
+            ("created_by", self.created_by),
+        ):
+            if not isinstance(value, str):
+                raise ValueError(f"{field_name} must be a string")
+        if not self.tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not self.name.strip() or len(self.name) > 200:
+            raise ValueError("collection name must contain 1-200 characters")
+        if self.project_id is not None and (
+            not isinstance(self.project_id, str) or not self.project_id.strip()
+        ):
+            raise ValueError("project_id must be a non-empty string when provided")
+        if not self.collection_id.strip():
+            raise ValueError("collection_id is required")
 
 
 @dataclass(frozen=True)
@@ -55,12 +72,23 @@ class KnowledgeIndex:
     updated_at: datetime = field(default_factory=_now)
 
     def __post_init__(self) -> None:
-        if not all(value.strip() for value in (
-            self.tenant_id, self.collection_id, self.index_name, self.embedding_model,
-        )):
-            raise ValueError("index identity fields are required")
-        if self.dimensions < 1 or self.schema_version < 1:
-            raise ValueError("index dimensions and schema_version must be positive")
+        for field_name, value in (
+            ("tenant_id", self.tenant_id),
+            ("collection_id", self.collection_id),
+            ("index_name", self.index_name),
+            ("embedding_model", self.embedding_model),
+            ("index_id", self.index_id),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} must be a non-empty string")
+        for field_name, value in (
+            ("dimensions", self.dimensions),
+            ("schema_version", self.schema_version),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{field_name} must be a positive integer")
+        if not isinstance(self.status, IndexStatus):
+            raise ValueError("status must be an IndexStatus value")
 
 
 class KnowledgeCatalogRepository(Protocol):
@@ -101,8 +129,8 @@ class InMemoryKnowledgeCatalog:
     async def list_collections(
         self, tenant_id: str, project_ids: frozenset[str], limit: int = 100,
     ) -> list[KnowledgeCollection]:
-        if not 1 <= limit <= 500:
-            raise ValueError("limit must be between 1 and 500")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be an integer between 1 and 500")
         items = [
             item for (tenant, _), item in self.collections.items()
             if tenant == tenant_id and item.deleted_at is None
