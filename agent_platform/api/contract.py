@@ -4,7 +4,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping
-from uuid import UUID
 
 API_V1_PREFIX = "/api/platform/v1"
 API_VERSION_HEADER = "X-API-Version"
