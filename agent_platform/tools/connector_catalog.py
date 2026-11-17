@@ -201,7 +201,7 @@ class PostgresConnectorManifestRegistry:
             )
             rows = await cursor.fetchall()
         return tuple(
-            ConnectorManifest.from_mapping(row["manifest"], source=row["manifest"].get("source", "registry"))
+            ConnectorManifest.from_mapping(row["manifest"], source=row["source"])
             for row in rows
         )
 
