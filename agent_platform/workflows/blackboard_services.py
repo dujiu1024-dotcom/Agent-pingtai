@@ -162,22 +162,55 @@ class BlackboardMultiExpertServices:
             assignment["required_capabilities"] = sorted(required)
 
             if self.expert_registry is not None:
-                profile = await self.expert_registry.get(expert_id)
-                if profile is None or not profile.enabled:
-                    raise PermissionError(
-                        f"expert is not registered or enabled: {expert_id}"
-                    )
-                if not required.issubset(profile.capabilities):
-                    missing = ", ".join(sorted(required - profile.capabilities))
-                    raise ValueError(
-                        f"expert {expert_id} lacks required capabilities: {missing}"
-                    )
+                profile = await self._resolve_expert(expert_id, required)
+                assignment.update({
+                    "expert_name": profile.name,
+                    "expert_description": profile.description,
+                    "expert_capabilities": sorted(profile.capabilities),
+                })
             assignments.append(assignment)
         return assignments
 
+    async def _resolve_expert(self, expert_id: str, required: set[str]):
+        if self.expert_registry is None:
+            return None
+        profile = await self.expert_registry.get(expert_id)
+        if profile is None or not profile.enabled:
+            raise PermissionError(f"expert is not registered or enabled: {expert_id}")
+        missing = required - profile.capabilities
+        if missing:
+            raise ValueError(
+                f"expert {expert_id} lacks required capabilities: {', '.join(sorted(missing))}"
+            )
+        return profile
+
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]:
         scope, scope_id = self._scope(run_context)
-        result = dict(await self.callbacks.run_expert(assignment=assignment, objective=objective, run_context=run_context))
+        expert_id = assignment.get("expert_id")
+        if not isinstance(expert_id, str) or not expert_id.strip():
+            raise ValueError("expert assignment requires a non-empty expert_id")
+        raw_required = assignment.get("required_capabilities", ())
+        if not isinstance(raw_required, (list, tuple, set, frozenset)) or any(
+            not isinstance(item, str) or not item.strip() for item in raw_required
+        ):
+            raise ValueError("required_capabilities must contain non-empty strings")
+        required = set(raw_required)
+        if self.expert_registry is not None:
+            profile = await self._resolve_expert(expert_id, required)
+            # Re-resolve immediately before execution so revocation or a
+            # capability change after planning cannot leave a stale assignment usable.
+            assignment = {
+                **assignment,
+                "expert_name": profile.name,
+                "expert_description": profile.description,
+                "expert_capabilities": sorted(profile.capabilities),
+            }
+        isolated_context = copy.deepcopy(dict(run_context))
+        result = dict(await self.callbacks.run_expert(
+            assignment=copy.deepcopy(dict(assignment)),
+            objective=objective,
+            run_context=isolated_context,
+        ))
         expert_id = str(assignment.get("expert_id") or "expert")
         refs = self._refs(result)
         await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
