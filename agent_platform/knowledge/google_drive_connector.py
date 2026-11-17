@@ -66,7 +66,7 @@ class GoogleDriveKnowledgeConnector(BaseConnector):
         max_file_bytes: int = 25 * 1024 * 1024,
         page_size: int = 100,
         authenticator: ConnectorAuthenticator | None = None,
-        auth_scopes: tuple[str, ...] = ("files.read",),
+        auth_scopes: tuple[str, ...] = ("drive.readonly",),
     ) -> None:
         if not credential_ref.startswith("secret://"):
             raise ValueError("Google Drive credentials must use a secret:// reference")
