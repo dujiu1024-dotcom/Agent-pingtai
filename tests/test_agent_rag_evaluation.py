@@ -11,6 +11,7 @@ from agent_platform.observability.agent_rag_evaluation import (
     EvaluationDataset,
     EvaluationPlan,
     ModelEndpoint,
+    dataset_fingerprint,
     score_case,
 )
 
@@ -87,12 +88,31 @@ class AgentRAGEvaluationTests(unittest.IsolatedAsyncioTestCase):
             "tenant-a", "rag-release", 7, self.endpoint, concurrency_limit=2,
         ))
         self.assertEqual(report.dataset_version, 7)
+        self.assertEqual(len(report.dataset_sha256), 64)
+        self.assertEqual(report.dataset_sha256, dataset_fingerprint(self.dataset))
         self.assertEqual(report.endpoint_id, "prod-eu")
         self.assertEqual(report.model_version, "2026-11-01")
         self.assertEqual(report.concurrency_limit, 2)
         self.assertLessEqual(evaluator.maximum, 2)
         self.assertEqual(len(repository.saved), 1)
         self.assertEqual(report.metrics["answer_term_f1"], 1.0)
+
+    def test_dataset_fingerprint_is_stable_and_detects_same_version_mutation(self):
+        original = self.dataset
+        same_content = EvaluationDataset(
+            "rag-release", 7, tuple(original.cases),
+        )
+        changed_content = EvaluationDataset(
+            "rag-release", 7, (
+                EvaluationCase(
+                    "case-a", "question changed", ("alpha",), ("forbidden",),
+                    ("doc-a",), ("doc-a",),
+                ),
+                *original.cases[1:],
+            ),
+        )
+        self.assertEqual(dataset_fingerprint(original), dataset_fingerprint(same_content))
+        self.assertNotEqual(dataset_fingerprint(original), dataset_fingerprint(changed_content))
 
     async def test_failed_case_does_not_persist_partial_report(self):
         class Broken(FakeEvaluator):
