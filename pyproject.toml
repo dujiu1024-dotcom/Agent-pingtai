@@ -108,6 +108,7 @@ include = [
   "tests/test_gateway_runtime_postgres_integration.py",
   "tests/test_gateway_service.py",
   "tests/test_run_lifecycle.py",
+  "tests/test_run_context_postgres.py",
   "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
   "tests/test_postgres_checkpointer.py",
