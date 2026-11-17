@@ -26,8 +26,8 @@ class MemoryDeletionPropagationTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.propose(candidate)
         await service.confirm(
-            tenant_id="tenant-a", memory_id=candidate.memory_id,
-            confirmer_id="user-a",
+            principal=MemoryPrincipal(tenant_id="tenant-a", user_id="user-a"),
+            memory_id=candidate.memory_id,
         )
         principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
 
@@ -58,8 +58,8 @@ class MemoryDeletionPropagationTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.propose(candidate)
         await service.confirm(
-            tenant_id="tenant-a", memory_id=candidate.memory_id,
-            confirmer_id="user-a",
+            principal=MemoryPrincipal(tenant_id="tenant-a", user_id="user-a"),
+            memory_id=candidate.memory_id,
         )
         principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
         self.assertTrue(await service.forget(principal=principal, memory_id=candidate.memory_id))
@@ -87,8 +87,8 @@ class MemoryDeletionPropagationTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.propose(candidate)
         await service.confirm(
-            tenant_id="tenant-a", memory_id=candidate.memory_id,
-            confirmer_id="user-a",
+            principal=MemoryPrincipal(tenant_id="tenant-a", user_id="user-a"),
+            memory_id=candidate.memory_id,
         )
         principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
         self.assertTrue(

@@ -210,7 +210,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
             self.assertEqual((await cur.fetchone())["n"],1)
-        await self.memory.confirm(tenant_id=self.tenant_id,memory_id=candidate.memory_id,confirmer_id="user-1")
+        await self.memory.confirm(principal=principal,memory_id=candidate.memory_id)
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
             self.assertEqual((await cur.fetchone())["n"],2)
@@ -325,8 +325,8 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.propose(candidate)
         await service.confirm(
-            tenant_id=self.tenant_id, memory_id=candidate.memory_id,
-            confirmer_id="expiry-user",
+            principal=MemoryPrincipal(tenant_id=self.tenant_id, user_id="expiry-user"),
+            memory_id=candidate.memory_id,
         )
         with self.assertRaisesRegex(RuntimeError, "derived index unavailable"):
             await service.expire_due(tenant_id=self.tenant_id)

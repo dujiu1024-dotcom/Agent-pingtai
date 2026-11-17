@@ -127,16 +127,33 @@ class MemoryService:
                 return existing
             raise
         return rec
-    async def confirm(self,*,tenant_id: str,memory_id: str,confirmer_id: str)->MemoryRecord:
-        rec=await self.repository.get(tenant_id,memory_id)
-        if rec is None or rec.status is not MemoryStatus.CANDIDATE:raise ValueError("candidate memory not found or already reviewed")
-        updated=replace(rec,status=MemoryStatus.ACTIVE,confirmed_by=confirmer_id,updated_at=utc_now(),version=rec.version+1);await self.repository.put(updated);return updated
-    async def reject(self, *, tenant_id: str, memory_id: str) -> bool:
-        rec = await self.repository.get(tenant_id, memory_id)
+    async def confirm(
+        self, *, memory_id: str, principal: MemoryPrincipal,
+    ) -> MemoryRecord:
+        rec = await self.repository.get(principal.tenant_id, memory_id)
+        if rec is None or rec.status is not MemoryStatus.CANDIDATE:
+            raise ValueError("candidate memory not found or already reviewed")
+        if not self._can_manage_scope(
+            rec.candidate.scope, rec.candidate.scope_id, principal,
+        ):
+            raise PermissionError("memory candidate confirmation is not authorized")
+        updated = replace(
+            rec, status=MemoryStatus.ACTIVE, confirmed_by=principal.user_id,
+            updated_at=utc_now(), version=rec.version + 1,
+        )
+        await self.repository.put(updated)
+        return updated
+
+    async def reject(self, *, principal: MemoryPrincipal, memory_id: str) -> bool:
+        rec = await self.repository.get(principal.tenant_id, memory_id)
         if rec is None or rec.status not in {
             MemoryStatus.CANDIDATE, MemoryStatus.DELETED,
         }:
             return False
+        if not self._can_manage_scope(
+            rec.candidate.scope, rec.candidate.scope_id, principal,
+        ):
+            raise PermissionError("memory candidate rejection is not authorized")
         if rec.status is MemoryStatus.CANDIDATE:
             now = utc_now()
             await self.repository.put(replace(
@@ -146,7 +163,7 @@ class MemoryService:
         # Candidate rejection also removes derived index/cache state. Repeating
         # the operation retries cleanup after a transient downstream failure.
         if self.on_delete:
-            await self.on_delete(tenant_id, memory_id)
+            await self.on_delete(principal.tenant_id, memory_id)
         return True
     @staticmethod
     def _can_manage_scope(scope: MemoryScope, scope_id: str, principal: MemoryPrincipal) -> bool:
@@ -200,7 +217,7 @@ class MemoryService:
 
     async def resolve_conflict(self,*,principal: MemoryPrincipal,conflict_key: str,selected_memory_id: str)->MemoryRecord:
         records=await self.repository.list(principal.tenant_id,limit=5000)
-        candidates=[r for r in records if r.candidate.conflict_key==conflict_key and r.status in {MemoryStatus.CONFLICT,MemoryStatus.ACTIVE}]
+        candidates=[r for r in records if r.candidate.conflict_key==conflict_key and r.status in {MemoryStatus.CONFLICT,MemoryStatus.ACTIVE,MemoryStatus.SUPERSEDED}]
         selected=next((r for r in candidates if r.candidate.memory_id==selected_memory_id),None)
         if selected is None:
             raise ValueError("selected memory is not part of this conflict set")
