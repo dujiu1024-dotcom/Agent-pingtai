@@ -140,6 +140,27 @@ class RunReplayService:
         session.paused = False
         return self._state(session)
 
+    async def update_context(
+        self, *, tenant_id: str, run_id: str, session_id: str,
+        patch: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Apply an ephemeral, allow-listed context patch while playback is paused."""
+        if not isinstance(patch, Mapping) or not patch:
+            raise ValueError("replay context patch must be a non-empty object")
+        allowed = {"objective", "request", "constraints", "decisions", "evidence", "todo"}
+        unknown = set(patch) - allowed
+        if unknown:
+            raise ValueError("replay context patch contains immutable or unsupported fields")
+        session = await self._session(tenant_id, run_id, session_id)
+        if not session.paused:
+            raise ValueError("replay context can only be modified while paused")
+        run_context = dict(session.context.get("run_context") or {})
+        run_context.update(dict(patch))
+        context = dict(session.context)
+        context["run_context"] = run_context
+        session.context = context
+        return self._state(session)
+
     async def fast_forward(self, *, tenant_id: str, run_id: str, session_id: str) -> dict[str, Any]:
         session = await self._session(tenant_id, run_id, session_id)
         session.cursor = len(session.events)
