@@ -58,6 +58,7 @@ class RAGService:
     ) -> RAGAnswer:
         metadata = self._trace_metadata(principal, trace_context)
         started = monotonic()
+        retrieval_id = str(uuid4())
         status = "failed"
         with trace_span(
             "rag.answer", component="retrieval", tenant_id=principal.tenant_id,
@@ -75,7 +76,7 @@ class RAGService:
                     "knowledge.retrieve", component="knowledge",
                     tenant_id=principal.tenant_id, run_id=metadata.get("run_id"),
                     request_id=metadata.get("request_id"), agent_id=metadata.get("agent_id"),
-                    retrieval_id=str(uuid4()),
+                    retrieval_id=retrieval_id,
                     knowledge_collection_id=(trace_context or {}).get("knowledge_collection_id"),
                     attributes={"query_chars": len(query), "limit": limit},
                 ), safe_observation(
@@ -86,6 +87,7 @@ class RAGService:
                     hits = await self.knowledge.retrieve(
                         principal=principal, query=query, limit=limit,
                         filters=filters, strategy=strategy,
+                        trace_context={**metadata, "retrieval_id": retrieval_id},
                     )
                     if filters is not None:
                         hits = [hit for hit in hits if filters.matches(hit)]

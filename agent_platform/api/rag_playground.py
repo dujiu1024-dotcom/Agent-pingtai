@@ -96,6 +96,12 @@ def create_rag_playground_router(
                 "title": hit.title, "source_uri": hit.source_uri,
                 "source_url": source_url, "page_number": hit.page_number,
                 "start_offset": hit.start_offset, "end_offset": hit.end_offset,
+                "source_locator": {
+                    "page_number": hit.page_number,
+                    "start_offset": hit.start_offset,
+                    "end_offset": hit.end_offset,
+                },
+                "retrieval_trace": dict(hit.retrieval_trace),
                 "citation_id": hit.citation_id,
             })
         return {
