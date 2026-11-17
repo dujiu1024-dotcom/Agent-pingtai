@@ -23,9 +23,10 @@ from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
+from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
-from agent_platform.api.evaluation_variants import create_eval_variants_router
+from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
@@ -98,10 +99,12 @@ def create_platform_app(
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
-    evaluation_variant_run_service: Any | None = None,
+    evaluation_comparison_service: Any | None = None,
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
+    evaluation_rollout_bridge: Any | None = None,
+    evaluation_rollout_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
     prompt_evaluation_gate: Any | None = None,
@@ -242,7 +245,7 @@ def create_platform_app(
         )
     )
     evaluation_configured = any(value is not None for value in (
-        evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
+        evaluation_repository, evaluation_run_service,
     ))
     if evaluation_configured and any(value is None for value in (
         evaluation_repository, evaluation_manage_authorizer,
@@ -250,9 +253,28 @@ def create_platform_app(
         raise ValueError(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
+    if evaluation_comparison_service is not None and evaluation_manage_authorizer is None:
+        raise ValueError("evaluation comparison service requires the evaluation manager authorizer")
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
+        evaluation_run_service, evaluation_comparison_service,
     ))
+    evaluation_rollout_configured = any(value is not None for value in (
+        evaluation_rollout_bridge, evaluation_rollout_authorizer,
+    ))
+    if evaluation_rollout_configured:
+        if (
+            evaluation_rollout_bridge is None or evaluation_rollout_authorizer is None
+            or resource_audit_writer is None
+        ):
+            raise ValueError(
+                "evaluation rollout bridge, authorizer and audit writer must be configured together"
+            )
+        app.include_router(create_evaluation_rollout_router(
+            bridge=evaluation_rollout_bridge,
+            authorize=evaluation_rollout_authorizer,
+            audit_writer=resource_audit_writer,
+        ))
     if observability_api_configured:
         app.include_router(create_observability_router(
             metrics=metrics_exporter,
@@ -261,15 +283,9 @@ def create_platform_app(
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
             evaluation_run_service=evaluation_run_service,
+            evaluation_comparison_service=evaluation_comparison_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
-        ))
-    if evaluation_variant_run_service is not None:
-        if evaluation_manage_authorizer is None:
-            raise ValueError("multi-variant evaluation requires the evaluation manager authorizer")
-        app.include_router(create_eval_variants_router(
-            service=evaluation_variant_run_service,
-            authorize_manage=evaluation_manage_authorizer,
         ))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
@@ -289,6 +305,10 @@ def create_platform_app(
         rag=rag,
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
+    ))
+    app.include_router(create_knowledge_upload_router(
+        knowledge=knowledge,
+        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
     ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
