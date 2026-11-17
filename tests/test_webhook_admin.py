@@ -95,12 +95,16 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
                 url="https://hooks.example.test", topics=("run.completed",),
                 signing_secret=b"weak",
             )
+        secrets = FakeSecrets()
+        service = WebhookSubscriptionService(store=FakeWebhookAdminStore(), secrets=secrets)
         with self.assertRaises(ValueError):
             await service.create(
                 tenant_id="tenant-a", actor_id="user-a",
                 url="https://127.0.0.1/hook", topics=("run.completed",),
                 signing_secret=b"a" * 32,
             )
+        self.assertEqual(secrets.revoked, ["secret://tenant-a/1"])
+        self.assertEqual(secrets.values, {})
 
 
     async def test_mutations_fail_closed_without_audit_writer(self):
