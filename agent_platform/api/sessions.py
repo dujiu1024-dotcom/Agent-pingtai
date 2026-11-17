@@ -946,6 +946,12 @@ def create_sessions_router(
             pass
         except SessionError as exc:
             raise HTTPException(503, str(exc)) from exc
+        try:
+            await service.repository.delete_session_history(
+                principal.tenant_id, session_id,
+            )
+        except SessionNotFound:
+            raise HTTPException(404, "session not found")
         if audit_writer is not None and session.status != "deleted":
             await audit_writer.record(
                 tenant_id=principal.tenant_id, actor_id=principal.user_id,
