@@ -114,10 +114,40 @@ class MemoryService:
                 return existing
             raise
         return rec
-    async def confirm(self,*,tenant_id: str,memory_id: str,confirmer_id: str)->MemoryRecord:
-        rec=await self.repository.get(tenant_id,memory_id)
-        if rec is None or rec.status is not MemoryStatus.CANDIDATE:raise ValueError("candidate memory not found or already reviewed")
-        updated=replace(rec,status=MemoryStatus.ACTIVE,confirmed_by=confirmer_id,updated_at=utc_now(),version=rec.version+1);await self.repository.put(updated);return updated
+    async def confirm(
+        self,
+        *,
+        memory_id: str,
+        principal: MemoryPrincipal | None = None,
+        tenant_id: str | None = None,
+        confirmer_id: str | None = None,
+    ) -> MemoryRecord:
+        """Activate a candidate using an authorized principal or legacy identity fields."""
+        if principal is not None:
+            if tenant_id is not None and tenant_id != principal.tenant_id:
+                raise ValueError("tenant_id does not match principal")
+            tenant_id = principal.tenant_id
+            confirmer_id = principal.user_id
+        elif not tenant_id or not confirmer_id:
+            raise ValueError("principal or both tenant_id and confirmer_id are required")
+
+        rec = await self.repository.get(tenant_id, memory_id)
+        if rec is None or rec.status is not MemoryStatus.CANDIDATE:
+            raise ValueError("candidate memory not found or already reviewed")
+        if principal is not None and not self._can_manage_scope(
+            rec.candidate.scope, rec.candidate.scope_id, principal
+        ):
+            raise PermissionError("memory confirmation is not authorized")
+
+        updated = replace(
+            rec,
+            status=MemoryStatus.ACTIVE,
+            confirmed_by=confirmer_id,
+            updated_at=utc_now(),
+            version=rec.version + 1,
+        )
+        await self.repository.put(updated)
+        return updated
     async def reject(self, *, tenant_id: str, memory_id: str) -> bool:
         rec = await self.repository.get(tenant_id, memory_id)
         if rec is None or rec.status not in {
