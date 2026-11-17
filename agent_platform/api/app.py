@@ -169,7 +169,7 @@ def create_platform_app(
             readiness_checks=(
                 readiness_checks
                 if readiness_checks is not None
-                else {"redis": redis.ping}
+                else ({"redis": redis.ping} if callable(getattr(redis, "ping", None)) else {})
             )
         )
     )
