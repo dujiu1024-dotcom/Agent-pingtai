@@ -31,6 +31,16 @@ class GraphGovernanceConflict(RuntimeError):
 _SOURCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+def _freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(_freeze(item) for item in value)
+    return deepcopy(value)
+
+
 def _validate_source_reference(value: str, tenant_id: str) -> None:
     if not isinstance(value, str) or value != value.strip() or not value:
         raise ValueError("source reference must be a canonical non-empty URI")
@@ -105,7 +115,7 @@ class GovernedGraphEntity:
             or self.updated_at.utcoffset() is None
         ):
             raise ValueError("updated_at must be timezone-aware")
-        object.__setattr__(self, "attributes", MappingProxyType(deepcopy(dict(self.attributes))))
+        object.__setattr__(self, "attributes", _freeze(self.attributes))
 
 
 @dataclass(frozen=True)
@@ -160,7 +170,7 @@ class GraphGovernanceAuditEvent:
     details: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "details", MappingProxyType(deepcopy(dict(self.details))))
+        object.__setattr__(self, "details", _freeze(self.details))
 
 
 @dataclass(frozen=True)
