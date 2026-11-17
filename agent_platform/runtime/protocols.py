@@ -433,7 +433,7 @@ class LifecycleManagedHarnessAdapter:
     async def stream(self, request: "HarnessRequest") -> AsyncIterator["HarnessStreamEvent"]:
         await self.lifecycle.started(request=request, adapter=self.descriptor)
         completed = False
-        async def consume_stream() -> None:
+        async def consume_stream() -> AsyncIterator[HarnessStreamEvent]:
             nonlocal completed
             async for event in self.adapter.stream(request):
                 if event.event_type == "completed":
@@ -455,7 +455,7 @@ class LifecycleManagedHarnessAdapter:
             else:
                 async with asyncio.timeout(request.timeout_seconds):
                     async for _event in consume_stream():
-                    pass
+                        pass
         except asyncio.CancelledError:
             await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
             raise
