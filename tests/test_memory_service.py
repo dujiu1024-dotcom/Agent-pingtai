@@ -591,18 +591,18 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         exported = await service.export(principal=principal)
         self.assertEqual(len(exported), 1)
         item = exported[0]
-        self.assertEqual(item["version"], 2)
+        self.assertEqual(item["version"], 3)
         self.assertEqual(item["content"], "corrected preference")
         self.assertEqual(
-            [entry["version"] for entry in item["history"]], [1, 2],
+            [entry["version"] for entry in item["history"]], [1, 2, 3],
         )
         self.assertEqual(
             [entry["content"] for entry in item["history"]],
-            ["original preference", "corrected preference"],
+            ["original preference", "original preference", "corrected preference"],
         )
         self.assertEqual(
             [entry["source_ref"] for entry in item["history"]],
-            ["chat:original", "chat:correction"],
+            ["chat:original", "chat:original", "chat:correction"],
         )
         self.assertEqual(item["history"][0]["status"], "active")
         self.assertEqual(item["history"][1]["confirmed_by"], "owner")
