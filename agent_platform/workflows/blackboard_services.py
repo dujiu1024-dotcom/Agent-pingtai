@@ -17,40 +17,6 @@ from agent_platform.workflows.expert_registry import ExpertRegistry
 
 
 class MultiExpertCallbacks(Protocol):
-    async def _capture_source_lineage(
-        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
-    ) -> list[dict[str, Any]]:
-        """Pin each conclusion's source to an immutable Blackboard version.
-
-        External evidence identifiers remain explicit opaque references; their
-        owning connector/document service is responsible for resolving a version.
-        """
-        lineage: list[dict[str, Any]] = []
-        for ref in refs:
-            try:
-                normalized_ref = str(UUID(ref))
-            except (ValueError, TypeError, AttributeError):
-                lineage.append({
-                    "reference": str(ref),
-                    "source_type": "external",
-                    "version": None,
-                })
-                continue
-            source = await self.repository.get(normalized_ref)
-            if source is None:
-                raise ValueError("Blackboard provenance reference does not exist")
-            if source.scope is not scope or source.scope_id != scope_id:
-                raise PermissionError("Blackboard provenance crosses the active workflow scope")
-            lineage.append({
-                "reference": str(ref),
-                "source_type": "blackboard",
-                "entry_id": source.entry_id,
-                "version": source.version,
-                "kind": source.kind.value,
-                "author_id": source.author_id,
-            })
-        return lineage
-
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]: ...
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]: ...
     async def synthesize(self, *, objective: str, contributions: Sequence[Mapping[str, Any]], run_context: Mapping[str, Any]) -> Mapping[str, Any]: ...
@@ -161,6 +127,40 @@ class BlackboardMultiExpertServices:
                 raise PermissionError(
                     "Blackboard source reference crosses the active workflow scope"
                 )
+
+    async def _capture_source_lineage(
+        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        """Pin each conclusion's source to an immutable Blackboard version.
+
+        External evidence identifiers remain explicit opaque references; their
+        owning connector/document service is responsible for resolving a version.
+        """
+        lineage: list[dict[str, Any]] = []
+        for ref in refs:
+            try:
+                normalized_ref = str(UUID(ref))
+            except (ValueError, TypeError, AttributeError):
+                lineage.append({
+                    "reference": str(ref),
+                    "source_type": "external",
+                    "version": None,
+                })
+                continue
+            source = await self.repository.get(normalized_ref)
+            if source is None:
+                raise ValueError("Blackboard provenance reference does not exist")
+            if source.scope is not scope or source.scope_id != scope_id:
+                raise PermissionError("Blackboard provenance crosses the active workflow scope")
+            lineage.append({
+                "reference": str(ref),
+                "source_type": "blackboard",
+                "entry_id": source.entry_id,
+                "version": source.version,
+                "kind": source.kind.value,
+                "author_id": source.author_id,
+            })
+        return lineage
 
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
         self._scope(run_context)
