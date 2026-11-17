@@ -128,7 +128,7 @@ class CredentialService:
         credential = self._required(credential_id, "credential_id")
         consumer = self._required(consumer_id, "consumer_id")
         actor = self._required(granted_by, "granted_by")
-        if consumer_type not in _CONSUMER_TYPES:
+        if not isinstance(consumer_type, str) or consumer_type not in _CONSUMER_TYPES:
             raise ValueError("consumer_type must be agent or workflow")
         requested = self._scopes(scopes)
         record = await self._repository.get(tenant_id=tenant, credential_id=credential)
@@ -145,8 +145,8 @@ class CredentialService:
         await self._repository.grant(grant)
         try:
             await self._audit.record(
-            tenant_id=tenant, actor_id=actor, action="credential.granted",
-            subject_id=credential,
+                tenant_id=tenant, actor_id=actor, action="credential.granted",
+                subject_id=credential,
                 detail={"consumer_type": consumer_type, "consumer_id": consumer,
                         "scopes": list(requested)},
             )
