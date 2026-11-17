@@ -170,6 +170,82 @@ class Issue27A2702ConnectorIsolationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(new_connector.started, 1)
         self.assertEqual(new_connector.closed, 1)
 
+    async def test_failed_new_connector_startup_isolated_from_existing_connectors(self):
+        secret_store = FakeSecretStore()
+        authenticator = SecretStoreConnectorAuthenticator(
+            secret_store=secret_store,
+            consumer_type="agent",
+            consumer_id="agent-17",
+            actor_id="system:connector-worker",
+        )
+        google = GoogleDriveKnowledgeConnector(
+            client=object(), credential_ref="secret://tenant-a/credentials/drive",
+            document_factory=lambda *args: None, authenticator=authenticator,
+            auth_scopes=("drive.readonly",),
+        )
+        sharepoint = SharePointKnowledgeConnector(
+            client=object(), credential_ref="secret://tenant-a/credentials/sharepoint",
+            drive_id="drive-1", document_factory=lambda *args: None,
+            credential_revoker=lambda _ref: None, authenticator=authenticator,
+            auth_scopes=("sites.read.all",),
+        )
+        http_client = FakeHTTPClient()
+        http = HTTPJSONConnectorProvider(
+            list_endpoint="https://connector.example.test/files",
+            revoke_endpoint="https://connector.example.test/revoke",
+            allowed_hosts=frozenset({"connector.example.test"}), client=http_client,
+            credential_ref="secret://tenant-a/credentials/http",
+            authenticator=authenticator, auth_scopes=("files.read",),
+        )
+
+        class FailingConnector(NewCatalogConnector):
+            async def start(self):
+                self.started += 1
+                raise RuntimeError("new connector failed to start")
+
+        failed = FailingConnector()
+        recovered = NewCatalogConnector()
+        created = iter((failed, recovered))
+        catalog = ConnectorCatalog(
+            registry=InMemoryConnectorManifestRegistry(),
+            connector_factory=lambda _manifest: next(created),
+        )
+        await catalog.register(tenant_id="tenant-a", manifest=connector_manifest())
+
+        with self.assertRaisesRegex(RuntimeError, "failed to start"):
+            await catalog.load(tenant_id="tenant-a", connector_id="new-calendar")
+        self.assertEqual((failed.started, failed.closed), (1, 1))
+        self.assertEqual(await catalog.loaded_ids(tenant_id="tenant-a"), ())
+
+        # A failed new connector must not poison established provider instances or auth.
+        self.assertEqual(await google._token("tenant-a"), "token-for-drive")
+        self.assertEqual(await sharepoint._token("tenant-a"), "token-for-sharepoint")
+        await http.fetch_page(
+            credential=None, tenant_id="tenant-a", scopes=("files.read",), cursor=None,
+        )
+        self.assertEqual(
+            http_client.calls[-1][2]["headers"]["Authorization"], "Bearer token-for-http",
+        )
+
+        loaded = await catalog.load(tenant_id="tenant-a", connector_id="new-calendar")
+        self.assertIs(loaded, recovered)
+        self.assertEqual((recovered.started, recovered.closed), (1, 0))
+        self.assertEqual(await catalog.loaded_ids(tenant_id="tenant-a"), ("new-calendar",))
+        self.assertTrue(await catalog.unload(
+            tenant_id="tenant-a", connector_id="new-calendar",
+        ))
+        self.assertEqual(recovered.closed, 1)
+
+        # The old connectors still work after both failed and successful catalog lifecycles.
+        await http.fetch_page(
+            credential=None, tenant_id="tenant-a", scopes=("files.read",), cursor=None,
+        )
+        self.assertEqual(len(secret_store.calls), 5)
+        self.assertEqual(len(http_client.calls), 2)
+        self.assertEqual(
+            http_client.calls[-1][2]["headers"]["Authorization"], "Bearer token-for-http",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
