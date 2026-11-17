@@ -175,13 +175,15 @@ class PostgresTrustedPublisherKeyRepository:
                     not_before=not_before, expires_at=expires_at, created_by=created_by,
                 )
                 if revoke_key_ids:
-                    await connection.execute(
+                    cursor = await connection.execute(
                         """UPDATE platform_trusted_publisher_keys
                            SET revoked_at=COALESCE(revoked_at,now()), revoked_by=%s
                            WHERE tenant_id=%s AND extension_id=%s
                              AND key_id=ANY(%s)""",
                         (created_by, tenant_id, extension_id, list(revoke_key_ids)),
                     )
+                    if cursor.rowcount != len(revoke_key_ids):
+                        raise ValueError("one or more publisher keys to revoke were not found")
                 return key
 
     async def revoke(self, *, tenant_id: str, extension_id: str, key_id: str,
