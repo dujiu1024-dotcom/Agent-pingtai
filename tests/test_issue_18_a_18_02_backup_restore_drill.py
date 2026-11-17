@@ -131,7 +131,18 @@ class Issue18BackupRestoreDrillTests(unittest.TestCase):
             evidence_dir = Path(os.environ.get("DRILL_EVIDENCE_DIR", work / "drill-evidence"))
             evidence_dir.mkdir(parents=True, exist_ok=True)
             evidence_path = evidence_dir / "postgres-backup-restore-drill.json"
+            shutil.copy2(Path(f"{backup_file}.manifest.json"), evidence_dir / "postgres-backup-manifest.json")
+            shutil.copy2(Path(f"{backup_file}.sha256"), evidence_dir / "postgres-backup-checksum.sha256")
             evidence_path.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            validation = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/disaster_recovery.py"), "--validate-record", str(evidence_path)],
+                check=False, capture_output=True, text=True,
+            )
+            self.assertEqual(validation.returncode, 1, validation.stderr + validation.stdout)
+            validation_report = json.loads(validation.stdout)
+            self.assertEqual(validation_report["failures"], ["independent reviewer sign-off missing"])
+            self.assertEqual(validation_report["measured_rpo_seconds"], record["measured_rpo_seconds"])
+            self.assertEqual(validation_report["measured_rto_seconds"], record["measured_rto_seconds"])
 
             self.assertLessEqual(measured_rpo, objective["rpo_seconds"])
             self.assertLessEqual(measured_rto, objective["rto_seconds"])
