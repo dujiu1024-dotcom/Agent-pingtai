@@ -39,7 +39,10 @@ class SecretStoreConnectorAuthenticator:
     ) -> None:
         if consumer_type not in {"agent", "workflow"}:
             raise ValueError("consumer_type must be agent or workflow")
-        if not consumer_id.strip() or not actor_id.strip():
+        if (
+            not isinstance(consumer_id, str) or not consumer_id.strip()
+            or not isinstance(actor_id, str) or not actor_id.strip()
+        ):
             raise ValueError("consumer_id and actor_id are required")
         self.secret_store = secret_store
         self.consumer_type = consumer_type
@@ -86,17 +89,19 @@ class BaseConnector:
         authenticator: ConnectorAuthenticator | None = None,
         auth_scopes: tuple[str, ...] = (),
     ) -> None:
-        if not connector_id.strip():
+        if not isinstance(connector_id, str) or not connector_id.strip():
             raise ValueError("connector_id is required")
         if credential_ref is not None and not credential_ref.startswith("secret://"):
             raise ValueError("connector credentials must use a secret:// reference")
         if authenticator is not None and credential_ref is None:
             raise ValueError("shared authentication requires a secret:// credential reference")
-        if authenticator is not None and not auth_scopes:
-            raise ValueError("shared authentication requires explicit auth_scopes")
-        if len(set(auth_scopes)) != len(auth_scopes) or any(
+        if not isinstance(auth_scopes, tuple) or any(
             not isinstance(scope, str) or not scope.strip() for scope in auth_scopes
         ):
+            raise ValueError("auth_scopes must be a tuple of non-empty scope tags")
+        if authenticator is not None and not auth_scopes:
+            raise ValueError("shared authentication requires explicit auth_scopes")
+        if len(set(auth_scopes)) != len(auth_scopes):
             raise ValueError("auth_scopes must contain unique non-empty scope tags")
         self.connector_id = connector_id
         self.credential_ref = credential_ref
