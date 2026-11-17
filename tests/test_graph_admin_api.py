@@ -79,6 +79,11 @@ class GraphAdminApiTests(unittest.TestCase):
         ))
         self.client = TestClient(self.app)
 
+    def test_visualization_endpoint_is_authorized_and_reports_configuration(self):
+        response = self.client.get("/api/platform/v1/graph/visualization")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"configured": False, "url": None})
+
     def test_search_returns_tenant_scoped_entities(self):
         hidden_tenant_entity = SimpleNamespace(
             tenant_id="tenant-a", entity_id="tenant-secret", entity_type="person",
