@@ -40,7 +40,7 @@ class FakeGraphService:
 
     def _validate_entity(self, record, entity_id, scope):
         entity = getattr(record, "entity", record)
-        if entity.tenant_id != self.tenant_id or entity.project_id not in scope:
+        if entity.tenant_id != self.tenant_id or (entity.project_id is not None and entity.project_id not in scope):
             raise PermissionError("scope denied")
         return entity
 
