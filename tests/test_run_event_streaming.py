@@ -34,9 +34,11 @@ class RunEventBrokerTests(unittest.IsolatedAsyncioTestCase):
     async def test_slow_subscriber_is_detached_without_blocking_publish(self):
         broker = RunEventBroker(history_limit=10, subscriber_limit=1)
         stream = broker.subscribe(tenant_id="t", run_id="r")
+        first = asyncio.create_task(anext(stream))
+        await asyncio.sleep(0)
         await broker.publish(tenant_id="t", run_id="r", event_type="RUN_START")
         await broker.publish(tenant_id="t", run_id="r", event_type="STEP_START")
-        self.assertEqual((await anext(stream)).data["event_type"], "RUN_START")
+        self.assertEqual((await first).data["event_type"], "RUN_START")
         await stream.aclose()
 
 
