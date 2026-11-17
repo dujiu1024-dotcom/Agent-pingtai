@@ -7,7 +7,6 @@ import statistics
 import threading
 import time
 import unittest
-from concurrent.futures import Future
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
@@ -78,7 +77,7 @@ class RunStreamingAcceptanceTests(unittest.TestCase):
             protocol_version = "HTTP/1.1"
 
             def do_GET(self):
-                run_id = self.path.rsplit("/", 1)[-1]
+                run_id = self.path.rstrip("/").split("/")[-2]
                 last_event_id = self.headers.get("Last-Event-ID")
                 try:
                     events = asyncio.run_coroutine_threadsafe(
