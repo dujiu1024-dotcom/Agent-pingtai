@@ -155,3 +155,7 @@ jobs:
           Path("release-evidence.json").write_text(os.environ["RELEASE_EVIDENCE"], encoding="utf-8")
           PY
           python scripts/release_gate.py --evidence release-evidence.json --commit-sha "$GITHUB_SHA"
+            tests.test_issue_18_a_18_01_deployment_acceptance \
+            tests.test_release_upgrade \
+            tests.test_deployment_compose \
+            tests.test_backup_recovery_scripts \
