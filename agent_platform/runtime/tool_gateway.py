@@ -17,6 +17,7 @@ from typing import Any, Awaitable, Callable, Mapping, Protocol
 from uuid import uuid4
 
 from agent_platform.contracts import RunContext
+from agent_platform.observability.trace_spans import trace_span
 
 _TOOL_ID = re.compile(r"^[a-z][a-z0-9_.-]{1,127}$")
 
@@ -169,6 +170,7 @@ class ToolGateway:
         self, *, authenticator: ToolAuthenticator, run_registry: ToolRunRegistry,
         audit_sink: ToolAuditSink, authorizer: ToolAuthorizer | None = None,
         max_timeout_seconds: float = 300.0,
+        trace_exporter: Callable[[Mapping[str, Any]], Any] | None = None,
     ) -> None:
         if max_timeout_seconds <= 0 or not math.isfinite(max_timeout_seconds):
             raise ValueError("max_timeout_seconds must be finite and positive")
@@ -177,7 +179,10 @@ class ToolGateway:
         self.audit_sink = audit_sink
         self.authorizer = authorizer or ScopeToolAuthorizer()
         self.max_timeout_seconds = max_timeout_seconds
-        self._tools: dict[str, ToolDefinition] = {}
+        if trace_exporter is not None and not callable(trace_exporter):
+            raise TypeError("trace_exporter must be callable")
+        self.trace_exporter = trace_exporter
+        self._tools: dict[str, ToolDefinition] = {};
         self._active: dict[tuple[str, str, str], asyncio.Task] = {}
         self._cancelled: set[tuple[str, str, str]] = set()
 
@@ -232,7 +237,20 @@ class ToolGateway:
                 agent_id=run_context.agent_id, project_id=run_context.project_id,
                 principal=principal, call_id=call_id, correlation_id=run_context.correlation_id,
             )
-            task = asyncio.create_task(definition.handler(dict(arguments), context))
+            async def execute_with_trace() -> Any:
+                with trace_span(
+                    f"tool.{tool_name}",
+                    component="tool",
+                    tenant_id=run_context.tenant_id,
+                    run_id=run_context.run_id,
+                    agent_id=run_context.agent_id,
+                    tool_name=tool_name,
+                    correlation_id=run_context.correlation_id,
+                    exporter=self.trace_exporter,
+                ):
+                    return await definition.handler(dict(arguments), context)
+
+            task = asyncio.create_task(execute_with_trace())
             self._active[key] = task
             try:
                 result = await asyncio.wait_for(task, timeout=effective_timeout)
