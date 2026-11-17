@@ -183,7 +183,7 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
         prompt_id = "support"
         scoped_id = tenant_prompt_key(self.tenant_a, prompt_id)
         await self.prompts.register(
-            scoped_id, "Answer for {{customer}}", created_by="integration",
+            scoped_id, "Answer for {customer}", created_by="integration",
         )
         await self.prompts.create_variant(
             scoped_id, "control", 1, created_by="integration",
