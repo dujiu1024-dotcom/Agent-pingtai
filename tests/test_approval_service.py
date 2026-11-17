@@ -107,7 +107,8 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         service = ApprovalService(repository, clock=lambda: self.now)
         app = FastAPI()
         app.include_router(create_approval_router(
-            service=service, authorize_approver=lambda actor: actor.user_id == "approver",
+            service=service, authorize_approver=lambda actor, action, resource: actor.user_id == "approver" and action == "external.write" and resource.startswith("account:"),
+            resolve_risk_level=lambda actor, action, resource: RiskLevel.EXTERNAL_OR_IRREVERSIBLE,
         ))
 
         @app.middleware("http")
@@ -121,7 +122,7 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         client = TestClient(app)
         created = client.post("/api/platform/v1/approvals", json={
             "action": "external.write", "resource": "account:7",
-            "risk_level": 2, "parameters": {"amount": 10},
+            "risk_level": 0, "parameters": {"amount": 10},
             "tenant_id": "tenant-attacker", "requested_by": "attacker",
         })
         self.assertEqual(created.status_code, 201)
@@ -132,7 +133,8 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.json()["status"], "pending")
         self.assertIn(("tenant-a", approval_id), repository.records)
         self.assertNotIn(("tenant-attacker", approval_id), repository.records)
-        self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 403)
+        self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 200)
+        self.assertEqual(client.get("/api/platform/v1/approvals").json()["items"], [])
 
     async def test_requester_can_revoke_and_other_user_cannot(self):
         record = await self.service.request(

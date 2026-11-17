@@ -12,7 +12,8 @@ from agent_platform.identity.models import Principal
 
 
 def create_approval_router(*, service: ApprovalService,
-                           authorize_approver: Callable[[Principal], Any]) -> APIRouter:
+                           authorize_approver: Callable[[Principal, str, str], Any],
+                           resolve_risk_level: Callable[[Principal, str, str], Any]) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/approvals", tags=["approvals"])
 
     def principal(request: Request) -> Principal:
@@ -21,8 +22,8 @@ def create_approval_router(*, service: ApprovalService,
             raise HTTPException(401, "authenticated user required")
         return value
 
-    async def can_approve(actor: Principal) -> bool:
-        result = authorize_approver(actor)
+    async def can_approve(actor: Principal, action: str, resource: str) -> bool:
+        result = authorize_approver(actor, action, resource)
         if inspect.isawaitable(result):
             result = await result
         return result is True
@@ -37,34 +38,41 @@ def create_approval_router(*, service: ApprovalService,
             parameters = body.get("parameters", {})
             if not isinstance(parameters, dict):
                 raise ValueError("parameters must be an object")
+            action = str(body.get("action") or "")
+            resource = str(body.get("resource") or "")
+            risk_level = resolve_risk_level(actor, action, resource)
+            if inspect.isawaitable(risk_level):
+                risk_level = await risk_level
+            if not isinstance(risk_level, RiskLevel):
+                raise ValueError("trusted approval policy returned an invalid risk level")
             record = await service.request(
                 tenant_id=actor.tenant_id, actor_id=actor.user_id,
-                action=str(body.get("action") or ""),
-                resource=str(body.get("resource") or ""),
-                parameters=parameters,
-                risk_level=RiskLevel(int(body.get("risk_level", 0))),
+                action=action, resource=resource, parameters=parameters,
+                risk_level=risk_level,
                 run_id=str(body["run_id"]) if body.get("run_id") else None,
             )
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"approval_id": record.approval_id, "status": record.status,
-                "action_hash": record.action_hash, "expires_at": record.expires_at.isoformat()}
+                "action_hash": record.action_hash, "policy_version": record.policy_version, "expires_at": record.expires_at.isoformat()}
 
     @router.get("")
     async def pending_approvals(request: Request, limit: int = 100):
         actor = principal(request)
-        if not await can_approve(actor):
-            raise HTTPException(403, "approval permission required")
         try:
             records = await service.pending(tenant_id=actor.tenant_id, limit=limit)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"items": [{
-            "approval_id": x.approval_id, "run_id": x.run_id,
-            "action": x.action, "resource": x.resource,
-            "risk_level": x.risk_level, "requested_by": x.requested_by,
-            "status": x.status, "expires_at": x.expires_at.isoformat(),
-        } for x in records]}
+        visible = []
+        for x in records:
+            if await can_approve(actor, x.action, x.resource):
+                visible.append({
+                    "approval_id": x.approval_id, "run_id": x.run_id,
+                    "action": x.action, "resource": x.resource,
+                    "risk_level": x.risk_level, "requested_by": x.requested_by,
+                    "status": x.status, "expires_at": x.expires_at.isoformat(),
+                })
+        return {"items": visible}
 
     @router.get("/{approval_id}")
     async def get_approval(approval_id: str, request: Request):
@@ -75,7 +83,7 @@ def create_approval_router(*, service: ApprovalService,
             raise HTTPException(400, str(exc)) from exc
         if record is None:
             raise HTTPException(404, "approval not found")
-        if record.requested_by != actor.user_id and not await can_approve(actor):
+        if record.requested_by != actor.user_id and not await can_approve(actor, record.action, record.resource):
             raise HTTPException(404, "approval not found")
         return {
             "approval_id": record.approval_id, "run_id": record.run_id,
@@ -88,7 +96,10 @@ def create_approval_router(*, service: ApprovalService,
     @router.post("/{approval_id}/decision")
     async def decide_approval(approval_id: str, request: Request):
         actor = principal(request)
-        if not await can_approve(actor):
+        record = await service.get(tenant_id=actor.tenant_id, approval_id=approval_id)
+        if record is None:
+            raise HTTPException(404, "approval not found")
+        if not await can_approve(actor, record.action, record.resource):
             raise HTTPException(403, "approval permission required")
         try:
             body = await request.json()
@@ -110,7 +121,10 @@ def create_approval_router(*, service: ApprovalService,
     @router.post("/{approval_id}/revoke")
     async def revoke_approval(approval_id: str, request: Request):
         actor = principal(request)
-        allow_admin = await can_approve(actor)
+        record = await service.get(tenant_id=actor.tenant_id, approval_id=approval_id)
+        if record is None:
+            raise HTTPException(404, "approval not found")
+        allow_admin = await can_approve(actor, record.action, record.resource)
         try:
             changed = await service.revoke(
                 tenant_id=actor.tenant_id, approval_id=approval_id,

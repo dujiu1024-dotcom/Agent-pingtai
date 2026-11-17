@@ -15,7 +15,8 @@ class PostgresApprovalVerifier:
         self._connection_factory = connection_factory
 
     async def consume(
-        self, *, tenant_id: str, approval_id: str, action_digest: str
+        self, *, tenant_id: str, approval_id: str, action_digest: str,
+        policy_version: str = "1",
     ) -> bool:
         connection = await self._connection_factory()
         async with connection:
@@ -27,11 +28,12 @@ class PostgresApprovalVerifier:
                     WHERE tenant_id = %s
                       AND approval_id = %s
                       AND action_hash = %s
+                      AND policy_version = %s
                       AND status = 'approved'
                       AND expires_at > now()
                     RETURNING approval_id
                     """,
-                    (tenant_id, UUID(approval_id), action_digest),
+                    (tenant_id, UUID(approval_id), action_digest, policy_version),
                 )
                 return await cursor.fetchone() is not None
 

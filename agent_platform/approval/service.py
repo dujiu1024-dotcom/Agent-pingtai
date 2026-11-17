@@ -22,6 +22,7 @@ class ApprovalRecord:
     decided_by: str | None
     status: str
     expires_at: datetime
+    policy_version: str = "1"
 
 
 class ApprovalRepository:
@@ -35,9 +36,13 @@ class ApprovalRepository:
 
 class ApprovalService:
     def __init__(self, repository: ApprovalRepository, *,
-                 clock: Callable[[], datetime] | None = None) -> None:
+                 clock: Callable[[], datetime] | None = None,
+                 policy_version: str = "1") -> None:
+        if not isinstance(policy_version, str) or not policy_version.strip():
+            raise ValueError("policy_version must be a non-empty trusted version")
         self.repository = repository
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.policy_version = policy_version
 
     async def request(self, *, tenant_id: str, actor_id: str, action: str,
                       resource: str, parameters: dict[str, Any],
@@ -56,6 +61,7 @@ class ApprovalService:
             action=action, resource=resource, risk_level=int(risk_level),
             action_hash=request.digest(), requested_by=actor_id,
             decided_by=None, status="pending", expires_at=self.clock() + ttl,
+            policy_version=self.policy_version,
         )
         await self.repository.create(record)
         return record
@@ -113,6 +119,7 @@ class ApprovalService:
             or record.resource != request.resource
             or record.run_id != run_id
             or record.action_hash != request.digest()
+            or record.policy_version != self.policy_version
         ):
             return None
         return record.action_hash
@@ -147,6 +154,7 @@ class PostgresApprovalRepository:
             risk_level=row["risk_level"], action_hash=row["action_hash"],
             requested_by=row["requested_by"], decided_by=row["decided_by"],
             status=row["status"], expires_at=row["expires_at"],
+            policy_version=row.get("policy_version", "1"),
         )
 
     async def create(self, record: ApprovalRecord) -> None:
@@ -156,12 +164,13 @@ class PostgresApprovalRepository:
                 await connection.execute(
                     """INSERT INTO platform_approvals
                     (tenant_id,approval_id,run_id,action,resource,risk_level,action_hash,
-                     requested_by,status,expires_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)""",
+                     requested_by,status,expires_at,policy_version)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s)""",
                     (record.tenant_id, UUID(record.approval_id),
                      UUID(record.run_id) if record.run_id else None,
                      record.action, record.resource, record.risk_level,
-                     record.action_hash, record.requested_by, record.expires_at),
+                     record.action_hash, record.requested_by, record.expires_at,
+                     record.policy_version),
                 )
                 await connection.execute(
                     """INSERT INTO platform_tool_audit
