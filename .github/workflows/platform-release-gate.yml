@@ -70,6 +70,7 @@ jobs:
             tests.test_platform_e2e_release_gate \
             tests.test_core_business_journey_e2e \
             tests.test_release_gate_evidence \
+            tests.test_issue_21_a_21_02_release_gate_blocking \
             tests.test_identity_api \
             tests.test_identity_http \
             tests.test_knowledge_memory_api \\
@@ -83,6 +84,7 @@ jobs:
             tests.test_tool_gateway \
             tests.test_sandbox_oci \
             tests.test_issue_21_c_21_02_security_negative \
+            tests.test_issue_21_c_21_02_injection_boundaries \
             tests.test_run_lifecycle \
             tests.test_event_consumer \
             tests.test_session_message_pagination \
