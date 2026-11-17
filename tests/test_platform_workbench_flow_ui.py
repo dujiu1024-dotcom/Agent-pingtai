@@ -28,3 +28,22 @@ def test_workbench_ui_exposes_registry_management_and_permission_controls():
     assert '"/disable"' in script
     assert "Registry Authorizer" in script
     assert "Secret Reference" in script
+
+
+def test_workbench_ui_exposes_knowledge_memory_blackboard_and_operations_views():
+    root = Path(__file__).resolve().parents[1] / "agent_platform" / "web" / "static"
+    html = (root / "index.html").read_text()
+    script = (root / "app.js").read_text()
+    assert 'data-view="governance"' in html
+    for route in (
+        "/knowledge/documents", "/memories/candidates", "/memories",
+        "/blackboard/entries", "/observability/evaluations",
+        "/observability/alerts", "/observability/metrics",
+        "/quotas/usage", "/audit/tool-events", "/audit/identity-events",
+    ):
+        assert route in script
+    for label in ("知识库管理", "记忆管理", "Blackboard 协作视图", "评测报告",
+                  "成本与配额", "运营告警", "审计追踪"):
+        assert label in script
+    assert "30*86400000" in script
+    assert "Promise.allSettled" in script
