@@ -29,14 +29,26 @@ class Reranker(Protocol):
 class QueryRewriter(Protocol):
     async def rewrite(self,query: str)->str: ...
 class KnowledgeService:
-    def __init__(self,repository: KnowledgeRepository,*,parsers: ParserRegistry|None=None,embedder: Embedder|None=None,reranker: Reranker|None=None,query_rewriter: QueryRewriter|None=None,max_upload_bytes: int=25*1024*1024,observer=None,metrics=None)->None:
+    def __init__(
+        self, repository: KnowledgeRepository, *, parsers: ParserRegistry | None = None,
+        embedder: Embedder | None = None, reranker: Reranker | None = None,
+        query_rewriter: QueryRewriter | None = None,
+        max_upload_bytes: int = 25 * 1024 * 1024, max_query_chars: int = 4096,
+        observer=None, metrics=None,
+    ) -> None:
         if (
             isinstance(max_upload_bytes, bool)
             or not isinstance(max_upload_bytes, int)
             or max_upload_bytes < 1024
         ):
             raise ValueError("max_upload_bytes must be an integer of at least 1024")
-        self.repository=repository;self.parsers=parsers or ParserRegistry();self.embedder=embedder;self.reranker=reranker;self.query_rewriter=query_rewriter;self.max_upload_bytes=max_upload_bytes;self.observer=observer;self.metrics=metrics
+        if (
+            isinstance(max_query_chars, bool)
+            or not isinstance(max_query_chars, int)
+            or not 1 <= max_query_chars <= 32768
+        ):
+            raise ValueError("max_query_chars must be an integer between 1 and 32768")
+        self.repository=repository;self.parsers=parsers or ParserRegistry();self.embedder=embedder;self.reranker=reranker;self.query_rewriter=query_rewriter;self.max_upload_bytes=max_upload_bytes;self.max_query_chars=max_query_chars;self.observer=observer;self.metrics=metrics
         if embedder is not None and hasattr(repository,"embedding_model"):
             repository.embedding_model=getattr(embedder,"storage_key",embedder.model_id)
             if hasattr(repository,"embedding_model_version"):
@@ -404,7 +416,12 @@ class KnowledgeService:
         return {"connector_id":connector.connector_id,"pages":page_count,"documents":document_count,"deleted_documents":deleted_count,"cursor":cursor,"has_more":page_count==max_pages and bool(page.has_more)}
 
     async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8,filters: RetrievalFilters|None=None,strategy: RetrievalStrategy|str=RetrievalStrategy.HYBRID)->list[RetrievalHit]:
-        if not query.strip():raise ValueError("query must not be empty")
+        if not isinstance(query, str):
+            raise TypeError("query must be a string")
+        if not query.strip():
+            raise ValueError("query must not be empty")
+        if len(query) > self.max_query_chars:
+            raise ValueError("query exceeds configured character limit")
         if limit<1 or limit>50:raise ValueError("limit must be between 1 and 50")
         try:
             strategy=RetrievalStrategy(strategy)
@@ -421,8 +438,18 @@ class KnowledgeService:
                 self.observer,name="knowledge.retrieve",
                 input={"query_chars":len(query),"limit":limit},metadata=metadata,
             ) as span:
-                rewritten=await self.query_rewriter.rewrite(query) if self.query_rewriter else query
-                if not rewritten.strip():raise ValueError("query rewriter returned an empty query")
+                rewritten = query.strip()
+                rewrite_applied = False
+                if self.query_rewriter is not None:
+                    rewritten = await self.query_rewriter.rewrite(rewritten)
+                    if not isinstance(rewritten, str):
+                        raise TypeError("query rewriter must return a string")
+                    if not rewritten.strip():
+                        raise ValueError("query rewriter returned an empty query")
+                    if len(rewritten) > self.max_query_chars:
+                        raise ValueError("rewritten query exceeds configured character limit")
+                    rewritten = rewritten.strip()
+                    rewrite_applied = rewritten != query.strip()
                 vector=await self.embedder.embed_query(rewritten) if self.embedder else None
                 dimensions=getattr(self.embedder,"dimensions",None) if self.embedder else None
                 if vector is not None and dimensions is not None and len(vector)!=dimensions:
@@ -432,7 +459,7 @@ class KnowledgeService:
                 if self.reranker and hits:hits=list(await self.reranker.rerank(query,hits))
                 result=list(hits[:limit])
                 status="succeeded"
-                safe_update(span,output={"status":status,"result_count":len(result)})
+                safe_update(span,output={"status":status,"result_count":len(result),"query_rewritten":rewrite_applied})
                 return result
         except Exception as exc:
             # Do not put the query or provider exception text into trace payloads.
