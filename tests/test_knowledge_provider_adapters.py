@@ -185,6 +185,53 @@ class KnowledgeProviderAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ocr.assert_content, b"%PDF-scanned")
         self.assertEqual(ocr.assert_media_type, "application/pdf")
 
+    def test_ocr_parser_rejects_invalid_limits_and_media_type_contracts(self):
+        class OCRProvider:
+            def extract_text(self, content, media_type):
+                return "text"
+
+        for invalid_limit in (0, -1, True, 1.5):
+            with self.subTest(limit=invalid_limit):
+                with self.assertRaises(ValueError):
+                    OCRParserAdapter(OCRProvider(), max_output_chars=invalid_limit)
+        for invalid_types in ((), ("",), ("application/pdf", "application/pdf"),
+                              (" application/pdf",), ("application/pdf; charset=utf-8",)):
+            with self.subTest(media_types=invalid_types):
+                with self.assertRaises(ValueError):
+                    OCRParserAdapter(OCRProvider(), media_types=invalid_types)
+
+    def test_ocr_parser_enforces_input_and_output_bounds(self):
+        class OCRProvider:
+            def __init__(self, result):
+                self.result = result
+                self.calls = 0
+
+            def extract_text(self, content, media_type):
+                self.calls += 1
+                return self.result
+
+        provider = OCRProvider("1234")
+        parser = OCRParserAdapter(provider, max_output_chars=4)
+        self.assertEqual(parser.parse(b"image", "image/png"), "1234")
+        with self.assertRaises(ValueError):
+            parser.parse(b"", "image/png")
+        with self.assertRaises(ValueError):
+            parser.parse("not-bytes", "image/png")
+        self.assertEqual(provider.calls, 1)
+
+        oversized = OCRParserAdapter(OCRProvider("12345"), max_output_chars=4)
+        with self.assertRaisesRegex(ValueError, "character limit"):
+            oversized.parse(b"image", "image/png")
+
+    def test_ocr_parser_rejects_non_text_provider_response(self):
+        class OCRProvider:
+            def extract_text(self, content, media_type):
+                return None
+
+        parser = OCRParserAdapter(OCRProvider())
+        with self.assertRaises(TypeError):
+            parser.parse(b"image", "image/png")
+
     def test_azure_document_intelligence_rejects_cross_host_poll_url(self):
         client = SyncClient([
             SyncResponse(
