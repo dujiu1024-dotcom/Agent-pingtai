@@ -56,6 +56,7 @@ class PromptRouteDecision:
     policy_revision: int
     subject_hash: str
     decided_at_epoch_ms: int
+    policy_tenant_id: str = ""
 
 
 class PromptRolloutRepository(Protocol):
@@ -175,7 +176,7 @@ class PostgresPromptRolloutRepository:
         )
 
     async def append_decision(self, decision: PromptRouteDecision) -> None:
-        scoped = tenant_prompt_key(decision.tenant_id, decision.prompt_id)
+        scoped = tenant_prompt_key(decision.policy_tenant_id or decision.tenant_id, decision.prompt_id)
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
@@ -237,6 +238,10 @@ class PromptRolloutService:
         if inspect.isawaitable(variants):
             variants = await variants
         active = {item.name for item in variants if item.status == "active"}
+        if tag_routes is not None and not isinstance(tag_routes, Mapping):
+            raise ValueError("tag_routes must be a mapping")
+        if tenant_routes is not None and not isinstance(tenant_routes, Mapping):
+            raise ValueError("tenant_routes must be a mapping")
         tag_routes = tag_routes or {}
         tenant_routes = tenant_routes or {}
         selected = set(weights) | set(tag_routes.values()) | set(tenant_routes.values())
@@ -255,6 +260,8 @@ class PromptRolloutService:
     ) -> PromptRouteDecision:
         if not isinstance(routing_key, str) or not routing_key.strip():
             raise ValueError("routing_key is required for deterministic routing")
+        if not isinstance(user_tags, tuple) or any(not isinstance(tag, str) or not tag.strip() for tag in user_tags):
+            raise ValueError("user_tags must be a tuple of non-empty strings")
         owner = policy_tenant_id or tenant_id
         policy = await self.repository.get_policy(owner, prompt_id)
         if policy is None:
@@ -283,7 +290,7 @@ class PromptRolloutService:
         decision = PromptRouteDecision(
             tenant_id, prompt_id, variant, rule, policy.revision,
             hashlib.sha256(routing_key.encode("utf-8")).hexdigest(),
-            int(time.time() * 1000),
+            int(time.time() * 1000), owner,
         )
         await self.repository.append_decision(decision)
         return decision
