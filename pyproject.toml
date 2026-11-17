@@ -143,7 +143,7 @@ include = [
   "agent_platform/api/health.py",
   "tests/test_core_business_journey_e2e.py",
   "tests/test_graph_schema.py",
-  "tests/test_graph_postgres_repository.py",
+  "tests/test_graph_build_pipeline.py",
 ]
 
 [tool.ruff.lint]
