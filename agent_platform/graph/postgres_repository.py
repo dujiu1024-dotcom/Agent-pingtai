@@ -25,12 +25,25 @@ def _json(value: Mapping[str, Any]) -> str:
         raise ValueError("graph attributes must be finite JSON values") from exc
 
 
-def _source_mapping(schema: GraphSchema, domain: GraphSourceDomain, source_type: str) -> None:
-    if not any(
-        item.domain is domain and item.source_type == source_type
-        for item in schema.source_mappings
-    ):
+def _source_mapping(schema: GraphSchema, domain: GraphSourceDomain, source_type: str):
+    mapping = next(
+        (
+            item for item in schema.source_mappings
+            if item.domain is domain and item.source_type == source_type
+        ),
+        None,
+    )
+    if mapping is None:
         raise ValueError("source domain/type is not mapped by the tenant graph schema")
+    return mapping
+
+
+def _authorized_projects(project_ids: set[str] | None) -> list[str]:
+    if project_ids is None:
+        return []
+    if any(not isinstance(item, str) or not item.strip() for item in project_ids):
+        raise ValueError("project_ids must contain non-empty strings")
+    return sorted(project_ids)
 
 
 @dataclass(frozen=True)
@@ -77,7 +90,9 @@ class PostgresGraphRepository:
         entity.validate(schema)
         if not isinstance(source_domain, GraphSourceDomain):
             raise ValueError("source_domain must be a GraphSourceDomain")
-        _source_mapping(schema, source_domain, source_type)
+        mapping = _source_mapping(schema, source_domain, source_type)
+        if mapping.entity_type != entity.entity_type:
+            raise ValueError("source mapping entity type does not match graph entity")
         if not isinstance(source_id, str) or not source_id.strip() or len(source_id) > 200:
             raise ValueError("source_id must contain 1-200 non-whitespace characters")
         if type(source_version) is not int or source_version < 1:
@@ -128,7 +143,7 @@ class PostgresGraphRepository:
         async with conn:
             async with conn.transaction():
                 cur = await conn.execute(
-                    """SELECT entity_id,project_id FROM platform_graph_entities
+                    """SELECT entity_id,entity_type,project_id FROM platform_graph_entities
                     WHERE tenant_id=%s AND entity_id=ANY(%s) FOR KEY SHARE""",
                     (
                         relation.tenant_id,
@@ -142,6 +157,15 @@ class PostgresGraphRepository:
                 if len(endpoints) != expected_endpoints:
                     raise ValueError("both relation endpoints must exist in the same tenant")
                 allowed_projects = {None, relation.project_id}
+                by_id = {row["entity_id"]: row for row in endpoints}
+                source = by_id.get(relation.source_entity_id)
+                target = by_id.get(relation.target_entity_id)
+                if source is None or target is None:
+                    raise ValueError("both relation endpoints must exist in the same tenant")
+                if source["entity_type"] != relation.source_entity_type:
+                    raise ValueError("source entity type does not match persisted endpoint")
+                if target["entity_type"] != relation.target_entity_type:
+                    raise ValueError("target entity type does not match persisted endpoint")
                 if any(row["project_id"] not in allowed_projects for row in endpoints):
                     raise ValueError("relation endpoints cross project boundaries")
                 if relation.project_id is None and any(
@@ -187,19 +211,12 @@ class PostgresGraphRepository:
             raise ValueError("tenant_id and entity_id are required")
         conn = await self._connect()
         async with conn:
-            if project_ids is None:
-                cur = await conn.execute(
-                    """SELECT * FROM platform_graph_entities
-                    WHERE tenant_id=%s AND entity_id=%s""",
-                    (tenant_id, entity_id),
-                )
-            else:
-                cur = await conn.execute(
-                    """SELECT * FROM platform_graph_entities
-                    WHERE tenant_id=%s AND entity_id=%s
-                      AND (project_id IS NULL OR project_id=ANY(%s))""",
-                    (tenant_id, entity_id, sorted(project_ids)),
-                )
+            cur = await conn.execute(
+                """SELECT * FROM platform_graph_entities
+                WHERE tenant_id=%s AND entity_id=%s
+                  AND (project_id IS NULL OR project_id=ANY(%s))""",
+                (tenant_id, entity_id, _authorized_projects(project_ids)),
+            )
             return await cur.fetchone()
 
     async def list_entities(
@@ -219,9 +236,8 @@ class PostgresGraphRepository:
         if entity_type is not None:
             conditions.append("entity_type=%s")
             params.append(entity_type)
-        if project_ids is not None:
-            conditions.append("(project_id IS NULL OR project_id=ANY(%s))")
-            params.append(sorted(project_ids))
+        conditions.append("(project_id IS NULL OR project_id=ANY(%s))")
+        params.append(_authorized_projects(project_ids))
         params.append(limit)
         conn = await self._connect()
         async with conn:
