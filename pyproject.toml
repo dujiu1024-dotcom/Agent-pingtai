@@ -52,7 +52,6 @@ include = [
   "tests/test_approval_workbench_ui.py",
   "tests/test_identity_audit_contract.py",
   "tests/test_platform_api_app.py",
-  "tests/test_issue_14_c_14_05_responsive_workbench.py",
   "tests/test_identity_http.py",
   "tests/test_identity_api.py",
   "tests/test_identity_context.py",
@@ -181,7 +180,6 @@ include = [
   "tests/test_session_management_api.py",
   "tests/test_session_conversation_migration.py",
   "tests/test_sse_protocol.py",
-  "tests/test_issue_30_a_30_01_streaming_acceptance.py",
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
   "tests/test_evaluation_rollout.py",
@@ -196,7 +194,8 @@ include = [
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_665_s_665_01_e2e.py",
   "tests/test_api_v1_compatibility_middleware.py",
-  "tests/test_issue_666_a_666_08_rollback_drill.py",
+  "tests/test_issue_667_s_34_02_workbench_pages.py",
+  "tests/test_issue_667_s_34_05_legacy_panel_coverage.py",
 ]
 
 [tool.ruff.lint]
@@ -253,7 +252,6 @@ files = [
   "agent_platform/streaming/client.py",
   "agent_platform/blackboard/replay.py",
   "agent_platform/blackboard/sse.py",
-  "tests/test_issue_667_s_667_08_first_screen_performance.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）

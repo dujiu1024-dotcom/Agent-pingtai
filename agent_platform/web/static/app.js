@@ -16,7 +16,7 @@ function pre(v){return "<pre class='json'>"+json(v)+"</pre>"}
 function btn(t,attr,cls=""){return "<button class='button "+cls+"' "+attr+">"+t+"</button>"}
 async function list(p){const r=await api(p);return r.items||[]}
 async function refresh(){try{S.me=await api("/auth/me");$("#identity").textContent=S.me.display_name||S.me.email||S.me.user_id;$("#logout").hidden=false;$("#login").hidden=true;$("#content").hidden=false;S.features=(await api(API+"/workbench/capabilities")).features||{};$("#api-state").textContent="API 已连接"}catch(e){S.me=null;$("#identity").textContent="未登录";$("#logout").hidden=true;$("#login").hidden=false;$("#content").hidden=true;$("#api-state").textContent="未认证"}}
-function nav(v){if(v!=="task-detail"&&S.runStream){S.runStream.close();S.runStream=null}S.view=v;S.session=null;S.task=null;S.approval=null;document.querySelectorAll("[data-view]").forEach(b=>{const active=b.dataset.view===v;b.classList.toggle("active",active);if(active)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});const names={overview:"工作台总览",tasks:"任务中心",sessions:"会话与文件",approvals:"人工审批",artifacts:"产物交付"};$("#title").textContent=names[v]||v;$("#crumb").textContent=v.toUpperCase();render()}
+function nav(v){if(v!=="task-detail"&&S.runStream){S.runStream.close();S.runStream=null}S.view=v;S.session=null;S.task=null;S.approval=null;document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===v));const names={overview:"工作台总览",tasks:"任务中心",sessions:"会话与文件",approvals:"人工审批",artifacts:"产物交付"};$("#title").textContent=names[v]||v;$("#crumb").textContent=v.toUpperCase();render()}
 async function render(){const root=$("#view");root.innerHTML="<div class='panel'>加载中…</div>";try{
 if(S.view==="overview"){const rs=await Promise.allSettled([list(API+"/workbench/tasks?limit=50"),list(API+"/sessions?limit=50"),list(API+"/files?limit=50"),list(API+"/approvals?limit=50")]);const n=rs.map(x=>x.status==="fulfilled"?x.value.length:"—");root.innerHTML="<div class='grid'>"+[["启用能力",Object.values(S.features).filter(Boolean).length],["任务",n[0]],["会话",n[1]],["文件资产",n[2]]].map(x=>"<div class='stat'><small>"+x[0]+"</small><strong>"+x[1]+"</strong></div>").join("")+"</div>"+panel("平台能力",Object.entries(S.features).map(x=>"<span class='pill'>"+esc(x[0])+": "+(x[1]?"启用":"未启用")+"</span>").join(" "))+(rs[3].status==="fulfilled"?panel("待处理审批","<p>当前审批记录："+n[3]+"</p>",btn("打开审批中心","data-go='approvals'")):"")}
 else if(S.view==="sessions"){if(!S.features.sessions){root.innerHTML=panel("会话服务未配置","<p>后端尚未启用会话能力。</p>");return}const [ss,fs]=await Promise.all([list(API+"/sessions?limit=100"),list(API+"/files?limit=100")]);root.innerHTML=panel("创建会话","<form id='session-form' class='inline-form'><label>会话标题<input name='title' required maxlength='200'></label><label>项目 ID（可选）<input name='project_id'></label><button class='button primary'>创建会话</button></form>")+panel("会话列表",table(["会话","项目","状态","更新时间","操作"],ss.map(x=>"<tr><td>"+esc(x.title||x.session_id)+"<small class='subline'>"+esc(x.session_id)+"</small></td><td>"+esc(x.project_id||"—")+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.updated_at)+"</td><td>"+btn("打开","data-session='"+esc(x.session_id)+"'")+"</td></tr>")))+panel("文件资产",table(["文件","大小","会话","版本","操作"],fs.map(x=>"<tr><td>"+esc(x.filename)+"</td><td>"+esc(x.size_bytes)+" bytes</td><td>"+esc(x.session_id||"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")))}
@@ -426,48 +426,165 @@ document.addEventListener("click",async e=>{
 });
 
 
-/* C-24-03: authenticated RAG query playground using the tenant-scoped API. */
-S.ragPlayground={options:null,result:null,error:null};
-async function renderRagPlayground(){
- const root=$("#view");$("#title").textContent="RAG Query 测试";$("#crumb").textContent="RAG PLAYGROUND";
- if(!S.ragPlayground.options){
-  root.innerHTML=panel("RAG Query 测试","<p>正在读取当前租户可用的 Embedding 模型…</p>");
-  S.ragPlayground.options=await api(API+"/rag-playground/options");
- }
- const options=S.ragPlayground.options,models=options.embedding_models||[];
- const selected=S.ragPlayground.result;
- const modelOptions=models.map(m=>"<option value='"+esc(m)+"'>"+esc(m)+"</option>").join("");
- const controls="<form id='rag-query-form'><label>问题<textarea name='query' required maxlength='4096' rows='3' placeholder='输入要验证的检索问题'></textarea></label><div class='form-grid'><label>Embedding 模型<select name='embedding_model'>"+modelOptions+"</select></label><label>Top-K<input name='top_k' type='number' min='1' max='"+esc(options.max_top_k||20)+"' value='5' required></label><label>最低相似度<input name='min_score' type='number' min='0' max='1' step='0.01' value='0'></label><label class='inline-form'><span>启用 Rerank</span><input name='rerank' type='checkbox'></label></div><button class='button primary'>执行检索与生成</button></form><p class='subtle'>请求由已认证的服务端 Principal 确定租户身份；模型必须来自服务端启用列表，未授权片段由检索层过滤。</p>";
- let output="";
- if(selected){
-  const rows=(selected.retrieved||[]).map((hit,index)=>"<article class='message'><header><b>#"+(index+1)+" · "+esc(hit.title||hit.document_id)+"</b><small>score "+esc(Number(hit.score||0).toFixed(4))+"</small></header><p>"+esc(hit.text)+"</p><small class='subline'>文档 "+esc(hit.document_id)+" · v"+esc(hit.document_version)+" · Chunk "+esc(hit.chunk_id)+" · "+(hit.page_number?"第 "+esc(hit.page_number)+" 页":"offset "+esc(hit.start_offset??"—")+"–"+esc(hit.end_offset??"—"))+"</small>"+(hit.source_url?"<p><a href='"+esc(hit.source_url)+"' target='_blank' rel='noopener noreferrer'>打开来源文档</a></p>":"")+"</article>");
-  output=panel("生成答案", "<p>"+esc(selected.answer||"未生成答案")+"</p><p class='subtle'>"+(selected.abstained?"已拒答："+esc(selected.reason||"无授权证据"):"基于检索结果生成")+"</p>")+
-   panel("Top-K 召回片段",rows.join("")||"<p class='empty'>没有达到阈值的授权片段</p>")+
-   panel("引用与检索配置",pre({citations:selected.citations,query:selected.query,embedding_model:selected.embedding_model,rerank:selected.rerank,top_k:selected.top_k,min_score:selected.min_score}));
- }
- root.innerHTML=panel("查询配置",controls)+output;
- const form=$("#rag-query-form");if(form&&models.length)form.elements.embedding_model.value=models.includes(options.default_embedding_model)?options.default_embedding_model:models[0];
-}
-const ragPlaygroundBaseRender=render;
-render=async function(){
- if(S.view==="rag-playground"){
-  try{await renderRagPlayground()}catch(error){$("#view").innerHTML=panel("RAG Query 测试不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-rag-retry='1'"));S.ragPlayground.options=null}
+/* S-34-02: dedicated Batch and Observability workbench surfaces. */
+async function renderBatch(){
+ const root=$("#view");
+ $("#title").textContent="批量执行";
+ $("#crumb").textContent="BATCH EXECUTION";
+ if(S.features.batch_execution===false){
+  root.innerHTML=panel("批量执行未启用","<p class='subtle'>当前租户未启用 Batch Execution 能力；页面不会绕过服务端 capability 或授权检查。</p>");
   return;
  }
- return ragPlaygroundBaseRender();
+ const batches=await list(API+"/workbench/batches?limit=100");
+ const rows=batches.map(x=>{
+  const id=String(x.batch_id||"");
+  const actions=btn("详情","data-batch='"+esc(id)+"'")+
+   (["queued","running","pending"].includes(String(x.status).toLowerCase())?btn("取消","data-batch-cancel='"+esc(id)+"'"):"")+
+   (["failed","cancelled","partial_failure"].includes(String(x.status).toLowerCase())?btn("重试","data-batch-retry='"+esc(id)+"'"):"");
+  return "<tr><td><code>"+esc(id)+"</code></td><td>"+esc(x.template_id||"—")+"</td><td><span class='pill'>"+esc(x.status||"unknown")+"</span></td><td>"+esc(x.total_tasks??x.total??"—")+"</td><td>"+esc(x.succeeded??x.success_count??"—")+"</td><td>"+esc(x.failed??x.failure_count??"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
+ });
+ let detail="";
+ if(S.batchId){
+  try{
+   const item=await api(API+"/workbench/batches/"+encodeURIComponent(S.batchId));
+   detail=panel("批次详情 · "+esc(S.batchId),pre(item));
+  }catch(error){detail=panel("批次详情不可用","<p class='error'>"+esc(error.message)+"</p>")}
+ }
+ root.innerHTML=
+  panel("提交批处理",
+   "<form id='batch-submit-form' class='registry-form'>"+
+   "<div class='form-grid'><label>模板 ID<input name='template_id' required maxlength='128' placeholder='已授权的 Agent / Workflow 模板'></label>"+
+   "<label>最大并发<input name='max_concurrency' type='number' min='1' max='1000' value='8' required></label></div>"+
+   "<label>数据集（JSON 数组；每项为输入对象）<textarea name='dataset' rows='8' required>[{\"prompt\":\"第一项任务\"},{\"prompt\":\"第二项任务\"}]</textarea></label>"+
+   "<p class='subtle'>提交使用服务端 BatchTaskService，tenant/actor 从认证 Principal 派生；请求附带幂等键。数据集上限由 API 执行。</p>"+
+   "<button class='button primary'>提交批次</button></form>")+
+  detail+
+  panel("批次队列",table(["Batch ID","模板","状态","任务数","成功","失败","创建时间","操作"],rows))+
+  "<p class='subtle'>批次列表、详情、取消和重试均通过同源认证 API；重试生成新的幂等键，权限由服务端再次验证。</p>";
+}
+async function renderObservability(){
+ const root=$("#view");
+ $("#title").textContent="运行可观测性";
+ $("#crumb").textContent="OBSERVABILITY";
+ const window=isoWindow(),q="start="+encodeURIComponent(window.start)+"&end="+encodeURIComponent(window.end);
+ const jobs=[
+  ["capacity",()=>api(API+"/observability/health/capacity")],
+  ["alerts",()=>list(API+"/observability/alerts?limit=100")],
+  ["metrics",async()=>{const response=await api(API+"/observability/metrics");return await response.text()}],
+  ["usage",()=>list(API+"/quotas/usage?"+q+"&limit=1000")],
+  ["audit",()=>list(API+"/audit/tool-events?limit=100")],
+  ["identity",()=>list(API+"/audit/identity-events?limit=100")]
+ ];
+ const settled=await Promise.allSettled(jobs.map(x=>x[1]()));
+ const data=Object.fromEntries(jobs.map((x,i)=>[x[0],settled[i].status==="fulfilled"?settled[i].value:null]));
+ const errors=jobs.filter((x,i)=>settled[i].status==="rejected")
+  .map(x=>"<li>"+esc(x[0])+": "+esc(settled[jobs.indexOf(x)].reason?.message||"不可用")+"</li>").join("");
+ const alerts=data.alerts?.items||[],usage=data.usage?.items||[],audit=data.audit?.items||[],identity=data.identity?.items||[];
+ const openAlerts=alerts.filter(x=>!["resolved","closed"].includes(String(x.status||"").toLowerCase()));
+ const tokens=usage.reduce((n,x)=>n+Number(x.total_tokens||0),0);
+ const cost=usage.reduce((n,x)=>n+Number(x.cost_usd||0),0);
+ const alertRows=alerts.map(x=>{
+  const id=String(x.event_id||"");
+  const status=String(x.status||"").toLowerCase();
+  const actions=(status==="open"?btn("确认","data-alert-ack='"+esc(id)+"'"):"")+
+   (["open","acknowledged"].includes(status)?btn("解决","data-alert-resolve='"+esc(id)+"'"):"");
+  return "<tr><td>"+esc(id)+"</td><td>"+esc(x.severity||"—")+"</td><td>"+esc(x.status||"—")+"</td><td>"+esc(x.title||"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
+ });
+ root.innerHTML=
+  "<div class='grid'>"+
+   "<div class='stat'><small>待处理告警</small><strong>"+openAlerts.length+"</strong></div>"+
+   "<div class='stat'><small>近 30 天 Token</small><strong>"+tokens+"</strong></div>"+
+   "<div class='stat'><small>近 30 天成本 USD</small><strong>"+cost.toFixed(4)+"</strong></div>"+
+  "</div>"+
+  (errors?panel("部分数据源不可用","<ul class='error'>"+errors+"</ul>"):"")+
+  panel("容量与健康",data.capacity?pre(data.capacity):"<p class='subtle'>容量健康数据不可用。</p>")+
+  panel("运营告警",table(["事件","级别","状态","标题","创建时间","操作"],alertRows))+
+  panel("用量明细",rowsPanel("模型与 Run 用量",usage,["occurred_at","run_id","model_key","input_tokens","output_tokens","total_tokens","cost_usd","project_id","agent_id"]))+
+  panel("审计追踪",rowsPanel("工具事件",audit,["event_id","occurred_at","actor_id","run_id","tool_name","action","outcome"])+
+   rowsPanel("身份事件",identity,["event_id","occurred_at","actor_id","action","target_id","outcome"]))+
+  panel("Prometheus 指标",data.metrics?"<pre class='json'>"+esc(data.metrics)+"</pre>":"<p class='subtle'>指标 exporter 未配置或无权限。</p>")+
+  "<p class='subtle'>统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。数据源错误会显式显示；所有读取与告警变更均由服务端认证、租户隔离和权限策略控制。</p>";
+}
+const workbenchPagesBaseRender=render;
+function renderLegacyPanels(){
+ const legacy=(panel)=>"/app/?legacy=1&panel="+encodeURIComponent(panel);
+ const cards=[
+  ["任务看板","旧版项目/任务看板；新工作台提供任务中心。","native","tasks"],
+  ["运行执行","旧版手动运行入口；新工作台通过任务中心提交执行。","native","tasks"],
+  ["交付报告","旧版运行报告与产物；新工作台提供产物交付。","native","artifacts"],
+  ["事件流","旧版事件时间线；新工作台提供可观测性与审计视图。","native","observability"],
+  ["经营看板","旧版经营汇总仍保留原始视图，供迁移期间核对。","legacy","ops"],
+  ["系统健康自检","旧版 listener/console/tick 自检面板。","legacy","health"],
+  ["商务 · 客户与款项","客户、报价、合同、发票与回款管理。","legacy","business"],
+  ["内容日历 · B站/抖音","内容计划、发布记录与数据回填。","legacy","content"],
+  ["圆桌会议 · 多角色讨论","多角色讨论、轮次与结论产物。","legacy","roundtable"]
+ ];
+ const native=cards.filter(x=>x[2]==="native").map(x=>panel(x[0],"<p class='subtle'>"+esc(x[1])+"</p>",btn("打开新工作台入口","data-go='"+esc(x[3])+"'")));
+ const legacyCards=cards.filter(x=>x[2]==="legacy").map(x=>panel(x[0],"<p class='subtle'>"+esc(x[1])+"</p>","<a class='button' href='"+esc(legacy(x[3]))+"' target='_blank' rel='noopener'>在旧版兼容面板打开</a>"));
+ $("#view").innerHTML=panel("迁移说明","<p>已迁移能力使用新工作台原生页面；尚未迁移为新 API 的领域面板通过受控 legacy fallback 直达，不伪装成新系统实现。</p>")+
+  "<div class='grid'>"+native.join("")+legacyCards.join("")+"</div>"+
+  panel("迁移边界","<p>商务、内容日历、圆桌会议和旧版系统自检目前仍由 legacy console 提供。对应链接只用于兼容访问；完成后端 API 与权限迁移前，不应关闭这些领域的旧系统入口。</p>");
+}
+render=async function(){
+ if(S.view==="legacy-panels"){renderLegacyPanels();return;}
+ if(S.view==="batch"){
+  try{await renderBatch()}catch(error){$("#view").innerHTML=panel("批量执行不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-retry='1'"))}
+  return;
+ }
+ if(S.view==="observability"){
+  try{await renderObservability()}catch(error){$("#view").innerHTML=panel("可观测性不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-retry='1'"))}
+  return;
+ }
+ return workbenchPagesBaseRender();
 };
+VIEW_CAPABILITIES.batch=["batch_execution"];
+VIEW_CAPABILITIES.observability=["observability","metrics","audit","quotas"];
 document.addEventListener("submit",async event=>{
- const form=event.target;if(form.id!=="rag-query-form")return;
- event.preventDefault();const data=new FormData(form);
- const payload={query:String(data.get("query")||"").trim(),embedding_model:String(data.get("embedding_model")||""),top_k:Number(data.get("top_k")),min_score:Number(data.get("min_score")),rerank:data.get("rerank")==="on"};
- const submit=form.querySelector("button[type='submit'],button:not([type])");if(submit)submit.disabled=true;
+ const form=event.target;
+ if(form.id!=="batch-submit-form")return;
+ event.preventDefault();
+ const data=new FormData(form);
+ let dataset;
+ try{dataset=JSON.parse(String(data.get("dataset")||""))}
+ catch{toast("数据集必须是合法 JSON 数组");return}
+ if(!Array.isArray(dataset)||!dataset.length||dataset.some(row=>!row||typeof row!=="object"||Array.isArray(row))){
+  toast("数据集必须是非空的 JSON 对象数组");return;
+ }
+ const concurrency=Number(data.get("max_concurrency"));
+ if(!Number.isInteger(concurrency)||concurrency<1||concurrency>1000){toast("最大并发必须为 1 到 1000 的整数");return}
  try{
-  S.ragPlayground.result=await api(API+"/rag-playground/query",{method:"POST",body:JSON.stringify(payload)});
-  toast("RAG 查询完成");await renderRagPlayground();
+  const result=await api(API+"/workbench/batches",{method:"POST",body:JSON.stringify({
+   template_id:String(data.get("template_id")||"").trim(),dataset,
+   max_concurrency:concurrency,idempotency_key:crypto.randomUUID()
+  })});
+  S.batchId=result.batch_id||null;
+  toast("批处理已提交");
+  await renderBatch();
  }catch(error){toast(error.message)}
- finally{if(submit)submit.disabled=false}
 });
-document.addEventListener("click",event=>{
+document.addEventListener("click",async event=>{
  const button=event.target.closest("button");if(!button)return;
- if(button.dataset.ragRetry){S.ragPlayground.options=null;S.ragPlayground.result=null;nav("rag-playground")}
+ try{
+  if(button.dataset.batch){
+   S.batchId=button.dataset.batch;await renderBatch();return;
+  }
+  if(button.dataset.batchCancel){
+   await api(API+"/workbench/batches/"+encodeURIComponent(button.dataset.batchCancel)+"/cancel",{method:"POST",body:"{}"});
+   toast("批次取消请求已提交");await renderBatch();return;
+  }
+  if(button.dataset.batchRetry){
+   await api(API+"/workbench/batches/"+encodeURIComponent(button.dataset.batchRetry)+"/retry",{
+    method:"POST",body:JSON.stringify({idempotency_key:crypto.randomUUID()})
+   });
+   toast("批次重试已提交");await renderBatch();return;
+  }
+  if(button.dataset.alertAck){
+   await api(API+"/observability/alerts/"+encodeURIComponent(button.dataset.alertAck)+"/acknowledge",{method:"POST",body:"{}"});
+   toast("告警已确认");await renderObservability();return;
+  }
+  if(button.dataset.alertResolve){
+   await api(API+"/observability/alerts/"+encodeURIComponent(button.dataset.alertResolve)+"/resolve",{method:"POST",body:"{}"});
+   toast("告警已解决");await renderObservability();return;
+  }
+ }catch(error){toast(error.message)}
 });
