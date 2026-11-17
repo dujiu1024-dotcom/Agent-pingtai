@@ -533,7 +533,7 @@ class RegistryLangGraphExecutorResolver:
         self.lifecycle_resolver = lifecycle_resolver
         self.runtime_provider_resolver = runtime_provider_resolver
         self.graph_factory = graph_factory
-        self.run_context_resolver = run_context_resolver
+        self.run_context_resolver = run_context_resolver\n        self.event_broker_resolver = event_broker_resolver
 
     async def _resolve(self, callback: Callable[..., Any], *args: Any) -> Any:
         value = callback(*args)
