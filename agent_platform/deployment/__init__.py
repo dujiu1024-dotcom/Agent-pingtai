@@ -1,4 +1,39 @@
-"""Versioned deployment and rollout policy primitives."""
+"""Deployment, backup and disaster recovery primitives."""
+
+__all__ = [
+    "BackupArtifact",
+    "BackupCatalog",
+    "BackupCoordinator",
+    "BackupKind",
+    "BackupPolicy",
+    "BackupScheduler",
+    "RestoreDrill",
+    "RestoreDrillState",
+    "begin_restore_drill",
+    "meets_rpo",
+    "recovery_point_age",
+    "Deployment",
+    "DeploymentState",
+    "DeploymentStrategy",
+    "HealthSnapshot",
+    "MaintenanceWindow",
+    "RolloutPolicy",
+    "build_rollout_policy",
+]
+
+from agent_platform.deployment.backups import (
+    BackupArtifact,
+    BackupCatalog,
+    BackupCoordinator,
+    BackupKind,
+    BackupPolicy,
+    BackupScheduler,
+    RestoreDrill,
+    RestoreDrillState,
+    begin_restore_drill,
+    meets_rpo,
+    recovery_point_age,
+)
 from agent_platform.deployment.versioned import (
     Deployment,
     DeploymentState,
