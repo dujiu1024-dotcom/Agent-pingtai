@@ -378,7 +378,12 @@ class BlackboardMultiExpertServices:
             decision = indexed_conflicts[index]
             evidence_refs = tuple(decision.get("evidence_refs", ()))
             # Preserve conflict and challenge lineage; UUID evidence must resolve in-scope.
-            decision_refs = (str(conflict_entry_id), str(challenge_entry_id), *evidence_refs)
+            decision_refs = tuple(dict.fromkeys((
+                str(conflict_entry_id),
+                str(challenge_entry_id),
+                *persisted_conflict.source_refs,
+                *evidence_refs,
+            )))
             await self._validate_source_refs(
                 scope=scope, scope_id=scope_id, refs=decision_refs,
                 require_existing=True,
