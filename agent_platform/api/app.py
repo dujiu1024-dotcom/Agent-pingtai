@@ -380,6 +380,13 @@ def create_platform_app(
     batch_api_configured = batch_service_resolver is not None
     if batch_api_configured and task_authorizer is None:
         raise ValueError("batch service resolver requires the workbench task authorizer")
+    graph_configured = any(value is not None for value in (
+        graph_query_service_resolver, graph_read_authorizer,
+    ))
+    if graph_configured and (
+        graph_query_service_resolver is None or graph_read_authorizer is None
+    ):
+        raise ValueError("graph query service resolver and graph read authorizer must be configured together")
     app.include_router(create_workbench_router(
         features={
             "knowledge": True,
@@ -416,12 +423,7 @@ def create_platform_app(
             authorize_scope=blackboard_authorizer,
             verify_evidence_refs=blackboard_evidence_verifier,
         ))
-    graph_configured = any(value is not None for value in (
-        graph_query_service_resolver, graph_read_authorizer,
-    ))
     if graph_configured:
-        if graph_query_service_resolver is None or graph_read_authorizer is None:
-            raise ValueError("graph query service resolver and graph read authorizer must be configured together")
         graph_identity_context = IdentityContextResolver(identity_repository)
         app.include_router(create_graph_router(
             resolve_principal=_principal_from_request,
