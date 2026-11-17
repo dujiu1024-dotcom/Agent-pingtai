@@ -31,6 +31,7 @@ include = [
   "tests/test_disaster_recovery_evidence.py",
   "tests/test_platform_ops.py",
   "tests/test_migration_batches.py",
+  "tests/test_issue_666_a_666_06_migration_scope.py",
   "tests/test_migration_audit.py",
   "tests/test_console.py",
   "tests/test_listener.py",
