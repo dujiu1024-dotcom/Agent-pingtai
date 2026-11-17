@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -179,7 +180,9 @@ class RunLifecycleManager:
      await release(row.tenant_id,row.run_id,worker_id)
   return resumed
  async def run_with_timeout(self,tenant_id:str,run_id:str,operation:Any,*,timeout:float)->Any:
-  if isinstance(timeout,bool) or timeout<=0: raise ValueError("timeout must be positive")
+  if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+      or not math.isfinite(timeout) or timeout <= 0):
+   raise ValueError("timeout must be a finite positive number")
   task=asyncio.create_task(operation)
   async with self._lock: self._tasks[(tenant_id,run_id)]=task
   try:
