@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-import re
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol
 from urllib.parse import urlsplit
