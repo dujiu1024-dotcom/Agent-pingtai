@@ -39,7 +39,35 @@ services:
       - redis_password
       - minio_root_password
     depends_on:
-      platform-worker:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PLATFORM_API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: ${API_MEMORY_LIMIT:-2g}
+    cpus: ${API_CPU_LIMIT:-2.0}
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-2g}
+          cpus: "${API_CPU_LIMIT:-2.0}"
+    networks: [platform]
+
+  platform-worker:
     image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
     restart: unless-stopped
     init: true
@@ -95,35 +123,6 @@ services:
           memory: ${WORKER_MEMORY_LIMIT:-2g}
           cpus: "${WORKER_CPU_LIMIT:-2.0}"
     networks: [platform]
-
-  postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${PLATFORM_API_PORT:-8080}:8080"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=3)"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 45s
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    pids_limit: 256
-    mem_limit: ${API_MEMORY_LIMIT:-2g}
-    cpus: ${API_CPU_LIMIT:-2.0}
-    deploy:
-      resources:
-        limits:
-          memory: ${API_MEMORY_LIMIT:-2g}
-          cpus: "${API_CPU_LIMIT:-2.0}"
-    networks: [platform]
-
   postgres:
     image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     restart: unless-stopped
