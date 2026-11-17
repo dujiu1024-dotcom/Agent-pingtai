@@ -90,6 +90,7 @@ def render_acceptance_report(
         ("Dependencies healthy", "dependencies_healthy", deployment),
         ("Change window approved", "change_window_approved", deployment),
         ("Rollback ready before deployment", "rollback_ready", deployment),
+        ("Artifact SHA-256", "artifact_digest", deployment),
         ("Migration preflight passed", "preflight_passed", migration),
         ("Migration compatibility window confirmed", "compatibility_window_confirmed", migration),
         ("Migration strategy", "strategy", migration),
