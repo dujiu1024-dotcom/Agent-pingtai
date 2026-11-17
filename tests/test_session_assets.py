@@ -350,3 +350,7 @@ if __name__ == "__main__":
         self.assertEqual([item.session_id for item in sessions], [first.session_id])
         self.assertEqual([item.asset_id for item in assets], [asset.asset_id])
         self.assertEqual(await self.repository.list_sessions("tenant-b", "user-a"), ())
+
+
+if __name__ == "__main__":
+    unittest.main()
