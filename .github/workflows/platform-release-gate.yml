@@ -95,6 +95,7 @@ jobs:
             tests.test_tenant_creation_integration \
             tests.test_service_identity_authorization_integration \
             tests.test_redis_streams_integration \
+            tests.test_quota_policies \
             tests.test_quota_postgres_integration \
             tests.test_platform_perf_smoke -v
       - name: Static checks
