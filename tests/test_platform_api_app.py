@@ -700,5 +700,25 @@ class PlatformApiCompositionTests(unittest.TestCase):
             route_paths,
         )
 
+
+    def test_gateway_serves_legacy_console_fallback_and_allowlisted_static_assets(self):
+        legacy = self.client.get("/app/?legacy=1")
+        self.assertEqual(legacy.status_code, 200)
+        self.assertIn("FDE 工作室", legacy.text)
+        self.assertEqual(legacy.headers["content-type"].split(";")[0], "text/html")
+        self.assertEqual(legacy.headers["cache-control"], "no-store")
+
+        app_script = self.client.get("/app/assets/app.js")
+        self.assertEqual(app_script.status_code, 200)
+        self.assertIn("workbench/capabilities", app_script.text)
+        self.assertTrue(app_script.headers["content-type"].startswith("text/javascript"))
+
+        stylesheet = self.client.get("/app/assets/style.css")
+        self.assertEqual(stylesheet.status_code, 200)
+        self.assertTrue(stylesheet.headers["content-type"].startswith("text/css"))
+
+        rejected = self.client.get("/app/assets/../../console.html")
+        self.assertEqual(rejected.status_code, 404)
+
 if __name__ == "__main__":
     unittest.main()
