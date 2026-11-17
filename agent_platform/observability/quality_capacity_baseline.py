@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from math import ceil
 import json
 import time
 from dataclasses import asdict, dataclass
+from math import ceil
 from typing import Any
 
 from agent_platform.observability.agent_rag_evaluation import (
@@ -106,14 +106,14 @@ async def run_quality_capacity_baseline(
 
     async def operation(index: int) -> int:
         nonlocal active, max_active
+        queued_at = time.perf_counter()
         async with semaphore:
             active += 1
             max_active = max(max_active, active)
-            started = time.perf_counter()
-            # Yield to exercise real asyncio scheduling without network or sleeps.
+            # Include semaphore queue time in end-to-end operation latency.
             await asyncio.sleep(0)
             checksum = (index * 31 + 17) % 997
-            latencies_ms.append((time.perf_counter() - started) * 1000)
+            latencies_ms.append((time.perf_counter() - queued_at) * 1000)
             active -= 1
             return checksum
 
