@@ -9,9 +9,8 @@ from agent_platform.memory.conflicts import (
 )
 from agent_platform.memory.retrieval import (
     MemoryCitation,
-    MemoryRecallStrategy,
-    MemoryRetrievalHit,
-    MemoryRetrievalQuery,
+    MemoryRecall,
+    MemoryRecallPolicy,
     MemoryRetrievalService,
 )
 from agent_platform.memory.review import (
@@ -19,12 +18,6 @@ from agent_platform.memory.review import (
     MemoryCandidateWorkflow,
     MemoryReviewDecision,
     MemoryReviewEvent,
-)
-from agent_platform.memory.retrieval import (
-    MemoryRecallHit,
-    MemoryRecallQuery,
-    MemoryRecallStrategy,
-    MemoryRetrievalService,
 )
 from agent_platform.memory.service import (
     InMemoryMemoryRepository,
@@ -38,9 +31,8 @@ from agent_platform.memory.service import (
 
 __all__ = [
     "MemoryCitation",
-    "MemoryRecallStrategy",
-    "MemoryRetrievalHit",
-    "MemoryRetrievalQuery",
+    "MemoryRecall",
+    "MemoryRecallPolicy",
     "MemoryRetrievalService",
     "InMemoryMemoryRepository",
     "MemoryCandidate",
@@ -53,8 +45,9 @@ __all__ = [
     "MemoryCandidateWorkflow",
     "MemoryReviewDecision",
     "MemoryReviewEvent",
-    "MemoryRecallHit",
-    "MemoryRecallQuery",
-    "MemoryRecallStrategy",
-    "MemoryRetrievalService",
+    "InMemoryMemoryConflictAuditRepository",
+    "MemoryConflictDecision",
+    "MemoryConflictResolution",
+    "MemoryConflictResolver",
+    "MemoryConflictSource",
 ]

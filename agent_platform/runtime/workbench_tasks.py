@@ -290,6 +290,7 @@ class RegistryBackedTaskCenterService:
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
         run_id: str | None = None, priority: int = 100,
+        parent_run_id: str | None = None, budget_lineage_key: str | None = None,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
@@ -369,7 +370,7 @@ class RegistryBackedTaskCenterService:
         template_version = template.version
         run_id = run_id or str(uuid4())
         preparation_owner = str(uuid4())
-        created = await self.run_store.create_task_run(
+        create_run_args = dict(
             tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
             agent_id=agent_id, agent_version=agent.version,
             template_id=template_id, template_version=template_version,
@@ -381,7 +382,7 @@ class RegistryBackedTaskCenterService:
                 {"kind": item.kind, "item_id": item.item_id, "version": item.version}
                 for item in [agent, template, provider, *tools, *skills, *([workflow] if workflow is not None else [])]
             ],
-        }
+        )
         if parent_run_id is not None:
             create_run_args["parent_run_id"] = parent_run_id
             create_run_args["budget_lineage_key"] = budget_lineage_key

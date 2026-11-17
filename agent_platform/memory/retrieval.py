@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from math import isfinite
 from typing import Sequence
 
@@ -78,6 +79,57 @@ class MemoryRecall:
     score: float
 
 
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases — existing tests and callers use these names.
+# They delegate to the new MemoryRecallPolicy + MemoryRecall primitives above.
+# ---------------------------------------------------------------------------
+
+
+class MemoryRecallStrategy(Enum):
+    """Legacy ranking-strategy enum. All values currently resolve to HYBRID,
+    which maps onto the default lexical*0.7 + confidence*0.2 + recency*0.1
+    blend used by MemoryRetrievalService._score."""
+
+    CONFIDENCE = "confidence"
+    RECENCY = "recency"
+    HYBRID = "hybrid"
+
+
+class MemoryRetrievalQuery:
+    """Legacy query object that packs the old kwargs surface into a
+    MemoryRecallPolicy and an optional free-text search string."""
+
+    def __init__(
+        self,
+        *,
+        as_of: datetime | None = None,
+        scopes: frozenset[MemoryScope] | None = None,
+        min_confidence: float = 0.0,
+        source_refs: frozenset[str] | None = None,
+        text: str = "",
+        strategy: MemoryRecallStrategy | None = None,
+        limit: int = 20,
+    ) -> None:
+        self.text = text
+        self.strategy = strategy or MemoryRecallStrategy.HYBRID
+        # Delegate all validation to MemoryRecallPolicy so invalid inputs
+        # (naive timestamps, out-of-range confidence/limit, etc.) raise the
+        # same ValueError that the new API raises.
+        self._policy = MemoryRecallPolicy(
+            scopes=scopes if scopes is not None else frozenset(),
+            min_confidence=min_confidence,
+            limit=limit,
+            as_of=as_of,
+            source_prefixes=tuple(source_refs) if source_refs else (),
+        )
+
+    def to_policy(self) -> MemoryRecallPolicy:
+        return self._policy
+
+
+MemoryRecallHit = MemoryRecall
+
+
 def _tokens(value: str) -> frozenset[str]:
     return frozenset(token.casefold() for token in value.split() if token.strip())
 
@@ -98,8 +150,9 @@ def _metadata_time(record: MemoryRecord, key: str) -> datetime | None:
 class MemoryRetrievalService:
     """Tenant-bound retrieval; authorization and lifecycle filters run before ranking."""
 
-    def __init__(self, *, memory: MemoryService) -> None:
-        self.memory = memory
+    def __init__(self, memory: MemoryService | None = None, *, memory_kw: MemoryService | None = None) -> None:
+        # Accept both positional (legacy) and keyword invocations.
+        self.memory: MemoryService = memory or memory_kw  # type: ignore[assignment]
 
     @staticmethod
     def _eligible(
@@ -203,6 +256,19 @@ class MemoryRetrievalService:
             )
             for record in ranked
         ]
+
+    async def search(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: MemoryRetrievalQuery | None = None,
+    ) -> list[MemoryRecall]:
+        """Legacy entry point — delegates to :meth:`retrieve`."""
+        return await self.retrieve(
+            principal=principal,
+            query=query.text if query else "",
+            policy=query.to_policy() if query else None,
+        )
 
     async def version_history(
         self, *, principal: MemoryPrincipal, memory_id: str
