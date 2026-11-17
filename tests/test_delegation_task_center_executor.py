@@ -145,6 +145,34 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.metadata["child_run_id"], self.child.run_id)
 
 
+
+    async def test_child_cannot_reset_persisted_budget_root(self):
+        self.child = RunContext(
+            tenant_id="tenant-a",
+            run_id="00000000-0000-0000-0000-000000000124",
+            agent_id="researcher",
+            model_template=ModelTemplateRef("general", 2),
+            task_id="parent-task",
+            project_id="project-a",
+            correlation_id="parent-trace",
+            metadata={
+                "parent_run_id": "parent-run",
+                "root_run_id": "other-root",
+                "delegation_key": "research-root-tamper",
+                "delegation_depth": 1,
+            },
+        )
+        request = HarnessRequest(
+            context=self.child, instructions="Research", input_text="Do work",
+            metadata={"delegation_key": "research-root-tamper"},
+        )
+        with self.assertRaisesRegex(PermissionError, "cannot reset"):
+            await self.executor.execute_child(
+                request=request, parent_context=self.parent,
+                idempotency_key="tenant-a:parent-run:research-root-tamper",
+            )
+        self.assertIsNone(self.service.submitted)
+
     async def test_child_media_references_are_persisted_without_materializing_bytes(self):
         media = MediaInput(
             modality="image",

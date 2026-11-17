@@ -6,6 +6,7 @@ from agent_platform.quotas.groups import (
     QuotaScope,
 )
 from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
+from agent_platform.quotas.inheritance import RunBudgetInheritanceService, RunBudgetLineage
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
     Budget,
@@ -20,5 +21,5 @@ __all__ = [
     "Budget", "BudgetExceeded", "InMemoryQuotaStore",
     "PostgresQuotaStore", "QuotaEnforcedHarnessAdapter", "QuotaReservation",
     "QuotaService", "UsageEvent", "QuotaScope", "QuotaReservationGroup",
-    "QuotaReservationGroupService",
+    "QuotaReservationGroupService", "RunBudgetInheritanceService", "RunBudgetLineage",
 ]

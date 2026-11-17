@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
@@ -55,6 +55,7 @@ class QuotaReservationGroupService:
         scopes: tuple[QuotaScope, ...], estimated_tokens: int,
         estimated_cost_usd: Decimal, estimated_input_tokens: int | None = None,
         estimated_output_tokens: int | None = None,
+        idempotency_key: str | None = None,
     ) -> tuple[QuotaReservationGroup, tuple[str, ...]]:
         if not tenant_id or not run_id or not root_run_id:
             raise ValueError("tenant_id, run_id and root_run_id are required")
@@ -89,10 +90,20 @@ class QuotaReservationGroupService:
             ):
                 raise BudgetExceeded("separate input and output estimates are required by this budget")
             budgets.append(budget)
-        group_id = str(uuid4())
+        if idempotency_key is not None and (
+            not isinstance(idempotency_key, str) or not idempotency_key.strip()
+        ):
+            raise ValueError("idempotency_key must be a non-empty string")
+        group_id = str(
+            uuid5(NAMESPACE_URL, f"quota-group:{tenant_id}:{run_id}:{root_run_id}:{idempotency_key}")
+            if idempotency_key is not None else uuid4()
+        )
         reservations = tuple(
             QuotaReservation(
-                reservation_id=str(uuid4()), tenant_id=tenant_id, run_id=run_id,
+                reservation_id=str(
+                    uuid5(NAMESPACE_URL, f"{group_id}:{b.scope_type}:{b.scope_id}")
+                    if idempotency_key is not None else uuid4()
+                ), tenant_id=tenant_id, run_id=run_id,
                 scope_type=b.scope_type, scope_id=b.scope_id,
                 reserved_tokens=estimated_tokens, reserved_cost_usd=estimated_cost_usd,
                 created_at=now, period_start=b.period_start, period_end=b.period_end,
