@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
+import hmac
 import re
 import time
 from dataclasses import dataclass
@@ -55,6 +58,66 @@ def validate_page(*, limit: int = DEFAULT_PAGE_SIZE, cursor: str | None = None) 
     if cursor is not None and (not isinstance(cursor, str) or not cursor.strip() or len(cursor) > 1024):
         raise ValueError("cursor must contain 1..1024 characters")
     return limit, cursor
+
+
+def encode_secure_cursor(values: Mapping[str, Any], *, secret: bytes, tenant_id: str,
+                        query_fingerprint: str, ttl_seconds: int = 3600,
+                        now: int | None = None) -> str:
+    """Create an opaque HMAC-authenticated cursor bound to tenant and query."""
+    if not isinstance(secret, bytes) or len(secret) < 32:
+        raise ValueError("cursor signing secret must contain at least 32 bytes")
+    if not isinstance(tenant_id, str) or not tenant_id.strip():
+        raise ValueError("tenant_id is required")
+    if not isinstance(query_fingerprint, str) or not query_fingerprint.strip():
+        raise ValueError("query_fingerprint is required")
+    if not isinstance(values, Mapping) or not values:
+        raise ValueError("cursor values must be a non-empty mapping")
+    if isinstance(ttl_seconds, bool) or not 1 <= ttl_seconds <= 604800:
+        raise ValueError("cursor TTL must be between 1 second and 7 days")
+    issued_at = int(time.time()) if now is None else now
+    if isinstance(issued_at, bool) or not isinstance(issued_at, int) or issued_at < 0:
+        raise ValueError("cursor clock must be a non-negative integer")
+    payload = {
+        "v": 1, "tenant": tenant_id, "query": query_fingerprint,
+        "exp": issued_at + ttl_seconds, "values": dict(values),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    signature = hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).hexdigest()
+    return f"{encoded}.{signature}"
+
+
+def decode_secure_cursor(cursor: str, *, secret: bytes, tenant_id: str,
+                        query_fingerprint: str, now: int | None = None) -> dict[str, Any]:
+    """Verify cursor integrity, expiry, tenant and query binding before use."""
+    if not isinstance(secret, bytes) or len(secret) < 32:
+        raise ValueError("cursor signing secret must contain at least 32 bytes")
+    if not isinstance(cursor, str) or len(cursor) > 4096 or cursor.count(".") != 1:
+        raise ValueError("invalid pagination cursor")
+    encoded, supplied_signature = cursor.split(".", 1)
+    if (not re.fullmatch(r"[A-Za-z0-9_-]+", encoded)
+            or not re.fullmatch(r"[0-9a-f]{64}", supplied_signature)):
+        raise ValueError("invalid pagination cursor")
+    expected = hmac.new(secret, encoded.encode("ascii"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, supplied_signature):
+        raise ValueError("invalid pagination cursor")
+    try:
+        raw = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        payload = json.loads(raw)
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid pagination cursor") from exc
+    if not isinstance(payload, dict) or set(payload) != {"v", "tenant", "query", "exp", "values"}:
+        raise ValueError("invalid pagination cursor")
+    current = int(time.time()) if now is None else now
+    if isinstance(current, bool) or not isinstance(current, int) or current < 0:
+        raise ValueError("cursor clock must be a non-negative integer")
+    expiry = payload.get("exp")
+    if (payload.get("v") != 1 or payload.get("tenant") != tenant_id
+            or payload.get("query") != query_fingerprint
+            or isinstance(expiry, bool) or not isinstance(expiry, int) or expiry <= current
+            or not isinstance(payload.get("values"), dict) or not payload["values"]):
+        raise ValueError("pagination cursor is expired or bound to another query")
+    return payload["values"]
 
 
 def validate_idempotency_key(value: str | None) -> str:
@@ -129,8 +192,24 @@ def rate_limit_headers(*, limit: int, remaining: int, reset_epoch: int,
     return headers
 
 
+def api_rate_limit_key(*, client_ip: str, method: str, path: str,
+                       authorization: bytes | None = None,
+                       cookie: bytes | None = None) -> str:
+    """Build a bounded, non-secret rate-limit key for IP + tenant-bound credential + route."""
+    credential = authorization or cookie or b""
+    credential_fingerprint = (
+        hashlib.sha256(credential).hexdigest()[:24] if credential else "anonymous"
+    )
+    segments = [part for part in path.split("/") if part]
+    resource = segments[3] if len(segments) > 3 else "root"
+    safe_method = method.upper() if method.upper() in {
+        "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+    } else "OTHER"
+    return f"{client_ip}:credential:{credential_fingerprint}:{safe_method}:{resource}"
+
+
 class PublicApiContractASGIMiddleware:
-    """Enforce URL/header version agreement, request correlation and shared IP limits."""
+    """Enforce versioning, correlation and shared IP/credential/route rate limits."""
 
     def __init__(self, app: Any, *, rate_limiter: Any, limit: int = 120,
                  window_seconds: int = 60) -> None:
@@ -192,7 +271,13 @@ class PublicApiContractASGIMiddleware:
                 return
 
         client = scope.get("client") or ("unknown", 0)
-        rate_key = f"{client[0]}:{scope.get('method', 'GET').upper()}"
+        rate_key = api_rate_limit_key(
+            client_ip=str(client[0]),
+            method=str(scope.get("method", "GET")),
+            path=path,
+            authorization=headers.get(b"authorization"),
+            cookie=headers.get(b"cookie"),
+        )
         try:
             allowed = await self.rate_limiter.allow(
                 rate_key, limit=self.limit, window_seconds=self.window_seconds,
