@@ -109,8 +109,8 @@ class ExtensionLifecycleManager:
                     await self._audit("install", item, "requested")
                     package = package_artifacts[item.extension_id]
                     await self.runtime.install(item, package)
-                    await self.store.put(InstalledExtension(item, "disabled", package))
                     completed.append(item)
+                    await self.store.put(InstalledExtension(item, "disabled", package))
                     await self._audit("install", item, "succeeded")
             except Exception:
                 for item in reversed(completed):
@@ -197,8 +197,8 @@ class ExtensionLifecycleManager:
                 for manifest in plan.manifests:
                     await self._audit("uninstall", manifest, "requested")
                     await self.runtime.uninstall(manifest)
-                    await self.store.remove(manifest.extension_id)
                     removed.append(installed[manifest.extension_id])
+                    await self.store.remove(manifest.extension_id)
                     await self._audit("uninstall", manifest, "succeeded")
             except Exception:
                 for item in reversed(removed):
