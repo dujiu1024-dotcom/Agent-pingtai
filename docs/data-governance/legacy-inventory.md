@@ -14,7 +14,7 @@ python -m scripts.inventory_legacy_system --root . --db /path/to/agency.db --out
 ## 报告结构
 
 - `files`：已知旧系统根目录下的文件路径、字节数、类别和风险。仅读取文件系统元数据，不读取文件内容。
-- `database.tables`：SQLite 表、列、主键顺序、外键、精确行数、身份/业务列名和敏感列名；另列出视图、触发器及数据库文件大小。
+- `database.tables`：SQLite 表、列、主键顺序、外键、精确行数、身份/业务列名、敏感列名，以及每个索引的唯一性、来源、部分索引标志、列顺序、排序方向、collation 和表达式列；另列出视图、触发器、索引总数及数据库文件大小。
 - `identity_relations`：根据列名和外键推断的身份关联线索；不输出原始用户 ID、open_id、token 或业务行。
 - `business_mappings`：旧项目、任务、用户/会话、客户/财务、知识资产及连接器等到新平台能力的候选映射。除需领域设计的财务映射外，均标为 `candidate_unverified`；需要业务负责人确认语义、所有权和租户边界。
 - `migration_candidates`：代码/能力迁移决策目录；`reuse/adapt/replace/retire/unassessed` 是决策建议，不等同于数据迁移完成。
