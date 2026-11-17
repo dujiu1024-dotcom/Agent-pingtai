@@ -84,6 +84,7 @@ include = [
   "tests/test_tool_gateway.py",
   "tests/test_observability.py",
   "tests/test_issue_16_a_16_01_contract_matrix.py",
+  "tests/test_issue_16_a_16_03_delivery_readiness.py",
   "tests/test_run_trace.py",
   "tests/test_run_replay.py",
   "tests/test_run_replay_api.py",
