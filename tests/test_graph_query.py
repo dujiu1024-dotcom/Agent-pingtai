@@ -41,9 +41,24 @@ class FakeGraphRepository:
             for key in ("a", "b", "c", "d")
         }
         self.relations = [
-            RelationRecord(GraphRelation("tenant-a", "ab", "references", "a", "b", "document", "document", {}, "project-a")),
-            RelationRecord(GraphRelation("tenant-a", "bc", "references", "b", "c", "document", "document", {}, "project-a")),
-            RelationRecord(GraphRelation("tenant-a", "bd", "mentions", "b", "d", "document", "document", {}, "project-a")),
+            RelationRecord(
+                GraphRelation(
+                    "tenant-a", "ab", "references", "a", "b",
+                    "document", "document", {}, "project-a",
+                )
+            ),
+            RelationRecord(
+                GraphRelation(
+                    "tenant-a", "bc", "references", "b", "c",
+                    "document", "document", {}, "project-a",
+                )
+            ),
+            RelationRecord(
+                GraphRelation(
+                    "tenant-a", "bd", "mentions", "b", "d",
+                    "document", "document", {}, "project-a",
+                )
+            ),
         ]
         self.calls = []
 
@@ -53,7 +68,9 @@ class FakeGraphRepository:
             return None
         return self.entities.get(entity_id)
 
-    async def list_relations(self, entity_id, *, direction="both", allowed_project_ids=(), limit=200):
+    async def list_relations(
+        self, entity_id, *, direction="both", allowed_project_ids=(), limit=200
+    ):
         self.calls.append(("edges", entity_id, direction, tuple(allowed_project_ids), limit))
         if "project-a" not in allowed_project_ids:
             return []
@@ -88,7 +105,8 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
             "a", direction="out", depth=2, allowed_project_ids=("project-a",), limit=10
         )
         self.assertEqual({item.entity.entity_id for item in result.entities}, {"a", "b", "c", "d"})
-        self.assertEqual({item.relation.relation_id for item in result.relations}, {"ab", "bc", "bd"})
+        relation_ids = {item.relation.relation_id for item in result.relations}
+        self.assertEqual(relation_ids, {"ab", "bc", "bd"})
         self.assertFalse(result.truncated)
         for call in self.repository.calls:
             if call[0] == "get":
@@ -103,7 +121,8 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.truncated)
         self.assertLessEqual(len(result.entities), 2)
         self.assertLessEqual(len(result.relations), 2)
-        self.assertEqual(len({item.relation.relation_id for item in result.relations}), len(result.relations))
+        relation_ids = {item.relation.relation_id for item in result.relations}
+        self.assertEqual(len(relation_ids), len(result.relations))
 
     async def test_shortest_path_returns_minimum_hop_path(self):
         path = await self.service.shortest_path(
@@ -160,7 +179,10 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
 
         class Retriever:
             async def retrieve(self, *, query, candidate_document_ids, allowed_project_ids, limit):
-                self.assertion = (query, tuple(candidate_document_ids), tuple(allowed_project_ids), limit)
+                self.assertion = (
+                    query, tuple(candidate_document_ids),
+                    tuple(allowed_project_ids), limit,
+                )
                 return (Hit("doc-a", 0.9), Hit("doc-secret", 1.0))
 
         retriever = Retriever()
