@@ -186,18 +186,35 @@ def create_sessions_router(
         }
 
     @router.get("/sessions/{session_id}/messages")
-    async def list_messages(session_id: str, request: Request, limit: int = 100):
+    async def list_messages(
+        session_id: str, request: Request, limit: int = 100,
+        before_message_id: str | None = None,
+    ):
         principal, service = await context(request, "session", session_id, "read")
         try:
-            messages = await service.repository.list_messages(principal.tenant_id, session_id, limit)
+            messages = await service.repository.list_messages(
+                principal.tenant_id, session_id, limit, before_message_id,
+            )
         except (SessionError, ValueError) as exc:
             raise HTTPException(404 if isinstance(exc, SessionNotFound) else 400, str(exc)) from exc
-        return {"items": [{
-            "message_id": m.message_id, "role": m.role.value, "content": m.content,
-            "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
-            "asset_ids": list(m.asset_ids), "metadata": dict(m.metadata),
-            "created_at": m.created_at.isoformat(),
-        } for m in messages]}
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="message.list", subject_id=session_id,
+                detail={
+                    "limit": limit, "before_message_id": before_message_id,
+                    "returned": len(messages),
+                },
+            )
+        return {
+            "items": [{
+                "message_id": m.message_id, "role": m.role.value, "content": m.content,
+                "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
+                "asset_ids": list(m.asset_ids), "metadata": dict(m.metadata),
+                "created_at": m.created_at.isoformat(),
+            } for m in messages],
+            "next_cursor": messages[0].message_id if len(messages) == limit else None,
+        }
 
     @router.post("/sessions/{session_id}/messages", status_code=201)
     async def append_message(session_id: str, request: Request):
