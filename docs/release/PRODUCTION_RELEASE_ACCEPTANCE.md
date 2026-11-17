@@ -15,7 +15,7 @@ migrations, change traffic, or contact production systems.
 
 Use named people or stable team identities, not role placeholders. The evidence
 archive reference must identify an immutable, access-controlled archive location.
-Archive the exact release candidate SHA and artifact digest, CI run URLs, test reports, deployment preflight, migration
+Archive the exact release candidate SHA, artifact digest, and archive content digest, CI run URLs, test reports, deployment preflight, migration
 preflight output, rollback drill report, smoke report, approvals, and final
 decision record. Do not put credentials, tokens, or customer secrets in evidence.
 
