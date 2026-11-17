@@ -6,7 +6,6 @@ it is never accepted from Agent arguments or environment variables.
 """
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
