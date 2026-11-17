@@ -5,6 +5,7 @@ from agent_platform.deployment.backups import (
     BackupCoordinator,
     BackupKind,
     BackupPolicy,
+    BackupScheduler,
     RestoreDrill,
     RestoreDrillState,
     begin_restore_drill,
