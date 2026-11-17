@@ -86,18 +86,42 @@ class OCRParserAdapter:
         self,
         provider: OCRProvider,
         media_types: tuple[str, ...] = ("application/pdf", "image/tiff", "image/png", "image/jpeg"),
+        *,
+        max_output_chars: int = 2_000_000,
     ) -> None:
-        if not media_types or any(not item.strip() for item in media_types):
-            raise ValueError("OCR media types must be non-empty")
+        if (
+            not isinstance(media_types, tuple)
+            or not media_types
+            or any(
+                not isinstance(item, str)
+                or not item
+                or item != item.strip()
+                or "/" not in item
+                for item in media_types
+            )
+            or len(set(media_types)) != len(media_types)
+        ):
+            raise ValueError("OCR media types must be unique non-empty type/subtype values")
+        if (
+            isinstance(max_output_chars, bool)
+            or not isinstance(max_output_chars, int)
+            or max_output_chars < 1
+        ):
+            raise ValueError("max_output_chars must be a positive integer")
         self.provider = provider
         self.supported_media_types = media_types
+        self.max_output_chars = max_output_chars
 
     def parse(self, content: bytes, media_type: str) -> str:
         if media_type not in self.supported_media_types:
             raise ValueError(f"unsupported media type: {media_type}")
+        if not isinstance(content, bytes) or not content:
+            raise ValueError("OCR content must be non-empty bytes")
         text = self.provider.extract_text(content, media_type)
         if not isinstance(text, str):
             raise TypeError("OCR provider must return text")
+        if len(text) > self.max_output_chars:
+            raise ValueError("OCR output exceeds configured character limit")
         return text
 
 
