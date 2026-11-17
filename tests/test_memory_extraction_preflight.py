@@ -32,7 +32,7 @@ class MemoryExtractionPreflightTests(unittest.IsolatedAsyncioTestCase):
         self.turn = MemoryTurn(
             tenant_id="tenant-a",
             user_id="user-a",
-            source_ref="session://tenant-a/session-a/turn-1",
+            source_ref="session://tenant-a/session-a@1",
             user_message="Remember my preference",
         )
 
