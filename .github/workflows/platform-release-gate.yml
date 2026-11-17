@@ -136,6 +136,8 @@ jobs:
         run: python -m unittest tests.test_langgraph_gateway_contract -v
       - name: Run connector catalog and backward-compatibility acceptance tests
         run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
+      - name: Run S-34-07 offline legacy fallback acceptance
+        run: python -m unittest tests.test_issue_667_s_34_07_offline_fallback -v
 
   production-release-evidence:
     needs:

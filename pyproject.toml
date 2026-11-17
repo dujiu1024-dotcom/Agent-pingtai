@@ -63,7 +63,6 @@ include = [
   "tests/test_knowledge_evaluation_dataset.py",
   "tests/test_rag_metrics.py",
   "tests/test_rag_metrics_api.py",
-  "tests/test_issue_521_c_24_03_query_playground.py",
   "tests/test_knowledge_memory_api.py",
   "tests/test_rag_dataset_upload_api.py",
   "tests/test_knowledge_catalog_api.py",
@@ -118,7 +117,6 @@ include = [
   "tests/test_strands_gateway_mcp_http_integration.py",
   "tests/test_runtime_adapter_contract.py",
   "tests/test_harness_benchmark_suite.py",
-  "tests/test_langgraph_gateway_contract.py",
   "tests/test_harness_baseline_gate.py",
   "tests/test_model_templates.py",
   "tests/test_deepseek_harness_adapter.py",
@@ -196,7 +194,7 @@ include = [
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_665_s_665_01_e2e.py",
   "tests/test_api_v1_compatibility_middleware.py",
-  "tests/test_issue_667_a_667_05_legacy_panel_bridge.py",
+  "tests/test_issue_667_s_34_07_offline_fallback.py",
 ]
 
 [tool.ruff.lint]
