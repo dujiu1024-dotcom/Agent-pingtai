@@ -115,6 +115,55 @@ class GraphAdminApiTests(unittest.TestCase):
         self.assertEqual(metrics.json()["active_subgraph_count"], 1)
         self.assertEqual(metrics.json()["scope"], "authorized_search_sample")
 
+    def test_annotation_uses_server_resolved_principal_and_expected_version(self):
+        captured = {}
+
+        class Governance:
+            async def correct_entity(self, *, principal, entity_id, expected_version, attributes):
+                captured.update({
+                    "principal": principal, "entity_id": entity_id,
+                    "expected_version": expected_version, "attributes": attributes,
+                })
+                return SimpleNamespace(
+                    entity_id=entity_id, entity_type="person", attributes=attributes,
+                    project_id="project-a", version=expected_version + 1,
+                    status=SimpleNamespace(value="active"), updated_by="user-a",
+                    updated_at=SimpleNamespace(isoformat=lambda: "2026-11-17T00:00:00+00:00"),
+                )
+
+        async def resolve_principal(request):
+            return self.principal
+
+        async def resolve_query_service(principal):
+            return self.service
+
+        async def authorize_read(principal):
+            return ("project-a",)
+
+        async def resolve_governance(principal):
+            return Governance()
+
+        async def resolve_knowledge_principal(request):
+            return "server-derived-knowledge-principal"
+
+        app = FastAPI()
+        app.include_router(create_graph_router(
+            resolve_principal=resolve_principal,
+            resolve_query_service=resolve_query_service,
+            authorize_read=authorize_read,
+            resolve_governance=resolve_governance,
+            resolve_knowledge_principal=resolve_knowledge_principal,
+        ))
+        response = TestClient(app).patch(
+            "/api/platform/v1/graph/entities/a",
+            json={"expected_version": 4, "attributes": {"label": "Ada Lovelace"}},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(captured["principal"], "server-derived-knowledge-principal")
+        self.assertEqual(captured["expected_version"], 4)
+        self.assertEqual(captured["attributes"], {"label": "Ada Lovelace"})
+        self.assertEqual(response.json()["version"], 5)
+
     def test_search_rejects_empty_query_and_service_tenant_mismatch(self):
         self.assertEqual(
             self.client.get("/api/platform/v1/graph/entities?q=").status_code, 400
