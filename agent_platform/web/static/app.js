@@ -98,3 +98,33 @@ document.addEventListener("submit",async e=>{
  $("#blackboard-results").innerHTML=rowsPanel("Blackboard 条目",result.items||[],["entry_id","kind","status","version","author_id","created_at","content"]);
  }catch(x){$("#blackboard-results").innerHTML="<p class='error'>"+esc(x.message)+"</p>"}
 });
+
+
+// Capability visibility is presentation-only; every API still enforces authorization.
+const VIEW_CAPABILITIES={
+ sessions:["sessions"],tasks:["task_execution"],approvals:["approvals"],
+ registry:["registry","resource_registry"],
+ governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"]
+};
+function viewCapabilityEnabled(view){
+ const keys=VIEW_CAPABILITIES[view];if(!keys)return true;
+ const declared=keys.filter(k=>Object.prototype.hasOwnProperty.call(S.features,k));
+ return declared.length===0||declared.some(k=>Boolean(S.features[k]));
+}
+function applyCapabilityGate(){
+ document.querySelectorAll("nav [data-view]").forEach(b=>{
+  const enabled=viewCapabilityEnabled(b.dataset.view);
+  b.hidden=!enabled;
+  b.setAttribute("aria-hidden",String(!enabled));
+ });
+ if(!viewCapabilityEnabled(S.view)){
+  const first=[...document.querySelectorAll("nav [data-view]")].find(b=>!b.hidden);
+  if(first){S.view=first.dataset.view;S.session=null;S.task=null;S.approval=null}
+ }
+}
+const capabilityBaseRefresh=refresh;
+refresh=async function(){await capabilityBaseRefresh();if(S.me){applyCapabilityGate()}};
+const capabilityBaseNav=nav;
+nav=function(view){if(!viewCapabilityEnabled(view)){toast("该工作台能力当前未启用");return}return capabilityBaseNav(view)};
+
+refresh().then(()=>{if(S.me){applyCapabilityGate();if(!viewCapabilityEnabled(S.view))nav("overview")}});
