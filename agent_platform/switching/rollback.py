@@ -144,7 +144,7 @@ class RollbackCoordinator:
         try:
             await self._run(stage, rollback_id, deadline=deadline)
             stage = "backfill_postgres_to_sqlite"
-            report = await self._run(stage, rollback_id, deadline)
+            report = await self._run(stage, rollback_id, deadline=deadline)
             if not isinstance(report, RollbackDataReport):
                 raise RollbackExecutionError(stage, False, "backfill returned no parity report")
             if not report.parity_verified:
@@ -157,10 +157,10 @@ class RollbackCoordinator:
             if verified is not True:
                 raise RollbackExecutionError(stage, False, "host parity verification rejected")
             stage = "switch_gateway_to_legacy"
-            await self._run(stage, rollback_id, deadline)
+            await self._run(stage, rollback_id, deadline=deadline)
             gateway_switched = True
             stage = "resume_legacy_writes"
-            await self._run(stage, rollback_id, deadline)
+            await self._run(stage, rollback_id, deadline=deadline, gateway_switched=True)
             return RollbackResult(
                 rollback_id=rollback_id,
                 data_report=report,
@@ -179,7 +179,7 @@ class RollbackCoordinator:
     ) -> object:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise RollbackExecutionError(stage, False, "rollback deadline exceeded")
+            raise RollbackExecutionError(stage, gateway_switched, "rollback deadline exceeded")
         operation = self._operations[stage]
         try:
             return await asyncio.wait_for(operation(rollback_id, *args), timeout=remaining)
