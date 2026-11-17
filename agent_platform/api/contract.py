@@ -349,11 +349,7 @@ class PublicApiContractASGIMiddleware:
 
 
 class ApiV1CompatibilityMiddleware:
-    """Route the documented /api/v1 alias to the platform Router prefix.
-
-    Unknown and not-yet-migrated legacy endpoints remain 404s, but use the
-    stable public API error envelope instead of FastAPI's HTML/default body.
-    """
+    """Route /api/v1 aliases and normalize misses from the versioned API surface."""
 
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -371,12 +367,52 @@ class ApiV1CompatibilityMiddleware:
             scope["path"] = API_V1_PREFIX + suffix
             scope["raw_path"] = (API_V1_PREFIX + suffix).encode("utf-8")
 
-        async def send_with_compatibility_headers(message: dict[str, Any]) -> None:
-            if message["type"] == "http.response.start" and is_versioned_api:
-                headers = list(message.get("headers", []))
-                headers.append((b"x-api-version", b"v1"))
-                message = dict(message)
-                message["headers"] = headers
+        response_status: int | None = None
+        response_headers: list[tuple[bytes, bytes]] = []
+
+        async def send_with_compatibility(message: dict[str, Any]) -> None:
+            nonlocal response_status, response_headers
+            if message["type"] == "http.response.start":
+                response_status = message["status"]
+                response_headers = list(message.get("headers", []))
+                if is_versioned_api and response_status != 404:
+                    response_headers.append((b"x-api-version", b"v1"))
+                    await send({**message, "headers": response_headers})
+                elif not is_versioned_api:
+                    await send(message)
+                return
+
+            if message["type"] != "http.response.body":
+                await send(message)
+                return
+
+            if is_versioned_api and response_status == 404:
+                response_body = message.get("body", b"")
+                if message.get("more_body", False):
+                    # FastAPI's normal 404 response is a single body frame.
+                    # Keep streaming 404s intact rather than buffering indefinitely.
+                    await send({"type": "http.response.start", "status": 404, "headers": response_headers})
+                    await send(message)
+                    return
+                payload = json.dumps(
+                    error_for_http_status(
+                        404, "The requested API route or resource was not found"
+                    ).to_dict(),
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                headers = [
+                    (key, value) for key, value in response_headers
+                    if key.lower() not in (b"content-length", b"content-type")
+                ]
+                headers.extend([
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(payload)).encode("ascii")),
+                    (b"x-api-version", b"v1"),
+                ])
+                await send({"type": "http.response.start", "status": 404, "headers": headers})
+                await send({"type": "http.response.body", "body": payload, "more_body": False})
+                return
+
             await send(message)
 
-        await self.app(scope, receive, send_with_compatibility_headers)
+        await self.app(scope, receive, send_with_compatibility)
