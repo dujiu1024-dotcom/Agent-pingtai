@@ -26,6 +26,9 @@
     "outbox_and_event_state_reconciled",
     "tenant_authorization_smoke_tests_passed"
   ],
+  "consistency_gates_by_scope": {
+    "postgres": ["postgres_restore_marker_verified"]
+  },
   "failover_gates": [
     "former_primary_fenced",
     "replication_or_backup_recovery_point_recorded",
