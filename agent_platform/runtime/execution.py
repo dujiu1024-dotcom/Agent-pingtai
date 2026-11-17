@@ -18,7 +18,7 @@ class LangGraphRunExecutor:
  def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900,
   worker_id:str|None=None,lease_seconds:int=60,registry_snapshot_service:Any|None=None,
   registry_runtime_provider:Any|None=None,model_template_id:str|None=None,
-  required_tools:tuple[str,...]=(),intervention_store:Any|None=None,
+  required_tools:tuple[str,...]=(),run_context_service:Any|None=None,intervention_store:Any|None=None,
   intervention_applier:Any|None=None)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
@@ -30,6 +30,7 @@ class LangGraphRunExecutor:
   self.registry_runtime_provider=registry_runtime_provider
   self.model_template_id=model_template_id
   self.required_tools=tuple(required_tools)
+  self.run_context_service=run_context_service
   self.intervention_store=intervention_store
   self.intervention_applier=intervention_applier
   if intervention_store is not None and intervention_applier is None:
@@ -47,6 +48,10 @@ class LangGraphRunExecutor:
    snapshot=await self.registry_snapshot_service.get(tenant_id=tenant_id,run_id=run_id)
    config["configurable"]["platform_registry_snapshot"]=[dict(entry) for entry in snapshot.entries]
    config["configurable"]["platform_registry_snapshot_digest"]=snapshot.digest
+  if self.run_context_service is not None:
+   config["configurable"]["platform_run_context"]=await self.run_context_service.rebuild(
+    tenant_id=tenant_id,run_id=run_id,
+   )
   return config
  async def _checkpoint_ref(self,tenant_id:str,run_id:str)->str|None:
   getter=getattr(self.graph,"aget_state",None)
@@ -112,6 +117,12 @@ class LangGraphRunExecutor:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None:raise KeyError("Run not found")
   if old.status!=RunStatus.QUEUED:raise ValueError(f"Run cannot start from {old.status.value}; use recovery for interrupted Runs")
+  if self.run_context_service is not None:
+   if not isinstance(input,dict):
+    raise ValueError("Run context assembly requires an object input")
+   await self.run_context_service.ensure_initial(
+    tenant_id=tenant_id,run_id=run_id,initial_context=input,
+   )
   config=await self._run_config(tenant_id,run_id)
   store=self.lifecycle.store
   acquire=getattr(store,"acquire_lease",None)

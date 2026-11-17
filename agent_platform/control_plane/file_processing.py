@@ -15,6 +15,14 @@ from agent_platform.knowledge.contracts import Document, KnowledgeScope
 from agent_platform.knowledge.service import KnowledgeService
 
 
+def _jsonb(value: Any) -> Any:
+    try:
+        from psycopg.types.json import Jsonb
+    except ImportError as exc:
+        raise RuntimeError("Install psycopg[binary,pool] for PostgreSQL storage") from exc
+    return Jsonb(value)
+
+
 @dataclass(frozen=True)
 class FileProcessingJob:
     tenant_id: str
@@ -29,7 +37,10 @@ class FileProcessingQueue(Protocol):
     async def enqueue(self, *, tenant_id: str, asset_id: str) -> None: ...
     async def claim(self, *, worker_id: str, lease_seconds: int = 120) -> FileProcessingJob | None: ...
     async def complete(self, job: FileProcessingJob) -> None: ...
-    async def fail(self, job: FileProcessingJob, *, error_code: str) -> bool: ...
+    async def fail(
+        self, job: FileProcessingJob, *, error_code: str,
+        error_message: str | None = None,
+    ) -> bool: ...
 
 
 class FileProcessingScanner(Protocol):
@@ -71,6 +82,14 @@ class PostgresFileProcessingQueue:
                 row = await cursor.fetchone()
                 if row is None:
                     return None
+                if row["attempts"]:
+                    await connection.execute(
+                        """UPDATE platform_file_processing_attempts
+                           SET status='abandoned',finished_at=now(),
+                               error_code='lease_expired',error_message='worker lease expired'
+                           WHERE tenant_id=%s AND job_id=%s AND attempt=%s AND status='running'""",
+                        (row["tenant_id"], row["job_id"], row["attempts"]),
+                    )
                 updated = await connection.execute(
                     """UPDATE platform_file_processing_jobs
                        SET status='running', attempts=attempts+1, lease_owner=%s,
@@ -80,25 +99,62 @@ class PostgresFileProcessingQueue:
                     (worker_id, lease_seconds, row["tenant_id"], row["job_id"]),
                 )
                 current = await updated.fetchone()
+                await connection.execute(
+                    """INSERT INTO platform_file_processing_attempts
+                       (tenant_id,job_id,attempt,worker_id,status)
+                       VALUES (%s,%s,%s,%s,'running')
+                       ON CONFLICT (tenant_id,job_id,attempt) DO UPDATE
+                       SET worker_id=EXCLUDED.worker_id,status='running',
+                           started_at=now(),finished_at=NULL,error_code=NULL,error_message=NULL""",
+                    (row["tenant_id"], row["job_id"], current["attempts"], worker_id),
+                )
                 return FileProcessingJob(
                     tenant_id=row["tenant_id"], job_id=str(row["job_id"]),
                     asset_id=str(row["asset_id"]), attempts=current["attempts"],
                     max_attempts=row["max_attempts"], lease_owner=worker_id,
                 )
 
+    async def record_result(self, job: FileProcessingJob, *, result: dict[str, Any],
+                            parser_name: str | None = None) -> None:
+        connection = await self._connect()
+        async with connection:
+            updated = await connection.execute(
+                """UPDATE platform_file_processing_jobs
+                   SET result=%s,parser_name=%s,updated_at=now()
+                   WHERE tenant_id=%s AND job_id=%s AND status='running' AND lease_owner=%s""",
+                (_jsonb(result), parser_name, job.tenant_id, UUID(job.job_id), job.lease_owner),
+            )
+            if updated.rowcount != 1:
+                raise RuntimeError("file processing job lease was lost")
+            await connection.execute(
+                """UPDATE platform_file_processing_attempts
+                   SET result=%s,parser_name=%s
+                   WHERE tenant_id=%s AND job_id=%s AND attempt=%s AND worker_id=%s""",
+                (_jsonb(result), parser_name, job.tenant_id, UUID(job.job_id),
+                 job.attempts, job.lease_owner),
+            )
+
     async def complete(self, job: FileProcessingJob) -> None:
         connection = await self._connect()
         async with connection:
             result = await connection.execute(
                 """UPDATE platform_file_processing_jobs
-                   SET status='succeeded',lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
+                   SET status='succeeded',lease_owner=NULL,lease_expires_at=NULL,
+                       completed_at=now(),updated_at=now()
                    WHERE tenant_id=%s AND job_id=%s AND status='running' AND lease_owner=%s""",
                 (job.tenant_id, UUID(job.job_id), job.lease_owner),
             )
             if result.rowcount != 1:
                 raise RuntimeError("file processing job lease was lost")
+            await connection.execute(
+                """UPDATE platform_file_processing_attempts
+                   SET status='succeeded',finished_at=now()
+                   WHERE tenant_id=%s AND job_id=%s AND attempt=%s AND worker_id=%s""",
+                (job.tenant_id, UUID(job.job_id), job.attempts, job.lease_owner),
+            )
 
-    async def fail(self, job: FileProcessingJob, *, error_code: str) -> bool:
+    async def fail(self, job: FileProcessingJob, *, error_code: str,
+                   error_message: str | None = None) -> bool:
         dead = job.attempts >= job.max_attempts
         delay = min(3600, 2 ** min(job.attempts, 10))
         connection = await self._connect()
@@ -106,13 +162,23 @@ class PostgresFileProcessingQueue:
             result = await connection.execute(
                 """UPDATE platform_file_processing_jobs
                    SET status=%s,available_at=now()+(%s * interval '1 second'),
-                       lease_owner=NULL,lease_expires_at=NULL,last_error_code=%s,updated_at=now()
+                       lease_owner=NULL,lease_expires_at=NULL,last_error_code=%s,
+                       last_error_message=%s,updated_at=now()
                    WHERE tenant_id=%s AND job_id=%s AND status='running' AND lease_owner=%s""",
                 ("dead" if dead else "queued", delay, error_code[:100],
-                 job.tenant_id, UUID(job.job_id), job.lease_owner),
+                 (error_message or error_code)[:500], job.tenant_id,
+                 UUID(job.job_id), job.lease_owner),
             )
             if result.rowcount != 1:
                 raise RuntimeError("file processing job lease was lost")
+            await connection.execute(
+                """UPDATE platform_file_processing_attempts
+                   SET status=%s,error_code=%s,error_message=%s,finished_at=now()
+                   WHERE tenant_id=%s AND job_id=%s AND attempt=%s AND worker_id=%s""",
+                ("dead" if dead else "retrying", error_code[:100],
+                 (error_message or error_code)[:500], job.tenant_id,
+                 UUID(job.job_id), job.attempts, job.lease_owner),
+            )
         return dead
 
 
@@ -180,7 +246,25 @@ class FileProcessingWorker:
                 metadata={"asset_id": asset.asset_id, "session_id": asset.session_id},
             )
             knowledge = self.knowledge_for_tenant(job.tenant_id)
-            await knowledge.ingest(document=document, content=content)
+            ingest_result = await knowledge.ingest(document=document, content=content)
+            parser_names = [
+                type(parser).__name__ for parser in getattr(getattr(knowledge, "parsers", None), "parsers", ())
+                if asset.media_type in getattr(parser, "supported_media_types", ())
+            ]
+            record_result = getattr(self.queue, "record_result", None)
+            if callable(record_result):
+                await record_result(
+                    job,
+                    result={
+                        "document_id": ingest_result.document.document_id,
+                        "document_version": ingest_result.document.version,
+                        "content_hash": ingest_result.document.content_hash,
+                        "chunk_count": len(ingest_result.chunks),
+                        "skipped_unchanged": ingest_result.skipped_unchanged,
+                        "parser_candidates": parser_names,
+                    },
+                    parser_name=parser_names[0] if parser_names else None,
+                )
             # Deletion may race with parsing/indexing. Never resurrect a tombstoned
             # asset; remove any index entry created while the worker was running.
             latest = await repository.get_asset(job.tenant_id, job.asset_id)
@@ -206,7 +290,15 @@ class FileProcessingWorker:
                 await self.queue.complete(job)
                 return True
             error_code = type(exc).__name__.lower()
-            dead = await self.queue.fail(job, error_code=error_code)
+            fail = self.queue.fail
+            try:
+                dead = await fail(
+                    job, error_code=error_code,
+                    error_message=f"file processing failed ({error_code})",
+                )
+            except TypeError:
+                # Backwards-compatible queue adapters may implement the old port.
+                dead = await fail(job, error_code=error_code)
             if dead:
                 marked_rejected = await repository.set_asset_status_if_not_deleted(
                     job.tenant_id, job.asset_id, AssetStatus.REJECTED,

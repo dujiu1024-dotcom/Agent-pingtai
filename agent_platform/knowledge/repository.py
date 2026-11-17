@@ -43,6 +43,11 @@ class KnowledgeRepository(Protocol):
 
     async def revoke_document_access(self, tenant_id: str, document_id: str, principal_type: str, principal_id: str, permission: str) -> bool: ...
 
+    async def replace_document_access(
+        self, tenant_id: str, document_id: str,
+        grants: Sequence[tuple[str, str, str]], granted_by: str,
+    ) -> None: ...
+
     async def delete_document(self, tenant_id: str, document_id: str) -> bool: ...
 
 
@@ -204,6 +209,24 @@ class InMemoryKnowledgeRepository:
             return False
         grants.remove(key)
         return True
+
+    async def replace_document_access(
+        self, tenant_id: str, document_id: str,
+        grants: Sequence[tuple[str, str, str]], granted_by: str,
+    ) -> None:
+        if await self.get_document(tenant_id, document_id) is None:
+            raise ValueError("document not found")
+        normalized = set(grants)
+        if any(
+            kind not in {"user", "role", "project"}
+            or permission not in {"read", "manage"}
+            or not identifier.strip()
+            for kind, identifier, permission in normalized
+        ):
+            raise ValueError("invalid connector ACL grant")
+        key = (tenant_id, document_id)
+        self.document_acl_enforced.add(key)
+        self.document_acl[key] = normalized
 
     async def delete_document(self, tenant_id: str, document_id: str) -> bool:
         from dataclasses import replace

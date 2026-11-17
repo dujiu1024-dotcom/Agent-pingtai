@@ -59,7 +59,7 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             if scope_type == "tenant":
                 if scope_id != principal.tenant_id:
                     raise PermissionError("tenant budget scope must match authenticated tenant")
-            elif scope_type in {"project", "agent", "model", "queue", "worker_pool"}:
+            elif scope_type in {"project", "agent", "run", "model", "queue", "worker_pool"}:
                 if authorize_scope is None:
                     raise PermissionError("resource scope authorization is not configured")
                 scope_allowed = authorize_scope(principal, scope_type, scope_id)
@@ -95,6 +95,7 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
                 soft_cost_usd=optional_decimal("soft_cost_usd"),
                 hard_input_tokens=optional_integer("hard_input_tokens"),
                 hard_output_tokens=optional_integer("hard_output_tokens"),
+                hard_context_window_tokens=optional_integer("hard_context_window_tokens"),
             )
             await quota_service.configure(budget)
         except PermissionError as exc:
@@ -105,7 +106,8 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
                 "scope_id": budget.scope_id, "period_start": budget.period_start.isoformat(),
                 "period_end": budget.period_end.isoformat(), "configured": True,
                 "hard_input_tokens": budget.hard_input_tokens,
-                "hard_output_tokens": budget.hard_output_tokens}
+                "hard_output_tokens": budget.hard_output_tokens,
+                "hard_context_window_tokens": budget.hard_context_window_tokens}
 
 
     @router.post("/reconciliation", status_code=201)

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from agent_platform.identity.models import Principal
 
@@ -21,6 +22,7 @@ class TaskCenterService(Protocol):
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
+        priority: int = 100,
     ) -> Mapping[str, Any]: ...
 
     async def get_task(
@@ -29,6 +31,11 @@ class TaskCenterService(Protocol):
 
     async def cancel_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
+    ) -> Mapping[str, Any] | None: ...
+
+    async def retry_task(
+        self, *, tenant_id: str, task_id: str, actor_id: str,
+        idempotency_key: str,
     ) -> Mapping[str, Any] | None: ...
 
 
@@ -112,8 +119,9 @@ def create_workbench_router(
             if session_id and not await authorize_task(principal, session_id, "use_session"):
                 raise HTTPException(403, "session access denied")
             try:
-                if "priority" in body and (type(body["priority"]) is not int or body["priority"] != 100):
-                    raise HTTPException(422, "custom task priority is not supported by this task center")
+                priority = body.get("priority", 100)
+                if type(priority) is not int or not 0 <= priority <= 1000:
+                    raise HTTPException(422, "priority must be an integer between 0 and 1000")
                 submit_kwargs: dict[str, Any] = {
                     "tenant_id": principal.tenant_id, "actor_id": principal.user_id,
                     "agent_id": agent_id, "project_id": project_id,
@@ -122,6 +130,7 @@ def create_workbench_router(
                         str(body["idempotency_key"])
                         if body.get("idempotency_key") else None
                     ),
+                    "priority": priority,
                 }
                 result = await service.submit_task(**submit_kwargs)
             except PermissionError as exc:
@@ -140,6 +149,29 @@ def create_workbench_router(
             if result is None:
                 raise HTTPException(404, "task not found")
             return dict(result)
+
+        @router.post("/tasks/{task_id}/retry")
+        async def retry_task(task_id: str, request: Request):
+            principal, service = await task_context(request, task_id, "retry")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "retry request body must be JSON") from exc
+            idempotency_key = body.get("idempotency_key") if isinstance(body, Mapping) else None
+            if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+                raise HTTPException(422, "idempotency_key is required for task retry")
+            try:
+                result = await service.retry_task(
+                    tenant_id=principal.tenant_id, task_id=task_id,
+                    actor_id=principal.user_id, idempotency_key=idempotency_key,
+                )
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            if result is None:
+                raise HTTPException(404, "task not found")
+            return JSONResponse(dict(result), status_code=202)
 
         @router.post("/tasks/{task_id}/cancel")
         async def cancel_task(task_id: str, request: Request):

@@ -31,6 +31,8 @@ class QuotaEnforcedHarnessAdapter:
         estimate_tool_cost_usd: Callable[[Any, Any], Decimal] | None = None,
         measure_storage_bytes: Callable[[Any, Any], int] | None = None,
         release_reservation_on_error: Callable[[BaseException], bool] | None = None,
+        reservation_lease_seconds: int = 300,
+        reservation_heartbeat_interval_seconds: float = 60.0,
     ) -> None:
         if not callable(context_window_tokens) and (
             not isinstance(context_window_tokens, int)
@@ -38,6 +40,14 @@ class QuotaEnforcedHarnessAdapter:
             or context_window_tokens < 1
         ):
             raise ValueError("context_window_tokens must be a positive integer or resolver")
+        if not 15 <= reservation_lease_seconds <= 3600:
+            raise ValueError("reservation_lease_seconds must be between 15 and 3600")
+        if not 0 < reservation_heartbeat_interval_seconds < reservation_lease_seconds:
+            raise ValueError("reservation heartbeat interval must be positive and shorter than lease")
+        self.reservation_lease_seconds = reservation_lease_seconds
+        self.reservation_heartbeat_interval_seconds = float(
+            reservation_heartbeat_interval_seconds
+        )
         self.context_window_tokens = context_window_tokens
         self.inner = inner
         self.quota_service = quota_service
@@ -136,7 +146,11 @@ class QuotaEnforcedHarnessAdapter:
         )
         started = monotonic()
         try:
-            result = await self.inner.run(request)
+            async with self.quota_service.reservation_lease(
+                reservation, lease_seconds=self.reservation_lease_seconds,
+                heartbeat_interval_seconds=self.reservation_heartbeat_interval_seconds,
+            ):
+                result = await self.inner.run(request)
         except BaseException as exc:
             # A Harness may fail after the provider accepted a billable request.
             # Retain the reservation unless a trusted host classifier can prove
