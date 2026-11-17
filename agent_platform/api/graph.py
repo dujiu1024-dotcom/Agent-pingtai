@@ -1,7 +1,7 @@
 """Authenticated HTTP routes for bounded graph and hybrid retrieval."""
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Mapping, Any
+from typing import Any, Awaitable, Callable, Mapping
 
 from fastapi import APIRouter, HTTPException, Request
 
