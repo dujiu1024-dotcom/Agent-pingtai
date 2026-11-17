@@ -44,6 +44,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_platform_run_budget_child_key ON platform_r
 CREATE OR REPLACE FUNCTION platform_enforce_run_budget_lineage() RETURNS trigger LANGUAGE plpgsql AS $lineage$
 DECLARE inherited_root uuid;
 BEGIN
+    IF TG_OP='UPDATE' AND (
+       NEW.parent_run_id IS DISTINCT FROM OLD.parent_run_id OR
+       NEW.retry_of_run_id IS DISTINCT FROM OLD.retry_of_run_id OR
+       NEW.budget_root_run_id IS DISTINCT FROM OLD.budget_root_run_id
+    ) THEN
+        RAISE EXCEPTION 'Run budget lineage is immutable after creation';
+    END IF;
     IF NEW.retry_of_run_id IS NOT NULL THEN
         SELECT budget_root_run_id INTO inherited_root FROM platform_runs WHERE tenant_id=NEW.tenant_id AND run_id=NEW.retry_of_run_id FOR UPDATE;
         IF inherited_root IS NULL THEN RAISE EXCEPTION 'retry source Run has no budget lineage'; END IF;
@@ -55,10 +62,6 @@ BEGIN
         IF inherited_root IS NULL THEN RAISE EXCEPTION 'parent Run not found in tenant or has no budget lineage'; END IF;
         IF NEW.budget_lineage_kind='root' THEN NEW.budget_lineage_kind:='delegation'; END IF;
     ELSE inherited_root:=NEW.run_id; NEW.budget_lineage_kind:='root';
-    END IF;
-    IF TG_OP='UPDATE' AND OLD.parent_run_id IS NULL AND OLD.retry_of_run_id IS NULL
-       AND OLD.budget_root_run_id=OLD.run_id AND NEW.parent_run_id IS NOT NULL THEN
-        NEW.budget_root_run_id:=NULL;
     END IF;
     IF NEW.budget_root_run_id IS NOT NULL AND NEW.budget_root_run_id<>inherited_root THEN RAISE EXCEPTION 'Run cannot reset or change its inherited budget root'; END IF;
     NEW.budget_root_run_id:=inherited_root; RETURN NEW;
