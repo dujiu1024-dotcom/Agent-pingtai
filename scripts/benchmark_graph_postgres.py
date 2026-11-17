@@ -104,7 +104,7 @@ async def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                      for rid, source, target in batch],
                 )
 
-    entity_batches = [
+    try:\n        entity_batches = [
         entity_ids[i:i + args.batch_size]
         for i in range(0, len(entity_ids), args.batch_size)
     ]
@@ -212,7 +212,7 @@ async def main() -> None:
     args = parse_args()
     report = await run_benchmark(args)
     report["cleanup"] = "completed"
-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n    ", encoding="utf-8")
     print(json.dumps(report, indent=2, sort_keys=True))
 
 
