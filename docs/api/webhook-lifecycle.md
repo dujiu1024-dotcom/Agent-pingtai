@@ -26,3 +26,8 @@ Dead-letter listing and replay are tenant scoped and require webhook-management 
 - Every claim carries a UUID lease token. Completion, retry, and dead-letter transitions are conditional on the same token and leased status; an expired worker cannot overwrite a row reclaimed by another worker.
 - Retry/dead-letter rows persist only the HTTP response code and a bounded error-type code, never raw exception text or request credentials.
 - Subscription audit details record the destination hostname and topics, not URL paths/query strings or signing-secret material; denied management requests are audited before returning 403.
+
+
+## 禁用与密钥撤销恢复
+
+禁用订阅先在数据库中将状态切换为 disabled，再撤销 Secret Manager 中的签名密钥。两者无法组成同一事务；若外部撤销暂时失败，订阅仍保持禁用，后续重复调用禁用接口必须继续返回待撤销的 secret reference 并重试。Secret Manager 的 revoke 操作必须幂等；不得因第一次撤销失败而丢失待清理引用。
