@@ -80,12 +80,31 @@ def validate_api_version(version: str) -> str:
 
 
 def error_for_http_status(status: int, message: str, *, request_id: str | None = None) -> ApiError:
-    """Map transport status to public stable codes; never expose server exception details."""
+    """Map common HTTP failures to stable public codes without leaking server details."""
     codes = {
-        400: "INVALID_REQUEST", 401: "UNAUTHENTICATED", 403: "FORBIDDEN",
-        404: "NOT_FOUND", 409: "CONFLICT", 410: "GONE", 412: "PRECONDITION_FAILED",
-        422: "VALIDATION_ERROR", 429: "RATE_LIMITED", 500: "INTERNAL_ERROR",
-        502: "UPSTREAM_ERROR", 503: "SERVICE_UNAVAILABLE", 504: "UPSTREAM_TIMEOUT",
+        400: "INVALID_REQUEST",
+        401: "UNAUTHENTICATED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        405: "METHOD_NOT_ALLOWED",
+        408: "REQUEST_TIMEOUT",
+        409: "CONFLICT",
+        410: "GONE",
+        412: "PRECONDITION_FAILED",
+        413: "PAYLOAD_TOO_LARGE",
+        415: "UNSUPPORTED_MEDIA_TYPE",
+        416: "RANGE_NOT_SATISFIABLE",
+        418: "REQUEST_REJECTED",
+        422: "VALIDATION_ERROR",
+        423: "RESOURCE_LOCKED",
+        424: "FAILED_DEPENDENCY",
+        428: "PRECONDITION_REQUIRED",
+        429: "RATE_LIMITED",
+        431: "REQUEST_HEADER_FIELDS_TOO_LARGE",
+        500: "INTERNAL_ERROR",
+        502: "UPSTREAM_ERROR",
+        503: "SERVICE_UNAVAILABLE",
+        504: "UPSTREAM_TIMEOUT",
     }
     code = codes.get(status, "REQUEST_FAILED" if 400 <= status < 500 else "INTERNAL_ERROR")
     safe_message = message if 400 <= status < 500 else "The request could not be completed"
