@@ -249,6 +249,9 @@ class InMemorySessionRepository:
             return False
         from dataclasses import replace
         self.assets[key] = replace(asset, status=status)
+        versions = self.asset_versions.get(key, [])
+        if versions:
+            versions[-1] = replace(versions[-1], status=status)
         return True
 
 

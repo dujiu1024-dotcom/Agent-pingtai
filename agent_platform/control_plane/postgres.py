@@ -476,10 +476,28 @@ class PostgresSessionRepository:
             cursor = await connection.execute(
                 """UPDATE platform_file_assets SET status=%s
                    WHERE tenant_id=%s AND asset_id=%s AND status <> 'deleted'
-                   RETURNING asset_id""",
+                   RETURNING current_version""",
                 (status.value, self.tenant_id, _uuid(asset_id)),
             )
-            return await cursor.fetchone() is not None
+            row = await cursor.fetchone()
+            if row is None:
+                return False
+            await connection.execute(
+                """UPDATE platform_file_asset_versions SET status=%s
+                   WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
+                (status.value, self.tenant_id, _uuid(asset_id), row["current_version"]),
+            )
+            return True
+
+    @staticmethod
+    def _to_asset_version(row: Any) -> FileAssetVersion:
+        return FileAssetVersion(
+            tenant_id=row["tenant_id"], asset_id=str(row["asset_id"]),
+            version=row["version"], object_key=row["object_key"],
+            filename=row["filename"], media_type=row["media_type"],
+            size_bytes=row["size_bytes"], sha256=row["sha256"],
+            status=AssetStatus(row["status"]), created_at=row["created_at"],
+        )
 
     def _check_tenant(self, tenant_id: str) -> None:
         if tenant_id != self.tenant_id:
