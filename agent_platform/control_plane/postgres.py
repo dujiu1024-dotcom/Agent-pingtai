@@ -11,6 +11,7 @@ from agent_platform.control_plane.registry import (
 )
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus,
+    ContextWindowSnapshot,
     ConversationMessage,
     ConversationSession,
     FileAsset,
@@ -232,11 +233,13 @@ class PostgresSessionRepository:
                 )
                 if await cursor.fetchone() is None:
                     raise SessionNotFound("session not found or inactive")
-                await connection.execute(
+                cursor = await connection.execute(
                     """INSERT INTO platform_messages
                        (tenant_id,message_id,session_id,role,content,actor_id,task_id,run_id,
                         asset_ids,metadata,token_usage,created_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (tenant_id,message_id) DO NOTHING
+                       RETURNING message_id""",
                     (self.tenant_id, _uuid(message.message_id), _uuid(message.session_id),
                      message.role.value, message.content, message.actor_id, message.task_id,
                      message.run_id, _jsonb(list(message.asset_ids)),
@@ -249,6 +252,23 @@ class PostgresSessionRepository:
                      }) if message.token_usage is not None else None,
                      message.created_at),
                 )
+                if await cursor.fetchone() is None:
+                    existing_cursor = await connection.execute(
+                        """SELECT session_id,role,content,actor_id,task_id,run_id,asset_ids,metadata
+                           FROM platform_messages WHERE tenant_id=%s AND message_id=%s""",
+                        (self.tenant_id, _uuid(message.message_id)),
+                    )
+                    existing = await existing_cursor.fetchone()
+                    if (
+                        existing is None
+                        or str(existing["session_id"]) != message.session_id
+                        or existing["role"] != message.role.value
+                        or existing["content"] != message.content
+                        or existing["actor_id"] != message.actor_id
+                        or existing["task_id"] != message.task_id
+                        or existing["run_id"] != message.run_id
+                    ):
+                        raise SessionError("message id already belongs to different content")
                 await connection.execute(
                     "UPDATE platform_conversation_sessions SET updated_at=now() WHERE tenant_id=%s AND session_id=%s",
                     (self.tenant_id, _uuid(message.session_id)),
@@ -300,6 +320,58 @@ class PostgresSessionRepository:
             metadata=dict(row["metadata"] or {}), created_at=row["created_at"],
             token_usage=MessageTokenUsage(**dict(row["token_usage"]))
             if row.get("token_usage") else None,
+        ) for row in rows)
+
+    async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None:
+        self._check_tenant(snapshot.tenant_id)
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (f"{self.tenant_id}:{snapshot.session_id}:context-snapshot",),
+                )
+                cursor = await connection.execute(
+                    """INSERT INTO platform_context_window_snapshots
+                       (tenant_id,session_id,snapshot_id,version,run_id,last_message_id,
+                        snapshot_data,token_count,max_tokens,created_by,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       RETURNING snapshot_id""",
+                    (self.tenant_id, _uuid(snapshot.session_id), _uuid(snapshot.snapshot_id),
+                     snapshot.version, snapshot.run_id,
+                     _uuid(snapshot.last_message_id) if snapshot.last_message_id else None,
+                     _jsonb(dict(snapshot.snapshot)), snapshot.token_count,
+                     snapshot.max_tokens, snapshot.created_by, snapshot.created_at),
+                )
+                if await cursor.fetchone() is None:
+                    raise SessionError("context snapshot was not persisted")
+
+    async def list_context_snapshots(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+    ) -> tuple[ContextWindowSnapshot, ...]:
+        if tenant_id != self.tenant_id:
+            raise SessionNotFound("session not found")
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT tenant_id,session_id,snapshot_id,version,run_id,last_message_id,
+                          snapshot_data,token_count,max_tokens,created_by,created_at
+                   FROM platform_context_window_snapshots
+                   WHERE tenant_id=%s AND session_id=%s
+                   ORDER BY version DESC LIMIT %s""",
+                (self.tenant_id, _uuid(session_id), limit),
+            )
+            rows = await cursor.fetchall()
+        return tuple(ContextWindowSnapshot(
+            tenant_id=row["tenant_id"], session_id=str(row["session_id"]),
+            snapshot_id=str(row["snapshot_id"]), version=row["version"],
+            run_id=row["run_id"],
+            last_message_id=str(row["last_message_id"]) if row["last_message_id"] else None,
+            snapshot=dict(row["snapshot_data"]), token_count=row["token_count"],
+            max_tokens=row["max_tokens"], created_by=row["created_by"],
+            created_at=row["created_at"],
         ) for row in rows)
 
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]:

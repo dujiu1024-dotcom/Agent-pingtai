@@ -19,7 +19,7 @@ class LangGraphRunExecutor:
  def __init__(self,*,graph:Any,lifecycle:RunLifecycleManager,timeout_seconds:float=900,
   worker_id:str|None=None,lease_seconds:int=60,registry_snapshot_service:Any|None=None,
   registry_runtime_provider:Any|None=None,model_template_id:str|None=None,
-  required_tools:tuple[str,...]=(),run_context_service:Any|None=None,intervention_store:Any|None=None,
+  required_tools:tuple[str,...]=(),run_context_service:Any|None=None,session_repository:Any|None=None,intervention_store:Any|None=None,
   intervention_applier:Any|None=None)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
@@ -32,6 +32,11 @@ class LangGraphRunExecutor:
   self.model_template_id=model_template_id
   self.required_tools=tuple(required_tools)
   self.run_context_service=run_context_service
+  self.session_repository=session_repository
+  self.session_persistence=None
+  if session_repository is not None:
+   from agent_platform.runtime.session_persistence import SessionRunPersistence
+   self.session_persistence=SessionRunPersistence(session_repository)
   self.intervention_store=intervention_store
   self.intervention_applier=intervention_applier
   if intervention_store is not None and intervention_applier is None:
@@ -43,8 +48,10 @@ class LangGraphRunExecutor:
    "platform_tenant_id":tenant_id,
    "platform_run_id":run_id,
   }}
- async def _run_config(self,tenant_id:str,run_id:str)->dict[str,Any]:
+ async def _run_config(self,tenant_id:str,run_id:str,*,session_history:Any|None=None)->dict[str,Any]:
   config=self._config(tenant_id,run_id)
+  if session_history is not None:
+   config["configurable"]["platform_session_history"]=list(session_history)
   if self.registry_snapshot_service is not None:
    snapshot=await self.registry_snapshot_service.get(tenant_id=tenant_id,run_id=run_id)
    config["configurable"]["platform_registry_snapshot"]=[dict(entry) for entry in snapshot.entries]
@@ -54,6 +61,49 @@ class LangGraphRunExecutor:
     tenant_id=tenant_id,run_id=run_id,
    )
   return config
+ async def _session_begin(self,tenant_id:str,run_id:str,payload:Any,session_context:Any)->tuple[dict[str,Any]|None,Any|None]:
+  if session_context is None:return None,None
+  if self.session_persistence is None:
+   raise ValueError("session_context requires a configured session_repository")
+  if not isinstance(session_context,dict):raise ValueError("session_context must be an object")
+  session_id=session_context.get("session_id");actor_id=session_context.get("actor_id")
+  if not isinstance(session_id,str) or not session_id.strip() or not isinstance(actor_id,str) or not actor_id.strip():
+   raise ValueError("session_context requires session_id and actor_id")
+  history=await self.session_persistence.begin_run(
+   tenant_id=tenant_id,session_id=session_id,run_id=run_id,actor_id=actor_id,payload=payload,
+  )
+  return {"session_id":session_id,"actor_id":actor_id},history
+
+ async def _invoke_graph(self,payload:Any,config:Any,*,tenant_id:str,run_id:str,session:Any)->Any:
+  stream=getattr(self.graph,"astream",None)
+  if session is None or not callable(stream):
+   return await self.graph.ainvoke(payload,config=config)
+  latest=None
+  async for state in stream(payload,config=config,stream_mode="values"):
+   if isinstance(state,dict):
+    await self.session_persistence.append_progress(
+     tenant_id=tenant_id,session_id=session["session_id"],run_id=run_id,
+     actor_id=session["actor_id"],state=state,
+    )
+   # LangGraph persists its own node checkpoint before yielding the values update.
+   await self._session_checkpoint(tenant_id,run_id,config,session)
+   latest=state
+  if latest is None:
+   raise RuntimeError("LangGraph stream completed without a state update")
+  return latest
+
+ async def _session_checkpoint(self,tenant_id:str,run_id:str,config:Any,session:Any)->None:
+  if session is None or self.session_persistence is None:return
+  try:
+   await self.session_persistence.checkpoint(
+    graph=self.graph,config=config,tenant_id=tenant_id,
+    session_id=session["session_id"],run_id=run_id,actor_id=session["actor_id"],
+   )
+  except Exception:
+   # The LangGraph checkpointer and Run checkpoint_ref remain authoritative;
+   # a mirror failure must not hide the original execution outcome.
+   raise
+
  async def _checkpoint_ref(self,tenant_id:str,run_id:str)->str|None:
   getter=getattr(self.graph,"aget_state",None)
   if getter is None:return None
@@ -114,17 +164,18 @@ class LangGraphRunExecutor:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None or old.status!=RunStatus.RUNNING:return old
   return await self.lifecycle.finish(tenant_id,run_id,status,checkpoint_ref=checkpoint_ref,error=error)
- async def execute(self,*,tenant_id:str,run_id:str,input:Any,timeout_seconds:float|None=None)->Any:
+ async def execute(self,*,tenant_id:str,run_id:str,input:Any,timeout_seconds:float|None=None,session_context:Any|None=None)->Any:
   old=await self.lifecycle.store.get(tenant_id,run_id)
   if old is None:raise KeyError("Run not found")
   if old.status!=RunStatus.QUEUED:raise ValueError(f"Run cannot start from {old.status.value}; use recovery for interrupted Runs")
+  session,session_history=await self._session_begin(tenant_id,run_id,input,session_context)
   if self.run_context_service is not None:
    if not isinstance(input,dict):
     raise ValueError("Run context assembly requires an object input")
    await self.run_context_service.ensure_initial(
     tenant_id=tenant_id,run_id=run_id,initial_context=input,
    )
-  config=await self._run_config(tenant_id,run_id)
+  config=await self._run_config(tenant_id,run_id,session_history=session_history)
   store=self.lifecycle.store
   acquire=getattr(store,"acquire_lease",None)
   release=getattr(store,"release_lease",None)
@@ -147,7 +198,7 @@ class LangGraphRunExecutor:
      )
      runtime_prepared=True
     with trace_span("run.execute", component="run", tenant_id=tenant_id, run_id=run_id):
-     result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
+     result=await self._run_leased(tenant_id,run_id,self._invoke_graph(input,config,tenant_id=tenant_id,run_id=run_id,session=session),
       timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
       already_claimed=acquired)
    except asyncio.TimeoutError:raise
@@ -163,11 +214,15 @@ class LangGraphRunExecutor:
      await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
     elif current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
+     if session is not None:
+      await self._session_checkpoint(tenant_id,run_id,config,session)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
     # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
     ref=await self._checkpoint_ref(tenant_id,run_id)
+    if session is not None:
+     await self._session_checkpoint(tenant_id,run_id,config,session)
     await self._finish(tenant_id,run_id,RunStatus.FAILED,checkpoint_ref=ref,error=str(exc)[:500])
     raise
    ref=await self._checkpoint_ref(tenant_id,run_id)
@@ -175,6 +230,12 @@ class LangGraphRunExecutor:
    if latest is not None and latest.status==RunStatus.CANCELLING:
     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
     return None
+   if session is not None:
+    await self.session_persistence.append_assistant(
+     tenant_id=tenant_id,session_id=session["session_id"],run_id=run_id,
+     actor_id=session["actor_id"],result=result,
+    )
+    await self._session_checkpoint(tenant_id,run_id,config,session)
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    return result
   finally:
@@ -184,7 +245,7 @@ class LangGraphRunExecutor:
    finally:
     if acquired and release is not None:
      await release(tenant_id,run_id,self.worker_id)
- async def resume_claimed(self,*,snapshot:RunSnapshot,input:Any)->Any:
+ async def resume_claimed(self,*,snapshot:RunSnapshot,input:Any,session_context:Any|None=None)->Any:
   """Resume one Run already claimed by this worker's durable queue poll."""
   tenant_id=snapshot.tenant_id;run_id=snapshot.run_id
   owns_lease=getattr(self.lifecycle.store,"owns_lease",None)
@@ -198,7 +259,7 @@ class LangGraphRunExecutor:
    await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
    return None
   if current.status==RunStatus.QUEUED:
-   return await self.execute(tenant_id=tenant_id,run_id=run_id,input=input)
+   return await self.execute(tenant_id=tenant_id,run_id=run_id,input=input,session_context=session_context)
   if current.status==RunStatus.RUNNING:
    current=await self.lifecycle.store.transition(
     RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,current.version,
@@ -207,6 +268,7 @@ class LangGraphRunExecutor:
    )
   if current.status!=RunStatus.INTERRUPTED:
    raise ValueError(f"claimed Run cannot resume from {current.status.value}")
+  session,session_history=await self._session_begin(tenant_id,run_id,input,session_context)
   if current.checkpoint_ref:
    actual=await self._checkpoint_ref(tenant_id,run_id)
    if actual!=current.checkpoint_ref:
@@ -237,9 +299,10 @@ class LangGraphRunExecutor:
     runtime_prepared=True
    payload=None if running.checkpoint_ref else input
    with trace_span("run.resume", component="run", tenant_id=tenant_id, run_id=run_id):
-    result=await self._run_leased(
+    recovery_config=await self._run_config(tenant_id,run_id,session_history=session_history)
+   result=await self._run_leased(
      tenant_id,run_id,
-     self.graph.ainvoke(payload,config=await self._run_config(tenant_id,run_id)),
+     self._invoke_graph(payload,recovery_config,tenant_id=tenant_id,run_id=run_id,session=session),
      timeout=self.timeout_seconds,already_claimed=True,
     )
    ref=await self._checkpoint_ref(tenant_id,run_id)
@@ -247,6 +310,12 @@ class LangGraphRunExecutor:
    if latest is not None and latest.status==RunStatus.CANCELLING:
     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
     return None
+   if session is not None:
+    await self.session_persistence.append_assistant(
+     tenant_id=tenant_id,session_id=session["session_id"],run_id=run_id,
+     actor_id=session["actor_id"],result=result,
+    )
+    await self._session_checkpoint(tenant_id,run_id,recovery_config,session)
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    return result
   except asyncio.TimeoutError:
@@ -264,11 +333,19 @@ class LangGraphRunExecutor:
     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
    elif latest and latest.status==RunStatus.RUNNING:
     ref=await self._checkpoint_ref(tenant_id,run_id)
+    if session is not None:
+     await self._session_checkpoint(
+      tenant_id,run_id,await self._run_config(tenant_id,run_id,session_history=session_history),session,
+     )
     await self.lifecycle.mark_interrupted(
      tenant_id,run_id,checkpoint_ref=ref,reason="recovery execution cancelled")
    raise
   except Exception as exc:
    ref=await self._checkpoint_ref(tenant_id,run_id)
+   if session is not None:
+    await self._session_checkpoint(
+     tenant_id,run_id,await self._run_config(tenant_id,run_id,session_history=session_history),session,
+    )
    await self._finish(tenant_id,run_id,RunStatus.FAILED,
     checkpoint_ref=ref,error=str(exc)[:500])
    raise
