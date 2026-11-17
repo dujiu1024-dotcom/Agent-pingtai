@@ -25,3 +25,15 @@ def test_replay_controls_use_authenticated_replay_api_contract() -> None:
     assert '"/replay"' in script
     assert "replay_input_ref" in script
     assert '"/seek"' in script
+
+
+
+def test_replay_context_editor_is_available_only_while_paused() -> None:
+    script = (ROOT / "agent_platform/web/static/app.js").read_text(encoding="utf-8")
+
+    assert 'id=\'replay-context-form\'' in script
+    assert '"/context"' in script
+    assert 'method:"PATCH"' in script
+    assert 'r.paused?"":"disabled"' in script
+    assert "仅作用于当前 Replay Session" in script
+    assert "请先暂停 Replay 再修改上下文" in script
