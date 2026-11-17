@@ -48,7 +48,7 @@ class RunEventStreamingApiTests(unittest.TestCase):
         async def authorize(_principal, resource, resource_id, action):
             return allowed and resource == "run" and resource_id == "run-a" and action == "read"
 
-        async def resolve_broker(_principal):
+        async def resolve_broker(_tenant_id):
             return _Broker()
 
         app = FastAPI()
