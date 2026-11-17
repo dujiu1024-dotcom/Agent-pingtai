@@ -3,7 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from agent_platform.deployment.backups import (
-    BackupCatalog, BackupCoordinator, BackupKind, BackupPolicy, BackupArtifact,
+    BackupCatalog, BackupCoordinator, BackupKind, BackupPolicy, BackupArtifact, BackupScheduler,
     RestoreDrillState, begin_restore_drill, meets_rpo,
 )
 
@@ -31,6 +31,18 @@ class BackupTests(unittest.TestCase):
         self.assertTrue(full.offsite_uri.startswith("s3://offsite/"))
         self.assertEqual([item.backup_id for item in self.catalog.chain(incremental.backup_id)],
                          [full.backup_id, incremental.backup_id])
+
+    def test_scheduler_creates_full_then_incremental_and_respects_intervals(self):
+        scheduler = BackupScheduler(self.coordinator)
+        self.assertEqual(scheduler.due_kind("t1", "db", NOW), BackupKind.FULL)
+        full = scheduler.run_if_due("t1", "db", NOW)
+        self.assertIsNotNone(full)
+        self.assertIsNone(scheduler.run_if_due("t1", "db", NOW + timedelta(minutes=10)))
+        self.assertEqual(scheduler.due_kind("t1", "db", NOW + timedelta(hours=1)),
+                         BackupKind.INCREMENTAL)
+        self.assertIsNotNone(scheduler.run_if_due("t1", "db", NOW + timedelta(hours=1)))
+        self.assertEqual(scheduler.due_kind("t1", "db", NOW + timedelta(days=1)),
+                         BackupKind.FULL)
 
     def test_incremental_without_full_rejected(self):
         with self.assertRaises(ValueError):
