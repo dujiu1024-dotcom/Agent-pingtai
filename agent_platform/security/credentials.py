@@ -51,7 +51,10 @@ class CredentialRepository(Protocol):
         consumer_type: str, consumer_id: str,
     ) -> CredentialGrant | None: ...
     async def revoke(self, *, tenant_id: str, credential_id: str) -> bool: ...
-    async def revoke_grant(\n        self, *, tenant_id: str, credential_id: str, consumer_type: str, consumer_id: str,\n    ) -> None: ...\n
+    async def revoke_grant(
+        self, *, tenant_id: str, credential_id: str, consumer_type: str, consumer_id: str,
+    ) -> None: ...
+
 
 class CredentialService:
     """Create, share and resolve credentials with explicit tenant/scope checks."""
@@ -167,7 +170,7 @@ class CredentialService:
         credential = self._required(credential_id, "credential_id")
         consumer = self._required(consumer_id, "consumer_id")
         actor = self._required(actor_id, "actor_id")
-        if consumer_type not in _CONSUMER_TYPES:
+        if not isinstance(consumer_type, str) or consumer_type not in _CONSUMER_TYPES:
             raise ValueError("consumer_type must be agent or workflow")
         required = self._scopes(required_scopes)
         record = await self._repository.get(tenant_id=tenant, credential_id=credential)
