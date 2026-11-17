@@ -188,12 +188,10 @@ class ReliabilityFaultInjectionIntegrationTests(unittest.IsolatedAsyncioTestCase
         self.assertEqual(result["processed"], 1)
         self.assertEqual(result["duplicates"], 1)
         self.assertEqual(handled, [event_id])
-        self.assertEqual(
-            await replacement_transport.pending_summary(
-                tenant_id=self.tenant_id, topic=self.topic, group=self.group,
-            )["pending"],
-            0,
+        pending_after_restart = await replacement_transport.pending_summary(
+            tenant_id=self.tenant_id, topic=self.topic, group=self.group,
         )
+        self.assertEqual(pending_after_restart["pending"], 0)
         self.assertNotEqual(first_message_id, duplicate_message_id)
 
 
