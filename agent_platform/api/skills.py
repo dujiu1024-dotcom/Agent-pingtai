@@ -70,7 +70,7 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
             active = await service.registry.repository.get_active(
                 principal.tenant_id, "skill", candidate.item_id,
             )
-            if active is None:
+            if active is None or not await authorize(principal, active.item_id, "read"):
                 continue
             seen.add(active.item_id)
             manifest = active.definition.get("manifest", {})
@@ -100,6 +100,9 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
         version = body.get("version")
         if type(version) is not int or version < 1:
             raise HTTPException(422, "version must be a positive integer")
+        current = await service.agent_store.get(principal.tenant_id, body["agent_id"], skill_id)
+        if current is not None:
+            raise HTTPException(409, "Skill is already installed; use upgrade")
         try:
             item = await service.install_for_agent(
                 tenant_id=principal.tenant_id, agent_id=body["agent_id"],
@@ -109,8 +112,7 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
             raise HTTPException(404, str(exc)) from exc
         except (SkillPackageError, ValueError) as exc:
             raise HTTPException(409, str(exc)) from exc
-        return {"installation": installed_dict(item),
-                "status": "current" if item else "installed"}
+        return {"installation": installed_dict(item), "status": "installed"}
 
     @router.delete("/{skill_id}/install")
     async def uninstall_skill(skill_id: str, request: Request, agent_id: str):
@@ -136,6 +138,11 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
         version = body.get("version")
         if type(version) is not int or version < 1:
             raise HTTPException(422, "version must be a positive integer")
+        current = await service.agent_store.get(principal.tenant_id, body["agent_id"], skill_id)
+        if current is None:
+            raise HTTPException(409, "Skill is not installed; use install")
+        if version <= current.registry_version:
+            raise HTTPException(409, "upgrade version must be newer than the installed version")
         try:
             item = await service.install_for_agent(
                 tenant_id=principal.tenant_id, agent_id=body["agent_id"],
