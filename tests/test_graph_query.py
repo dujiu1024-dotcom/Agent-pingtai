@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from agent_platform.graph.query import GraphQueryService
 from agent_platform.graph.schema import GraphEntity, GraphRelation, GraphSourceDomain
-from agent_platform.graph.postgres_repository import GraphSourceReference
 
 
 @dataclass(frozen=True)
@@ -19,6 +18,14 @@ class EntityRecord:
 @dataclass(frozen=True)
 class RelationRecord:
     relation: GraphRelation
+
+
+@dataclass(frozen=True)
+class GraphSourceReference:
+    domain: GraphSourceDomain
+    source_type: str
+    source_id: str
+    source_version: int
 
 
 @dataclass(frozen=True)
