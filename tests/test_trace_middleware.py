@@ -30,7 +30,7 @@ class TraceContextMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             messages.append(message)
 
         middleware = TraceContextASGIMiddleware(app)
-        scope = {"type": "http", "headers": headers, "state": {}}
+        scope = {"type": "http", "method": "POST", "path": "/api/runs", "headers": headers, "state": {}}
         await middleware(scope, receive, send)
         return observed, messages
 
@@ -41,6 +41,8 @@ class TraceContextMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         response_headers = dict(messages[0]["headers"])
         self.assertEqual(response_headers[b"traceparent"].decode(), context.traceparent)
         self.assertEqual(observed["state"]["trace_context"], context)
+        self.assertEqual(observed["state"]["trace_span"].component, "request")
+        self.assertEqual(observed["state"]["trace_span"].status, "ok")
         self.assertIsNone(current_trace_context())
 
     async def test_extracts_valid_context_and_preserves_correlation(self):
@@ -48,9 +50,11 @@ class TraceContextMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         observed, messages = await self.invoke([
             (b"traceparent", traceparent),
             (b"x-correlation-id", b"request-17"),
+            (b"x-request-id", b"req-17"),
         ])
         self.assertEqual(observed["context"].traceparent, traceparent.decode())
         self.assertEqual(observed["context"].correlation_id, "request-17")
+        self.assertEqual(observed["state"]["request_id"], "req-17")
         self.assertEqual(dict(messages[0]["headers"])[b"x-correlation-id"], b"request-17")
 
     async def test_malformed_trace_is_replaced_not_reflected(self):
