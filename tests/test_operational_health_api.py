@@ -16,8 +16,9 @@ class OperationalHealthApiTests(unittest.TestCase):
         ))
         @app.middleware("http")
         async def identity(request, call_next):
-            request.state.__dict__["identity.principal"] = Principal(
-                tenant_id="tenant-a", user_id="operator-a", roles=("operator",),
+            request.state.__dict__.setdefault("_state", {})["identity.principal"] = Principal(
+                user_id="operator-a", tenant_id="tenant-a", session_id="session-a",
+                email="operator@example.invalid", display_name="Operator",
             )
             return await call_next(request)
         return TestClient(app)
