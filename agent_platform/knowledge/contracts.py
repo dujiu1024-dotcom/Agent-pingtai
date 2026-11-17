@@ -16,6 +16,52 @@ class KnowledgeScope(str, Enum):
     PROJECT = "project"
     PRIVATE = "private"
 
+
+@dataclass(frozen=True)
+class KnowledgeCollection:
+    """Tenant-owned knowledge namespace with optional project boundary."""
+
+    tenant_id: str
+    name: str
+    collection_id: str = field(default_factory=lambda: str(uuid4()))
+    description: str = ""
+    project_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=now_utc)
+    updated_at: datetime = field(default_factory=now_utc)
+    deleted_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.tenant_id, str) or not self.tenant_id.strip():
+            raise ValueError("tenant_id must not be empty")
+        if not isinstance(self.name, str) or not self.name.strip() or len(self.name) > 200:
+            raise ValueError("collection name must contain 1-200 characters")
+        if not isinstance(self.collection_id, str) or not self.collection_id.strip():
+            raise ValueError("collection_id must not be empty")
+        if self.project_id is not None and not self.project_id.strip():
+            raise ValueError("project_id must not be empty when provided")
+
+
+@dataclass(frozen=True)
+class KnowledgeIndex:
+    tenant_id: str
+    collection_id: str
+    index_id: str = field(default_factory=lambda: str(uuid4()))
+    name: str = "default"
+    index_type: str = "hybrid"
+    embedding_model: str | None = None
+    dimensions: int | None = None
+    status: str = "ready"
+    created_at: datetime = field(default_factory=now_utc)
+
+    def __post_init__(self) -> None:
+        if self.index_type not in {"lexical", "vector", "hybrid"}:
+            raise ValueError("index_type must be lexical, vector or hybrid")
+        if self.dimensions is not None and (
+            isinstance(self.dimensions, bool) or self.dimensions < 1
+        ):
+            raise ValueError("dimensions must be a positive integer")
+
 @dataclass(frozen=True)
 class Document:
     tenant_id: str
@@ -29,6 +75,7 @@ class Document:
     version: int = 1
     media_type: str = "text/plain"
     metadata: dict[str, Any] = field(default_factory=dict)
+    collection_id: str | None = None
     created_at: datetime = field(default_factory=now_utc)
     deleted_at: datetime | None = None
 
