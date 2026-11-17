@@ -220,6 +220,9 @@ class FileAssetVersion:
 class SessionRepository(Protocol):
     async def create_session(self, session: ConversationSession) -> None: ...
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None: ...
+    async def set_session_status(
+        self, tenant_id: str, session_id: str, status: str, *, expected_status: str,
+    ) -> bool: ...
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
     async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None: ...
@@ -304,6 +307,23 @@ class InMemorySessionRepository:
 
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None:
         return self.sessions.get((tenant_id, session_id))
+
+    async def set_session_status(
+        self, tenant_id: str, session_id: str, status: str, *, expected_status: str,
+    ) -> bool:
+        if status not in {"active", "archived", "deleted"}:
+            raise SessionError("session status is invalid")
+        key = (tenant_id, session_id)
+        current = self.sessions.get(key)
+        if current is None or current.status != expected_status:
+            return False
+        if current.status == "deleted":
+            return False
+        from dataclasses import replace
+        self.sessions[key] = replace(
+            current, status=status, updated_at=datetime.now(timezone.utc),
+        )
+        return True
 
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]:
         if not 1 <= limit <= 500:
