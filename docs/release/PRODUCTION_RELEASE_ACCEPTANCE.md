@@ -15,7 +15,7 @@ migrations, change traffic, or contact production systems.
 
 Use named people or stable team identities, not role placeholders. The evidence
 archive reference must identify an immutable, access-controlled archive location.
-Archive the exact release candidate SHA, CI run URLs, test reports, migration
+Archive the exact release candidate SHA and artifact digest, CI run URLs, test reports, deployment preflight, migration
 preflight output, rollback drill report, smoke report, approvals, and final
 decision record. Do not put credentials, tokens, or customer secrets in evidence.
 
@@ -23,6 +23,7 @@ decision record. Do not put credentials, tokens, or customer secrets in evidence
 
 | Check | Acceptance evidence |
 |---|---|
+| Deployment preflight | Target environment and configuration are verified, dependencies are healthy, the exact artifact SHA-256 is recorded, the change window is approved, and rollback is ready |
 | E2E | Required critical user journeys and integration tests pass |
 | Fault injection | Recovery and failure-mode tests pass; unresolved data-loss risks are blockers |
 | Performance | Agreed latency, throughput, concurrency and capacity thresholds pass |
@@ -41,6 +42,7 @@ test is not evidence that the check passed.
 Release is NO-GO if any of the following applies:
 
 - A required check is missing, pending, failed, stale, or has placeholder ownership or evidence.
+- Deployment preflight is incomplete, the artifact digest is invalid, the change window is not approved, or rollback readiness is not confirmed.
 - The evidence commit SHA differs from the exact release candidate.
 - Migration preflight or backward/forward compatibility confirmation is absent.
 - Rollback/restore drill is absent or failed.
@@ -56,7 +58,7 @@ five minutes in the future. Evidence older than the configured freshness window
 
 1. Freeze the release candidate and record its full 40-character commit SHA.
 2. Assign the release owner, independent approver, and each check owner.
-3. Run non-production tests, migration preflight, compatibility, backup/restore,
+3. Verify target configuration and dependencies, pin the artifact digest, approve the change window, and confirm rollback readiness. Run non-production tests, migration preflight, compatibility, backup/restore,
    and rollback drills. Capture immutable outputs.
 4. Obtain production smoke evidence only through the separately authorized
    production change process. This repository workflow does not perform it.
