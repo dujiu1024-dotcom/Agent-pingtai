@@ -774,7 +774,7 @@ summary:hover{color:var(--ac)}
         { 'Content-Type': 'application/json' },
         CONSOLE_TOKEN ? { 'X-Console-Token': CONSOLE_TOKEN } : {});
       if (stateEtag) headers['If-None-Match'] = stateEtag;
-      const res = await fetch('/api/state', { headers });
+      const res = await fetch('/api/v1/legacy/state', { headers });
       if (res.status === 304) return;           // 状态没变，跳过整包传输与重绘
       stateEtag = res.headers.get('ETag') || '';
       const body = await res.json();
@@ -1809,7 +1809,7 @@ summary:hover{color:var(--ac)}
   async function renderRoundtableList() {
     const box = $('#rtList'); if (!box) return;
     let rows = [];
-    try { rows = (await api('/api/roundtable')).data || []; }
+    try { rows = (await api('/api/v1/legacy/roundtable')).data || []; }
     catch { rows = []; }
     if (!rows.length) { box.innerHTML = '<p style="color:var(--muted);font-size:12px">暂无历史会议</p>'; return; }
     box.innerHTML = '<h4 style="margin:14px 0 6px;font-size:13px">历史会议（点击查看三份产物）</h4>' +
@@ -1826,7 +1826,7 @@ summary:hover{color:var(--ac)}
   async function openRoundtableFile(path) {
     if (!path) return;
     try {
-      const res = await fetch('/api/output?path=' + encodeURIComponent(path),
+      const res = await fetch('/api/v1/legacy/output?path=' + encodeURIComponent(path),
         { headers: CONSOLE_TOKEN ? { 'X-Console-Token': CONSOLE_TOKEN } : {} });
       const txt = await res.text();
       if (!res.ok) throw new Error(txt || ('HTTP ' + res.status));
@@ -1848,7 +1848,7 @@ summary:hover{color:var(--ac)}
         roles: $('#rtRoles').value.trim(),
         rounds: Number($('#rtRounds').value) || 0,
       };
-      const d = await api('/api/roundtable', { method: 'POST', body: JSON.stringify(body) });
+      const d = await api('/api/v1/legacy/roundtable', { method: 'POST', body: JSON.stringify(body) });
       const r = d.data || {};
       const tk = r.tokens || {};
       $('#rtStatus').textContent = '角色：' + (r.roles || []).join(' → ')
@@ -1870,7 +1870,7 @@ summary:hover{color:var(--ac)}
     const box = $('#healthBody');
     box.innerHTML = '<p style="color:var(--muted)">读取自检结果…</p>';
     let d;
-    try { d = (await api('/api/selfcheck')).data; }
+    try { d = (await api('/api/v1/legacy/selfcheck')).data; }
     catch (e) { box.innerHTML = '<p style="color:#c33">自检失败：' + esc(e.message) + '</p>'; return; }
     const svc = d.services || {};
     const names = ['listener', 'console', 'tick', 'selfcheck'];
@@ -1917,7 +1917,7 @@ summary:hover{color:var(--ac)}
     const box = $('#contentBody'); if (!box) return;
     box.innerHTML = '<p style="color:var(--muted)">加载中…</p>';
     let d;
-    try { d = (await api('/api/content')).data || {}; }
+    try { d = (await api('/api/v1/legacy/content')).data || {}; }
     catch (e) { box.innerHTML = '<p class="danger">加载失败：' + esc(e.message) + '</p>'; return; }
     const plans = d.plans || [];
     const published = plans.filter(p => p.status === 'published');
@@ -1958,7 +1958,7 @@ summary:hover{color:var(--ac)}
       const p = { kind: 'add', channel: $('#ctChannel').value,
                   title: ($('#ctTitle').value || '').trim(),
                   planned: $('#ctPlanned').value || '' };
-      try { const r = await api('/api/content', { method: 'POST', body: JSON.stringify(p) });
+      try { const r = await api('/api/v1/legacy/content', { method: 'POST', body: JSON.stringify(p) });
         toast(r.output || '已新增'); renderContent(); }
       catch (e) { toast('新增失败：' + e.message, 'err'); }
     });
@@ -1967,7 +1967,7 @@ summary:hover{color:var(--ac)}
       const p = { kind: 'update', id: v('#ctId'), status: $('#ctStatus').value,
                   published_at: v('#ctPublished'), views: v('#ctViews'),
                   likes: v('#ctLikes'), comments: v('#ctComments'), dms: v('#ctDms') };
-      try { const r = await api('/api/content', { method: 'POST', body: JSON.stringify(p) });
+      try { const r = await api('/api/v1/legacy/content', { method: 'POST', body: JSON.stringify(p) });
         toast(r.output || '已回填'); renderContent(); }
       catch (e) { toast('回填失败：' + e.message, 'err'); }
     });
@@ -1976,7 +1976,7 @@ summary:hover{color:var(--ac)}
     const box = $('#bizBody'); if (!box) return;
     box.innerHTML = '<p style="color:var(--muted)">加载中…</p>';
     let d;
-    try { d = (await api('/api/finance')).data || {}; }
+    try { d = (await api('/api/v1/legacy/finance')).data || {}; }
     catch (e) { box.innerHTML = '<p class="danger">加载失败：' + esc(e.message) + '</p>'; return; }
     const s = d.summary || {};
     $('#bizMeta').textContent = '已开票 ' + bizMoney(s.invoiced) + ' · 已回款 ' + bizMoney(s.paid);
@@ -2018,7 +2018,7 @@ summary:hover{color:var(--ac)}
                 due_at: v('#bzDate2'), signed_at: v('#bzDate'),
                 paid_at: v('#bzDate'), valid_until: v('#bzDate2'), no: v('#bzName') };
     try {
-      const r = await api('/api/finance', { method: 'POST', body: JSON.stringify(p) });
+      const r = await api('/api/v1/legacy/finance', { method: 'POST', body: JSON.stringify(p) });
       toast(r.output || '已新增');
       renderBiz();
     } catch (e) { toast('新增失败：' + e.message, 'err'); }
@@ -2207,7 +2207,7 @@ summary:hover{color:var(--ac)}
   async function doSync(btn) {
     btn.disabled = true; btn.textContent = '投递中…';
     try {
-      const r = await api('/api/sync', { method: 'POST', body: '{}' });
+      const r = await api('/api/v1/legacy/sync', { method: 'POST', body: '{}' });
       lastSyncOut = (r.output || '').trim() || (r.error || '').trim() || '完成';
       toast(r.ok ? '推进完成' : '推进失败：' + (r.error || ''), r.ok ? 'ok' : 'err');
       await load();
@@ -2223,7 +2223,7 @@ summary:hover{color:var(--ac)}
     const s = (S.subscriptions || [])[i];
     if (!s) return;
     try {
-      await api('/api/subscriptions/toggle', {
+      await api('/api/v1/legacy/subscriptions/toggle', {
         method: 'POST',
         body: JSON.stringify({ event_type: s.event_type, target: s.target, action: s.action, enabled: !s.enabled })
       });
@@ -2326,7 +2326,7 @@ summary:hover{color:var(--ac)}
       if (!evidence) { $('#taskErr').textContent = '没有证据不能关闭任务'; $('#evi').focus(); return; }
       closeBtn.disabled = true; closeBtn.textContent = '写入中…';
       try {
-        await api('/api/tasks/' + t.id + '/close', { method: 'POST', body: JSON.stringify({ evidence, verify: $('#vfy').value.trim() }) });
+        await api('/api/v1/legacy/tasks/' + t.id + '/close', { method: 'POST', body: JSON.stringify({ evidence, verify: $('#vfy').value.trim() }) });
         toast(t.id + ' 已关闭');
         await load();
         openTask(t.id);
@@ -2342,7 +2342,7 @@ summary:hover{color:var(--ac)}
       };
       const btn = $('#upBtn'); btn.disabled = true;
       try {
-        await api('/api/tasks/' + t.id + '/update', { method: 'POST', body: JSON.stringify(payload) });
+        await api('/api/v1/legacy/tasks/' + t.id + '/update', { method: 'POST', body: JSON.stringify(payload) });
         toast(t.id + ' 已更新');
         await load(); openTask(t.id);
       } catch (err) {
@@ -2608,7 +2608,7 @@ summary:hover{color:var(--ac)}
     if (!instruction) { $('#runErr').textContent = '请先输入指令'; return; }
     $('#runDiag').disabled = true; $('#runDiag').textContent = '识别中…';
     try {
-      const r = await api('/api/dispatch/diagnose', {
+      const r = await api('/api/v1/legacy/dispatch/diagnose', {
         method: 'POST', body: JSON.stringify({ instruction, task })
       });
       if (!r.ok) throw new Error(r.error || '识别失败');
@@ -2631,7 +2631,7 @@ summary:hover{color:var(--ac)}
     const dispatched = [];
     for (const role of runStartChecked) {
       try {
-        const r = await api('/api/agents/' + encodeURIComponent(role) + '/run', {
+        const r = await api('/api/v1/legacy/agents/' + encodeURIComponent(role) + '/run', {
           method: 'POST', body: JSON.stringify({ task, note: instruction })
         });
         const job = r.data || {};
@@ -2651,7 +2651,7 @@ summary:hover{color:var(--ac)}
 
   async function pollJobs() {
     let list;
-    try { list = (await api('/api/jobs')).data || []; } catch { return; }
+    try { list = (await api('/api/v1/legacy/jobs')).data || []; } catch { return; }
     if (!P._lastJobByRole) P._lastJobByRole = {};
     let fresh = 0, changed = 0;
     list.forEach(j => {
@@ -2678,7 +2678,7 @@ summary:hover{color:var(--ac)}
   // 产出文件 → 可直接在页面打开的链接（服务端只放行 agency/outputs 内文件）
   function outLink(p, text) {
     if (!p) return '';
-    return '<a href="/api/output?path=' + encodeURIComponent(p) + '" target="_blank">' +
+    return '<a href="/api/v1/legacy/output?path=' + encodeURIComponent(p) + '" target="_blank">' +
       esc(text || p) + '</a>';
   }
 
@@ -2696,7 +2696,7 @@ summary:hover{color:var(--ac)}
         '<b>' + esc(ownerLabel(j.role)) + ' · ' + esc(j.task || '自由任务') + '</b>' +
         '<small>' + esc(j.elapsed || 0) + 's · ' + Number(j.tokens || 0).toLocaleString() + ' token</small>' +
         '<p>' + (j.path
-          ? '<a href="/api/output?path=' + encodeURIComponent(j.path) + '" target="_blank">打开产出</a> <span class="mono">' + esc(j.path) + '</span>'
+          ? '<a href="/api/v1/legacy/output?path=' + encodeURIComponent(j.path) + '" target="_blank">打开产出</a> <span class="mono">' + esc(j.path) + '</span>'
           : esc(j.error || '无产出文件')) + '</p>' +
         '<div class="repAct"><button data-rep="' + esc(j.id) + '">看汇报</button>' +
           '<button class="ghost" data-rep-x="' + esc(j.id) + '">知道了</button></div></div>';
@@ -2719,7 +2719,7 @@ summary:hover{color:var(--ac)}
         '<div><dt>token</dt><dd>' + Number(j.tokens || 0).toLocaleString() + '</dd></div>' +
         '<div><dt>模型</dt><dd>' + esc(j.model || '—') + '</dd></div>' +
         '<div><dt>产出文件</dt><dd>' + (j.path
-          ? '<a href="/api/output?path=' + encodeURIComponent(j.path) + '" target="_blank">' + esc(j.path) + '</a>'
+          ? '<a href="/api/v1/legacy/output?path=' + encodeURIComponent(j.path) + '" target="_blank">' + esc(j.path) + '</a>'
           : '—') + '</dd></div>' +
       '</div>' +
       '<div class="blk"><h3>输出</h3><p>' + esc((j.output || '').trim() || j.error || '(无输出)') + '</p></div>' +
@@ -2754,7 +2754,7 @@ summary:hover{color:var(--ac)}
     const btn = $('#newSubmit');
     btn.disabled = true; btn.textContent = '写入中…';
     try {
-      const r = await api('/api/tasks', { method: 'POST', body: JSON.stringify(payload) });
+      const r = await api('/api/v1/legacy/tasks', { method: 'POST', body: JSON.stringify(payload) });
       toast((r.id || '任务') + ' 已写入台账');
       closeNew();
       await load();
