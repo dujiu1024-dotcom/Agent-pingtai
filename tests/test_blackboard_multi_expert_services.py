@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
-from agent_platform.contracts import BlackboardEntry, EntryKind, Scope
+from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 from agent_platform.workflows.expert_registry import ExpertProfile, InMemoryExpertRegistry
 
@@ -771,9 +772,6 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_idempotent_decision_record_cannot_be_mutated_after_acceptance(self):
-        from dataclasses import replace
-        from agent_platform.contracts import EntryStatus
-
         repository = InMemoryBlackboard()
         services = BlackboardMultiExpertServices(
             tenant_id="tenant-a", repository=repository, callbacks=WorkflowCallbacks(),
