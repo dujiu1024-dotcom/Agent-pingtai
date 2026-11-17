@@ -90,7 +90,11 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual({item.entity.entity_id for item in result.entities}, {"a", "b", "c", "d"})
         self.assertEqual({item.relation.relation_id for item in result.relations}, {"ab", "bc", "bd"})
         self.assertFalse(result.truncated)
-        self.assertTrue(all("project-a" in call for call in self.repository.calls if call[0] in {"get", "edges"}))
+        for call in self.repository.calls:
+            if call[0] == "get":
+                self.assertEqual(call[2], ("project-a",))
+            elif call[0] == "edges":
+                self.assertEqual(call[3], ("project-a",))
 
     async def test_neighbor_limit_reports_truncation_and_deduplicates(self):
         result = await self.service.neighbors(
@@ -132,6 +136,14 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.TimeoutError):
             await service.neighbors(
                 "a", allowed_project_ids=("project-a",), timeout_seconds=0.001
+            )
+
+    async def test_invalid_limits_and_directions_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "limit"):
+            await self.service.neighbors("a", allowed_project_ids=("project-a",), limit=0)
+        with self.assertRaisesRegex(ValueError, "direction"):
+            await self.service.neighbors(
+                "a", direction="sideways", allowed_project_ids=("project-a",)
             )
 
     async def test_project_scope_is_mandatory_for_project_entities(self):
