@@ -108,6 +108,25 @@ class PostgresRunContextSnapshotStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored, snapshot)
         self.assertIsNone(await self.store.latest("tenant-b", run_id))
 
+    async def test_context_service_rebuilds_from_postgres_adapter(self):
+        tenant_id = "tenant-a"
+        run_id = str(uuid4())
+        service = RunContextSnapshotService(tenant_id=tenant_id, store=self.store)
+        await service.ensure_initial(
+            tenant_id=tenant_id, run_id=run_id,
+            initial_context={"objective": "resume after worker loss"},
+        )
+        await service.capture(
+            tenant_id=tenant_id, run_id=run_id,
+            updates={"decisions": ["preserve the selected evidence"]},
+            references=[{"ref_id": "evidence-1", "pinned": True}],
+        )
+        rebuilt = await service.rebuild(tenant_id=tenant_id, run_id=run_id)
+        self.assertEqual(rebuilt["objective"], "resume after worker loss")
+        self.assertEqual(rebuilt["decisions"], ["preserve the selected evidence"])
+        self.assertEqual(rebuilt["references"][0]["ref_id"], "evidence-1")
+        self.assertEqual(rebuilt["snapshot_revision"], 2)
+
     async def test_append_rejects_revision_gap_or_duplicate(self):
         tenant_id = "tenant-a"
         run_id = str(uuid4())
