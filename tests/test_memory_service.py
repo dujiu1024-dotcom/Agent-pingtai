@@ -32,7 +32,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_candidate_is_not_retrievable_until_confirmed(self):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="prefers concise reports",source_ref="conversation:123",confidence=.9,created_by="extractor")
         await service.propose(c); p=MemoryPrincipal(tenant_id="t",user_id="u1"); self.assertEqual(await service.retrieve(principal=p),[])
-        await service.confirm(tenant_id="t",memory_id=c.memory_id,confirmer_id="u1"); self.assertEqual(len(await service.retrieve(principal=p)),1)
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u1", permissions=frozenset({"memory.manage"})), memory_id=c.memory_id); self.assertEqual(len(await service.retrieve(principal=p)),1)
     async def test_reject_retries_derived_data_cleanup_after_tombstone(self):
         attempts = []
 
@@ -49,23 +49,23 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.propose(candidate)
         with self.assertRaisesRegex(RuntimeError, "index unavailable"):
-            await service.reject(tenant_id="t", memory_id=candidate.memory_id)
+            await service.reject(principal=MemoryPrincipal(tenant_id="t", user_id="reviewer", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         self.assertEqual(
             (await service.repository.get("t", candidate.memory_id)).status.value,
             "deleted",
         )
-        self.assertTrue(await service.reject(tenant_id="t", memory_id=candidate.memory_id))
+        self.assertTrue(await service.reject(principal=MemoryPrincipal(tenant_id="t", user_id="reviewer", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id))
         self.assertEqual(attempts, [("t", candidate.memory_id)] * 2)
 
     async def test_user_scope_isolation_and_forget(self):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="x",source_ref="chat:1",confidence=.8,created_by="u1")
-        await service.propose(c); await service.confirm(tenant_id="t",memory_id=c.memory_id,confirmer_id="u1")
+        await service.propose(c); await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u1", permissions=frozenset({"memory.manage"})), memory_id=c.memory_id)
         self.assertEqual(await service.retrieve(principal=MemoryPrincipal(tenant_id="t",user_id="u2")),[])
         self.assertTrue(await service.forget(principal=MemoryPrincipal(tenant_id="t",user_id="u1"),memory_id=c.memory_id))
         self.assertEqual(await service.retrieve(principal=MemoryPrincipal(tenant_id="t",user_id="u1")),[])
     async def test_tenant_boundary(self):
         service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t1",scope=MemoryScope.TENANT,scope_id="t1",content="policy",source_ref="doc:1",confidence=1,created_by="admin")
-        await service.propose(c); await service.confirm(tenant_id="t1",memory_id=c.memory_id,confirmer_id="admin")
+        await service.propose(c); await service.confirm(principal=MemoryPrincipal(tenant_id="t1", user_id="admin", permissions=frozenset({"memory.manage"})), memory_id=c.memory_id)
         self.assertEqual(await service.retrieve(principal=MemoryPrincipal(tenant_id="t2",user_id="u")),[])
 
     async def test_correct_export_and_expiry(self):
@@ -74,7 +74,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         expiry=datetime.now(timezone.utc)+timedelta(days=1)
         candidate=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u",content="old",source_ref="chat:1",confidence=.7,created_by="extractor",expires_at=expiry)
         await service.propose(candidate)
-        await service.confirm(tenant_id="t",memory_id=candidate.memory_id,confirmer_id="u")
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         principal=MemoryPrincipal(tenant_id="t",user_id="u")
         corrected=await service.correct(principal=principal,memory_id=candidate.memory_id,content="new",source_ref="chat:2")
         self.assertEqual(corrected.candidate.content,"new")
@@ -89,7 +89,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         service=MemoryService(InMemoryMemoryRepository())
         first=MemoryCandidate(tenant_id="t",scope=MemoryScope.TENANT,scope_id="t",content="old policy",source_ref="policy:1",confidence=.9,created_by="admin",conflict_key="policy.version")
         await service.propose(first)
-        await service.confirm(tenant_id="t",memory_id=first.memory_id,confirmer_id="admin")
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="admin", permissions=frozenset({"memory.manage"})), memory_id=first.memory_id)
         second=MemoryCandidate(tenant_id="t",scope=MemoryScope.TENANT,scope_id="t",content="new policy",source_ref="policy:2",confidence=.95,created_by="admin",conflict_key="policy.version")
         proposed=await service.propose(second)
         self.assertEqual(proposed.status,MemoryStatus.CONFLICT)
@@ -108,9 +108,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             confidence=.9, created_by="extractor",
         )
         await service.propose(candidate)
-        await service.confirm(
-            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="reviewer",
-        )
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="reviewer", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         reader = MemoryPrincipal(
             tenant_id="t", user_id="reader",
             project_ids=frozenset({"project-a"}),
@@ -147,9 +145,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             confidence=.9, created_by="extractor",
         )
         await service.propose(candidate)
-        await service.confirm(
-            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="reviewer",
-        )
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="reviewer", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         runner = MemoryPrincipal(
             tenant_id="t", user_id="runner", agent_ids=frozenset({"agent-a"}),
         )
@@ -230,7 +226,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         principal = MemoryPrincipal(tenant_id='t', user_id='u')
         turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session:s:user:m3:assistant:m4', user_message='Fact', assistant_message='Acknowledged')
         first = (await pipeline.propose_from_turn(principal=principal, turn=turn))[0]
-        await memory.confirm(tenant_id='t', memory_id=first.candidate.memory_id, confirmer_id='u')
+        await memory.confirm(principal=MemoryPrincipal(tenant_id='t', user_id='u', permissions=frozenset({"memory.manage"})), memory_id=first.candidate.memory_id)
         corrected = await memory.correct(principal=principal, memory_id=first.candidate.memory_id, content='user corrected', source_ref='manual:1')
         repeated = (await pipeline.propose_from_turn(principal=principal, turn=turn))[0]
         self.assertEqual(repeated.candidate.content, 'user corrected')
@@ -303,8 +299,8 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         service=MemoryService(InMemoryMemoryRepository())
         own=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="old",source_ref="chat:1",confidence=.8,created_by="u1",conflict_key="preference")
         other=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u2",content="other user's preference",source_ref="chat:2",confidence=.8,created_by="u2",conflict_key="preference")
-        await service.propose(own);await service.confirm(tenant_id="t",memory_id=own.memory_id,confirmer_id="u1")
-        await service.propose(other);await service.confirm(tenant_id="t",memory_id=other.memory_id,confirmer_id="u2")
+        await service.propose(own);await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u1", permissions=frozenset({"memory.manage"})), memory_id=own.memory_id)
+        await service.propose(other);await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u2", permissions=frozenset({"memory.manage"})), memory_id=other.memory_id)
         revised=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="new",source_ref="chat:3",confidence=.9,created_by="u1",conflict_key="preference")
         conflict=await service.propose(revised)
         admin=MemoryPrincipal(tenant_id="t",user_id="admin",permissions=frozenset({"memory.manage"}))
@@ -322,7 +318,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         service=MemoryService(InMemoryMemoryRepository(),on_delete=cleanup)
         candidate=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u",content="private fact",source_ref="chat:1",confidence=.9,created_by="u")
         await service.propose(candidate)
-        await service.confirm(tenant_id="t",memory_id=candidate.memory_id,confirmer_id="u")
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         principal=MemoryPrincipal(tenant_id="t",user_id="u")
         with self.assertRaisesRegex(RuntimeError,"cache unavailable"):
             await service.forget(principal=principal,memory_id=candidate.memory_id)
@@ -349,7 +345,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
         )
         await service.propose(candidate)
-        await service.confirm(tenant_id="t", memory_id=candidate.memory_id, confirmer_id="u")
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         with self.assertRaisesRegex(RuntimeError, "index unavailable"):
             await service.expire_due(tenant_id="t")
         self.assertEqual((await service.repository.get("t", candidate.memory_id)).status.value, "expired")
@@ -365,9 +361,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             confidence=0.8, created_by="extractor",
         )
         await service.propose(candidate)
-        await service.confirm(
-            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="u1",
-        )
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u1", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         owner = MemoryPrincipal(tenant_id="t", user_id="u1")
         await service.correct(
             principal=owner, memory_id=candidate.memory_id,
@@ -393,9 +387,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             confidence=0.8, created_by="extractor",
         )
         await service.propose(candidate)
-        await service.confirm(
-            tenant_id="t", memory_id=candidate.memory_id, confirmer_id="u",
-        )
+        await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         principal = MemoryPrincipal(tenant_id="t", user_id="u")
         self.assertTrue(await service.forget(
             principal=principal, memory_id=candidate.memory_id,
@@ -423,10 +415,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             created_by="user-a",
         )
         await service.propose(candidate)
-        await service.confirm(
-            tenant_id="tenant-a", memory_id=candidate.memory_id,
-            confirmer_id="user-a",
-        )
+        await service.confirm(principal=MemoryPrincipal(tenant_id="tenant-a", user_id="user-a", permissions=frozenset({"memory.manage"})), memory_id=candidate.memory_id)
         principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
 
         with self.assertRaisesRegex(RuntimeError, "vector index unavailable"):
@@ -457,9 +446,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             created_by="admin", conflict_key="policy",
         )
         await service.propose(first)
-        await service.confirm(
-            tenant_id="tenant-a", memory_id=first.memory_id, confirmer_id="admin",
-        )
+        await service.confirm(principal=MemoryPrincipal(tenant_id="tenant-a", user_id="admin", permissions=frozenset({"memory.manage"})), memory_id=first.memory_id)
         second = MemoryCandidate(
             tenant_id="tenant-a", scope=MemoryScope.TENANT, scope_id="tenant-a",
             content="new policy", source_ref="policy:new", confidence=0.9,
@@ -473,3 +460,63 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await service.retrieve(principal=principal), [
             await repository.get("tenant-a", second.memory_id)
         ])
+
+    async def test_candidate_review_requires_scope_authorization(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="owner",
+            content="private preference", source_ref="turn:review",
+            confidence=0.9, created_by="extractor",
+        )
+        await service.propose(candidate)
+        intruder = MemoryPrincipal(tenant_id="t", user_id="intruder")
+        with self.assertRaises(PermissionError):
+            await service.confirm(principal=intruder, memory_id=candidate.memory_id)
+        with self.assertRaises(PermissionError):
+            await service.reject(principal=intruder, memory_id=candidate.memory_id)
+        owner = MemoryPrincipal(tenant_id="t", user_id="owner")
+        confirmed = await service.confirm(principal=owner, memory_id=candidate.memory_id)
+        self.assertEqual(confirmed.confirmed_by, "owner")
+
+    async def test_conflict_resolution_retries_superseded_cleanup(self):
+        calls = []
+        async def cleanup(tenant_id, memory_id):
+            calls.append(memory_id)
+            if len(calls) == 1:
+                raise RuntimeError("index temporarily unavailable")
+
+        repository = InMemoryMemoryRepository()
+        service = MemoryService(repository, on_delete=cleanup)
+        admin = MemoryPrincipal(
+            tenant_id="t", user_id="admin",
+            permissions=frozenset({"memory.manage"}),
+        )
+        previous = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.TENANT, scope_id="t",
+            content="old policy", source_ref="policy:old", confidence=0.8,
+            created_by="admin", conflict_key="policy",
+        )
+        await service.propose(previous)
+        await service.confirm(principal=admin, memory_id=previous.memory_id)
+        proposed = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.TENANT, scope_id="t",
+            content="new policy", source_ref="policy:new", confidence=0.9,
+            created_by="admin", conflict_key="policy",
+        )
+        await service.propose(proposed)
+        with self.assertRaisesRegex(RuntimeError, "index temporarily unavailable"):
+            await service.resolve_conflict(
+                principal=admin, conflict_key="policy",
+                selected_memory_id=proposed.memory_id,
+            )
+        self.assertEqual(
+            (await repository.get("t", previous.memory_id)).status.value,
+            "superseded",
+        )
+        selected = await service.resolve_conflict(
+            principal=admin, conflict_key="policy",
+            selected_memory_id=proposed.memory_id,
+        )
+        self.assertEqual(selected.status.value, "active")
+        self.assertEqual(calls, [previous.memory_id, previous.memory_id])
+
