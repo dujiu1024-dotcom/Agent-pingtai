@@ -237,7 +237,9 @@ class PostgresSessionRepository:
                     """INSERT INTO platform_messages
                        (tenant_id,message_id,session_id,role,content,actor_id,task_id,run_id,
                         asset_ids,metadata,token_usage,created_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (tenant_id,message_id) DO NOTHING
+                       RETURNING message_id""",
                     (self.tenant_id, _uuid(message.message_id), _uuid(message.session_id),
                      message.role.value, message.content, message.actor_id, message.task_id,
                      message.run_id, _jsonb(list(message.asset_ids)),
@@ -250,6 +252,23 @@ class PostgresSessionRepository:
                      }) if message.token_usage is not None else None,
                      message.created_at),
                 )
+                if await cursor.fetchone() is None:
+                    existing_cursor = await connection.execute(
+                        """SELECT session_id,role,content,actor_id,task_id,run_id,asset_ids,metadata
+                           FROM platform_messages WHERE tenant_id=%s AND message_id=%s""",
+                        (self.tenant_id, _uuid(message.message_id)),
+                    )
+                    existing = await existing_cursor.fetchone()
+                    if (
+                        existing is None
+                        or str(existing["session_id"]) != message.session_id
+                        or existing["role"] != message.role.value
+                        or existing["content"] != message.content
+                        or existing["actor_id"] != message.actor_id
+                        or existing["task_id"] != message.task_id
+                        or existing["run_id"] != message.run_id
+                    ):
+                        raise SessionError("message id already belongs to different content")
                 await connection.execute(
                     "UPDATE platform_conversation_sessions SET updated_at=now() WHERE tenant_id=%s AND session_id=%s",
                     (self.tenant_id, _uuid(message.session_id)),
