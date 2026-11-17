@@ -1,5 +1,6 @@
 """Real Redis Streams integration tests; enabled only with AGENT_PLATFORM_TEST_REDIS_URL."""
 
+import json
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ if REDIS_URL:
     from agent_platform.events.redis_streams import RedisStreamsTransport
 if DSN and REDIS_URL:
     from psycopg import AsyncConnection
+    from psycopg.rows import dict_row
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.outbox_replay import PostgresOutboxReplayStore
 
@@ -290,13 +292,11 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     """INSERT INTO platform_outbox
                        (tenant_id, event_id, topic, payload, published_at)
                        VALUES (%s, %s, %s, %s::jsonb, now())""",
-                    (tenant_id, event_id, topic, __import__("json").dumps(payload)),
+                    (tenant_id, event_id, topic, json.dumps(payload)),
                 )
 
             async def connect():
-                return await AsyncConnection.connect(DSN, row_factory=__import__(
-                    "psycopg.rows", fromlist=["dict_row"]
-                ).dict_row)
+                return await AsyncConnection.connect(DSN, row_factory=dict_row)
 
             await transport.ensure_group(
                 tenant_id=tenant_id, topic=topic, group="recovery-group"
@@ -341,7 +341,7 @@ class RedisStreamsIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(recovered), 1)
             _recovered_message_id, fields = recovered[0]
             self.assertEqual(fields["event_id"], event_id)
-            self.assertEqual(__import__("json").loads(fields["payload"]), payload)
+            self.assertEqual(json.loads(fields["payload"]), payload)
 
             async with await connect() as conn:
                 row = await (await conn.execute(
