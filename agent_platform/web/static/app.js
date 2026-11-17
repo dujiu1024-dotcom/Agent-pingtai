@@ -165,3 +165,43 @@ document.addEventListener("click",async e=>{
   if(b.dataset.batchRetry){const result=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batchRetry)+"/retry",{method:"POST",body:JSON.stringify({idempotency_key:"workbench-retry-"+Date.now()})});toast("失败任务已重新提交："+(result.batch_id||""));await renderBatchWorkbench()}
  }catch(x){toast(x.message)}
 });
+
+
+// C-24-03: Query Test uses the existing knowledge/RAG pipeline through the
+// tenant-authenticated playground API; it never performs client-side retrieval.
+const ragPlaygroundBaseRender=render;
+async function renderRagPlayground(){
+ const root=$("#view");
+ if(!S.features.rag_query){root.innerHTML=panel("RAG Query 测试未启用","<p>后端尚未配置可切换的 embedding/rerank RAG resolver。</p>");return}
+ let options;
+ try{options=await api(API+"/rag-playground/options")}catch(e){root.innerHTML=panel("RAG Query 测试不可用","<p class='error'>"+esc(e.message)+"</p>");return}
+ const models=options.embedding_models||[];
+ root.innerHTML=panel("检索参数","<form id='rag-query-form'><label>问题<textarea name='query' required maxlength='4096' rows='3' placeholder='输入需要验证的知识库问题'></textarea></label><div class='form-grid'><label>Embedding 模型<select name='embedding_model'>"+models.map(m=>"<option value='"+esc(m)+"' "+(m===options.default_embedding_model?"selected":"")+">"+esc(m)+"</option>").join("")+"</select></label><label>Top-K<input name='top_k' type='number' min='1' max='"+esc(options.max_top_k||20)+"' value='5'></label><label>最低相似度阈值<input name='min_score' type='number' min='0' max='1' step='0.01' value='0'></label><label><span>启用 Rerank</span><input name='rerank' type='checkbox'></label></div><button class='button primary' type='submit'>执行检索与答案生成</button></form>")+"<div id='rag-query-results'></div>";
+}
+const ragPlaygroundRender=render;
+render=async function(){if(S.view==="rag-test"){await renderRagPlayground();return}return ragPlaygroundRender()};
+document.addEventListener("submit",async e=>{
+ const form=e.target;if(form.id!=="rag-query-form")return;e.preventDefault();
+ const d=new FormData(form),query=String(d.get("query")||"").trim(),target=$("#rag-query-results");
+ if(!query){toast("请输入问题");return}
+ const topK=Number(d.get("top_k")),threshold=Number(d.get("min_score"));
+ if(!Number.isInteger(topK)||topK<1||topK>20||!Number.isFinite(threshold)||threshold<0||threshold>1){toast("Top-K 或相似度阈值无效");return}
+ target.innerHTML="<section class='panel'>正在执行检索与答案生成…</section>";
+ try{
+  const result=await api(API+"/rag-playground/query",{method:"POST",body:JSON.stringify({
+   query,top_k:topK,min_score:threshold,embedding_model:String(d.get("embedding_model")||""),
+   rerank:d.get("rerank")==="on"
+  })});
+  const hits=result.retrieved||[];
+  const hitRows=hits.map((hit,index)=>{
+   const score=Number(hit.score),width=Math.max(0,Math.min(100,score*100));
+   const tone=score>=0.8?"#15803d":score>=0.5?"#b45309":"#64748b";
+   const source=hit.source_url?"<a href='"+esc(hit.source_url)+"' target='_blank' rel='noopener noreferrer'>"+esc(hit.title||hit.source_uri)+"</a>":esc(hit.title||hit.source_uri);
+   return "<article class='panel rag-hit'><div class='panel-head'><strong>#"+(index+1)+" · "+source+"</strong><strong style='color:"+tone+"'>"+(Number.isFinite(score)?score.toFixed(4):"—")+"</strong></div><div style='height:7px;background:var(--border,#e5e7eb);border-radius:5px;overflow:hidden'><div style='height:7px;width:"+width+"%;background:"+tone+"'></div></div><p>"+esc(hit.text)+"</p><small class='subline'>Chunk "+esc(hit.chunk_id)+" · 文档 "+esc(hit.document_id)+" · v"+esc(hit.document_version)+(hit.page_number?" · 第 "+esc(hit.page_number)+" 页":"")+" · offset "+esc(hit.start_offset)+"-"+esc(hit.end_offset)+"</small></article>";
+  }).join("");
+  const answer=result.abstained?"<p class='subtle'>未生成答案："+esc(result.reason||"检索结果不足")+"</p>":"<div class='rag-answer'>"+esc(result.answer)+"</div>";
+  const meta="<p class='subtle'>Embedding："+esc(result.embedding_model)+" · Rerank："+(result.rerank?"开启":"关闭")+" · Top-K："+esc(result.top_k)+" · 阈值："+esc(result.min_score)+" · 召回："+hits.length+" 条</p>";
+  const citations=(result.citations||[]).map(x=>"<li>"+esc(x.title||x.source_uri||x.citation_id)+"</li>").join("");
+  target.innerHTML=panel("生成答案",meta+answer+(citations?"<h4>引用来源</h4><ul>"+citations+"</ul>":""))+panel("Top-K 召回 Chunk",hitRows||"<p class='empty'>没有达到阈值的授权检索结果</p>");
+ }catch(x){target.innerHTML=panel("Query 执行失败","<p class='error'>"+esc(x.message)+"</p>")}
+});
