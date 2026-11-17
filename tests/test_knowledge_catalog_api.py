@@ -111,8 +111,6 @@ class KnowledgeCatalogApiTests(unittest.TestCase):
         self.assertEqual(good.status_code, 201)
         self.assertEqual(good.json()["status"], "pending")
 
-
-
     def test_collection_rejects_private_and_cross_project_documents(self):
         import asyncio
 
@@ -157,6 +155,7 @@ class KnowledgeCatalogApiTests(unittest.TestCase):
                 url, json=payload, headers={"x-permissions": "knowledge.manage"},
             )
             self.assertEqual(response.status_code, 400, response.text)
+
 
 if __name__ == "__main__":
     unittest.main()
