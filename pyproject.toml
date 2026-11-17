@@ -21,6 +21,7 @@ include = [
   "scripts/verify_platform_backups.py",
   "scripts/disaster_recovery.py",
   "tests/test_legacy_inventory.py",
+  "tests/test_issue_19_a_19_01_single_writer_mapping.py",
   "scripts/inventory_legacy_system.py",
   "scripts/run_legacy_migration.py",
   "tests/test_release_gate_evidence.py",

@@ -34,12 +34,14 @@ class MigrationCutoverTests(unittest.TestCase):
     def test_dual_write_keeps_legacy_authoritative_until_switch(self):
         plan = plan_write(phase=CutoverPhase.DUAL_WRITE)
         self.assertEqual(plan.authoritative_system, "legacy")
-        self.assertEqual(plan.write_systems, ("legacy", "target"))
+        self.assertEqual(plan.write_systems, ("legacy",))
+        self.assertEqual(plan.replication_targets, ("target",))
 
     def test_target_primary_writes_both_during_rollback_window(self):
         plan = plan_write(phase=CutoverPhase.TARGET_PRIMARY)
         self.assertEqual(plan.authoritative_system, "target")
-        self.assertEqual(plan.write_systems, ("target", "legacy"))
+        self.assertEqual(plan.write_systems, ("target",))
+        self.assertEqual(plan.replication_targets, ("legacy",))
 
     def test_canary_assignment_is_stable_for_same_tenant_and_request(self):
         first = choose_read_plan(
@@ -111,7 +113,7 @@ class MigrationCutoverTests(unittest.TestCase):
         self.assertFalse(not_ready.allowed)
         self.assertIn("legacy_writes_still_observed", not_ready.reasons)
         self.assertEqual(plan_write(phase=CutoverPhase.TARGET_PRIMARY).write_systems,
-                         ("target", "legacy"))
+                         ("target",))
 
         ready = evaluate_cutover(
             current=CutoverPhase.TARGET_PRIMARY,

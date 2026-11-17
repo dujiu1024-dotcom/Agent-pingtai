@@ -109,18 +109,33 @@ _LEGACY_ROOTS = ("agency.py", "db.py", "memory.py", "vectors.py", "conversation.
                  "company", "templates")
 _BUSINESS_MAPPINGS = (
     {"source": "agency/state/agency.db:projects", "target": "agent_platform tenancy/project domain",
-     "status": "candidate_unverified", "evidence_required": "project identifiers, ownership, lifecycle and tenant boundary"},
+     "owner": "platform-data", "mapping": "Preserve project identity; reconcile tenant ownership, lifecycle and membership semantics.", "status": "candidate_unverified", "evidence_required": "project identifiers, ownership, lifecycle and tenant boundary"},
     {"source": "agency/state/agency.db:tasks;events;reminders;agent_runs;dead_letter", "target": "agent_platform task_center/runs/events",
-     "status": "candidate_unverified", "evidence_required": "task state machine, dependencies, event idempotency and run linkage"},
+     "owner": "runtime", "mapping": "Normalize tasks, reminders, runs and events while preserving dependencies and idempotency lineage.", "status": "candidate_unverified", "evidence_required": "task state machine, dependencies, event idempotency and run linkage"},
     {"source": "agency/state/agency.db:users;conversations", "target": "agent_platform identity/sessions",
-     "status": "candidate_unverified", "evidence_required": "open_id provider binding, account claims, roles and conversation ownership"},
+     "owner": "identity-runtime", "mapping": "Resolve provider identity and conversation ownership before mapping users to principals and conversations to sessions.", "status": "candidate_unverified", "evidence_required": "open_id provider binding, account claims, roles and conversation ownership"},
     {"source": "agency/state/agency.db:clients;quotes;contracts;invoices;payments;costs", "target": "business/finance domain (not yet proven in platform)",
-     "status": "gap_requires_domain_design", "evidence_required": "customer identity, contractual lineage, financial precision and retention"},
+     "owner": "business-finance-domain", "mapping": "No approved target model yet; retain as an explicit domain-design gap pending financial and contractual mapping.", "status": "gap_requires_domain_design", "evidence_required": "customer identity, contractual lineage, financial precision and retention"},
     {"source": "agency/state/agency.db:facts;docs;embeddings;entities;relations", "target": "agent_platform knowledge/RAG",
-     "status": "candidate_unverified", "evidence_required": "source lineage, classification, chunk identity, vector model/dimensions and deletion propagation"},
+     "owner": "knowledge", "mapping": "Map source documents and facts to versioned documents/chunks/entities; validate embedding and citation lineage.", "status": "candidate_unverified", "evidence_required": "source lineage, classification, chunk identity, vector model/dimensions and deletion propagation"},
     {"source": "agency/state/agency.db:feishu_tasks;dependencies;deliveries;content_plan;subscriptions;config_kv", "target": "agent_platform connectors/integrations and product-specific domains",
-     "status": "candidate_unverified", "evidence_required": "remote IDs, sync conflict policy, credential rotation and business ownership"},
+     "owner": "integrations", "mapping": "Map remote object IDs and sync state to connector resources; preserve delivery/dependency relationships and credential references.", "status": "candidate_unverified", "evidence_required": "remote IDs, sync conflict policy, credential rotation and business ownership"},
 )
+
+
+def validate_business_mappings(mappings: Iterable[dict[str, Any]]) -> tuple[dict[str, Any], ...]:
+    """Require a unique source, target mapping and accountable owner per data object."""
+    records = tuple(dict(item) for item in mappings)
+    seen_sources: set[str] = set()
+    for item in records:
+        for field_name in ("source", "target", "mapping", "owner"):
+            value = item.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"business mapping {field_name} is required")
+        if item["source"] in seen_sources:
+            raise ValueError("business mapping sources must be unique")
+        seen_sources.add(item["source"])
+    return records
 
 
 def _risk(path: str, category: str, size: int = 0,
@@ -291,7 +306,7 @@ def build_legacy_inventory(root: str | Path,
                   "items": files},
         "database": db,
         "identity_relations": db.get("identity_relations", []),
-        "business_mappings": list(_BUSINESS_MAPPINGS),
+        "business_mappings": list(validate_business_mappings(_BUSINESS_MAPPINGS)),
         "migration_candidates": inventory_report(),
         "risk_summary": dict(sorted(risk_counts.items())),
         "limitations": [

@@ -97,6 +97,7 @@ class CutoverDecision:
 class WritePlan:
     authoritative_system: str
     write_systems: tuple[str, ...]
+    replication_targets: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -144,9 +145,9 @@ def plan_write(*, phase: CutoverPhase) -> WritePlan:
     if phase in {CutoverPhase.LEGACY_PRIMARY, CutoverPhase.ROLLED_BACK}:
         return WritePlan("legacy", ("legacy",))
     if phase == CutoverPhase.DUAL_WRITE:
-        return WritePlan("legacy", ("legacy", "target"))
+        return WritePlan("legacy", ("legacy",), ("target",))
     if phase in {CutoverPhase.CANARY, CutoverPhase.TARGET_PRIMARY}:
-        return WritePlan("target", ("target", "legacy"))
+        return WritePlan("target", ("target",), ("legacy",))
     if phase == CutoverPhase.RETIRED:
         return WritePlan("target", ("target",))
     raise ValueError("unsupported cutover phase")
