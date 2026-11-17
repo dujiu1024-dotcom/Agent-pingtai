@@ -6,6 +6,8 @@ all run inputs immutable so a report can be reproduced from its dataset version.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from dataclasses import dataclass
 from math import log2
 from statistics import mean
@@ -124,12 +126,36 @@ class EvaluationReport:
     tenant_id: str
     dataset_id: str
     dataset_version: int
+    dataset_sha256: str
     endpoint_id: str
     model_key: str
     model_version: str
     concurrency_limit: int
     case_metrics: tuple[CaseMetrics, ...]
     metrics: dict[str, float | None]
+
+
+def dataset_fingerprint(dataset: EvaluationDataset) -> str:
+    """Return a canonical SHA-256 for the exact ordered dataset contents."""
+    payload = {
+        "dataset_id": dataset.dataset_id,
+        "version": dataset.version,
+        "cases": [
+            {
+                "case_id": case.case_id,
+                "query": case.query,
+                "expected_answer_terms": list(case.expected_answer_terms),
+                "forbidden_answer_terms": list(case.forbidden_answer_terms),
+                "relevant_document_ids": list(case.relevant_document_ids),
+                "required_citation_document_ids": list(case.required_citation_document_ids),
+            }
+            for case in dataset.cases
+        ],
+    }
+    canonical = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 class AgentRAGEvaluator(Protocol):
@@ -253,6 +279,7 @@ class AgentRAGEvaluationService:
         report = EvaluationReport(
             run_id=str(uuid4()), tenant_id=plan.tenant_id,
             dataset_id=dataset.dataset_id, dataset_version=dataset.version,
+            dataset_sha256=dataset_fingerprint(dataset),
             endpoint_id=plan.endpoint.endpoint_id, model_key=plan.endpoint.model_key,
             model_version=plan.endpoint.model_version,
             concurrency_limit=plan.concurrency_limit, case_metrics=metrics,
