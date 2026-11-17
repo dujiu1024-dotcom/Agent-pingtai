@@ -190,7 +190,8 @@ include = [
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
-  "tests/test_issue_665_s_665_03_fault_drill.py",
+  "scripts/benchmark_switch_performance.py",
+  "tests/test_issue_665_s_665_02_benchmark.py",
 ]
 
 [tool.ruff.lint]
