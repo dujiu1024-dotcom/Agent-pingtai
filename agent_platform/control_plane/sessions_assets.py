@@ -587,8 +587,8 @@ class SessionAssetService:
             raise SessionError("media type is not allowed")
         if session_id is not None:
             session = await self.repository.get_session(tenant_id, session_id)
-            if session is None:
-                raise SessionNotFound("session not found")
+            if session is None or session.status != "active":
+                raise SessionNotFound("session not found or inactive")
             if project_id is None:
                 project_id = session.project_id
             elif project_id != session.project_id:
