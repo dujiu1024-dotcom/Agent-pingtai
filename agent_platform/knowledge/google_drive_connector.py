@@ -60,7 +60,7 @@ class GoogleDriveKnowledgeConnector(BaseConnector):
         self,
         *,
         client: Any,
-        credentials: GoogleDriveCredentialResolver,
+        credentials: GoogleDriveCredentialResolver | None = None,
         credential_ref: str,
         document_factory: DocumentFactory,
         max_file_bytes: int = 25 * 1024 * 1024,
