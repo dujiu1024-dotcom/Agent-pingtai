@@ -151,22 +151,26 @@ class PostgresEvaluationRepository:
             rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-    async def latest_reports(self, dataset_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    async def latest_reports(
+        self, dataset_id: str, *, tenant_id: str, limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        if not dataset_id.strip() or not tenant_id.strip():
+            raise ValueError("dataset_id and tenant_id are required")
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         connection = await self._connect()
         async with connection:
             cursor = await connection.execute(
-                """SELECT eval_run_id,dataset_id,dataset_version,model_key,report,
+                """SELECT eval_run_id,tenant_id,dataset_id,dataset_version,model_key,report,
                           gate_passed,created_at
-                   FROM platform_eval_runs WHERE dataset_id=%s
+                   FROM platform_eval_runs WHERE dataset_id=%s AND tenant_id=%s
                    ORDER BY created_at DESC LIMIT %s""",
-                (dataset_id,limit),
+                (dataset_id,tenant_id,limit),
             )
             rows = await cursor.fetchall()
         return [{
-            "eval_run_id": str(row["eval_run_id"]), "dataset_id": row["dataset_id"],
-            "dataset_version": row["dataset_version"], "model_key": row["model_key"],
-            "report": row["report"], "gate_passed": row["gate_passed"],
-            "created_at": row["created_at"],
+            "eval_run_id": str(row["eval_run_id"]), "tenant_id": row["tenant_id"],
+            "dataset_id": row["dataset_id"], "dataset_version": row["dataset_version"],
+            "model_key": row["model_key"], "report": row["report"],
+            "gate_passed": row["gate_passed"], "created_at": row["created_at"],
         } for row in rows]

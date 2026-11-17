@@ -266,4 +266,5 @@ def build_multi_expert_workflow(
             ("reject", "__end__"),
         ),
         checkpointer=checkpointer,
+        tool_using_nodes=(),
     )

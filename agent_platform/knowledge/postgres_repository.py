@@ -140,6 +140,47 @@ class PostgresKnowledgeRepository:
                 )
                 return cur.rowcount > 0
 
+    async def replace_document_access(
+        self, tenant_id: str, document_id: str,
+        grants: Sequence[tuple[str, str, str]], granted_by: str,
+    ) -> None:
+        if not granted_by.strip():
+            raise ValueError("ACL grantor is required")
+        normalized = set(grants)
+        if any(
+            kind not in {"user", "role", "project"}
+            or permission not in {"read", "manage"}
+            or not identifier.strip()
+            for kind, identifier, permission in normalized
+        ):
+            raise ValueError("invalid connector ACL grant")
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    "SELECT 1 FROM knowledge_documents WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL ORDER BY version DESC LIMIT 1",
+                    (tenant_id, document_id),
+                )
+                if await cur.fetchone() is None:
+                    raise ValueError("document not found")
+                # Enforce ACL before replacing grants. An empty grant set means
+                # source-side sharing is private to the mapped owner only.
+                await conn.execute(
+                    "UPDATE knowledge_documents SET acl_enforced=true WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",
+                    (tenant_id, document_id),
+                )
+                await conn.execute(
+                    "DELETE FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",
+                    (tenant_id, document_id),
+                )
+                for kind, identifier, permission in sorted(normalized):
+                    await conn.execute(
+                        """INSERT INTO knowledge_document_acl
+                        (tenant_id,document_id,principal_type,principal_id,permission,granted_by)
+                        VALUES(%s,%s,%s,%s,%s,%s)""",
+                        (tenant_id, document_id, kind, identifier, permission, granted_by),
+                    )
+
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
         conn=await self._connect()
         async with conn:

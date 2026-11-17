@@ -21,6 +21,7 @@ class TaskLease:
     attempts: int
     max_attempts: int
     lease_owner: str
+    status: str = "running"
 
 
 class TaskCenterError(ValueError):
@@ -156,7 +157,11 @@ class PostgresTaskCenterService:
         result = self._serialize(row)
         if row["status"] == "cancelling":
             if row["run_id"] and self._cancel_run:
-                await self._cancel_run(self.tenant_id, str(row["run_id"]))
+                cancellation = await self._cancel_run(self.tenant_id, str(row["run_id"]))
+                run_status = cancellation.get("status") if isinstance(cancellation, Mapping) else getattr(cancellation, "status", None)
+                run_status = getattr(run_status, "value", run_status)
+                if run_status == "cancelled":
+                    await self.acknowledge_cancel_by_id(task_id=task_id)
             elif row["run_id"] and self._cancel_run is None:
                 db = await self._connect()
                 async with db:
@@ -166,7 +171,8 @@ class PostgresTaskCenterService:
                         (self.tenant_id, UUID(task_id)),
                     )
                 raise TaskCenterError("running task cancellation requires a Run cancellation handler")
-            await self.acknowledge_cancel_by_id(task_id=task_id)
+            elif not row["run_id"]:
+                await self.acknowledge_cancel_by_id(task_id=task_id)
             result = await self.get_task(tenant_id=self.tenant_id, task_id=task_id) or result
         return result
 
@@ -191,6 +197,36 @@ class PostgresTaskCenterService:
                 (self.tenant_id, UUID(lease.task_id), lease.lease_owner),
             )
 
+    async def reconcile_cancellation(self, lease: TaskLease) -> None:
+        task = await self.get_task(tenant_id=self.tenant_id, task_id=lease.task_id)
+        if task is None:
+            return
+        run_id = task["run_id"]
+        if run_id is None:
+            await self.acknowledge_cancel(lease)
+            return
+        if self._cancel_run is None:
+            await self.release_cancellation_lease(lease)
+            return
+        cancellation = await self._cancel_run(self.tenant_id, run_id)
+        run_status = cancellation.get("status") if isinstance(cancellation, Mapping) else getattr(cancellation, "status", None)
+        run_status = getattr(run_status, "value", run_status)
+        if run_status == "cancelled":
+            await self.acknowledge_cancel(lease)
+        else:
+            # The Run may still be stopping in another process. Release this
+            # task lease so a later poll can reconcile against durable Run state.
+            await self.release_cancellation_lease(lease)
+
+    async def release_cancellation_lease(self, lease: TaskLease) -> None:
+        db = await self._connect()
+        async with db:
+            await db.execute(
+                """UPDATE platform_tasks SET lease_owner=NULL,lease_expires_at=NULL,updated_at=now()
+                   WHERE tenant_id=%s AND task_id=%s AND status='cancelling' AND lease_owner=%s""",
+                (self.tenant_id, UUID(lease.task_id), lease.lease_owner),
+            )
+
     async def claim_next(self, *, worker_id: str, lease_seconds: int = 60) -> TaskLease | None:
         if not worker_id.strip() or lease_seconds < 5:
             raise ValueError("worker_id and lease_seconds >= 5 are required")
@@ -202,12 +238,15 @@ class PostgresTaskCenterService:
                            SELECT tenant_id,task_id FROM platform_tasks
                            WHERE tenant_id=%s
                              AND ((status='queued' AND available_at<=now())
-                               OR (status='running' AND lease_expires_at<=now()))
+                               OR (status IN ('running','cancelling')
+                                   AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
                            ORDER BY priority DESC,available_at,created_at
                            LIMIT 1 FOR UPDATE SKIP LOCKED
                        )
                        UPDATE platform_tasks AS task
-                       SET status='running',attempts=task.attempts+1,lease_owner=%s,
+                       SET status=CASE WHEN task.status='cancelling' THEN 'cancelling' ELSE 'running' END,
+                           attempts=task.attempts+CASE WHEN task.status='cancelling' THEN 0 ELSE 1 END,
+                           lease_owner=%s,
                            lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
                        FROM candidate
                        WHERE task.tenant_id=candidate.tenant_id
@@ -225,6 +264,7 @@ class PostgresTaskCenterService:
             session_id=str(claimed["session_id"]) if claimed["session_id"] else None,
             input=dict(claimed["input"]), attempts=claimed["attempts"],
             max_attempts=claimed["max_attempts"], lease_owner=worker_id,
+            status=claimed["status"],
         )
 
     async def set_run_id(self, lease: TaskLease, run_id: str) -> None:
@@ -324,6 +364,9 @@ class TaskQueueWorker:
         )
         if lease is None:
             return False
+        if lease.status == "cancelling":
+            await self.service.reconcile_cancellation(lease)
+            return True
         execution = asyncio.create_task(self.execute_task(lease))
         async def heartbeat() -> None:
             while True:
@@ -344,7 +387,7 @@ class TaskQueueWorker:
         except asyncio.CancelledError:
             execution.cancel()
             await asyncio.gather(execution, return_exceptions=True)
-            await self.service.acknowledge_cancel(lease)
+            await self.service.reconcile_cancellation(lease)
             raise
         except Exception as exc:
             await self.service.fail(lease, error=type(exc).__name__)

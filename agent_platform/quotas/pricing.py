@@ -33,6 +33,35 @@ class PricingCard:
             raise ValueError("effective_at must be timezone-aware")
 
 
+@dataclass(frozen=True)
+class PricingFeed:
+    """One immutable, revisioned response from a configured trusted pricing source."""
+
+    source: str
+    revision: str
+    fetched_at: datetime
+    cards: tuple[PricingCard, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise ValueError("pricing source is required")
+        if not isinstance(self.revision, str) or not self.revision.strip():
+            raise ValueError("pricing source revision is required")
+        if (
+            not isinstance(self.fetched_at, datetime)
+            or self.fetched_at.tzinfo is None
+            or self.fetched_at.utcoffset() is None
+        ):
+            raise ValueError("pricing feed fetched_at must be timezone-aware")
+        if not self.cards:
+            raise ValueError("pricing feed must contain at least one card")
+        if any(not isinstance(card, PricingCard) for card in self.cards):
+            raise TypeError("pricing feed cards must be PricingCard instances")
+        keys = [(card.model_key, card.version) for card in self.cards]
+        if len(keys) != len(set(keys)) or len({key[0] for key in keys}) != len(keys):
+            raise ValueError("pricing feed must contain one unique version per model")
+
+
 class ModelPricingCatalog:
     """Immutable snapshot: unknown models never receive an invented zero price."""
 
