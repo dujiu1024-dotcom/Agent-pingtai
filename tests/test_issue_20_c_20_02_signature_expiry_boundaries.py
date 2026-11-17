@@ -7,7 +7,7 @@ from agent_platform.events.webhooks import signature, verify_signature
 
 class WebhookSignatureExpiryBoundaryTests(unittest.TestCase):
     def test_signature_is_valid_at_inclusive_window_edge_and_expired_one_second_later(self):
-        secret = b"boundary-test-secret"
+        secret = b"b" * 32
         body = b'{"event":"run.completed","id":"evt-1"}'
         issued_at = 1_800_000_000
         signed = signature(secret, str(issued_at), body)
@@ -22,7 +22,7 @@ class WebhookSignatureExpiryBoundaryTests(unittest.TestCase):
         ))
 
     def test_future_timestamp_outside_window_is_rejected(self):
-        secret = b"boundary-test-secret"
+        secret = b"b" * 32
         body = b'{"event":"run.completed","id":"evt-2"}'
         issued_at = 1_800_000_000
         signed = signature(secret, str(issued_at), body)
@@ -36,7 +36,7 @@ class WebhookSignatureExpiryBoundaryTests(unittest.TestCase):
         ))
 
     def test_default_clock_expires_previously_valid_signature(self):
-        secret = b"boundary-test-secret"
+        secret = b"b" * 32
         body = b"payload"
         issued_at = 1_800_000_000
         signed = signature(secret, str(issued_at), body)
@@ -44,7 +44,7 @@ class WebhookSignatureExpiryBoundaryTests(unittest.TestCase):
             self.assertFalse(verify_signature(secret, str(issued_at), body, signed))
 
     def test_expiry_does_not_mask_body_or_signature_tampering(self):
-        secret = b"boundary-test-secret"
+        secret = b"b" * 32
         body = b"payload"
         issued_at = 1_800_000_000
         signed = signature(secret, str(issued_at), body)
