@@ -23,7 +23,6 @@ from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
 from agent_platform.events.admin import WebhookSubscriptionService
-from agent_platform.web.app import create_platform_web_router
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
@@ -35,6 +34,7 @@ from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 from agent_platform.security.audit_http import AuditRequestASGIMiddleware
+from agent_platform.web.app import create_platform_web_router
 
 
 async def _principal_from_request(request: Any) -> Any:
