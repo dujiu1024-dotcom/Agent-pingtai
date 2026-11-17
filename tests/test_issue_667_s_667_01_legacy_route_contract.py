@@ -31,6 +31,7 @@ def test_legacy_console_api_calls_remain_on_versioned_api_surface():
     legacy_calls = {path for path in calls if path.startswith("/api/")}
     assert EXPECTED_LEGACY_ROUTES <= legacy_calls
     assert all(path.startswith("/api/v1/") for path in legacy_calls)
+    assert "'X-API-Version': 'v1'" in source
 
 def test_legacy_api_prefix_is_rewritten_and_query_is_preserved():
     seen = []
