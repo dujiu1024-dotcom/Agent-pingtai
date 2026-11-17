@@ -84,7 +84,8 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
                 call_id="timeout", timeout_seconds=0.01,
             )
         self.assertTrue(self.started.is_set())
-        self.assertEqual(self.audit.records[-1]["outcome"], "timed_out")
+        self.assertEqual(self.audit.records[-1]["action"], "tool.call.timed_out")
+        self.assertEqual(self.audit.records[-1]["detail"]["status"], "timed_out")
 
     async def test_run_cancellation_cancels_handler_and_is_audited(self):
         cancellation = asyncio.Event()
@@ -96,7 +97,8 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         cancellation.set()
         with self.assertRaises(ToolCallCancelled):
             await task
-        self.assertEqual(self.audit.records[-1]["outcome"], "cancelled")
+        self.assertEqual(self.audit.records[-1]["action"], "tool.call.cancelled")
+        self.assertEqual(self.audit.records[-1]["detail"]["status"], "cancelled")
 
     async def test_caller_task_cancellation_propagates(self):
         task = asyncio.create_task(self.contract.call(
