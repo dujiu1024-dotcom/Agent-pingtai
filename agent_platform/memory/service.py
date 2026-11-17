@@ -26,6 +26,7 @@ class MemoryPrincipal:
 class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
     expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict); conflict_key: str|None=None
+    applies_from: datetime|None=None; applies_until: datetime|None=None
     def __post_init__(self)->None:
         required = (self.tenant_id, self.scope_id, self.content, self.source_ref, self.created_by, self.memory_id)
         if any(not isinstance(value, str) or not value.strip() for value in required):
@@ -45,6 +46,15 @@ class MemoryCandidate:
             or self.expires_at.utcoffset() is None
         ):
             raise ValueError("expires_at must be timezone-aware")
+        for bound in (self.applies_from, self.applies_until):
+            if bound is not None and (
+                not isinstance(bound, datetime)
+                or bound.tzinfo is None
+                or bound.utcoffset() is None
+            ):
+                raise ValueError("applicability bounds must be timezone-aware")
+        if self.applies_from is not None and self.applies_until is not None and self.applies_from >= self.applies_until:
+            raise ValueError("applies_from must be earlier than applies_until")
         if self.conflict_key is not None and (
             not isinstance(self.conflict_key, str) or not self.conflict_key.strip()
         ):
@@ -173,7 +183,7 @@ class MemoryService:
         return updated
     async def export(self,*,principal: MemoryPrincipal)->list[dict[str,object]]:
         records=await self.retrieve(principal=principal,limit=1000)
-        return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"updated_at":r.updated_at.isoformat()} for r in records]
+        return [{"memory_id":r.candidate.memory_id,"scope":r.candidate.scope.value,"scope_id":r.candidate.scope_id,"content":r.candidate.content,"source_ref":r.candidate.source_ref,"confidence":r.candidate.confidence,"version":r.version,"expires_at":r.candidate.expires_at.isoformat() if r.candidate.expires_at else None,"applies_from":r.candidate.applies_from.isoformat() if r.candidate.applies_from else None,"applies_until":r.candidate.applies_until.isoformat() if r.candidate.applies_until else None,"updated_at":r.updated_at.isoformat()} for r in records]
     async def history(self,*,principal: MemoryPrincipal,memory_id: str)->list[MemoryRecord]:
         record=await self.repository.get(principal.tenant_id,memory_id)
         if record is None:
