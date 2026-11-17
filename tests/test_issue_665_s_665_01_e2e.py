@@ -6,6 +6,7 @@ from typing import Any
 from agent_platform.contracts import BlackboardEntry, EntryKind
 from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
 from agent_platform.events.outbox import OutboxRecord, OutboxRelay
+from agent_platform.runtime.execution import LangGraphRunExecutor
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager, RunStatus
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 from agent_platform.workflows.multi_expert import build_multi_expert_workflow
@@ -62,12 +63,15 @@ class JourneyCallbacks:
 
 
 class NotificationOutboxStore:
-    def __init__(self, record: OutboxRecord) -> None:
-        self.record = record
+    def __init__(self) -> None:
+        self.records: list[OutboxRecord] = []
         self.published: list[str] = []
 
+    def enqueue(self, record: OutboxRecord) -> None:
+        self.records.append(record)
+
     async def claim_batch(self, *, limit: int):
-        return [self.record][:limit]
+        return self.records[:limit]
 
     async def mark_published(self, record: OutboxRecord):
         self.published.append(record.event_id)
@@ -75,6 +79,34 @@ class NotificationOutboxStore:
 
     async def mark_failed(self, record: OutboxRecord, error: str):
         raise AssertionError(f"notification outbox unexpectedly failed: {error}")
+
+
+class RunNotificationBroker:
+    def __init__(self, *, blackboard: JourneyBlackboard, outbox: NotificationOutboxStore) -> None:
+        self.blackboard = blackboard
+        self.outbox = outbox
+
+    async def publish(self, *, tenant_id: str, run_id: str, event_type: str, data: Any):
+        if event_type != "COMPLETE":
+            return
+        artifact = next(
+            entry for entry in self.blackboard.entries.values()
+            if entry.kind is EntryKind.ARTIFACT and entry.status.value == "accepted"
+            and entry.scope_id == TASK
+        )
+        self.outbox.enqueue(OutboxRecord(
+            tenant_id=tenant_id,
+            outbox_id=1,
+            event_id="00000000-0000-0000-0000-000000006650",
+            topic="notification.run.completed",
+            payload={
+                "run_id": run_id,
+                "task_id": TASK,
+                "status": data["status"],
+                "artifact_entry_id": artifact.entry_id,
+            },
+            lease_token="00000000-0000-0000-0000-000000006651",
+        ))
 
 
 class NotificationTransport:
@@ -118,34 +150,40 @@ class Issue665S66501E2ETests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(resolved_agent.definition["capabilities"], ["delivery.execute"])
 
-        # Create and start a real platform Run lifecycle record before graph execution.
+        # The platform Run executor owns QUEUED → RUNNING → SUCCEEDED transitions.
         run_store = InMemoryRunStateStore()
         lifecycle = RunLifecycleManager(run_store)
         await run_store.create(TENANT, RUN)
-        started = await lifecycle.start(TENANT, RUN)
-        self.assertEqual(started.status, RunStatus.RUNNING)
 
         blackboard = JourneyBlackboard()
         services = BlackboardMultiExpertServices(
             tenant_id=TENANT, repository=blackboard, callbacks=JourneyCallbacks(),
         )
+        outbox = NotificationOutboxStore()
+        notification_broker = RunNotificationBroker(blackboard=blackboard, outbox=outbox)
         try:
             from langgraph.checkpoint.memory import InMemorySaver
         except ImportError as exc:
             self.skipTest(f"LangGraph test dependency unavailable: {exc}")
         graph = build_multi_expert_workflow(services=services, checkpointer=InMemorySaver())
-        result = await graph.ainvoke(
-            {
+        executor = LangGraphRunExecutor(
+            graph=graph, lifecycle=lifecycle, worker_id="s665-e2e-worker",
+            timeout_seconds=10, event_broker=notification_broker,
+        )
+        result = await executor.execute(
+            tenant_id=TENANT,
+            run_id=RUN,
+            input={
                 "tenant_id": TENANT,
                 "task_id": TASK,
                 "run_id": RUN,
                 "objective": "prepare a delivery artifact",
                 "run_context": {"agent_id": AGENT, "agent_version": resolved_agent.version},
             },
-            config={"configurable": {"thread_id": f"{TENANT}:{RUN}"}},
         )
         self.assertEqual(result["status"], "completed")
-        final_run = await lifecycle.finish(TENANT, RUN, RunStatus.SUCCEEDED)
+        final_run = await run_store.get(TENANT, RUN)
+        self.assertIsNotNone(final_run)
         self.assertEqual(final_run.status, RunStatus.SUCCEEDED)
 
         # Verify workflow claims and final artifact are persisted under this task scope.
@@ -160,21 +198,9 @@ class Issue665S66501E2ETests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(final_artifact.scope_id, TASK)
         self.assertIn(claims[0].entry_id, final_artifact.source_refs)
 
-        # The completed Run emits its notification through the outbox relay.
-        record = OutboxRecord(
-            tenant_id=TENANT,
-            outbox_id=1,
-            event_id="00000000-0000-0000-0000-000000006650",
-            topic="notification.run.completed",
-            payload={
-                "run_id": RUN,
-                "task_id": TASK,
-                "status": final_run.status.value,
-                "artifact_entry_id": final_artifact.entry_id,
-            },
-            lease_token="00000000-0000-0000-0000-000000006651",
-        )
-        outbox = NotificationOutboxStore(record)
+        # RunExecution emits COMPLETE; the broker enqueues the completion notification.
+        self.assertEqual(len(outbox.records), 1)
+        record = outbox.records[0]
         transport = NotificationTransport()
         audit = AuditSink()
         relay_result = await OutboxRelay(
