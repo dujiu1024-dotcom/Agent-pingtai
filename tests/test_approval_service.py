@@ -133,7 +133,8 @@ class ApprovalServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(detail.json()["status"], "pending")
         self.assertIn(("tenant-a", approval_id), repository.records)
         self.assertNotIn(("tenant-attacker", approval_id), repository.records)
-        self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 403)
+        self.assertEqual(client.get("/api/platform/v1/approvals").status_code, 200)
+        self.assertEqual(client.get("/api/platform/v1/approvals").json()["items"], [])
 
     async def test_requester_can_revoke_and_other_user_cannot(self):
         record = await self.service.request(
