@@ -92,7 +92,7 @@ def create_knowledge_memory_router(
         principal=await resolve_knowledge_principal(request)
         try:documents=await knowledge.list_documents(principal=principal,limit=limit)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
-        return {"items":[{"document_id":d.document_id,"version":d.version,"title":d.title,"source_uri":d.source_uri,"scope":d.scope.value,"project_id":d.project_id,"media_type":d.media_type,"content_hash":d.content_hash} for d in documents]}
+        return {"items":[{"document_id":d.document_id,"version":d.version,"title":d.title,"source_uri":d.source_uri,"scope":d.scope.value,"project_id":d.project_id,"media_type":d.media_type,"content_hash":d.content_hash,"collection_id":d.collection_id} for d in documents]}
     @router.get("/knowledge/collections")
     async def list_knowledge_collections(request: Request, limit: int = 100):
         principal = await resolve_knowledge_principal(request)
