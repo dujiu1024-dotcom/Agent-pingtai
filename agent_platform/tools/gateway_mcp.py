@@ -11,7 +11,7 @@ import copy
 import json
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Awaitable, Callable, Mapping
 
 from agent_platform.approval.policy import ActionRequest
 from agent_platform.tools.gateway import (
@@ -56,6 +56,9 @@ class GatewaySessionContext:
         )
 
 
+RunSessionAuthorizer = Callable[[GatewaySessionContext], Awaitable[bool]]
+
+
 class GatewayMCPBridge:
     """MCP list/call surface with identity and authority fixed by the host."""
 
@@ -64,6 +67,7 @@ class GatewayMCPBridge:
         *,
         gateway: SupervisedToolGateway,
         session: GatewaySessionContext,
+        authorize_run: RunSessionAuthorizer | None = None,
     ) -> None:
         try:
             from jsonschema import Draft202012Validator
@@ -74,6 +78,9 @@ class GatewayMCPBridge:
         self._validator_class = Draft202012Validator
         self.gateway = gateway
         self.session = session
+        # Missing live-state authorization is fail-closed; a fixed MCP session
+        # and a valid token alone do not prove that its Run is still active.
+        self._authorize_run = authorize_run
         definitions = {tool.name: tool for tool in gateway.registered_tools}
         missing = set(session.allowed_tool_names) - set(definitions)
         if missing:
@@ -126,6 +133,14 @@ class GatewayMCPBridge:
         if bound is None:
             raise ToolExecutionDenied("tool is not available in this run's MCP session")
         definition, schema = bound
+        if self._authorize_run is None:
+            raise ToolExecutionDenied("live Run authorization is not configured")
+        try:
+            authorized = await self._authorize_run(self.session)
+        except Exception as exc:
+            raise ToolExecutionDenied("live Run authorization failed") from exc
+        if authorized is not True:
+            raise ToolExecutionDenied("Run is not active or no longer authorized")
         safe_arguments = copy.deepcopy(dict(arguments))
         validation_errors = list(
             self._validator_class(schema).iter_errors(safe_arguments)
