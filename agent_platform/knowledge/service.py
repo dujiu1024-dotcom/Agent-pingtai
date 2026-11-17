@@ -103,6 +103,7 @@ class KnowledgeService:
                 and existing.owner_user_id==document.owner_user_id
                 and existing.media_type==document.media_type
                 and existing.metadata==document.metadata
+                and existing.collection_id==document.collection_id
             )
             if unchanged:
                 document=existing
