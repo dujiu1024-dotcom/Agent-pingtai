@@ -44,6 +44,13 @@ scope when the graph layer has no evidence.
 
 ## Adapter and acceptance boundary
 
+The HTTP router is exposed by `create_graph_query_router` and is optionally
+mounted by `create_platform_app` when the host injects a graph query service,
+a principal resolver that returns `KnowledgePrincipal`, and an authorization
+callback. The normal platform identity middleware still protects the route;
+the graph-specific resolver must derive tenant/project identity from the
+authenticated request state, never from query payload fields.
+
 The service is storage/provider agnostic. A Postgres/Neo4j adapter can implement
 the query protocol separately; the repository must support tenant/project
 predicates, depth/row limits, cancellation or server-side statement timeout,
