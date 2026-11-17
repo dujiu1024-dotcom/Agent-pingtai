@@ -18,6 +18,8 @@ def create_evaluation_rollout_router(
     @router.post("/{experiment_id}/rollout")
     async def apply_rollout(experiment_id: str, request: Request):
         actor = getattr(request.state, "identity.principal", None)
+        if actor is None:
+            actor = getattr(getattr(request.state, "identity", None), "principal", None)
         if not isinstance(actor, Principal):
             raise HTTPException(401, "authenticated user required")
         if not isinstance(experiment_id, str) or not experiment_id.strip():
