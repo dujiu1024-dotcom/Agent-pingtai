@@ -5,7 +5,7 @@ import so an incorrectly configured process never becomes a healthy API.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import FastAPI
 
@@ -22,6 +22,20 @@ from agent_platform.runtime.lifecycle import RunLifecycleManager
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
 
 
+def _postgres_connection_factory(dsn: str) -> Callable[[], Any]:
+    async def connect() -> Any:
+        try:
+            from psycopg import AsyncConnection
+            from psycopg.rows import dict_row
+        except ImportError as exc:
+            raise RuntimeError(
+                "production API requires psycopg[binary,pool] from requirements-platform.txt"
+            ) from exc
+        return await AsyncConnection.connect(dsn, row_factory=dict_row)
+
+    return connect
+
+
 def create_production_app(
     *,
     settings: ProductionSettings | None = None,
@@ -31,17 +45,7 @@ def create_production_app(
     """Build the production API graph; optional arguments are test seams only."""
     configured = settings or load_production_settings()
     if connection_factory is None:
-        async def connection_factory() -> Any:
-            try:
-                from psycopg import AsyncConnection
-                from psycopg.rows import dict_row
-            except ImportError as exc:
-                raise RuntimeError(
-                    "production API requires psycopg[binary,pool] from requirements-platform.txt"
-                ) from exc
-            return await AsyncConnection.connect(
-                configured.postgres_dsn, row_factory=dict_row,
-            )
+        connection_factory = _postgres_connection_factory(configured.postgres_dsn)
 
     if redis_client is None:
         try:
