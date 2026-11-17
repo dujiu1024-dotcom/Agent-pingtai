@@ -49,9 +49,11 @@ class ConnectorManifest:
     def from_mapping(cls, value: Mapping[str, Any], *, source: str = "local") -> "ConnectorManifest":
         if not isinstance(value, Mapping):
             raise ConnectorManifestError("manifest must be an object")
-        forbidden = {"command", "args", "url", "endpoint", "env", "entrypoint", "module"}
-        if forbidden.intersection(value):
-            raise ConnectorManifestError("manifest contains runtime configuration fields")
+        allowed_manifest_fields = {
+            "connector_id", "name", "version", "description", "auth_type", "operations",
+        }
+        if set(value) - allowed_manifest_fields:
+            raise ConnectorManifestError("manifest contains unsupported or runtime configuration fields")
         connector_id = value.get("connector_id")
         name, version = value.get("name"), value.get("version")
         description, auth_type = value.get("description", ""), value.get("auth_type")
@@ -73,8 +75,8 @@ class ConnectorManifest:
         for item in raw_operations:
             if not isinstance(item, Mapping):
                 raise ConnectorManifestError("operation must be an object")
-            if {"command", "url", "endpoint", "handler", "module"}.intersection(item):
-                raise ConnectorManifestError("operation contains executable configuration")
+            if set(item) - {"name", "description", "input_schema"}:
+                raise ConnectorManifestError("operation contains unsupported or executable configuration")
             op_name, op_desc, schema = item.get("name"), item.get("description", ""), item.get("input_schema")
             if not isinstance(op_name, str) or not _IDENTIFIER.fullmatch(op_name):
                 raise ConnectorManifestError("operation name is invalid")
@@ -292,7 +294,7 @@ class ConnectorCatalog:
                 if callable(close):
                     try:
                         result = close()
-                        if asyncio.iscoroutine(result):
+                        if inspect.isawaitable(result):
                             await result
                     except Exception:
                         pass
