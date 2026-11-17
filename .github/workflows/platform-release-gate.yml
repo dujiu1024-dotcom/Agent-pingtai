@@ -112,7 +112,6 @@ jobs:
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_issue_22_a_22_05_graph_storage_benchmark \\
-            tests.test_issue_665_a_665_06_performance_parity \\
             tests.test_platform_perf_smoke -v
       - name: Static checks
         run: |
@@ -135,6 +134,10 @@ jobs:
         run: python -m unittest tests.test_issue_72_a_72_01_unified_model_budget tests.test_registry_runtime_assembly tests.test_model_runtime_router tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy tests.test_issue_28_a_28_02_malicious_skill_blocked -v
       - name: Run connector catalog and backward-compatibility acceptance tests
         run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
+      - name: Run distributed evaluation scheduler lease tests
+        run: python -m unittest tests.test_evaluation_worker -v
+      - name: Run SQLite to PostgreSQL migration parity acceptance
+        run: python -m unittest tests.test_issue_666_a_666_06_migration_parity -v
 
   production-release-evidence:
     needs:
