@@ -1,7 +1,8 @@
 """Authenticated knowledge-graph browsing, quality metrics and annotation API."""
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -10,7 +11,13 @@ from agent_platform.identity.models import Principal
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 QueryServiceResolver = Callable[[Principal], Awaitable[GraphQueryService]]
-GraphReadAuthorizer = Callable[[Principal], Awaitable[Sequence[str]]]
+@dataclass(frozen=True)
+class GraphAccessScope:
+    project_ids: tuple[str, ...] = ()
+    allow_tenant_scope: bool = False
+
+
+GraphReadAuthorizer = Callable[[Principal], Awaitable[GraphAccessScope]]
 GovernanceResolver = Callable[[Principal], Awaitable[Any]]
 
 
@@ -26,18 +33,21 @@ def create_graph_router(
 
     async def context(request: Request):
         principal = await resolve_principal(request)
-        allowed = await authorize_read(principal)
-        if isinstance(allowed, (str, bytes)):
-            raise HTTPException(403, "graph project scope must be an authorized project list")
-        allowed_projects = tuple(allowed)
+        access = await authorize_read(principal)
+        if not isinstance(access, GraphAccessScope):
+            raise HTTPException(403, "graph read authorization must return GraphAccessScope")
         service = await resolve_query_service(principal)
         if getattr(service, "tenant_id", None) != principal.tenant_id:
             raise HTTPException(403, "graph query service tenant mismatch")
         try:
-            allowed_projects = service._scope(allowed_projects)
+            allowed_projects = service._scope(access.project_ids)
         except (AttributeError, ValueError) as exc:
             raise HTTPException(403, "graph project scope is invalid") from exc
-        return principal, service, allowed_projects
+        return principal, service, access, allowed_projects
+
+    def entity_is_allowed(entity: Any, access: GraphAccessScope, allowed: tuple[str, ...]) -> bool:
+        project_id = getattr(entity, "project_id", None)
+        return access.allow_tenant_scope if project_id is None else project_id in allowed
 
     def entity_payload(record: Any) -> dict[str, Any]:
         entity = getattr(record, "entity", record)
@@ -75,7 +85,7 @@ def create_graph_router(
             raise HTTPException(400, "q must contain 1-200 non-whitespace characters")
         if not 1 <= limit <= 100:
             raise HTTPException(400, "limit must be between 1 and 100")
-        _, service, allowed = await context(request)
+        _, service, access, allowed = await context(request)
         try:
             items = await service.repository.search_entities(
                 q.strip(), entity_type=entity_type, allowed_project_ids=allowed, limit=limit,
@@ -87,7 +97,7 @@ def create_graph_router(
             raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"items": [entity_payload(item) for item in items], "limit": limit}
+        return {"items": [entity_payload(item) for item in items if entity_is_allowed(getattr(item, "entity", item), access, allowed)], "limit": limit}
 
     @router.get("/entities/{entity_id}/neighbors")
     async def entity_neighbors(
@@ -104,11 +114,27 @@ def create_graph_router(
             raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        visible_entities = {
+            entity.entity_id: entity
+            for entity in (getattr(item, "entity", item) for item in result.entities)
+            if entity_is_allowed(entity, access, allowed)
+        }
+        visible_relations = []
+        for item in result.relations:
+            relation = getattr(item, "relation", item)
+            if (
+                relation.source_entity_id in visible_entities
+                and relation.target_entity_id in visible_entities
+                and (access.allow_tenant_scope or relation.project_id is not None)
+                and (relation.project_id is None or relation.project_id in allowed)
+            ):
+                visible_relations.append(item)
         return {
-            "entities": [entity_payload(item) for item in result.entities],
-            "relations": [relation_payload(item) for item in result.relations],
+            "entities": [entity_payload(item) for item in result.entities
+                         if getattr(getattr(item, "entity", item), "entity_id") in visible_entities],
+            "relations": [relation_payload(item) for item in visible_relations],
             "truncated": result.truncated,
-            "visited_count": result.visited_count,
+            "visited_count": len(visible_entities),
         }
 
     @router.get("/metrics")
@@ -122,9 +148,13 @@ def create_graph_router(
             records = await service.repository.search_entities(
                 q.strip(), allowed_project_ids=allowed, limit=limit,
             )
-            entities = [service._validate_entity(
-                item, getattr(getattr(item, "entity", item), "entity_id"), allowed
-            ) for item in records]
+            entities = []
+            for item in records:
+                entity = service._validate_entity(
+                    item, getattr(getattr(item, "entity", item), "entity_id"), allowed
+                )
+                if entity_is_allowed(entity, access, allowed):
+                    entities.append(entity)
             ids = {item.entity_id for item in entities}
             relations: dict[str, Any] = {}
             for entity_id in ids:
@@ -133,7 +163,9 @@ def create_graph_router(
                 ):
                     relation = service._validate_relation(record, allowed)
                     if (
-                        relation.source_entity_id in ids
+                        (access.allow_tenant_scope or relation.project_id is not None)
+                        and (relation.project_id is None or relation.project_id in allowed)
+                        and relation.source_entity_id in ids
                         and relation.target_entity_id in ids
                     ):
                         relations[relation.relation_id] = relation
