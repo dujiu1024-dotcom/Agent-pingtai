@@ -137,6 +137,54 @@ def create_knowledge_memory_router(
         return {"collection_id": item.collection_id, "name": item.name,
                 "description": item.description, "project_id": item.project_id}
 
+    @router.patch("/knowledge/collections/{collection_id}")
+    async def update_knowledge_collection(collection_id: str, request: Request):
+        principal = await resolve_knowledge_principal(request)
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "JSON object is required") from exc
+        if not isinstance(body, dict) or not body:
+            raise HTTPException(400, "non-empty JSON object is required")
+        if "project_id" in body or "tenant_id" in body or "collection_id" in body:
+            raise HTTPException(400, "collection identity and scope are immutable")
+        name = body.get("name")
+        description = body.get("description")
+        metadata = body.get("metadata")
+        if name is not None and not isinstance(name, str):
+            raise HTTPException(400, "name must be a string")
+        if description is not None and not isinstance(description, str):
+            raise HTTPException(400, "description must be a string")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise HTTPException(400, "metadata must be an object")
+        try:
+            item = await knowledge.update_collection(
+                principal=principal, collection_id=collection_id,
+                name=name, description=description, metadata=metadata,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404 if str(exc) == "collection not found" else 400, str(exc)) from exc
+        return {"collection_id": item.collection_id, "name": item.name,
+                "description": item.description, "project_id": item.project_id,
+                "metadata": item.metadata, "updated_at": item.updated_at.isoformat()}
+
+    @router.delete("/knowledge/collections/{collection_id}", status_code=204)
+    async def delete_knowledge_collection(collection_id: str, request: Request):
+        principal = await resolve_knowledge_principal(request)
+        try:
+            deleted = await knowledge.delete_collection(
+                principal=principal, collection_id=collection_id,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        if not deleted:
+            raise HTTPException(404, "collection not found")
+        return JSONResponse(status_code=204, content=None)
+
     @router.get("/knowledge/collections/{collection_id}/indexes")
     async def list_knowledge_indexes(collection_id: str, request: Request):
         principal = await resolve_knowledge_principal(request)

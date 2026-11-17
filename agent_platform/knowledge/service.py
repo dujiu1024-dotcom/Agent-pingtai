@@ -66,6 +66,52 @@ class KnowledgeService:
     ) -> list[KnowledgeCollection]:
         return await self.repository.list_collections(principal, limit=limit)
 
+    @staticmethod
+    def _can_manage_collection(collection: KnowledgeCollection, principal: KnowledgePrincipal) -> bool:
+        if collection.project_id is not None:
+            return (
+                collection.project_id in principal.manage_project_ids
+                or "knowledge.manage" in principal.permissions
+            )
+        return "knowledge.manage" in principal.permissions
+
+    async def update_collection(
+        self, *, principal: KnowledgePrincipal, collection_id: str,
+        name: str | None = None, description: str | None = None,
+        metadata: dict | None = None,
+    ) -> KnowledgeCollection:
+        current = await self.repository.get_collection(principal.tenant_id, collection_id)
+        if current is None:
+            raise ValueError("collection not found")
+        if not self._can_manage_collection(current, principal):
+            raise PermissionError("collection management is not authorized")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("collection name must be a string")
+        updated_name = current.name if name is None else name.strip()
+        updated_description = current.description if description is None else description
+        updated_metadata = current.metadata if metadata is None else metadata
+        if not updated_name or len(updated_name) > 200:
+            raise ValueError("collection name must contain 1-200 characters")
+        if not isinstance(updated_description, str) or not isinstance(updated_metadata, dict):
+            raise ValueError("description must be a string and metadata an object")
+        updated = await self.repository.update_collection(
+            principal.tenant_id, collection_id, name=updated_name,
+            description=updated_description, metadata=updated_metadata,
+        )
+        if updated is None:
+            raise ValueError("collection not found")
+        return updated
+
+    async def delete_collection(
+        self, *, principal: KnowledgePrincipal, collection_id: str,
+    ) -> bool:
+        current = await self.repository.get_collection(principal.tenant_id, collection_id)
+        if current is None:
+            return False
+        if not self._can_manage_collection(current, principal):
+            raise PermissionError("collection management is not authorized")
+        return await self.repository.delete_collection(principal.tenant_id, collection_id)
+
     async def list_collection_indexes(
         self, *, principal: KnowledgePrincipal, collection_id: str,
     ) -> list[KnowledgeIndex]:

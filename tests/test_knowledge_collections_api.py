@@ -103,6 +103,79 @@ class KnowledgeCollectionApiTests(unittest.TestCase):
         stored = next(iter(self.repository.documents.values()))
         self.assertEqual(stored.collection_id, collection["collection_id"])
 
+    def test_collection_update_delete_and_document_guard(self):
+        headers = {"x-permissions": "knowledge.manage"}
+        created = self.client.post(
+            "/api/platform/v1/knowledge/collections",
+            json={"name": "engineering", "metadata": {"owner": "platform"}},
+            headers=headers,
+        )
+        collection_id = created.json()["collection_id"]
+        denied = self.client.patch(
+            f"/api/platform/v1/knowledge/collections/{collection_id}",
+            json={"name": "renamed"},
+        )
+        self.assertEqual(denied.status_code, 403)
+        updated = self.client.patch(
+            f"/api/platform/v1/knowledge/collections/{collection_id}",
+            json={"name": "engineering-v2", "metadata": {"owner": "runtime"}},
+            headers=headers,
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["name"], "engineering-v2")
+        self.assertEqual(updated.json()["metadata"], {"owner": "runtime"})
+        immutable = self.client.patch(
+            f"/api/platform/v1/knowledge/collections/{collection_id}",
+            json={"project_id": "project-a"}, headers=headers,
+        )
+        self.assertEqual(immutable.status_code, 400)
+
+        document = self.client.post(
+            "/api/platform/v1/knowledge/documents",
+            json={"title": "source", "scope": "tenant", "collection_id": collection_id,
+                  "content": "attached source"},
+            headers=headers,
+        )
+        self.assertEqual(document.status_code, 200)
+        blocked = self.client.delete(
+            f"/api/platform/v1/knowledge/collections/{collection_id}", headers=headers,
+        )
+        self.assertEqual(blocked.status_code, 409)
+        removed_doc = self.client.delete(
+            f"/api/platform/v1/knowledge/documents/{document.json()['document_id']}",
+            headers=headers,
+        )
+        self.assertEqual(removed_doc.status_code, 204)
+        deleted = self.client.delete(
+            f"/api/platform/v1/knowledge/collections/{collection_id}", headers=headers,
+        )
+        self.assertEqual(deleted.status_code, 204)
+        listed = self.client.get("/api/platform/v1/knowledge/collections", headers=headers)
+        self.assertEqual(listed.json()["items"], [])
+
+    def test_collection_lifecycle_is_tenant_scoped(self):
+        created = self.client.post(
+            "/api/platform/v1/knowledge/collections",
+            json={"name": "tenant-a-only"}, headers={"x-permissions": "knowledge.manage"},
+        )
+        collection_id = created.json()["collection_id"]
+        foreign = self.client.patch(
+            f"/api/platform/v1/knowledge/collections/{collection_id}",
+            json={"name": "stolen"},
+            headers={"x-tenant": "tenant-b", "x-permissions": "knowledge.manage"},
+        )
+        self.assertEqual(foreign.status_code, 404)
+        foreign_delete = self.client.delete(
+            f"/api/platform/v1/knowledge/collections/{collection_id}",
+            headers={"x-tenant": "tenant-b", "x-permissions": "knowledge.manage"},
+        )
+        self.assertEqual(foreign_delete.status_code, 404)
+        self.assertEqual(
+            self.client.get("/api/platform/v1/knowledge/collections",
+                            headers={"x-permissions": "knowledge.manage"}).json()["items"][0]["collection_id"],
+            collection_id,
+        )
+
     def test_collection_name_and_index_contract_validation(self):
         from agent_platform.knowledge.contracts import KnowledgeCollection, KnowledgeIndex
         with self.assertRaises(ValueError):

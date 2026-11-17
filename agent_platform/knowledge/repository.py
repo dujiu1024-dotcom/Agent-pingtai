@@ -17,6 +17,8 @@ class KnowledgeRepository(Protocol):
     async def create_collection(self, collection: KnowledgeCollection) -> KnowledgeCollection: ...
     async def get_collection(self, tenant_id: str, collection_id: str) -> KnowledgeCollection | None: ...
     async def list_collections(self, principal: KnowledgePrincipal, limit: int = 100) -> list[KnowledgeCollection]: ...
+    async def update_collection(self, tenant_id: str, collection_id: str, *, name: str, description: str, metadata: dict) -> KnowledgeCollection | None: ...
+    async def delete_collection(self, tenant_id: str, collection_id: str) -> bool: ...
     async def create_index(self, index: KnowledgeIndex) -> KnowledgeIndex: ...
     async def list_indexes(self, tenant_id: str, collection_id: str) -> list[KnowledgeIndex]: ...
     async def save_document(
@@ -105,6 +107,49 @@ class InMemoryKnowledgeRepository:
                 continue
             visible.append(item)
         return sorted(visible, key=lambda item: item.created_at, reverse=True)[:limit]
+
+    async def update_collection(
+        self, tenant_id: str, collection_id: str, *, name: str,
+        description: str, metadata: dict,
+    ) -> KnowledgeCollection | None:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        current = await self.get_collection(tenant_id, collection_id)
+        if current is None:
+            return None
+        if any(
+            item.tenant_id == tenant_id and item.collection_id != collection_id
+            and item.project_id == current.project_id
+            and item.name.casefold() == name.casefold() and item.deleted_at is None
+            for item in self.collections.values()
+        ):
+            raise ValueError("collection name already exists in this scope")
+        updated = replace(
+            current, name=name, description=description, metadata=dict(metadata),
+            updated_at=datetime.now(timezone.utc),
+        )
+        self.collections[(tenant_id, collection_id)] = updated
+        return updated
+
+    async def delete_collection(self, tenant_id: str, collection_id: str) -> bool:
+        from dataclasses import replace
+        from datetime import datetime, timezone
+
+        current = await self.get_collection(tenant_id, collection_id)
+        if current is None:
+            return False
+        if any(
+            document.tenant_id == tenant_id and document.collection_id == collection_id
+            and document.deleted_at is None
+            for document in self.documents.values()
+        ):
+            raise ValueError("collection contains active documents")
+        self.collections[(tenant_id, collection_id)] = replace(
+            current, deleted_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        return True
 
     async def create_index(self, index: KnowledgeIndex) -> KnowledgeIndex:
         if await self.get_collection(index.tenant_id, index.collection_id) is None:

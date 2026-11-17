@@ -91,6 +91,58 @@ class PostgresKnowledgeRepository:
             deleted_at=row["deleted_at"],
         ) for row in rows]
 
+    async def update_collection(
+        self, tenant_id: str, collection_id: str, *, name: str,
+        description: str, metadata: dict,
+    ) -> KnowledgeCollection | None:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    """UPDATE knowledge_collections
+                    SET name=%s, description=%s, metadata=%s, updated_at=now()
+                    WHERE tenant_id=%s AND collection_id=%s AND deleted_at IS NULL
+                    RETURNING *""",
+                    (name, description, _jsonb(metadata), tenant_id, collection_id),
+                )
+                row = await cur.fetchone()
+        if row is None:
+            return None
+        return KnowledgeCollection(
+            tenant_id=row["tenant_id"], collection_id=str(row["collection_id"]),
+            name=row["name"], description=row["description"],
+            project_id=row["project_id"], metadata=dict(row["metadata"] or {}),
+            created_at=row["created_at"], updated_at=row["updated_at"],
+            deleted_at=row["deleted_at"],
+        )
+
+    async def delete_collection(self, tenant_id: str, collection_id: str) -> bool:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute(
+                    """SELECT collection_id FROM knowledge_collections
+                    WHERE tenant_id=%s AND collection_id=%s AND deleted_at IS NULL
+                    FOR UPDATE""",
+                    (tenant_id, collection_id),
+                )
+                if await cur.fetchone() is None:
+                    return False
+                cur = await conn.execute(
+                    """SELECT 1 FROM knowledge_documents
+                    WHERE tenant_id=%s AND collection_id=%s AND deleted_at IS NULL
+                    LIMIT 1""",
+                    (tenant_id, collection_id),
+                )
+                if await cur.fetchone() is not None:
+                    raise ValueError("collection contains active documents")
+                cur = await conn.execute(
+                    """UPDATE knowledge_collections SET deleted_at=now(), updated_at=now()
+                    WHERE tenant_id=%s AND collection_id=%s AND deleted_at IS NULL""",
+                    (tenant_id, collection_id),
+                )
+                return cur.rowcount == 1
+
     async def create_index(self, index: KnowledgeIndex) -> KnowledgeIndex:
         if await self.get_collection(index.tenant_id, index.collection_id) is None:
             raise ValueError("collection not found")
