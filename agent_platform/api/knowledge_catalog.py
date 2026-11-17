@@ -139,10 +139,7 @@ def create_knowledge_catalog_router(
         if collection.project_id is None:
             if document.scope.value != "tenant":
                 raise HTTPException(404, "document not found")
-        elif (
-            document.scope.value != "project"
-            or document.project_id != collection.project_id
-        ):
+        elif document.scope.value != "project" or document.project_id != collection.project_id:
             raise HTTPException(404, "document not found")
         try:
             created = await catalog.attach_document(
