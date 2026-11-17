@@ -111,6 +111,8 @@ jobs:
             tests.test_runs_api \
             tests.test_audit_api \
             tests.test_model_runtime_router \
+            tests.test_platform_api_app \
+            tests.test_run_budget_ledger \
             tests.test_session_data_model \
             tests.test_session_conversation_migration \
             tests.test_session_assets \
