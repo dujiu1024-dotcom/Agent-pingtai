@@ -91,6 +91,7 @@ def create_platform_app(
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
+    evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
@@ -358,6 +359,13 @@ def create_platform_app(
             raise ValueError("alert_dispatch_worker must expose async start() and stop()")
         app.router.on_startup.append(alert_dispatch_worker.start)
         app.router.on_shutdown.append(alert_dispatch_worker.stop)
+    if evaluation_worker is not None:
+        if not callable(getattr(evaluation_worker, "start", None)) or not callable(
+            getattr(evaluation_worker, "stop", None)
+        ):
+            raise ValueError("evaluation_worker must expose async start() and stop()")
+        app.router.on_startup.append(evaluation_worker.start)
+        app.router.on_shutdown.append(evaluation_worker.stop)
     if alert_evaluation_worker is not None:
         if not callable(getattr(alert_evaluation_worker, "start", None)) or not callable(
             getattr(alert_evaluation_worker, "stop", None)
