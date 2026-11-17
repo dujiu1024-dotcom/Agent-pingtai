@@ -164,6 +164,7 @@ class LangGraphRunExecutor:
     elif current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
+    # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
     ref=await self._checkpoint_ref(tenant_id,run_id)
