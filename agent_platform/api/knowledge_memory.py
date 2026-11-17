@@ -203,6 +203,26 @@ def create_knowledge_memory_router(
             for item in indexes
         ]}
 
+    @router.get("/knowledge/documents/{document_id}/chunks")
+    async def list_document_chunks(document_id: str, request: Request):
+        principal = await resolve_knowledge_principal(request)
+        try: chunks = await knowledge.list_document_chunks(principal=principal, document_id=document_id)
+        except PermissionError as exc: raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc: raise HTTPException(404, str(exc)) from exc
+        return {"items": [{"chunk_id": c.chunk_id, "ordinal": c.ordinal, "text": c.text, "token_count": len(c.text.split()), "char_count": len(c.text), "page_number": c.page_number, "start_offset": c.start_offset, "end_offset": c.end_offset, "content_hash": c.content_hash, "metadata": c.metadata, "embedding_status": c.metadata.get("embedding_status", "indexed")} for c in chunks]}
+
+    @router.patch("/knowledge/documents/{document_id}/chunks/{chunk_id}")
+    async def edit_document_chunk(document_id: str, chunk_id: str, request: Request):
+        principal = await resolve_knowledge_principal(request)
+        body = await request.json()
+        text = body.get("text") if isinstance(body, dict) else None
+        if not isinstance(text, str) or not text.strip() or len(text) > 20000: raise HTTPException(400, "text must contain 1-20000 characters")
+        try: item = await knowledge.update_document_chunk(principal=principal, document_id=document_id, chunk_id=chunk_id, text=text)
+        except PermissionError as exc: raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc: raise HTTPException(404 if str(exc) == "document not found" else 400, str(exc)) from exc
+        if item is None: raise HTTPException(404, "chunk not found")
+        return {"chunk_id": item.chunk_id, "content_hash": item.content_hash, "token_count": len(item.text.split()), "embedding_status": item.metadata.get("embedding_status", "stale")}
+
     @router.post("/knowledge/documents")
     async def ingest_document(request: Request):
         principal=await resolve_knowledge_principal(request);body=await request.json()
