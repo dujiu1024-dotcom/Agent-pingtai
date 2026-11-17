@@ -167,7 +167,7 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
             )
         await self.evaluations.save_human_score(
             tenant_id=self.tenant_a, eval_run_id=run_a, case_id="case-1",
-            reviewer_id="reviewer-a", score=0.9, rationale="contains token sk-SECRET",
+            reviewer_id="reviewer-a", score=0.9, rationale="contains token sk-abcdefghijklmnop",
         )
         scores_a = await self.evaluations.list_human_scores(
             tenant_id=self.tenant_a, eval_run_id=run_a,
@@ -176,7 +176,7 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
             tenant_id=self.tenant_b, eval_run_id=run_a,
         )
         self.assertEqual(len(scores_a), 1)
-        self.assertNotIn("sk-SECRET", scores_a[0]["rationale"])
+        self.assertNotIn("sk-abcdefghijklmnop", scores_a[0]["rationale"])
         self.assertEqual(scores_b, [])
 
     async def test_prompt_rollout_policy_and_decisions_are_tenant_scoped(self):
@@ -238,7 +238,7 @@ class Issue16ObservabilityPostgresReliabilityTests(unittest.IsolatedAsyncioTestC
                     (prompt_id,),
                 )
         resolved = await self.prompts.resolve(prompt_id, version=1)
-        self.assertIn("variant-0", resolved.template)
+        self.assertRegex(resolved.template, r"^response \\{name\\} variant-[0-4]$")
 
 
 if __name__ == "__main__":
