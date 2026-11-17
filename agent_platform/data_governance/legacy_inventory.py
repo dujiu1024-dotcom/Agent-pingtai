@@ -202,6 +202,29 @@ def _sqlite_inventory(database: Path) -> dict[str, Any]:
             quoted = '"' + name.replace('"', '""') + '"'
             columns = list(connection.execute(f"PRAGMA table_info({quoted})"))
             foreign_keys = list(connection.execute(f"PRAGMA foreign_key_list({quoted})"))
+            index_rows = list(connection.execute(f"PRAGMA index_list({quoted})"))
+            indexes = []
+            for index in index_rows:
+                index_name = str(index["name"])
+                quoted_index = '"' + index_name.replace('"', '""') + '"'
+                index_columns = list(connection.execute(f"PRAGMA index_xinfo({quoted_index})"))
+                indexes.append({
+                    "name": index_name,
+                    "unique": bool(index["unique"]),
+                    "origin": str(index["origin"]),
+                    "partial": bool(index["partial"]),
+                    "columns": [
+                        {
+                            "sequence": int(column["seqno"]),
+                            "name": column["name"],
+                            "expression": int(column["cid"]) == -2,
+                            "descending": bool(column["desc"]),
+                            "collation": column["coll"],
+                            "key": bool(column["key"]),
+                        }
+                        for column in index_columns
+                    ],
+                })
             count = int(connection.execute(f"SELECT COUNT(*) FROM {quoted}").fetchone()[0])
             total_rows += count
             column_names = [str(column["name"]) for column in columns]
@@ -221,6 +244,7 @@ def _sqlite_inventory(database: Path) -> dict[str, Any]:
                 "foreign_keys": [{"column": fk["from"], "references_table": fk["table"],
                                   "references_column": fk["to"], "on_delete": fk["on_delete"]}
                                  for fk in foreign_keys],
+                "indexes": indexes,
                 "risk": risk, "risk_reasons": reasons,
             })
             identity_targets = sorted({str(fk["table"]) for fk in foreign_keys
@@ -239,6 +263,7 @@ def _sqlite_inventory(database: Path) -> dict[str, Any]:
         }
     return {"status": "scanned", "path": str(database), "bytes": database.stat().st_size,
             "tables": details, "views": objects["views"], "triggers": objects["triggers"],
+            "index_count": sum(len(table["indexes"]) for table in details),
             "total_rows": total_rows, "identity_relations": identity_relations,
             "inspection": "sqlite_read_only_query_only", "raw_row_values_exported": False}
 
