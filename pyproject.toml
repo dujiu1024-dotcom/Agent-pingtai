@@ -140,6 +140,7 @@ include = [
   "tests/test_quota_token_estimator.py",
   "tests/test_quotas.py",
   "tests/test_quota_reporting_api.py",
+  "tests/test_issue_17_a_17_03_delivery_readiness.py",
   "tests/test_quota_harness_enforcement.py",
   "tests/test_quota_postgres_integration.py",
   "tests/test_file_download_api.py",
