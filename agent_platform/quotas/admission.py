@@ -46,6 +46,7 @@ class TenantFairQuotaAdmissionController:
         self._conditions: dict[AdmissionKey, asyncio.Condition] = {}
         self._queues: dict[AdmissionKey, OrderedDict[str, deque[str]]] = {}
         self._requests: dict[str, AdmissionRequest] = {}
+        self._attempted_tenants: dict[AdmissionKey, set[str]] = {}
 
     @staticmethod
     def _validate(request: AdmissionRequest) -> None:
@@ -97,8 +98,15 @@ class TenantFairQuotaAdmissionController:
                                 # tenant use its independently scoped capacity.
                                 if request.tenant_id in queues:
                                     queues.move_to_end(request.tenant_id)
-                                condition.notify_all()
-                                await condition.wait()
+                                attempted = self._attempted_tenants.setdefault(key, set())
+                                attempted.add(request.tenant_id)
+                                if set(queues).issubset(attempted):
+                                    # Every queued tenant has had one fair attempt;
+                                    # sleep until capacity is actually returned.
+                                    await condition.wait()
+                                else:
+                                    condition.notify_all()
+                                    await condition.wait()
                                 continue
                             self._pop(queues, request.tenant_id, ticket)
                             # Rotate this tenant behind every tenant already
@@ -124,6 +132,7 @@ class TenantFairQuotaAdmissionController:
                     condition.notify_all()
                 if not queues:
                     self._queues.pop(key, None)
+                    self._attempted_tenants.pop(key, None)
 
     @staticmethod
     def _pop(queues: OrderedDict[str, deque[str]], tenant_id: str, ticket: str) -> None:
@@ -144,6 +153,7 @@ class TenantFairQuotaAdmissionController:
         condition = self._conditions.get(key)
         if condition is not None:
             async with condition:
+                self._attempted_tenants.pop(key, None)
                 condition.notify_all()
         return released
 
