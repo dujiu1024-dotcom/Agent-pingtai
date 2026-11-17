@@ -101,9 +101,19 @@ load_services
 "$ROOT/scripts/check_migrations.sh"
 if [[ "$MODE" == "--check" ]]; then echo "Release preflight passed for $CURRENT_RELEASE_VERSION -> $RELEASE_VERSION; no services changed."; exit 0; fi
 : "${PRE_UPGRADE_BACKUP_COMMAND:?PRE_UPGRADE_BACKUP_COMMAND is required before applying an upgrade}"
+# Do not begin an upgrade until a last-known-good release is available.
+read_snapshot "$STATE_DIR/latest-success" >/dev/null
 bash -euo pipefail -c "$PRE_UPGRADE_BACKUP_COMMAND"
-snapshot_env
-if [[ -n "${MIGRATION_COMMAND:-}" ]]; then bash -euo pipefail -c "$MIGRATION_COMMAND"; fi
+SNAPSHOT="$(snapshot_env)"
+if [[ -n "${MIGRATION_COMMAND:-}" ]] && ! bash -euo pipefail -c "$MIGRATION_COMMAND"; then
+  echo "migration command failed; restoring prior release configuration (database changes, if any, require manual recovery)" >&2
+  restore_previous || exit 1
+  "${COMPOSE[@]}" config --quiet
+  for rollback_service in "${SERVICES[@]}"; do
+    "${COMPOSE[@]}" up -d --no-deps --wait "$rollback_service" || { echo "service recovery failed at $rollback_service; manual recovery required" >&2; exit 1; }
+  done
+  exit 1
+fi
 for service in "${SERVICES[@]}"; do
   if ! "${COMPOSE[@]}" up -d --no-deps --wait "$service"; then
     echo "upgrade failed at service $service; restoring prior configuration and rolling services back" >&2
@@ -116,4 +126,5 @@ for service in "${SERVICES[@]}"; do
     exit 1
   fi
 done
+publish_success "$SNAPSHOT"
 printf 'Release %s upgraded successfully.\n' "$RELEASE_VERSION"
