@@ -19,7 +19,7 @@ class KnowledgeCatalogApiTests(unittest.TestCase):
                 tenant_id=request.headers.get("x-tenant", "tenant-a"),
                 user_id=request.headers.get("x-user", "user-a"),
                 project_ids=frozenset({"project-a"}),
-                manage_project_ids=frozenset({"project-a"}),
+                manage_project_ids=frozenset(request.headers.get("x-manage-projects", "").split()),
                 permissions=frozenset(request.headers.get("x-permissions", "").split()),
             )
 
