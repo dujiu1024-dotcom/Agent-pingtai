@@ -611,16 +611,15 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(repository.entries), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     async def test_dispatch_contract_is_task_bound_and_revalidates_capabilities(self):
         repository = InMemoryBlackboard()
         registry = InMemoryExpertRegistry((
             ExpertProfile("researcher", "Researcher", "Research", frozenset({"research", "citations"})),
         ))
-        callbacks = WorkflowCallbacks()
+        class SingleExpertCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher", "required_capabilities": ["research"]}]
+        callbacks = SingleExpertCallbacks()
         services = BlackboardMultiExpertServices(
             tenant_id="tenant-a", repository=repository, callbacks=callbacks,
             expert_registry=registry,
@@ -670,3 +669,7 @@ if __name__ == "__main__":
             await unknown.plan_experts(
                 objective="research", run_context={"tenant_id": "tenant-a", "task_id": "t", "run_id": "r"},
             )
+
+
+if __name__ == "__main__":
+    unittest.main()
