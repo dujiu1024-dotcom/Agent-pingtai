@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -282,17 +281,28 @@ class ConnectorCatalog:
             if asyncio.iscoroutine(connector):
                 connector = await connector
             start = getattr(connector, "start", None)
-            if callable(start):
-                result = start()
-                if asyncio.iscoroutine(result):
-                    await result
+            try:
+                if callable(start):
+                    result = start()
+                    if asyncio.iscoroutine(result):
+                        await result
+            except Exception:
+                close = getattr(connector, "close", None) or getattr(connector, "stop", None)
+                if callable(close):
+                    try:
+                        result = close()
+                        if asyncio.iscoroutine(result):
+                            await result
+                    except Exception:
+                        pass
+                raise
             self._loaded[key] = connector
             return connector
 
     async def unload(self, *, tenant_id: str, connector_id: str) -> bool:
         key = (tenant_id, connector_id)
         async with self._lock(key):
-            connector = self._loaded.pop(key, None)
+            connector = self._loaded.get(key)
             if connector is None:
                 return False
             close = getattr(connector, "close", None) or getattr(connector, "stop", None)
@@ -300,6 +310,7 @@ class ConnectorCatalog:
                 result = close()
                 if asyncio.iscoroutine(result):
                     await result
+            self._loaded.pop(key, None)
             return True
 
     async def health_check(self, *, tenant_id: str, connector_id: str) -> Any:
