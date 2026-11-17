@@ -390,6 +390,7 @@ def create_platform_app(
             "agent_management": registry_configured,
             "task_execution": task_center_configured,
             "graph": graph_configured,
+            "graph_annotation": graph_governance_resolver is not None,
             "batch_execution": batch_api_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
             "blackboard": blackboard_configured,
