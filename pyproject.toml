@@ -125,6 +125,8 @@ include = [
   "tests/test_production_deployment_contract.py",
   "tests/test_operational_health.py",
   "tests/test_operational_health_api.py",
+  "tests/test_runtime_self_monitor.py",
+  "tests/test_hot_configuration_reload.py",
   "agent_platform/api/health.py",
 ]
 
