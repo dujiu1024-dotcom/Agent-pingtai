@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable, Mapping
-from uuid import UUID
 
 from agent_platform.approval.policy import ActionRequest, RiskLevel
 
@@ -186,7 +185,6 @@ class PostgresApprovalTimeoutRepository:
         async with connection:
             async with connection.transaction():
                 scope = "AND tenant_id=%s" if tenant_id is not None else ""
-                params: tuple[Any, ...] = (now, tenant_id, limit) if tenant_id is not None else (now, limit)
                 cursor = await connection.execute(
                     f"""WITH due AS (
                            SELECT tenant_id, approval_id
