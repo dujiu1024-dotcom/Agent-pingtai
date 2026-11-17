@@ -30,7 +30,7 @@ class FakeConnection:
     async def execute(self, query, params=()):
         sql = " ".join(query.split())
         if sql.startswith("INSERT INTO platform_alert_events"):
-            event_id, scope, dedupe, rule, metric, value, threshold, severity, fired, description = params
+            event_id, scope, dedupe, rule, metric, value, threshold, severity, fired, description, on_call_user_id, ack_due_at = params
             key = (scope, dedupe)
             if key in self.events:
                 return FakeCursor()
@@ -38,7 +38,7 @@ class FakeConnection:
                    "metric_name": metric, "observed_value": value, "threshold": threshold,
                    "severity": severity, "fired_at": fired, "description": description,
                    "status": "open", "delivery_status": "pending", "delivery_attempts": 0, "acknowledged_by": None, "acknowledged_at": None,
-                   "resolved_at": None}
+                   "resolved_at": None, "on_call_user_id": on_call_user_id, "ack_due_at": ack_due_at}
             self.events[key] = row
             return FakeCursor(row)
         if sql.startswith("WITH candidates AS"):
@@ -52,13 +52,15 @@ class FakeConnection:
                     if len(rows) >= limit:
                         break
             return FakeCursor(rows=rows)
-        if sql.startswith("UPDATE platform_alert_events") and "delivery_status=%s" in sql:
-            status, success, delivered_at, error, event_id = params
+        if sql.startswith("UPDATE platform_alert_events") and "delivery_status=CASE" in sql:
+            success, _, delivered_at, _, _, error, event_id = params
+            status = "sent" if success else "failed"
             row = next((v for v in self.events.values() if v["event_id"] == event_id), None)
             if row and row["delivery_status"] == "sending":
                 row["delivery_status"] = status
                 row["delivered_at"] = delivered_at if success else None
                 row["last_delivery_error"] = error
+                row["next_delivery_at"] = None if success else delivered_at
                 return FakeCursor(row)
             return FakeCursor()
         if sql.startswith("SELECT event_id FROM platform_alert_events"):

@@ -128,6 +128,7 @@ class AlertRuleEvaluationWorker:
         self._task: asyncio.Task[None] | None = None
         self.cycles = 0
         self.last_result = {"observed": 0, "fired": 0, "created": 0, "deduplicated": 0}
+        self.last_digests: tuple[Any, ...] = ()
         self.last_error_type: str | None = None
 
     @property

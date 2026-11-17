@@ -13,7 +13,8 @@ class PostgresAlertEventStore:
         self._connect = connection_factory
 
     async def record_once(
-        self, event: AlertEvent, *, scope_key: str, dedupe_key: str
+        self, event: AlertEvent, *, scope_key: str, dedupe_key: str,
+        on_call_user_id: str | None = None, ack_due_at: datetime | None = None,
     ) -> tuple[str, bool]:
         if not scope_key.strip() or not dedupe_key.strip():
             raise ValueError("scope_key and dedupe_key are required")
@@ -23,13 +24,13 @@ class PostgresAlertEventStore:
             cursor = await connection.execute(
                 """INSERT INTO platform_alert_events
                    (event_id,scope_key,dedupe_key,rule_id,metric_name,observed_value,
-                    threshold,severity,fired_at,description,status)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open')
+                    threshold,severity,fired_at,description,status,on_call_user_id,ack_due_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',%s,%s)
                    ON CONFLICT (scope_key,dedupe_key) DO NOTHING
                    RETURNING event_id""",
                 (event_id,scope_key,dedupe_key,event.rule_id,event.metric_name,
                  event.observed_value,event.threshold,event.severity,event.fired_at,
-                 event.description),
+                 event.description,on_call_user_id,ack_due_at),
             )
             row = await cursor.fetchone()
             if row is not None:
@@ -57,8 +58,11 @@ class PostgresAlertEventStore:
                 cursor = await connection.execute(
                     """WITH candidates AS (
                          SELECT event_id FROM platform_alert_events
-                         WHERE (delivery_status IN ('pending','failed')
-                              OR (delivery_status='sending' AND delivery_claimed_at < now() - interval '5 minutes'))
+                         WHERE ((delivery_status='pending' AND next_delivery_at <= now())
+                              OR (delivery_status='failed' AND next_delivery_at <= now()
+                                  AND delivery_attempts < delivery_max_attempts)
+                              OR (delivery_status='sending' AND delivery_claimed_at < now() - interval '5 minutes'
+                                  AND delivery_attempts < delivery_max_attempts))
                            AND (%s IS NULL OR event_id=%s)
                          ORDER BY fired_at
                          LIMIT %s
@@ -99,8 +103,9 @@ class PostgresAlertEventStore:
             cursor = await connection.execute(
                 """SELECT event_id,scope_key,rule_id,metric_name,observed_value,
                           threshold,severity,fired_at,description,status,
-                          acknowledged_by,acknowledged_at,resolved_at,
-                          delivery_status,delivery_attempts,delivered_at,last_delivery_error
+                          acknowledged_by,acknowledged_at,resolved_at,on_call_user_id,ack_due_at,
+                          delivery_status,delivery_attempts,delivery_max_attempts,next_delivery_at,
+                          delivered_at,last_delivery_error
                    FROM platform_alert_events
                    WHERE scope_key=%s AND status IN ('open','acknowledged')
                    ORDER BY fired_at DESC LIMIT %s""",

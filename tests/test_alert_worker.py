@@ -40,7 +40,8 @@ class FakeAlertEventStore:
         self.events = {}
         self.fail_once = False
 
-    async def record_once(self, event, *, scope_key, dedupe_key):
+    async def record_once(self, event, *, scope_key, dedupe_key, **kwargs):
+        self.last_record_options = kwargs
         if self.fail_once:
             self.fail_once = False
             raise RuntimeError("database password=must-not-be-retained")
@@ -93,6 +94,39 @@ class AlertRuleEvaluationWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["deduplicated"], 1)
         self.assertEqual(result["created"], 0)
         self.assertEqual(manager.evaluate_candidates({"latency": 3.0}), ())
+
+
+    async def test_worker_applies_inhibition_and_persists_on_call_assignment(self):
+        from agent_platform.observability.alert_policy import (
+            AlertInhibitionRule, AlertPolicyEngine, OnCallRotation,
+        )
+        now = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        manager = AlertManager((
+            AlertRule("cluster-down", "cluster", 1, severity="critical"),
+            AlertRule("queue-lag", "queue", 5, severity="warning"),
+        ), FakeNotifier(), clock=lambda: now)
+        store = FakeAlertEventStore()
+        policy = AlertPolicyEngine(inhibition_rules=(
+            AlertInhibitionRule("cluster-down", frozenset({"queue-lag"}), "critical"),
+        ))
+        rotation = OnCallRotation(
+            user_ids=("oncall-a", "oncall-b"), starts_at=now,
+            rotation_interval=timedelta(hours=1),
+            acknowledgement_timeout=timedelta(minutes=10),
+        )
+        worker = AlertRuleEvaluationWorker(
+            manager=manager, metrics_provider=lambda: {"cluster": 2, "queue": 99},
+            event_store=store, scope_key="tenant-a",
+            policy_engine=policy, on_call_rotation=rotation,
+        )
+        result = await worker.run_once()
+        self.assertEqual(result["fired"], 1)
+        self.assertEqual(store.last_record_options["on_call_user_id"], "oncall-a")
+        self.assertEqual(
+            store.last_record_options["ack_due_at"], now + timedelta(minutes=10)
+        )
+        self.assertEqual([digest.events[0].rule_id for digest in worker.last_digests],
+                         ["cluster-down"])
 
     async def test_worker_survives_poll_errors_and_validates_configuration(self):
         stop = asyncio.Event()
