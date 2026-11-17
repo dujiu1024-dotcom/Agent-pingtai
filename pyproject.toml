@@ -24,6 +24,7 @@ include = [
   "scripts/inventory_legacy_system.py",
   "scripts/run_legacy_migration.py",
   "tests/test_release_gate_evidence.py",
+  "tests/test_issue_21_a_21_02_release_gate_blocking.py",
   "tests/test_release_upgrade.py",
   "tests/test_backup_integrity_verification.py",
   "tests/test_disaster_recovery_evidence.py",
