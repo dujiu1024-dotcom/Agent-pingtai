@@ -51,8 +51,14 @@ class RunEventBrokerTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         await broker.publish(tenant_id="t", run_id="r", event_type="RUN_START")
         await broker.publish(tenant_id="t", run_id="r", event_type="STEP_START")
-        self.assertEqual((await first).data["event_type"], "RUN_START")
+        reconnect = await first
+        self.assertEqual(reconnect.data["event_type"], "RECONNECT_REQUIRED")
+        self.assertIsNone(reconnect.event_id)
         await stream.aclose()
+        replay = await broker.subscribe(tenant_id="t", run_id="r")
+        self.assertEqual((await anext(replay)).data["event_type"], "RUN_START")
+        self.assertEqual((await anext(replay)).data["event_type"], "STEP_START")
+        await replay.aclose()
 
 
 if __name__ == "__main__":
