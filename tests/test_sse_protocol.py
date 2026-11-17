@@ -97,7 +97,7 @@ class SSEProtocolTests(unittest.IsolatedAsyncioTestCase):
             final=True,
         )
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0].data, {"part": "\\n" + '"joined"'})
+        self.assertEqual(events[0].data, {"part": "joined"})
 
 
 if __name__ == "__main__":
