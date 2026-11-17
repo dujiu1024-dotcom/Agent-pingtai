@@ -143,6 +143,10 @@ class ReliabilityFaultInjectionTests(unittest.IsolatedAsyncioTestCase):
 
         async def resume(snapshot):
             resumed.append(snapshot.run_id)
+            await lifecycle_after_restart.finish(
+                snapshot.tenant_id, snapshot.run_id, RunStatus.SUCCEEDED,
+                checkpoint_ref=snapshot.checkpoint_ref,
+            )
 
         recovered = await lifecycle_after_restart.recover(
             checkpoint_loader=load_checkpoint,
@@ -154,7 +158,7 @@ class ReliabilityFaultInjectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resumed, ["run-restart"])
         self.assertEqual(
             (await store.get("tenant-a", "run-restart")).status,
-            RunStatus.RUNNING,
+            RunStatus.SUCCEEDED,
         )
 
     async def test_model_timeout_transitions_run_to_timed_out_and_cancels_work(self):
