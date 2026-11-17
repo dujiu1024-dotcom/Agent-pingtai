@@ -52,8 +52,8 @@ class ProductionEgressPolicyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / ".env"
             path.write_text(
-                "EGRESS_PROXY_URL=https://proxy.example.internal:8443\\n"
-                "EGRESS_PROXY_URL=https://attacker.example.internal:8443\\n",
+                "EGRESS_PROXY_URL=https://proxy.example.internal:8443\n"
+                "EGRESS_PROXY_URL=https://attacker.example.internal:8443\n",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "duplicate environment key"):
