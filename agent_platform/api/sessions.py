@@ -751,7 +751,7 @@ def create_sessions_router(
         # Export every message in bounded pages; never silently truncate history.
         messages = []
         cursor = None
-        for _ in range(20):
+        for _ in range(21):
             page = await service.repository.list_messages(
                 principal.tenant_id, session_id, limit=500,
                 before_message_id=cursor,
@@ -759,13 +759,11 @@ def create_sessions_router(
             if not page:
                 break
             messages = list(page) + messages
+            if len(messages) > 10000:
+                raise HTTPException(413, "session export exceeds 10000 messages")
             if len(page) < 500:
                 break
             cursor = page[0].message_id
-        else:
-            raise HTTPException(413, "session export exceeds 10000 messages")
-        if len(messages) >= 10000:
-            raise HTTPException(413, "session export exceeds 10000 messages")
         payload = {
             "session": {
                 "session_id": session.session_id, "title": session.title,
