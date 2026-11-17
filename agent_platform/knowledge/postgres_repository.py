@@ -71,20 +71,21 @@ class PostgresKnowledgeRepository:
         return [Document(tenant_id=row["tenant_id"],document_id=str(row["document_id"]),version=row["version"],title=row["title"],source_uri=row["source_uri"],content_hash=row["content_hash"],scope=KnowledgeScope(row["scope"]),project_id=row["project_id"],owner_user_id=row["owner_user_id"],media_type=row["media_type"],metadata=dict(row["metadata"] or {}),created_at=row["created_at"],deleted_at=row["deleted_at"]) for row in rows]
     @staticmethod
     def _hit(row: dict[str,Any],strategy: str)->RetrievalHit:
-        return RetrievalHit(document_id=str(row["document_id"]),document_version=row["version"],chunk_id=str(row["chunk_id"]),text=row["body"],source_uri=row["source_uri"],title=row["title"],score=float(row["score"] or 0),page_number=row["page_number"],start_offset=row["start_offset"],end_offset=row["end_offset"],retrieval_trace={"strategy":strategy,"tenant_scoped":True,"acl_filtered_in_sql":True})
+        return RetrievalHit(document_id=str(row["document_id"]),document_version=row["version"],chunk_id=str(row["chunk_id"]),text=row["body"],source_uri=row["source_uri"],title=row["title"],score=float(row["score"] or 0),page_number=row["page_number"],start_offset=row["start_offset"],end_offset=row["end_offset"],retrieval_trace={"strategy":strategy,"tenant_scoped":True,"acl_filtered_in_sql":True,"citation":{"document_id":str(row["document_id"]),"document_version":row["version"],"chunk_id":str(row["chunk_id"]),"source_uri":row["source_uri"],"title":row["title"],"page_number":row["page_number"],"start_offset":row["start_offset"],"end_offset":row["end_offset"]}})
     async def search(self,*,principal: KnowledgePrincipal,query: str,query_vector: Sequence[float]|None,limit: int)->list[RetrievalHit]:
         conn=await self._connect();roles=list(principal.roles);projects=list(principal.project_ids);candidate_limit=max(limit*4,20)
         acl="""((NOT d.acl_enforced AND NOT EXISTS(SELECT 1 FROM knowledge_document_acl ax WHERE ax.tenant_id=d.tenant_id AND ax.document_id=d.document_id)) OR (d.scope='private' AND d.owner_user_id=%s) OR EXISTS(SELECT 1 FROM knowledge_document_acl a WHERE a.tenant_id=d.tenant_id AND a.document_id=d.document_id AND a.permission IN ('read','manage') AND ((a.principal_type='user' AND a.principal_id=%s) OR (a.principal_type='role' AND a.principal_id=ANY(%s)) OR (a.principal_type='project' AND a.principal_id=ANY(%s)))))"""
         common="""d.tenant_id=%s AND d.deleted_at IS NULL AND d.version=(SELECT max(dv.version) FROM knowledge_documents dv WHERE dv.tenant_id=d.tenant_id AND dv.document_id=d.document_id AND dv.deleted_at IS NULL) AND ((d.scope='tenant') OR (d.scope='project' AND d.project_id=ANY(%s)) OR (d.scope='private' AND (d.owner_user_id=%s OR d.acl_enforced OR EXISTS(SELECT 1 FROM knowledge_document_acl ap WHERE ap.tenant_id=d.tenant_id AND ap.document_id=d.document_id)))) AND """+acl
-        lexical_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,ts_rank_cd(c.search_vector,plainto_tsquery('simple',%s)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version WHERE """+common+""" AND c.search_vector @@ plainto_tsquery('simple',%s) ORDER BY score DESC LIMIT %s"""
-        lexical_params=(query,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,query,candidate_limit)
+        chunk_acl="""(NOT c.acl_enforced OR EXISTS(SELECT 1 FROM knowledge_chunk_acl ca WHERE ca.tenant_id=c.tenant_id AND ca.chunk_id=c.chunk_id AND ca.permission IN ('read','manage') AND ((ca.principal_type='user' AND ca.principal_id=%s) OR (ca.principal_type='role' AND ca.principal_id=ANY(%s)) OR (ca.principal_type='project' AND ca.principal_id=ANY(%s)))))"""
+        lexical_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,ts_rank_cd(c.search_vector,plainto_tsquery('simple',%s)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version WHERE """+common+" AND "+chunk_acl+" AND c.search_vector @@ plainto_tsquery('simple',%s) ORDER BY score DESC LIMIT %s"
+        lexical_params=(query,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,query,candidate_limit)
         async with conn:
             cur=await conn.execute(lexical_sql,lexical_params);lexical=await cur.fetchall()
             semantic=[]
             if query_vector:
                 literal="["+",".join(str(float(x)) for x in query_vector)+"]"
-                semantic_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,(1-(e.embedding <=> %s::vector)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version JOIN knowledge_embeddings e ON e.tenant_id=c.tenant_id AND e.chunk_id=c.chunk_id AND e.embedding_model=%s WHERE """+common+""" ORDER BY e.embedding <=> %s::vector LIMIT %s"""
-                semantic_params=(literal,self.embedding_model,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,literal,candidate_limit)
+                semantic_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,(1-(e.embedding <=> %s::vector)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version JOIN knowledge_embeddings e ON e.tenant_id=c.tenant_id AND e.chunk_id=c.chunk_id AND e.embedding_model=%s WHERE """+common+" AND "+chunk_acl+" ORDER BY e.embedding <=> %s::vector LIMIT %s"
+                semantic_params=(literal,self.embedding_model,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,literal,candidate_limit)
                 cur=await conn.execute(semantic_sql,semantic_params);semantic=await cur.fetchall()
         # Reciprocal-rank fusion combines independent lexical and semantic candidate lists.
         fused:dict[str,tuple[float,dict[str,Any],set[str]]]={}
@@ -134,6 +135,10 @@ class PostgresKnowledgeRepository:
                     (tenant_id, document_id),
                 )
                 await conn.execute(
+                    "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
+                    (tenant_id, document_id),
+                )
+                await conn.execute(
                     """INSERT INTO knowledge_document_acl
                     (tenant_id,document_id,principal_type,principal_id,permission,granted_by)
                     VALUES(%s,%s,%s,%s,%s,%s)
@@ -155,6 +160,11 @@ class PostgresKnowledgeRepository:
                     AND principal_id=%s AND permission=%s""",
                     (tenant_id, document_id, principal_type, principal_id, permission),
                 )
+                if cur.rowcount:
+                    await conn.execute(
+                        "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
+                        (tenant_id, document_id),
+                    )
                 return cur.rowcount > 0
 
     async def replace_document_access(
@@ -190,6 +200,10 @@ class PostgresKnowledgeRepository:
                     "DELETE FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",
                     (tenant_id, document_id),
                 )
+                await conn.execute(
+                    "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
+                    (tenant_id, document_id),
+                )
                 for kind, identifier, permission in sorted(normalized):
                     await conn.execute(
                         """INSERT INTO knowledge_document_acl
@@ -198,12 +212,40 @@ class PostgresKnowledgeRepository:
                         (tenant_id, document_id, kind, identifier, permission, granted_by),
                     )
 
+    async def grant_chunk_access(self, tenant_id: str, document_id: str, chunk_id: str, principal_type: str, principal_id: str, permission: str, granted_by: str) -> None:
+        if principal_type not in {"user", "role", "project"} or permission not in {"read", "manage"}:
+            raise ValueError("invalid chunk ACL")
+        if not principal_id.strip() or not granted_by.strip():
+            raise ValueError("chunk ACL principal and grantor are required")
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute("SELECT 1 FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s AND chunk_id=%s", (tenant_id, document_id, chunk_id))
+                if await cur.fetchone() is None:
+                    raise ValueError("chunk not found")
+                await conn.execute("UPDATE knowledge_chunks SET acl_enforced=true WHERE tenant_id=%s AND chunk_id=%s", (tenant_id, chunk_id))
+                await conn.execute("""INSERT INTO knowledge_chunk_acl (tenant_id,chunk_id,principal_type,principal_id,permission,granted_by) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(tenant_id,chunk_id,principal_type,principal_id,permission) DO UPDATE SET granted_by=EXCLUDED.granted_by,created_at=now()""", (tenant_id, chunk_id, principal_type, principal_id, permission, granted_by))
+                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'acl_changed')", (tenant_id, chunk_id))
+
+    async def revoke_chunk_access(self, tenant_id: str, chunk_id: str, principal_type: str, principal_id: str, permission: str) -> bool:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute("DELETE FROM knowledge_chunk_acl WHERE tenant_id=%s AND chunk_id=%s AND principal_type=%s AND principal_id=%s AND permission=%s", (tenant_id, chunk_id, principal_type, principal_id, permission))
+                if cur.rowcount:
+                    await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'acl_changed')", (tenant_id, chunk_id))
+                return cur.rowcount > 0
+
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
         conn=await self._connect()
         async with conn:
             async with conn.transaction():
                 cur=await conn.execute("UPDATE knowledge_documents SET deleted_at=now() WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",(tenant_id,document_id))
                 if cur.rowcount<1:return False
+                await conn.execute(
+                    "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'deleted')",
+                    (tenant_id, document_id),
+                )
                 # Remove derived vectors in the same transaction as source chunks.
                 await conn.execute("DELETE FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id IN (SELECT chunk_id FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s)",(tenant_id,tenant_id,document_id))
                 await conn.execute("DELETE FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s",(tenant_id,document_id))

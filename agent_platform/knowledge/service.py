@@ -132,6 +132,40 @@ class KnowledgeService:
             principal.tenant_id, document_id, principal_type, principal_id, permission,
         )
 
+    async def grant_chunk_access(
+        self, *, principal: KnowledgePrincipal, document_id: str, chunk_id: str,
+        principal_type: str, principal_id: str, permission: str = "read",
+    ) -> None:
+        if principal_type not in {"user", "role", "project"} or permission not in {"read", "manage"}:
+            raise ValueError("invalid chunk ACL")
+        if not principal_id.strip():
+            raise ValueError("principal_id must not be empty")
+        document = await self.repository.get_document(principal.tenant_id, document_id)
+        if document is None:
+            raise ValueError("document not found")
+        if not self._can_manage_document(document, principal):
+            raise PermissionError("chunk ACL management is not authorized")
+        grant = getattr(self.repository, "grant_chunk_access", None)
+        if not callable(grant):
+            raise RuntimeError("repository does not support chunk ACLs")
+        await grant(principal.tenant_id, document_id, chunk_id, principal_type, principal_id, permission, principal.user_id)
+
+    async def revoke_chunk_access(
+        self, *, principal: KnowledgePrincipal, document_id: str, chunk_id: str,
+        principal_type: str, principal_id: str, permission: str = "read",
+    ) -> bool:
+        if principal_type not in {"user", "role", "project"} or permission not in {"read", "manage"}:
+            raise ValueError("invalid chunk ACL")
+        document = await self.repository.get_document(principal.tenant_id, document_id)
+        if document is None:
+            raise ValueError("document not found")
+        if not self._can_manage_document(document, principal):
+            raise PermissionError("chunk ACL management is not authorized")
+        revoke = getattr(self.repository, "revoke_chunk_access", None)
+        if not callable(revoke):
+            raise RuntimeError("repository does not support chunk ACLs")
+        return await revoke(principal.tenant_id, chunk_id, principal_type, principal_id, permission)
+
     async def delete_document(self,*,principal: KnowledgePrincipal,document_id: str)->bool:
         document=await self.repository.get_document(principal.tenant_id,document_id)
         if document is None:

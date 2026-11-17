@@ -153,6 +153,55 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id, doc.document_id),
             )
             self.assertEqual((await cur.fetchone())["n"],0)
+    async def test_chunk_acl_is_filtered_before_retrieval_and_emits_cache_invalidation(self):
+        document = Document(
+            tenant_id=self.tenant_id, title="mixed access source",
+            source_uri="https://example.test/source", content_hash="source-hash",
+        )
+        allowed_chunk = DocumentChunk(
+            tenant_id=self.tenant_id, document_id=document.document_id,
+            document_version=1, ordinal=0, text="public context marker",
+            content_hash="public", start_offset=0, end_offset=21,
+        )
+        restricted_chunk = DocumentChunk(
+            tenant_id=self.tenant_id, document_id=document.document_id,
+            document_version=1, ordinal=1, text="secret needle marker",
+            content_hash="secret", start_offset=22, end_offset=42,
+        )
+        await self.knowledge.save_document(document, [allowed_chunk, restricted_chunk])
+        await self.knowledge.grant_chunk_access(
+            self.tenant_id, document.document_id, restricted_chunk.chunk_id,
+            "user", "permitted", "read", "owner",
+        )
+        denied = await self.knowledge.search(
+            principal=KnowledgePrincipal(tenant_id=self.tenant_id, user_id="denied"),
+            query="needle", query_vector=None, limit=5,
+        )
+        permitted = await self.knowledge.search(
+            principal=KnowledgePrincipal(tenant_id=self.tenant_id, user_id="permitted"),
+            query="needle", query_vector=None, limit=5,
+        )
+        self.assertEqual(denied, [])
+        self.assertEqual(len(permitted), 1)
+        citation = permitted[0].retrieval_trace["citation"]
+        self.assertEqual(citation["document_id"], document.document_id)
+        self.assertEqual(citation["chunk_id"], restricted_chunk.chunk_id)
+        self.assertEqual(citation["source_uri"], document.source_uri)
+        self.assertEqual(citation["start_offset"], 22)
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT reason FROM knowledge_cache_invalidations WHERE tenant_id=%s AND resource_type='chunk' AND resource_id=%s ORDER BY event_id DESC LIMIT 1",
+                (self.tenant_id, restricted_chunk.chunk_id),
+            )
+            self.assertEqual((await cur.fetchone())["reason"], "acl_changed")
+        self.assertTrue(await self.knowledge.revoke_chunk_access(
+            self.tenant_id, restricted_chunk.chunk_id, "user", "permitted", "read",
+        ))
+        self.assertEqual(await self.knowledge.search(
+            principal=KnowledgePrincipal(tenant_id=self.tenant_id, user_id="permitted"),
+            query="needle", query_vector=None, limit=5,
+        ), [])
+
     async def test_memory_candidate_confirmation_correction_export_expiry_and_delete(self):
         candidate=MemoryCandidate(tenant_id=self.tenant_id,scope=MemoryScope.USER,scope_id="user-1",content="old preference",source_ref="conversation:1",confidence=.8,created_by="extractor")
         await self.memory.propose(candidate)
