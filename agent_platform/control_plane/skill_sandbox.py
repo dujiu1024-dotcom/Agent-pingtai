@@ -154,6 +154,22 @@ class SkillSandboxRuntime:
         if hasattr(value, "__await__"):
             await value
 
+    def _ensure_runner_input_fits(self, archive: bytes, paths: tuple[str, ...]) -> None:
+        """Fail during install, not at execution, when OCI stdin cannot carry a bundle."""
+        config = getattr(self.sandbox_runner, "config", None)
+        limit = getattr(config, "max_stdin_bytes", None)
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+            return
+        request = json.dumps({
+            "archive": base64.b64encode(archive).decode("ascii"),
+            "bundle_paths": list(paths),
+        }, separators=(",", ":")).encode("utf-8")
+        if len(request) > limit:
+            raise SkillSandboxError(
+                "Skill bundle exceeds the configured OCI sandbox input limit "
+                f"({len(request)} > {limit} bytes)"
+            )
+
     @staticmethod
     def _inspect_archive(archive: bytes) -> tuple[str, ...]:
         import io
@@ -192,6 +208,7 @@ class SkillSandboxRuntime:
         if not isinstance(archive, bytes) or not archive or len(archive) > self.max_bundle_bytes:
             raise SkillSandboxError("Skill bundle is empty or exceeds the configured size limit")
         paths = self._inspect_archive(archive)
+        self._ensure_runner_input_fits(archive, paths)
         import io
         import zipfile
         with zipfile.ZipFile(io.BytesIO(archive), "r") as bundle:
@@ -227,6 +244,7 @@ class SkillSandboxRuntime:
         if archive is None:
             raise LookupError("Skill version is not installed")
         paths = self._inspect_archive(archive)
+        self._ensure_runner_input_fits(archive, paths)
         # Re-scan at load time so a newly detected threat blocks existing installs.
         try:
             clean = await self.scanner.scan(skill_id + ".zip", "application/zip", archive)
