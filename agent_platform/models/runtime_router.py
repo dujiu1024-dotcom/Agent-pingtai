@@ -356,6 +356,7 @@ class OpenAICompatibleModelRouter:
         if len(candidates) != len(set(candidates)):
             raise ValueError("model route candidates must be unique")
         last_error: Exception | None = None
+        stream_tokens_emitted = False
         for index, candidate in enumerate(candidates):
             # Write-ahead audit before registry resolution and quota checks so
             # rejected attempts are visible and no Provider can run unaudited.
@@ -604,7 +605,11 @@ class OpenAICompatibleModelRouter:
                             timeout_seconds=self.timeout_seconds,
                         )
                         if on_token is not None:
-                            transport_args["on_token"] = on_token
+                            async def emit_stream_token(token: str) -> None:
+                                nonlocal stream_tokens_emitted
+                                stream_tokens_emitted = True
+                                await on_token(token)
+                            transport_args["on_token"] = emit_stream_token
                         raw = await self.transport.complete(**transport_args)
                     except ModelTransportError as exc:
                         if self.circuit_breaker is not None:
@@ -633,11 +638,11 @@ class OpenAICompatibleModelRouter:
                     status = "response_received"
                     safe_update(span, output={"status": status})
             except ModelTransportError as exc:
-                if quota_reservation is not None:
-                    # The provider may have accepted the request before the transport failed.
-                    # Keep the reservation and prohibit automatic fallback to avoid duplicate billing.
+                if quota_reservation is not None or stream_tokens_emitted:
+                    # Once tokens are visible, fallback would duplicate partial user output.
+                    # Keep any reservation and let reconciliation handle ambiguous billing.
                     raise ModelUsageRecordingError(
-                        "model transport outcome is ambiguous; quota reservation retained for reconciliation"
+                        "streaming model outcome is ambiguous; fallback is prohibited"
                     ) from exc
                 last_error = exc
                 safe_metric(
