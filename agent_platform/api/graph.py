@@ -18,6 +18,17 @@ class GraphAccessScope:
     project_ids: tuple[str, ...] = ()
     allow_tenant_scope: bool = False
 
+    def __post_init__(self) -> None:
+        if isinstance(self.project_ids, (str, bytes)):
+            raise ValueError("project_ids must be a sequence of project IDs")
+        if any(not isinstance(value, str) or not value.strip() for value in self.project_ids):
+            raise ValueError("project_ids must contain non-empty strings")
+        if len(self.project_ids) != len(set(self.project_ids)):
+            raise ValueError("project_ids must be unique")
+        if type(self.allow_tenant_scope) is not bool:
+            raise ValueError("allow_tenant_scope must be a boolean")
+        object.__setattr__(self, "project_ids", tuple(self.project_ids))
+
 
 GraphReadAuthorizer = Callable[[Principal], Awaitable[GraphAccessScope]]
 GovernanceResolver = Callable[[Principal], Awaitable[Any]]
