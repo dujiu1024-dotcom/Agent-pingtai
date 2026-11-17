@@ -57,6 +57,7 @@ class OpenAICompatibleTransport(Protocol):
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> Mapping[str, Any]: ...
 
 
