@@ -173,6 +173,7 @@ include = [
   "tests/test_graph_governance.py",
   "tests/test_graph_schema.py",
   "tests/test_issue_22_a_22_05_benchmark_contract.py",
+  "scripts/benchmark_graph_postgres.py",
   "tests/test_graph_admin_api.py",
   "tests/test_graph_workbench_ui.py",
   "tests/test_session_data_model.py",
