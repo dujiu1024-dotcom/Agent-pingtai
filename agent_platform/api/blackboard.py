@@ -36,6 +36,16 @@ def create_blackboard_router(
             raise HTTPException(403, "Blackboard repository tenant mismatch")
         return repository
 
+    async def scope_is_authorized(
+        principal: Principal, scope: Scope, scope_id: str, action: str
+    ) -> bool:
+        # Tenant resources are addressed by the authenticated tenant, not by
+        # a tenant identifier supplied by a caller. Project/task membership is
+        # resolved by the host's resource-level authorization policy.
+        if scope is Scope.TENANT and scope_id != principal.tenant_id:
+            return False
+        return await authorize_scope(principal, scope, scope_id, action)
+
     async def verify_refs(principal: Principal, scope: Scope, scope_id: str, refs: Sequence[str]) -> tuple[str, ...]:
         normalized = tuple(dict.fromkeys(ref.strip() for ref in refs if ref.strip()))
         if not normalized:
@@ -43,12 +53,12 @@ def create_blackboard_router(
         if verify_evidence_refs is None:
             raise HTTPException(503, "evidence reference verification is not configured")
         if not await verify_evidence_refs(principal, scope, scope_id, normalized):
-            raise HTTPException(422, "one or more evidence references are missing or inaccessible")
+            raise HTTPException(422, "one or more Blackboard evidence references are missing or inaccessible")
         return normalized
 
     async def scope_context(request: Request, scope: Scope, scope_id: str, action: str):
         principal = await resolve_principal(request)
-        if not await authorize_scope(principal, scope, scope_id, action):
+        if not await scope_is_authorized(principal, scope, scope_id, action):
             raise HTTPException(403, "Blackboard scope access denied")
         return principal, await repository_for(principal)
 
@@ -58,7 +68,7 @@ def create_blackboard_router(
         entry = await repository.get(entry_id)
         if entry is None:
             raise HTTPException(404, "Blackboard entry not found")
-        if not await authorize_scope(principal, entry.scope, entry.scope_id, action):
+        if not await scope_is_authorized(principal, entry.scope, entry.scope_id, action):
             raise HTTPException(403, "Blackboard scope access denied")
         return principal, repository, entry
 
@@ -107,7 +117,7 @@ def create_blackboard_router(
             raise HTTPException(400, "scope_id and object content are required")
         if not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs):
             raise HTTPException(400, "source_refs must be an array of strings")
-        if not await authorize_scope(principal, scope, scope_id, "write"):
+        if not await scope_is_authorized(principal, scope, scope_id, "write"):
             raise HTTPException(403, "Blackboard scope access denied")
         refs = await verify_refs(principal, scope, scope_id, refs)
         repository = await repository_for(principal)
@@ -173,8 +183,8 @@ def create_blackboard_router(
             raise HTTPException(400, "JSON object required")
         content = body.get("content")
         expected_version = body.get("expected_version")
-        if not isinstance(content, dict) or not isinstance(expected_version, int):
-            raise HTTPException(400, "content and integer expected_version are required")
+        if not isinstance(content, dict) or type(expected_version) is not int or expected_version < 1:
+            raise HTTPException(400, "content and positive integer expected_version are required")
         await verify_refs(principal, entry.scope, entry.scope_id, entry.source_refs)
         replacement = replace(entry, content=content, author_id=principal.user_id)
         try:

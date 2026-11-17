@@ -101,10 +101,14 @@ class BlackboardApiTests(unittest.TestCase):
             )
 
         async def authorize_scope(principal, scope, scope_id, action):
+            allowed_scopes = {
+                (Scope.TASK, "task-a"),
+                (Scope.PROJECT, "project-a"),
+                (Scope.TENANT, "tenant-a"),
+            }
             return (
                 principal.tenant_id == self.repository.tenant_id
-                and scope is Scope.TASK
-                and scope_id == "task-a"
+                and (scope, scope_id) in allowed_scopes
                 and action in {"read", "write", "decide"}
             )
 
@@ -278,6 +282,76 @@ class BlackboardApiTests(unittest.TestCase):
         )
         self.assertEqual(wrong_tenant.status_code, 403)
 
+
+    def test_project_and_tenant_scopes_are_authorized_independently(self):
+        for scope, scope_id in (("project", "project-a"), ("tenant", "tenant-a")):
+            response = self.client.post(
+                "/api/platform/v1/blackboard/entries",
+                json={
+                    "scope": scope,
+                    "scope_id": scope_id,
+                    "kind": "fact",
+                    "content": {"scope": scope},
+                    "tenant_id": "tenant-b",
+                    "author_id": "attacker",
+                },
+            )
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.json()["author_id"], "user-a")
+            self.assertEqual(response.json()["scope_id"], scope_id)
+
+    def test_tenant_scope_cannot_target_another_tenant_even_if_policy_is_permissive(self):
+        async def resolve_principal(request):
+            return Principal(
+                user_id="user-a",
+                tenant_id="tenant-a",
+                session_id="session-a",
+                email="user@example.com",
+                display_name="User",
+            )
+
+        async def resolve_repository(principal):
+            return self.repository
+
+        async def permissive_authorizer(principal, scope, scope_id, action):
+            return True
+
+        app = FastAPI()
+        app.include_router(create_blackboard_router(
+            resolve_principal=resolve_principal,
+            resolve_repository=resolve_repository,
+            authorize_scope=permissive_authorizer,
+        ))
+        client = TestClient(app)
+        denied = client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "tenant",
+                "scope_id": "tenant-b",
+                "kind": "fact",
+                "content": {"secret": "must not cross tenant boundary"},
+            },
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(self.repository.entries, {})
+
+    def test_expected_version_rejects_boolean_and_non_positive_values(self):
+        proposed = self.client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "task",
+                "scope_id": "task-a",
+                "kind": "fact",
+                "content": {"value": "initial"},
+            },
+        )
+        entry_id = proposed.json()["entry_id"]
+        for invalid_version in (True, 0, -1):
+            response = self.client.patch(
+                f"/api/platform/v1/blackboard/entries/{entry_id}",
+                json={"expected_version": invalid_version, "content": {"value": "invalid"}},
+            )
+            self.assertEqual(response.status_code, 400)
 
 if __name__ == "__main__":
     unittest.main()
