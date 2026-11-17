@@ -73,3 +73,23 @@
 - FastAPI 自动生成的 OpenAPI JSON 是路由级机器可读 schema；Swagger UI 位于应用默认文档入口。
 - 本文定义跨路由语义；新增/变更路由必须说明认证、授权动作、分页参数、幂等支持情况、错误码和版本兼容性。
 - 契约 helper 存在不代表所有既有路由都已切换到 cursor 分页或持久化幂等。路由接线须有对应测试，不得仅凭文档宣称覆盖。
+
+
+## 标准 HTTP 错误码扩展
+
+除上表列出的核心状态外，常见 HTTP 失败状态也使用稳定、可分支处理的错误码：
+
+| HTTP 状态 | 稳定错误码 |
+|---:|---|
+| 405 | METHOD_NOT_ALLOWED |
+| 408 | REQUEST_TIMEOUT |
+| 413 | PAYLOAD_TOO_LARGE |
+| 415 | UNSUPPORTED_MEDIA_TYPE |
+| 416 | RANGE_NOT_SATISFIABLE |
+| 418 | REQUEST_REJECTED |
+| 423 | RESOURCE_LOCKED |
+| 424 | FAILED_DEPENDENCY |
+| 428 | PRECONDITION_REQUIRED |
+| 431 | REQUEST_HEADER_FIELDS_TOO_LARGE |
+
+未显式登记的 4xx 映射为 `REQUEST_FAILED`；未显式登记的 5xx 映射为 `INTERNAL_ERROR`，并始终隐藏内部异常文本。客户端应优先依赖稳定错误码，不应解析 message 文本。
