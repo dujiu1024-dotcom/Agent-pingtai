@@ -130,6 +130,23 @@ def expert_dispatch_payloads(state: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def ordered_expert_contributions(
+    contributions: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return an isolated, deterministic view of concurrently collected results.
+
+    LangGraph's additive reducer collects branches in completion order. That
+    order is inherently nondeterministic, so downstream synthesis and review
+    must not use it as a precedence signal when experts disagree.
+    """
+    normalized = [copy.deepcopy(dict(item)) for item in contributions]
+    normalized.sort(key=lambda item: (
+        str(item.get("expert_id") or item.get("author_id") or ""),
+        str(item.get("blackboard_entry_id") or ""),
+    ))
+    return normalized
+
+
 def build_multi_expert_workflow(
     *,
     services: MultiExpertServices,
@@ -178,7 +195,7 @@ def build_multi_expert_workflow(
     async def synthesize(state: MultiExpertState) -> dict[str, Any]:
         result = await services.synthesize(
             objective=state["objective"],
-            contributions=state.get("contributions", []),
+            contributions=ordered_expert_contributions(state.get("contributions", [])),
             run_context=workflow_context(state),
         )
         return {"synthesis": dict(result)}
@@ -186,7 +203,7 @@ def build_multi_expert_workflow(
     async def review(state: MultiExpertState) -> dict[str, Any]:
         result = await services.review(
             synthesis=state["synthesis"],
-            contributions=state.get("contributions", []),
+            contributions=ordered_expert_contributions(state.get("contributions", [])),
             run_context=workflow_context(state),
         )
         return {
