@@ -140,6 +140,16 @@ class GraphVectorRetriever(Protocol):
     ) -> Sequence[Mapping[str, Any]]: ...
 
 
+def _validate_scoped_record(
+    row: Mapping[str, Any], *, tenant_id: str, project_ids: frozenset[str],
+) -> None:
+    if row.get("tenant_id") != tenant_id:
+        raise GraphQueryAuthorizationError("graph repository returned a cross-tenant record")
+    project_id = row.get("project_id")
+    if project_id is not None and project_id not in project_ids:
+        raise GraphQueryAuthorizationError("graph repository returned an unauthorized project record")
+
+
 class GraphQueryService:
     """Pass principal-derived scope to adapters and fail closed on bad results."""
 
@@ -181,17 +191,31 @@ class GraphQueryService:
         for row in rows:
             if not isinstance(row, Mapping):
                 raise GraphQueryError("graph repository returned a non-object record")
-            if row.get("tenant_id") != tenant_id:
-                raise GraphQueryAuthorizationError("graph repository returned a cross-tenant record")
-            project_id = row.get("project_id")
-            if project_id is not None and project_id not in project_ids:
-                raise GraphQueryAuthorizationError("graph repository returned an unauthorized project record")
+            _validate_scoped_record(
+                row, tenant_id=tenant_id, project_ids=project_ids,
+            )
             entity_id = row.get("entity_id")
             if not isinstance(entity_id, str) or not _RECORD_ID.fullmatch(entity_id):
                 raise GraphQueryError("graph repository returned an invalid entity_id")
-            if entity_id in seen:
+            path = row.get("path", ())
+            if path:
+                if not isinstance(path, Sequence) or isinstance(path, (str, bytes)):
+                    raise GraphQueryError("path result must contain a sequence of nodes")
+                for node in path:
+                    if not isinstance(node, Mapping):
+                        raise GraphQueryError("path result contains a non-object node")
+                    _validate_scoped_record(
+                        node, tenant_id=tenant_id, project_ids=project_ids,
+                    )
+                    node_id = node.get("entity_id")
+                    if not isinstance(node_id, str) or not _RECORD_ID.fullmatch(node_id):
+                        raise GraphQueryError("path result contains an invalid entity_id")
+            result_id = row.get("result_id", entity_id)
+            if not isinstance(result_id, str) or not result_id:
+                raise GraphQueryError("graph repository returned an invalid result_id")
+            if result_id in seen:
                 continue
-            seen.add(entity_id)
+            seen.add(result_id)
             result.append(dict(row))
         return tuple(result)
 
@@ -238,7 +262,8 @@ class GraphQueryService:
         candidates = tuple(item["entity_id"] for item in graph_result.items)
         if not candidates:
             return GraphHybridResult((), graph_result.truncated, graph_result.elapsed_ms)
-        remaining = spec.timeout_ms / 1000 - (monotonic() - started)
+        total_budget = min(spec.timeout_ms, self.max_timeout_ms) / 1000
+        remaining = total_budget - (monotonic() - started)
         if remaining <= 0:
             raise GraphQueryTimeout("hybrid retrieval exceeded its time budget")
         try:
