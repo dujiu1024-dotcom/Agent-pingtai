@@ -126,7 +126,10 @@ class SessionRunPersistence:
             message_id = str(uuid5(
                 NAMESPACE_URL, f"session-run:{tenant_id}:{session_id}:{run_id}:stream:{identity}",
             ))
-            if message_id in existing_ids:
+            if message_id in existing_ids or any(
+                row.run_id == run_id and row.role == role and row.content == content
+                for row in rows
+            ):
                 continue
             usage = None
             if isinstance(usage_data, Mapping):
