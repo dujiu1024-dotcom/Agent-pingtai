@@ -181,5 +181,44 @@ class PromptABExperimentTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_repeated_ab_scores_have_less_than_five_percent_cv(self):
+        """Acceptance harness: repeated runs stay within the 5% score-CV gate."""
+        import statistics
+
+        registry, _ = setup_registry()
+        run_judge_scores = (0.78, 0.82, 0.79, 0.81) * 5
+        candidate_scores = []
+
+        for judge_value in run_judge_scores:
+            service = PromptABTestService(
+                registry=registry,
+                executor=FakeExecutor(),
+                repository=InMemoryPromptExperimentRepository(),
+                judge=FakeJudge(judge_value),
+                judge_weight=0.5,
+            )
+            report = await service.run(
+                tenant_id="tenant-a",
+                prompt_id="support",
+                dataset=dataset(),
+                variants=("control", "candidate"),
+                baseline_variant="control",
+            )
+            candidate = next(
+                item for item in report.metrics if item.variant == "candidate"
+            )
+            candidate_scores.append(candidate.average_score)
+
+        mean_score = statistics.fmean(candidate_scores)
+        coefficient_of_variation = statistics.pstdev(candidate_scores) / mean_score
+        self.assertGreater(mean_score, 0)
+        self.assertLess(
+            coefficient_of_variation,
+            0.05,
+            f"score coefficient of variation {coefficient_of_variation:.2%} "
+            "must remain below 5%",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
