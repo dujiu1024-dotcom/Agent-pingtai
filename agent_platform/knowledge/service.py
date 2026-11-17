@@ -90,8 +90,11 @@ class KnowledgeService:
             collection = await self.repository.get_collection(document.tenant_id, document.collection_id)
             if collection is None:
                 raise ValueError("collection not found in tenant")
-            if collection.project_id is not None and collection.project_id != document.project_id:
-                raise ValueError("document project must match collection project")
+            if collection.project_id is not None and (
+                collection.project_id != document.project_id
+                or document.scope.value != "project"
+            ):
+                raise ValueError("project collections require project-scoped documents in the same project")
         existing=await self.repository.get_document(document.tenant_id,document.document_id)
         if existing is not None:
             unchanged=(
