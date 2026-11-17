@@ -141,7 +141,7 @@ class PostgresIdempotencyBackend:
     ) -> IdempotencyClaim:
         async with self.pool.connection() as connection:
             async with connection.transaction():
-                await connection.execute(
+                cursor = await connection.execute(
                     """INSERT INTO platform_api_idempotency
                        (tenant_id, principal_id, http_method, route, idempotency_key,
                         request_hash, state, owner_token, lease_expires_at, expires_at)
