@@ -164,6 +164,13 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
             source_version=1, target_version=1, conflict_policy="prefer_target",
         )
         self.assertEqual(merged.attributes["title"], "target title")
+        self.assertEqual(
+            merged.source_refs,
+            (
+                "knowledge://tenant-a/target@1",
+                "knowledge://tenant-a/source@1",
+            ),
+        )
         source = await self.repository.get_entity("tenant-a", "source")
         self.assertIs(source.status, GraphEntityStatus.SUPERSEDED)
         self.assertEqual(source.merged_into, "target")
@@ -203,6 +210,34 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
         active = await self.repository.get_entity("tenant-a", "not-expired")
         self.assertIs(expired.status, GraphEntityStatus.EXPIRED)
         self.assertIs(active.status, GraphEntityStatus.ACTIVE)
+
+
+    async def test_entity_rejects_cross_tenant_and_unversioned_source_references(self):
+        with self.assertRaisesRegex(ValueError, "tenant-bound"):
+            GovernedGraphEntity(
+                tenant_id="tenant-a", entity_id="bad", entity_type="document",
+                attributes={}, source_refs=("knowledge://tenant-b/doc@1",),
+            )
+        with self.assertRaisesRegex(ValueError, "pin an explicit version"):
+            GovernedGraphEntity(
+                tenant_id="tenant-a", entity_id="bad", entity_type="document",
+                attributes={}, source_refs=("knowledge://tenant-a/doc",),
+            )
+
+    async def test_relation_history_records_merge_rewire_and_tombstone(self):
+        await self.repository.add_entity(_entity("source"))
+        await self.repository.add_entity(_entity("target"))
+        await self.repository.add_entity(_entity("neighbor"))
+        await self.repository.add_relation(GovernedGraphRelation(
+            "tenant-a", "edge-1", "references", "source", "neighbor",
+        ))
+        await self.service.merge_entities(
+            principal=self.principal, source_id="source", target_id="target",
+            source_version=1, target_version=1,
+        )
+        history = await self.repository.relation_history("tenant-a", "edge-1")
+        self.assertEqual([item.version for item in history], [1, 2])
+        self.assertEqual(history[-1].source_entity_id, "target")
 
     async def test_invalidation_jobs_require_current_lease_owner(self):
         await self.repository.add_entity(_entity("doc-a"))
