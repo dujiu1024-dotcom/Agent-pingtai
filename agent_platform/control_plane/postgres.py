@@ -256,6 +256,21 @@ class PostgresSessionRepository:
                     (self.tenant_id, _uuid(session_id)),
                 )
 
+    async def list_session_assets_for_deletion(
+        self, tenant_id: str, session_id: str,
+    ) -> tuple[FileAsset, ...]:
+        self._check_tenant(tenant_id)
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT * FROM platform_file_assets
+                   WHERE tenant_id=%s AND session_id=%s
+                   ORDER BY created_at DESC,asset_id""",
+                (self.tenant_id, _uuid(session_id)),
+            )
+            rows = await cursor.fetchall()
+        return tuple(self._to_asset(row) for row in rows)
+
     async def append_message(self, message: ConversationMessage) -> None:
         self._check_tenant(message.tenant_id)
         connection = await self._connection_factory()
