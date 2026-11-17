@@ -142,7 +142,7 @@ class RollbackCoordinator:
         stage = "quiesce_platform_writes"
         gateway_switched = False
         try:
-            await self._run(stage, rollback_id, deadline)
+            await self._run(stage, rollback_id, deadline=deadline)
             stage = "backfill_postgres_to_sqlite"
             report = await self._run(stage, rollback_id, deadline)
             if not isinstance(report, RollbackDataReport):
@@ -175,6 +175,7 @@ class RollbackCoordinator:
 
     async def _run(
         self, stage: str, rollback_id: str, *args: object, deadline: float,
+        gateway_switched: bool = False,
     ) -> object:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -183,8 +184,8 @@ class RollbackCoordinator:
         try:
             return await asyncio.wait_for(operation(rollback_id, *args), timeout=remaining)
         except asyncio.TimeoutError as exc:
-            raise RollbackExecutionError(stage, False, "rollback deadline exceeded") from exc
+            raise RollbackExecutionError(stage, gateway_switched, "rollback deadline exceeded") from exc
         except RollbackExecutionError:
             raise
         except Exception as exc:
-            raise RollbackExecutionError(stage, False, type(exc).__name__) from exc
+            raise RollbackExecutionError(stage, gateway_switched, type(exc).__name__) from exc
