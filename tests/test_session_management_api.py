@@ -176,8 +176,6 @@ class SessionManagementApiTests(unittest.TestCase):
             self.client.get(f"/api/platform/v1/files/{asset.asset_id}/metadata").status_code,
             404,
         )
-        self.assertEqual(
-            (awaitable := asyncio.run(self.repository.get_asset("tenant-a", asset.asset_id))).status.value,
-            "available",
-        )
+        remaining = asyncio.run(self.repository.get_asset("tenant-a", asset.asset_id))
+        self.assertEqual(remaining.status.value, "available")
         self.assertIn(asset.object_key, self.service.storage.objects)
