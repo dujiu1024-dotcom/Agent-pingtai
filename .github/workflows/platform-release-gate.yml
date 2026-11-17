@@ -74,6 +74,7 @@ jobs:
             tests.test_identity_http \
             tests.test_knowledge_memory_api \
             tests.test_memory_boundaries \
+            tests.test_graph_governance \
             tests.test_memory_extraction_preflight \
             tests.test_multi_expert_workflow_integration \
             tests.test_tool_gateway \
@@ -81,11 +82,12 @@ jobs:
             tests.test_issue_21_c_21_02_security_negative \
             tests.test_run_lifecycle \
             tests.test_event_consumer \
+            tests.test_session_message_pagination \
             tests.test_issue_21_c_21_03_fault_injection \
             tests.test_issue_21_c_21_04_quality_capacity \
             tests.test_agent_rag_evaluation \
             tests.test_knowledge_evaluation_dataset \
-            tests.test_graph_extraction_pipeline \
+            tests.test_prompt_variants \
             tests.test_harness_benchmark_metrics \
             tests.test_outbox \
             tests.test_backup_recovery_scripts \
@@ -99,6 +101,9 @@ jobs:
             tests.test_redis_streams_integration \
             tests.test_quota_policies \
             tests.test_quota_postgres_integration \
+            tests.test_session_data_model \
+            tests.test_session_conversation_migration \
+            tests.test_session_assets \
             tests.test_platform_perf_smoke -v
       - name: Static checks
         run: |
