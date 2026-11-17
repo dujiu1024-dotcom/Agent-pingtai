@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent_platform.events.admin import WebhookSubscriptionService
-from agent_platform.events.webhooks import WebhookSubscription
+from agent_platform.events.webhooks import WebhookSubscription, signature, verify_signature
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.identity.models import Principal
 
@@ -59,6 +59,32 @@ class FakeSecrets:
     async def revoke(self, *, secret_ref: str):
         self.revoked.append(secret_ref)
         self.values.pop(secret_ref, None)
+
+
+class WebhookSignatureValidationTests(unittest.TestCase):
+    def test_signature_verification_checks_digest_shape_and_timestamp_window(self):
+        secret = b"s" * 32
+        body = b'{"id":"evt-1","type":"run.completed"}'
+        timestamp = "1700000000"
+        signed = signature(secret, timestamp, body)
+        self.assertTrue(verify_signature(
+            secret, timestamp, body, signed, now=1700000000,
+        ))
+        self.assertFalse(verify_signature(
+            secret, timestamp, body, signed, now=1700000400,
+        ))
+        self.assertFalse(verify_signature(
+            secret, timestamp, body, "sha256=not-a-digest", now=1700000000,
+        ))
+        self.assertFalse(verify_signature(
+            secret, timestamp, body, None, now=1700000000,
+        ))
+        self.assertFalse(verify_signature(
+            b"weak", timestamp, body, signed, now=1700000000,
+        ))
+        self.assertFalse(verify_signature(
+            secret, timestamp, bytearray(body), signed, now=1700000000,
+        ))
 
 
 class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
