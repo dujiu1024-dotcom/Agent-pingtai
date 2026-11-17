@@ -85,6 +85,8 @@ class KnowledgeService:
             raise ValueError("collection not found")
         if not self._can_manage_collection(current, principal):
             raise PermissionError("collection management is not authorized")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("collection name must be a string")
         updated_name = current.name if name is None else name.strip()
         updated_description = current.description if description is None else description
         updated_metadata = current.metadata if metadata is None else metadata
