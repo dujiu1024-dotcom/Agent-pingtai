@@ -4,9 +4,13 @@ from __future__ import annotations
 import inspect
 from typing import Any, Callable
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 
 from agent_platform.identity.models import Principal
+from agent_platform.observability.evaluation_reports import (
+    build_variant_comparison, render_variant_report_html, render_variant_report_pdf,
+)
 
 
 def create_eval_variants_router(
@@ -69,5 +73,55 @@ def create_eval_variants_router(
                 } for case in row.cases],
             } for row in result.variant_results],
         }
+
+    async def load_report_run(request: Request, run_id: str):
+        actor = getattr(request.state, "identity.principal", None)
+        if actor is None:
+            actor = getattr(getattr(request.state, "identity", None), "principal", None)
+        if not isinstance(actor, Principal):
+            raise HTTPException(401, "authenticated user required")
+        allowed = authorize_manage(actor)
+        if inspect.isawaitable(allowed):
+            allowed = await allowed
+        if allowed is not True:
+            raise HTTPException(403, "evaluation report permission required")
+        repository = getattr(service, "run_repository", None)
+        if repository is None or not callable(getattr(repository, "get_run", None)):
+            raise HTTPException(503, "evaluation run repository is not configured")
+        try:
+            run = await repository.get_run(tenant_id=actor.tenant_id, run_id=run_id)
+            return build_variant_comparison(run)
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation run not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, "evaluation run report data is invalid") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "evaluation report is unavailable") from exc
+
+    @router.get("/variants/{run_id}/comparison")
+    async def compare_variants(run_id: str, request: Request):
+        return await load_report_run(request, run_id)
+
+    @router.get("/variants/{run_id}/report")
+    async def export_variant_report(
+        run_id: str, request: Request,
+        report_format: str = Query(default="html", alias="format"),
+    ):
+        comparison = await load_report_run(request, run_id)
+        if report_format == "html":
+            content = render_variant_report_html(comparison)
+            return Response(
+                content=content, media_type="text/html",
+                headers={"Content-Disposition": f'attachment; filename="eval-{run_id}.html"'},
+            )
+        if report_format == "pdf":
+            content = render_variant_report_pdf(comparison)
+            return Response(
+                content=content, media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="eval-{run_id}.pdf"'},
+            )
+        raise HTTPException(400, "format must be html or pdf")
 
     return router
