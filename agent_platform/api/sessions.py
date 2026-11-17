@@ -1,6 +1,7 @@
 """Authenticated session/message/file API backed by SessionAssetService."""
 from __future__ import annotations
 
+import json
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
@@ -65,7 +66,10 @@ def create_sessions_router(
         return principal, service
 
     @router.get("/sessions")
-    async def list_sessions(request: Request, limit: int = 100, project_id: str | None = None):
+    async def list_sessions(
+        request: Request, limit: int = 100, project_id: str | None = None,
+        include_archived: bool = False,
+    ):
         principal = await resolve_principal(request)
         service = await resolve_service(principal)
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
@@ -81,6 +85,8 @@ def create_sessions_router(
             raise HTTPException(400, str(exc)) from exc
         visible = []
         for session in items:
+            if not include_archived and session.status != "active":
+                continue
             if not await authorize(principal, "session", session.session_id, "read"):
                 continue
             if session.project_id and not await authorize(
@@ -676,5 +682,193 @@ def create_sessions_router(
             )
         headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(asset.filename)}"}
         return Response(content=content, media_type=asset.media_type, headers=headers)
+
+
+    @router.get("/sessions/{session_id}")
+    async def get_session(session_id: str, request: Request, message_limit: int = 100):
+        principal, service = await context(request, "session", session_id, "read")
+        session = await service.repository.get_session(principal.tenant_id, session_id)
+        if session is None or session.status == "deleted":
+            raise HTTPException(404, "session not found")
+        try:
+            messages = await service.repository.list_messages(
+                principal.tenant_id, session_id, limit=message_limit,
+            )
+            snapshots = await service.repository.list_context_snapshots(
+                principal.tenant_id, session_id, limit=20,
+            )
+        except (SessionError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.read", subject_id=session_id,
+                detail={"message_count": len(messages), "snapshot_count": len(snapshots)},
+            )
+        return {
+            "session": {
+                "session_id": session.session_id, "title": session.title,
+                "project_id": session.project_id, "agent_id": session.agent_id,
+                "isolation_scope": session.isolation_scope.value,
+                "status": session.status, "created_at": session.created_at.isoformat(),
+                "updated_at": session.updated_at.isoformat(),
+            },
+            "messages": [{
+                "message_id": m.message_id, "role": m.role.value, "content": m.content,
+                "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
+                "asset_ids": list(m.asset_ids), "metadata": dict(m.metadata),
+                "token_usage": (
+                    {
+                        "prompt_tokens": m.token_usage.prompt_tokens,
+                        "completion_tokens": m.token_usage.completion_tokens,
+                        "total_tokens": m.token_usage.total_tokens,
+                        "model": m.token_usage.model,
+                    } if m.token_usage is not None else None
+                ),
+                "created_at": m.created_at.isoformat(),
+            } for m in messages],
+            "context_snapshots": [{
+                "snapshot_id": s.snapshot_id, "version": s.version,
+                "run_id": s.run_id, "last_message_id": s.last_message_id,
+                "token_count": s.token_count, "max_tokens": s.max_tokens,
+                "created_by": s.created_by, "created_at": s.created_at.isoformat(),
+            } for s in snapshots],
+        }
+
+    @router.get("/sessions/{session_id}/export")
+    async def export_session(session_id: str, request: Request, format: str = "json"):
+        if format not in {"json", "markdown"}:
+            raise HTTPException(400, "format must be json or markdown")
+        principal, service = await context(request, "session", session_id, "read")
+        session = await service.repository.get_session(principal.tenant_id, session_id)
+        if session is None or session.status == "deleted":
+            raise HTTPException(404, "session not found")
+        # Export every message in bounded pages; never silently truncate history.
+        messages = []
+        cursor = None
+        for _ in range(20):
+            page = await service.repository.list_messages(
+                principal.tenant_id, session_id, limit=500,
+                before_message_id=cursor,
+            )
+            if not page:
+                break
+            messages = list(page) + messages
+            if len(page) < 500:
+                break
+            cursor = page[0].message_id
+        else:
+            raise HTTPException(413, "session export exceeds 10000 messages")
+        if len(messages) >= 10000:
+            raise HTTPException(413, "session export exceeds 10000 messages")
+        payload = {
+            "session": {
+                "session_id": session.session_id, "title": session.title,
+                "tenant_id": principal.tenant_id, "owner_id": session.owner_id,
+                "project_id": session.project_id, "agent_id": session.agent_id,
+                "isolation_scope": session.isolation_scope.value,
+                "status": session.status, "created_at": session.created_at.isoformat(),
+                "updated_at": session.updated_at.isoformat(),
+            },
+            "messages": [{
+                "message_id": m.message_id, "role": m.role.value, "content": m.content,
+                "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
+                "asset_ids": list(m.asset_ids), "metadata": dict(m.metadata),
+                "token_usage": (
+                    {
+                        "prompt_tokens": m.token_usage.prompt_tokens,
+                        "completion_tokens": m.token_usage.completion_tokens,
+                        "total_tokens": m.token_usage.total_tokens,
+                        "model": m.token_usage.model,
+                    } if m.token_usage is not None else None
+                ),
+                "created_at": m.created_at.isoformat(),
+            } for m in messages],
+        }
+        safe_id = quote(session_id, safe="")
+        if format == "json":
+            content = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+            media_type = "application/json"
+            filename = f"session-{safe_id}.json"
+        else:
+            lines = [f"# {session.title or 'Session'}", "", f"- Session: `{session_id}`",
+                     f"- Status: {session.status}", ""]
+            for message in messages:
+                lines.extend([
+                    f"## {message.role.value} · {message.created_at.isoformat()}",
+                    "", message.content, "",
+                ])
+            content = "\n".join(lines)
+            media_type = "text/markdown; charset=utf-8"
+            filename = f"session-{safe_id}.md"
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.exported", subject_id=session_id,
+                detail={"format": format, "message_count": len(messages)},
+            )
+        return Response(
+            content=content, media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @router.post("/sessions/{session_id}/archive")
+    async def archive_session(session_id: str, request: Request):
+        principal, service = await context(request, "session", session_id, "write")
+        changed = await service.repository.set_session_status(
+            principal.tenant_id, session_id, "archived", expected_status="active",
+        )
+        if not changed:
+            current = await service.repository.get_session(principal.tenant_id, session_id)
+            if current is None or current.status == "deleted":
+                raise HTTPException(404, "session not found")
+            raise HTTPException(409, "only active sessions can be archived")
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.archived", subject_id=session_id, detail={},
+            )
+        return {"session_id": session_id, "status": "archived"}
+
+    @router.post("/sessions/{session_id}/restore")
+    async def restore_session(session_id: str, request: Request):
+        principal, service = await context(request, "session", session_id, "write")
+        changed = await service.repository.set_session_status(
+            principal.tenant_id, session_id, "active", expected_status="archived",
+        )
+        if not changed:
+            current = await service.repository.get_session(principal.tenant_id, session_id)
+            if current is None or current.status == "deleted":
+                raise HTTPException(404, "session not found")
+            raise HTTPException(409, "only archived sessions can be restored")
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.restored", subject_id=session_id, detail={},
+            )
+        return {"session_id": session_id, "status": "active"}
+
+    @router.delete("/sessions/{session_id}", status_code=204)
+    async def delete_session(session_id: str, request: Request):
+        principal, service = await context(request, "session", session_id, "delete")
+        session = await service.repository.get_session(principal.tenant_id, session_id)
+        if session is None or session.status == "deleted":
+            raise HTTPException(404, "session not found")
+        changed = await service.repository.set_session_status(
+            principal.tenant_id, session_id, "deleted",
+            expected_status=session.status,
+        )
+        if not changed:
+            raise HTTPException(409, "session lifecycle changed; retry deletion")
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.deleted", subject_id=session_id,
+                detail={"project_id": session.project_id, "status": session.status},
+            )
+        return Response(status_code=204)
 
     return router
