@@ -234,7 +234,7 @@ class PostgresQuotaPolicyRepository:
                      limits=EXCLUDED.limits,priority=EXCLUDED.priority,enabled=EXCLUDED.enabled,
                      version=EXCLUDED.version,created_by=EXCLUDED.created_by,updated_at=now()
                    WHERE EXCLUDED.version > platform_quota_policies.version""",
-                (policy.policy_id,policy.tenant_id,policy.scope_type,policy.scope_id,
+                (policy.policy_id,policy.tenant_id or "",policy.scope_type,policy.scope_id,
                  json.dumps(dict(policy.limits),allow_nan=False),policy.priority,
                  policy.enabled,policy.version,policy.created_by),
             )
@@ -250,7 +250,7 @@ class PostgresQuotaPolicyRepository:
             )
             rows = await cursor.fetchall()
         return [QuotaPolicy(
-            policy_id=row["policy_id"],tenant_id=row["tenant_id"],scope_type=row["scope_type"],
+            policy_id=row["policy_id"],tenant_id=row["tenant_id"] or None,scope_type=row["scope_type"],
             scope_id=row["scope_id"],limits=json.loads(row["limits"]) if isinstance(row["limits"],str) else row["limits"],
             priority=row["priority"],enabled=row["enabled"],version=row["version"],created_by=row["created_by"],
         ) for row in rows]
