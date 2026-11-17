@@ -48,7 +48,11 @@ class PersistentRunTokenVerifier:
         if getattr(record, "endpoint_url", None) != self.resource_server_url:
             return None
         scopes = getattr(record, "scopes", ())
-        if not scopes or any(not isinstance(scope, str) or not scope.strip() for scope in scopes):
+        if (
+            not isinstance(scopes, (tuple, list))
+            or not scopes
+            or any(not isinstance(scope, str) or not scope.strip() for scope in scopes)
+        ):
             return None
 
         try:
