@@ -45,6 +45,14 @@ class IdentityContextResolver:
             tenant_id=context.tenant_id, user_id=context.user_id,
             project_ids=context.project_ids, agent_ids=context.agent_ids,
             permissions=permissions,
-            manage_project_ids=context.memory_manage_project_ids if "memory.manage" in permissions else frozenset(),
-            manage_agent_ids=context.memory_manage_agent_ids if "memory.manage" in permissions else frozenset(),
+            manage_project_ids=(
+                context.memory_manage_project_ids
+                if not isinstance(request.state.__dict__.get("identity.principal"), AuthenticatedApiCredential)
+                or "memory.manage" in permissions else frozenset()
+            ),
+            manage_agent_ids=(
+                context.memory_manage_agent_ids
+                if not isinstance(request.state.__dict__.get("identity.principal"), AuthenticatedApiCredential)
+                or "memory.manage" in permissions else frozenset()
+            ),
         )
