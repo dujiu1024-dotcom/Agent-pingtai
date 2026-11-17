@@ -128,6 +128,37 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
             actor_resolver=lambda context: "user-a",
         )
 
+    async def test_parent_cancellation_during_submit_cancels_persisted_child(self):
+        submit_started = asyncio.Event()
+
+        async def persist_then_wait(**kwargs):
+            self.service.submitted = kwargs
+            self.service.row = {
+                "task_id": kwargs["run_id"],
+                "run_id": kwargs["run_id"],
+                "status": "queued",
+                "output": None,
+                "usage": {},
+                "template_id": "general",
+                "template_version": 2,
+            }
+            submit_started.set()
+            await asyncio.Event().wait()
+            return {"run_id": kwargs["run_id"], "template_id": "general", "template_version": 2}
+
+        self.service.submit_task = persist_then_wait
+        execution = asyncio.create_task(self.executor.execute_child(
+            request=self.request,
+            parent_context=self.parent,
+            idempotency_key="cancel-during-submit",
+        ))
+        await submit_started.wait()
+        execution.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await execution
+        self.assertTrue(self.service.cancelled)
+        self.assertEqual(self.service.row["status"], "cancelled")
+
     async def test_child_run_is_durable_idempotent_and_returns_normalized_result(self):
         result = await self.executor.execute_child(
             request=self.request,
@@ -241,6 +272,55 @@ class TaskCenterChildRunExecutorTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(ValueError, "share the durable RunStateStore"):
             executor.bind_worker(SimpleNamespace(run_store=object(), run_once=lambda: None))
+
+    async def test_rejects_child_project_scope_spoofing_before_persisting(self):
+        spoofed_context = RunContext(
+            tenant_id="tenant-a",
+            run_id=self.child.run_id,
+            agent_id="researcher",
+            model_template=ModelTemplateRef("general", 2),
+            task_id="parent-task",
+            project_id="project-b",
+            correlation_id="parent-trace",
+            metadata={
+                "parent_run_id": "parent-run",
+                "root_run_id": "parent-run",
+                "delegation_depth": 1,
+                "ancestor_agent_ids": ["orchestrator"],
+            },
+        )
+        request = HarnessRequest(
+            context=spoofed_context,
+            instructions="Do work",
+            input_text="Input",
+            allowed_tools=("knowledge.search",),
+        )
+        with self.assertRaisesRegex(PermissionError, "project scope"):
+            await self.executor.execute_child(
+                request=request,
+                parent_context=self.parent,
+                idempotency_key="project-scope-spoof",
+            )
+        self.assertIsNone(self.service.submitted)
+
+    async def test_rejects_published_agent_tools_that_exceed_delegated_scope(self):
+        # The current task-center worker builds its graph from the complete
+        # Run-pinned Agent tool set. A narrower request allowlist alone cannot
+        # constrain that graph, so delegation must fail closed before submit.
+        self.service.registry.tools = ["knowledge.search", "web.search"]
+        self.request = HarnessRequest(
+            context=self.child,
+            instructions="Do work",
+            input_text="Input",
+            allowed_tools=("knowledge.search",),
+        )
+        with self.assertRaisesRegex(PermissionError, "exactly match"):
+            await self.executor.execute_child(
+                request=self.request,
+                parent_context=self.parent,
+                idempotency_key="narrow-tool-scope",
+            )
+        self.assertIsNone(self.service.submitted)
 
     async def test_rejects_unapproved_tools_before_persisting_child(self):
         self.request = HarnessRequest(

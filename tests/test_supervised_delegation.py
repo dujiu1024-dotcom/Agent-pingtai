@@ -148,6 +148,11 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
                 allowed_agent_ids=frozenset({"researcher"}),
                 max_timeout_seconds=float("inf"),
             )
+        with self.assertRaisesRegex(ValueError, "max_failure_takeovers must be 0"):
+            DelegationPolicy(
+                allowed_agent_ids=frozenset({"researcher"}),
+                max_failure_takeovers=1,
+            )
         with self.assertRaises(ValueError):
             await self.service.delegate(parent=self.parent, requests=("not-a-spec",))
 
@@ -184,6 +189,20 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
             ))
         self.assertTrue(sibling_cancelled.is_set())
 
+
+    async def test_nested_child_preserves_original_root_run_identity(self):
+        nested_parent = RunContext(
+            tenant_id="tenant-a", run_id="child-run", agent_id="orchestrator",
+            model_template=ModelTemplateRef("general", 2),
+            metadata={"parent_run_id": "root-run", "root_run_id": "root-run", "delegation_depth": 1},
+        )
+        await self.service.delegate(parent=nested_parent, requests=(
+            DelegationSpec("nested-1", "researcher", "Continue delegated work"),
+        ))
+        request = self.executor.calls[0][0]
+        self.assertEqual(request.context.metadata["parent_run_id"], "child-run")
+        self.assertEqual(request.context.metadata["root_run_id"], "root-run")
+
     async def test_timeout_and_output_limits_are_enforced(self):
         async def slow(**kwargs):
             await asyncio.sleep(0.05)
@@ -203,16 +222,3 @@ class SupervisedDelegationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-    async def test_nested_child_preserves_original_root_run_identity(self):
-        nested_parent = RunContext(
-            tenant_id="tenant-a", run_id="child-run", agent_id="orchestrator",
-            model_template=ModelTemplateRef("general", 2),
-            metadata={"parent_run_id": "root-run", "root_run_id": "root-run", "delegation_depth": 1},
-        )
-        await self.service.delegate(parent=nested_parent, requests=(
-            DelegationSpec("nested-1", "researcher", "Continue delegated work"),
-        ))
-        request = self.executor.calls[0][0]
-        self.assertEqual(request.context.metadata["parent_run_id"], "child-run")
-        self.assertEqual(request.context.metadata["root_run_id"], "root-run")

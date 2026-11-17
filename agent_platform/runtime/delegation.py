@@ -67,6 +67,7 @@ class DelegationPolicy:
     max_children: int = 5
     max_timeout_seconds: float = 180.0
     max_output_chars: int = 30_000
+    max_failure_takeovers: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.allowed_agent_ids, frozenset) or not self.allowed_agent_ids or any(
@@ -93,6 +94,14 @@ class DelegationPolicy:
             or not 0 < self.max_timeout_seconds <= 1800
         ):
             raise ValueError("max_timeout_seconds must be finite and in (0, 1800]")
+        if (
+            isinstance(self.max_failure_takeovers, bool)
+            or not isinstance(self.max_failure_takeovers, int)
+            or self.max_failure_takeovers != 0
+        ):
+            raise ValueError(
+                "automatic failure takeover is disabled; max_failure_takeovers must be 0"
+            )
 
 
 @dataclass(frozen=True)

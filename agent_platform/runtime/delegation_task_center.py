@@ -75,8 +75,14 @@ class TaskCenterChildRunExecutor:
         declared_tools = self.task_service._string_list(
             definition.get("tool_ids", []), "tool_ids",
         )
-        if not set(request.allowed_tools).issubset(declared_tools):
-            raise PermissionError("delegated tools exceed the published Agent tool allowlist")
+        requested_tools = tuple(request.allowed_tools)
+        if len(set(requested_tools)) != len(requested_tools):
+            raise PermissionError("delegated tool allowlist contains duplicates")
+        if set(requested_tools) != set(declared_tools):
+            raise PermissionError(
+                "delegated tool allowlist must exactly match the published Agent tool set; "
+                "the task-center runtime executes the complete Run-pinned Agent tool set"
+            )
 
     @staticmethod
     def _task_input(request: HarnessRequest, parent_context: Any) -> dict[str, Any]:
@@ -123,8 +129,31 @@ class TaskCenterChildRunExecutor:
     ) -> HarnessResult:
         if request.context.tenant_id != parent_context.tenant_id:
             raise PermissionError("child Run tenant must match its parent")
-        if request.context.metadata.get("parent_run_id") != parent_context.run_id:
+        if request.context.project_id != parent_context.project_id:
+            raise PermissionError("child Run project scope must be inherited from its parent")
+        if request.context.model_template != parent_context.model_template:
+            raise PermissionError("child Run model template must be inherited from its parent")
+        if request.context.task_id != parent_context.task_id:
+            raise PermissionError("child Run task identity must be inherited from its parent")
+        if request.context.correlation_id != parent_context.correlation_id:
+            raise PermissionError("child Run correlation identity must be inherited from its parent")
+        child_metadata = request.context.metadata
+        parent_metadata = parent_context.metadata or {}
+        if child_metadata.get("parent_run_id") != parent_context.run_id:
             raise PermissionError("child Run must carry the authenticated parent Run identity")
+        expected_root = parent_metadata.get("root_run_id", parent_context.run_id)
+        if child_metadata.get("root_run_id") != expected_root:
+            raise PermissionError("child Run root identity must be inherited from its parent")
+        parent_depth = parent_metadata.get("delegation_depth", 0)
+        if (
+            isinstance(parent_depth, bool) or not isinstance(parent_depth, int)
+            or parent_depth < 0
+            or child_metadata.get("delegation_depth") != parent_depth + 1
+        ):
+            raise PermissionError("child Run delegation depth must increment exactly once")
+        ancestors = child_metadata.get("ancestor_agent_ids")
+        if not isinstance(ancestors, (list, tuple)) or parent_context.agent_id not in ancestors:
+            raise PermissionError("child Run must preserve the parent Agent ancestry")
         if not isinstance(idempotency_key, str) or not idempotency_key.strip():
             raise ValueError("child Run idempotency key is required")
         await self._validate_pinned_runtime(request)
@@ -133,30 +162,31 @@ class TaskCenterChildRunExecutor:
         durable_idempotency_key = "child-run:" + hashlib.sha256(
             idempotency_key.encode("utf-8")
         ).hexdigest()
-        submitted = await self.task_service.submit_task(
-            tenant_id=parent_context.tenant_id,
-            actor_id=actor_id,
-            agent_id=request.context.agent_id,
-            project_id=request.context.project_id,
-            session_id=parent_context.metadata.get("session_id"),
-            input=task_input,
-            idempotency_key=durable_idempotency_key,
-            run_id=request.context.run_id,
-        )
-        if submitted.get("run_id") != request.context.run_id:
-            raise RuntimeError("idempotent child submission resolved to a different Run ID")
-        if (
-            submitted.get("template_id") != request.context.model_template.template_id
-            or submitted.get("template_version") != request.context.model_template.version
-        ):
-            await self.task_service.cancel_task(
-                tenant_id=parent_context.tenant_id,
-                task_id=request.context.run_id,
-                actor_id=actor_id,
-            )
-            raise PermissionError("persisted child Run changed its pinned model template version")
-
         try:
+            submitted = await self.task_service.submit_task(
+                tenant_id=parent_context.tenant_id,
+                actor_id=actor_id,
+                agent_id=request.context.agent_id,
+                project_id=request.context.project_id,
+                session_id=parent_metadata.get("session_id"),
+                input=task_input,
+                idempotency_key=durable_idempotency_key,
+                run_id=request.context.run_id,
+            )
+            if submitted.get("run_id") != request.context.run_id:
+                raise RuntimeError("idempotent child submission resolved to a different Run ID")
+            if (
+                submitted.get("template_id") != request.context.model_template.template_id
+                or submitted.get("template_version") != request.context.model_template.version
+            ):
+                await self.task_service.cancel_task(
+                    tenant_id=parent_context.tenant_id,
+                    task_id=request.context.run_id,
+                    actor_id=actor_id,
+                )
+                raise PermissionError("persisted child Run changed its pinned model template version")
+
+
             while True:
                 task = await self.task_service.get_task(
                     tenant_id=parent_context.tenant_id,
