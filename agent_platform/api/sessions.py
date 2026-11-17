@@ -546,6 +546,56 @@ def create_sessions_router(
             "created_at": restored.created_at.isoformat(),
         }
 
+    @router.delete("/files/{asset_id}", status_code=204)
+    async def delete_file(asset_id: str, request: Request):
+        principal, service = await context(request, "file", asset_id, "delete")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "write",
+        ):
+            raise HTTPException(403, "linked session modification denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "file.delete",
+        ):
+            raise HTTPException(403, "linked project file deletion denied")
+        try:
+            await service.delete_asset(tenant_id=principal.tenant_id, asset_id=asset_id)
+        except SessionNotFound as exc:
+            raise HTTPException(404, "file not found") from exc
+        except SessionError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.deleted", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "session_id": asset.session_id},
+            )
+        return Response(status_code=204)
+
+    @router.get("/files/{asset_id}/metadata")
+    async def get_file_metadata(asset_id: str, request: Request):
+        principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
+        return {
+            "asset_id": asset.asset_id, "filename": asset.filename,
+            "media_type": asset.media_type, "size_bytes": asset.size_bytes,
+            "sha256": asset.sha256, "status": asset.status.value,
+            "session_id": asset.session_id, "project_id": asset.project_id,
+            "version": asset.version, "created_at": asset.created_at.isoformat(),
+        }
+
     @router.get("/files/{asset_id}/download-url")
     async def create_download_url(asset_id: str, request: Request, expires_in: int = 300):
         principal, service = await context(request, "file", asset_id, "read")
