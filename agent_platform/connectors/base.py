@@ -6,7 +6,7 @@ module centralizes credential resolution without retaining plaintext credentials
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 
@@ -92,6 +92,8 @@ class BaseConnector:
             raise ValueError("connector credentials must use a secret:// reference")
         if authenticator is not None and credential_ref is None:
             raise ValueError("shared authentication requires a secret:// credential reference")
+        if authenticator is not None and not auth_scopes:
+            raise ValueError("shared authentication requires explicit auth_scopes")
         if len(set(auth_scopes)) != len(auth_scopes) or any(
             not isinstance(scope, str) or not scope.strip() for scope in auth_scopes
         ):
