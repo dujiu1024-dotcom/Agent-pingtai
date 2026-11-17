@@ -309,28 +309,16 @@ function replayBlackboardContent(event){
 async function openReplay(runId){
  const opened=await api(replayEndpoint(runId),{method:"POST",body:"{}"});
  const [timeline,blackboard]=await Promise.all([
-  api(API+"/runs/"+encodeURIComponent(runId)+"/events?limit=200").catch(()=>({items:[]})),
+  api(replayEndpoint(runId)+"/"+encodeURIComponent(opened.session_id)+"/events?limit=500"),
   api(API+"/blackboard/entries?scope=run&scope_id="+encodeURIComponent(runId)+"&limit=100").catch(error=>({items:[],error:error.message}))
  ]);
- let events=(timeline.items||[]).map((item,index)=>({
-  ...item,sequence:Number(item.sequence??item.sequence_number??index+1),
-  event_type:item.event_type||item.type||item.kind||"RUN_EVENT",
-  payload:item.payload||item.data||{}
+ const events=(timeline.items||[]).map((item,index)=>({
+  ...item,sequence:Number(item.sequence??index+1),
+  event_type:item.event_type||"RUN_EVENT",
+  payload:item.payload||{}
  }));
- // The replay session itself is the authoritative source for the C-29-01 trace.
- // Read it through the authorized step API when the Run detail endpoint has no events.
- if(!events.length&&Number(opened.total||0)>0){
-  const limit=Math.min(Number(opened.total),500);
-  for(let cursor=0;cursor<limit;cursor++){
-   const step=await api(replayEndpoint(runId)+"/"+encodeURIComponent(opened.session_id)+"/step",
-    {method:"POST",body:"{}"});
-   if(step.event)events.push(step.event);
-   else break;
-  }
-  await api(replayEndpoint(runId)+"/"+encodeURIComponent(opened.session_id)+"/seek",
-   {method:"POST",body:JSON.stringify({sequence:0})});
- }
- S.replay={...opened,runId,events,blackboardItems:blackboard.items||[],blackboardError:blackboard.error||null,currentEvent:null};
+ S.replay={...opened,runId,events,timelineTotal:timeline.total??events.length,
+  blackboardItems:blackboard.items||[],blackboardError:blackboard.error||null,currentEvent:null};
  await renderReplay();
 }
 async function replayAction(action,body={}){
