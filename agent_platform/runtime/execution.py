@@ -20,7 +20,7 @@ class LangGraphRunExecutor:
   worker_id:str|None=None,lease_seconds:int=60,registry_snapshot_service:Any|None=None,
   registry_runtime_provider:Any|None=None,model_template_id:str|None=None,
   required_tools:tuple[str,...]=(),run_context_service:Any|None=None,session_repository:Any|None=None,intervention_store:Any|None=None,
-  intervention_applier:Any|None=None)->None:
+  intervention_applier:Any|None=None,trace_service:Any|None=None)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
   if registry_runtime_provider is not None and not (model_template_id or "").strip():
@@ -60,6 +60,11 @@ class LangGraphRunExecutor:
    config["configurable"]["platform_run_context"]=await self.run_context_service.rebuild(
     tenant_id=tenant_id,run_id=run_id,
    )
+  if self.trace_service is not None:
+   from agent_platform.observability.run_trace import RunTraceCallbackHandler
+   config["callbacks"]=[RunTraceCallbackHandler(
+    trace=self.trace_service,tenant_id=tenant_id,run_id=run_id,
+   )]
   return config
  async def _session_begin(self,tenant_id:str,run_id:str,payload:Any,session_context:Any)->tuple[dict[str,Any]|None,Any|None]:
   if session_context is None:return None,None
@@ -189,6 +194,14 @@ class LangGraphRunExecutor:
   runtime_prepared=False
   try:
    await self.lifecycle.start(tenant_id,run_id)
+   if self.trace_service is not None:
+    from agent_platform.observability.run_trace import RunTraceEventType
+    await self.trace_service.emit(
+     tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.RUN_START,
+     payload={"worker_id":self.worker_id,"checkpoint_ref":old.checkpoint_ref,
+              "registry_snapshot":self.registry_snapshot_service is not None,
+              "session_enabled":session is not None},
+    )
    try:
     if self.registry_runtime_provider is not None:
      await self.registry_runtime_provider.prepare(
@@ -201,14 +214,33 @@ class LangGraphRunExecutor:
      result=await self._run_leased(tenant_id,run_id,self._invoke_graph(input,config,tenant_id=tenant_id,run_id=run_id,session=session),
       timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
       already_claimed=acquired)
-   except asyncio.TimeoutError:raise
+   except asyncio.TimeoutError:
+    if self.trace_service is not None:
+     from agent_platform.observability.run_trace import RunTraceEventType
+     await self.trace_service.emit(
+      tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.ERROR,
+      payload={"component":"run","error_type":"TimeoutError"},
+     )
+    raise
    except WorkerLeaseLost:
+    if self.trace_service is not None:
+     from agent_platform.observability.run_trace import RunTraceEventType
+     await self.trace_service.emit(
+      tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.ERROR,
+      payload={"component":"run","error_type":"WorkerLeaseLost"},
+     )
     current=await self.lifecycle.store.get(tenant_id,run_id)
     if current and current.status==RunStatus.CANCELLING:
      await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
     # A lease transfer is not an execution failure; the new owner recovers it.
     raise
    except asyncio.CancelledError:
+    if self.trace_service is not None:
+     from agent_platform.observability.run_trace import RunTraceEventType
+     await self.trace_service.emit(
+      tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.ERROR,
+      payload={"component":"run","error_type":"CancelledError"},
+     )
     current=await self.lifecycle.store.get(tenant_id,run_id)
     if current and current.status==RunStatus.CANCELLING:
      await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
@@ -220,6 +252,12 @@ class LangGraphRunExecutor:
     # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
+    if self.trace_service is not None:
+     from agent_platform.observability.run_trace import RunTraceEventType
+     await self.trace_service.emit(
+      tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.ERROR,
+      payload={"component":"run","error_type":type(exc).__name__},
+     )
     ref=await self._checkpoint_ref(tenant_id,run_id)
     if session is not None:
      await self._session_checkpoint(tenant_id,run_id,config,session)
@@ -237,6 +275,12 @@ class LangGraphRunExecutor:
     )
     await self._session_checkpoint(tenant_id,run_id,config,session)
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
+   if self.trace_service is not None:
+    from agent_platform.observability.run_trace import RunTraceEventType
+    await self.trace_service.emit(
+     tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.COMPLETE,
+     payload={"status":"succeeded","checkpoint_ref":ref},
+    )
    return result
   finally:
    try:
