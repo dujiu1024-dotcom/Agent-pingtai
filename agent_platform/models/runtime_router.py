@@ -597,18 +597,23 @@ class OpenAICompatibleModelRouter:
                     input=trace_input, metadata=metadata,
                 ) as span:
                     try:
-                        transport_args = dict(
-                            config=config, messages=dispatch_messages,
-                            request_parameters=parameters,
-                            timeout_seconds=self.timeout_seconds,
-                        )
-                        if on_token is not None:
+                        if on_token is None:
+                            raw = await self.transport.complete(
+                                config=config, messages=dispatch_messages,
+                                request_parameters=parameters,
+                                timeout_seconds=self.timeout_seconds,
+                            )
+                        else:
                             async def emit_stream_token(token: str) -> None:
                                 nonlocal stream_tokens_emitted
                                 stream_tokens_emitted = True
                                 await on_token(token)
-                            transport_args["on_token"] = emit_stream_token
-                        raw = await self.transport.complete(**transport_args)
+                            raw = await self.transport.complete(
+                                config=config, messages=dispatch_messages,
+                                request_parameters=parameters,
+                                timeout_seconds=self.timeout_seconds,
+                                on_token=emit_stream_token,
+                            )
                     except ModelTransportError as exc:
                         if self.circuit_breaker is not None:
                             await self.circuit_breaker.record_failure(breaker_key)
