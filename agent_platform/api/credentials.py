@@ -103,6 +103,8 @@ def create_credentials_router(
             if not isinstance(body, dict) or set(body) - {"grantee_type", "grantee_id", "scopes"}:
                 raise ValueError("grantee_type, grantee_id and scopes are required")
             grantee_type, grantee_id = body.get("grantee_type"), body.get("grantee_id")
+            if not isinstance(grantee_type, str) or not isinstance(grantee_id, str):
+                raise ValueError("grantee_type and grantee_id must be strings")
             if not await allowed(actor, grantee_type, grantee_id, "credential.use"):
                 raise HTTPException(403, "target Agent or Workflow is not accessible")
             grant = await (await service_for(actor)).grant(
