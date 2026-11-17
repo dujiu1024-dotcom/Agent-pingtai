@@ -41,5 +41,5 @@ jobs:
             tests.test_runtime_permission_guard \
             tests.test_runtime_security_auto_response \
             tests.test_emergency_isolation \
-            tests.test_issue_21_c_21_02_security_negative \\
+            tests.test_issue_21_c_21_02_security_negative \
             tests.test_issue_12_a_12_02_security_acceptance -v
