@@ -1,4 +1,4 @@
-"""Governed cross-session memory and candidate review."""
+"""Governed cross-session memory, candidate review and version-aware retrieval."""
 
 from agent_platform.memory.retrieval import (
     MemoryCitation,
@@ -12,6 +12,12 @@ from agent_platform.memory.review import (
     MemoryCandidateWorkflow,
     MemoryReviewDecision,
     MemoryReviewEvent,
+)
+from agent_platform.memory.retrieval import (
+    MemoryRecallHit,
+    MemoryRecallQuery,
+    MemoryRecallStrategy,
+    MemoryRetrievalService,
 )
 from agent_platform.memory.service import (
     InMemoryMemoryRepository,
@@ -40,4 +46,8 @@ __all__ = [
     "MemoryCandidateWorkflow",
     "MemoryReviewDecision",
     "MemoryReviewEvent",
+    "MemoryRecallHit",
+    "MemoryRecallQuery",
+    "MemoryRecallStrategy",
+    "MemoryRetrievalService",
 ]
