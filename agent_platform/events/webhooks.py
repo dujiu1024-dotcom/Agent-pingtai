@@ -406,19 +406,33 @@ class PostgresWebhookStore:
                 )
         return old_secret_ref
 
-    async def disable_subscription(self, tenant_id: str, subscription_id: str) -> bool:
+    async def disable_subscription(self, tenant_id: str, subscription_id: str) -> str | None:
+        """Disable once but return the secret reference on retries until it is revoked.
+
+        Secret revocation is an external side effect and cannot share the database
+        transaction. Returning the reference for an already-disabled subscription
+        lets the service retry a failed revocation without re-enabling delivery.
+        SecretManager.revoke must therefore be idempotent.
+        """
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
                 cursor = await connection.execute(
-                    """UPDATE platform_webhook_subscriptions
-                       SET status='disabled',updated_at=now()
-                       WHERE tenant_id=%s AND subscription_id=%s AND status='active'
-                       RETURNING secret_ref""",
+                    """SELECT secret_ref,status FROM platform_webhook_subscriptions
+                       WHERE tenant_id=%s AND subscription_id=%s FOR UPDATE""",
                     (tenant_id, UUID(subscription_id)),
                 )
                 row = await cursor.fetchone()
-                return row["secret_ref"] if row else None
+                if row is None:
+                    return None
+                if row["status"] == "active":
+                    await connection.execute(
+                        """UPDATE platform_webhook_subscriptions
+                           SET status='disabled',updated_at=now()
+                           WHERE tenant_id=%s AND subscription_id=%s AND status='active'""",
+                        (tenant_id, UUID(subscription_id)),
+                    )
+                return row["secret_ref"]
 
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]:
         if not 1 <= limit <= 500:
