@@ -80,12 +80,12 @@ class S3ObjectStorageTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await storage.presign_get(
                 "tenant/tenant-a/assets/file-1/hash",
-                filename="report.pdf\\r\\nX-Injected: yes",
+                filename="report.pdf\r\nX-Injected: yes",
             )
         with self.assertRaises(ValueError):
             await storage.presign_get(
                 "tenant/tenant-a/assets/file-1/hash",
-                media_type="application/pdf\\r\\nX-Injected: yes",
+                media_type="application/pdf\r\nX-Injected: yes",
             )
         with self.assertRaises(ValueError):
             await storage.presign_get(
