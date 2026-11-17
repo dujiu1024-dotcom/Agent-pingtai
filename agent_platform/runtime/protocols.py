@@ -451,11 +451,11 @@ class LifecycleManagedHarnessAdapter:
         try:
             if request.timeout_seconds is None:
                 async for _event in consume_stream():
-                    pass
+                    yield _event
             else:
                 async with asyncio.timeout(request.timeout_seconds):
                     async for _event in consume_stream():
-                        pass
+                        yield _event
         except asyncio.CancelledError:
             await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
             raise
