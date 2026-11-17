@@ -130,6 +130,23 @@ def expert_dispatch_payloads(state: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def ordered_expert_contributions(
+    contributions: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return an isolated, deterministic view of concurrently collected results.
+
+    LangGraph's additive reducer collects branches in completion order. That
+    order is inherently nondeterministic, so downstream synthesis and review
+    must not use it as a precedence signal when experts disagree.
+    """
+    normalized = [copy.deepcopy(dict(item)) for item in contributions]
+    normalized.sort(key=lambda item: (
+        str(item.get("expert_id") or item.get("author_id") or ""),
+        str(item.get("blackboard_entry_id") or ""),
+    ))
+    return normalized
+
+
 def build_multi_expert_workflow(
     *,
     services: MultiExpertServices,
