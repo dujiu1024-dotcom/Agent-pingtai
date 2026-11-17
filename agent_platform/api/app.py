@@ -86,6 +86,7 @@ def create_platform_app(
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
+    operational_health_monitor: Any | None = None,
     alert_store: Any | None = None,
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
@@ -234,11 +235,12 @@ def create_platform_app(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, alert_store, evaluation_repository, evaluation_run_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
             metrics=metrics_exporter,
+            operational_health_monitor=operational_health_monitor,
             alert_store=alert_store,
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
