@@ -795,5 +795,65 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             await services._propose_once(mutated)
 
 
+    async def test_dispatch_contract_is_task_bound_and_revalidates_capabilities(self):
+        repository = InMemoryBlackboard()
+        registry = InMemoryExpertRegistry((
+            ExpertProfile("researcher", "Researcher", "Research", frozenset({"research", "citations"})),
+        ))
+        class SingleExpertCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher", "required_capabilities": ["research"]}]
+        callbacks = SingleExpertCallbacks()
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository, callbacks=callbacks,
+            expert_registry=registry,
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task-contract", "run_id": "run-contract"}
+        assignments = await services.plan_experts(
+            objective="research", run_context=context,
+        )
+        assignment = assignments[0]
+        self.assertEqual(assignment["task_id"], "task-contract")
+        self.assertTrue(assignment["assignment_id"])
+        self.assertEqual(assignment["declared_capabilities"], ["citations", "research"])
+        with self.assertRaisesRegex(PermissionError, "different task"):
+            await services.run_expert(
+                assignment=assignment,
+                objective="research",
+                run_context={**context, "task_id": "other-task"},
+            )
+        with self.assertRaisesRegex(PermissionError, "capability declaration changed"):
+            registry.register(ExpertProfile("researcher", "Researcher", "Research", frozenset({"research"})))
+            await services.run_expert(assignment=assignment, objective="research", run_context=context)
+
+    async def test_dispatch_rejects_unregistered_and_missing_capabilities(self):
+        repository = InMemoryBlackboard()
+        registry = InMemoryExpertRegistry((
+            ExpertProfile("researcher", "Researcher", "Research", frozenset({"research"})),
+        ))
+        class CapabilityCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher", "required_capabilities": ["legal_review"]}]
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository,
+            callbacks=CapabilityCallbacks(), expert_registry=registry,
+        )
+        with self.assertRaisesRegex(ValueError, "lacks required capabilities"):
+            await services.plan_experts(
+                objective="research", run_context={"tenant_id": "tenant-a", "task_id": "t", "run_id": "r"},
+            )
+        class UnknownCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "missing"}]
+        unknown = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository,
+            callbacks=UnknownCallbacks(), expert_registry=registry,
+        )
+        with self.assertRaisesRegex(PermissionError, "not registered or enabled"):
+            await unknown.plan_experts(
+                objective="research", run_context={"tenant_id": "tenant-a", "task_id": "t", "run_id": "r"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

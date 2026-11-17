@@ -163,6 +163,7 @@ class BlackboardMultiExpertServices:
                 raise ValueError("required_capabilities must not contain duplicates")
             assignment["required_capabilities"] = sorted(required)
 
+            profile = None
             if self.expert_registry is not None:
                 profile = await self._resolve_expert(expert_id, required)
                 assignment.update({
