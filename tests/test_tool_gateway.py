@@ -17,11 +17,20 @@ from agent_platform.tools.idempotency import (
 class FakeApprovalVerifier:
     def __init__(self, valid=False):
         self.valid = valid
+        self.expected_digest = None
+        self.expected_run_id = None
         self.calls = []
 
-    async def consume(self, *, tenant_id, approval_id, action_digest, policy_version="1"):
-        self.calls.append((tenant_id, approval_id, action_digest, policy_version))
-        return self.valid
+    async def consume(
+        self, *, tenant_id, approval_id, action_digest, policy_version="1",
+        run_id=None,
+    ):
+        self.calls.append((tenant_id, approval_id, action_digest, policy_version, run_id))
+        return (
+            self.valid
+            and (self.expected_digest is None or action_digest == self.expected_digest)
+            and (self.expected_run_id is None or run_id == self.expected_run_id)
+        )
 
 
 class FakeAuditSink:
@@ -201,6 +210,36 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(len(self.approvals.calls), 1)
         self.assertEqual(self.approvals.calls[0][3], "policy-v2")
+
+    async def test_external_action_approval_is_bound_to_exact_parameters_and_run(self):
+        from agent_platform.approval.policy import ActionRequest
+
+        self.approvals.valid = True
+        self.approvals.expected_run_id = "approved-run"
+        self.approvals.expected_digest = ActionRequest(
+            action="send", resource="resource:x",
+            parameters={"value": "x"}, actor_id="agent-a",
+        ).digest()
+
+        with self.assertRaises(ToolExecutionDenied):
+            await self.call(
+                "send", approval_id="approval-bound",
+                run_id="approved-run", arguments={"value": "changed"},
+            )
+        with self.assertRaises(ToolExecutionDenied):
+            await self.call(
+                "send", approval_id="approval-bound",
+                run_id="different-run",
+            )
+        self.assertEqual(self.executed, [])
+
+        result = await self.call(
+            "send", approval_id="approval-bound",
+            run_id="approved-run",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(self.executed), 1)
+        self.assertEqual(self.approvals.calls[-1][4], "approved-run")
 
     async def test_external_action_replay_returns_cached_result_without_reexecution(self):
         self.approvals.valid = True
