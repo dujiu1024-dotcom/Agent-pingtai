@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timezone
 
@@ -7,18 +8,18 @@ from fastapi import FastAPI
 
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
+from agent_platform.contracts import BlackboardEntry, EntryKind
+from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
 from agent_platform.identity.http import IdentityASGIMiddleware
 from agent_platform.identity.models import AuthorizationContext, IssuedSession, Principal
 from agent_platform.identity.service import AuthenticationError
-from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
-from agent_platform.workflows.expert_registry import ControlPlaneExpertRegistry
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
+from agent_platform.workflows.expert_registry import ControlPlaneExpertRegistry
 from agent_platform.workflows.multi_expert import build_multi_expert_workflow
-from agent_platform.contracts import BlackboardEntry, EntryKind
 
 
 class JourneyIdentity:
@@ -197,7 +198,6 @@ class CoreBusinessJourneyE2ETests(unittest.TestCase):
         # Configure and publish two tenant-scoped Agent definitions.
         registry = RegistryService(InMemoryRegistryRepository())
         for agent_id, capability in (("researcher", "knowledge.search"), ("reviewer", "artifact.review")):
-            import asyncio
             draft = asyncio.run(registry.create_draft(
                 tenant_id="tenant-e2e", kind="agent", item_id=agent_id,
                 definition={"name": agent_id.title(), "capabilities": [capability]},
