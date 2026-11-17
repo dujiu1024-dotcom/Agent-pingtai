@@ -573,6 +573,103 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(row["agent_id"], "expert-a")
 
 
+    async def test_workbench_worker_claims_highest_priority_first(self):
+        store = PostgresRunStateStore(self.connect)
+        low_priority_run = str(uuid4())
+        high_priority_run = str(uuid4())
+        for run_id, priority in (
+            (low_priority_run, 100),
+            (high_priority_run, 900),
+        ):
+            self.assertTrue(await store.create_task_run(
+                tenant_id=self.tenant_id, run_id=run_id, actor_id="priority-user",
+                agent_id="priority-agent", agent_version=1,
+                template_id="priority-template", template_version=1,
+                input={"prompt": run_id}, preparation_owner=f"prep-{run_id}",
+                registry_snapshot=[], priority=priority,
+            ))
+            async with await self.connect() as conn:
+                await conn.execute(
+                    """UPDATE platform_runs
+                       SET dispatch_ready=true, registry_snapshot_digest=%s,
+                           preparation_owner=NULL, preparation_lease_expires_at=NULL
+                       WHERE tenant_id=%s AND run_id=%s""",
+                    ("a" * 64, self.tenant_id, run_id),
+                )
+                await conn.commit()
+
+        claimed = await store.claim_workbench_tasks(
+            "worker-priority-integration", tenant_id=self.tenant_id,
+            limit=2, lease_seconds=30,
+        )
+        self.assertEqual(
+            [row.run_id for row in claimed],
+            [high_priority_run, low_priority_run],
+        )
+        # Do not leave claimed rows in the global worker queue for other integration tests.
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='failed', finished_at=now(),
+                       worker_id=NULL, lease_expires_at=NULL
+                   WHERE tenant_id=%s AND run_id IN (%s,%s)""",
+                (self.tenant_id, high_priority_run, low_priority_run),
+            )
+            await conn.commit()
+
+
+    async def test_failed_workbench_task_retry_preserves_registry_snapshot_and_priority(self):
+        store = PostgresRunStateStore(self.connect)
+        original_run_id = str(uuid4())
+        self.assertTrue(await store.create_task_run(
+            tenant_id=self.tenant_id, run_id=original_run_id, actor_id="retry-user",
+            agent_id="retry-agent", agent_version=2,
+            template_id="retry-template", template_version=3,
+            input={"prompt": "retry this"}, preparation_owner="prepare-retry",
+            registry_snapshot=[{"kind": "agent", "item_id": "retry-agent", "version": 2}],
+            priority=800,
+        ))
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='failed', finished_at=now(),
+                       registry_snapshot_digest=%s, dispatch_ready=true,
+                       preparation_owner=NULL, preparation_lease_expires_at=NULL
+                   WHERE tenant_id=%s AND run_id=%s""",
+                ("b" * 64, self.tenant_id, original_run_id),
+            )
+            await conn.commit()
+
+        retried_run_id = await store.create_retry_task_run(
+            tenant_id=self.tenant_id, task_id=original_run_id,
+            actor_id="retry-user", run_id=str(uuid4()),
+            idempotency_key=f"retry:{original_run_id}:integration-1",
+            request_digest="c" * 64,
+        )
+        retried = await store.get_task_record(
+            self.tenant_id, retried_run_id, actor_id="retry-user",
+        )
+        self.assertEqual(retried["status"], "queued")
+        self.assertEqual(retried["priority"], 800)
+        self.assertEqual(str(retried["retry_of_run_id"]), original_run_id)
+        self.assertEqual(
+            retried["registry_snapshot"],
+            [{"kind": "agent", "item_id": "retry-agent", "version": 2}],
+        )
+
+
+
+
+        # Keep the globally polled workbench queue isolated from subsequent tests.
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='cancelled', finished_at=now(), dispatch_ready=false
+                   WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, retried_run_id),
+            )
+            await conn.commit()
+
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
 class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

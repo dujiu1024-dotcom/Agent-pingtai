@@ -25,13 +25,15 @@ class PostgresRunStateStore(RunStateStore):
   return RunSnapshot(row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),row["checkpoint_ref"],row["last_error"],row["updated_at"])
  async def create_task_run(self, *, tenant_id:str, run_id:str, actor_id:str,
   agent_id:str, agent_version:int, template_id:str, template_version:int, input:Mapping[str,Any],
-  preparation_owner:str, registry_snapshot:Sequence[Mapping[str,Any]],
+  preparation_owner:str, registry_snapshot:Sequence[Mapping[str,Any]], priority:int=100,
   project_id:str|None=None, session_id:str|None=None, workflow_id:str|None=None,
   idempotency_key:str|None=None, request_digest:str|None=None)->bool:
   if not tenant_id.strip() or not actor_id.strip() or not agent_id.strip() or not template_id.strip():
    raise ValueError("tenant, actor, Agent and model template are required")
   if not preparation_owner.strip():
    raise ValueError("preparation_owner is required")
+  if type(priority) is not int or not 0 <= priority <= 1000:
+   raise ValueError("priority must be an integer between 0 and 1000")
   if agent_version < 1 or template_version < 1:
    raise ValueError("Agent and model template versions must be positive")
   run_uuid=UUID(run_id)
@@ -44,14 +46,14 @@ class PostgresRunStateStore(RunStateStore):
    async with c.transaction():
     cur=await c.execute("""INSERT INTO platform_runs
      (tenant_id,run_id,project_id,session_id,task_id,agent_id,agent_version,template_id,template_version,
-      workflow_id,status,input,created_by,idempotency_key,request_digest,registry_snapshot,dispatch_ready,
+      workflow_id,status,priority,input,created_by,idempotency_key,request_digest,registry_snapshot,dispatch_ready,
       preparation_owner,preparation_lease_expires_at)
-     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,false,%s,now()+(60 * interval '1 second'))
+     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s,false,%s,now()+(60 * interval '1 second'))
      ON CONFLICT (tenant_id,created_by,idempotency_key)
        WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING run_id""",
      (tenant_id,run_uuid,project_id,session_id,str(run_uuid),agent_id,agent_version,template_id,
-      template_version,workflow_id,Jsonb(dict(input)),actor_id,idempotency_key,request_digest,
+      template_version,workflow_id,priority,Jsonb(dict(input)),actor_id,idempotency_key,request_digest,
       Jsonb([dict(item) for item in registry_snapshot]),preparation_owner))
     inserted=await cur.fetchone()
     if inserted is not None:
@@ -68,11 +70,67 @@ class PostgresRunStateStore(RunStateStore):
      raise ValueError("idempotency_key was already used with a different task request")
     return False
 
+ async def create_retry_task_run(
+  self, *, tenant_id:str, task_id:str, actor_id:str, run_id:str,
+  idempotency_key:str, request_digest:str,
+ )->str:
+  """Create a new Run from a failed task while preserving its pinned registry snapshot."""
+  run_uuid=UUID(run_id)
+  c=await self._connect()
+  async with c:
+   async with c.transaction():
+    cur=await c.execute(
+     """SELECT run_id,status,registry_snapshot,registry_snapshot_digest
+        FROM platform_runs
+        WHERE tenant_id=%s AND task_id=%s AND created_by=%s
+        FOR UPDATE""",
+     (tenant_id,task_id,actor_id),
+    )
+    source=await cur.fetchone()
+    if source is None:
+     raise KeyError("task not found")
+    if source["status"] not in ("failed","timed_out"):
+     raise ValueError("only failed or timed_out tasks can be retried")
+    if source["registry_snapshot"] is None or not source["registry_snapshot_digest"]:
+     raise ValueError("task has no immutable registry snapshot and cannot be retried")
+    cur=await c.execute(
+     """INSERT INTO platform_runs
+        (tenant_id,run_id,project_id,session_id,task_id,agent_id,agent_version,
+         template_id,template_version,workflow_id,status,priority,input,created_by,
+         idempotency_key,request_digest,registry_snapshot,registry_snapshot_digest,
+         dispatch_ready,retry_of_run_id)
+        SELECT tenant_id,%s,project_id,session_id,%s,agent_id,agent_version,
+         template_id,template_version,workflow_id,'queued',priority,input,created_by,
+         %s,%s,registry_snapshot,registry_snapshot_digest,true,%s
+        FROM platform_runs
+        WHERE tenant_id=%s AND run_id=%s AND created_by=%s
+        ON CONFLICT (tenant_id,created_by,idempotency_key)
+          WHERE idempotency_key IS NOT NULL DO NOTHING
+        RETURNING run_id""",
+     (run_uuid,str(run_uuid),idempotency_key,request_digest,source["run_id"],
+      tenant_id,source["run_id"],actor_id),
+    )
+    inserted=await cur.fetchone()
+    if inserted is not None:
+     return str(inserted["run_id"])
+    cur=await c.execute(
+     """SELECT run_id,request_digest FROM platform_runs
+        WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s
+        FOR UPDATE""",
+     (tenant_id,actor_id,idempotency_key),
+    )
+    existing=await cur.fetchone()
+    if existing is None:
+     raise RuntimeError("idempotent retry insertion conflict could not be resolved")
+    if existing["request_digest"] != request_digest:
+     raise ValueError("idempotency_key was already used with a different retry request")
+    return str(existing["run_id"])
+
  async def get_task_record(self, tenant_id:str, task_id:str, *, actor_id:str|None=None)->dict[str,Any]|None:
   c=await self._connect()
   async with c:
    query="""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,retry_of_run_id,
     idempotency_key,request_digest,registry_snapshot,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND task_id=%s"""
@@ -97,7 +155,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,retry_of_run_id,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s AND idempotency_key=%s""",
@@ -110,7 +168,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT tenant_id,run_id,task_id,project_id,session_id,agent_id,agent_version,template_id,
-    template_version,workflow_id,status,input,output,usage,trace_id,created_by,
+    template_version,workflow_id,status,priority,input,output,usage,trace_id,created_by,retry_of_run_id,
     idempotency_key,request_digest,started_at,finished_at,created_at,updated_at,
     checkpoint_ref,last_error,registry_snapshot_digest,dispatch_ready
     FROM platform_runs WHERE tenant_id=%s AND created_by=%s
@@ -246,7 +304,7 @@ class PostgresRunStateStore(RunStateStore):
     RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
     (tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
- async def claim_workbench_tasks(self,worker_id:str,*,limit:int=20,lease_seconds:int=60)->list[RunSnapshot]:
+ async def claim_workbench_tasks(self,worker_id:str,*,tenant_id:str|None=None,limit:int=20,lease_seconds:int=60)->list[RunSnapshot]:
   if not worker_id.strip() or not 1<=limit<=200 or lease_seconds<5:
    raise ValueError("invalid workbench worker lease parameters")
   c=await self._connect()
@@ -254,16 +312,17 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""WITH candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
     WHERE task_id IS NOT NULL AND dispatch_ready=true
+      AND (%s::text IS NULL OR tenant_id=%s)
       AND ((status IN ('queued','interrupted','cancelling')
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
-    ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
+    ORDER BY priority DESC,created_at ASC FOR UPDATE SKIP LOCKED LIMIT %s
     )
     UPDATE platform_runs r SET worker_id=%s,
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
     RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
-    (limit,worker_id,lease_seconds))
+    (tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
 
  async def acquire_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60)->bool:

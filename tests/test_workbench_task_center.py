@@ -18,11 +18,12 @@ class FakeTaskService:
 
     async def submit_task(
         self, *, tenant_id, actor_id, agent_id, project_id, session_id,
-        input, idempotency_key=None,
+        input, idempotency_key=None, priority=100,
     ):
         task = {
             "task_id": "task-1", "agent_id": agent_id, "project_id": project_id,
             "session_id": session_id, "input": dict(input), "status": "queued",
+            "priority": priority,
         }
         self.items[task["task_id"]] = task
         return task
@@ -101,16 +102,17 @@ class WorkbenchTaskCenterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.service.items, {})
 
-    def test_task_submission_accepts_only_default_priority(self):
+    def test_task_submission_accepts_custom_priority(self):
         response = self.client.post(
             "/api/platform/v1/workbench/tasks",
-            json={"agent_id": "agent-a", "input": {"text": "analyze"}, "priority": 100},
+            json={"agent_id": "agent-a", "input": {"text": "analyze"}, "priority": 850},
         )
         self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["priority"], 850)
         self.assertEqual(len(self.service.items), 1)
 
-    def test_task_submission_rejects_unsupported_custom_priority(self):
-        for invalid_priority in (10, "fast", 10.5, True):
+    def test_task_submission_rejects_out_of_range_or_invalid_priority(self):
+        for invalid_priority in (-1, 1001, "fast", 10.5, True):
             response = self.client.post(
                 "/api/platform/v1/workbench/tasks",
                 json={"agent_id": "agent-a", "input": {"text": "analyze"},

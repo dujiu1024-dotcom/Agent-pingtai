@@ -349,12 +349,45 @@ class OpenAICompatibleModelRouter:
             # every routed request must pass it before provider dispatch.
             estimate = None
             if self.token_estimator is not None:
-                estimate = self.token_estimator.estimate(
-                    model_id=config.model_id,
-                    messages=messages,
-                    request_parameters=parameters,
-                    context_window_tokens=config.context_window_tokens,
-                )
+                # Estimate the exact effective parameter set sent by the transport:
+                # template defaults are merged first and per-call values override them.
+                effective_parameters = {**dict(config.parameters), **dict(parameters)}
+                try:
+                    estimate = self.token_estimator.estimate(
+                        model_id=config.model_id,
+                        messages=messages,
+                        request_parameters=effective_parameters,
+                        context_window_tokens=config.context_window_tokens,
+                    )
+                except Exception as exc:
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason="token_estimation_failed",
+                        error_type=type(exc).__name__,
+                    )
+                    # Preserve the estimator's typed failure for callers while
+                    # guaranteeing no provider dispatch or fallback can occur.
+                    raise
+                input_estimate = getattr(estimate, "input_tokens", None)
+                output_estimate = getattr(estimate, "output_tokens", None)
+                total_estimate = getattr(estimate, "total_tokens", None)
+                if (
+                    not isinstance(input_estimate, int) or isinstance(input_estimate, bool)
+                    or input_estimate < 0
+                    or not isinstance(output_estimate, int) or isinstance(output_estimate, bool)
+                    or output_estimate < 1
+                    or not isinstance(total_estimate, int) or isinstance(total_estimate, bool)
+                    or total_estimate != input_estimate + output_estimate
+                    or total_estimate > config.context_window_tokens
+                ):
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason="token_estimate_invalid_or_context_window_exceeded",
+                        error_type="InvalidTokenEstimate",
+                    )
+                    raise ModelRoutingError(
+                        "model token estimate is invalid or exceeds the pinned context window"
+                    )
             if self.quota_service is not None:
                 if estimate is None:
                     raise ModelRoutingError(
