@@ -8,7 +8,6 @@ requires-python = ">=3.11"
 tokenizer = ["tiktoken>=0.7,<1"]
 
 [tool.ruff]
-# C-20-04 lifecycle compensation regression coverage is included below.
 line-length = 100
 target-version = "py310"
 # 存量文件暂不纳入，先只门禁新增/本轮改动文件
@@ -17,21 +16,17 @@ include = [
   "conversation.py",
   "tools/schedule_wbs.py",
   "scripts/release_gate.py",
-  "scripts/validate_production_egress.py",
   "scripts/release_upgrade.py",
   "scripts/verify_platform_backups.py",
-  "scripts/run_platform_backup.py",
   "scripts/disaster_recovery.py",
   "tests/test_legacy_inventory.py",
   "scripts/inventory_legacy_system.py",
   "scripts/run_legacy_migration.py",
   "tests/test_release_gate_evidence.py",
-  "tests/test_production_egress_policy.py",
   "tests/test_release_upgrade.py",
   "tests/test_backup_integrity_verification.py",
   "tests/test_disaster_recovery_evidence.py",
   "tests/test_platform_ops.py",
-  "tests/test_platform_backup_runner.py",
   "tests/test_migration_batches.py",
   "tests/test_console.py",
   "tests/test_listener.py",
@@ -73,7 +68,6 @@ include = [
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_evaluation_store.py",
-  "tests/test_agent_rag_evaluation.py",
   "tests/test_sandbox_oci.py",
   "tests/test_issue_21_c_21_02_security_negative.py",
   "tests/test_sandbox_lifecycle.py",
@@ -97,9 +91,7 @@ include = [
   "tests/test_deepseek_harness_adapter.py",
   "tests/test_event_consumer.py",
   "tests/test_issue_21_c_21_03_fault_injection.py",
-  "agent_platform/observability/quality_capacity_baseline.py",
   "tests/test_issue_21_c_21_04_quality_capacity.py",
-  "scripts/run_quality_capacity_baseline.py",
   "tests/test_platform_postgres_integration.py",
   "tests/test_tenant_creation_integration.py",
   "tests/test_service_identity_authorization_integration.py",
@@ -128,7 +120,6 @@ include = [
   "tests/test_issue_8_c_8_05.py",
   "tests/test_issue_8_a_8_01_contracts.py",
   "tests/test_extension_package.py",
-  "tests/test_extension_manager.py",
   "tests/test_i18n_context.py",
   "tests/test_postgres_subject_adapters.py",
   "tests/test_subject_export_coordinator.py",
