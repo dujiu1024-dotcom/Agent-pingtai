@@ -81,6 +81,28 @@ class SessionDataModelTests(unittest.TestCase):
         self.assertEqual(snapshot.version, 1)
         self.assertEqual(snapshot.token_count, 10)
 
+    def test_snapshot_payload_must_be_json_compatible(self):
+        with self.assertRaisesRegex(ValueError, "JSON-compatible"):
+            ContextWindowSnapshot(
+                tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-a",
+                version=1, snapshot={"unsupported": object()}, token_count=0,
+                max_tokens=100, created_by="user-a",
+            )
+        with self.assertRaisesRegex(ValueError, "JSON-compatible"):
+            ContextWindowSnapshot(
+                tenant_id="tenant-a", session_id="session-a", snapshot={"not_finite": float("nan")},
+                snapshot_id="snapshot-b", version=1, token_count=0, max_tokens=100,
+                created_by="user-a",
+            )
+
+    def test_message_metadata_must_be_json_compatible(self):
+        with self.assertRaisesRegex(ValueError, "JSON-compatible"):
+            ConversationMessage(
+                tenant_id="tenant-a", message_id="message-a", session_id="session-a",
+                role=MessageRole.USER, content="hello", actor_id="user-a",
+                metadata={"unsupported": object()},
+            )
+
     def test_context_window_snapshot_rejects_invalid_budget_and_version(self):
         base = {
             "tenant_id": "tenant-a", "session_id": "session-a",
@@ -109,6 +131,27 @@ class ContextSnapshotRepositoryTests(unittest.IsolatedAsyncioTestCase):
         await self.repository.create_session(ConversationSession(
             tenant_id="tenant-a", session_id="session-a", owner_id="user-a",
         ))
+
+    async def test_message_ids_are_unique_per_tenant(self):
+        first = ConversationMessage(
+            tenant_id="tenant-a", message_id="message-shared", session_id="session-a",
+            role=MessageRole.USER, content="first", actor_id="user-a",
+        )
+        await self.repository.append_message(first)
+        duplicate = ConversationMessage(
+            tenant_id="tenant-a", message_id="message-shared", session_id="session-a",
+            role=MessageRole.ASSISTANT, content="duplicate", actor_id="agent-a",
+        )
+        with self.assertRaisesRegex(SessionError, "message already exists"):
+            await self.repository.append_message(duplicate)
+        await self.repository.create_session(ConversationSession(
+            tenant_id="tenant-b", session_id="session-a", owner_id="user-b",
+        ))
+        other_tenant = ConversationMessage(
+            tenant_id="tenant-b", message_id="message-shared", session_id="session-a",
+            role=MessageRole.USER, content="isolated", actor_id="user-b",
+        )
+        await self.repository.append_message(other_tenant)
 
     async def test_snapshot_round_trip_and_version_order_are_session_scoped(self):
         older = ContextWindowSnapshot(
