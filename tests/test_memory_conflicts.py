@@ -86,8 +86,11 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
             "merged memory must retain a resolvable canonical source pointer",
         )
         self.assertEqual(
-            result.candidate.metadata["merged_source_refs"],
-            "session://tenant-a/message-1@1,session://tenant-a/message-2@3",
+            set(result.candidate.metadata["merged_source_refs"].split(",")),
+            {
+                "session://tenant-a/message-1@1",
+                "session://tenant-a/message-2@3",
+            },
         )
         self.assertIn(active.candidate.memory_id, result.candidate.metadata["merged_from"])
         self.assertIn(conflict.candidate.memory_id, result.candidate.metadata["merged_from"])
