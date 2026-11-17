@@ -13,8 +13,8 @@ line-length = 100
 target-version = "py310"
 # 存量文件暂不纳入，先只门禁新增/本轮改动文件
 include = [
-  "intent.py",
-  "conversation.py",
+  "legacy/v1-archive/intent.py",
+  "legacy/v1-archive/conversation.py",
   "tools/schedule_wbs.py",
   "scripts/release_gate.py",
   "scripts/release_upgrade.py",
@@ -167,6 +167,7 @@ include = [
   "tests/test_runs_interventions_api.py",
   "tests/test_task_center_interventions_postgres_integration.py",
   "tests/test_production_deployment_contract.py",
+  "tests/test_issue_614_runtime_composition.py",
   "tests/test_operational_health.py",
   "tests/test_operational_health_api.py",
   "tests/test_runtime_self_monitor.py",
