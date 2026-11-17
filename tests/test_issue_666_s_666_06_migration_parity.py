@@ -42,8 +42,12 @@ class SQLitePostgresParityTests(unittest.TestCase):
         self.temp.cleanup()
 
     def _write_source(self):
-        content = "".join(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n"
-                          for row in self.source_rows).encode()
+        records = [
+            {"table": "users", "primary_key": {"id": row["id"]}, "row": row}
+            for row in self.source_rows
+        ]
+        content = "".join(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n"
+                          for record in records).encode()
         (self.export_dir / "users.jsonl").write_bytes(content)
         manifest = {
             "format": "legacy-sqlite-jsonl-v1",
