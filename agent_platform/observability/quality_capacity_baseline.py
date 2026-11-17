@@ -7,7 +7,6 @@ import hashlib
 import json
 import time
 from dataclasses import asdict, dataclass
-from statistics import mean
 from typing import Any
 
 from agent_platform.observability.agent_rag_evaluation import (
