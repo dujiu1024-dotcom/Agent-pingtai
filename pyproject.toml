@@ -78,7 +78,6 @@ include = [
   "tests/test_run_trace.py",
   "tests/test_run_replay.py",
   "tests/test_run_replay_api.py",
-  "tests/test_replay_workbench_ui.py",
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
@@ -162,8 +161,7 @@ include = [
   "tests/test_sse_protocol.py",
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
-  "tests/test_connector_catalog.py",
-  "tests/test_connector_framework.py",
+  "tests/test_issue_9_a_9_01_recovery.py",
 ]
 
 [tool.ruff.lint]
@@ -189,8 +187,6 @@ files = [
   "agent_platform/sandbox/oci.py",
   "agent_platform/sandbox/lifecycle.py",
   "agent_platform/tools/gateway_mcp.py",
-  "agent_platform/tools/connector_catalog.py",
-  "agent_platform/connectors/base.py",
   "agent_platform/blackboard/postgres_repository.py",
   "agent_platform/approval/postgres.py",
   "agent_platform/security/*.py",
