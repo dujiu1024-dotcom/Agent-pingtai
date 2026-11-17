@@ -804,6 +804,45 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls, [])
         self.assertEqual(audit.events[-1]["outcome"], "denied")
         self.assertEqual(audit.events[-1]["detail"]["reason"], "quota_reservation_denied")
+    async def test_streaming_callback_is_forwarded_without_bypassing_router_audit(self):
+        class StreamingTransport:
+            def __init__(self):
+                self.streamed = False
+
+            async def complete(self, *, config, messages, request_parameters,
+                               timeout_seconds, on_token=None):
+                self.streamed = on_token is not None
+                if on_token is not None:
+                    await on_token("first")
+                    await on_token("second")
+                return {
+                    "choices": [{"message": {"content": "firstsecond"}}],
+                    "usage": {"prompt_tokens": 2, "completion_tokens": 2},
+                }
+
+        transport = StreamingTransport()
+        audit = AuditRecorder()
+        router = OpenAICompatibleModelRouter(
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport, audit_sink=audit,
+        )
+        tokens = []
+
+        async def on_token(token):
+            tokens.append(token)
+
+        result = await router.complete(
+            snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-stream",
+            template_id="primary",
+            messages=({"role": "user", "content": "hello"},),
+            request_id="request-stream", on_token=on_token,
+        )
+        self.assertEqual(tokens, ["first", "second"])
+        self.assertTrue(transport.streamed)
+        self.assertEqual(result.content, "firstsecond")
+        self.assertEqual(audit.events[-1]["action"], "model.response")
+        self.assertEqual(audit.events[-1]["outcome"], "succeeded")
+
 
 if __name__ == "__main__":
     unittest.main()
