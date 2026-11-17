@@ -251,16 +251,16 @@ class SkillPackageRegistry:
                 raise SkillPackageError("artifact registry did not return an immutable reference")
             try:
                 draft = await self.registry.create_draft(
-                tenant_id=tenant_id, kind="skill", item_id=manifest.name, actor_id=actor_id,
-                definition={
-                    "format": "skill-package-v1", "manifest": {
-                        "name": manifest.name, "version": manifest.version,
-                        "description": manifest.description, "entrypoint": manifest.entrypoint,
-                        "dependencies": dict(manifest.dependencies),
-                        "allowed_tools": list(manifest.allowed_tools),
+                    tenant_id=tenant_id, kind="skill", item_id=manifest.name, actor_id=actor_id,
+                    definition={
+                        "format": "skill-package-v1", "manifest": {
+                            "name": manifest.name, "version": manifest.version,
+                            "description": manifest.description, "entrypoint": manifest.entrypoint,
+                            "dependencies": dict(manifest.dependencies),
+                            "allowed_tools": list(manifest.allowed_tools),
+                        },
+                        "files": list(paths), "sha256": digest, "artifact_ref": artifact_ref,
                     },
-                    "files": list(paths), "sha256": digest, "artifact_ref": artifact_ref,
-                },
                 )
             except Exception:
                 await self.artifacts.delete(artifact_ref)
