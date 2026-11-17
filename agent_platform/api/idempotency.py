@@ -72,6 +72,7 @@ class PostgresIdempotencyBackend:
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
+                await connection.execute("DELETE FROM platform_api_idempotency WHERE tenant_id=%s AND principal_id=%s AND http_method=%s AND route=%s AND idempotency_key=%s AND expires_at<=now()", (tenant_id,principal_id,method,route,key))
                 await connection.execute("INSERT INTO platform_api_idempotency (tenant_id,principal_id,http_method,route,idempotency_key,request_hash,state,owner_token,lease_until,expires_at) VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,now()+make_interval(secs=>30),now()+make_interval(secs=>%s)) ON CONFLICT DO NOTHING", (tenant_id,principal_id,method,route,key,request_hash,owner_token,ttl_seconds))
                 cursor = await connection.execute("SELECT request_hash,state,owner_token,lease_until,response_status,response_headers,response_body FROM platform_api_idempotency WHERE tenant_id=%s AND principal_id=%s AND http_method=%s AND route=%s AND idempotency_key=%s FOR UPDATE", (tenant_id,principal_id,method,route,key))
                 row = await cursor.fetchone()
