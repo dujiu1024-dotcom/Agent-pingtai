@@ -1,7 +1,7 @@
 """Read-only compatibility mapper for explicit legacy conversation imports.
 
 This module never reads or writes legacy tables and never persists adapted objects.
-Callers must supply an approved tenant mapping and, when applicable, project mapping.
+Callers must supply approved tenant and platform-owner mappings and, when applicable, an approved project mapping.
 """
 from __future__ import annotations
 
