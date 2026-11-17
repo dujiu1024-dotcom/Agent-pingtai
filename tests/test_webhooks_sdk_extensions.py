@@ -35,21 +35,27 @@ class FakeWebhookStore:
         self.completed = []
         self.retried = []
         self.dead = []
+        self.complete_result = True
+        self.retry_result = True
+        self.dead_result = True
 
     async def claim(self, *, limit):
         return [(self.subscription, self.payload, self.attempt)]
 
     async def complete(self, tenant_id, delivery_id, *, response_code, lease_token):
         self.completed.append((tenant_id, delivery_id, response_code, lease_token))
+        return self.complete_result
 
     async def retry(self, tenant_id, delivery_id, *, next_attempt_at, response_code,
                     lease_token, last_error_code):
         self.retried.append((tenant_id, delivery_id, next_attempt_at, response_code,
                              lease_token, last_error_code))
+        return self.retry_result
 
     async def dead_letter(self, tenant_id, delivery_id, *, response_code, lease_token,
                           last_error_code):
         self.dead.append((tenant_id, delivery_id, response_code, lease_token, last_error_code))
+        return self.dead_result
 
 
 class FakeAuditSink:
@@ -228,6 +234,23 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             "webhook.delivery.attempt", "webhook.delivery",
         ])
 
+    async def test_stale_delivery_completion_is_not_reported_as_delivered(self):
+        store = FakeWebhookStore()
+        store.complete_result = False
+        audit = FakeAuditSink()
+        dispatcher = WebhookDispatcher(
+            store=store, transport=FakeWebhookTransport(code=204),
+            resolve_secret=lambda _ref: SECRET,
+            audit_sink=audit,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+        )
+        result = await dispatcher.dispatch()
+        self.assertEqual(result["delivered"], 0)
+        self.assertEqual(result["lease_lost"], 1)
+        self.assertEqual(audit.events[-1]["action"], "webhook.delivery.lease_lost")
+
     async def test_dispatch_retry_persists_lease_fence_and_safe_error_code(self):
         store = FakeWebhookStore(attempt=2)
         transport = FakeWebhookTransport(code=503)
@@ -276,6 +299,7 @@ class _RecordingConnection:
     def __init__(self):
         self.query = None
         self.params = None
+        self.rowcount = 1
 
     async def __aenter__(self):
         return self
@@ -289,7 +313,7 @@ class _RecordingConnection:
     async def execute(self, query, params):
         self.query = query
         self.params = params
-        return None
+        return self
 
 
 class WebhookLeaseFencingTests(unittest.IsolatedAsyncioTestCase):
