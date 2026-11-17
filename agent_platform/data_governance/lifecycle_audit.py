@@ -3,6 +3,7 @@
 Only identifiers, bounded scope metadata and evidence digests are persisted; callers
 must never pass source records, credentials, prompts or exported payloads as evidence.
 """
+# ruff: noqa: I001 -- keep the standard-library import block explicit.
 from __future__ import annotations
 
 import hashlib
