@@ -31,7 +31,6 @@ class IdentityContextResolver:
         return context, permissions
 
     async def knowledge(self, request: Request) -> KnowledgePrincipal:
-        authenticated = request.state.__dict__.get("identity.principal")
         context, permissions = await self._context(request)
         return KnowledgePrincipal(
             tenant_id=context.tenant_id, user_id=context.user_id,
