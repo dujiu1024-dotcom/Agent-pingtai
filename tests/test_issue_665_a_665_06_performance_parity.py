@@ -62,9 +62,29 @@ class SwitchPerformanceParityTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "pass")
 
-    def test_rejects_negative_tolerance(self):
-        with self.assertRaisesRegex(ValueError, "non-negative"):
-            evaluate_parity(report(), report(), max_regression_pct=-1)
+    def test_rejects_negative_or_over_100_tolerance(self):
+        for tolerance in (-1, 100.01):
+            with self.subTest(tolerance=tolerance):
+                with self.assertRaisesRegex(ValueError, "between 0 and 100"):
+                    evaluate_parity(report(), report(), max_regression_pct=tolerance)
+
+    def test_rejects_non_finite_tolerance(self):
+        for tolerance in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(tolerance=tolerance):
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    evaluate_parity(report(), report(), max_regression_pct=tolerance)
+
+    def test_non_finite_metrics_are_incomplete(self):
+        for invalid in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(metric=invalid):
+                legacy = report()
+                legacy["metrics"]["run_throughput_ops_per_second"] = invalid
+                result = evaluate_parity(legacy, report())
+                self.assertEqual(result["status"], "incomplete")
+                self.assertIn(
+                    "legacy:metrics.run_throughput_ops_per_second",
+                    result["missing"],
+                )
 
 
 if __name__ == "__main__":
