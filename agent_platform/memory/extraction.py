@@ -106,7 +106,7 @@ class MemoryExtractionService:
             for text in (turn.user_message, turn.assistant_message)
         }
         source_texts.add(
-            " ".join((turn.user_message + "\\n" + turn.assistant_message).casefold().split())
+            " ".join((turn.user_message + " " + turn.assistant_message).casefold().split())
         )
         candidates: list[MemoryCandidate] = []
         for index, draft in enumerate(drafts):

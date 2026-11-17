@@ -156,7 +156,7 @@ class MemoryDistillationAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             MemoryDraft(
                 scope=MemoryScope.USER,
                 scope_id="user-a",
-                content="I need concise reports.\\n  I will prepare concise reports.",
+                content="I need concise reports.  I will prepare concise reports.",
                 confidence=0.99,
             ),
         ])
