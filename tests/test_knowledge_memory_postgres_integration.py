@@ -275,8 +275,8 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         await service.propose(candidate)
         await service.confirm(
-            tenant_id=self.tenant_id, memory_id=candidate.memory_id,
-            confirmer_id="expiry-user",
+            principal=MemoryPrincipal(tenant_id=self.tenant_id, user_id="expiry-user"),
+            memory_id=candidate.memory_id,
         )
         with self.assertRaisesRegex(RuntimeError, "derived index unavailable"):
             await service.expire_due(tenant_id=self.tenant_id)
