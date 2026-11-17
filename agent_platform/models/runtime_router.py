@@ -216,12 +216,13 @@ class OpenAICompatibleHTTPTransport:
                 usage: Mapping[str, Any] | None = None
                 consumed = 0
                 while True:
-                    raw_line = response.readline()
+                    remaining = self.max_response_bytes - consumed
+                    raw_line = response.readline(remaining + 1)
                     if not raw_line:
                         break
-                    consumed += len(raw_line)
-                    if consumed > self.max_response_bytes:
+                    if len(raw_line) > remaining:
                         raise ModelTransportError("model provider stream exceeded size limit")
+                    consumed += len(raw_line)
                     line = raw_line.decode("utf-8").rstrip("\r\n")
                     if not line or line.startswith(":") or not line.startswith("data:"):
                         continue
