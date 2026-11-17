@@ -9,6 +9,8 @@ from agent_platform.memory.boundaries import (
     MEMORY_BOUNDARIES,
     MemoryLayer,
     memory_boundary,
+    durable_scope_value,
+    is_durable_memory_layer,
 )
 from agent_platform.memory.service import MemoryCandidate, MemoryScope
 
@@ -149,3 +151,36 @@ def test_organization_memory_is_tenant_bounded() -> None:
 def test_memory_boundary_rejects_untyped_layer() -> None:
     with pytest.raises(TypeError):
         memory_boundary("user")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("layer", "scope"),
+    [
+        (MemoryLayer.USER, MemoryScope.USER),
+        (MemoryLayer.AGENT, MemoryScope.AGENT),
+        (MemoryLayer.PROJECT, MemoryScope.PROJECT),
+        (MemoryLayer.ORGANIZATION, MemoryScope.TENANT),
+    ],
+)
+def test_durable_layer_mapping_is_executable(
+    layer: MemoryLayer, scope: MemoryScope,
+) -> None:
+    assert is_durable_memory_layer(layer)
+    assert durable_scope_value(layer) == scope.value
+
+
+@pytest.mark.parametrize("layer", [MemoryLayer.RUN, MemoryLayer.SESSION])
+def test_ephemeral_layers_cannot_be_mapped_to_durable_memory_scope(
+    layer: MemoryLayer,
+) -> None:
+    assert not is_durable_memory_layer(layer)
+    with pytest.raises(ValueError, match="ephemeral"):
+        durable_scope_value(layer)
+
+
+@pytest.mark.parametrize("layer", ["user", None, 1])
+def test_layer_mapping_rejects_untyped_values(layer: object) -> None:
+    with pytest.raises(TypeError):
+        is_durable_memory_layer(layer)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        durable_scope_value(layer)  # type: ignore[arg-type]
