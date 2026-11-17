@@ -93,6 +93,9 @@ class QuotaPolicyRepository(Protocol):
     async def put_policy(self, policy: QuotaPolicy) -> None: ...
     async def list_policies(self, *, tenant_id: str) -> list[QuotaPolicy]: ...
     async def append_audit(self, event: QuotaPolicyAudit) -> None: ...
+    async def put_policy_and_audit(
+        self, policy: QuotaPolicy, event: QuotaPolicyAudit,
+    ) -> None: ...
 
 
 class InMemoryQuotaPolicyRepository:
@@ -164,11 +167,9 @@ class QuotaPolicyService:
             occurred_at=datetime.now(timezone.utc), payload_sha256=digest,
         )
         atomic_writer = getattr(self.repository, "put_policy_and_audit", None)
-        if callable(atomic_writer):
-            await atomic_writer(policy, event)
-        else:
-            await self.repository.put_policy(policy)
-            await self.repository.append_audit(event)
+        if not callable(atomic_writer):
+            raise RuntimeError("quota policy repository must support atomic policy+audit writes")
+        await atomic_writer(policy, event)
         return event
 
     async def resolve(self, context: QuotaPolicyContext) -> ResolvedQuotaPolicy:
