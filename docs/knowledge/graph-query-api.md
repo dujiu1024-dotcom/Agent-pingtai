@@ -7,9 +7,9 @@ C-22-04 adds a tenant-bound query facade over the graph repository contract. It 
 - `neighbors`: breadth-first expansion in incoming, outgoing or both directions; optional relation-type filters; depth is limited to 5 and result entities/relations to 500.
 - `shortest_path`: directed breadth-first shortest path with a maximum depth of 8 and a 5,000-node visit budget.
 - `match_relation_chain`: ordered relation-type path template, up to 8 hops and 500 results per hop.
-- `hybrid_retrieve`: search graph entity names first, derive candidate Knowledge document IDs from source references, then invoke an ACL-aware document retriever to re-check canonical document/chunk permissions before returning hits.
+- `hybrid_retrieve`: search graph entity names first, derive candidate Knowledge document IDs from source references, then invoke a vector-capable ACL-aware document retriever to vector-rerank only those candidate documents and re-check canonical document/chunk permissions before returning hits.
 
-Every operation applies the service tenant binding and passes the caller-authorized project allow-list to the repository. The PostgreSQL repository remains responsible for tenant predicates and project filters. Query timeouts are enforced with cancellation; invalid limits, directions, depths and empty identifiers fail closed. Neighbor results deduplicate entity/relation IDs and report truncation when the result budget is reached.
+Every operation requires a repository explicitly bound to the service tenant, validates returned entity/relation tenant and project scope as defense in depth, and passes the caller-authorized project allow-list to the repository. The PostgreSQL repository remains responsible for tenant predicates and project filters. Query timeouts are enforced with cancellation; invalid limits, directions, depths, relation-filter counts, query lengths and empty identifiers fail closed. Neighbor results deduplicate entity/relation IDs and report truncation when the result budget is reached.
 
 ## Authorization boundary
 
@@ -17,7 +17,7 @@ The graph is a derived index, not an authorization authority. A graph hit or sou
 
 ## Operational limits
 
-The service defaults to a 2-second query timeout (configurable up to 30 seconds). Neighbor depth is capped at 5, shortest path depth at 8, relation-chain length at 8, candidate seed count at 200, and output limits at 500. Timeouts propagate as `asyncio.TimeoutError`; callers should translate them into the platform's standard timeout response. No unbounded graph traversal or arbitrary client-provided SQL/DSL is exposed.
+The service defaults to a 2-second query timeout (configurable up to 30 seconds). Hybrid query text is capped at 200 characters to match the PostgreSQL entity-search contract. Neighbor depth is capped at 5, shortest path depth at 8, relation-chain length at 8, candidate seed count at 200, and output limits at 500. Timeouts propagate as `asyncio.TimeoutError`; callers should translate them into the platform's standard timeout response. No unbounded graph traversal or arbitrary client-provided SQL/DSL is exposed.
 
 ## Integration boundary
 
