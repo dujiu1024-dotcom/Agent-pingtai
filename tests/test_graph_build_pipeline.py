@@ -3,8 +3,6 @@ from __future__ import annotations
 
 import unittest
 
-from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
-
 from agent_platform.graph.pipeline import (
     CandidateStatus,
     ExtractedEntity,
@@ -18,6 +16,7 @@ from agent_platform.graph.pipeline import (
     MemoryServiceGraphCandidateRepository,
     graph_pipeline_schema,
 )
+from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
 
 
 class FakeExtractor:
