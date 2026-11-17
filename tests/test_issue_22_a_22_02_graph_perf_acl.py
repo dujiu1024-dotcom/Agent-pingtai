@@ -10,7 +10,6 @@ import os
 import time
 import unittest
 from pathlib import Path
-from statistics import quantiles
 from uuid import uuid4
 
 DSN = os.environ.get("AGENT_PLATFORM_TEST_DSN")
@@ -32,11 +31,12 @@ class GraphQueryPerformanceAndAclAcceptanceTests(unittest.IsolatedAsyncioTestCas
             for migration in sorted(Path("agent_platform/storage/postgres").glob("*.sql")):
                 await conn.execute(migration.read_text(encoding="utf-8"), prepare=False)
         async with await AsyncConnection.connect(DSN) as conn:
-            await conn.executemany(
-                "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
-                ((self.tenant_id, "Graph performance test"),
-                 (self.other_tenant_id, "Graph isolation test")),
-            )
+            async with conn.cursor() as cursor:
+                await cursor.executemany(
+                    "INSERT INTO platform_tenants (tenant_id, display_name) VALUES (%s, %s)",
+                    ((self.tenant_id, "Graph performance test"),
+                     (self.other_tenant_id, "Graph isolation test")),
+                )
             entities = [
                 (self.tenant_id, f"n{i:05d}", "document", f"node-{i:05d}",
                  '{"title":"benchmark"}', "project-a")
@@ -48,12 +48,13 @@ class GraphQueryPerformanceAndAclAcceptanceTests(unittest.IsolatedAsyncioTestCas
                 (self.tenant_id, "secret-y", "document", "secret-y",
                  '{"title":"hidden"}', "project-b"),
             ])
-            await conn.executemany(
-                """INSERT INTO graph_entities
-                   (tenant_id, entity_id, entity_type, entity_name, attributes, project_id)
-                   VALUES (%s, %s, %s, %s, %s::jsonb, %s)""",
-                entities,
-            )
+            async with conn.cursor() as cursor:
+                await cursor.executemany(
+                    """INSERT INTO graph_entities
+                       (tenant_id, entity_id, entity_type, entity_name, attributes, project_id)
+                       VALUES (%s, %s, %s, %s, %s::jsonb, %s)""",
+                    entities,
+                )
             relations = [
                 (self.tenant_id, f"chain-{i:05d}", "references",
                  f"n{i:05d}", f"n{i+1:05d}", "document", "document",
@@ -63,13 +64,13 @@ class GraphQueryPerformanceAndAclAcceptanceTests(unittest.IsolatedAsyncioTestCas
             # Fan-out/fan-in around the root makes the neighbor expansion non-trivial.
             relations.extend(
                 (self.tenant_id, f"hub-{i:03d}", "references",
-                 "n00000", f"n{i+00100:05d}", "document", "document",
+                 "n00000", f"n{i+100:05d}", "document", "document",
                  "{}", "project-a")
                 for i in range(24)
             )
             relations.extend(
                 (self.tenant_id, f"leaf-{i:03d}", "references",
-                 f"n{i+00100:05d}", f"n{i+00200:05d}", "document", "document",
+                 f"n{i+00100:05d}", f"n{i+200:05d}", "document", "document",
                  "{}", "project-a")
                 for i in range(24)
             )
@@ -77,14 +78,15 @@ class GraphQueryPerformanceAndAclAcceptanceTests(unittest.IsolatedAsyncioTestCas
                 (self.tenant_id, "secret-edge", "references", "secret-x", "secret-y",
                  "document", "document", "{}", "project-b")
             )
-            await conn.executemany(
-                """INSERT INTO graph_relations
-                   (tenant_id, relation_id, relation_type, source_entity_id,
-                    target_entity_id, source_entity_type, target_entity_type,
-                    attributes, project_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)""",
-                relations,
-            )
+            async with conn.cursor() as cursor:
+                await cursor.executemany(
+                    """INSERT INTO graph_relations
+                       (tenant_id, relation_id, relation_type, source_entity_id,
+                        target_entity_id, source_entity_type, target_entity_type,
+                        attributes, project_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)""",
+                    relations,
+                )
             await conn.commit()
 
         async def connect():
