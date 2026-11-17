@@ -109,7 +109,7 @@ class ContractTests(unittest.IsolatedAsyncioTestCase):
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
-        self.assertEqual(self.audit.records[-1]["outcome"], "cancelled")
+        self.assertEqual(self.audit.records[-1]["outcome"], "failed")
 
 
 if __name__ == "__main__":

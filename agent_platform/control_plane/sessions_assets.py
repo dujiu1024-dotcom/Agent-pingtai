@@ -79,6 +79,21 @@ class FileAsset:
     project_id: str | None = None
     session_id: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    version: int = 1
+
+
+@dataclass(frozen=True)
+class FileAssetVersion:
+    tenant_id: str
+    asset_id: str
+    version: int
+    object_key: str
+    filename: str
+    media_type: str
+    size_bytes: int
+    sha256: str
+    status: AssetStatus
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SessionRepository(Protocol):
@@ -89,6 +104,9 @@ class SessionRepository(Protocol):
     async def list_messages(self, tenant_id: str, session_id: str, limit: int = 100) -> tuple[ConversationMessage, ...]: ...
     async def create_asset(self, asset: FileAsset) -> None: ...
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None: ...
+    async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]: ...
+    async def get_asset_version(self, tenant_id: str, asset_id: str, version: int) -> FileAssetVersion | None: ...
+    async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None: ...
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100, project_id: str | None = None) -> tuple[FileAsset, ...]: ...
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None: ...
     async def set_asset_status_if_not_deleted(
@@ -117,6 +135,7 @@ class InMemorySessionRepository:
         self.sessions: dict[tuple[str, str], ConversationSession] = {}
         self.messages: dict[tuple[str, str], list[ConversationMessage]] = {}
         self.assets: dict[tuple[str, str], FileAsset] = {}
+        self.asset_versions: dict[tuple[str, str], list[FileAssetVersion]] = {}
 
     async def create_session(self, session: ConversationSession) -> None:
         key = (session.tenant_id, session.session_id)
@@ -153,9 +172,36 @@ class InMemorySessionRepository:
         if key in self.assets:
             raise SessionError("asset already exists")
         self.assets[key] = asset
+        self.asset_versions[key] = [FileAssetVersion(
+            asset.tenant_id, asset.asset_id, asset.version, asset.object_key,
+            asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
+            asset.status, asset.created_at,
+        )]
 
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None:
         return self.assets.get((tenant_id, asset_id))
+
+    async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]:
+        return tuple(self.asset_versions.get((tenant_id, asset_id), ()))
+
+    async def get_asset_version(self, tenant_id: str, asset_id: str, version: int) -> FileAssetVersion | None:
+        return next((item for item in self.asset_versions.get((tenant_id, asset_id), ()) if item.version == version), None)
+
+    async def create_asset_version(self, version: FileAssetVersion, *, expected_version: int) -> None:
+        key = (version.tenant_id, version.asset_id)
+        current = self.assets.get(key)
+        if current is None or current.status is not AssetStatus.AVAILABLE:
+            raise SessionNotFound("asset not found or unavailable")
+        if current.version != expected_version or version.version != expected_version + 1:
+            raise SessionError("file asset version changed; retry from the latest version")
+        from dataclasses import replace
+        self.asset_versions.setdefault(key, []).append(version)
+        self.assets[key] = replace(
+            current, object_key=version.object_key, filename=version.filename,
+            media_type=version.media_type, size_bytes=version.size_bytes,
+            sha256=version.sha256, status=version.status,
+            created_at=version.created_at, version=version.version,
+        )
 
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100, project_id: str | None = None) -> tuple[FileAsset, ...]:
         if not 1 <= limit <= 500:
@@ -174,6 +220,11 @@ class InMemorySessionRepository:
             raise SessionNotFound("asset not found")
         from dataclasses import replace
         self.assets[key] = replace(asset, status=status)
+        versions = self.asset_versions.get(key, [])
+        if status is AssetStatus.DELETED:
+            self.asset_versions[key] = [replace(item, status=status) for item in versions]
+        elif versions:
+            versions[-1] = replace(versions[-1], status=status)
 
     async def set_asset_status_if_not_deleted(
         self, tenant_id: str, asset_id: str, status: AssetStatus
@@ -184,6 +235,9 @@ class InMemorySessionRepository:
             return False
         from dataclasses import replace
         self.assets[key] = replace(asset, status=status)
+        versions = self.asset_versions.get(key, [])
+        if versions:
+            versions[-1] = replace(versions[-1], status=status)
         return True
 
 
@@ -323,6 +377,98 @@ class SessionAssetService:
             )
         return asset
 
+    async def create_asset_version(
+        self, *, tenant_id: str, asset_id: str, content: bytes,
+        filename: str | None = None, media_type: str | None = None,
+        expected_version: int | None = None,
+    ) -> FileAssetVersion:
+        asset = await self.repository.get_asset(tenant_id, asset_id)
+        if asset is None or asset.status is not AssetStatus.AVAILABLE:
+            raise SessionNotFound("file asset not found or unavailable")
+        if not content or len(content) > self.max_upload_bytes:
+            raise SessionError("file is empty or exceeds upload size limit")
+        if expected_version is not None and expected_version != asset.version:
+            raise SessionError("file asset version changed; reload before updating")
+        clean_name = _SAFE_FILENAME.sub("_", (filename or asset.filename).replace(chr(92), "/").rsplit("/", 1)[-1])[:180]
+        if not clean_name or clean_name in {".", ".."}:
+            raise SessionError("invalid filename")
+        selected_type = media_type or asset.media_type
+        if self.allowed_media_types is not None and selected_type not in self.allowed_media_types:
+            raise SessionError("media type is not allowed")
+        digest = hashlib.sha256(content).hexdigest()
+        next_version = asset.version + 1
+        object_key = f"tenant/{tenant_id}/assets/{asset_id}/versions/{next_version}/{digest}"
+        await self.storage.put(object_key, content, media_type=selected_type)
+        version = FileAssetVersion(
+            tenant_id, asset_id, next_version, object_key, clean_name, selected_type,
+            len(content), digest,
+            AssetStatus.PENDING if self.processing_queue else (
+                AssetStatus.SCANNING if self.scanner else AssetStatus.AVAILABLE
+            ),
+        )
+        try:
+            await self.repository.create_asset_version(version, expected_version=asset.version)
+        except Exception:
+            await self.storage.delete(object_key)
+            raise
+        if self.processing_queue is not None:
+            try:
+                await self.processing_queue.enqueue(tenant_id=tenant_id, asset_id=asset_id)
+            except Exception as exc:
+                await self.repository.set_asset_status(tenant_id, asset_id, AssetStatus.REJECTED)
+                await self.storage.delete(object_key)
+                raise SessionError("file processing could not be scheduled") from exc
+        elif self.scanner is not None:
+            try:
+                accepted = await self.scanner.scan(clean_name, selected_type, content)
+            except Exception as exc:
+                await self.repository.set_asset_status(tenant_id, asset_id, AssetStatus.REJECTED)
+                await self.storage.delete(object_key)
+                raise SessionError("file safety scan failed") from exc
+            status = AssetStatus.AVAILABLE if accepted else AssetStatus.REJECTED
+            await self.repository.set_asset_status(tenant_id, asset_id, status)
+            if not accepted:
+                await self.storage.delete(object_key)
+            version = FileAssetVersion(
+                version.tenant_id, version.asset_id, version.version, version.object_key,
+                version.filename, version.media_type, version.size_bytes, version.sha256,
+                status, version.created_at,
+            )
+        return version
+
+    async def list_asset_versions(self, *, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]:
+        asset = await self.repository.get_asset(tenant_id, asset_id)
+        if asset is None:
+            raise SessionNotFound("file asset not found")
+        return await self.repository.list_asset_versions(tenant_id, asset_id)
+
+    async def download_asset_version(
+        self, *, tenant_id: str, asset_id: str, version: int,
+    ) -> tuple[FileAssetVersion, bytes]:
+        if version < 1:
+            raise SessionError("version must be positive")
+        record = await self.repository.get_asset_version(tenant_id, asset_id, version)
+        if record is None or record.status is not AssetStatus.AVAILABLE:
+            raise SessionNotFound("file asset version not found or unavailable")
+        content = await self.storage.get(record.object_key)
+        if hashlib.sha256(content).hexdigest() != record.sha256:
+            raise SessionError("stored object integrity check failed")
+        return record, content
+
+    async def restore_asset_version(
+        self, *, tenant_id: str, asset_id: str, version: int,
+        expected_version: int | None = None,
+    ) -> FileAssetVersion:
+        """Restore historical bytes as a new current version; history remains append-only."""
+        historical, content = await self.download_asset_version(
+            tenant_id=tenant_id, asset_id=asset_id, version=version,
+        )
+        return await self.create_asset_version(
+            tenant_id=tenant_id, asset_id=asset_id, content=content,
+            filename=historical.filename, media_type=historical.media_type,
+            expected_version=expected_version,
+        )
+
     async def create_download_url(
         self, *, tenant_id: str, asset_id: str, expires_in: int = 300,
     ) -> tuple[FileAsset, str]:
@@ -374,7 +520,11 @@ class SessionAssetService:
                     "file is tombstoned but knowledge index cleanup failed; retry deletion"
                 ) from exc
         try:
-            await self.storage.delete(asset.object_key)
+            versions = await self.repository.list_asset_versions(tenant_id, asset_id)
+            object_keys = {item.object_key for item in versions}
+            object_keys.add(asset.object_key)
+            for object_key in object_keys:
+                await self.storage.delete(object_key)
         except Exception as exc:
             raise SessionError(
                 "file is tombstoned but object cleanup failed; retry deletion"

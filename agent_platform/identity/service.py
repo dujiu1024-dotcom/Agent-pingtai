@@ -73,10 +73,23 @@ class IdentityService:
     async def logout(self, principal: Principal) -> bool:
         return await self._repository.revoke_session(session_id=principal.session_id, tenant_id=principal.tenant_id, user_id=principal.user_id, revoked_at=datetime.now(timezone.utc))
 
-    async def authorize(self, *, principal: Principal, resource: ResourceRef, permission_key: str) -> None:
+    async def authorize(
+        self, *, principal: Principal | AuthenticatedApiCredential,
+        resource: ResourceRef, permission_key: str,
+    ) -> None:
         if not permission_key.strip():
             raise ValueError("permission_key must not be empty")
-        allowed = await self._repository.has_permission(tenant_id=principal.tenant_id, user_id=principal.user_id, resource_type=resource.resource_type, resource_id=resource.resource_id, permission_key=permission_key)
+        if isinstance(principal, AuthenticatedApiCredential):
+            await self.authorize_api_credential(
+                credential=principal, resource=resource,
+                permission_key=permission_key,
+            )
+            return
+        allowed = await self._repository.has_permission(
+            tenant_id=principal.tenant_id, user_id=principal.user_id,
+            resource_type=resource.resource_type,
+            resource_id=resource.resource_id, permission_key=permission_key,
+        )
         if not allowed:
             raise AuthorizationDenied("permission denied")
 
