@@ -147,11 +147,17 @@ class MemoryConflictResolver:
                 f"{item.memory_id}@{item.version}" for item in sources
             )
             resulting_id = str(uuid4())
+            # Keep the canonical source pointer owned by its source domain. The
+            # decision audit below records every contributing source/version;
+            # a synthetic memory-conflict URI is not a resolvable source record.
+            metadata["merged_source_refs"] = ",".join(
+                item.source_ref for item in sources
+            )
             merged_candidate = replace(
                 selected.candidate,
                 memory_id=resulting_id,
                 content=merged_content.strip(),
-                source_ref=f"memory-conflict-merge:{decision_id}",
+                source_ref=selected.candidate.source_ref,
                 metadata=metadata,
             )
 

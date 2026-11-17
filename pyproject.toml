@@ -63,6 +63,7 @@ include = [
   "tests/test_memory_service.py",
   "tests/test_memory_deletion.py",
   "tests/test_memory_retrieval_versioned.py",
+  "tests/test_memory_conflicts.py",
   "tests/test_memory_candidate_workflow.py",
   "tests/test_memory_retrieval.py",
   "tests/test_structured_output.py",
