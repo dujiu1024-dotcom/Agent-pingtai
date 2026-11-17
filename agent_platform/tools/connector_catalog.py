@@ -23,7 +23,7 @@ class ConnectorManifestError(ConnectorCatalogError, ValueError):
 
 
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
-_VERSION = re.compile(r"^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
+_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
 _AUTH_TYPES = frozenset({"none", "oauth", "api_key", "service_account"})
 
 
