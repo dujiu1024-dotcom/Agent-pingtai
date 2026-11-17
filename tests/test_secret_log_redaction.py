@@ -17,7 +17,7 @@ class SecretRedactionTests(unittest.TestCase):
         self.assertNotIn("super-secret-value", result)
         self.assertNotIn("abc.def.ghi", result)
         self.assertNotIn("hvs.abcdefghijklmnop", result)
-        self.assertNotIn("vault_token=", result)
+        self.assertIn("vault_token=[REDACTED]", result)
         self.assertIn("[REDACTED]", result)
 
     def test_structured_values_are_redacted_without_mutating_input(self):
