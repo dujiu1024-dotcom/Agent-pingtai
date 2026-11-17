@@ -219,6 +219,10 @@ class StrandsAgentsAdapter:
         return tuple(outputs)
 
     async def run(self, request: HarnessRequest) -> HarnessResult:
+        if request.media_inputs:
+            raise RuntimeError(
+                "Strands adapter does not declare image, PDF, audio or video input support"
+            )
         if request.allowed_tools and self.gateway_tool_provider is None:
             raise RuntimeError(
                 "Strands tools require a run-scoped MCP Tool Gateway provider"
