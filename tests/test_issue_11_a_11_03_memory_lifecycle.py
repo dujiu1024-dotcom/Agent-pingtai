@@ -19,10 +19,12 @@ from agent_platform.memory.service import (
 class MemoryLifecycleAcceptanceTests(unittest.TestCase):
     def setUp(self):
         self.cleanup_attempts = []
+        self.fail_cleanup_memory_id = None
 
         async def cleanup(tenant_id: str, memory_id: str) -> None:
             self.cleanup_attempts.append((tenant_id, memory_id))
-            if len(self.cleanup_attempts) == 1:
+            attempts_for_memory = sum(1 for _, item_id in self.cleanup_attempts if item_id == memory_id)
+            if memory_id == self.fail_cleanup_memory_id and attempts_for_memory == 1:
                 raise RuntimeError("derived index temporarily unavailable")
 
         self.memory = MemoryService(InMemoryMemoryRepository(), on_delete=cleanup)
@@ -102,6 +104,7 @@ class MemoryLifecycleAcceptanceTests(unittest.TestCase):
         self.assertEqual(expired_history[-1]["status"], "expired")
 
         deletable_id = self._create_and_confirm()
+        self.fail_cleanup_memory_id = deletable_id
         first = self.client.delete(f"/api/platform/v1/memories/{deletable_id}")
         self.assertEqual(first.status_code, 500)
         # The tombstone is durable even when derived-data cleanup fails.
@@ -114,7 +117,7 @@ class MemoryLifecycleAcceptanceTests(unittest.TestCase):
         repeated = self.client.delete(f"/api/platform/v1/memories/{deletable_id}")
         self.assertEqual(repeated.status_code, 204)
         self.assertEqual(
-            self.cleanup_attempts,
+            [item for item in self.cleanup_attempts if item[1] == deletable_id],
             [("tenant-a", deletable_id), ("tenant-a", deletable_id)],
         )
         self.assertEqual(self.client.get("/api/platform/v1/memories").json()["items"], [])
