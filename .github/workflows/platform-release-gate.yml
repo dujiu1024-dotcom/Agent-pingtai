@@ -68,6 +68,7 @@ jobs:
         run: |
           python -m unittest \
             tests.test_platform_e2e_release_gate \
+            tests.test_issue_527_c_30_01_sse_protocol \
             tests.test_core_business_journey_e2e \
             tests.test_release_gate_evidence \
             tests.test_identity_api \
@@ -157,4 +158,3 @@ jobs:
           Path("release-evidence.json").write_text(os.environ["RELEASE_EVIDENCE"], encoding="utf-8")
           PY
           python scripts/release_gate.py --evidence release-evidence.json --commit-sha "$GITHUB_SHA"
-\n            tests.test_issue_527_c_30_01_sse_protocol \\
