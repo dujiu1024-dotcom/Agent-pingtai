@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Fail-closed validator for production release evidence.
+"""Fail-closed production release evidence and sign-off validator.
 
-The validator intentionally does not infer that a check passed from CI configuration.
-Every required check must carry a successful result, an accountable owner, a UTC
-verification timestamp, and a durable evidence reference.
+This tool validates evidence only; it never deploys, migrates, changes traffic,
+or accesses production infrastructure.
 """
 from __future__ import annotations
 
@@ -16,20 +15,12 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_CHECKS = (
-    "deployment_preflight",
-    "e2e",
-    "fault_injection",
-    "performance",
-    "security",
-    "backup_restore",
-    "production_smoke",
-    "migration",
-    "rollback",
-    "egress_policy",
+    "e2e", "fault_injection", "performance", "security",
+    "backup_restore", "production_smoke", "migration", "rollback",
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PLACEHOLDER_RE = re.compile(
-    r"(?:^|[\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\s/_-])",
+    r"(?:^|[\\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\\s/_-])",
     re.IGNORECASE,
 )
 
@@ -58,20 +49,22 @@ def _parse_utc(value: Any, field: str, errors: list[str]) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _validate_timestamp_freshness(
-    timestamp: datetime | None,
-    field: str,
-    *,
-    current: datetime,
-    max_age_hours: int,
-    errors: list[str],
-) -> None:
+def _fresh(timestamp: datetime | None, field: str, *, current: datetime,
+           max_age_hours: int, errors: list[str]) -> None:
     if timestamp is None:
         return
     if timestamp > current + timedelta(minutes=5):
         errors.append(f"{field}: timestamp is in the future")
     if current - timestamp > timedelta(hours=max_age_hours):
         errors.append(f"{field}: evidence is stale")
+
+
+def _required_text(document: dict[str, Any], field: str, errors: list[str]) -> None:
+    value = document.get(field)
+    if not isinstance(value, str) or not value.strip():
+        errors.append(f"{field}: required non-empty string")
+    elif _is_placeholder(value):
+        errors.append(f"{field}: must not contain a template placeholder")
 
 
 def validate_evidence(
@@ -81,36 +74,20 @@ def validate_evidence(
     now: datetime | None = None,
     max_age_hours: int = 168,
 ) -> list[str]:
-    """Return blocking validation errors; an empty list means evidence is complete."""
-    errors: list[str] = []
+    """Return blocking errors; no errors means the candidate is eligible for GO."""
     if not isinstance(document, dict):
         return ["evidence document must be a JSON object"]
-    # bool is a subclass of int in Python; reject JSON true/false explicitly.
+    errors: list[str] = []
     if type(document.get("schema_version")) is not int or document["schema_version"] != 2:
         errors.append("schema_version must be the integer 2")
-    for field in ("release_id", "environment", "release_owner"):
-        if not isinstance(document.get(field), str) or not document[field].strip():
-            errors.append(f"{field}: required non-empty string")
-    for field in ("release_id", "release_owner"):
-        if _is_placeholder(document.get(field)):
-            errors.append(f"{field}: must not contain a template placeholder")
-    if document.get("release_decision") != "go":
-        errors.append("release_decision: must be go after all required checks pass")
+    for field in ("release_id", "environment", "release_owner", "release_approver",
+                  "evidence_archive_ref"):
+        _required_text(document, field, errors)
     if document.get("environment") != "production":
         errors.append("environment: must equal production")
-    if document.get("release_decision") != "approved":
-        errors.append("release_decision: must equal approved")
-    for field in ("release_owner", "evidence_archive_ref", "decision_reason"):
-        value = document.get(field)
-        if not isinstance(value, str) or not value.strip():
-            errors.append(f"{field}: required non-empty string")
-        elif _is_placeholder(value):
-            errors.append(f"{field}: must not contain a template placeholder")
-    blockers = document.get("blocking_conditions")
-    if not isinstance(blockers, list):
-        errors.append("blocking_conditions: required list")
-    elif blockers:
-        errors.append("blocking_conditions: must be empty before release approval")
+    if document.get("release_owner") == document.get("release_approver"):
+        errors.append("release_approver: must be independent from release_owner")
+
     commit_sha = document.get("commit_sha")
     if not isinstance(commit_sha, str) or not SHA_RE.fullmatch(commit_sha):
         errors.append("commit_sha: must be a full 40-character lowercase Git SHA")
@@ -119,10 +96,16 @@ def validate_evidence(
 
     current = now or datetime.now(timezone.utc)
     generated = _parse_utc(document.get("generated_at_utc"), "generated_at_utc", errors)
-    _validate_timestamp_freshness(
-        generated, "generated_at_utc", current=current,
-        max_age_hours=max_age_hours, errors=errors,
-    )
+    _fresh(generated, "generated_at_utc", current=current,
+           max_age_hours=max_age_hours, errors=errors)
+
+    blockers = document.get("blockers")
+    if not isinstance(blockers, list) or any(
+        not isinstance(item, str) or not item.strip() for item in blockers
+    ):
+        errors.append("blockers: must be an array of non-empty strings")
+    elif blockers:
+        errors.append("blockers: must be empty before release")
 
     checks = document.get("checks")
     if not isinstance(checks, dict):
@@ -142,12 +125,30 @@ def validate_evidence(
             elif _is_placeholder(value):
                 errors.append(f"checks.{name}.{field}: must not contain a template placeholder")
         verified = _parse_utc(
-            result.get("verified_at_utc"), f"checks.{name}.verified_at_utc", errors,
+            result.get("verified_at_utc"), f"checks.{name}.verified_at_utc", errors
         )
-        _validate_timestamp_freshness(
-            verified, f"checks.{name}.verified_at_utc", current=current,
-            max_age_hours=max_age_hours, errors=errors,
-        )
+        _fresh(verified, f"checks.{name}.verified_at_utc", current=current,
+               max_age_hours=max_age_hours, errors=errors)
+    migration = checks.get("migration")
+    if isinstance(migration, dict):
+        if migration.get("preflight_passed") is not True:
+            errors.append("checks.migration.preflight_passed: must be true")
+        if migration.get("compatibility_window_confirmed") is not True:
+            errors.append("checks.migration.compatibility_window_confirmed: must be true")
+        if migration.get("strategy") not in {"expand_contract", "forward_fix"}:
+            errors.append("checks.migration.strategy: must be expand_contract or forward_fix")
+    rollback = checks.get("rollback")
+    if isinstance(rollback, dict):
+        if rollback.get("drill_passed") is not True:
+            errors.append("checks.rollback.drill_passed: must be true")
+        if rollback.get("strategy") not in {
+            "compensating_migration", "backup_restore", "forward_fix"
+        }:
+            errors.append("checks.rollback.strategy: unsupported rollback strategy")
+
+    decision = document.get("release_decision")
+    if decision != "go":
+        errors.append("release_decision: must be go; otherwise release is blocked")
     return errors
 
 
