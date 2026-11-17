@@ -322,7 +322,9 @@ class GraphQueryService:
                         edge = self._validate_relation(edge_record, scope)
                         source, target, relation_id = self._relation_endpoints(edge)
                         if source == path.entity_ids[-1] and edge.relation_type == relation_type:
-                            node = await self.repository.get_entity(target, allowed_project_ids=scope)
+                            node = await self.repository.get_entity(
+                                target, allowed_project_ids=scope
+                            )
                             if node is None:
                                 continue
                             self._validate_entity(node, target, scope)
