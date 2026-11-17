@@ -19,11 +19,11 @@ def test_legacy_fallback_serves_console_without_blocking_on_optional_cdn():
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     html = response.text
-    scripts = re.findall(r"<script\\b([^>]*)>", html, flags=re.IGNORECASE)
+    scripts = re.findall(r"<script\b([^>]*)>", html, flags=re.IGNORECASE)
     external = [attrs for attrs in scripts if "src=" in attrs]
     assert len(external) == 1
     assert "three.min.js" in external[0]
-    assert re.search(r"\\basync(?:\\s|$)", external[0]), (
+    assert re.search(r"\basync(?:\s|$)", external[0]), (
         "the optional 3D CDN script must not block parsing when the browser is offline"
     )
 
