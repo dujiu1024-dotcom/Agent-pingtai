@@ -13,9 +13,11 @@ and secret-file contract) and requires:
 - ALERT_WEBHOOK_ALLOWED_HOSTS: comma-separated exact bare hostnames; the
   provider rejects redirects, non-HTTPS URLs, userinfo, query strings, fragments
   and non-standard ports.
-- ALERT_WEBHOOK_AUTHORIZATION_FILE (optional): path to a mounted secret file.
-  The authorization value is never accepted from a command-line argument and
-  is not logged.
+- ALERT_WEBHOOK_AUTHORIZATION_FILE (optional): set to
+  /run/secrets/alert_webhook_authorization when using the Compose profile.
+  Set ALERT_WEBHOOK_AUTHORIZATION_HOST_PATH to the host-side secret file path;
+  Compose mounts it read-only. The authorization value is never accepted from a
+  command-line argument and is not logged.
 - ALERT_DISPATCH_POLL_INTERVAL_SECONDS: 0.1–3600 seconds (default 5).
 - ALERT_DISPATCH_BATCH_SIZE: 1–500 (default 100).
 
