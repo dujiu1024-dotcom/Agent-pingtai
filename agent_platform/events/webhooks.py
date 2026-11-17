@@ -130,7 +130,14 @@ def verify_signature(secret: bytes, timestamp: str, body: bytes, supplied: str, 
                       now: int | None = None, tolerance_seconds: int = 300) -> bool:
     """Verify HMAC and enforce a bounded timestamp window to prevent replay."""
     if (
-        not isinstance(timestamp, str)
+        not isinstance(secret, bytes)
+        or len(secret) < 32
+        or not isinstance(body, bytes)
+        or not isinstance(supplied, str)
+        or len(supplied) != 71
+        or not supplied.startswith("sha256=")
+        or any(character not in "0123456789abcdef" for character in supplied[7:])
+        or not isinstance(timestamp, str)
         or not timestamp
         or not timestamp.isascii()
         or not timestamp.isdigit()
