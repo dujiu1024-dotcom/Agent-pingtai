@@ -111,6 +111,7 @@ jobs:
             tests.test_quota_postgres_integration \
             tests.test_session_data_model \
             tests.test_session_conversation_migration \
+            tests.test_issue_666_a_666_06_migration_scope \
             tests.test_session_assets \
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \

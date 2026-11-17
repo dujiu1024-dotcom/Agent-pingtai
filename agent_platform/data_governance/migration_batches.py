@@ -389,3 +389,82 @@ def migration_batch_status(target_path: str | Path, batch_id: str) -> dict[str, 
         return _batch_snapshot(connection, batch_id)
     finally:
         connection.close()
+
+
+def validate_migration_scope(
+    source_path: str | Path,
+    target_path: str | Path,
+    mappings: list[TableMapping],
+    *,
+    excluded_source_tables: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Fail closed unless every source table is mapped or explicitly excluded.
+
+    Exclusions are reported but make the result ineligible for a 100% migration
+    consistency claim. This prevents a successful diff over a hand-picked subset
+    from being mistaken for a complete database migration.
+    """
+    if not mappings:
+        raise ValueError("mappings must not be empty")
+    mapped_names = [item.source_table for item in mappings]
+    target_names = [item.target_table for item in mappings]
+    if len(set(mapped_names)) != len(mapped_names):
+        raise MigrationError("source tables must be mapped exactly once")
+    if len(set(target_names)) != len(target_names):
+        raise MigrationError("target tables must be mapped exactly once")
+    excluded = dict(excluded_source_tables or {})
+    for name, rationale in excluded.items():
+        _ident(name)
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise MigrationError(f"excluded source table requires a rationale: {name}")
+    overlap = set(mapped_names) & set(excluded)
+    if overlap:
+        raise MigrationError("source tables cannot be both mapped and excluded: "
+                             + ", ".join(sorted(overlap)))
+
+    source = _open_source(source_path)
+    target = _open_source(target_path)
+    try:
+        source_tables = sorted(
+            str(row["name"]) for row in source.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+        )
+        target_tables = {
+            str(row["name"]) for row in target.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+        }
+        unknown_mappings = set(mapped_names) - set(source_tables)
+        unknown_exclusions = set(excluded) - set(source_tables)
+        if unknown_mappings:
+            raise MigrationError("mapping references unknown source tables: "
+                                 + ", ".join(sorted(unknown_mappings)))
+        if unknown_exclusions:
+            raise MigrationError("exclusion references unknown source tables: "
+                                 + ", ".join(sorted(unknown_exclusions)))
+        missing_targets = set(target_names) - target_tables
+        if missing_targets:
+            raise MigrationError("mapping references missing target tables: "
+                                 + ", ".join(sorted(missing_targets)))
+        unaccounted = set(source_tables) - set(mapped_names) - set(excluded)
+        if unaccounted:
+            raise MigrationError("unaccounted source tables: " + ", ".join(sorted(unaccounted)))
+        return {
+            "source_tables": source_tables,
+            "mapped_source_tables": sorted(mapped_names),
+            "excluded_source_tables": [
+                {"name": name, "rationale": excluded[name]} for name in sorted(excluded)
+            ],
+            "target_tables": sorted(target_names),
+            "source_table_count": len(source_tables),
+            "mapped_table_count": len(mapped_names),
+            "excluded_table_count": len(excluded),
+            "scope_accounted": True,
+            "eligible_for_100_percent_consistency": bool(source_tables) and not excluded,
+        }
+    finally:
+        source.close()
+        target.close()
