@@ -101,8 +101,8 @@ class SkillSandboxRuntimeTests(unittest.IsolatedAsyncioTestCase):
             sandbox_runner=limited_runner, available_tools={"knowledge.search"},
         )
         large_document = (
-            "---\\nname: summarize\\ndescription: Summarize reports.\\n"
-            "allowed-tools: [knowledge.search]\\n---\\n" + ("x" * 3000)
+            "---\nname: summarize\ndescription: Summarize reports.\n"
+            "allowed-tools: [knowledge.search]\n---\n" + ("x" * 3000)
         )
         with self.assertRaisesRegex(SkillSandboxError, "OCI sandbox input limit"):
             await runtime.install(
