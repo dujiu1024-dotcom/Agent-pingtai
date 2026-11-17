@@ -25,7 +25,69 @@ else if(S.view==="approval-detail"){await renderApproval(S.approval);return}
 else if(S.view==="artifacts"){const fs=await list(API+"/files?limit=200");root.innerHTML=panel("交付产物","<p class='subtle'>文件资产经平台权限校验下载；可关联会话和任务。</p>"+table(["文件","媒体类型","大小","会话","版本","操作"],fs.map(x=>"<tr><td>"+esc(x.filename)+"<small class='subline'>"+esc(x.asset_id)+"</small></td><td>"+esc(x.media_type)+"</td><td>"+esc(x.size_bytes)+" bytes</td><td>"+esc(x.session_id||"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")))}
 }catch(e){root.innerHTML=panel("数据加载失败","<p class='error'>"+esc(e.message)+"</p>"+btn("重试","data-retry='1'"))}}
 async function renderSession(id){if(!id){nav("sessions");return}const [ss,ms,fs]=await Promise.all([list(API+"/sessions?limit=200"),list(API+"/sessions/"+encodeURIComponent(id)+"/messages?limit=200"),list(API+"/files?session_id="+encodeURIComponent(id)+"&limit=100")]);const s=ss.find(x=>x.session_id===id)||{session_id:id};$("#title").textContent=s.title||"会话详情";$("#crumb").textContent="SESSION DETAIL";$("#view").innerHTML=panel("会话信息","<p>会话 ID："+esc(id)+"</p><p>项目："+esc(s.project_id||"—")+" · 状态："+esc(s.status||"—")+"</p>",btn("返回会话列表","data-go='sessions'"))+panel("消息记录",ms.map(m=>"<article class='message'><header><b>"+esc(m.role)+"</b><small>"+esc(m.created_at)+"</small></header><p>"+esc(m.content)+"</p></article>").join("")||"<p class='empty'>暂无消息</p>")+panel("发送消息","<form id='message-form'><label>消息内容<textarea name='content' required></textarea></label><button class='button primary'>发送</button></form>")+panel("上传附件","<form id='upload-form'><input type='file' name='file' required><button class='button'>上传到此会话</button></form>")+panel("会话文件",table(["文件","大小","版本","操作"],fs.map(f=>"<tr><td>"+esc(f.filename)+"</td><td>"+esc(f.size_bytes)+" bytes</td><td>"+esc(f.version)+"</td><td>"+btn("下载","data-download='"+esc(f.asset_id)+"'")+"</td></tr>")))}
-async function renderTask(id){if(!id){nav("tasks");return}const t=await api(API+"/workbench/tasks/"+encodeURIComponent(id));S.currentTask=t;const runId=t.run_id||t.result?.run_id||t.output?.run_id;let run="<p class='subtle'>此任务尚未关联 Run ID。</p>";if(runId){try{const r=await api(API+"/runs/"+encodeURIComponent(runId));run="<p>Run："+esc(runId)+" · 状态："+esc(r.status)+" · 版本："+esc(r.version)+"</p>"+pre(r)+btn("查看 Run 事件","data-run-events='"+esc(runId)+"'")}catch(e){run="<p class='error'>Run 详情不可用："+esc(e.message)+"</p>"}}const arts=t.artifacts||t.result?.artifacts||t.output?.artifacts||[];$("#title").textContent="任务详情";$("#crumb").textContent="TASK DETAIL";$("#view").innerHTML=panel("执行状态","<p>任务："+esc(id)+"</p><p>Agent："+esc(t.agent_id)+" · 状态："+esc(t.status)+"</p>"+pre(t),btn("返回任务列表","data-go='tasks'"))+panel("运行详情",run)+panel("执行产物",arts.length?arts.map(a=>"<p>"+esc(a.filename||a.name||a.asset_id||a.uri)+"</p>").join(""):"<p class='subtle'>任务未直接声明产物；请在产物交付页查看已上传文件。</p>")+panel("任务操作",btn("取消任务","data-task-cancel='"+esc(id)+"'")+btn("重试任务","data-task-retry='"+esc(id)+"'"))}
+function connectRunStream(runId){
+ if(S.runStream){S.runStream.close();S.runStream=null}
+ const output=$("#run-stream-output"),status=$("#run-stream-status"),events=$("#run-stream-events");
+ if(!runId||!output||!window.EventSource)return;
+ const source=new EventSource(API+"/runs/"+encodeURIComponent(runId)+"/stream",{withCredentials:true});
+ S.runStream=source;
+ const addEvent=(label,data)=>{
+  if(!events)return;
+  const line=document.createElement("div");
+  line.textContent=label+" · "+JSON.stringify(data);
+  events.appendChild(line);
+  while(events.childNodes.length>200)events.removeChild(events.firstChild);
+ };
+ source.addEventListener("token_stream",event=>{
+  try{const data=JSON.parse(event.data);output.textContent+=String(data.token??"")}
+  catch(error){addEvent("token parse error",{message:error.message})}
+ });
+ source.addEventListener("step_progress",event=>{
+  try{const data=JSON.parse(event.data);addEvent(data.event_type||"STEP",data)}
+  catch(error){addEvent("step event parse error",{message:error.message})}
+ });
+ source.addEventListener("tool_output",event=>{
+  try{addEvent("TOOL_OUTPUT",JSON.parse(event.data))}
+  catch(error){addEvent("tool event parse error",{message:error.message})}
+ });
+ source.addEventListener("run_complete",event=>{
+  try{addEvent("COMPLETE",JSON.parse(event.data))}catch{}
+  if(status)status.textContent="流式执行完成";
+  source.close();if(S.runStream===source)S.runStream=null;
+ });
+ source.addEventListener("error",event=>{
+  if(typeof event.data==="string"){
+   try{addEvent("ERROR",JSON.parse(event.data))}catch{addEvent("ERROR",{message:event.data})}
+   if(status)status.textContent="执行失败";
+   source.close();if(S.runStream===source)S.runStream=null;
+  }else if(status){status.textContent="连接中断，浏览器将自动重连"}
+ });
+ source.onopen=()=>{if(status)status.textContent="实时连接中"};
+}
+async function renderTask(id){
+ if(!id){nav("tasks");return}
+ if(S.runStream){S.runStream.close();S.runStream=null}
+ const t=await api(API+"/workbench/tasks/"+encodeURIComponent(id));S.currentTask=t;
+ const runId=t.run_id||t.result?.run_id||t.output?.run_id;
+ let run="<p class='subtle'>此任务尚未关联 Run ID。</p>";
+ if(runId){
+  try{
+   const r=await api(API+"/runs/"+encodeURIComponent(runId));
+   run="<p>Run："+esc(runId)+" · 状态："+esc(r.status)+" · 版本："+esc(r.version)+"</p>"+
+    pre(r)+btn("查看 Run 事件","data-run-events='"+esc(runId)+"'")+
+    "<p id='run-stream-status' class='subtle'>准备连接实时事件…</p>"+
+    "<pre id='run-stream-output' class='json' aria-live='polite'></pre>"+
+    "<div id='run-stream-events' class='subtle' aria-live='polite'></div>";
+  }catch(e){run="<p class='error'>Run 详情不可用："+esc(e.message)+"</p>"}
+ }
+ const arts=t.artifacts||t.result?.artifacts||t.output?.artifacts||[];
+ $("#title").textContent="任务详情";$("#crumb").textContent="TASK DETAIL";
+ $("#view").innerHTML=panel("执行状态","<p>任务："+esc(id)+"</p><p>Agent："+esc(t.agent_id)+" · 状态："+esc(t.status)+"</p>"+pre(t),btn("返回任务列表","data-go='tasks'"))+
+  panel("运行详情",run)+
+  panel("执行产物",arts.length?arts.map(a=>"<p>"+esc(a.filename||a.name||a.asset_id||a.uri)+"</p>").join(""):"<p class='subtle'>任务未直接声明产物；请在产物交付页查看已上传文件。</p>")+
+  panel("任务操作",btn("取消任务","data-task-cancel='"+esc(id)+"'")+btn("重试任务","data-task-retry='"+esc(id)+"'"));
+ if(runId)connectRunStream(runId);
+}
 async function renderApproval(id){if(!id){nav("approvals");return}const a=await api(API+"/approvals/"+encodeURIComponent(id));S.currentApproval=a;$("#title").textContent="审批详情";$("#crumb").textContent="APPROVAL DETAIL";$("#view").innerHTML=panel("审批请求",pre(a),btn("返回审批队列","data-go='approvals'"))+(a.status==="pending"?panel("人工决策","<p>核对动作、资源和请求信息后作出决定。决策由服务端验证权限和状态。</p>"+btn("批准","data-decision='true'","primary")+btn("拒绝","data-decision='false'")):"")}
 document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.view){nav(b.dataset.view);return}if(b.dataset.go){nav(b.dataset.go);return}if(b.dataset.session){S.view="session-detail";S.session=b.dataset.session;await renderSession(S.session);return}if(b.dataset.task){S.view="task-detail";S.task=b.dataset.task;await renderTask(S.task);return}if(b.dataset.approval){S.view="approval-detail";S.approval=b.dataset.approval;await renderApproval(S.approval);return}if(b.dataset.download){const r=await request(API+"/files/"+encodeURIComponent(b.dataset.download));const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="artifact";a.click();URL.revokeObjectURL(url);return}if(b.dataset.decision!==undefined){const yes=b.dataset.decision==="true";await api(API+"/approvals/"+encodeURIComponent(S.approval)+"/decision",{method:"POST",body:JSON.stringify({approved:yes})});toast(yes?"审批已批准":"审批已拒绝");nav("approvals");return}if(b.dataset.taskCancel){await api(API+"/workbench/tasks/"+encodeURIComponent(b.dataset.taskCancel)+"/cancel",{method:"POST",body:"{}"});toast("取消请求已提交");await renderTask(b.dataset.taskCancel);return}if(b.dataset.taskRetry){await api(API+"/workbench/tasks/"+encodeURIComponent(b.dataset.taskRetry)+"/retry",{method:"POST",body:JSON.stringify({idempotency_key:crypto.randomUUID()})});toast("重试请求已提交");await renderTask(b.dataset.taskRetry);return}if(b.dataset.runEvents){const ev=await list(API+"/runs/"+encodeURIComponent(b.dataset.runEvents)+"/events");$("#view").insertAdjacentHTML("beforeend",panel("Run 事件",pre(ev)));return}if(b.dataset.retry){render();return}}catch(x){toast(x.message)}});
 document.addEventListener("submit",async e=>{const f=e.target;if(f.id==="login-form"){e.preventDefault();const d=new FormData(f);try{await api("/auth/login",{method:"POST",body:JSON.stringify({tenant_id:d.get("tenant_id"),email:d.get("email"),password:d.get("password")})});await refresh();if(S.me)nav("overview")}catch(x){$("#login-error").textContent=x.message}return}if(f.id==="session-form"){e.preventDefault();const d=new FormData(f);try{const r=await api(API+"/sessions",{method:"POST",body:JSON.stringify({title:d.get("title"),project_id:d.get("project_id")||null})});toast("会话已创建");S.session=r.session_id;S.view="session-detail";await renderSession(S.session)}catch(x){toast(x.message)}return}if(f.id==="message-form"){e.preventDefault();const d=new FormData(f);try{await api(API+"/sessions/"+encodeURIComponent(S.session)+"/messages",{method:"POST",body:JSON.stringify({role:"user",content:d.get("content")})});toast("消息已发送");await renderSession(S.session)}catch(x){toast(x.message)}return}if(f.id==="upload-form"){e.preventDefault();const file=f.elements.file.files[0];if(!file)return;try{await upload(API+"/files?session_id="+encodeURIComponent(S.session),file);toast("文件已上传");await renderSession(S.session)}catch(x){toast(x.message)}return}if(f.id==="task-form"){e.preventDefault();const d=new FormData(f);let input;try{input=JSON.parse(d.get("input"))}catch{toast("任务输入必须是合法 JSON");return}if(!input||Array.isArray(input)||typeof input!=="object"||!Object.keys(input).length){toast("任务输入必须是非空 JSON 对象");return}try{const r=await api(API+"/workbench/tasks",{method:"POST",body:JSON.stringify({agent_id:d.get("agent_id"),project_id:d.get("project_id")||null,session_id:d.get("session_id")||null,priority:Number(d.get("priority")||100),input})});toast("任务已提交");if(r.task_id){S.task=r.task_id;S.view="task-detail";await renderTask(r.task_id)}else nav("tasks")}catch(x){toast(x.message)}}});
