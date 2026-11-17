@@ -21,6 +21,7 @@ from agent_platform.production_config import ProductionSettings, load_production
 from agent_platform.runtime.lifecycle import RunLifecycleManager
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
+from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import QuotaService
 from agent_platform.security.audit import PostgresAuditWriter
@@ -95,6 +96,8 @@ def create_production_app(
     # PostgreSQL store across API processes. Never fall back to in-memory state.
     quota_store = PostgresQuotaStore(connection_factory)
     quota_service = QuotaService(quota_store)
+    quota_policy_repository = PostgresQuotaPolicyRepository(connection_factory)
+    quota_policy_service = QuotaPolicyService(quota_policy_repository)
     quota_maintenance_worker = QuotaReservationMaintenanceWorker(quota_service)
     quota_audit_writer = _QuotaAuditAdapter(PostgresAuditWriter(connection_factory))
 
@@ -183,6 +186,8 @@ def create_production_app(
     app.state.run_lifecycle = run_lifecycle
     app.state.quota_store = quota_store
     app.state.quota_service = quota_service
+    app.state.quota_policy_repository = quota_policy_repository
+    app.state.quota_policy_service = quota_policy_service
     app.state.quota_reservation_worker = quota_maintenance_worker
     app.state.quota_audit_writer = quota_audit_writer
     if close_redis_on_shutdown:
