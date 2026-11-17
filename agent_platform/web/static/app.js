@@ -424,3 +424,147 @@ document.addEventListener("click",async e=>{
   if(b.dataset.replayReopen){await openReplay(S.replay.runId)}
  }catch(x){toast(x.message)}
 });
+
+
+/* S-34-02: dedicated Batch and Observability workbench surfaces. */
+async function renderBatch(){
+ const root=$("#view");
+ $("#title").textContent="批量执行";
+ $("#crumb").textContent="BATCH EXECUTION";
+ if(S.features.batch_execution===false){
+  root.innerHTML=panel("批量执行未启用","<p class='subtle'>当前租户未启用 Batch Execution 能力；页面不会绕过服务端 capability 或授权检查。</p>");
+  return;
+ }
+ const batches=await list(API+"/workbench/batches?limit=100");
+ const rows=batches.map(x=>{
+  const id=String(x.batch_id||"");
+  const actions=btn("详情","data-batch='"+esc(id)+"'")+
+   (["queued","running","pending"].includes(String(x.status).toLowerCase())?btn("取消","data-batch-cancel='"+esc(id)+"'"):"")+
+   (["failed","cancelled","partial_failure"].includes(String(x.status).toLowerCase())?btn("重试","data-batch-retry='"+esc(id)+"'"):"");
+  return "<tr><td><code>"+esc(id)+"</code></td><td>"+esc(x.template_id||"—")+"</td><td><span class='pill'>"+esc(x.status||"unknown")+"</span></td><td>"+esc(x.total_tasks??x.total??"—")+"</td><td>"+esc(x.succeeded??x.success_count??"—")+"</td><td>"+esc(x.failed??x.failure_count??"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
+ });
+ let detail="";
+ if(S.batchId){
+  try{
+   const item=await api(API+"/workbench/batches/"+encodeURIComponent(S.batchId));
+   detail=panel("批次详情 · "+esc(S.batchId),pre(item));
+  }catch(error){detail=panel("批次详情不可用","<p class='error'>"+esc(error.message)+"</p>")}
+ }
+ root.innerHTML=
+  panel("提交批处理",
+   "<form id='batch-submit-form' class='registry-form'>"+
+   "<div class='form-grid'><label>模板 ID<input name='template_id' required maxlength='128' placeholder='已授权的 Agent / Workflow 模板'></label>"+
+   "<label>最大并发<input name='max_concurrency' type='number' min='1' max='1000' value='8' required></label></div>"+
+   "<label>数据集（JSON 数组；每项为输入对象）<textarea name='dataset' rows='8' required>[{\\\"prompt\\\":\\\"第一项任务\\\"},{\\\"prompt\\\":\\\"第二项任务\\\"}]</textarea></label>"+
+   "<p class='subtle'>提交使用服务端 BatchTaskService，tenant/actor 从认证 Principal 派生；请求附带幂等键。数据集上限由 API 执行。</p>"+
+   "<button class='button primary'>提交批次</button></form>")+
+  detail+
+  panel("批次队列",table(["Batch ID","模板","状态","任务数","成功","失败","创建时间","操作"],rows))+
+  "<p class='subtle'>批次列表、详情、取消和重试均通过同源认证 API；重试生成新的幂等键，权限由服务端再次验证。</p>";
+}
+async function renderObservability(){
+ const root=$("#view");
+ $("#title").textContent="运行可观测性";
+ $("#crumb").textContent="OBSERVABILITY";
+ const window=isoWindow(),q="start="+encodeURIComponent(window.start)+"&end="+encodeURIComponent(window.end);
+ const jobs=[
+  ["capacity",()=>api(API+"/observability/health/capacity")],
+  ["alerts",()=>list(API+"/observability/alerts?limit=100")],
+  ["metrics",()=>api(API+"/observability/metrics")],
+  ["usage",()=>list(API+"/quotas/usage?"+q+"&limit=1000")],
+  ["audit",()=>list(API+"/audit/tool-events?limit=100")],
+  ["identity",()=>list(API+"/audit/identity-events?limit=100")]
+ ];
+ const settled=await Promise.allSettled(jobs.map(x=>x[1]()));
+ const data=Object.fromEntries(jobs.map((x,i)=>[x[0],settled[i].status==="fulfilled"?settled[i].value:null]));
+ const errors=jobs.filter((x,i)=>settled[i].status==="rejected")
+  .map(x=>"<li>"+esc(x[0])+": "+esc(settled[jobs.indexOf(x)].reason?.message||"不可用")+"</li>").join("");
+ const alerts=data.alerts?.items||[],usage=data.usage?.items||[],audit=data.audit?.items||[],identity=data.identity?.items||[];
+ const openAlerts=alerts.filter(x=>!["resolved","closed"].includes(String(x.status||"").toLowerCase()));
+ const tokens=usage.reduce((n,x)=>n+Number(x.total_tokens||0),0);
+ const cost=usage.reduce((n,x)=>n+Number(x.cost_usd||0),0);
+ const alertRows=alerts.map(x=>{
+  const id=String(x.event_id||"");
+  const status=String(x.status||"").toLowerCase();
+  const actions=(status==="open"?btn("确认","data-alert-ack='"+esc(id)+"'"):"")+
+   (["open","acknowledged"].includes(status)?btn("解决","data-alert-resolve='"+esc(id)+"'"):"");
+  return "<tr><td>"+esc(id)+"</td><td>"+esc(x.severity||"—")+"</td><td>"+esc(x.status||"—")+"</td><td>"+esc(x.title||"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
+ });
+ root.innerHTML=
+  "<div class='grid'>"+
+   "<div class='stat'><small>待处理告警</small><strong>"+openAlerts.length+"</strong></div>"+
+   "<div class='stat'><small>近 30 天 Token</small><strong>"+tokens+"</strong></div>"+
+   "<div class='stat'><small>近 30 天成本 USD</small><strong>"+cost.toFixed(4)+"</strong></div>"+
+  "</div>"+
+  (errors?panel("部分数据源不可用","<ul class='error'>"+errors+"</ul>"):"")+
+  panel("容量与健康",data.capacity?pre(data.capacity):"<p class='subtle'>容量健康数据不可用。</p>")+
+  panel("运营告警",table(["事件","级别","状态","标题","创建时间","操作"],alertRows))+
+  panel("用量明细",rowsPanel("模型与 Run 用量",usage,["occurred_at","run_id","model_key","input_tokens","output_tokens","total_tokens","cost_usd","project_id","agent_id"]))+
+  panel("审计追踪",rowsPanel("工具事件",audit,["event_id","occurred_at","actor_id","run_id","tool_name","action","outcome"])+
+   rowsPanel("身份事件",identity,["event_id","occurred_at","actor_id","action","target_id","outcome"]))+
+  panel("Prometheus 指标",data.metrics?pre(data.metrics):"<p class='subtle'>指标 exporter 未配置或无权限。</p>")+
+  "<p class='subtle'>统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。数据源错误会显式显示；所有读取与告警变更均由服务端认证、租户隔离和权限策略控制。</p>";
+}
+const workbenchPagesBaseRender=render;
+render=async function(){
+ if(S.view==="batch"){
+  try{await renderBatch()}catch(error){$("#view").innerHTML=panel("批量执行不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-retry='1'"))}
+  return;
+ }
+ if(S.view==="observability"){
+  try{await renderObservability()}catch(error){$("#view").innerHTML=panel("可观测性不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-retry='1'"))}
+  return;
+ }
+ return workbenchPagesBaseRender();
+};
+VIEW_CAPABILITIES.batch=["batch_execution"];
+VIEW_CAPABILITIES.observability=["observability","metrics","audit","quotas"];
+document.addEventListener("submit",async event=>{
+ const form=event.target;
+ if(form.id!=="batch-submit-form")return;
+ event.preventDefault();
+ const data=new FormData(form);
+ let dataset;
+ try{dataset=JSON.parse(String(data.get("dataset")||""))}
+ catch{toast("数据集必须是合法 JSON 数组");return}
+ if(!Array.isArray(dataset)||!dataset.length||dataset.some(row=>!row||typeof row!=="object"||Array.isArray(row))){
+  toast("数据集必须是非空的 JSON 对象数组");return;
+ }
+ const concurrency=Number(data.get("max_concurrency"));
+ if(!Number.isInteger(concurrency)||concurrency<1||concurrency>1000){toast("最大并发必须为 1 到 1000 的整数");return}
+ try{
+  const result=await api(API+"/workbench/batches",{method:"POST",body:JSON.stringify({
+   template_id:String(data.get("template_id")||"").trim(),dataset,
+   max_concurrency:concurrency,idempotency_key:crypto.randomUUID()
+  })});
+  S.batchId=result.batch_id||null;
+  toast("批处理已提交");
+  await renderBatch();
+ }catch(error){toast(error.message)}
+});
+document.addEventListener("click",async event=>{
+ const button=event.target.closest("button");if(!button)return;
+ try{
+  if(button.dataset.batch){
+   S.batchId=button.dataset.batch;await renderBatch();return;
+  }
+  if(button.dataset.batchCancel){
+   await api(API+"/workbench/batches/"+encodeURIComponent(button.dataset.batchCancel)+"/cancel",{method:"POST",body:"{}"});
+   toast("批次取消请求已提交");await renderBatch();return;
+  }
+  if(button.dataset.batchRetry){
+   await api(API+"/workbench/batches/"+encodeURIComponent(button.dataset.batchRetry)+"/retry",{
+    method:"POST",body:JSON.stringify({idempotency_key:crypto.randomUUID()})
+   });
+   toast("批次重试已提交");await renderBatch();return;
+  }
+  if(button.dataset.alertAck){
+   await api(API+"/observability/alerts/"+encodeURIComponent(button.dataset.alertAck)+"/acknowledge",{method:"POST",body:"{}"});
+   toast("告警已确认");await renderObservability();return;
+  }
+  if(button.dataset.alertResolve){
+   await api(API+"/observability/alerts/"+encodeURIComponent(button.dataset.alertResolve)+"/resolve",{method:"POST",body:"{}"});
+   toast("告警已解决");await renderObservability();return;
+  }
+ }catch(error){toast(error.message)}
+});
