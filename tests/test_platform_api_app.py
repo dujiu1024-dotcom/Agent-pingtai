@@ -567,5 +567,38 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertEqual(response.json()["error"]["message"], "Request validation failed")
 
 
+
+    def test_publisher_key_registry_requires_authorizer_and_audit_and_is_exposed_to_runtime(self):
+        class Registry:
+            async def resolve(self, tenant_id, extension_id, key_id):
+                return None
+
+        class AuditWriter:
+            async def record(self, **event):
+                return None
+
+        registry = Registry()
+        arguments = {
+            "identity": self.identity,
+            "identity_repository": FakeIdentityRepository(),
+            "knowledge": self.knowledge,
+            "memory": self.memory,
+            "redis": FakeRedis(),
+            "allowed_origins": ("https://console.example.com",),
+            "publisher_key_registry": registry,
+            "publisher_key_authorizer": lambda principal, extension_id, action: True,
+        }
+        with self.assertRaisesRegex(ValueError, "append-only audit writer"):
+            create_platform_app(**arguments)
+
+        app = create_platform_app(**arguments, resource_audit_writer=AuditWriter())
+        self.assertIs(app.state.trusted_publisher_key_resolver, registry)
+        route_paths = {route.path for route in app.routes}
+        self.assertIn("/api/platform/v1/extensions/publishers/keys", route_paths)
+        self.assertIn(
+            "/api/platform/v1/extensions/publishers/{extension_id}/keys/{key_id}/revoke",
+            route_paths,
+        )
+
 if __name__ == "__main__":
     unittest.main()
