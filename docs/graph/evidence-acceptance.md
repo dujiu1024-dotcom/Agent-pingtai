@@ -20,7 +20,7 @@ Extraction creates reviewable candidates only. Confidence is finite and constrai
 
 ## Automated evidence
 
-`tests/test_issue_22_a_22_01_graph_evidence.py` ingests a controlled knowledge document through `KnowledgeService`, uses the resulting persisted-contract chunk IDs/offsets, extracts two entities and one relation, and checks that 100% of the generated candidates resolve to verified fragments (the required threshold is 80%). It also exercises accepted/rejected review transitions and negative cases for forged fragment references and mismatched offsets.
+`tests/test_issue_22_a_22_01_graph_evidence.py` ingests a controlled knowledge document through `KnowledgeService`, uses the actual KnowledgeService ingestion output chunk IDs/offsets, extracts two entities and one relation, and checks that 100% of the generated candidates resolve to verified fragments (the required threshold is 80%). It also exercises accepted/rejected review transitions and negative cases for forged fragment references and mismatched offsets.
 
 ## Acceptance boundary
 
