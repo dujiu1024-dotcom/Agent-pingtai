@@ -73,5 +73,133 @@ class HierarchicalQuotaPolicyTests(unittest.IsolatedAsyncioTestCase):
             QuotaPolicy("bad", "tenant", "t-1", {"tokens": float("nan")}, tenant_id="t-1")
 
 
+class _FakeCursor:
+    def __init__(self, rowcount=1):
+        self.rowcount = rowcount
+
+
+class _FakeTransaction:
+    def __init__(self, connection):
+        self.connection = connection
+
+    async def __aenter__(self):
+        self.snapshot = (
+            list(self.connection.policy_rows), list(self.connection.audit_rows),
+        )
+        self.connection.in_transaction = True
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        self.connection.in_transaction = False
+        if exc_type is not None:
+            self.connection.policy_rows, self.connection.audit_rows = self.snapshot
+        return False
+
+
+class _FakePostgresConnection:
+    def __init__(self, *, fail_audit=False, policy_rowcount=1):
+        self.fail_audit = fail_audit
+        self.policy_rowcount = policy_rowcount
+        self.policy_rows = []
+        self.audit_rows = []
+        self.in_transaction = False
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+    def transaction(self):
+        return _FakeTransaction(self)
+
+    async def execute(self, query, params):
+        if not self.in_transaction:
+            raise AssertionError("policy and audit writes must share a transaction")
+        if "INSERT INTO platform_quota_policies" in query:
+            self.policy_rows.append(params)
+            return _FakeCursor(self.policy_rowcount)
+        if "INSERT INTO platform_quota_policy_audit" in query:
+            if self.fail_audit:
+                raise RuntimeError("audit database unavailable")
+            self.audit_rows.append(params)
+            return _FakeCursor()
+        raise AssertionError("unexpected SQL statement")
+
+
+class PostgresQuotaPolicyAtomicityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_policy_and_audit_are_written_in_one_transaction(self):
+        from agent_platform.quotas.policies import (
+            PostgresQuotaPolicyRepository, QuotaPolicyAudit,
+        )
+        from datetime import datetime, timezone
+
+        connection = _FakePostgresConnection()
+        repository = PostgresQuotaPolicyRepository(lambda: _async_value(connection))
+        policy = QuotaPolicy(
+            "tenant-policy", "tenant", "tenant-a", {"tokens": 100},
+            tenant_id="tenant-a",
+        )
+        event = QuotaPolicyAudit(
+            audit_id="audit-1", tenant_id="tenant-a", actor_id="admin",
+            action="quota.policy.created", policy_id="tenant-policy",
+            policy_version=1, before=None,
+            after={"scope_type": "tenant", "scope_id": "tenant-a", "limits": {"tokens": 100}},
+            occurred_at=datetime.now(timezone.utc), payload_sha256="a" * 64,
+        )
+        await repository.put_policy_and_audit(policy, event)
+        self.assertEqual(len(connection.policy_rows), 1)
+        self.assertEqual(len(connection.audit_rows), 1)
+
+    async def test_audit_failure_rolls_back_policy_write(self):
+        from agent_platform.quotas.policies import (
+            PostgresQuotaPolicyRepository, QuotaPolicyAudit,
+        )
+        from datetime import datetime, timezone
+
+        connection = _FakePostgresConnection(fail_audit=True)
+        repository = PostgresQuotaPolicyRepository(lambda: _async_value(connection))
+        policy = QuotaPolicy(
+            "tenant-policy", "tenant", "tenant-a", {"tokens": 100},
+            tenant_id="tenant-a",
+        )
+        event = QuotaPolicyAudit(
+            audit_id="audit-2", tenant_id="tenant-a", actor_id="admin",
+            action="quota.policy.created", policy_id="tenant-policy",
+            policy_version=1, before=None, after={"limits": {"tokens": 100}},
+            occurred_at=datetime.now(timezone.utc), payload_sha256="b" * 64,
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit database unavailable"):
+            await repository.put_policy_and_audit(policy, event)
+        self.assertEqual(connection.policy_rows, [])
+        self.assertEqual(connection.audit_rows, [])
+
+    async def test_stale_version_does_not_append_audit(self):
+        from agent_platform.quotas.policies import (
+            PostgresQuotaPolicyRepository, QuotaPolicyAudit,
+        )
+        from datetime import datetime, timezone
+
+        connection = _FakePostgresConnection(policy_rowcount=0)
+        repository = PostgresQuotaPolicyRepository(lambda: _async_value(connection))
+        policy = QuotaPolicy(
+            "tenant-policy", "tenant", "tenant-a", {"tokens": 100},
+            tenant_id="tenant-a", version=2,
+        )
+        event = QuotaPolicyAudit(
+            audit_id="audit-3", tenant_id="tenant-a", actor_id="admin",
+            action="quota.policy.updated", policy_id="tenant-policy",
+            policy_version=2, before={"version": 1}, after={"version": 2},
+            occurred_at=datetime.now(timezone.utc), payload_sha256="c" * 64,
+        )
+        with self.assertRaisesRegex(ValueError, "stale or already exists"):
+            await repository.put_policy_and_audit(policy, event)
+        self.assertEqual(connection.audit_rows, [])
+
+
+async def _async_value(value):
+    return value
+
+
 if __name__ == "__main__":
     unittest.main()
