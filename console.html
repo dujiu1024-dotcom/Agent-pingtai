@@ -2881,6 +2881,23 @@ summary:hover{color:var(--ac)}
     });
   }
 
+  function openLegacyPanelFromQuery() {
+    const requested = new URLSearchParams(window.location.search).get('panel');
+    const panels = {
+      ops: openOps,
+      health: openHealth,
+      business: openBiz,
+      content: openContent,
+      roundtable: openRoundtable,
+      board: openBoard,
+      run: () => openRun(),
+      events: openEvents,
+    };
+    if (requested && Object.prototype.hasOwnProperty.call(panels, requested)) {
+      panels[requested]();
+    }
+  }
+
   function boot() {
     bindUI();
     if (THREE_OK) {
@@ -2905,7 +2922,7 @@ summary:hover{color:var(--ac)}
       b.classList.add('on');
       $('#c').style.display = 'none';
     }
-    load();
+    load().then(openLegacyPanelFromQuery);
     setInterval(() => {
       const d = new Date();
       $('#clock').textContent = d.toLocaleTimeString('zh-CN', { hour12: false });
