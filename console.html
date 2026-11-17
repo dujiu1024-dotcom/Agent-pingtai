@@ -771,7 +771,7 @@ summary:hover{color:var(--ac)}
     if (showSpin) $('#bRefresh').textContent = '刷新中';
     try {
       const headers = Object.assign(
-        { 'Content-Type': 'application/json' },
+        { 'Content-Type': 'application/json', 'X-API-Version': 'v1' },
         CONSOLE_TOKEN ? { 'X-Console-Token': CONSOLE_TOKEN } : {});
       if (stateEtag) headers['If-None-Match'] = stateEtag;
       const res = await fetch('/api/v1/legacy/state', { headers });
@@ -1827,7 +1827,7 @@ summary:hover{color:var(--ac)}
     if (!path) return;
     try {
       const res = await fetch('/api/v1/legacy/output?path=' + encodeURIComponent(path),
-        { headers: CONSOLE_TOKEN ? { 'X-Console-Token': CONSOLE_TOKEN } : {} });
+        { headers: Object.assign({ 'X-API-Version': 'v1' }, CONSOLE_TOKEN ? { 'X-Console-Token': CONSOLE_TOKEN } : {}) });
       const txt = await res.text();
       if (!res.ok) throw new Error(txt || ('HTTP ' + res.status));
       $('#rtResult').textContent = txt;
