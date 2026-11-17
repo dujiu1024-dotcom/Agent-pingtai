@@ -19,6 +19,13 @@ class AsyncPromptRegistry:
         self.keys.append(prompt_id)
         return self.inner.register(prompt_id, template)
 
+    async def rollback(self, prompt_id, version, *, updated_by):
+        self.keys.append(prompt_id)
+        self.inner.activate(prompt_id, version)
+
+    async def list_audit(self, prompt_id, *, limit=100):
+        return [{"prompt_id": prompt_id, "action": "version.rolled_back"}]
+
     async def activate(self, prompt_id, version, *, updated_by):
         self.keys.append(prompt_id)
         self.inner.activate(prompt_id, version)
@@ -44,6 +51,9 @@ class PromptRegistryApiTests(unittest.TestCase):
             authorize=lambda actor, prompt_id, action: authorized.append(
                 (actor.tenant_id, prompt_id, action)
             ) or True,
+            evaluate_gate=lambda **kwargs: {
+                "gate_passed": True, "eval_run_id": "eval-123",
+            },
         ))
 
         @app.middleware("http")
@@ -67,6 +77,22 @@ class PromptRegistryApiTests(unittest.TestCase):
             "/api/platform/v1/prompts/support/activate", json={"version": 1},
         )
         self.assertEqual(activated.status_code, 200)
+        self.assertEqual(activated.json()["eval_run_id"], "eval-123")
+
+        canary = client.post(
+            "/api/platform/v1/prompts/support/canary",
+            json={"version": 1, "percentage": 10},
+        )
+        self.assertEqual(canary.status_code, 400)  # cannot canary the active version
+
+        rollback = client.post(
+            "/api/platform/v1/prompts/support/rollback", json={"version": 1},
+        )
+        self.assertEqual(rollback.status_code, 200)
+
+        audit = client.get("/api/platform/v1/prompts/support/audit")
+        self.assertEqual(audit.status_code, 200)
+        self.assertEqual(audit.json()["items"][0]["action"], "version.rolled_back")
 
         rendered = client.post(
             "/api/platform/v1/prompts/support/render",
@@ -76,7 +102,7 @@ class PromptRegistryApiTests(unittest.TestCase):
         self.assertEqual(rendered.json()["rendered"], "Answer why")
         self.assertTrue(all(key.startswith("tenant:8:tenant-a:") for key in registry.keys))
         self.assertEqual(
-            [action for _, _, action in authorized], ["write", "publish", "read"],
+            [action for _, _, action in authorized], ["write", "publish", "publish", "read_audit", "read"],
         )
 
     def test_prompt_write_requires_authorization(self):
