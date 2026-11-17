@@ -21,6 +21,7 @@ from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
+from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
@@ -63,6 +64,7 @@ def create_platform_app(
     identity_repository: Any,
     knowledge: KnowledgeService,
     memory: MemoryService,
+    knowledge_catalog: Any | None = None,
     redis: Any,
     allowed_origins: Sequence[str],
     service_identity: Any | None = None,
@@ -308,6 +310,13 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
+    if knowledge_catalog is not None:
+        knowledge_context_resolver = IdentityContextResolver(identity_repository)
+        app.include_router(create_knowledge_catalog_router(
+            catalog=knowledge_catalog,
+            knowledge=knowledge,
+            resolve_principal=knowledge_context_resolver.knowledge,
+        ))
     publisher_keys_configured = any(value is not None for value in (
         publisher_key_registry, publisher_key_authorizer,
     ))
