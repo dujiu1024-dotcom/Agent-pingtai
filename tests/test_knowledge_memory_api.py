@@ -33,7 +33,7 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
             return MemoryPrincipal(
                 tenant_id=request.headers.get("x-tenant", "tenant-a"),
                 user_id=request.headers.get("x-user", "user-a"),
-                project_ids=frozenset({"project-a"}),
+                project_ids=frozenset(request.headers.get("x-projects", "project-a").split()),
                 agent_ids=frozenset({"agent-a"}),
                 permissions=frozenset(request.headers.get("x-permissions", "").split()),
             )
@@ -335,6 +335,79 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         ):
             response = self.client.patch(f"/api/platform/v1/memories/{memory_id}",json=payload)
             self.assertEqual(response.status_code,400)
+
+
+    def test_memory_retrieval_isolated_by_tenant_user_and_project_membership(self):
+        created_ids = {}
+        for scope, scope_id in (
+            ("user", None),
+            ("project", "project-a"),
+            ("project", "project-secret"),
+            ("tenant", "tenant-a"),
+        ):
+            payload = {
+                "scope": scope,
+                "content": f"{scope} memory {scope_id or 'owner'}",
+                "source_ref": f"conversation:{scope}:{scope_id or 'owner'}",
+                "confidence": 0.9,
+            }
+            if scope_id is not None:
+                payload["scope_id"] = scope_id
+            response = self.client.post(
+                "/api/platform/v1/memories/candidates",
+                json=payload,
+                headers={"x-permissions": "memory.manage"},
+            )
+            self.assertEqual(response.status_code, 200)
+            memory_id = response.json()["memory_id"]
+            confirmed = self.client.post(
+                f"/api/platform/v1/memories/{memory_id}/confirm",
+                headers={"x-permissions": "memory.manage"},
+            )
+            self.assertEqual(confirmed.status_code, 200)
+            created_ids[(scope, scope_id)] = memory_id
+
+        owner_ids = {
+            item["memory_id"]
+            for item in self.client.get("/api/platform/v1/memories").json()["items"]
+        }
+        self.assertEqual(
+            owner_ids,
+            {
+                created_ids[("user", None)],
+                created_ids[("project", "project-a")],
+                created_ids[("tenant", "tenant-a")],
+            },
+        )
+
+        other_user_ids = {
+            item["memory_id"]
+            for item in self.client.get(
+                "/api/platform/v1/memories", headers={"x-user": "user-b"}
+            ).json()["items"]
+        }
+        self.assertEqual(
+            other_user_ids,
+            {created_ids[("tenant", "tenant-a")]},
+        )
+
+        non_member_ids = {
+            item["memory_id"]
+            for item in self.client.get(
+                "/api/platform/v1/memories",
+                headers={"x-user": "user-b", "x-projects": "project-b"},
+            ).json()["items"]
+        }
+        self.assertEqual(
+            non_member_ids,
+            {created_ids[("tenant", "tenant-a")]},
+        )
+
+        other_tenant = self.client.get(
+            "/api/platform/v1/memories", headers={"x-tenant": "tenant-b"}
+        )
+        self.assertEqual(other_tenant.status_code, 200)
+        self.assertEqual(other_tenant.json()["items"], [])
 
 
 
