@@ -161,6 +161,7 @@ class BlackboardMultiExpertServices:
                 raise ValueError("required_capabilities must not contain duplicates")
             assignment["required_capabilities"] = sorted(required)
 
+            profile = None
             if self.expert_registry is not None:
                 profile = await self.expert_registry.get(expert_id)
                 if profile is None or not profile.enabled:
@@ -172,11 +173,54 @@ class BlackboardMultiExpertServices:
                     raise ValueError(
                         f"expert {expert_id} lacks required capabilities: {missing}"
                     )
-            assignments.append(assignment)
+            from agent_platform.workflows.expert_registry import ExpertAssignment
+
+            declared = profile.capabilities if profile is not None else frozenset()
+            task_id = str(run_context.get("task_id") or run_context.get("run_id") or "").strip()
+            if not task_id:
+                raise ValueError("expert assignment requires task_id or run_id")
+            contract = ExpertAssignment(
+                assignment_id=self._entry_id(run_context, "assignment:" + expert_id),
+                task_id=task_id,
+                expert_id=expert_id,
+                focus=str(assignment.get("focus") or ""),
+                required_capabilities=frozenset(required),
+                declared_capabilities=frozenset(declared),
+            )
+            normalized = dict(assignment)
+            normalized.update(contract.to_dict())
+            if profile is not None:
+                normalized["expert_name"] = profile.name
+                normalized["expert_description"] = profile.description
+            assignments.append(normalized)
         return assignments
 
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]:
         scope, scope_id = self._scope(run_context)
+        expert_id = assignment.get("expert_id")
+        if not isinstance(expert_id, str) or not expert_id.strip():
+            raise ValueError("expert assignment requires a non-empty expert_id")
+        if self.expert_registry is not None:
+            profile = await self.expert_registry.get(expert_id)
+            if profile is None or not profile.enabled:
+                raise PermissionError(f"expert is not registered or enabled: {expert_id}")
+            required = assignment.get("required_capabilities", ())
+            if not isinstance(required, (list, tuple, set, frozenset)):
+                raise ValueError("required_capabilities must be an array")
+            required_set = frozenset(required)
+            if any(not isinstance(item, str) or not item.strip() for item in required_set):
+                raise ValueError("required_capabilities must contain non-empty strings")
+            if not required_set.issubset(profile.capabilities):
+                raise PermissionError(f"expert {expert_id} no longer satisfies required capabilities")
+            declared = assignment.get("declared_capabilities")
+            if declared is not None and frozenset(declared) != profile.capabilities:
+                raise PermissionError(f"expert capability declaration changed after planning: {expert_id}")
+            expected_task = str(run_context.get("task_id") or run_context.get("run_id") or "").strip()
+            if assignment.get("task_id") != expected_task:
+                raise PermissionError("expert assignment belongs to a different task")
+            expected_assignment_id = self._entry_id(run_context, "assignment:" + expert_id)
+            if assignment.get("assignment_id") != expected_assignment_id:
+                raise PermissionError("expert assignment identifier is invalid")
         result = dict(await self.callbacks.run_expert(assignment=assignment, objective=objective, run_context=run_context))
         expert_id = str(assignment.get("expert_id") or "expert")
         refs = self._refs(result)
