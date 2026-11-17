@@ -100,6 +100,11 @@ class RunEventBroker:
             if len(subscribers) >= self.subscriber_limit:
                 raise RuntimeError("Run event subscriber capacity reached")
             subscribers.add(queue)
+        return self._iterate(key, queue)
+
+    async def _iterate(
+        self, key: tuple[str, str], queue: asyncio.Queue[SSEEvent],
+    ) -> AsyncIterator[SSEEvent]:
         try:
             while True:
                 event = await queue.get()
