@@ -335,6 +335,29 @@ class PostgresGraphCandidateStore:
                         inserted += 1
         return inserted
 
+    async def list_candidates(
+        self, *, status: str = "candidate", limit: int = 100,
+    ) -> tuple[dict[str, Any], ...]:
+        if status not in {"candidate", "conflict", "accepted", "rejected"}:
+            raise ValueError("invalid graph candidate status")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be an integer between 1 and 500")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT candidate_id, source_domain, source_type, source_id,
+                          source_version, source_ref, project_id, candidate_kind,
+                          local_id, payload, confidence, evidence_refs, conflict_key,
+                          status, reviewed_by, review_reason, reviewed_at, created_at
+                   FROM platform_graph_extraction_candidates
+                   WHERE tenant_id = %s AND status = %s
+                   ORDER BY created_at, candidate_id
+                   LIMIT %s""",
+                (self.tenant_id, status, limit),
+            )
+            rows = await cursor.fetchall()
+        return tuple(rows)
+
     async def review_candidate(
         self, *, candidate_id: str, reviewer_id: str, decision: str, reason: str,
     ) -> bool:
