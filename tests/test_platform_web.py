@@ -46,3 +46,38 @@ def test_platform_web_exposes_responsive_accessible_workbench_and_shared_api_tra
     assert "Capability visibility is presentation-only" in script
     assert "async function upload(path,file){const r=await request(path" in script
     assert 'b.setAttribute("aria-current","page")' in script
+
+
+def test_platform_web_can_explicitly_serve_legacy_console():
+    app = FastAPI()
+    app.include_router(create_platform_web_router())
+    client = TestClient(app)
+
+    response = client.get("/app/?legacy=1")
+    assert response.status_code == 200
+    assert "FDE 工作室" in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_platform_web_falls_back_when_new_index_is_not_deployed(tmp_path, monkeypatch):
+    from agent_platform.web import app as web_app
+
+    monkeypatch.setattr(web_app, "STATIC", tmp_path)
+    app = FastAPI()
+    app.include_router(create_platform_web_router())
+
+    response = TestClient(app).get("/app/")
+    assert response.status_code == 200
+    assert "FDE 工作室" in response.text
+
+
+def test_platform_web_returns_service_unavailable_when_both_uis_are_missing(tmp_path, monkeypatch):
+    from agent_platform.web import app as web_app
+
+    monkeypatch.setattr(web_app, "STATIC", tmp_path)
+    monkeypatch.setattr(web_app, "LEGACY_CONSOLE", tmp_path / "console.html")
+    app = FastAPI()
+    app.include_router(create_platform_web_router())
+
+    response = TestClient(app).get("/app/")
+    assert response.status_code == 503
