@@ -11,7 +11,7 @@ import copy
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 from uuid import uuid4
 
 
@@ -206,3 +206,128 @@ class RunContextSnapshotService:
             "snapshot_revision": snapshot.revision,
             "snapshot_digest": snapshot.digest,
         }
+
+
+
+class PostgresRunContextSnapshotStore:
+    """Append-only PostgreSQL storage for tenant-scoped Run context snapshots."""
+
+    def __init__(self, *, connection_factory: Callable[[], Any]) -> None:
+        self._connection_factory = connection_factory
+
+    @classmethod
+    def from_dsn(cls, *, dsn: str) -> "PostgresRunContextSnapshotStore":
+        if not isinstance(dsn, str) or not dsn.strip():
+            raise ValueError("PostgreSQL DSN is required")
+
+        async def connect() -> Any:
+            try:
+                from psycopg import AsyncConnection
+                from psycopg.rows import dict_row
+            except ImportError as exc:
+                raise RuntimeError(
+                    "Install psycopg[binary,pool] for PostgreSQL storage"
+                ) from exc
+            return await AsyncConnection.connect(dsn, row_factory=dict_row)
+
+        return cls(connection_factory=connect)
+
+    @staticmethod
+    def _jsonb(value: Any) -> Any:
+        try:
+            from psycopg.types.json import Jsonb
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install psycopg[binary,pool] for PostgreSQL storage"
+            ) from exc
+        return Jsonb(value)
+
+    @staticmethod
+    def _from_row(row: Mapping[str, Any] | None) -> RunContextSnapshot | None:
+        if row is None:
+            return None
+        return RunContextSnapshot(
+            tenant_id=str(row["tenant_id"]),
+            run_id=str(row["run_id"]),
+            revision=int(row["revision"]),
+            snapshot_id=str(row["snapshot_id"]),
+            context=_json_copy(row["context_payload"]),
+            references=tuple(_json_copy(row["references_payload"] or [])),
+            digest=str(row["digest"]),
+        )
+
+    async def append(self, snapshot: RunContextSnapshot) -> RunContextSnapshot:
+        if not snapshot.tenant_id.strip() or not snapshot.run_id.strip():
+            raise ValueError("snapshot tenant_id and run_id are required")
+        expected_digest = RunContextSnapshotService._digest(
+            snapshot.tenant_id, snapshot.run_id, snapshot.revision,
+            snapshot.context, snapshot.references,
+        )
+        if snapshot.digest != expected_digest:
+            raise ValueError("Run context snapshot integrity check failed")
+        try:
+            from uuid import UUID
+            run_uuid = UUID(snapshot.run_id)
+            snapshot_uuid = UUID(snapshot.snapshot_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("PostgreSQL Run context IDs must be UUIDs") from exc
+
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                # Serialize revision allocation per tenant/Run across worker processes.
+                lock_key = f"{snapshot.tenant_id}:{run_uuid}"
+                await connection.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (lock_key,),
+                )
+                cursor = await connection.execute(
+                    """SELECT revision FROM platform_run_context_snapshots
+                       WHERE tenant_id = %s AND run_id = %s
+                       ORDER BY revision DESC LIMIT 1""",
+                    (snapshot.tenant_id, run_uuid),
+                )
+                current = await cursor.fetchone()
+                expected_revision = int(current["revision"]) + 1 if current else 1
+                if snapshot.revision != expected_revision:
+                    raise ValueError("Run context snapshot revision conflict")
+                await connection.execute(
+                    """INSERT INTO platform_run_context_snapshots
+                       (tenant_id, run_id, revision, snapshot_id, context_payload,
+                        references_payload, digest)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        snapshot.tenant_id, run_uuid, snapshot.revision, snapshot_uuid,
+                        self._jsonb(_json_copy(snapshot.context)),
+                        self._jsonb(_json_copy(list(snapshot.references))),
+                        snapshot.digest,
+                    ),
+                )
+        return RunContextSnapshot(
+            tenant_id=snapshot.tenant_id, run_id=snapshot.run_id,
+            revision=snapshot.revision, snapshot_id=snapshot.snapshot_id,
+            context=_json_copy(snapshot.context),
+            references=tuple(_json_copy(list(snapshot.references))),
+            digest=snapshot.digest,
+        )
+
+    async def latest(self, tenant_id: str, run_id: str) -> RunContextSnapshot | None:
+        if not tenant_id.strip() or not run_id.strip():
+            raise ValueError("tenant_id and run_id are required")
+        try:
+            from uuid import UUID
+            run_uuid = UUID(run_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("PostgreSQL Run context IDs must be UUIDs") from exc
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT tenant_id, run_id, revision, snapshot_id,
+                          context_payload, references_payload, digest
+                   FROM platform_run_context_snapshots
+                   WHERE tenant_id = %s AND run_id = %s
+                   ORDER BY revision DESC LIMIT 1""",
+                (tenant_id, run_uuid),
+            )
+            row = await cursor.fetchone()
+        return self._from_row(row)
