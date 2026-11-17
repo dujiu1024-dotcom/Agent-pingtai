@@ -95,7 +95,8 @@ class PromptManagementApiTests(unittest.TestCase):
         self.assertEqual(diff.status_code, 200)
         self.assertIn("+Hello there {name}", diff.json()["diff"])
         expected_key = tenant_prompt_key("tenant-a", "support")
-        self.assertTrue(all(key == expected_key for _, key, _ in self.authorized))
+        self.assertTrue(all(prompt_id == "support" for _, prompt_id, _ in self.authorized))
+        self.assertEqual(set(self.registry.inner._versions), {expected_key})
 
     def test_variant_create_assign_history_and_deprecate(self):
         self.client.post(
