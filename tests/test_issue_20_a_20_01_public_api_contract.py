@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import unittest
 
+from fastapi import HTTPException
+
 from agent_platform.api.contract import (
     PublicApiContractASGIMiddleware,
     decode_secure_cursor,
@@ -234,7 +236,7 @@ class Issue20A2001PublicApiContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(other_tenant.status_code, 201)
         self.assertEqual(calls, ["executed", "executed"])
 
-        with self.assertRaises(Exception) as conflict:
+        with self.assertRaises(HTTPException) as conflict:
             await service.execute(**{**args, "body": b'{"name":"different"}'})
         self.assertEqual(conflict.exception.status_code, 409)
         self.assertEqual(
