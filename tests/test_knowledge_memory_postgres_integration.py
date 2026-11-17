@@ -160,7 +160,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
             self.assertEqual((await cur.fetchone())["n"],1)
-        await self.memory.confirm(tenant_id=self.tenant_id,memory_id=candidate.memory_id,confirmer_id="user-1")
+        await self.memory.confirm(principal=principal,memory_id=candidate.memory_id)
         async with await self.connect() as conn:
             cur=await conn.execute("SELECT count(*) n FROM platform_memory_versions WHERE tenant_id=%s AND memory_id=%s",(self.tenant_id,candidate.memory_id))
             self.assertEqual((await cur.fetchone())["n"],2)
