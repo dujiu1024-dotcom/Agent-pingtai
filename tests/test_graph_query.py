@@ -177,6 +177,21 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.entities, ())
         self.assertEqual(result.relations, ())
 
+    async def test_query_service_rejects_repository_without_tenant_binding(self):
+        with self.assertRaisesRegex(ValueError, "explicitly bound"):
+            GraphQueryService(tenant_id="tenant-a", repository=object())
+
+    async def test_hybrid_query_respects_postgres_search_length_bound(self):
+        class Retriever:
+            async def retrieve(self, **kwargs):
+                raise AssertionError("retriever must not run for invalid query")
+
+        with self.assertRaisesRegex(ValueError, "1-200"):
+            await self.service.hybrid_retrieve(
+                "x" * 201, document_retriever=Retriever(),
+                allowed_project_ids=("project-a",),
+            )
+
     async def test_rejects_repository_entity_outside_tenant_or_project_scope(self):
         class CrossTenantRepository(FakeGraphRepository):
             async def get_entity(self, entity_id, *, allowed_project_ids=()):
