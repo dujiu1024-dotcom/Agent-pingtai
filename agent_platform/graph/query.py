@@ -122,6 +122,27 @@ class GraphQueryService:
             raise ValueError("repository returned an invalid graph relation")
         return source, target, relation_id
 
+    def _validate_entity(self, record: Any, entity_id: str, scope: tuple[str, ...]) -> Any:
+        entity = self._entity(record)
+        if getattr(entity, "tenant_id", None) != self.tenant_id:
+            raise PermissionError("graph repository returned an entity outside the tenant")
+        if getattr(entity, "entity_id", None) != entity_id:
+            raise ValueError("graph repository returned a mismatched entity ID")
+        project_id = getattr(entity, "project_id", None)
+        if project_id is not None and project_id not in scope:
+            raise PermissionError("graph repository returned an entity outside project scope")
+        return entity
+
+    def _validate_relation(self, record: Any, scope: tuple[str, ...]) -> Any:
+        relation = self._relation(record)
+        if getattr(relation, "tenant_id", None) != self.tenant_id:
+            raise PermissionError("graph repository returned a relation outside the tenant")
+        project_id = getattr(relation, "project_id", None)
+        if project_id is not None and project_id not in scope:
+            raise PermissionError("graph repository returned a relation outside project scope")
+        self._relation_endpoints(relation)
+        return relation
+
     async def neighbors(
         self, entity_id: str, *, direction: str = "both",
         relation_types: Sequence[str] = (), depth: int = 1,
@@ -145,6 +166,7 @@ class GraphQueryService:
             root = await self.repository.get_entity(entity_id, allowed_project_ids=scope)
             if root is None:
                 return GraphQueryResult((), (), False, 0)
+            self._validate_entity(root, entity_id, scope)
             entities: dict[str, Any] = {entity_id: root}
             relations: dict[str, Any] = {}
             frontier = [entity_id]
@@ -157,7 +179,7 @@ class GraphQueryService:
                         limit=500,
                     )
                     for edge_record in edges:
-                        edge = self._relation(edge_record)
+                        edge = self._validate_relation(edge_record, scope)
                         source, target, relation_id = self._relation_endpoints(edge)
                         if allowed_types and edge.relation_type not in allowed_types:
                             continue
@@ -219,6 +241,8 @@ class GraphQueryService:
             target = await self.repository.get_entity(target_entity_id, allowed_project_ids=scope)
             if source is None or target is None:
                 return None
+            self._validate_entity(source, source_entity_id, scope)
+            self._validate_entity(target, target_entity_id, scope)
             if source_entity_id == target_entity_id:
                 return GraphPath((source_entity_id,), ())
             queue: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
@@ -234,7 +258,7 @@ class GraphQueryService:
                     current, direction="out", allowed_project_ids=scope, limit=500
                 )
                 for edge_record in edges:
-                    edge = self._relation(edge_record)
+                    edge = self._validate_relation(edge_record, scope)
                     start, end, relation_id = self._relation_endpoints(edge)
                     if start != current or (
                         allowed_types and edge.relation_type not in allowed_types
@@ -243,6 +267,10 @@ class GraphQueryService:
                     if end == target_entity_id:
                         return GraphPath(path_nodes + (end,), path_edges + (relation_id,))
                     if end not in visited:
+                        node = await self.repository.get_entity(end, allowed_project_ids=scope)
+                        if node is None:
+                            continue
+                        self._validate_entity(node, end, scope)
                         visited.add(end)
                         queue.append((end, path_nodes + (end,), path_edges + (relation_id,)))
                         if len(visited) > visit_budget:
@@ -270,8 +298,10 @@ class GraphQueryService:
         scope = self._scope(allowed_project_ids)
 
         async def run() -> tuple[GraphPath, ...]:
-            if await self.repository.get_entity(start_entity_id, allowed_project_ids=scope) is None:
+            start = await self.repository.get_entity(start_entity_id, allowed_project_ids=scope)
+            if start is None:
                 return ()
+            self._validate_entity(start, start_entity_id, scope)
             paths = [GraphPath((start_entity_id,), ())]
             for relation_type in relation_types:
                 next_paths: list[GraphPath] = []
@@ -281,9 +311,13 @@ class GraphQueryService:
                         allowed_project_ids=scope, limit=500,
                     )
                     for edge_record in edges:
-                        edge = self._relation(edge_record)
+                        edge = self._validate_relation(edge_record, scope)
                         source, target, relation_id = self._relation_endpoints(edge)
                         if source == path.entity_ids[-1] and edge.relation_type == relation_type:
+                            node = await self.repository.get_entity(target, allowed_project_ids=scope)
+                            if node is None:
+                                continue
+                            self._validate_entity(node, target, scope)
                             next_paths.append(GraphPath(
                                 path.entity_ids + (target,), path.relation_ids + (relation_id,)
                             ))
@@ -319,6 +353,7 @@ class GraphQueryService:
                 entity = self._entity(record)
                 entity_id = getattr(entity, "entity_id", None)
                 if isinstance(entity_id, str):
+                    self._validate_entity(record, entity_id, scope)
                     entity_ids.setdefault(entity_id, record)
                 source_ref = getattr(record, "source_ref", None)
                 if source_ref is not None and source_ref.domain is GraphSourceDomain.KNOWLEDGE:
