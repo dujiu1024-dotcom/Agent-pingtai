@@ -277,6 +277,7 @@ class LangGraphRunExecutor:
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    if self.trace_service is not None:
     from agent_platform.observability.run_trace import RunTraceEventType
+    await self.trace_service.capture_blackboard_events(tenant_id=tenant_id,run_id=run_id)
     await self.trace_service.emit(
      tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.COMPLETE,
      payload={"status":"succeeded","checkpoint_ref":ref},
@@ -332,6 +333,12 @@ class LangGraphRunExecutor:
    RunSnapshot(tenant_id,run_id,RunStatus.RUNNING,current.version,
     current.checkpoint_ref),expected_version=current.version,
   )
+  if self.trace_service is not None:
+   from agent_platform.observability.run_trace import RunTraceEventType
+   await self.trace_service.emit(
+    tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.RUN_START,
+    payload={"worker_id":self.worker_id,"resumed":True,"checkpoint_ref":running.checkpoint_ref},
+   )
   runtime_prepared=False
   try:
    if self.registry_runtime_provider is not None:
@@ -361,6 +368,13 @@ class LangGraphRunExecutor:
     )
     await self._session_checkpoint(tenant_id,run_id,recovery_config,session)
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
+   if self.trace_service is not None:
+    from agent_platform.observability.run_trace import RunTraceEventType
+    await self.trace_service.capture_blackboard_events(tenant_id=tenant_id,run_id=run_id)
+    await self.trace_service.emit(
+     tenant_id=tenant_id,run_id=run_id,event_type=RunTraceEventType.COMPLETE,
+     payload={"status":"succeeded","checkpoint_ref":ref,"resumed":True},
+    )
    return result
   except asyncio.TimeoutError:
    raise
