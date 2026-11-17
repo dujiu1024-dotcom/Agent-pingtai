@@ -40,6 +40,18 @@
       "owner": "replace-with-owner",
       "verified_at_utc": "2026-11-16T00:00:00Z",
       "evidence_ref": "replace-with-production-smoke-report"
+    },
+    "migration": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-migration-preflight-and-compatibility-report"
+    },
+    "rollback": {
+      "status": "pending",
+      "owner": "replace-with-owner",
+      "verified_at_utc": "2026-11-16T00:00:00Z",
+      "evidence_ref": "replace-with-rollback-plan-and-restore-drill-report"
     }
   }
 }

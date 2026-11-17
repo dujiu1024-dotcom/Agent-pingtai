@@ -22,6 +22,8 @@ REQUIRED_CHECKS = (
     "security",
     "backup_restore",
     "production_smoke",
+    "migration",
+    "rollback",
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PLACEHOLDER_RE = re.compile(
