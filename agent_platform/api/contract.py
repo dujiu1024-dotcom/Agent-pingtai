@@ -346,3 +346,37 @@ class PublicApiContractASGIMiddleware:
             await send(message)
 
         await self.app(scope, receive, contract_send)
+
+
+class ApiV1CompatibilityMiddleware:
+    """Route the documented /api/v1 alias to the platform Router prefix.
+
+    Unknown and not-yet-migrated legacy endpoints remain 404s, but use the
+    stable public API error envelope instead of FastAPI's HTML/default body.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        is_versioned_api = path == "/api/v1" or path.startswith("/api/v1/")
+        if is_versioned_api:
+            suffix = path[len("/api/v1"):]
+            scope = dict(scope)
+            scope["path"] = API_V1_PREFIX + suffix
+            scope["raw_path"] = (API_V1_PREFIX + suffix).encode("utf-8")
+
+        async def send_with_compatibility_headers(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start" and is_versioned_api:
+                headers = list(message.get("headers", []))
+                headers.append((b"x-api-version", b"v1"))
+                message = dict(message)
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_compatibility_headers)
