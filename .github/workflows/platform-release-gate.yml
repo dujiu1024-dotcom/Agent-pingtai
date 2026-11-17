@@ -126,8 +126,10 @@ jobs:
         run: |
           python -m pip install -U pip
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
-      - name: Run core business journey, release evidence, evaluation and Skill lifecycle acceptance tests
-        run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy tests.test_issue_28_a_28_01_skill_lifecycle_acceptance -v
+      - name: Run core business journey, release evidence and evaluation metric acceptance tests
+        run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy -v
+      - name: Run connector catalog and backward-compatibility acceptance tests
+        run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
 
   production-release-evidence:
     needs:
