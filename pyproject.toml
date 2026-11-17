@@ -126,6 +126,7 @@ include = [
   "tests/test_operational_health.py",
   "tests/test_operational_health_api.py",
   "agent_platform/api/health.py",
+  "tests/test_core_business_journey_e2e.py",
 ]
 
 [tool.ruff.lint]
