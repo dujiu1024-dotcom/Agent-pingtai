@@ -163,10 +163,12 @@ def migrate(connection: Any, rows_by_table: Mapping[str, list[dict[str, Any]]],
     # TRANSACTION must be the first statement to make the whole dry-run truly
     # read-only; issuing BEGIN READ ONLY here would be a nested BEGIN and can be
     # ignored by PostgreSQL after the driver has opened its transaction.
-    if dry_run:
-        connection.execute("SET TRANSACTION READ ONLY")
     report: dict[str, Any] = {"mode": "dry-run" if dry_run else "apply", "tables": [], "total_rows": 0}
     try:
+        # Keep transaction setup inside the rollback guard: a failed read-only
+        # setup must not leave an implicit transaction open on a reused connection.
+        if dry_run:
+            connection.execute("SET TRANSACTION READ ONLY")
         for mapping in mappings:
             source = mapping["source"]
             target_sql = _sql_table(mapping["target_schema"], mapping["target"])
