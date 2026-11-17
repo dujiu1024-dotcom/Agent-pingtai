@@ -241,7 +241,7 @@ def create_platform_app(
         )
     )
     evaluation_configured = any(value is not None for value in (
-        evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
+        evaluation_repository, evaluation_run_service,
     ))
     if evaluation_configured and any(value is None for value in (
         evaluation_repository, evaluation_manage_authorizer,

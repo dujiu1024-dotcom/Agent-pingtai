@@ -38,7 +38,7 @@ class EvaluationComparisonTests(unittest.IsolatedAsyncioTestCase):
         now = datetime(2026, 11, 17, tzinfo=timezone.utc)
         self.repo.rows = [
             {"tenant_id": "tenant-a", "dataset_id": "support", "dataset_version": 2,
-             "eval_run_id": "run-a", "model_key": "model-a", "gate_passed": False,
+             "eval_run_id": "run-a", "model_key": "<script>x</script>", "gate_passed": False,
              "created_at": now, "report": {"pass_rate": 0.8, "average_score": 0.82,
              "metrics": {"cost_usd": 0.02, "latency_ms": 800}}},
             {"tenant_id": "tenant-a", "dataset_id": "support", "dataset_version": 2,
@@ -91,7 +91,7 @@ class EvaluationComparisonTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_html_escapes_untrusted_values_and_pdf_signature(self):
         report = await self.service.create_report(
-            tenant_id="tenant-a", dataset_id="<script>x</script>", dataset_version=2,
+            tenant_id="tenant-a", dataset_id="support", dataset_version=2,
             created_by="reviewer",
         )
         rendered = self.service.render_html(report)
