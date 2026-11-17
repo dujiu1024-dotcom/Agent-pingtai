@@ -68,9 +68,19 @@ class RunEventBroker:
             self._history[key].append(event)
             for queue in tuple(self._subscribers[key]):
                 if queue.full():
-                    # A slow subscriber is disconnected rather than silently losing
-                    # ordered execution events; it can reconnect from Last-Event-ID.
+                    # Tell the client to reconnect without advancing its cursor.
+                    # The next subscription replays all events after its last id.
                     self._subscribers[key].discard(queue)
+                    while not queue.empty():
+                        queue.get_nowait()
+                    queue.put_nowait(SSEEvent(
+                        event="step_progress",
+                        data={
+                            "run_id": run_id,
+                            "event_type": "RECONNECT_REQUIRED",
+                            "message": "subscriber fell behind; reconnect from Last-Event-ID",
+                        },
+                    ))
                     continue
                 queue.put_nowait(event)
             return event
@@ -87,7 +97,7 @@ class RunEventBroker:
                 raise ValueError("Last-Event-ID does not belong to this Run")
             cursor = int(suffix)
         key = (tenant_id, run_id)
-        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(self.subscriber_limit)
+        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(max(self.subscriber_limit, len(self._history[key])))
         async with self._lock:
             history = tuple(
                 event for event in self._history[key]
@@ -99,8 +109,6 @@ class RunEventBroker:
             )
             if cursor and cursor < oldest - 1:
                 raise ValueError("Last-Event-ID is older than the retained Run event window")
-            if len(history) > self.subscriber_limit:
-                raise ValueError("Run event backlog exceeds subscriber capacity")
             for event in history:
                 queue.put_nowait(event)
             subscribers = self._subscribers[key]
@@ -116,7 +124,7 @@ class RunEventBroker:
             while True:
                 event = await queue.get()
                 yield event
-                if event.data.get("event_type") in {"COMPLETE", "ERROR"}:
+                if event.data.get("event_type") in {"COMPLETE", "ERROR", "RECONNECT_REQUIRED"}:
                     return
         finally:
             async with self._lock:
