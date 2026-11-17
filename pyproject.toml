@@ -136,6 +136,7 @@ include = [
   "tests/test_s3_object_storage.py",
   "tests/test_data_connectors.py",
   "tests/test_issue_8_c_8_05.py",
+  "tests/test_legacy_conversation_adapter.py",
   "tests/test_issue_8_a_8_01_contracts.py",
   "tests/test_extension_package.py",
   "tests/test_i18n_context.py",
