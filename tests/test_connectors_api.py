@@ -181,7 +181,7 @@ class ConnectorApiTests(unittest.TestCase):
             "/api/platform/v1/connectors/drive-tenant/sync",
             headers={"x-tenant": "tenant-b"},
         )
-        self.assertEqual(denied.status_code, 409)
+        self.assertEqual(denied.status_code, 404)
 
     def test_plaintext_secret_reference_is_rejected(self):
         response = self.client.post(
