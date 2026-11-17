@@ -141,6 +141,10 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 (self.tenant_id, doc.document_id),
             )
             await conn.commit()
+        await self.knowledge.grant_chunk_access(
+            self.tenant_id, doc.document_id, newer_chunk.chunk_id,
+            "user", "reader", "read", "owner",
+        )
         self.assertTrue(await self.knowledge.delete_document(self.tenant_id,doc.document_id))
         self.assertEqual(await self.knowledge.search(principal=KnowledgePrincipal(tenant_id=self.tenant_id,user_id="u"),query="gamma",query_vector=None,limit=5),[])
         async with await self.connect() as conn:
@@ -151,6 +155,11 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             cur=await conn.execute(
                 "SELECT count(*) n FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",
                 (self.tenant_id, doc.document_id),
+            )
+            self.assertEqual((await cur.fetchone())["n"],0)
+            cur=await conn.execute(
+                "SELECT count(*) n FROM knowledge_chunk_acl WHERE tenant_id=%s AND chunk_id=%s",
+                (self.tenant_id, newer_chunk.chunk_id),
             )
             self.assertEqual((await cur.fetchone())["n"],0)
     async def test_chunk_acl_is_filtered_before_retrieval_and_emits_cache_invalidation(self):
