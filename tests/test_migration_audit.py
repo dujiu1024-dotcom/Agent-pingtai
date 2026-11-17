@@ -6,7 +6,6 @@ import unittest
 from pathlib import Path
 
 from agent_platform.data_governance.migration_audit import (
-    MigrationAuditError,
     append_migration_audit_event,
     list_migration_audit_events,
     verify_migration_audit_chain,
