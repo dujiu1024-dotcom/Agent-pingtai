@@ -5,6 +5,7 @@ import asyncio
 import json
 import math
 from collections.abc import AsyncIterator, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -72,19 +73,29 @@ async def iter_sse(
         raise ValueError("heartbeat_interval must be a finite positive number")
 
     iterator = aiter(events)
+    pending: asyncio.Task[SSEEvent] | None = None
     try:
         while True:
-            try:
-                event = await asyncio.wait_for(anext(iterator), timeout=heartbeat_interval)
-            except asyncio.TimeoutError:
+            if pending is None:
+                pending = asyncio.create_task(anext(iterator))
+            done, _ = await asyncio.wait({pending}, timeout=heartbeat_interval)
+            if not done:
                 yield HEARTBEAT_FRAME
                 continue
+            try:
+                event = pending.result()
             except StopAsyncIteration:
                 return
+            finally:
+                pending = None
             if not isinstance(event, SSEEvent):
                 raise TypeError("SSE stream items must be SSEEvent instances")
             yield encode_sse(event)
     finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            with suppress(asyncio.CancelledError):
+                await pending
         close = getattr(iterator, "aclose", None)
         if close is not None:
             await close()
