@@ -10,8 +10,9 @@ def test_new_workbench_exposes_legacy_feature_index():
     for panel in ("ops", "health", "business", "content", "roundtable"):
         assert f"legacy(x[3])" in script
         assert f'"{panel}"' in script
+    assert 'btn("打开新工作台入口","data-go=\'' in script
     for native in ("tasks", "artifacts", "observability"):
-        assert f'data-go=\'{native}\'' in script
+        assert f'"{native}"' in script
 
 
 def test_legacy_links_are_direct_and_only_use_allowlisted_panel_names():
