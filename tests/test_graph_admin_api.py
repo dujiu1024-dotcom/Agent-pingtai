@@ -34,6 +34,10 @@ class FakeGraphService:
         ]
         self.relations = [SimpleNamespace(relation=relation)]
 
+    @staticmethod
+    def _scope(values):
+        return tuple(values)
+
     def _validate_entity(self, record, entity_id, scope):
         entity = getattr(record, "entity", record)
         if entity.tenant_id != self.tenant_id or entity.project_id not in scope:
