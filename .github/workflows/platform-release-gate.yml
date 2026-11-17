@@ -94,7 +94,6 @@ jobs:
             tests.test_harness_benchmark_metrics \
             tests.test_outbox \
             tests.test_connector_framework \
-            tests.test_backup_recovery_scripts \
             tests.test_gateway_runtime_postgres_integration \
             tests.test_platform_postgres_integration \
             tests.test_postgres_langgraph_checkpoint_integration \
@@ -108,6 +107,10 @@ jobs:
             tests.test_session_data_model \
             tests.test_session_conversation_migration \
             tests.test_session_assets \
+            tests.test_issue_18_a_18_01_deployment_acceptance \
+            tests.test_release_upgrade \
+            tests.test_deployment_compose \
+            tests.test_backup_recovery_scripts \
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_platform_perf_smoke -v
@@ -155,7 +158,3 @@ jobs:
           Path("release-evidence.json").write_text(os.environ["RELEASE_EVIDENCE"], encoding="utf-8")
           PY
           python scripts/release_gate.py --evidence release-evidence.json --commit-sha "$GITHUB_SHA"
-            tests.test_issue_18_a_18_01_deployment_acceptance \
-            tests.test_release_upgrade \
-            tests.test_deployment_compose \
-            tests.test_backup_recovery_scripts \
