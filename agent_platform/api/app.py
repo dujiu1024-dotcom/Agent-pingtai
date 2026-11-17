@@ -29,6 +29,7 @@ from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
+from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
@@ -78,6 +79,7 @@ def create_platform_app(
     connector_sync_worker: Any | None = None,
     connector_cleanup_worker: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
+    run_replay_resolver: Any | None = None,
     run_authorizer: Any | None = None,
     run_intervention_resolver: Any | None = None,
     run_detail_resolver: Any | None = None,
