@@ -155,6 +155,7 @@ include = [
   "tests/test_issue_8_a_8_01_contracts.py",
   "tests/test_extension_package.py",
   "tests/test_issue_28_a_28_01_skill_lifecycle_acceptance.py",
+  "tests/test_issue_28_a_28_02_malicious_skill_blocked.py",
   "tests/test_i18n_context.py",
   "tests/test_postgres_subject_adapters.py",
   "tests/test_subject_export_coordinator.py",
