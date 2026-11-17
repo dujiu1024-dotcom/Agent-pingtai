@@ -10,8 +10,8 @@ from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
-from agent_platform.api.identity import create_identity_router
 from agent_platform.api.health import create_health_router
+from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
