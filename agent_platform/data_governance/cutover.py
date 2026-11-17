@@ -30,6 +30,7 @@ class ConsistencyEvidence:
     write_error_rate: float = 0.0
     observed_seconds: float = 0.0
     legacy_write_rate: float = 0.0
+    evidence_age_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         for name, value in (("sampled_rows", self.sampled_rows),
@@ -43,7 +44,8 @@ class ConsistencyEvidence:
         for name, value in (("replication_lag_seconds", self.replication_lag_seconds),
                             ("write_error_rate", self.write_error_rate),
                             ("observed_seconds", self.observed_seconds),
-                            ("legacy_write_rate", self.legacy_write_rate)):
+                            ("legacy_write_rate", self.legacy_write_rate),
+                            ("evidence_age_seconds", self.evidence_age_seconds)):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be a finite non-negative number")
         if self.write_error_rate > 1 or self.legacy_write_rate > 1:
@@ -66,6 +68,7 @@ class CutoverPolicy:
     min_sampled_rows: int = 100
     min_observation_seconds: float = 900.0
     rollback_window_seconds: float = 86400.0
+    max_evidence_age_seconds: float = 60.0
 
     def __post_init__(self) -> None:
         for name, value in (("max_mismatch_rate", self.max_mismatch_rate),
@@ -74,7 +77,8 @@ class CutoverPolicy:
                 raise ValueError(f"{name} must be between 0 and 1")
         for name, value in (("max_replication_lag_seconds", self.max_replication_lag_seconds),
                             ("min_observation_seconds", self.min_observation_seconds),
-                            ("rollback_window_seconds", self.rollback_window_seconds)):
+                            ("rollback_window_seconds", self.rollback_window_seconds),
+                            ("max_evidence_age_seconds", self.max_evidence_age_seconds)):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be finite and non-negative")
         if isinstance(self.min_sampled_rows, bool) or not isinstance(self.min_sampled_rows, int) or self.min_sampled_rows < 1:
@@ -103,6 +107,8 @@ class ReadPlan:
 
 def evaluate_consistency(evidence: ConsistencyEvidence, policy: CutoverPolicy) -> tuple[str, ...]:
     failures: list[str] = []
+    if evidence.evidence_age_seconds > policy.max_evidence_age_seconds:
+        failures.append("evidence_stale")
     if evidence.sampled_rows < policy.min_sampled_rows:
         failures.append("insufficient_sample")
     if evidence.mismatched_rows and evidence.mismatch_rate > policy.max_mismatch_rate:
@@ -182,5 +188,5 @@ def evaluate_cutover(*, current: CutoverPhase, requested: CutoverPhase,
 
 
 def rollback_required(*, evidence: ConsistencyEvidence, policy: CutoverPolicy) -> bool:
-    """Return true for any failed consistency, lag, or write-error guardrail."""
+    """Return true for failed consistency, stale evidence, lag, or write-error guardrails."""
     return bool(evaluate_consistency(evidence, policy))
