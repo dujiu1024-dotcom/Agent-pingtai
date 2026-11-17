@@ -270,3 +270,35 @@ class PostgresQuotaStore:
             )
             for row in rows
         ]
+
+
+    async def heartbeat_reservation(
+        self, reservation_id: str, *, lease_seconds: int = 300,
+    ) -> bool:
+        """Renew an active reservation lease; expired leases cannot be resurrected."""
+        if not isinstance(lease_seconds, int) or isinstance(lease_seconds, bool):
+            raise ValueError("lease_seconds must be an integer")
+        if lease_seconds < 15 or lease_seconds > 3600:
+            raise ValueError("lease_seconds must be between 15 and 3600")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_heartbeat(%s,%s) AS renewed",
+                    (UUID(reservation_id), lease_seconds),
+                )
+                row = await cursor.fetchone()
+        return bool(row["renewed"])
+
+    async def expire_stale_reservations(self, *, limit: int = 500) -> int:
+        """Release capacity held by crashed workers using bounded, concurrent-safe batches."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1 or limit > 10000:
+            raise ValueError("limit must be an integer between 1 and 10000")
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    "SELECT platform_quota_expire_stale(%s) AS expired", (limit,),
+                )
+                row = await cursor.fetchone()
+        return int(row["expired"])
