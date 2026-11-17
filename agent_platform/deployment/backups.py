@@ -184,6 +184,34 @@ class BackupCoordinator:
         return artifact
 
 
+class BackupScheduler:
+    """Deterministic scheduler decision helper for an external durable scheduler."""
+
+    def __init__(self, coordinator: BackupCoordinator) -> None:
+        self.coordinator = coordinator
+
+    def due_kind(self, tenant_id: str, resource: str,
+                 now: datetime) -> BackupKind | None:
+        if now.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
+        latest = self.coordinator.catalog.latest(tenant_id, resource)
+        if latest is None:
+            return BackupKind.FULL
+        chain = self.coordinator.catalog.chain(latest.backup_id)
+        last_full = chain[0]
+        if now - last_full.created_at >= self.coordinator.policy.snapshot_interval:
+            return BackupKind.FULL
+        if now - latest.created_at >= self.coordinator.policy.incremental_interval:
+            return BackupKind.INCREMENTAL
+        return None
+
+    def run_if_due(self, tenant_id: str, resource: str,
+                   now: datetime | None = None) -> BackupArtifact | None:
+        instant = now or datetime.now(timezone.utc)
+        kind = self.due_kind(tenant_id, resource, instant)
+        return self.coordinator.run(tenant_id, resource, kind, instant) if kind else None
+
+
 @dataclass
 class RestoreDrill:
     backup_id: str
