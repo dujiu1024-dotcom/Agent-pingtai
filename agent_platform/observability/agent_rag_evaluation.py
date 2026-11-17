@@ -79,11 +79,11 @@ class EvaluationPlan:
     def __post_init__(self) -> None:
         if not self.tenant_id.strip() or not self.dataset_id.strip():
             raise ValueError("tenant_id and dataset_id are required")
-        if isinstance(self.dataset_version, bool) or self.dataset_version < 1:
+        if isinstance(self.dataset_version, bool) or not isinstance(self.dataset_version, int) or self.dataset_version < 1:
             raise ValueError("dataset_version must be positive")
-        if isinstance(self.concurrency_limit, bool) or not 1 <= self.concurrency_limit <= 32:
+        if isinstance(self.concurrency_limit, bool) or not isinstance(self.concurrency_limit, int) or not 1 <= self.concurrency_limit <= 32:
             raise ValueError("concurrency_limit must be between 1 and 32")
-        if isinstance(self.retrieval_k, bool) or not 1 <= self.retrieval_k <= 100:
+        if isinstance(self.retrieval_k, bool) or not isinstance(self.retrieval_k, int) or not 1 <= self.retrieval_k <= 100:
             raise ValueError("retrieval_k must be between 1 and 100")
 
 
@@ -163,14 +163,15 @@ def score_case(case: EvaluationCase, output: CaseOutput, *, k: int = 5) -> CaseM
     forbidden = {term.casefold() for term in case.forbidden_answer_terms}
     found = {term for term in expected if term in answer}
     answer_recall = len(found) / len(expected) if expected else 1.0
-    answer_precision = len(found) / (len(found) + len(forbidden.intersection(answer.split()))) if found else (
+    forbidden_found = {term for term in forbidden if term in answer}
+    answer_precision = len(found) / (len(found) + len(forbidden_found)) if found else (
         1.0 if not expected else 0.0
     )
     f1 = (
         2 * answer_precision * answer_recall / (answer_precision + answer_recall)
         if answer_precision + answer_recall else 0.0
     )
-    forbidden_rate = len(forbidden.intersection(answer.split())) / len(forbidden) if forbidden else 0.0
+    forbidden_rate = len(forbidden_found) / len(forbidden) if forbidden else 0.0
 
     retrieval = _retrieval_metrics(case, output.retrieved_document_ids, k)
     citation_ids = [item.document_id for item in output.citations]
