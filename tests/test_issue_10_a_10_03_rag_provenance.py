@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 
 from agent_platform.knowledge.citations import citation_context
@@ -72,8 +73,11 @@ class Issue10A1003ProvenanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hit.page_number, 7)
         self.assertEqual((hit.start_offset, hit.end_offset), (chunk.start_offset, chunk.end_offset))
         self.assertTrue(trace["retrieval_id"])
-        self.assertEqual(trace["query_fingerprint"], __import__("hashlib").sha256(b"retention").hexdigest())
-        self.assertEqual(trace["strategy"], "lexical")
+        self.assertEqual(trace["retrieval_id"], answer.citations[0]["retrieval_trace"]["retrieval_id"])
+        self.assertEqual(trace["query_fingerprint"], hashlib.sha256(b"retention").hexdigest())
+        self.assertEqual(trace["requested_strategy"], "lexical")
+        self.assertEqual(trace["run_id"], "run-123")
+        self.assertEqual(trace["request_id"], "request-456")
         self.assertEqual(trace["candidate_limit"], 20)
         self.assertEqual(trace["result_limit"], 4)
         self.assertEqual(trace["result_rank"], 1)
