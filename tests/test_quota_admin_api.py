@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -9,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.identity.models import Principal
-from agent_platform.quotas.service import Budget, InMemoryQuotaStore, QuotaService
+from agent_platform.quotas.service import InMemoryQuotaStore, QuotaService
 
 
 class QuotaAdminApiTests(unittest.TestCase):
@@ -102,7 +103,9 @@ class QuotaAdminApiTests(unittest.TestCase):
                   "hard_tokens": 10},
         )
         self.assertEqual(response.status_code, 503)
-        self.assertIsNone(awaitable_placeholder()) if False else None
+        self.assertIsNone(asyncio.run(self.store.get_budget(
+            "tenant-a", "tenant", "tenant-a", datetime.now(timezone.utc),
+        )))
 
     def test_invalid_limits_are_rejected(self):
         response = self.client.put(
