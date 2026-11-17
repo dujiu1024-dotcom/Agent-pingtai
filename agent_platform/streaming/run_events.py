@@ -8,9 +8,9 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Mapping
-from typing import Any
+from typing import Any, cast
 
-from agent_platform.streaming.sse import SSEEvent
+from agent_platform.streaming.sse import SSEEvent, SSEEventType
 
 RUN_EVENT_NAMES = frozenset({
     "RUN_START", "STEP_START", "STEP_FINISH", "LLM_REQUEST", "LLM_RESPONSE",
@@ -54,7 +54,7 @@ class RunEventBroker:
                 else "step_progress"
             )
             event = SSEEvent(
-                event=event_name,
+                event=cast(SSEEventType, event_name),
                 event_id=f"{run_id}:{sequence}",
                 data=payload,
             )
@@ -84,10 +84,10 @@ class RunEventBroker:
         async with self._lock:
             history = tuple(
                 event for event in self._history[key]
-                if int(event.event_id.rpartition(":")[2]) > cursor
+                if int((event.event_id or "").rpartition(":")[2]) > cursor
             )
             oldest = (
-                int(self._history[key][0].event_id.rpartition(":")[2])
+                int((self._history[key][0].event_id or "").rpartition(":")[2])
                 if self._history[key] else self._sequence[key] + 1
             )
             if cursor and cursor < oldest - 1:
