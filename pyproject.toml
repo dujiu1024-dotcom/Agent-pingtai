@@ -190,6 +190,8 @@ include = [
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
+  "scripts/benchmark_graph_storage.py",
+  "tests/test_issue_22_a_22_05_graph_storage_benchmark.py",
   "tests/test_issue_665_s_665_01_e2e.py",
 ]
 
