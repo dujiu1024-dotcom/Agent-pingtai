@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html.parser import HTMLParser
+import re
 from typing import Protocol
 
 
@@ -96,7 +97,15 @@ class OCRParserAdapter:
                 not isinstance(item, str)
                 or not item
                 or item != item.strip()
+                or item != item.lower()
+                or re.fullmatch(
+                    r"[a-z0-9][a-z0-9!#                or item != item.strip()
                 or "/" not in item
+^_.+-]*/[a-z0-9][a-z0-9!#                or item != item.strip()
+                or "/" not in item
+^_.+-]*",
+                    item,
+                ) is None
                 for item in media_types
             )
             or len(set(media_types)) != len(media_types)
