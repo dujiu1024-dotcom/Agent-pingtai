@@ -150,3 +150,71 @@ class MemoryBoundaryPolicy:
                 "reference; never a transcript."
             ),
         }[domain]
+
+
+class MemoryLayer(str, Enum):
+    """Logical memory layers; not every layer is durably persisted."""
+
+    USER = "user"
+    AGENT = "agent"
+    PROJECT = "project"
+    ORGANIZATION = "organization"
+    RUN = "run"
+    SESSION = "session"
+
+
+@dataclass(frozen=True)
+class MemoryLayerBoundary:
+    """Ownership and persistence contract for one logical memory layer."""
+
+    layer: MemoryLayer
+    owner: str
+    persistence: str
+    exclusions: str
+
+
+MEMORY_BOUNDARIES = (
+    MemoryLayerBoundary(
+        MemoryLayer.USER,
+        "The individual user within one tenant.",
+        "MemoryScope.USER: durable user-approved preferences and facts.",
+        "No credentials, secrets, or facts belonging to another user.",
+    ),
+    MemoryLayerBoundary(
+        MemoryLayer.AGENT,
+        "A named agent within one tenant.",
+        "MemoryScope.AGENT: durable agent operating knowledge and approved lessons.",
+        "No user-private facts or cross-tenant sharing.",
+    ),
+    MemoryLayerBoundary(
+        MemoryLayer.PROJECT,
+        "A project and its authorized members within one tenant.",
+        "MemoryScope.PROJECT: durable project facts and decisions.",
+        "No unrelated project data or cross-tenant sharing.",
+    ),
+    MemoryLayerBoundary(
+        MemoryLayer.ORGANIZATION,
+        "The organization boundary represented by one tenant.",
+        "MemoryScope.TENANT: durable organization-wide facts for one tenant.",
+        "No cross-tenant sharing or implicit access to another tenant.",
+    ),
+    MemoryLayerBoundary(
+        MemoryLayer.RUN,
+        "A single execution run and its runtime context.",
+        "Ephemeral run context; not persisted as MemoryScope.",
+        "No promotion to durable memory without extraction, review, and approval.",
+    ),
+    MemoryLayerBoundary(
+        MemoryLayer.SESSION,
+        "A conversation session and its message history.",
+        "Ephemeral session context; canonical history remains in the session store, not MemoryScope.",
+        "No transcript duplication or promotion without extraction and approval.",
+    ),
+)
+
+
+def memory_boundary(layer: MemoryLayer) -> MemoryLayerBoundary:
+    """Return the canonical contract for a typed memory layer."""
+    if not isinstance(layer, MemoryLayer):
+        raise TypeError("layer must be a MemoryLayer")
+    return next(item for item in MEMORY_BOUNDARIES if item.layer is layer)
