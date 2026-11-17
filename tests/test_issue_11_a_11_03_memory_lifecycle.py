@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
+from agent_platform.memory.maintenance import MemoryExpiryWorker
 from agent_platform.memory.service import (
     InMemoryMemoryRepository,
     MemoryPrincipal,
@@ -91,10 +92,11 @@ class MemoryLifecycleAcceptanceTests(unittest.TestCase):
     def test_expiry_removes_memory_and_delete_cleanup_can_be_retried(self):
         expired_at = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
         expired_id = self._create_and_confirm(expires_at=expired_at)
-        expired_count = self.memory.expire_due(
-            tenant_id="tenant-a", now=datetime.now(timezone.utc),
+        expiry_worker = MemoryExpiryWorker(
+            memory=self.memory,
+            list_tenant_ids=lambda: async_tenants(),
         )
-        self.assertEqual(awaitable_result(expired_count), 1)
+        self.assertEqual(awaitable_result(expiry_worker.run_once()), {"tenant-a": 1})
         self.assertEqual(
             self.client.get("/api/platform/v1/memories").json()["items"], [],
         )
@@ -121,6 +123,10 @@ class MemoryLifecycleAcceptanceTests(unittest.TestCase):
             [("tenant-a", deletable_id), ("tenant-a", deletable_id), ("tenant-a", deletable_id)],
         )
         self.assertEqual(self.client.get("/api/platform/v1/memories").json()["items"], [])
+
+
+async def async_tenants():
+    return ["tenant-a"]
 
 
 def awaitable_result(awaitable):
