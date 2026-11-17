@@ -62,17 +62,22 @@ def create_skill_router(*, resolve_principal: PrincipalResolver,
         items = await service.registry.repository.list_items(principal.tenant_id, "skill", limit=limit)
         result = []
         seen = set()
-        for item in items:
-            if item.status != "published" or item.item_id in seen:
+        for candidate in items:
+            if candidate.item_id in seen:
                 continue
-            seen.add(item.item_id)
-            manifest = item.definition.get("manifest", {})
-            state = await status_for(service, principal.tenant_id, agent_id, item.item_id)
+            active = await service.registry.repository.get_active(
+                principal.tenant_id, "skill", candidate.item_id,
+            )
+            if active is None:
+                continue
+            seen.add(active.item_id)
+            manifest = active.definition.get("manifest", {})
+            state = await status_for(service, principal.tenant_id, agent_id, active.item_id)
             result.append({
-                "skill_id": item.item_id, "name": manifest.get("name", item.item_id),
+                "skill_id": active.item_id, "name": manifest.get("name", active.item_id),
                 "description": manifest.get("description", ""),
                 "package_version": manifest.get("version", ""),
-                "registry_version": item.version, **state,
+                "registry_version": active.version, **state,
             })
         return {"items": result}
 
