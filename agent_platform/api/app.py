@@ -14,6 +14,7 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
+    ApiV1CompatibilityMiddleware,
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
   )
 from agent_platform.api.graph import create_graph_router
@@ -189,6 +190,7 @@ def create_platform_app(
         version="1.0.0",
         description="Versioned tenant-scoped API. See docs/api-contract.md for the public contract.",
     )
+    app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
     async def public_http_error(request: Request, exc: HTTPException) -> JSONResponse:
