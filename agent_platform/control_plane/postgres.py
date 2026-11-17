@@ -239,6 +239,23 @@ class PostgresSessionRepository:
             )
             return cursor.rowcount == 1
 
+    async def delete_session_history(self, tenant_id: str, session_id: str) -> None:
+        self._check_tenant(tenant_id)
+        connection = await self._connection_factory()
+        async with connection:
+            async with connection.transaction():
+                # Snapshots may reference a message cursor, so remove them first.
+                await connection.execute(
+                    """DELETE FROM platform_context_window_snapshots
+                       WHERE tenant_id=%s AND session_id=%s""",
+                    (self.tenant_id, _uuid(session_id)),
+                )
+                await connection.execute(
+                    """DELETE FROM platform_messages
+                       WHERE tenant_id=%s AND session_id=%s""",
+                    (self.tenant_id, _uuid(session_id)),
+                )
+
     async def append_message(self, message: ConversationMessage) -> None:
         self._check_tenant(message.tenant_id)
         connection = await self._connection_factory()
