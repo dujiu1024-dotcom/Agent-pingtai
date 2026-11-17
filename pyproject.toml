@@ -74,7 +74,6 @@ include = [
   "tests/test_memory_candidate_workflow.py",
   "tests/test_memory_extraction_preflight.py",
   "tests/test_issue_11_a_11_01_memory_distillation.py",
-  "tests/test_issue_11_a_11_02_memory_access_lifecycle.py",
   "tests/test_memory_retrieval.py",
   "tests/test_structured_output.py",
   "tests/test_knowledge_memory_postgres_integration.py",
@@ -191,7 +190,7 @@ include = [
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
-  "tests/test_issue_666_s_33_01_canary_routing.py",
+  "tests/test_issue_31_c_31_03_batch_workbench_api.py",
 ]
 
 [tool.ruff.lint]
