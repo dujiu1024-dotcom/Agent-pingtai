@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
 from agent_platform.control_plane.data_connectors import (
@@ -319,6 +320,42 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
             [("tenant-a", "drive-1", "delete")],
         )
         self.assertIsNone(saved.last_error)
+
+    async def test_revocation_during_provider_fetch_discards_page_and_applies_policy(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        class BlockingProvider(FakeProvider):
+            async def fetch_page(self, *, credential, scopes, cursor):
+                started.set()
+                await release.wait()
+                return ConnectorPage(
+                    ({"id": "late-document", "text": "must not persist"},),
+                    {"page": 2}, False,
+                )
+
+        provider = BlockingProvider()
+        service = DataConnectorService(
+            repository=self.repo, providers={"drive": provider},
+            secrets=FakeSecrets(), sink=self.sink,
+        )
+        sync = asyncio.create_task(service.sync_once(
+            tenant_id="tenant-a", connection_id="drive-1",
+            revocation_disposition="delete",
+        ))
+        await started.wait()
+        self.assertTrue(await service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+            revocation_disposition="delete",
+        ))
+        release.set()
+        with self.assertRaisesRegex(ConnectorError, "revoked during synchronization"):
+            await sync
+
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.status, "revoked")
+        self.assertEqual(self.sink.items, {})
+        self.assertIn(("tenant-a", "drive-1", "delete"), self.sink.revocations)
 
     async def test_tenant_isolation(self):
         with self.assertRaises(ConnectorError):
