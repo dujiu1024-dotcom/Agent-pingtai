@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
+from math import isfinite
 from typing import Sequence
 
 from agent_platform.memory.service import (
@@ -24,6 +25,8 @@ class MemoryRecallStrategy(str, Enum):
 
 @dataclass(frozen=True)
 class MemoryRetrievalQuery:
+    """A bounded retrieval request. All timestamps are UTC-offset aware."""
+
     scopes: frozenset[MemoryScope] = frozenset()
     as_of: datetime | None = None
     created_after: datetime | None = None
@@ -37,16 +40,41 @@ class MemoryRetrievalQuery:
     def __post_init__(self) -> None:
         for name in ("as_of", "created_after", "created_before"):
             value = getattr(self, name)
-            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            if value is not None and (
+                not isinstance(value, datetime)
+                or value.tzinfo is None
+                or value.utcoffset() is None
+            ):
                 raise ValueError(f"{name} must be timezone-aware")
-        if self.created_after and self.created_before and self.created_after > self.created_before:
+        if (
+            self.created_after is not None
+            and self.created_before is not None
+            and self.created_after > self.created_before
+        ):
             raise ValueError("created_after must not be later than created_before")
-        if not 0 <= self.min_confidence <= 1:
-            raise ValueError("min_confidence must be between 0 and 1")
-        if self.limit < 1 or self.limit > 100:
-            raise ValueError("limit must be between 1 and 100")
-        if self.text is not None and not self.text.strip():
-            raise ValueError("text must be non-empty when provided")
+        if not isinstance(self.scopes, frozenset) or any(
+            not isinstance(scope, MemoryScope) for scope in self.scopes
+        ):
+            raise ValueError("scopes must be a frozenset of MemoryScope values")
+        if not isinstance(self.source_refs, frozenset) or any(
+            not isinstance(ref, str) or not ref.strip() for ref in self.source_refs
+        ):
+            raise ValueError("source_refs must be a frozenset of non-empty strings")
+        if (
+            isinstance(self.min_confidence, bool)
+            or not isinstance(self.min_confidence, (int, float))
+            or not isfinite(self.min_confidence)
+            or not 0 <= self.min_confidence <= 1
+        ):
+            raise ValueError("min_confidence must be a finite number between 0 and 1")
+        if not isinstance(self.strategy, MemoryRecallStrategy):
+            raise ValueError("strategy must be a MemoryRecallStrategy")
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int) or not 1 <= self.limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        if self.text is not None and (
+            not isinstance(self.text, str) or not self.text.strip()
+        ):
+            raise ValueError("text must be a non-empty string when provided")
 
 
 @dataclass(frozen=True)
@@ -67,7 +95,7 @@ class MemoryRetrievalHit:
 
 
 class MemoryRetrievalService:
-    """Retrieves the exact authorized memory version valid at the requested time."""
+    """Returns the authorized memory version that was valid at the requested time."""
 
     def __init__(self, memory: MemoryService) -> None:
         self.memory = memory
@@ -85,7 +113,7 @@ class MemoryRetrievalService:
             return candidate.scope_id in principal.agent_ids or "memory.manage" in principal.permissions
         if candidate.scope is MemoryScope.PROJECT:
             return candidate.scope_id in principal.project_ids or "memory.manage" in principal.permissions
-        return "memory.manage" in principal.permissions
+        return candidate.scope_id == principal.tenant_id and "memory.manage" in principal.permissions
 
     @staticmethod
     def _text_score(content: str, text: str | None) -> float:
@@ -106,22 +134,23 @@ class MemoryRetrievalService:
         list_versions = getattr(self.memory.repository, "list_versions", None)
         if list_versions is None:
             raise RuntimeError("memory repository does not support version-aware retrieval")
+
         current_records = await self.memory.repository.list(principal.tenant_id, limit=5000)
         hits: list[MemoryRetrievalHit] = []
         for current in current_records:
             versions: Sequence[MemoryRecord] = await list_versions(
                 principal.tenant_id, current.candidate.memory_id
             )
-            eligible = [
-                item for item in versions
-                if item.created_at <= at and item.status is MemoryStatus.ACTIVE
-            ]
+            # Version snapshots carry their own recorded timestamp. Select the
+            # latest snapshot at/before as_of, then evaluate its status and ACL;
+            # this preserves historical reads without reviving deleted data now.
+            eligible = [item for item in versions if item.created_at <= at]
             if not eligible:
                 continue
             record = max(eligible, key=lambda item: (item.created_at, item.version))
-            candidate = record.candidate
             if not self._visible(record, principal, at):
                 continue
+            candidate = record.candidate
             if request.scopes and candidate.scope not in request.scopes:
                 continue
             if request.source_refs and candidate.source_ref not in request.source_refs:
@@ -132,6 +161,7 @@ class MemoryRetrievalService:
                 continue
             if candidate.confidence < request.min_confidence:
                 continue
+
             relevance = self._text_score(candidate.content, request.text)
             if request.strategy is MemoryRecallStrategy.RELEVANCE and request.text and relevance <= 0:
                 continue
@@ -142,15 +172,17 @@ class MemoryRetrievalService:
             else:
                 recency = min(max(record.created_at.timestamp(), 0), at.timestamp()) / max(at.timestamp(), 1)
                 score = relevance * 0.7 + candidate.confidence * 0.2 + recency * 0.1
+
             citation = MemoryCitation(
-                candidate.memory_id,
-                record.version,
-                candidate.source_ref,
-                candidate.scope,
-                candidate.scope_id,
-                record.updated_at,
+                memory_id=candidate.memory_id,
+                version=record.version,
+                source_ref=candidate.source_ref,
+                scope=candidate.scope,
+                scope_id=candidate.scope_id,
+                recorded_at=record.updated_at,
             )
-            hits.append(MemoryRetrievalHit(record, citation, score))
+            hits.append(MemoryRetrievalHit(record=record, citation=citation, score=score))
+
         if request.strategy is MemoryRecallStrategy.RECENCY:
             hits.sort(key=lambda hit: (hit.record.created_at, hit.record.version), reverse=True)
         elif request.strategy is MemoryRecallStrategy.CONFIDENCE:
