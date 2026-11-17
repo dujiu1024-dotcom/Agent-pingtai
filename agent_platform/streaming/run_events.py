@@ -97,11 +97,13 @@ class RunEventBroker:
                 raise ValueError("Last-Event-ID does not belong to this Run")
             cursor = int(suffix)
         key = (tenant_id, run_id)
-        queue: asyncio.Queue[SSEEvent] = asyncio.Queue(max(self.subscriber_limit, len(self._history[key])))
         async with self._lock:
             history = tuple(
                 event for event in self._history[key]
                 if int((event.event_id or "").rpartition(":")[2]) > cursor
+            )
+            queue: asyncio.Queue[SSEEvent] = asyncio.Queue(
+                max(self.subscriber_limit, len(history))
             )
             oldest = (
                 int((self._history[key][0].event_id or "").rpartition(":")[2])
