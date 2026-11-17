@@ -10,7 +10,7 @@ from typing import Any, Mapping, Protocol, Sequence
 
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 
-_IDENTIFIER = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,62}$")
+_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.-]{0,62}$")
 _RECORD_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 _MAX_QUERY_CHARS = 4096
 
