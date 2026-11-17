@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
 import re
 import statistics
 import time
@@ -150,10 +152,12 @@ class MultiVariantEvaluationRunService:
         if not isinstance(model_variants, Sequence) or isinstance(model_variants, (str, bytes)):
             raise ValueError("model_variants must be a list")
         variants = tuple(model_variants)
-        if not 1 <= len(variants) <= _MAX_VARIANTS or len(set(variants)) != len(variants):
+        if not 1 <= len(variants) <= _MAX_VARIANTS:
             raise ValueError("model_variants must contain 1 to 16 unique variants")
         if any(not isinstance(key, str) or not _MODEL_KEY.fullmatch(key) for key in variants):
             raise ValueError("each model variant must be a valid model key")
+        if len(set(variants)) != len(variants):
+            raise ValueError("model_variants must contain unique variants")
 
         dataset: EvaluationDatasetVersion = await self.dataset_repository.get_version(
             tenant_id=tenant_id, dataset_id=dataset_id, version=dataset_version,
@@ -183,7 +187,13 @@ class MultiVariantEvaluationRunService:
                     )
                     if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 1:
                         raise ValueError("judge score must be between 0 and 1")
-                    scored = VariantCaseScore(case.case_id, float(score), score >= float(case.rubric.get("pass_threshold", 1.0)), "llm_judge" if rubric_kind == "llm_judge" else "custom")
+                                        threshold = case.rubric.get("pass_threshold", 1.0)
+                    if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
+                        raise ValueError("pass_threshold must be between 0 and 1")
+                    scored = VariantCaseScore(
+                        case.case_id, float(score), score >= threshold,
+                        "llm_judge" if rubric_kind == "llm_judge" else "custom",
+                    )
                 else:
                     score, method = _score_rule(case.rubric, case.expected_output, output.output_text)
                     threshold = case.rubric.get("pass_threshold", 1.0)
@@ -209,7 +219,7 @@ class MultiVariantEvaluationRunService:
                 cost_usd=str(total_cost) if total_cost is not None else None,
                 average_latency_ms=statistics.fmean(latencies),
                 p50_latency_ms=float(statistics.median(latencies)),
-                p95_latency_ms=sorted(latencies)[max(0, __import__("math").ceil(len(latencies) * .95) - 1)],
+                p95_latency_ms=sorted(latencies)[max(0, math.ceil(len(latencies) * .95) - 1)],
                 cases=scores,
             )
 
@@ -218,7 +228,7 @@ class MultiVariantEvaluationRunService:
         payload = {
             "eval_run_id": run_id, "dataset_id": dataset.dataset_id,
             "dataset_version": dataset.version,
-            "prompt_sha256": __import__("hashlib").sha256(prompt.encode("utf-8")).hexdigest(),
+            "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "variants": [{
                 **asdict(item),
                 "cases": [asdict(case) for case in item.cases],
