@@ -483,7 +483,7 @@ class PostgresKnowledgeRepository:
                 row = await cur.fetchone()
                 if row is None: return None
                 await conn.execute("DELETE FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id=%s", (tenant_id, chunk_id))
-                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'content_edited')", (tenant_id, chunk_id))
+                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'updated')", (tenant_id, chunk_id))
         return DocumentChunk(tenant_id=row["tenant_id"], document_id=str(row["document_id"]), document_version=row["document_version"], ordinal=row["ordinal"], text=row["body"], content_hash=row["content_hash"], start_offset=row["start_offset"], end_offset=row["end_offset"], page_number=row["page_number"], chunk_id=str(row["chunk_id"]), metadata=dict(row["metadata"] or {}))
 
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
