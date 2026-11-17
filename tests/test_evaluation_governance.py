@@ -46,5 +46,59 @@ class EvaluationGovernanceTests(unittest.TestCase):
         self.assertNotIn("alice@example.test", str(rows))
 
 
+    def test_gate_decision_hash_is_deterministic_for_payload(self):
+        import asyncio
+        from agent_platform.observability.evaluation_governance import (
+            EvaluationGovernanceService,
+        )
+
+        class Repository:
+            def __init__(self):
+                self.evidence = []
+            async def load_report_for_tenant(self, *, tenant_id, eval_run_id):
+                if tenant_id != "tenant-a" or eval_run_id not in {"base", "candidate"}:
+                    raise KeyError("not found")
+                return {"metrics": {"answer_term_f1": 0.95, "citation_recall": 0.9}}
+            async def save_comparison(self, *, tenant_id, comparison):
+                self.comparison = comparison
+            async def save_gate_evidence(self, evidence):
+                self.evidence.append(evidence)
+
+        async def run():
+            repository = Repository()
+            service = EvaluationGovernanceService(repository)
+            policy = EvaluationThresholdPolicy("prod", 4, {"answer_term_f1": 0.9}, {})
+            evidence = await service.decide_release(
+                tenant_id="tenant-a", candidate_run_id="candidate",
+                baseline_run_id="base", policy=policy,
+                evidence_refs=("ci://run/123", "eval://candidate"),
+            )
+            self.assertTrue(evidence.passed)
+            self.assertEqual(evidence.policy_version, 4)
+            self.assertEqual(len(evidence.content_sha256), 64)
+            self.assertEqual(repository.evidence, [evidence])
+            self.assertIsNotNone(evidence.comparison_id)
+        asyncio.run(run())
+
+    def test_missing_evidence_reference_blocks_gate(self):
+        import asyncio
+        from agent_platform.observability.evaluation_governance import EvaluationGovernanceService
+
+        class Repository:
+            async def load_report_for_tenant(self, **kwargs):
+                return {"metrics": {"answer_term_f1": 1.0}}
+            async def save_gate_evidence(self, evidence):
+                raise AssertionError("must not persist")
+        async def run():
+            service = EvaluationGovernanceService(Repository())
+            with self.assertRaises(ValueError):
+                await service.decide_release(
+                    tenant_id="tenant-a", candidate_run_id="run",
+                    policy=EvaluationThresholdPolicy("prod", 1, {"answer_term_f1": 0.9}, {}),
+                    evidence_refs=(),
+                )
+        asyncio.run(run())
+
+
 if __name__ == "__main__":
     unittest.main()
