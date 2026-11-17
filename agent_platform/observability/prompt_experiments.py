@@ -6,16 +6,17 @@ scorer reuses the deterministic evaluation primitives from observability.evaluat
 from __future__ import annotations
 
 import asyncio
+import inspect
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol
 from uuid import uuid4
 
 from agent_platform.observability.evaluation import EvalCase, evaluate_case
 from agent_platform.observability.evaluation_governance import compare_metric_reports
-from agent_platform.observability.prompts import PromptRegistry, PromptVersion, tenant_prompt_key
+from agent_platform.observability.prompts import PromptVersion, tenant_prompt_key
 
 
 @dataclass(frozen=True)
@@ -213,13 +214,17 @@ class PromptABTestService:
 
         scoped_prompt_id = tenant_prompt_key(tenant_id, prompt_id)
         listed = self.registry.list_variants(scoped_prompt_id)
+        if inspect.isawaitable(listed):
+            listed = await listed
         available = {item.name: item for item in listed if item.status == "active"}
         if any(name not in available for name in variants):
             raise KeyError("one or more active prompt variants do not exist in this tenant")
-        snapshots = {
-            name: self.registry.resolve(scoped_prompt_id, version=available[name].current_version)
-            for name in variants
-        }
+        snapshots = {}
+        for name in variants:
+            snapshot = self.registry.resolve(
+                scoped_prompt_id, version=available[name].current_version,
+            )
+            snapshots[name] = await snapshot if inspect.isawaitable(snapshot) else snapshot
         if any(snapshot.prompt_id != scoped_prompt_id for snapshot in snapshots.values()):
             raise PermissionError("prompt resolver returned a cross-tenant version")
 
@@ -256,13 +261,14 @@ class PromptABTestService:
                 )
                 judge_score = None
                 if self.judge is not None and case.rubric:
-                    judge_score = await asyncio.wait_for(
-                        self.judge.score(
-                            rubric=case.rubric, variables=dict(case.variables),
-                            output_text=execution.output_text,
-                        ),
-                        timeout=self.timeout_seconds,
-                    )
+                    async with semaphore:
+                        judge_score = await asyncio.wait_for(
+                            self.judge.score(
+                                rubric=case.rubric, variables=dict(case.variables),
+                                output_text=execution.output_text,
+                            ),
+                            timeout=self.timeout_seconds,
+                        )
                     if (
                         isinstance(judge_score, bool)
                         or not isinstance(judge_score, (int, float))
