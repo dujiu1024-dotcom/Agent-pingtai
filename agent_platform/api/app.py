@@ -391,6 +391,7 @@ def create_platform_app(
             "quotas": quota_reporting_store is not None or quota_store is not None,
             "metrics": metrics_exporter is not None,
             "audit": audit_reader is not None and audit_authorizer is not None,
+            "prompt_management": prompt_registry is not None and prompt_manage_authorizer is not None,
         },
         resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,
