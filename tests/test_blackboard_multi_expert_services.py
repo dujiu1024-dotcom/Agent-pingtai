@@ -689,7 +689,6 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
             await services.archive(state=context)
         self.assertEqual(len(repository.entries), 1)
 
-
     async def test_planner_rejects_duplicate_experts_and_fanout_overflow(self):
         class DuplicateCallbacks(WorkflowCallbacks):
             async def plan_experts(self, *, objective, run_context):
