@@ -228,6 +228,22 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             "webhook.delivery.attempt", "webhook.delivery",
         ])
 
+    async def test_dispatch_retry_persists_lease_fence_and_safe_error_code(self):
+        store = FakeWebhookStore(attempt=2)
+        transport = FakeWebhookTransport(code=503)
+        dispatcher = WebhookDispatcher(
+            store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            audit_sink=FakeAuditSink(),
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+            clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
+        )
+        result = await dispatcher.dispatch()
+        self.assertEqual(result["retrying"], 1)
+        self.assertEqual(len(store.retried), 1)
+        self.assertEqual(store.retried[0][3:], (503, "lease-1", "non_success_response"))
+
     async def test_dispatch_retries_then_dead_letters(self):
         store = FakeWebhookStore(attempt=8)
         transport = FakeWebhookTransport(code=503)
