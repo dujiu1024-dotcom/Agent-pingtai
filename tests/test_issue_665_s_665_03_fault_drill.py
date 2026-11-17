@@ -13,7 +13,8 @@ from uuid import uuid4
 
 from agent_platform.events.redis_streams import RedisStreamsTransport
 from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
-from agent_platform.quotas.service import InMemoryQuotaStore, QuotaService
+from agent_platform.quotas.postgres import PostgresQuotaStore
+from agent_platform.quotas.service import QuotaService
 from agent_platform.resilience import (
     CircuitBreaker,
     CircuitBreakerOpen,
@@ -30,37 +31,58 @@ class UnavailableRedis:
         raise ConnectionError("injected Redis outage")
 
 
-class PrimarySwitchQuotaStore:
-    """QuotaStore test adapter whose active PG primary can be promoted."""
+class FakeCursor:
+    def __init__(self, row=None):
+        self.row = row
+
+    async def fetchone(self):
+        return self.row
+
+
+class FakeTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+
+class FailoverPostgresConnection:
+    """Small SQL response fixture for exercising the real PostgresQuotaStore."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    def transaction(self):
+        return FakeTransaction()
+
+    async def execute(self, query, _params=None):
+        if "SELECT * FROM platform_quota_budgets" in query:
+            return FakeCursor(None)
+        if "platform_quota_reserve_split" in query:
+            return FakeCursor({
+                "warning_soft_tokens": False,
+                "warning_soft_cost": False,
+            })
+        if "platform_quota_settle" in query:
+            return FakeCursor({"settled": True})
+        raise AssertionError(f"unexpected SQL in fault drill: {query[:80]}")
+
+
+class PrimarySwitchConnectionFactory:
+    """Models a primary outage followed by promotion and endpoint refresh."""
 
     def __init__(self):
         self.primary = "pg-primary"
         self.primary_available = False
-        self.store = InMemoryQuotaStore()
 
-    def _require_primary(self):
+    async def __call__(self):
         if not self.primary_available:
             raise ConnectionError(f"{self.primary} unavailable")
-
-    async def get_budget(self, *args):
-        self._require_primary()
-        return await self.store.get_budget(*args)
-
-    async def put_budget(self, budget):
-        self._require_primary()
-        await self.store.put_budget(budget)
-
-    async def reserve(self, reservation):
-        self._require_primary()
-        return await self.store.reserve(reservation)
-
-    async def settle(self, reservation_id, event):
-        self._require_primary()
-        await self.store.settle(reservation_id, event)
-
-    async def release(self, reservation_id):
-        self._require_primary()
-        return await self.store.release(reservation_id)
+        return FailoverPostgresConnection()
 
     async def promote_standby(self):
         self.primary = "pg-standby-promoted"
@@ -118,7 +140,8 @@ class S66503FaultDrillTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.data["delivery"], "process_local_replay_only")
 
     async def test_postgres_primary_loss_blocks_quota_dispatch_until_standby_promotion(self):
-        store = PrimarySwitchQuotaStore()
+        connection_factory = PrimarySwitchConnectionFactory()
+        store = PostgresQuotaStore(connection_factory)
         calls = []
 
         class Harness:
@@ -147,11 +170,11 @@ class S66503FaultDrillTests(unittest.IsolatedAsyncioTestCase):
             await adapter.run(request)
         self.assertEqual(calls, [])
 
-        await store.promote_standby()
+        await connection_factory.promote_standby()
         result = await adapter.run(request)
         self.assertEqual(len(calls), 1)
         self.assertEqual(result.usage["input_tokens"], 3)
-        self.assertEqual(store.primary, "pg-standby-promoted")
+        self.assertEqual(connection_factory.primary, "pg-standby-promoted")
 
     async def test_vault_outage_fails_closed_without_secret_or_stale_value_fallback(self):
         def unavailable(_method, _url, _headers, _body, _timeout):
