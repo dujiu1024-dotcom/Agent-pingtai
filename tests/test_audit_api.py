@@ -68,6 +68,19 @@ class AuditApiTests(unittest.TestCase):
         response = self.client(False).get("/api/platform/v1/audit/identity-events")
         self.assertEqual(response.status_code, 403)
 
+    def test_identity_audit_query_is_tenant_scoped_and_filterable(self):
+        response = self.client(True).get(
+            "/api/platform/v1/audit/identity-events",
+            params={"actor_id": "actor-a", "action": "identity.login"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["tenant_id"], "tenant-a")
+        self.assertEqual(response.json()["items"][0]["action"], "identity.login")
+
+    def test_identity_audit_query_requires_permission(self):
+        response = self.client(False).get("/api/platform/v1/audit/identity-events")
+        self.assertEqual(response.status_code, 403)
+
     def test_audit_query_requires_explicit_permission(self):
         response = self.client(False).get("/api/platform/v1/audit/tool-events")
         self.assertEqual(response.status_code, 403)
