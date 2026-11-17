@@ -75,6 +75,7 @@ class TenantFairQuotaAdmissionController:
         async with condition:
             tenant_queue = queues.setdefault(request.tenant_id, deque())
             tenant_queue.append(ticket)
+            condition.notify_all()
             try:
                 async def wait_for_slot() -> QuotaReservation:
                     while True:
