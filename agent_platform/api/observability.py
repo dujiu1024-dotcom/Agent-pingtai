@@ -43,6 +43,7 @@ def create_observability_router(
     authorize_eval_review: Callable[[Principal], Any] | None = None,
     authorize_eval_gate_manage: Callable[[Principal], Any] | None = None,
     evaluation_governance_service: Any | None = None,
+    operational_health_monitor: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/observability", tags=["observability"])
 
@@ -53,6 +54,27 @@ def create_observability_router(
         if not callable(render):
             raise HTTPException(503, "metrics exporter is not configured")
         return PlainTextResponse(render(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+    @router.get("/health/capacity")
+    async def operational_capacity_health(request: Request):
+        _principal(request)
+        if operational_health_monitor is None:
+            raise HTTPException(503, "operational health monitor is not configured")
+        evaluate = getattr(operational_health_monitor, "evaluate", None)
+        if not callable(evaluate):
+            raise HTTPException(503, "operational health monitor is unavailable")
+        try:
+            result = evaluate()
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception:
+            raise HTTPException(503, "operational health evaluation failed") from None
+        if not isinstance(result, dict) or result.get("status") not in {
+            "ok", "warning", "critical", "unavailable",
+        }:
+            raise HTTPException(503, "operational health monitor returned an invalid result")
+        status_code = 503 if result["status"] in {"critical", "unavailable"} else 200
+        return JSONResponse(status_code=status_code, content=result)
 
     @router.get("/alerts")
     async def list_alerts(request: Request, limit: int = Query(default=100, ge=1, le=500)):
