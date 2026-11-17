@@ -150,5 +150,59 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(queue.job)
 
 
+    async def test_write_ahead_audit_failure_blocks_provider_side_effect(self):
+        repo = InMemoryConnectorRepository()
+        await repo.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-a", provider="drive",
+            secret_ref="secret://tenant-a/drive-a", scopes=("files.read",),
+        ))
+        provider = Provider()
+        queue = Queue()
+        service = DataConnectorService(
+            repository=repo, providers={"drive": provider}, secrets=Secrets(),
+            sink=Sink(), sync_queue=queue,
+        )
+
+        async def resolve_service(tenant_id):
+            return service
+
+        worker = ConnectorSyncWorker(
+            queue=queue, resolve_service=resolve_service,
+            worker_id="sync-worker", audit_sink=AuditSink(fail=True), lease_seconds=5,
+        )
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(provider.calls, 0)
+        self.assertEqual(queue.last_error, "runtimeerror")
+
+    async def test_success_audit_failure_does_not_retry_completed_provider_sync(self):
+        class FailSuccessAuditSink(AuditSink):
+            async def append(self, event):
+                if event.outcome == "succeeded":
+                    raise RuntimeError("audit store unavailable")
+                await super().append(event)
+
+        repo = InMemoryConnectorRepository()
+        await repo.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-a", provider="drive",
+            secret_ref="secret://tenant-a/drive-a", scopes=("files.read",),
+        ))
+        provider = Provider()
+        queue = Queue()
+        service = DataConnectorService(
+            repository=repo, providers={"drive": provider}, secrets=Secrets(),
+            sink=Sink(), sync_queue=queue,
+        )
+
+        async def resolve_service(tenant_id):
+            return service
+
+        worker = ConnectorSyncWorker(
+            queue=queue, resolve_service=resolve_service,
+            worker_id="sync-worker", audit_sink=FailSuccessAuditSink(), lease_seconds=5,
+        )
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(provider.calls, 1)
+        self.assertIsNone(queue.job)
+
 if __name__ == "__main__":
     unittest.main()
