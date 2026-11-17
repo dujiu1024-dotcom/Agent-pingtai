@@ -96,6 +96,7 @@ include = [
   "tests/test_prompt_experiments.py",
   "tests/test_prompt_operations.py",
   "tests/test_evaluation_store.py",
+  "tests/test_evaluation_worker.py",
   "tests/test_evaluation_governance.py",
   "tests/test_sandbox_oci.py",
   "tests/test_issue_21_c_21_02_security_negative.py",
