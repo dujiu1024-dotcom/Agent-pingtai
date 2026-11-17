@@ -86,6 +86,20 @@ class FakeAuditSink:
         self.events.append(event)
 
 
+class FakeAuditSink:
+    def __init__(self, fail=False, fail_on_call=None):
+        self.events = []
+        self.fail = fail
+        self.fail_on_call = fail_on_call
+        self.calls = 0
+
+    async def record(self, **event):
+        self.calls += 1
+        if self.fail or self.calls == self.fail_on_call:
+            raise RuntimeError("audit unavailable")
+        self.events.append(event)
+
+
 class FakeWebhookTransport:
     def __init__(self, code=204):
         self.code = code
