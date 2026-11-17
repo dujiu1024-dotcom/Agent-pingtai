@@ -34,6 +34,8 @@ class MemoryExtractionPreflightTests(unittest.IsolatedAsyncioTestCase):
             user_id="user-a",
             source_ref="session://tenant-a/session-a@1",
             user_message="Remember my preference",
+            assistant_message="I will remember that preference.",
+            completed=True,
         )
 
     async def test_invalid_later_draft_does_not_persist_earlier_candidate(self):
