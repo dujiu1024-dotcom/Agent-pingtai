@@ -103,7 +103,7 @@ document.addEventListener("submit",async e=>{
 // Capability visibility is presentation-only; every API still enforces authorization.
 const VIEW_CAPABILITIES={
  sessions:["sessions"],tasks:["task_execution"],approvals:["approvals"],
- registry:["registry","resource_registry"],
+ registry:["registry","resource_registry"],skills:["skills"],
  governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"]
 };
 function viewCapabilityEnabled(view){

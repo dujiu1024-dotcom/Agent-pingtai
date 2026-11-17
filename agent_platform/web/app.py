@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 STATIC = Path(__file__).with_name("static")
-ASSETS = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8"}
+ASSETS = {"app.js": "text/javascript; charset=utf-8", "skills.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8"}
 
 def create_platform_web_router() -> APIRouter:
     router = APIRouter(tags=["platform-web"])
