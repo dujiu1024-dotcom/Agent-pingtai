@@ -169,6 +169,59 @@ class SecurityNegativeRegressionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(secret, repr(self.audit.records))
         self.assertNotIn(secret, repr(self.observer.inputs))
 
+    async def test_authorizer_exception_denies_and_is_audited_before_handler(self):
+        async def broken_authorizer(_context, _arguments):
+            raise RuntimeError("authorization backend unavailable")
+
+        async def handler(arguments):
+            self.executed.append(dict(arguments))
+            return {"ok": True}
+
+        gateway = SupervisedToolGateway(
+            tools=(ToolDefinition(
+                "search", RiskLevel.READ_ONLY, handler,
+                resource_resolver=lambda arguments: str(arguments["resource"]),
+                resource_authorizer=broken_authorizer,
+            ),),
+            approval_verifier=_ApprovalVerifier(),
+            audit_sink=self.audit,
+        )
+        with self.assertRaisesRegex(ToolExecutionDenied, "not authorized"):
+            await gateway.call(
+                tenant_id="tenant-a", actor_id="agent-1", actor_roles=("agent",),
+                tool_name="search", arguments={"resource": "tenant:tenant-a:kb"},
+                resource="tenant:tenant-a:kb", run_id="run-1", call_id="call-2",
+            )
+        self.assertEqual(self.executed, [])
+        self.assertEqual(self.audit.records[-1]["outcome"], "denied")
+        self.assertEqual(self.audit.records[-1]["detail"], "RuntimeError")
+
+    async def test_write_ahead_audit_failure_prevents_tool_execution(self):
+        class UnavailableAudit:
+            async def record(self, **_kwargs):
+                raise RuntimeError("audit backend unavailable")
+
+        async def handler(arguments):
+            self.executed.append(dict(arguments))
+            return {"ok": True}
+
+        gateway = SupervisedToolGateway(
+            tools=(ToolDefinition(
+                "search", RiskLevel.READ_ONLY, handler,
+                resource_resolver=lambda arguments: str(arguments["resource"]),
+                resource_authorizer=lambda _context, _arguments: _allow(),
+            ),),
+            approval_verifier=_ApprovalVerifier(),
+            audit_sink=UnavailableAudit(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit backend unavailable"):
+            await gateway.call(
+                tenant_id="tenant-a", actor_id="agent-1", actor_roles=("agent",),
+                tool_name="search", arguments={"resource": "tenant:tenant-a:kb"},
+                resource="tenant:tenant-a:kb", run_id="run-1", call_id="call-3",
+            )
+        self.assertEqual(self.executed, [])
+
     def test_oci_sandbox_blocks_network_mounts_privileges_and_host_namespaces(self):
         command = OciSandboxRunner(
             OciSandboxConfig(image=IMAGE, runtime="podman")
@@ -234,6 +287,10 @@ class SecurityNegativeRegressionTests(unittest.IsolatedAsyncioTestCase):
             await self._call(arguments=hostile)
         self.assertEqual(self.executed, [])
         self.assertEqual(self.audit.records[-1]["outcome"], "denied")
+
+
+async def _allow():
+    return True
 
 
 if __name__ == "__main__":
