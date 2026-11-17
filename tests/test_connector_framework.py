@@ -4,7 +4,6 @@ import unittest
 
 from agent_platform.connectors.base import (
     BaseConnector,
-    ConnectorAuthRequest,
     ConnectorAuthenticationError,
     SecretStoreConnectorAuthenticator,
 )
