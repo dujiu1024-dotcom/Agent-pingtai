@@ -123,6 +123,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -140,7 +142,7 @@ jobs:
         run: python -m unittest tests.test_issue_614_runtime_composition -v
 
       - name: Verify legacy v1 archive and compatibility launchers
-        run: python -m unittest tests.test_issue_666_s_666_03_legacy_archive -v
+        run: python -m unittest tests.test_issue_666_s_666_03_legacy_archive tests.test_issue_666_a_666_07_archive_history -v
 
   production-release-evidence:
     needs:
