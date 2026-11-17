@@ -166,7 +166,7 @@ def create_platform_app(
     app.include_router(create_identity_router(identity=identity))
     app.include_router(create_health_router(
         readiness_checks=(
-            readiness_checks if readiness_checks is not None else {"redis": redis.ping}
+            readiness_checks if readiness_checks is not None else ({"redis": redis.ping} if callable(getattr(redis, "ping", None)) else {})
         )
     ))
     evaluation_configured = any(value is not None for value in (
