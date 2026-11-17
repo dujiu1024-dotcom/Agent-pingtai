@@ -109,6 +109,27 @@ def route_after_approval(state: Mapping[str, Any]) -> str:
     return "archive" if approval.get("approved") is True else "reject"
 
 
+def expert_dispatch_payloads(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Build isolated branch payloads for concurrent expert execution."""
+    base_context = copy.deepcopy(dict(state.get("run_context", {})))
+    base_context.update({
+        "tenant_id": state["tenant_id"],
+        "task_id": state.get("task_id"),
+        "run_id": state["run_id"],
+    })
+    return [
+        {
+            "tenant_id": state["tenant_id"],
+            "task_id": state.get("task_id"),
+            "run_id": state["run_id"],
+            "objective": state["objective"],
+            "run_context": copy.deepcopy(base_context),
+            "assignment": copy.deepcopy(dict(assignment)),
+        }
+        for assignment in state.get("expert_assignments", [])
+    ]
+
+
 def build_multi_expert_workflow(
     *,
     services: MultiExpertServices,
