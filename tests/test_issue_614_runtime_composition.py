@@ -119,10 +119,6 @@ class TrustedBuilderDiscoveryTests(unittest.TestCase):
                 load_trusted_run_execution_builder(required=True)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ProductionEntrypointWiringTests(unittest.TestCase):
     def test_production_root_installs_builder_runtime_into_api_and_worker_slots(self):
         import importlib
@@ -194,3 +190,8 @@ class ProductionEntrypointWiringTests(unittest.TestCase):
         self.assertIs(installed["task_service_resolver"], runtime.task_service_resolver)
         self.assertIs(installed["task_authorizer"], runtime.task_authorizer)
         self.assertIs(installed["run_executor_resolver"], runtime.run_executor_resolver)
+
+
+
+if __name__ == "__main__":
+    unittest.main()
