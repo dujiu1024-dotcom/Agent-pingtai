@@ -14,10 +14,20 @@ class ExpertProfile:
     enabled: bool = True
 
     def __post_init__(self) -> None:
-        if not self.expert_id.strip() or not self.name.strip():
-            raise ValueError("expert_id and name must not be empty")
-        if any(not item.strip() for item in self.capabilities):
-            raise ValueError("expert capabilities must not be empty")
+        if not isinstance(self.expert_id, str) or not self.expert_id.strip():
+            raise ValueError("expert_id must be a non-empty string")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("expert name must be a non-empty string")
+        if not isinstance(self.description, str):
+            raise ValueError("expert description must be a string")
+        if not isinstance(self.enabled, bool):
+            raise ValueError("expert enabled flag must be boolean")
+        if not isinstance(self.capabilities, (set, frozenset, list, tuple)):
+            raise ValueError("expert capabilities must be a collection of strings")
+        normalized = frozenset(self.capabilities)
+        if any(not isinstance(item, str) or not item.strip() for item in normalized):
+            raise ValueError("expert capabilities must contain non-empty strings")
+        object.__setattr__(self, "capabilities", normalized)
 
 
 class ExpertRegistry(Protocol):
@@ -68,9 +78,9 @@ class ControlPlaneExpertRegistry:
         raw_capabilities = definition.get("capabilities", ())
         if not isinstance(raw_capabilities, (list, tuple, set, frozenset)):
             raise ValueError("published Agent capabilities must be an array")
-        capabilities = frozenset(str(item) for item in raw_capabilities)
-        if any(not item.strip() for item in capabilities):
-            raise ValueError("published Agent capabilities must not be empty")
+        if any(not isinstance(item, str) or not item.strip() for item in raw_capabilities):
+            raise ValueError("published Agent capabilities must contain non-empty strings")
+        capabilities = frozenset(raw_capabilities)
         enabled = definition.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ValueError("published Agent enabled flag must be boolean")

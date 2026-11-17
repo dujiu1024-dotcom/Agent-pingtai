@@ -8,6 +8,28 @@ from agent_platform.workflows.multi_expert import (
 
 
 class MultiExpertRoutingTests(unittest.TestCase):
+
+    def test_dispatch_payloads_isolate_context_and_allow_missing_task_id(self):
+        from agent_platform.workflows.multi_expert import expert_dispatch_payloads
+
+        state = {
+            "tenant_id": "tenant-a",
+            "run_id": "run-1",
+            "objective": "analyze",
+            "run_context": {"nested": {"value": "shared"}},
+            "expert_assignments": [
+                {"expert_id": "researcher"},
+                {"expert_id": "critic"},
+            ],
+        }
+        payloads = expert_dispatch_payloads(state)
+        self.assertEqual(len(payloads), 2)
+        self.assertIsNone(payloads[0]["task_id"])
+        self.assertIsNot(payloads[0]["run_context"], payloads[1]["run_context"])
+        payloads[0]["run_context"]["nested"]["value"] = "mutated"
+        self.assertEqual(payloads[1]["run_context"]["nested"]["value"], "shared")
+        self.assertEqual(state["run_context"]["nested"]["value"], "shared")
+
     def test_review_routes_conflicts_before_approval(self):
         self.assertEqual(
             route_after_review({

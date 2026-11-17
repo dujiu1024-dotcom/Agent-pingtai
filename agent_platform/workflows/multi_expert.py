@@ -6,6 +6,7 @@ blackboard persistence, Harness execution, conflict resolution, and approvals.
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Mapping, Sequence
 from operator import add
 from typing import Annotated, Any, Protocol, TypedDict
@@ -108,6 +109,27 @@ def route_after_approval(state: Mapping[str, Any]) -> str:
     return "archive" if approval.get("approved") is True else "reject"
 
 
+def expert_dispatch_payloads(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Build isolated branch payloads for concurrent expert execution."""
+    base_context = copy.deepcopy(dict(state.get("run_context", {})))
+    base_context.update({
+        "tenant_id": state["tenant_id"],
+        "task_id": state.get("task_id"),
+        "run_id": state["run_id"],
+    })
+    return [
+        {
+            "tenant_id": state["tenant_id"],
+            "task_id": state.get("task_id"),
+            "run_id": state["run_id"],
+            "objective": state["objective"],
+            "run_context": copy.deepcopy(base_context),
+            "assignment": copy.deepcopy(dict(assignment)),
+        }
+        for assignment in state.get("expert_assignments", [])
+    ]
+
+
 def build_multi_expert_workflow(
     *,
     services: MultiExpertServices,
@@ -116,12 +138,13 @@ def build_multi_expert_workflow(
     """Compile the multi-expert graph with a caller-supplied durable checkpointer."""
 
     def workflow_context(state: MultiExpertState) -> dict[str, Any]:
-        return {
-            **state.get("run_context", {}),
+        context = copy.deepcopy(dict(state.get("run_context", {})))
+        context.update({
             "tenant_id": state["tenant_id"],
             "task_id": state.get("task_id"),
             "run_id": state["run_id"],
-        }
+        })
+        return context
 
     async def plan(state: MultiExpertState) -> dict[str, Any]:
         assignments = await services.plan_experts(
@@ -140,18 +163,8 @@ def build_multi_expert_workflow(
         if not assignments:
             return "synthesize"
         return [
-            Send(
-                "run_expert",
-                {
-                    "tenant_id": state["tenant_id"],
-                    "task_id": state["task_id"],
-                    "run_id": state["run_id"],
-                    "objective": state["objective"],
-                    "run_context": workflow_context(state),
-                    "assignment": assignment,
-                },
-            )
-            for assignment in assignments
+            Send("run_expert", payload)
+            for payload in expert_dispatch_payloads(state)
         ]
 
     async def run_expert(state: MultiExpertState) -> dict[str, Any]:
