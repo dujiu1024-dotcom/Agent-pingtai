@@ -31,6 +31,11 @@ class RunReplayServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.context["phase"],"planning")
         self.assertEqual(session.context["version"],7)
         self.assertEqual(session.context["memory_snapshot"]["facts"],["persisted"])
+        timeline=await self.service.list_events(
+            tenant_id="tenant-a",run_id="run-a",session_id=session.session_id,
+        )
+        self.assertEqual(timeline["total"],3)
+        self.assertEqual(timeline["items"][1]["step_id"],"step-a")
         first=await self.service.step(tenant_id="tenant-a",run_id="run-a",session_id=session.session_id)
         self.assertEqual(first["event"]["event_type"],"RUN_START")
         paused=await self.service.pause(tenant_id="tenant-a",run_id="run-a",session_id=session.session_id)
