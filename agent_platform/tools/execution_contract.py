@@ -145,14 +145,14 @@ class ToolGatewayContract:
             if cancel_waiter is not None and cancel_waiter in done:
                 await self._audit.record(
                     tenant_id=principal.tenant_id, actor_id=principal.actor_id,
-                    action="tool.call", subject_id=principal.run_id, outcome="cancelled",
-                    detail={"tool_name": tool_name, "call_id": call_id},
+                    action="tool.call.cancelled", subject_id=principal.run_id, outcome="failed",
+                    detail={"tool_name": tool_name, "call_id": call_id, "status": "cancelled"},
                 )
                 raise ToolCallCancelled("tool call was cancelled")
             await self._audit.record(
                 tenant_id=principal.tenant_id, actor_id=principal.actor_id,
-                action="tool.call", subject_id=principal.run_id, outcome="timed_out",
-                detail={"tool_name": tool_name, "call_id": call_id,
+                action="tool.call.timed_out", subject_id=principal.run_id, outcome="failed",
+                detail={"tool_name": tool_name, "call_id": call_id, "status": "timed_out",
                         "timeout_seconds": float(timeout_seconds)},
             )
             raise ToolCallTimedOut("tool call exceeded its deadline")
@@ -165,8 +165,8 @@ class ToolGatewayContract:
                     pass
             await self._audit.record(
                 tenant_id=principal.tenant_id, actor_id=principal.actor_id,
-                action="tool.call", subject_id=principal.run_id, outcome="cancelled",
-                detail={"tool_name": tool_name, "call_id": call_id,
+                action="tool.call.cancelled", subject_id=principal.run_id, outcome="failed",
+                detail={"tool_name": tool_name, "call_id": call_id, "status": "cancelled",
                         "reason": "caller_cancelled"},
             )
             raise
