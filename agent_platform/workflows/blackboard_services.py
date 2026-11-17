@@ -74,7 +74,7 @@ class BlackboardMultiExpertServices:
         # Deterministic IDs make retries idempotent only when the retried
         # operation has the same semantic payload. Never silently accept a
         # different model result under an already-used run/stage key.
-        fields = ("scope", "scope_id", "kind", "content", "author_id", "source_refs", "version", "status", "created_at", "correlation_id")
+        fields = ("scope", "scope_id", "kind", "content", "author_id", "source_refs", "version", "status")
         if any(getattr(existing, field) != getattr(proposed, field) for field in fields):
             raise RuntimeError(
                 f"Blackboard idempotency conflict for entry {proposed.entry_id}"
