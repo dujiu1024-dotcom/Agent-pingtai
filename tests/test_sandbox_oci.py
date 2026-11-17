@@ -15,6 +15,8 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
             "MODEL_API_KEY", "AWS_ACCESS_KEY_ID", "GITHUB_TOKEN",
             "AUTHORIZATION", "SSH_AUTH_SOCK", "DATABASE_PASSWORD",
             "TLS_PRIVATE_KEY", "SESSION_COOKIE", "DOCKER_HOST",
+            "DATABASE_URL", "PLATFORM_DB_URL", "PGHOST", "PGPASSWORD",
+            "REDIS_URL", "MYSQL_DSN", "DB_CONNECTION_STRING",
         ):
             with self.subTest(key=key):
                 with self.assertRaisesRegex(ValueError, "credential-bearing"):
@@ -46,6 +48,31 @@ class OciSandboxConfigTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("--volume", command)
         self.assertNotIn("-v", command)
         self.assertEqual(command[-5:], (IMAGE, "python", "-I", "-c", "print('ok')"))
+
+    def test_command_cannot_inherit_host_database_or_runtime_access(self):
+        runner = OciSandboxRunner(
+            OciSandboxConfig(
+                image=IMAGE, runtime="podman",
+                allowed_environment_keys=frozenset({"LANG"}),
+            )
+        )
+        command = runner.build_command(
+            ("python", "-c", "pass"), environment={"LANG": "C.UTF-8"},
+        )
+        forbidden_options = {
+            "--network=host", "--privileged", "--pid=host", "--ipc=host",
+            "--uts=host", "--userns=host", "--env-file", "--mount",
+            "--volume", "--device", "--add-host",
+        }
+        self.assertTrue(forbidden_options.isdisjoint(command))
+        self.assertNotIn("/var/run/docker.sock", command)
+        self.assertNotIn("/run/podman/podman.sock", command)
+        env_values = [
+            command[i + 1] for i, value in enumerate(command[:-1])
+            if value == "--env"
+        ]
+        self.assertEqual(env_values, ["LANG=C.UTF-8"])
+        self.assertIn("--network=none", command)
 
     def test_rejects_untrusted_or_secret_environment_values(self):
         runner = OciSandboxRunner(OciSandboxConfig(image=IMAGE, runtime="podman"))

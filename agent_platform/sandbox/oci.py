@@ -67,8 +67,11 @@ class OciSandboxConfig:
                 "CREDENTIAL", "CREDENTIALS", "AUTH", "AUTHORIZATION", "BEARER",
                 "COOKIE", "COOKIES", "SESSION", "SESSIONS", "SOCK", "SOCKET",
                 "CERT", "CERTIFICATE", "PRIVATE", "SSH", "DOCKER",
+                "DB", "DATABASE", "POSTGRES", "MYSQL", "REDIS", "SQLITE",
+                "DSN", "CONNECTION", "JDBC", "URI",
             }
-            if components & sensitive_components:
+            database_endpoint_prefixes = ("PG", "POSTGRES", "MYSQL", "REDIS", "SQLITE")
+            if components & sensitive_components or key.startswith(database_endpoint_prefixes):
                 raise ValueError("credential-bearing environment keys are forbidden in the sandbox")
 
 
