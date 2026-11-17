@@ -363,6 +363,7 @@ def create_platform_app(
         app.include_router(create_webhook_admin_router(
             service=webhook_admin_service,
             authorize_manage=webhook_admin_authorizer,
+            audit_writer=resource_audit_writer,
         ))
     webhook_delivery_admin_configured = any(value is not None for value in (
         webhook_delivery_store, webhook_delivery_authorizer,
