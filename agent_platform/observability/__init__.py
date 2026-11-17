@@ -7,6 +7,7 @@ from agent_platform.observability.langfuse import LangfuseObservationSink
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.observability.prompts import PromptRegistry
+from agent_platform.observability.telemetry import PlatformTelemetry, StructuredEventLogger
 
 __all__ = [
     "InMemoryMetricsRecorder",
@@ -16,5 +17,7 @@ __all__ = [
     "ModelPricing",
     "ObservedHarnessAdapter",
     "PromptRegistry",
+    "PlatformTelemetry",
+    "StructuredEventLogger",
     "PrometheusClientMetricsRecorder",
 ]

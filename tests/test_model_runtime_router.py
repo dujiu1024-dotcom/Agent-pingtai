@@ -278,6 +278,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('model_requests_total{component="model",model_template="primary@1",status="failed"}', counters)
         self.assertIn('model_requests_total{component="model",model_template="fallback@2",status="response_received"}', counters)
         self.assertIn("model_fallbacks_total", " ".join(counters))
+        self.assertIn("model_tokens_total", " ".join(counters))
         self.assertIn("model_input_tokens_total", " ".join(counters))
         self.assertIn("model_output_tokens_total", " ".join(counters))
 

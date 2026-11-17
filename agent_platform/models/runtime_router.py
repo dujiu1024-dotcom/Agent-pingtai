@@ -555,6 +555,10 @@ class OpenAICompatibleModelRouter:
                         "model transport outcome is ambiguous; quota reservation retained for reconciliation"
                     ) from exc
                 last_error = exc
+                safe_metric(
+                    self.metrics, "increment", "model_retries_total",
+                    labels={**labels, "operation": "retry"},
+                )
                 continue
             finally:
                 safe_metric(
@@ -626,11 +630,39 @@ class OpenAICompatibleModelRouter:
                         price_card_version=price_card_version,
                         source="provider_reported",
                     )
+                    safe_metric(
+                        self.metrics, "increment", "model_cost_usd_total",
+                        float(Decimal(actual_micros) / Decimal(1_000_000)),
+                        labels=labels,
+                    )
                 except Exception as exc:
                     # A successful provider response may be billable; retain reservation if settlement fails.
                     raise ModelUsageRecordingError(
                         "model response succeeded but quota settlement failed"
                     ) from exc
+            elif self.quota_cost_estimator is not None:
+                # Cost telemetry is best-effort when quota enforcement is disabled.
+                try:
+                    estimated_micros = await self.quota_cost_estimator.estimate_micros(
+                        model_id=config.model_id,
+                        usage={**dict(usage), "input_tokens": input_tokens, "output_tokens": output_tokens},
+                    )
+                    if (
+                        isinstance(estimated_micros, int)
+                        and not isinstance(estimated_micros, bool)
+                        and estimated_micros >= 0
+                    ):
+                        safe_metric(
+                            self.metrics, "increment", "model_cost_usd_total",
+                            float(Decimal(estimated_micros) / Decimal(1_000_000)),
+                            labels=labels,
+                        )
+                except Exception:
+                    pass
+            safe_metric(
+                self.metrics, "increment", "model_tokens_total",
+                input_tokens + output_tokens, labels=labels,
+            )
             if input_tokens > 0:
                 safe_metric(
                     self.metrics, "increment", "model_input_tokens_total", input_tokens,

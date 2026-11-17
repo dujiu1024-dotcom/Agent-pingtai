@@ -395,6 +395,10 @@ class SupervisedToolGateway:
                         "status": status, "result_type": type(result).__name__,
                     })
             except Exception as exc:
+                safe_metric(
+                    self._metrics, "increment", "tool_failures_total",
+                    labels={"component": "tool", "operation": "invoke", "status": "failed"},
+                )
                 if effects is not None:
                     await effects.fail(
                         tenant_id=tenant_id, run_id=run_key, call_id=call_key,
