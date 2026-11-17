@@ -1,0 +1,37 @@
+{
+  "release_id": "release-2.1.0",
+  "from_version": "2.0.3",
+  "to_version": "2.1.0",
+  "image_digest": "registry.example/agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "config_revision": "config-2026-11-17-2",
+  "previous_config_revision": "config-2026-11-10-1",
+  "compatibility": {
+    "min_app_version": "2.0.0",
+    "max_app_version": "2.1.0",
+    "min_schema_version": "10",
+    "max_schema_version": "11",
+    "window_minutes": 1440,
+    "old_and_new_coexist": true
+  },
+  "migration": {
+    "preflight_passed": true,
+    "backup_ref": "backup://verified/replace-with-real-manifest-reference",
+    "expand_contract": true,
+    "destructive": true,
+    "contract_after_compatibility_window": true,
+    "rollback_strategy": "compensating_migration",
+    "compensating_migration_ref": "migrations/rollback-210.sql",
+    "migration_ref": "migrations/expand-210.sql"
+  },
+  "rollout": {
+    "batches": [5, 25, 70],
+    "health_gate": true,
+    "pause_minutes": 10
+  },
+  "rollback": {
+    "previous_image_digest": "registry.example/agent@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "previous_config_revision": "config-2026-11-10-1",
+    "config_restore_ref": "config-snapshots/config-2026-11-10-1",
+    "automatic_on_health_failure": true
+  }
+}
