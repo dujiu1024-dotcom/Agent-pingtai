@@ -136,5 +136,39 @@ class PromptRegistryApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+    def test_deployment_fails_closed_without_gate_and_when_gate_rejects(self):
+        for gate, expected_status in (
+            (None, 503),
+            (lambda **kwargs: {"gate_passed": False, "gate_failures": ["pass_rate_below_threshold"]}, 409),
+        ):
+            app = FastAPI()
+            registry = AsyncPromptRegistry()
+            app.include_router(create_prompt_registry_router(
+                registry=registry,
+                authorize=lambda actor, prompt_id, action: True,
+                evaluate_gate=gate,
+            ))
+
+            @app.middleware("http")
+            async def identity(request, call_next):
+                request.state.__setattr__(
+                    "identity.principal",
+                    Principal("user-1", "tenant-a", "session-1", "user@example.com", "User"),
+                )
+                return await call_next(request)
+
+            client = TestClient(app)
+            created = client.post(
+                "/api/platform/v1/prompts/support/versions",
+                json={"template": "Answer {question}"},
+            )
+            self.assertEqual(created.status_code, 201)
+            response = client.post(
+                "/api/platform/v1/prompts/support/activate", json={"version": 1},
+            )
+            self.assertEqual(response.status_code, expected_status)
+            self.assertEqual(registry.inner._active, {})
+
+
 if __name__ == "__main__":
     unittest.main()
