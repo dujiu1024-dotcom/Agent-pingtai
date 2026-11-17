@@ -72,7 +72,7 @@ class AdminResourceGovernanceAcceptanceTests(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_model_and_tool_admin_can_version_publish_list_and_enforce_permissions(self):
-        for kind, item_id in (("model_provider", "provider-a"), ("tool", "search-tool")):
+        for kind, item_id in (("model_provider", "provider-a"), ("model_template", "chat-template"), ("tool", "search-tool")):
             created = self.client.post(
                 f"/api/platform/v1/registry/{kind}/{item_id}/versions",
                 json={"definition": {"name": item_id, "config": {"mode": "safe"}}},
@@ -91,6 +91,18 @@ class AdminResourceGovernanceAcceptanceTests(unittest.TestCase):
             )
             self.assertEqual([v["version"] for v in history.json()["items"]], [1, 2])
             self.assertEqual(history.json()["items"][1]["status"], "published")
+
+            reader_history = self.client.get(
+                f"/api/platform/v1/registry/{kind}/{item_id}/versions",
+                headers={"x-user": "reader"},
+            )
+            self.assertEqual(reader_history.status_code, 200)
+            publish_denied = self.client.post(
+                f"/api/platform/v1/registry/{kind}/{item_id}/versions/1/publish",
+                json={},
+                headers={"x-user": "reader"},
+            )
+            self.assertEqual(publish_denied.status_code, 403)
 
             draft = self.client.post(
                 f"/api/platform/v1/registry/{kind}/{item_id}/versions",
