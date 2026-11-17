@@ -58,6 +58,23 @@ class QuotaRuntimeAlertTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(alerts[0]["run_id"], "run-alert")
         self.assertTrue(alerts[0]["warnings"])
 
+    async def test_missing_alert_sink_fails_closed_before_dispatch(self):
+        await self.configure_soft_budget()
+        inner = RecordingHarness()
+        adapter = QuotaEnforcedHarnessAdapter(
+            inner, quota_service=self.service,
+            estimate_request=lambda _request: (100, Decimal("0.10")),
+            estimate_actual_cost=lambda _request, _result: Decimal("0.01"),
+        )
+        with self.assertRaisesRegex(RuntimeError, "warning sink is not configured"):
+            await adapter.run(self.request())
+        self.assertEqual(inner.calls, 0)
+        tokens, cost, concurrency = await self.store.usage(
+            "tenant-a", "tenant", "tenant-a",
+            self.now - timedelta(hours=1), self.now + timedelta(hours=1),
+        )
+        self.assertEqual((tokens, cost, concurrency), (0, Decimal("0"), 0))
+
     async def test_alert_delivery_failure_fails_closed_before_dispatch(self):
         await self.configure_soft_budget()
         inner = RecordingHarness()
