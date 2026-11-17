@@ -19,6 +19,7 @@ REQUIRED_CHECKS = (
     "backup_restore", "production_smoke", "migration", "rollback",
 )
 ARTIFACT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+ARCHIVE_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PLACEHOLDER_RE = re.compile(
     r"(?:^|[\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\s/_-])",
@@ -82,12 +83,16 @@ def validate_evidence(
     if type(document.get("schema_version")) is not int or document["schema_version"] != 2:
         errors.append("schema_version must be the integer 2")
     for field in ("release_id", "environment", "release_owner", "release_approver",
-                  "evidence_archive_ref"):
+                  "evidence_archive_ref", "evidence_archive_sha256"):
         _required_text(document, field, errors)
     if document.get("environment") != "production":
         errors.append("environment: must equal production")
     if document.get("release_owner") == document.get("release_approver"):
         errors.append("release_approver: must be independent from release_owner")
+
+    archive_digest = document.get("evidence_archive_sha256")
+    if not isinstance(archive_digest, str) or not ARCHIVE_DIGEST_RE.fullmatch(archive_digest):
+        errors.append("evidence_archive_sha256: must be sha256:<64 lowercase hex characters>")
 
     commit_sha = document.get("commit_sha")
     if not isinstance(commit_sha, str) or not SHA_RE.fullmatch(commit_sha):
