@@ -96,7 +96,7 @@ class GraphEvidenceAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.raw_content = (
             "Acme Research is headquartered in London. "
-            "Ada Lovelace leads its data engineering group. "
+            "Ada Lovelace works for Acme Research as its data engineering lead. "
             "The group maintains the Atlas platform. "
             "Acme Research uses PostgreSQL for durable metadata storage. "
             "Ada joined Acme Research in 2021."
@@ -163,7 +163,7 @@ class GraphEvidenceAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             relations=(
                 GraphRelationDraft(
                     "ada-works-at-acme", "works_for", "person-ada", "company-acme",
-                    {}, 0.91, self._evidence("Ada Lovelace"),
+                    {}, 0.91, self._evidence("Ada Lovelace works for Acme Research"),
                 ),
             ),
         )
