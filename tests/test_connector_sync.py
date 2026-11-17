@@ -33,6 +33,17 @@ class Sink:
     def __init__(self):
         self.items = []
 
+
+class AuditSink:
+    def __init__(self, *, fail=False):
+        self.events = []
+        self.fail = fail
+
+    async def append(self, event):
+        if self.fail:
+            raise RuntimeError("audit unavailable")
+        self.events.append(event)
+
     async def upsert_page(self, *, tenant_id, connection_id, items):
         self.items.extend(items)
 
@@ -101,9 +112,10 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(tenant_id, "tenant-a")
             return service
 
+        audit = AuditSink()
         worker = ConnectorSyncWorker(
             queue=queue, resolve_service=resolve_service,
-            worker_id="sync-worker", lease_seconds=5,
+            worker_id="sync-worker", audit_sink=audit, lease_seconds=5,
         )
         self.assertTrue(await worker.run_once())
         self.assertIsNotNone(queue.job)
@@ -114,6 +126,12 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.cursor, {"page": 2})
         self.assertEqual(len(sink.items), 1)
         self.assertEqual(provider.calls, 2)
+        self.assertEqual([event.outcome for event in audit.events], [
+            "started", "failed", "started", "succeeded",
+        ])
+        self.assertTrue(all(event.actor_id == "system:connector-sync-worker" for event in audit.events))
+        self.assertTrue(all(event.tenant_id == "tenant-a" for event in audit.events))
+        self.assertNotIn("short-lived-token", repr(audit.events))
 
     async def test_request_sync_rejects_revoked_connections(self):
         repo = InMemoryConnectorRepository()
