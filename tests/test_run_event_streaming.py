@@ -31,6 +31,19 @@ class RunEventBrokerTests(unittest.IsolatedAsyncioTestCase):
                 tenant_id="t", run_id="r", last_event_id="r:1",
             )
 
+    async def test_sensitive_fields_are_redacted_and_reserved_envelope_is_immutable(self):
+        broker = RunEventBroker()
+        await broker.publish(
+            tenant_id="t", run_id="r", event_type="TOOL_OUTPUT",
+            data={"api_key": "do-not-send", "event_type": "FORGED", "output": "ok"},
+        )
+        stream = await broker.subscribe(tenant_id="t", run_id="r")
+        event = await anext(stream)
+        self.assertEqual(event.data["api_key"], "[REDACTED]")
+        self.assertEqual(event.data["event_type"], "TOOL_OUTPUT")
+        self.assertEqual(event.data["output"], "ok")
+        await stream.aclose()
+
     async def test_slow_subscriber_is_detached_without_blocking_publish(self):
         broker = RunEventBroker(history_limit=10, subscriber_limit=1)
         stream = await broker.subscribe(tenant_id="t", run_id="r")
