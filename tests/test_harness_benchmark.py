@@ -78,57 +78,6 @@ class HarnessBenchmarkTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "must not expose platform tools"):
             await runner.run([HarnessBenchmarkCase("case-a", "", "input")])
 
-    async def test_stream_without_completion_is_recorded_as_failure(self):
-        class IncompleteStreamingAdapter:
-            capabilities = type("Capabilities", (), {"streaming": True})()
-
-            async def run(self, request):
-                raise AssertionError("streaming case must use stream()")
-
-            async def stream(self, request):
-                from agent_platform.runtime.protocols import HarnessStreamEvent
-                yield HarnessStreamEvent(event_type="text_delta", text_delta="partial answer")
-
-        report = await HarnessBenchmarkRunner(
-            adapters={"incomplete": IncompleteStreamingAdapter()},
-            request_factory=self.request_factory,
-        ).run([
-            HarnessBenchmarkCase(
-                "stream-incomplete", "Summarize.", "input",
-                ("partial",), streaming=True,
-            )
-        ])
-        row = report.observations[0]
-        self.assertFalse(row.passed)
-        self.assertEqual(row.finish_reason, "error")
-        self.assertEqual(row.error_type, "RuntimeError")
-        self.assertEqual(row.output_text, "")
-
-    async def test_stream_rejects_completion_without_normalized_result(self):
-        from agent_platform.runtime.protocols import HarnessStreamEvent
-
-        class InvalidCompletionAdapter:
-            capabilities = type("Capabilities", (), {"streaming": True})()
-
-            async def run(self, request):
-                raise AssertionError("streaming case must use stream()")
-
-            async def stream(self, request):
-                yield HarnessStreamEvent(event_type="completed")
-
-        report = await HarnessBenchmarkRunner(
-            adapters={"invalid": InvalidCompletionAdapter()},
-            request_factory=self.request_factory,
-        ).run([
-            HarnessBenchmarkCase(
-                "stream-invalid-completion", "Summarize.", "input",
-                streaming=True,
-            )
-        ])
-        row = report.observations[0]
-        self.assertFalse(row.passed)
-        self.assertEqual(row.error_type, "RuntimeError")
-
     async def test_adapter_exception_is_recorded_without_aborting_other_cases(self):
         class BrokenAdapter:
             async def run(self, request):

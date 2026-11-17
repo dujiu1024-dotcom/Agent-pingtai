@@ -86,6 +86,7 @@ class HarnessBenchmarkObservation:
     streamed_events: int = 0
     error_type: str | None = None
     tool_calls_count: int = 0
+    skipped: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,36 +99,42 @@ class HarnessBenchmarkReport:
             grouped.setdefault(observation.runtime, []).append(observation)
         result: dict[str, dict[str, float | int]] = {}
         for runtime, rows in grouped.items():
+            eligible = [row for row in rows if not row.skipped]
+            eligible_count = len(eligible)
             result[runtime] = {
                 "cases": len(rows),
-                "passed": sum(row.passed for row in rows),
-                "pass_rate": round(sum(row.passed for row in rows) / len(rows), 4),
+                "eligible_cases": eligible_count,
+                "skipped_cases": sum(row.skipped for row in rows),
+                "passed": sum(row.passed for row in eligible),
+                "pass_rate": round(
+                    sum(row.passed for row in eligible) / eligible_count, 4
+                ) if eligible_count else 0.0,
                 "average_duration_ms": round(
-                    sum(row.duration_ms for row in rows) / len(rows), 2
-                ),
+                    sum(row.duration_ms for row in eligible) / eligible_count, 2
+                ) if eligible_count else 0.0,
                 "total_input_tokens": sum(
-                    row.usage.get("input_tokens", 0) for row in rows
+                    row.usage.get("input_tokens", 0) for row in eligible
                 ),
                 "total_output_tokens": sum(
-                    row.usage.get("output_tokens", 0) for row in rows
+                    row.usage.get("output_tokens", 0) for row in eligible
                 ),
                 "average_quality_score": round(
-                    sum(row.quality_score for row in rows) / len(rows), 4
+                    sum(row.quality_score for row in eligible) / eligible_count, 4
                 ),
-                "recovered_cases": sum(row.recovered for row in rows),
+                "recovered_cases": sum(row.recovered for row in eligible),
                 "average_time_to_first_token_ms": round(
                     sum(
                         row.time_to_first_token_ms or 0
-                        for row in rows if row.time_to_first_token_ms is not None
-                    ) / max(1, sum(row.time_to_first_token_ms is not None for row in rows)),
+                        for row in eligible if row.time_to_first_token_ms is not None
+                    ) / max(1, sum(row.time_to_first_token_ms is not None for row in eligible)),
                     2,
                 ),
-                "streamed_events": sum(row.streamed_events for row in rows),
-                "tool_calls": sum(row.tool_calls_count for row in rows),
+                "streamed_events": sum(row.streamed_events for row in eligible),
+                "tool_calls": sum(row.tool_calls_count for row in eligible),
             }
-            if any(row.estimated_cost_usd is not None for row in rows):
+            if any(row.estimated_cost_usd is not None for row in eligible):
                 result[runtime]["estimated_cost_usd"] = round(
-                    sum(row.estimated_cost_usd or 0 for row in rows), 8
+                    sum(row.estimated_cost_usd or 0 for row in eligible), 8
                 )
         return result
 
@@ -139,13 +146,14 @@ class HarnessBenchmarkReport:
 
     def to_markdown(self) -> str:
         lines = [
-            "| Runtime | Pass rate | Quality | Avg latency (ms) | TTFT (ms) | Stream events | Input tokens | Output tokens | Est. cost (USD) |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+            "| Runtime | Pass rate (eligible) | Skipped | Quality | Avg latency (ms) | TTFT (ms) | Stream events | Input tokens | Output tokens | Est. cost (USD) |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for runtime, stats in sorted(self.summary().items()):
             lines.append(
-                f"| {runtime} | {stats['passed']}/{stats['cases']} "
-                f"({stats['pass_rate']:.0%}) | {stats['average_quality_score']:.2f} "
+                f"| {runtime} | {stats['passed']}/{stats['eligible_cases']} "
+                f"({stats['pass_rate']:.0%}) | {stats['skipped_cases']} "
+                f"| {stats['average_quality_score']:.2f} "
                 f"| {stats['average_duration_ms']} | {stats['average_time_to_first_token_ms']} "
                 f"| {stats['streamed_events']} | {stats['total_input_tokens']} "
                 f"| {stats['total_output_tokens']} | "

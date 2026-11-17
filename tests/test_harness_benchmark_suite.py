@@ -89,13 +89,19 @@ class HarnessBenchmarkSuiteTests(unittest.IsolatedAsyncioTestCase):
             request_factory=self.request_factory,
         )
         self.assertEqual(len(scorecards), 2)
-        self.assertEqual(len([row for row in report.observations if row.runtime == "candidate-a"]), 5)
-        self.assertEqual(len([row for row in report.observations if row.runtime == "candidate-b"]), 6)
+        self.assertEqual(len([row for row in report.observations if row.runtime == "candidate-a"]), 7)
+        self.assertEqual(len([row for row in report.observations if row.runtime == "candidate-b"]), 7)
+        summary_a = payload["summary"]["candidate-a"]
+        summary_b = payload["summary"]["candidate-b"]
+        self.assertEqual((summary_a["eligible_cases"], summary_a["skipped_cases"]), (5, 2))
+        self.assertEqual((summary_b["eligible_cases"], summary_b["skipped_cases"]), (6, 1))
+        self.assertEqual(summary_a["pass_rate"], 1.0)
         payload = benchmark_evidence_payload(scorecards, report)
         self.assertEqual(payload["suite_version"], 1)
         self.assertEqual(len(payload["candidate_capabilities"]), 2)
         self.assertTrue(any("Cancellation" in item for item in payload["limitations"]))
         self.assertEqual(payload["summary"]["candidate-b"]["passed"], 6)
+        self.assertEqual(payload["summary"]["candidate-b"]["cases"], 7)
 
     async def test_runs_explicit_cancellation_probe_and_records_evidence(self):
         candidate = CandidateAdapter()
