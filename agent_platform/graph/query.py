@@ -11,7 +11,9 @@ from agent_platform.graph.schema import GraphSourceDomain
 class GraphQueryRepository(Protocol):
     """Tenant-bound graph storage interface; implementations enforce project scope."""
 
-    async def get_entity(self, entity_id: str, *, allowed_project_ids: Sequence[str] = ()) -> Any: ...
+    async def get_entity(
+        self, entity_id: str, *, allowed_project_ids: Sequence[str] = ()
+    ) -> Any: ...
 
     async def list_relations(
         self, entity_id: str, *, direction: str = "both",
@@ -198,7 +200,10 @@ class GraphQueryService:
         relation_types: Sequence[str] = (), max_depth: int = 5,
         allowed_project_ids: Sequence[str] = (), timeout_seconds: float | None = None,
     ) -> GraphPath | None:
-        for name, value in (("source_entity_id", source_entity_id), ("target_entity_id", target_entity_id)):
+        for name, value in (
+            ("source_entity_id", source_entity_id),
+            ("target_entity_id", target_entity_id),
+        ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} is required")
         self._positive_int(max_depth, "max_depth", 8)
@@ -231,7 +236,9 @@ class GraphQueryService:
                 for edge_record in edges:
                     edge = self._relation(edge_record)
                     start, end, relation_id = self._relation_endpoints(edge)
-                    if start != current or (allowed_types and edge.relation_type not in allowed_types):
+                    if start != current or (
+                        allowed_types and edge.relation_type not in allowed_types
+                    ):
                         continue
                     if end == target_entity_id:
                         return GraphPath(path_nodes + (end,), path_edges + (relation_id,))
@@ -250,8 +257,14 @@ class GraphQueryService:
     ) -> tuple[GraphPath, ...]:
         if not isinstance(start_entity_id, str) or not start_entity_id.strip():
             raise ValueError("start_entity_id is required")
-        if isinstance(relation_types, (str, bytes)) or not relation_types or len(relation_types) > 8 or any(
-            not isinstance(value, str) or not value.strip() for value in relation_types
+        if (
+            isinstance(relation_types, (str, bytes))
+            or not relation_types
+            or len(relation_types) > 8
+            or any(
+                not isinstance(value, str) or not value.strip()
+                for value in relation_types
+            )
         ):
             raise ValueError("relation_types must contain 1-8 relation type names")
         scope = self._scope(allowed_project_ids)
@@ -309,7 +322,10 @@ class GraphQueryService:
                     entity_ids.setdefault(entity_id, record)
                 source_ref = getattr(record, "source_ref", None)
                 if source_ref is not None and source_ref.domain is GraphSourceDomain.KNOWLEDGE:
-                    if source_ref.source_type == "document" and source_ref.source_id not in candidate_ids:
+                    if (
+                        source_ref.source_type == "document"
+                        and source_ref.source_id not in candidate_ids
+                    ):
                         candidate_ids.append(source_ref.source_id)
             graph = GraphQueryResult(tuple(entity_ids.values()), (), False, len(entity_ids))
             if not candidate_ids:
