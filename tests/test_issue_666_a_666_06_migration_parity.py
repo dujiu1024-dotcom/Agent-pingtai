@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import sqlite3
 import tempfile
 import unittest
@@ -79,6 +80,9 @@ class Issue666MigrationParityAcceptanceTests(unittest.TestCase):
         self.assertEqual(report["missing_in_target"], 0)
         self.assertEqual(report["extra_in_target"], 0)
         self.assertEqual(report["changed_rows"], 0)
+        for table_report in report["chain_reports"]:
+            self.assertEqual(table_report["source_checksum"], table_report["target_checksum"])
+            self.assertRegex(table_report["source_checksum"], re.compile(r"^[0-9a-f]{64}$"))
         self.assertEqual(self.source.read_bytes(), before)
 
     def test_missing_extra_and_changed_rows_are_counted_and_fail(self) -> None:
@@ -92,6 +96,10 @@ class Issue666MigrationParityAcceptanceTests(unittest.TestCase):
         self.assertEqual(report["extra_in_target"], 1)
         self.assertEqual(report["changed_rows"], 1)
         self.assertEqual(report["chain_reports"][0]["matched"], False)
+        self.assertNotEqual(
+            report["chain_reports"][0]["source_checksum"],
+            report["chain_reports"][0]["target_checksum"],
+        )
 
     def test_duplicate_target_primary_key_is_rejected(self) -> None:
         (self.target / "users.jsonl").write_text(
