@@ -101,6 +101,7 @@ jobs:
             tests.test_postgres_langgraph_checkpoint_integration \
             tests.test_postgres_redis_worker_recovery_integration \
             tests.test_postgres_backup_restore_integration \
+            tests.test_issue_18_a_18_02_backup_restore_drill \
             tests.test_tenant_creation_integration \
             tests.test_service_identity_authorization_integration \
             tests.test_redis_streams_integration \
