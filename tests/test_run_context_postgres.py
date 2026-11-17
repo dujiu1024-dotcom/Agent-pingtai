@@ -114,18 +114,55 @@ class PostgresRunContextSnapshotStoreTests(unittest.IsolatedAsyncioTestCase):
         service = RunContextSnapshotService(tenant_id=tenant_id, store=self.store)
         await service.ensure_initial(
             tenant_id=tenant_id, run_id=run_id,
-            initial_context={"objective": "resume after worker loss"},
+            initial_context={
+                "objective": "resume after worker loss",
+                "constraints": ["tenant boundary", "no unsupported claims"],
+                "decisions": ["baseline selected"],
+                "evidence": [{"evidence_id": "ev-1", "ref_id": "source-1"}],
+                "pending_items": ["review output"],
+            },
         )
         await service.capture(
             tenant_id=tenant_id, run_id=run_id,
-            updates={"decisions": ["preserve the selected evidence"]},
-            references=[{"ref_id": "evidence-1", "pinned": True}],
+            updates={
+                "decisions": ["baseline selected", "exclude stale source"],
+                "evidence": [
+                    {"evidence_id": "ev-1", "ref_id": "source-1"},
+                    {"evidence_id": "ev-2", "ref_id": "source-2"},
+                ],
+                "pending_items": ["review output", "publish report"],
+            },
+            references=[
+                {"ref_id": "source-1", "type": "evidence", "pinned": True},
+                {"ref_id": "source-2", "type": "evidence"},
+            ],
         )
-        rebuilt = await service.rebuild(tenant_id=tenant_id, run_id=run_id)
+        restarted_service = RunContextSnapshotService(
+            tenant_id=tenant_id, store=self.store,
+        )
+        rebuilt = await restarted_service.rebuild(tenant_id=tenant_id, run_id=run_id)
         self.assertEqual(rebuilt["objective"], "resume after worker loss")
-        self.assertEqual(rebuilt["decisions"], ["preserve the selected evidence"])
-        self.assertEqual(rebuilt["references"][0]["ref_id"], "evidence-1")
+        self.assertEqual(
+            rebuilt["constraints"], ["tenant boundary", "no unsupported claims"],
+        )
+        self.assertEqual(
+            rebuilt["decisions"], ["baseline selected", "exclude stale source"],
+        )
+        self.assertEqual(
+            rebuilt["evidence"],
+            [
+                {"evidence_id": "ev-1", "ref_id": "source-1"},
+                {"evidence_id": "ev-2", "ref_id": "source-2"},
+            ],
+        )
+        self.assertEqual(rebuilt["pending_items"], ["review output", "publish report"])
+        self.assertEqual(
+            [item["ref_id"] for item in rebuilt["references"]],
+            ["source-1", "source-2"],
+        )
         self.assertEqual(rebuilt["snapshot_revision"], 2)
+        self.assertTrue(rebuilt["snapshot_id"])
+        self.assertEqual(len(rebuilt["snapshot_digest"]), 64)
 
     async def test_append_rejects_revision_gap_or_duplicate(self):
         tenant_id = "tenant-a"
