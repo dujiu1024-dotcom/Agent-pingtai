@@ -1,16 +1,26 @@
 """Version-aware, permission-filtered memory retrieval with source citations."""
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Sequence
-from agent_platform.memory.service import MemoryPrincipal, MemoryRecord, MemoryScope, MemoryService, MemoryStatus
+
+from agent_platform.memory.service import (
+    MemoryPrincipal,
+    MemoryRecord,
+    MemoryScope,
+    MemoryService,
+    MemoryStatus,
+)
+
 
 class MemoryRecallStrategy(str, Enum):
     RECENCY = "recency"
     CONFIDENCE = "confidence"
     RELEVANCE = "relevance"
+
 
 @dataclass(frozen=True)
 class MemoryRetrievalQuery:
@@ -38,6 +48,7 @@ class MemoryRetrievalQuery:
         if self.text is not None and not self.text.strip():
             raise ValueError("text must be non-empty when provided")
 
+
 @dataclass(frozen=True)
 class MemoryCitation:
     memory_id: str
@@ -47,14 +58,17 @@ class MemoryCitation:
     scope_id: str
     recorded_at: datetime
 
+
 @dataclass(frozen=True)
 class MemoryRetrievalHit:
     record: MemoryRecord
     citation: MemoryCitation
     score: float
 
+
 class MemoryRetrievalService:
     """Retrieves the exact authorized memory version valid at the requested time."""
+
     def __init__(self, memory: MemoryService) -> None:
         self.memory = memory
 
@@ -77,12 +91,16 @@ class MemoryRetrievalService:
     def _text_score(content: str, text: str | None) -> float:
         if text is None:
             return 0.0
-        terms = set(re.findall(r"[\w-]+", text.casefold()))
-        words = set(re.findall(r"[\w-]+", content.casefold()))
+        terms = set(re.findall(r"[\\w-]+", text.casefold()))
+        words = set(re.findall(r"[\\w-]+", content.casefold()))
         return len(terms & words) / len(terms) if terms else 0.0
 
-    async def search(self, *, principal: MemoryPrincipal,
-                     query: MemoryRetrievalQuery | None = None) -> list[MemoryRetrievalHit]:
+    async def search(
+        self,
+        *,
+        principal: MemoryPrincipal,
+        query: MemoryRetrievalQuery | None = None,
+    ) -> list[MemoryRetrievalHit]:
         request = query or MemoryRetrievalQuery()
         at = request.as_of or datetime.now(timezone.utc)
         list_versions = getattr(self.memory.repository, "list_versions", None)
@@ -92,9 +110,12 @@ class MemoryRetrievalService:
         hits: list[MemoryRetrievalHit] = []
         for current in current_records:
             versions: Sequence[MemoryRecord] = await list_versions(
-                principal.tenant_id, current.candidate.memory_id)
-            eligible = [item for item in versions
-                        if item.created_at <= at and item.status is MemoryStatus.ACTIVE]
+                principal.tenant_id, current.candidate.memory_id
+            )
+            eligible = [
+                item for item in versions
+                if item.created_at <= at and item.status is MemoryStatus.ACTIVE
+            ]
             if not eligible:
                 continue
             record = max(eligible, key=lambda item: (item.created_at, item.version))
@@ -121,13 +142,22 @@ class MemoryRetrievalService:
             else:
                 recency = min(max(record.created_at.timestamp(), 0), at.timestamp()) / max(at.timestamp(), 1)
                 score = relevance * 0.7 + candidate.confidence * 0.2 + recency * 0.1
-            citation = MemoryCitation(candidate.memory_id, record.version, candidate.source_ref,
-                                       candidate.scope, candidate.scope_id, record.updated_at)
+            citation = MemoryCitation(
+                candidate.memory_id,
+                record.version,
+                candidate.source_ref,
+                candidate.scope,
+                candidate.scope_id,
+                record.updated_at,
+            )
             hits.append(MemoryRetrievalHit(record, citation, score))
         if request.strategy is MemoryRecallStrategy.RECENCY:
             hits.sort(key=lambda hit: (hit.record.created_at, hit.record.version), reverse=True)
         elif request.strategy is MemoryRecallStrategy.CONFIDENCE:
-            hits.sort(key=lambda hit: (hit.record.candidate.confidence, hit.record.created_at), reverse=True)
+            hits.sort(
+                key=lambda hit: (hit.record.candidate.confidence, hit.record.created_at),
+                reverse=True,
+            )
         else:
             hits.sort(key=lambda hit: (hit.score, hit.record.created_at), reverse=True)
         return hits[:request.limit]
