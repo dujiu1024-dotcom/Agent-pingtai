@@ -186,7 +186,8 @@ class GraphGovernanceRepository(Protocol):
                                 status: GraphEntityStatus, actor_id: str) -> GovernedGraphEntity: ...
     async def merge_entities(self, *, tenant_id: str, source_id: str, target_id: str,
                              source_version: int, target_version: int,
-                             attributes: Mapping[str, Any], actor_id: str) -> GovernedGraphEntity: ...
+                             attributes: Mapping[str, Any], source_refs: tuple[str, ...],
+                             actor_id: str) -> GovernedGraphEntity: ...
 
 
 class InMemoryGraphGovernanceRepository:
@@ -320,7 +321,7 @@ class InMemoryGraphGovernanceRepository:
     async def merge_entities(
         self, *, tenant_id: str, source_id: str, target_id: str,
         source_version: int, target_version: int, attributes: Mapping[str, Any],
-        actor_id: str,
+        source_refs: tuple[str, ...], actor_id: str,
     ) -> GovernedGraphEntity:
         if source_id == target_id:
             raise ValueError("source and target entities must differ")
@@ -336,7 +337,8 @@ class InMemoryGraphGovernanceRepository:
             if source.entity_type != target.entity_type or source.project_id != target.project_id:
                 raise ValueError("merged entities must share type and project scope")
             merged = replace(
-                target, attributes=attributes, version=target.version + 1,
+                target, attributes=attributes, source_refs=source_refs,
+                version=target.version + 1,
                 updated_at=datetime.now(timezone.utc), updated_by=actor_id,
             )
             superseded = replace(
@@ -638,7 +640,9 @@ class GraphGovernanceService:
         return await self.repository.merge_entities(
             tenant_id=source.tenant_id, source_id=source_id, target_id=target_id,
             source_version=source_version, target_version=target_version,
-            attributes=merged, actor_id=actor,
+            attributes=merged,
+            source_refs=tuple(dict.fromkeys(target.source_refs + source.source_refs)),
+            actor_id=actor,
         )
 
     async def expire_due(self, *, now: datetime | None = None) -> int:
