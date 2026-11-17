@@ -151,6 +151,8 @@ include = [
   "tests/test_session_run_persistence.py",
   "tests/test_session_conversation_migration.py",
   "tests/test_sse_protocol.py",
+  "tests/test_blackboard_sse.py",
+  "tests/test_blackboard_event_replay.py",
 ]
 
 [tool.ruff.lint]
@@ -202,6 +204,8 @@ files = [
   "tests/test_identity.py",
   "agent_platform/streaming/sse.py",
   "agent_platform/streaming/client.py",
+  "agent_platform/blackboard/replay.py",
+  "agent_platform/blackboard/sse.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
