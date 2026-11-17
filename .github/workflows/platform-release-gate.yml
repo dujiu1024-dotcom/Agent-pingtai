@@ -108,8 +108,8 @@ jobs:
             tests.test_session_data_model \
             tests.test_session_conversation_migration \
             tests.test_session_assets \
-            tests.test_issue_20_a_20_02_webhook_security_reliability \\
-            tests.test_issue_20_c_20_02_signature_expiry_boundaries \\
+            tests.test_issue_20_a_20_02_webhook_security_reliability \
+            tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_platform_perf_smoke -v
       - name: Static checks
         run: |
