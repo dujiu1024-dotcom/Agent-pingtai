@@ -103,6 +103,8 @@ class SupervisedToolGateway:
         if len(names) != len(set(names)):
             raise ValueError("tool names must be unique")
         for tool in tools:
+            if not isinstance(tool.policy_version, str) or not tool.policy_version.strip():
+                raise ValueError(f"tool {tool.name!r} must declare a non-empty policy_version")
             if (
                 not callable(tool.resource_resolver)
                 or not callable(tool.resource_authorizer)
