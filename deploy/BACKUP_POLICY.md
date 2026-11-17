@@ -45,3 +45,8 @@ The orchestrator applies per-component retention from deploy/backup-policy.json 
     AGE_RECIPIENT='age1...' BACKUP_ENV_FILE=deploy/.env BACKUP_COMPONENTS=config scripts/backup_platform.sh
 
 The individual component scripts in scripts/backup_{postgres,redis,object_storage}.sh remain the source of their component-specific capture commands. This orchestrator adds policy selection, encrypted configuration capture, and retention; it does not silently load executable shell from .env.
+
+
+## Scheduled integrity verification
+
+Run `python scripts/verify_platform_backups.py --backup-dir /srv/agent-platform/backups` after backup batches and at least daily. This validates the encrypted artifact against both the SHA-256 sidecar and JSON manifest, including the expected component format and artifact name. In a restricted recovery-validation environment, run the same command with `AGE_IDENTITY` set and `--decrypt` to authenticate age payloads and inspect PostgreSQL, Redis and tar archive formats. See [backup integrity verification](backup-integrity-verification.md). Any failed artifact is quarantined from restore selection until investigated; never bypass a failed checksum or manifest check.
