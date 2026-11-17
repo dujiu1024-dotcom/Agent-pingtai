@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 tokenizer = ["tiktoken>=0.7,<1"]
 
 [tool.ruff]
+# C-20-04 lifecycle compensation regression coverage is included below.
 line-length = 100
 target-version = "py310"
 # 存量文件暂不纳入，先只门禁新增/本轮改动文件
@@ -119,6 +120,7 @@ include = [
   "tests/test_issue_8_c_8_05.py",
   "tests/test_issue_8_a_8_01_contracts.py",
   "tests/test_extension_package.py",
+  "tests/test_extension_manager.py",
   "tests/test_i18n_context.py",
   "tests/test_postgres_subject_adapters.py",
   "tests/test_subject_export_coordinator.py",

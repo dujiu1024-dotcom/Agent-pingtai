@@ -106,5 +106,53 @@ class ExtensionManagerTests(unittest.IsolatedAsyncioTestCase):
             await self.manager.upgrade(manifest, artifact=b"v1b", previous_artifact=b"v1")
 
 
+    async def test_enable_terminal_audit_failure_restores_runtime_and_registry(self):
+        manifest = make_manifest("audit-enable-extension")
+        await self.manager.install(manifest, artifact=b"v1")
+        original_audit = self.manager.audit
+        failed = False
+
+        def audit(action, item, outcome):
+            nonlocal failed
+            if action == "enable" and outcome == "succeeded" and not failed:
+                failed = True
+                raise RuntimeError("audit unavailable")
+            return original_audit(action, item, outcome)
+
+        self.manager.audit = audit
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await self.manager.enable("audit-enable-extension")
+
+        stored = await self.store.get("audit-enable-extension")
+        self.assertEqual(stored.status, "disabled")
+        self.assertIn(("enable", "audit-enable-extension"), self.runtime.calls)
+        self.assertIn(("disable", "audit-enable-extension"), self.runtime.calls)
+
+    async def test_upgrade_terminal_audit_failure_restores_previous_version(self):
+        manifest = make_manifest("audit-upgrade-extension")
+        await self.manager.install(manifest, artifact=b"v1")
+        original_audit = self.manager.audit
+        failed = False
+
+        def audit(action, item, outcome):
+            nonlocal failed
+            if action == "upgrade" and outcome == "succeeded" and not failed:
+                failed = True
+                raise RuntimeError("audit unavailable")
+            return original_audit(action, item, outcome)
+
+        self.manager.audit = audit
+        replacement = make_manifest("audit-upgrade-extension", version="2.0.0")
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await self.manager.upgrade(
+                replacement, artifact=b"v2", previous_artifact=b"v1",
+            )
+
+        stored = await self.store.get("audit-upgrade-extension")
+        self.assertEqual(stored.manifest.version, "1.0.0")
+        self.assertEqual(stored.artifact, b"v1")
+        self.assertIn(("upgrade", "1.0.0", "2.0.0", b"v2"), self.runtime.calls)
+        self.assertIn(("upgrade", "2.0.0", "1.0.0", b"v1"), self.runtime.calls)
+
 if __name__ == "__main__":
     unittest.main()

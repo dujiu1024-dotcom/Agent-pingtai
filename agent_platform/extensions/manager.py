@@ -147,11 +147,19 @@ class ExtensionLifecycleManager:
             await runtime_action(item.manifest)
             try:
                 await self.store.put(InstalledExtension(item.manifest, target))
+                await self._audit(action, item.manifest, "succeeded")
             except Exception:
-                await compensation(item.manifest)
-                await self._audit(action, item.manifest, "compensated")
+                # A failed outcome audit is still a failed lifecycle operation:
+                # restore both the registry snapshot and runtime state.
+                try:
+                    await self.store.put(item)
+                finally:
+                    await compensation(item.manifest)
+                try:
+                    await self._audit(action, item.manifest, "compensated")
+                except Exception:
+                    pass
                 raise
-            await self._audit(action, item.manifest, "succeeded")
 
     async def upgrade(self, replacement: ExtensionManifest, *, artifact: Any,
                       previous_artifact: Any) -> None:
@@ -179,11 +187,19 @@ class ExtensionLifecycleManager:
             await self.runtime.upgrade(current.manifest, replacement, artifact)
             try:
                 await self.store.put(InstalledExtension(replacement, current.status, artifact))
+                await self._audit("upgrade", replacement, "succeeded")
             except Exception:
-                await self.runtime.upgrade(replacement, current.manifest, previous_artifact)
-                await self._audit("upgrade", replacement, "compensated")
+                # Keep runtime and registry on the same version if persistence or
+                # the terminal audit fails after the runtime swap.
+                try:
+                    await self.runtime.upgrade(replacement, current.manifest, previous_artifact)
+                finally:
+                    await self.store.put(current)
+                try:
+                    await self._audit("upgrade", replacement, "compensated")
+                except Exception:
+                    pass
                 raise
-            await self._audit("upgrade", replacement, "succeeded")
 
     async def uninstall(self, extension_id: str, *, cascade: bool = False) -> tuple[str, ...]:
         async with self._lock:
