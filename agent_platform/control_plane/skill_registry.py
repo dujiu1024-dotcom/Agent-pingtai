@@ -236,12 +236,21 @@ class SkillPackageRegistry:
         if not tenant_id.strip() or not actor_id.strip():
             raise ValueError("tenant_id and actor_id are required")
         manifest, paths, digest = self._inspect(archive)
-        await self._audit(actor_id, tenant_id, manifest.name, "upload", "requested")
-        artifact_ref = await self.artifacts.push(
-            tenant_id=tenant_id, skill_id=manifest.name, version=manifest.version, content=archive,
-        )
-        try:
-            draft = await self.registry.create_draft(
+        async with self._lock:
+            existing = await self.registry.repository.list_versions(tenant_id, "skill", manifest.name)
+            if any(
+                item.definition.get("manifest", {}).get("version") == manifest.version
+                for item in existing
+            ):
+                raise SkillPackageError("this Skill package version is already registered")
+            await self._audit(actor_id, tenant_id, manifest.name, "upload", "requested")
+            artifact_ref = await self.artifacts.push(
+                tenant_id=tenant_id, skill_id=manifest.name, version=manifest.version, content=archive,
+            )
+            if not isinstance(artifact_ref, str) or not artifact_ref.strip():
+                raise SkillPackageError("artifact registry did not return an immutable reference")
+            try:
+                draft = await self.registry.create_draft(
                 tenant_id=tenant_id, kind="skill", item_id=manifest.name, actor_id=actor_id,
                 definition={
                     "format": "skill-package-v1", "manifest": {
@@ -252,13 +261,13 @@ class SkillPackageRegistry:
                     },
                     "files": list(paths), "sha256": digest, "artifact_ref": artifact_ref,
                 },
-            )
-        except Exception:
-            await self.artifacts.delete(artifact_ref)
-            await self._audit(actor_id, tenant_id, manifest.name, "upload", "failed")
-            raise
-        await self._audit(actor_id, tenant_id, manifest.name, "upload", "succeeded")
-        return draft
+                )
+            except Exception:
+                await self.artifacts.delete(artifact_ref)
+                await self._audit(actor_id, tenant_id, manifest.name, "upload", "failed")
+                raise
+            await self._audit(actor_id, tenant_id, manifest.name, "upload", "succeeded")
+            return draft
 
     async def publish(self, *, tenant_id: str, skill_id: str, draft_version: int,
                       actor_id: str) -> RegistryVersion:
