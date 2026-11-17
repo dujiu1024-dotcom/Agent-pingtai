@@ -63,6 +63,14 @@ class ObservedHarnessAdapter:
 
     @contextmanager
     def _safe_observation(self, *, name: str, input: Mapping[str, Any], metadata: Mapping[str, Any]):
+        active_span = current_trace_span()
+        if active_span is not None and isinstance(metadata, dict):
+            metadata.update({
+                "trace_id": active_span.trace_id,
+                "span_id": active_span.span_id,
+                "parent_span_id": active_span.parent_span_id,
+                "trace_component": active_span.component,
+            })
         try:
             manager = self.observer.observe(name=name, input=input, metadata=metadata)
             span = manager.__enter__()
@@ -135,7 +143,12 @@ class ObservedHarnessAdapter:
         started = monotonic()
         status = "succeeded"
         try:
-            with self._safe_observation(name="agent.run", input=trace_input, metadata=metadata) as span:
+            with trace_span(
+                "agent.run", component="agent", tenant_id=context.tenant_id,
+                run_id=context.run_id, agent_id=context.agent_id,
+                correlation_id=context.correlation_id,
+                attributes={"model_template": template},
+            ), self._safe_observation(name="agent.run", input=trace_input, metadata=metadata) as span:
                 try:
                     result = await self.inner.run(request)
                 except asyncio.CancelledError:
