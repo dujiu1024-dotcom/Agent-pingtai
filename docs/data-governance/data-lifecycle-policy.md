@@ -4,8 +4,9 @@ Scope: Issue #19 / C-19-04 only.
 
 ## Retention and archive
 A tenant-scoped policy defines a positive retention period, an optional archive age
-(no later than expiry), and a legal hold. A legal hold suppresses both archive and
-deletion. The scheduler supplies tenant/resource scope and bounded page size; expired
+(no later than expiry), and a legal hold. A legal hold suppresses both scheduled retention deletion and explicit deletion
+requests; the service rejects direct delete requests before creating a tombstone or
+propagation outbox jobs. The scheduler supplies tenant/resource scope and bounded page size; expired
 records are archived first when configured, then receive a deletion request at expiry.
 The source adapter owns the authoritative created/updated timestamp query.
 
