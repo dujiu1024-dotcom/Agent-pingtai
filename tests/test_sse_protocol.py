@@ -70,8 +70,8 @@ class SSEProtocolTests(unittest.IsolatedAsyncioTestCase):
 
         client = SSEClient()
         raw = (
-            'id: cursor-7\\r\\nevent: token_stream\\r\\n'
-            'retry: 1250\\r\\ndata: {"token":"你好","sequence":7}\\r\\n\\r\\n'
+            'id: cursor-7\r\nevent: token_stream\r\n'
+            'retry: 1250\r\ndata: {"token":"你好","sequence":7}\r\n\r\n'
         ).encode("utf-8")
         events = []
         for byte in raw:
@@ -90,10 +90,10 @@ class SSEProtocolTests(unittest.IsolatedAsyncioTestCase):
 
         client = SSEClient()
         events = client.feed(
-            b": heartbeat\\n"
-            b"event: tool_output\\n"
-            b'data: {"part":\\n'
-            b'data: "joined"}\\n\\n',
+            b": heartbeat\n"
+            b"event: tool_output\n"
+            b'data: {"part":\n'
+            b'data: "joined"}\n\n',
             final=True,
         )
         self.assertEqual(len(events), 1)
