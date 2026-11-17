@@ -1,0 +1,40 @@
+{
+  "release_id": "REPLACE-WITH-RELEASE-ID",
+  "from_version": "2.0.0",
+  "to_version": "2.1.0",
+  "image_digest": "registry.example/agent@sha256:REPLACE-WITH-IMMUTABLE-DIGEST",
+  "config_revision": "REPLACE-WITH-NEW-CONFIG-REVISION",
+  "previous_config_revision": "REPLACE-WITH-PREVIOUS-CONFIG-REVISION",
+  "compatibility": {
+    "min_app_version": "2.0.0",
+    "max_app_version": "2.1.0",
+    "min_schema_version": "10",
+    "max_schema_version": "11",
+    "window_minutes": 1440,
+    "old_and_new_coexist": true
+  },
+  "migration": {
+    "preflight_passed": false,
+    "backup_ref": "REPLACE-WITH-VERIFIED-BACKUP-REF",
+    "expand_contract": true,
+    "destructive": false,
+    "contract_after_compatibility_window": false,
+    "rollback_strategy": "none",
+    "migration_ref": "REPLACE-WITH-MIGRATION-REF"
+  },
+  "rollout": {
+    "batches": [
+      5,
+      25,
+      70
+    ],
+    "health_gate": true,
+    "pause_minutes": 10
+  },
+  "rollback": {
+    "previous_image_digest": "registry.example/agent@sha256:REPLACE-WITH-PREVIOUS-IMMUTABLE-DIGEST",
+    "previous_config_revision": "REPLACE-WITH-PREVIOUS-CONFIG-REVISION",
+    "config_restore_ref": "REPLACE-WITH-IMMUTABLE-CONFIG-SNAPSHOT",
+    "automatic_on_health_failure": true
+  }
+}\n
