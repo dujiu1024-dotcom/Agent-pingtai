@@ -207,6 +207,115 @@ class PostgresRunBudgetLedger:
                 )
                 return await self._usage(connection, await cursor.fetchone())
 
+    async def get_run_budget_report(self, tenant_id: str, run_id: str) -> dict[str, Any]:
+        """Read the immutable budget limit and per-call estimates/provider actuals.
+
+        Results are tenant-bound, ordered deterministically, and retain reserved,
+        rejected and settled calls so an audit can explain both dispatch decisions
+        and final provider usage.
+        """
+        UUID(run_id)
+        connection = await self._connection_factory()
+        async with connection:
+            account = await connection.execute(
+                """SELECT max_tokens,max_cost_usd,reserved_tokens,reserved_cost_usd,
+                          actual_tokens,actual_cost_usd,overrun_reason,created_at,updated_at
+                   FROM platform_run_budget_accounts
+                   WHERE tenant_id=%s AND run_id=%s""",
+                (tenant_id, UUID(run_id)),
+            )
+            budget = await account.fetchone()
+            if budget is None:
+                raise KeyError("Run budget account not configured")
+            cursor = await connection.execute(
+                """SELECT call_id,model_key,estimated_input_tokens,estimated_output_tokens,
+                          estimated_cost_usd,actual_input_tokens,actual_output_tokens,
+                          actual_cost_usd,token_delta,cost_delta_usd,remaining_tokens,
+                          remaining_cost_usd,status,overrun_reason,created_at,settled_at
+                   FROM platform_model_call_budget_ledger
+                   WHERE tenant_id=%s AND run_id=%s
+                   ORDER BY created_at,call_id""",
+                (tenant_id, UUID(run_id)),
+            )
+            calls = await cursor.fetchall()
+        max_tokens = int(budget["max_tokens"])
+        max_cost = Decimal(budget["max_cost_usd"])
+        actual_tokens = int(budget["actual_tokens"])
+        actual_cost = Decimal(budget["actual_cost_usd"])
+        reserved_tokens = int(budget["reserved_tokens"])
+        reserved_cost = Decimal(budget["reserved_cost_usd"])
+        serialized_calls = []
+        for call in calls:
+            estimated_tokens = int(call["estimated_input_tokens"]) + int(call["estimated_output_tokens"])
+            actual_input = call["actual_input_tokens"]
+            actual_output = call["actual_output_tokens"]
+            actual_call_tokens = (
+                int(actual_input) + int(actual_output)
+                if actual_input is not None and actual_output is not None else None
+            )
+            serialized_calls.append({
+                "call_id": str(call["call_id"]),
+                "model_key": call["model_key"],
+                "status": call["status"],
+                "estimated_input_tokens": int(call["estimated_input_tokens"]),
+                "estimated_output_tokens": int(call["estimated_output_tokens"]),
+                "estimated_total_tokens": estimated_tokens,
+                "estimated_cost_usd": str(Decimal(call["estimated_cost_usd"])),
+                "actual_input_tokens": actual_input,
+                "actual_output_tokens": actual_output,
+                "actual_total_tokens": actual_call_tokens,
+                "actual_cost_usd": (
+                    str(Decimal(call["actual_cost_usd"]))
+                    if call["actual_cost_usd"] is not None else None
+                ),
+                "token_delta": call["token_delta"],
+                "cost_delta_usd": (
+                    str(Decimal(call["cost_delta_usd"]))
+                    if call["cost_delta_usd"] is not None else None
+                ),
+                "remaining_tokens": call["remaining_tokens"],
+                "remaining_cost_usd": (
+                    str(Decimal(call["remaining_cost_usd"]))
+                    if call["remaining_cost_usd"] is not None else None
+                ),
+                "overrun_reason": call["overrun_reason"],
+                "created_at": call["created_at"].isoformat() if call["created_at"] else None,
+                "settled_at": call["settled_at"].isoformat() if call["settled_at"] else None,
+            })
+        return {
+            "tenant_id": tenant_id,
+            "run_id": run_id,
+            "budget": {
+                "max_tokens": max_tokens,
+                "max_cost_usd": str(max_cost),
+                "reserved_tokens": reserved_tokens,
+                "reserved_cost_usd": str(reserved_cost),
+                "actual_tokens": actual_tokens,
+                "actual_cost_usd": str(actual_cost),
+                "remaining_tokens": max_tokens - actual_tokens - reserved_tokens,
+                "remaining_cost_usd": str(max_cost - actual_cost - reserved_cost),
+                "overrun_reason": budget["overrun_reason"],
+                "created_at": budget["created_at"].isoformat() if budget["created_at"] else None,
+                "updated_at": budget["updated_at"].isoformat() if budget["updated_at"] else None,
+            },
+            "calls": serialized_calls,
+            "summary": {
+                "call_count": len(serialized_calls),
+                "settled_calls": sum(item["status"] == "settled" for item in serialized_calls),
+                "reserved_calls": sum(item["status"] == "reserved" for item in serialized_calls),
+                "rejected_calls": sum(item["status"] == "rejected" for item in serialized_calls),
+                "estimated_tokens": sum(item["estimated_total_tokens"] for item in serialized_calls),
+                "actual_tokens": sum(item["actual_total_tokens"] or 0 for item in serialized_calls),
+                "estimated_cost_usd": str(sum(
+                    (Decimal(item["estimated_cost_usd"]) for item in serialized_calls), Decimal("0")
+                )),
+                "actual_cost_usd": str(sum(
+                    (Decimal(item["actual_cost_usd"]) for item in serialized_calls if item["actual_cost_usd"] is not None),
+                    Decimal("0"),
+                )),
+            },
+        }
+
     async def snapshot(self, tenant_id: str, run_id: str) -> RunBudgetSnapshot:
         connection = await self._connection_factory()
         async with connection:
