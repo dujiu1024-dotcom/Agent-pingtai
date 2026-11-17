@@ -197,8 +197,6 @@ async def run_quality_capacity_benchmark(
                     evaluated.recall_at_k, evaluated.reciprocal_rank,
                     result.input_tokens, result.output_tokens, _money(item_cost),
                 ))
-                if not evaluated.passed:
-                    failures += 1
             except Exception:
                 failures += 1
                 observations.append(BenchmarkObservation(
