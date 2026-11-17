@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import unittest
-from datetime import datetime, timezone
+from pathlib import Path
 
 from scripts.disaster_recovery import validate_record
 
@@ -23,9 +24,6 @@ def postgres_record() -> dict:
 
 class PostgresRecoveryEvidenceScopeTests(unittest.TestCase):
     def setUp(self) -> None:
-        from pathlib import Path
-        import json
-
         root = Path(__file__).resolve().parents[1]
         self.policy = json.loads(
             (root / "deploy/disaster-recovery-policy.json").read_text(encoding="utf-8")
