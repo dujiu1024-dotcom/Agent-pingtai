@@ -36,6 +36,29 @@ class ProductionEgressPolicyTests(unittest.TestCase):
                 values = dict(self.valid, EGRESS_PROXY_URL=proxy)
                 self.assertTrue(validate_egress_config(values))
 
+    def test_malformed_proxy_ports_and_hostnames_are_rejected(self):
+        for proxy in (
+            "https://proxy.example.internal:not-a-port",
+            "https://proxy.example.internal:70000",
+            "https://bad_host.internal:8443",
+            "https://[invalid-ipv6]:8443",
+            "https://proxy.example.internal:8443 ",
+        ):
+            with self.subTest(proxy=proxy):
+                values = dict(self.valid, EGRESS_PROXY_URL=proxy)
+                self.assertTrue(validate_egress_config(values))
+
+    def test_duplicate_env_keys_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text(
+                "EGRESS_PROXY_URL=https://proxy.example.internal:8443\\n"
+                "EGRESS_PROXY_URL=https://attacker.example.internal:8443\\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate environment key"):
+                parse_env_file(path)
+
     def test_wildcard_and_invalid_allowlist_entries_are_rejected(self):
         for hosts in ("*.example.com", "api.example.com,*", "bad host"):
             with self.subTest(hosts=hosts):
