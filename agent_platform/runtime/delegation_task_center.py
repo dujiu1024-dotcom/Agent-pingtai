@@ -125,6 +125,21 @@ class TaskCenterChildRunExecutor:
             raise PermissionError("child Run tenant must match its parent")
         if request.context.metadata.get("parent_run_id") != parent_context.run_id:
             raise PermissionError("child Run must carry the authenticated parent Run identity")
+        parent_root = (parent_context.metadata or {}).get("root_run_id", parent_context.run_id)
+        lineage_getter = getattr(self.task_service.run_store, "get_budget_lineage", None)
+        if callable(lineage_getter):
+            persisted_parent = await lineage_getter(parent_context.tenant_id, parent_context.run_id)
+            if not isinstance(persisted_parent, Mapping):
+                raise PermissionError("parent Run has no persisted budget lineage")
+            parent_root = persisted_parent.get("budget_root_run_id")
+            if not isinstance(parent_root, str) or not parent_root:
+                raise PermissionError("parent Run budget root is missing")
+        child_root = (request.context.metadata or {}).get("root_run_id", parent_root)
+        if child_root != parent_root:
+            raise PermissionError("child Run cannot reset or change its parent's budget root")
+        delegation_key = request.context.metadata.get("delegation_key")
+        if not isinstance(delegation_key, str) or not delegation_key.strip():
+            raise ValueError("child Run requires a stable delegation_key")
         if not isinstance(idempotency_key, str) or not idempotency_key.strip():
             raise ValueError("child Run idempotency key is required")
         await self._validate_pinned_runtime(request)
@@ -143,6 +158,23 @@ class TaskCenterChildRunExecutor:
             idempotency_key=durable_idempotency_key,
             run_id=request.context.run_id,
         )
+        lineage_register = getattr(
+            self.task_service.run_store, "register_budget_child_run", None,
+        )
+        if callable(lineage_register):
+            persisted_root = await lineage_register(
+                tenant_id=parent_context.tenant_id,
+                child_run_id=request.context.run_id,
+                parent_run_id=parent_context.run_id,
+                lineage_key=delegation_key,
+            )
+            if persisted_root != parent_root:
+                await self.task_service.cancel_task(
+                    tenant_id=parent_context.tenant_id,
+                    task_id=request.context.run_id,
+                    actor_id=actor_id,
+                )
+                raise PermissionError("persisted child Run budget root differs from its parent")
         if submitted.get("run_id") != request.context.run_id:
             raise RuntimeError("idempotent child submission resolved to a different Run ID")
         if (
