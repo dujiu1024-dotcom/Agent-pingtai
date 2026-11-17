@@ -1,9 +1,11 @@
 # Knowledge Graph Extraction Pipeline (C-22-03)
 
 The host resolves canonical Knowledge, Memory, Blackboard or parsed File records
-and enforces their source ACL before constructing `GraphSourceRecord`. File
-assets should enter through the Knowledge parser and be represented as a
-versioned Knowledge document; raw file bytes are never passed to the extractor.
+and enforces their source ACL before constructing `GraphSourceRecord`. The default
+schema maps `knowledge/document`, `memory/memory`, `blackboard/entry`, and
+`file/parsed_file` to their graph entity types. File assets enter through the #8
+file parser: only versioned extracted text is accepted as `parsed_file`; raw file
+bytes, unscanned uploads, and object-storage payloads are never passed to the extractor.
 
 The injected extractor receives bounded source text and the tenant's
 `GraphSchema`, then returns typed `GraphExtractionDraft` objects. The pipeline
