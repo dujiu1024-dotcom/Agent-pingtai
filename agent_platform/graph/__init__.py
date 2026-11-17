@@ -1,5 +1,16 @@
 """Tenant-scoped knowledge graph schema contracts."""
 
+from agent_platform.graph.governance import (
+    GraphEntityStatus,
+    GraphGovernanceAuditEvent,
+    GraphGovernanceConflict,
+    GraphGovernanceRepository,
+    GraphGovernanceService,
+    GraphInvalidationJob,
+    GovernedGraphEntity,
+    GovernedGraphRelation,
+    InMemoryGraphGovernanceRepository,
+)
 from agent_platform.graph.schema import (
     EntityTypeDefinition,
     GraphEntity,
@@ -15,6 +26,15 @@ from agent_platform.graph.schema import (
 )
 
 __all__ = [
+    "GraphEntityStatus",
+    "GraphGovernanceAuditEvent",
+    "GraphGovernanceConflict",
+    "GraphGovernanceRepository",
+    "GraphGovernanceService",
+    "GovernedGraphEntity",
+    "GovernedGraphRelation",
+    "GraphInvalidationJob",
+    "InMemoryGraphGovernanceRepository",
     "EntityTypeDefinition",
     "GraphEntity",
     "GraphRelation",
