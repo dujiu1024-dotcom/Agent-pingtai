@@ -8,8 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.knowledge.evaluation_dataset import parse_evaluation_dataset
-from agent_platform.knowledge.rag_metrics import evaluate_rag_dataset
 from agent_platform.knowledge.rag import RAGService
+from agent_platform.knowledge.rag_metrics import evaluate_rag_dataset
 from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 
 PrincipalResolver = Callable[[Request], Awaitable[KnowledgePrincipal]]
