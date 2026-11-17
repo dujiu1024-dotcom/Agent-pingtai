@@ -62,6 +62,7 @@ include = [
   "tests/test_issue_10_a_10_01_ingestion_rag_acceptance.py",
   "tests/test_knowledge_evaluation_dataset.py",
   "tests/test_rag_metrics.py",
+  "tests/test_issue_24_a_24_02_quality_reproducibility.py",
   "tests/test_rag_metrics_api.py",
   "tests/test_knowledge_memory_api.py",
   "tests/test_rag_dataset_upload_api.py",
