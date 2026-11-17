@@ -160,6 +160,8 @@ class WebhookSubscriptionService:
                 await _await(self.secrets.revoke(secret_ref=item["secret_ref"]))
             except Exception:
                 result["failed"] += 1
+                if raise_on_failure:
+                    raise
                 continue
             if await self._complete_claimed_secret_revocation(item):
                 result["revoked"] += 1
@@ -173,5 +175,5 @@ class WebhookSubscriptionService:
         old_ref = await self.store.disable_subscription(tenant_id, subscription_id)
         if old_ref is None:
             return False
-        await self.retry_pending_secret_revocations(limit=100)
+        await self.retry_pending_secret_revocations(limit=100, raise_on_failure=True)
         return True
