@@ -29,6 +29,7 @@ from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
+from agent_platform.api.skills import create_skill_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
@@ -121,6 +122,8 @@ def create_platform_app(
     memory_extraction_event_worker: Any | None = None,
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
+    skill_package_registry_resolver: Any | None = None,
+    skill_authorizer: Any | None = None,
     task_worker: Any | None = None,
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
@@ -371,6 +374,17 @@ def create_platform_app(
         blackboard_repository_resolver, blackboard_authorizer,
     )):
         raise ValueError("Blackboard repository resolver and authorizer must be configured together")
+    skills_configured = any(value is not None for value in (
+        skill_package_registry_resolver, skill_authorizer,
+    ))
+    if skills_configured:
+        if skill_package_registry_resolver is None or skill_authorizer is None:
+            raise ValueError("Skill package registry resolver and authorizer must be configured together")
+        app.include_router(create_skill_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=skill_package_registry_resolver,
+            authorize=skill_authorizer,
+        ))
     app.include_router(create_workbench_router(
         features={
             "knowledge": True,
@@ -380,6 +394,7 @@ def create_platform_app(
             "registry": registry_configured,
             "agent_management": registry_configured,
             "task_execution": task_center_configured,
+            "skills": skills_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
             "blackboard": blackboard_configured,
             "quotas": quota_reporting_store is not None or quota_store is not None,
