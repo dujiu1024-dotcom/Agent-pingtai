@@ -15,7 +15,7 @@ from agent_platform.identity.models import Principal
 from agent_platform.quotas.service import Budget, QuotaService
 
 
-def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None) -> APIRouter:
+def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None, quota_policy_service: Any | None = None, authorize_policy_scope: Any | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/quotas", tags=["quotas"])
 
     def actor(request: Request) -> Principal:
@@ -185,5 +185,84 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             output.getvalue(), media_type="text/csv; charset=utf-8",
             headers={"Content-Disposition": 'attachment; filename="usage-report.csv"'},
         )
+
+    @router.post("/policies", status_code=201)
+    async def configure_policy(request: Request):
+        principal = actor(request)
+        if quota_policy_service is None or authorize_manage is None:
+            raise HTTPException(503, "quota policy administration is not configured")
+        allowed = authorize_manage(principal)
+        if inspect.isawaitable(allowed):
+            allowed = await allowed
+        if allowed is not True:
+            raise HTTPException(403, "quota management permission required")
+        try:
+            from agent_platform.quotas.policies import QuotaPolicy
+            body = await request.json()
+            if not isinstance(body, dict) or not isinstance(body.get("limits"), dict):
+                raise ValueError("JSON object with limits is required")
+            scope_type = body.get("scope_type")
+            scope_id = body.get("scope_id")
+            if scope_type == "default":
+                if scope_id != "*":
+                    raise ValueError("default policy scope_id must be '*'")
+                tenant_id = None
+            elif scope_type == "tenant":
+                if scope_id != principal.tenant_id:
+                    raise PermissionError("tenant policy must match authenticated tenant")
+                tenant_id = principal.tenant_id
+            elif scope_type in {"project", "subject"}:
+                if authorize_policy_scope is None:
+                    raise PermissionError("project/subject policy authorization is not configured")
+                scope_allowed = authorize_policy_scope(principal, scope_type, scope_id)
+                if inspect.isawaitable(scope_allowed):
+                    scope_allowed = await scope_allowed
+                if scope_allowed is not True:
+                    raise PermissionError("quota policy scope is not accessible")
+                tenant_id = principal.tenant_id
+            else:
+                raise ValueError("unsupported quota policy scope")
+            policy = QuotaPolicy(
+                policy_id=body.get("policy_id", ""), scope_type=scope_type,
+                scope_id=scope_id, limits=body["limits"],
+                priority=body.get("priority", 100), enabled=body.get("enabled", True),
+                version=body.get("version", 1), tenant_id=tenant_id,
+                created_by=principal.user_id,
+            )
+            audit = await quota_policy_service.configure(
+                policy, actor_id=principal.user_id, authorize=lambda _: True,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"policy_id": policy.policy_id, "scope_type": policy.scope_type,
+                "scope_id": policy.scope_id, "version": policy.version,
+                "audit_id": audit.audit_id, "configured": True}
+
+    @router.get("/policies/effective")
+    async def effective_policy(request: Request, project_id: str | None = None,
+                               subject_id: str | None = None):
+        principal = actor(request)
+        if quota_policy_service is None:
+            raise HTTPException(503, "quota policy resolution is not configured")
+        if project_id is not None or subject_id is not None:
+            if authorize_policy_scope is None:
+                raise HTTPException(403, "project/subject policy authorization is not configured")
+            for scope_type, scope_id in (("project", project_id), ("subject", subject_id)):
+                if scope_id is None:
+                    continue
+                allowed = authorize_policy_scope(principal, scope_type, scope_id)
+                if inspect.isawaitable(allowed):
+                    allowed = await allowed
+                if allowed is not True:
+                    raise HTTPException(403, "quota policy scope is not accessible")
+        from agent_platform.quotas.policies import QuotaPolicyContext
+        resolved = await quota_policy_service.resolve(QuotaPolicyContext(
+            principal.tenant_id, project_id, subject_id,
+        ))
+        return {"tenant_id": resolved.tenant_id, "limits": dict(resolved.limits),
+                "sources": dict(resolved.sources), "policy_versions": dict(resolved.policy_versions),
+                "resolved_at": resolved.resolved_at.isoformat()}
 
     return router
