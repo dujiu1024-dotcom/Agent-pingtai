@@ -52,16 +52,23 @@ def create_run_replay_router(*, resolve_principal: PrincipalResolver,
     @router.post("/{session_id}/back")
     async def back(run_id: str, session_id: str, request: Request):
         return await action(request, run_id, session_id, "back")
+    async def requested_sequence(request: Request) -> int:
+        try:
+            body = await request.json()
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise HTTPException(400, "request body must be valid JSON") from exc
+        # bool is an int subclass in Python; reject it rather than treating true as sequence 1.
+        if not isinstance(body, dict) or type(body.get("sequence")) is not int:
+            raise HTTPException(400, "sequence integer is required")
+        return body["sequence"]
+
     @router.post("/{session_id}/seek")
     async def seek(run_id: str, session_id: str, request: Request):
-        body = await request.json()
-        if not isinstance(body, dict) or not isinstance(body.get("sequence"), int):
-            raise HTTPException(400, "sequence integer is required")
-        return await action(request, run_id, session_id, "seek", sequence=body["sequence"])
+        sequence = await requested_sequence(request)
+        return await action(request, run_id, session_id, "seek", sequence=sequence)
+
     @router.post("/{session_id}/rerun")
     async def rerun(run_id: str, session_id: str, request: Request):
-        body = await request.json()
-        if not isinstance(body, dict) or not isinstance(body.get("sequence"), int):
-            raise HTTPException(400, "sequence integer is required")
-        return await action(request, run_id, session_id, "rerun", sequence=body["sequence"])
+        sequence = await requested_sequence(request)
+        return await action(request, run_id, session_id, "rerun", sequence=sequence)
     return router
