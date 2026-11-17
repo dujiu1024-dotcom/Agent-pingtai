@@ -4,12 +4,16 @@ from __future__ import annotations
 from typing import Any, Sequence
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
+from agent_platform.api.contract import API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
@@ -153,6 +157,23 @@ def create_platform_app(
         raise ValueError("audit request sink and actor resolver must be configured together")
 
     app = FastAPI()
+
+    @app.exception_handler(StarletteHTTPException)
+    async def public_http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        if not request.url.path.startswith(API_V1_PREFIX):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail}, headers=exc.headers)
+        error = error_for_http_status(
+            exc.status_code,
+            "The request was rejected" if exc.status_code < 500 else "The request could not be completed",
+        )
+        return JSONResponse(status_code=exc.status_code, content=error.to_dict(), headers=exc.headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def public_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        if not request.url.path.startswith(API_V1_PREFIX):
+            return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        error = error_for_http_status(422, "Request validation failed")
+        return JSONResponse(status_code=422, content=error.to_dict())
     # Independent first-party UI; no dependency on legacy console/gui.
     app.include_router(create_platform_web_router())
     # Add request auditing before Identity middleware so it executes inside the
@@ -172,6 +193,8 @@ def create_platform_app(
         login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
     )
     app.add_middleware(TraceContextASGIMiddleware)
+    # Outer middleware also covers authentication failures returned before routing.
+    app.add_middleware(PublicApiContractASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
     app.include_router(
         create_health_router(
