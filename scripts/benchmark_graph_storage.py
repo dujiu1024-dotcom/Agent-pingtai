@@ -166,6 +166,25 @@ async def run_benchmark(
     }
 
 
+async def database_metadata(dsn: str) -> dict[str, str]:
+    try:
+        from psycopg import AsyncConnection
+    except ImportError as exc:
+        raise RuntimeError("Install psycopg[binary,pool] to run graph benchmarks") from exc
+    async with await AsyncConnection.connect(dsn) as connection:
+        version_cursor = await connection.execute("SELECT version()")
+        version = (await version_cursor.fetchone())[0]
+        buffers_cursor = await connection.execute("SHOW shared_buffers")
+        shared_buffers = (await buffers_cursor.fetchone())[0]
+        connections_cursor = await connection.execute("SHOW max_connections")
+        max_connections = (await connections_cursor.fetchone())[0]
+    return {
+        "postgresql_version": version,
+        "shared_buffers": shared_buffers,
+        "max_connections": max_connections,
+    }
+
+
 async def cleanup_rows(dsn: str, tenant_id: str, prefix: str) -> dict[str, int]:
     try:
         from psycopg import AsyncConnection
@@ -218,6 +237,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             "tenant_id": args.tenant_id,
             "namespace": prefix,
             "backend": "PostgreSQL via PostgresGraphRepository",
+            "database": await database_metadata(dsn),
             "schema_migration_required": "agent_platform/storage/postgres/082_graph_storage.sql",
             "dsn": "[redacted]",
         }
