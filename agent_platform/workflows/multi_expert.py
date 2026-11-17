@@ -116,12 +116,28 @@ def build_multi_expert_workflow(
     """Compile the multi-expert graph with a caller-supplied durable checkpointer."""
 
     def workflow_context(state: MultiExpertState) -> dict[str, Any]:
-        return {
-            **state.get("run_context", {}),
+        context = copy.deepcopy(dict(state.get("run_context", {})))
+        context.update({
             "tenant_id": state["tenant_id"],
             "task_id": state.get("task_id"),
             "run_id": state["run_id"],
-        }
+        })
+        return context
+
+    def expert_dispatch_payloads(state: MultiExpertState) -> list[dict[str, Any]]:
+        """Build isolated branch payloads so concurrent experts cannot mutate siblings' context."""
+        assignments = state.get("expert_assignments", [])
+        payloads = []
+        for assignment in assignments:
+            payloads.append({
+                "tenant_id": state["tenant_id"],
+                "task_id": state.get("task_id"),
+                "run_id": state["run_id"],
+                "objective": state["objective"],
+                "run_context": workflow_context(state),
+                "assignment": copy.deepcopy(dict(assignment)),
+            })
+        return payloads
 
     async def plan(state: MultiExpertState) -> dict[str, Any]:
         assignments = await services.plan_experts(
@@ -140,18 +156,8 @@ def build_multi_expert_workflow(
         if not assignments:
             return "synthesize"
         return [
-            Send(
-                "run_expert",
-                {
-                    "tenant_id": state["tenant_id"],
-                    "task_id": state["task_id"],
-                    "run_id": state["run_id"],
-                    "objective": state["objective"],
-                    "run_context": workflow_context(state),
-                    "assignment": assignment,
-                },
-            )
-            for assignment in assignments
+            Send("run_expert", payload)
+            for payload in expert_dispatch_payloads(state)
         ]
 
     async def run_expert(state: MultiExpertState) -> dict[str, Any]:
