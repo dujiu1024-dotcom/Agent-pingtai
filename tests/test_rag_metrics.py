@@ -97,7 +97,7 @@ class RAGMetricsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.token_scored_cases, 1)
         self.assertEqual(report.hit_rate_at_k, 1.0)
         self.assertEqual(report.mrr, 0.5)
-        self.assertAlmostEqual(report.ndcg_at_k, 1 / 1.6309297535714575)
+        self.assertAlmostEqual(report.ndcg_at_k, 1 / 1.584962500721156)
         self.assertAlmostEqual(report.token_coverage, 0.8)
         self.assertIsNone(report.cases[1].hit_rate_at_k)
         self.assertEqual(len(report.run_fingerprint), 64)
