@@ -44,6 +44,26 @@ class PostgresPromptRegistry:
                 )
         return PromptVersion(prompt_id, version, template, variables, digest)
 
+    async def resolve(self, prompt_id: str, *, version: int) -> PromptVersion:
+        if not isinstance(prompt_id, str) or not prompt_id.strip():
+            raise ValueError("prompt_id is required")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("version must be a positive integer")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT prompt_id,version,template,variables,content_hash
+                   FROM platform_prompt_versions WHERE prompt_id=%s AND version=%s""",
+                (prompt_id, version),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise KeyError("prompt version does not exist")
+        return PromptVersion(
+            row["prompt_id"], int(row["version"]), row["template"],
+            tuple(row["variables"]), row["content_hash"],
+        )
+
     async def create_variant(
         self, prompt_id: str, name: str, version: int, *, created_by: str,
     ) -> PromptVariant:
