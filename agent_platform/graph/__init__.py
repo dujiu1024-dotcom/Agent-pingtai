@@ -6,9 +6,9 @@ from agent_platform.graph.governance import (
     GraphGovernanceConflict,
     GraphGovernanceRepository,
     GraphGovernanceService,
+    GraphInvalidationJob,
     GovernedGraphEntity,
     GovernedGraphRelation,
-    GraphInvalidationJob,
     InMemoryGraphGovernanceRepository,
 )
 from agent_platform.graph.schema import (
