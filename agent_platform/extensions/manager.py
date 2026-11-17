@@ -14,6 +14,7 @@ from agent_platform.extensions.manifest import ExtensionManifest, validate_platf
 class InstalledExtension:
     manifest: ExtensionManifest
     status: str = "disabled"
+    artifact: Any = None
 
     def __post_init__(self) -> None:
         if self.status not in {"disabled", "enabled"}:
@@ -88,23 +89,27 @@ class ExtensionLifecycleManager:
         await _call(self.audit, action, manifest, outcome)
 
     async def install(self, manifest: ExtensionManifest, *, artifact: Any,
-                      available: Mapping[str, ExtensionManifest] | None = None) -> tuple[str, ...]:
+                      available: Mapping[str, ExtensionManifest] | None = None,
+                      dependency_artifacts: Mapping[str, Any] | None = None) -> tuple[str, ...]:
         async with self._lock:
             installed = await self.store.list()
             installed_manifests = {key: value.manifest for key, value in installed.items()}
             plan = self.lifecycle.plan_install(
                 manifest, installed=installed_manifests, available=available or {},
             )
-            if not artifact:
-                raise ValueError("verified extension artifact is required")
+            package_artifacts = dict(dependency_artifacts or {})
+            package_artifacts[manifest.extension_id] = artifact
+            if any(not package_artifacts.get(item.extension_id) for item in plan.manifests):
+                raise ValueError("verified artifacts are required for every new dependency")
             for item in plan.manifests:
                 await self._authorize("install", item)
             completed: list[ExtensionManifest] = []
             try:
                 for item in plan.manifests:
                     await self._audit("install", item, "requested")
-                    await self.runtime.install(item, artifact if item.extension_id == manifest.extension_id else None)
-                    await self.store.put(InstalledExtension(item, "disabled"))
+                    package = package_artifacts[item.extension_id]
+                    await self.runtime.install(item, package)
+                    await self.store.put(InstalledExtension(item, "disabled", package))
                     completed.append(item)
                     await self._audit("install", item, "succeeded")
             except Exception:
@@ -148,13 +153,14 @@ class ExtensionLifecycleManager:
                 raise
             await self._audit(action, item.manifest, "succeeded")
 
-    async def upgrade(self, replacement: ExtensionManifest, *, artifact: Any) -> None:
+    async def upgrade(self, replacement: ExtensionManifest, *, artifact: Any,
+                      previous_artifact: Any) -> None:
         async with self._lock:
             current = await self.store.get(replacement.extension_id)
             if current is None:
                 raise KeyError(replacement.extension_id)
-            if not artifact:
-                raise ValueError("verified replacement artifact is required")
+            if not artifact or not previous_artifact:
+                raise ValueError("verified replacement and rollback artifacts are required")
             if replacement.version == current.manifest.version:
                 raise ValueError("replacement version must differ from installed version")
             old_parts = tuple(int(value) for value in current.manifest.version.split("."))
@@ -172,9 +178,9 @@ class ExtensionLifecycleManager:
             await self._audit("upgrade", replacement, "requested")
             await self.runtime.upgrade(current.manifest, replacement, artifact)
             try:
-                await self.store.put(InstalledExtension(replacement, current.status))
+                await self.store.put(InstalledExtension(replacement, current.status, artifact))
             except Exception:
-                await self.runtime.upgrade(replacement, current.manifest, current.manifest)
+                await self.runtime.upgrade(replacement, current.manifest, previous_artifact)
                 await self._audit("upgrade", replacement, "compensated")
                 raise
             await self._audit("upgrade", replacement, "succeeded")
@@ -198,7 +204,9 @@ class ExtensionLifecycleManager:
                 for item in reversed(removed):
                     try:
                         await self._audit("rollback_uninstall", item.manifest, "requested")
-                        await self.runtime.install(item.manifest, None)
+                        if not item.artifact:
+                            raise RuntimeError("rollback artifact is unavailable")
+                        await self.runtime.install(item.manifest, item.artifact)
                         if item.status == "enabled":
                             await self.runtime.enable(item.manifest)
                         await self.store.put(item)
