@@ -161,6 +161,7 @@ include = [
   "tests/test_sse_protocol.py",
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
+  "tests/test_evaluation_rollout.py",
 ]
 
 [tool.ruff.lint]
