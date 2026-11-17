@@ -177,10 +177,10 @@ class PostgresTrustedPublisherKeyRepository:
                 if revoke_key_ids:
                     await connection.execute(
                         """UPDATE platform_trusted_publisher_keys
-                           SET revoked_at=COALESCE(revoked_at,now())
+                           SET revoked_at=COALESCE(revoked_at,now()), revoked_by=%s
                            WHERE tenant_id=%s AND extension_id=%s
                              AND key_id=ANY(%s)""",
-                        (tenant_id, extension_id, list(revoke_key_ids)),
+                        (created_by, tenant_id, extension_id, list(revoke_key_ids)),
                     )
                 return key
 
@@ -191,10 +191,10 @@ class PostgresTrustedPublisherKeyRepository:
             async with connection.transaction():
                 cursor = await connection.execute(
                     """UPDATE platform_trusted_publisher_keys
-                       SET revoked_at=COALESCE(revoked_at,now())
+                       SET revoked_at=COALESCE(revoked_at,now()), revoked_by=%s
                        WHERE tenant_id=%s AND extension_id=%s AND key_id=%s
                        RETURNING key_id""",
-                    (tenant_id, extension_id, key_id),
+                    (revoked_by, tenant_id, extension_id, key_id),
                 )
                 return await cursor.fetchone() is not None
 
