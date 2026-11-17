@@ -57,6 +57,9 @@ class SkillApiTests(unittest.TestCase):
         listed = client.get("/api/platform/v1/skills?agent_id=agent-1")
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json()["items"][0]["skill_id"], "summarizer")
+        status = client.get("/api/platform/v1/skills/summarizer/status?agent_id=agent-1")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["status"], "not_installed")
         installed = client.post("/api/platform/v1/skills/summarizer/install",
             json={"agent_id": "agent-1", "version": 3})
         self.assertEqual(installed.status_code, 201)
