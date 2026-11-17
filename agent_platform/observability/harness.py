@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from time import monotonic
-from typing import Any, Mapping, Protocol
+from typing import Any, Iterator, Mapping, Protocol
 
 from agent_platform.observability.cost import ModelCostEstimator
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
@@ -62,7 +62,7 @@ class ObservedHarnessAdapter:
         self.cost_estimator = cost_estimator
 
     @contextmanager
-    def _safe_observation(self, *, name: str, input: Mapping[str, Any], metadata: Mapping[str, Any]):
+    def _safe_observation(self, *, name: str, input: Mapping[str, Any], metadata: Mapping[str, Any]) -> Iterator[Any]:
         active_span = current_trace_span()
         if active_span is not None and isinstance(metadata, dict):
             metadata.update({
@@ -108,7 +108,7 @@ class ObservedHarnessAdapter:
         context = request.context
         template = f"{context.model_template.template_id}@{context.model_template.version}"
         labels = {"component": "harness", "model_template": template}
-        metadata = {
+        metadata: dict[str, Any] = {
             "tenant_id": context.tenant_id,
             "run_id": context.run_id,
             "agent_id": context.agent_id,
