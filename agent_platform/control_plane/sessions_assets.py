@@ -273,7 +273,7 @@ class InMemoryObjectStorage:
 
 
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")
-_MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9!#_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")^_.+-]*/[a-z0-9][a-z0-9!#_SAFE_FILENAME = re.compile(r"[^A-Za-z0-9._-]+")^_.+-]*$")
+_MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*$")
 
 
 def _normalize_media_type(value: str) -> str:
