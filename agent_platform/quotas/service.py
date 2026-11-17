@@ -221,6 +221,7 @@ class InMemoryQuotaStore:
         self._reservations: dict[str, QuotaReservation] = {}
         self._events: dict[str, UsageEvent] = {}
         self._settled: set[str] = set()
+        self._released: set[str] = set()
         self._lock = asyncio.Lock()
 
     async def put_budget(self, budget: Budget) -> None:
@@ -296,7 +297,10 @@ class InMemoryQuotaStore:
 
     async def release(self, reservation_id: str) -> bool:
         async with self._lock:
-            return self._reservations.pop(reservation_id, None) is not None
+            removed = self._reservations.pop(reservation_id, None) is not None
+            if removed:
+                self._released.add(reservation_id)
+            return removed
 
     async def usage(self, tenant_id: str, scope_type: str, scope_id: str, start: datetime, end: datetime) -> tuple[int, Decimal, int]:
         async with self._lock:

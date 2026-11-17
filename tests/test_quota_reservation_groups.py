@@ -100,6 +100,75 @@ class QuotaReservationGroupTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.service.release(accepted[0][0])
 
+    async def test_idempotent_reservation_replay_does_not_double_reserve(self):
+        kwargs = dict(
+            tenant_id="tenant-a", run_id="child-retry", root_run_id="root-run",
+            scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+            estimated_tokens=60, estimated_cost_usd=Decimal("0.60"),
+            estimated_input_tokens=40, estimated_output_tokens=20,
+            idempotency_key="provider-attempt-1",
+        )
+        first, _ = await self.service.reserve_run(**kwargs)
+        replay, _ = await self.service.reserve_run(**kwargs)
+        self.assertEqual(first.group_id, replay.group_id)
+        self.assertEqual(
+            await self.store.usage("tenant-a", "tenant", "tenant-a", self.start, self.end),
+            (60, Decimal("0.60"), 1),
+        )
+        with self.assertRaisesRegex(ValueError, "different reservation parameters"):
+            await self.service.reserve_run(**{**kwargs, "estimated_tokens": 50,
+                "estimated_input_tokens": 30, "estimated_output_tokens": 20})
+
+    async def test_settlement_replay_is_idempotent_and_usage_conflicts_are_rejected(self):
+        group, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id="child-settle", root_run_id="root-run",
+            scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+            estimated_tokens=60, estimated_cost_usd=Decimal("0.60"),
+            idempotency_key="provider-attempt-settle",
+        )
+        first = await self.service.settle_run(
+            group, model_key="model-x", input_tokens=25, output_tokens=10,
+            cost_usd=Decimal("0.20"),
+        )
+        replay = await self.service.settle_run(
+            group, model_key="model-x", input_tokens=25, output_tokens=10,
+            cost_usd=Decimal("0.20"),
+        )
+        self.assertEqual(first.event_id, replay.event_id)
+        self.assertEqual(len(await self.store.list_usage("tenant-a", self.start, self.end)), 1)
+        with self.assertRaisesRegex(ValueError, "different usage"):
+            await self.service.settle_run(
+                group, model_key="model-x", input_tokens=26, output_tokens=10,
+                cost_usd=Decimal("0.20"),
+            )
+
+    async def test_release_then_new_retry_attempt_gets_fresh_reservation(self):
+        first, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id="child-retry-2", root_run_id="root-run",
+            scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+            estimated_tokens=70, estimated_cost_usd=Decimal("0.70"),
+            idempotency_key="attempt-1",
+        )
+        self.assertTrue(await self.service.release(first))
+        second, _ = await self.service.reserve_run(
+            tenant_id="tenant-a", run_id="child-retry-2", root_run_id="root-run",
+            scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+            estimated_tokens=70, estimated_cost_usd=Decimal("0.70"),
+            idempotency_key="attempt-2",
+        )
+        self.assertNotEqual(first.group_id, second.group_id)
+        with self.assertRaisesRegex(ValueError, "released"):
+            await self.service.reserve_run(
+                tenant_id="tenant-a", run_id="child-retry-2", root_run_id="root-run",
+                scopes=(QuotaScope("tenant", "tenant-a"), QuotaScope("run", "root-run")),
+                estimated_tokens=70, estimated_cost_usd=Decimal("0.70"),
+                idempotency_key="attempt-1",
+            )
+        self.assertEqual(
+            await self.store.usage("tenant-a", "tenant", "tenant-a", self.start, self.end),
+            (70, Decimal("0.70"), 1),
+        )
+
     async def test_duplicate_scopes_and_wrong_root_scope_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "unique"):
             await self.service.reserve_run(

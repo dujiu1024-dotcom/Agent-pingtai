@@ -90,6 +90,9 @@ class QuotaReservationGroupService:
             ):
                 raise BudgetExceeded("separate input and output estimates are required by this budget")
             budgets.append(budget)
+        # Stable scope ordering makes deterministic group IDs replay identically
+        # even if callers supply the scope tuple in a different order.
+        budgets.sort(key=lambda budget: (budget.scope_type, budget.scope_id))
         if idempotency_key is not None and (
             not isinstance(idempotency_key, str) or not idempotency_key.strip()
         ):
@@ -127,6 +130,30 @@ class QuotaReservationGroupService:
         store = self.store
         warnings = []
         async with store._lock:
+            # An idempotent replay must return the original reservation group,
+            # not reserve capacity a second time. Partial groups are corruption.
+            existing = [store._reservations.get(r.reservation_id) for r in group.reservations]
+            settled = [r.reservation_id in store._settled for r in group.reservations]
+            released = [r.reservation_id in store._released for r in group.reservations]
+            if any(existing) or any(settled) or any(released):
+                if all(existing) and not any(settled):
+                    for actual, expected in zip(existing, group.reservations):
+                        if (
+                            actual.tenant_id, actual.run_id, actual.root_run_id,
+                            actual.scope_type, actual.scope_id, actual.reserved_tokens,
+                            actual.reserved_cost_usd, actual.reserved_input_tokens,
+                            actual.reserved_output_tokens, actual.period_start, actual.period_end,
+                        ) != (
+                            expected.tenant_id, expected.run_id, expected.root_run_id,
+                            expected.scope_type, expected.scope_id, expected.reserved_tokens,
+                            expected.reserved_cost_usd, expected.reserved_input_tokens,
+                            expected.reserved_output_tokens, expected.period_start, expected.period_end,
+                        ):
+                            raise ValueError("idempotency key was reused with different reservation parameters")
+                    return []
+                if all(settled) and not any(existing) and not any(released):
+                    return []
+                raise ValueError("reservation group is partially present, released, or inconsistent")
             # Validate every scope before mutating state; the lock makes the
             # check-and-insert indivisible for concurrent in-process callers.
             for reservation, budget in zip(group.reservations, budgets):
@@ -175,6 +202,50 @@ class QuotaReservationGroupService:
         warnings = []
         async with connection:
             async with connection.transaction():
+                if group.group_id:
+                    # Serialize retries with the same idempotency key before
+                    # checking rows; concurrent duplicate submissions then see
+                    # the first transaction's complete group.
+                    await connection.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                        (group.group_id,),
+                    )
+                    cursor = await connection.execute(
+                        """SELECT reservation_id,tenant_id,run_id,scope_type,scope_id,
+                                  reserved_tokens,reserved_cost_usd,reserved_input_tokens,
+                                  reserved_output_tokens,period_start,period_end,status
+                           FROM platform_quota_reservations
+                           WHERE tenant_id=%s AND reservation_group_id=%s""",
+                        (group.tenant_id, UUID(group.group_id)),
+                    )
+                    rows = await cursor.fetchall()
+                    if rows:
+                        if len(rows) != len(group.reservations):
+                            raise ValueError("reservation group is partially present")
+                        by_id = {str(row["reservation_id"]): row for row in rows}
+                        states = set()
+                        for expected in group.reservations:
+                            row = by_id.get(expected.reservation_id)
+                            if row is None:
+                                raise ValueError("reservation group is missing a scope")
+                            if (
+                                row["tenant_id"], str(row["run_id"]), row["scope_type"],
+                                row["scope_id"], row["reserved_tokens"],
+                                Decimal(row["reserved_cost_usd"]),
+                                row["reserved_input_tokens"], row["reserved_output_tokens"],
+                                row["period_start"], row["period_end"],
+                            ) != (
+                                expected.tenant_id, expected.run_id, expected.scope_type,
+                                expected.scope_id, expected.reserved_tokens,
+                                expected.reserved_cost_usd, expected.reserved_input_tokens,
+                                expected.reserved_output_tokens, expected.period_start,
+                                expected.period_end,
+                            ):
+                                raise ValueError("idempotency key was reused with different reservation parameters")
+                            states.add(row["status"])
+                        if states == {"active"} or states == {"settled"}:
+                            return warnings
+                        raise ValueError("reservation group is released, expired, or inconsistent")
                 for r in ordered:
                     try:
                         cursor = await connection.execute(
@@ -209,10 +280,11 @@ class QuotaReservationGroupService:
         primary = next((r for r in group.reservations if r.scope_type == "tenant"),
                        group.reservations[0])
         event_time = occurred_at or datetime.now(timezone.utc)
-        if any(not r.period_start <= event_time < r.period_end for r in group.reservations):
-            raise ValueError("usage event is outside one or more reserved budget periods")
         event = UsageEvent(
-            event_id=str(uuid4()), tenant_id=group.tenant_id, run_id=group.run_id,
+            # Stable event identity makes a retry after a lost settlement response
+            # return the original ledger event instead of charging twice.
+            event_id=str(uuid5(UUID(group.group_id), "quota-group-settlement")),
+            tenant_id=group.tenant_id, run_id=group.run_id,
             model_key=model_key, input_tokens=input_tokens, output_tokens=output_tokens,
             cost_usd=cost_usd, occurred_at=event_time,
             project_id=project_id, agent_id=agent_id, source=source,
@@ -220,9 +292,25 @@ class QuotaReservationGroupService:
         )
         if isinstance(self.store, InMemoryQuotaStore):
             async with self.store._lock:
+                existing_event = self.store._events.get(event.event_id)
+                if existing_event is not None:
+                    if (
+                        existing_event.tenant_id, existing_event.run_id, existing_event.root_run_id,
+                        existing_event.model_key, existing_event.input_tokens,
+                        existing_event.output_tokens, existing_event.cost_usd,
+                        existing_event.project_id, existing_event.agent_id, existing_event.source,
+                    ) != (
+                        event.tenant_id, event.run_id, event.root_run_id, event.model_key,
+                        event.input_tokens, event.output_tokens, event.cost_usd,
+                        event.project_id, event.agent_id, event.source,
+                    ):
+                        raise ValueError("reservation group was settled with different usage")
+                    return existing_event
                 active = [self.store._reservations.get(r.reservation_id) for r in group.reservations]
                 if any(r is None for r in active):
                     raise KeyError("one or more group reservations are no longer active")
+                if any(not r.period_start <= event_time < r.period_end for r in group.reservations):
+                    raise ValueError("usage event is outside one or more reserved budget periods")
                 if (primary.tenant_id, primary.run_id) != (event.tenant_id, event.run_id):
                     raise PermissionError("usage event does not match reservation group")
                 if not primary.period_start <= event.occurred_at < primary.period_end:
@@ -237,6 +325,38 @@ class QuotaReservationGroupService:
             connection = await self.store._connection_factory()
             async with connection:
                 async with connection.transaction():
+                    cursor = await connection.execute(
+                        """SELECT * FROM platform_usage_ledger WHERE event_id=%s""",
+                        (UUID(event.event_id),),
+                    )
+                    settled_row = await cursor.fetchone()
+                    if settled_row is not None:
+                        if (
+                            settled_row["tenant_id"], str(settled_row["run_id"]),
+                            settled_row["model_key"], settled_row["input_tokens"],
+                            settled_row["output_tokens"], Decimal(settled_row["cost_usd"]),
+                            settled_row["project_id"], settled_row["agent_id"],
+                            settled_row["source"],
+                        ) != (
+                            event.tenant_id, event.run_id, event.model_key,
+                            event.input_tokens, event.output_tokens, event.cost_usd,
+                            event.project_id, event.agent_id, event.source,
+                        ):
+                            raise ValueError("reservation group was settled with different usage")
+                        return UsageEvent(
+                            event_id=str(settled_row["event_id"]),
+                            tenant_id=settled_row["tenant_id"], run_id=str(settled_row["run_id"]),
+                            model_key=settled_row["model_key"],
+                            input_tokens=settled_row["input_tokens"],
+                            output_tokens=settled_row["output_tokens"],
+                            cost_usd=Decimal(settled_row["cost_usd"]),
+                            occurred_at=settled_row["occurred_at"],
+                            project_id=settled_row["project_id"], agent_id=settled_row["agent_id"],
+                            source=settled_row["source"],
+                            root_run_id=str(settled_row["root_run_id"]) if settled_row.get("root_run_id") else group.root_run_id,
+                        )
+                    if any(not r.period_start <= event_time < r.period_end for r in group.reservations):
+                        raise ValueError("usage event is outside one or more reserved budget periods")
                     cursor = await connection.execute(
                         """SELECT COUNT(*) AS active_count
                            FROM platform_quota_reservations
@@ -271,7 +391,10 @@ class QuotaReservationGroupService:
             async with self.store._lock:
                 removed = False
                 for r in group.reservations:
-                    removed = self.store._reservations.pop(r.reservation_id, None) is not None or removed
+                    was_active = self.store._reservations.pop(r.reservation_id, None) is not None
+                    if was_active:
+                        self.store._released.add(r.reservation_id)
+                    removed = was_active or removed
                 return removed
         if isinstance(self.store, PostgresQuotaStore):
             connection = await self.store._connection_factory()
