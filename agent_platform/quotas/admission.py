@@ -7,6 +7,7 @@ fairness among callers sharing one controller instance.
 from __future__ import annotations
 
 import asyncio
+import math
 from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -54,11 +55,12 @@ class TenantFairQuotaAdmissionController:
             request.tenant_id, request.run_id, request.scope_type, request.scope_id,
         )):
             raise ValueError("tenant, Run and quota scope identifiers are required")
-        if request.strategy not in {"reject", "queue"}:
+        if not isinstance(request.strategy, str) or request.strategy not in {"reject", "queue"}:
             raise ValueError("strategy must be 'reject' or 'queue'")
         if request.wait_timeout_seconds is not None and (
             isinstance(request.wait_timeout_seconds, bool)
             or not isinstance(request.wait_timeout_seconds, (int, float))
+            or not math.isfinite(request.wait_timeout_seconds)
             or request.wait_timeout_seconds <= 0
         ):
             raise ValueError("wait timeout must be a positive number")
