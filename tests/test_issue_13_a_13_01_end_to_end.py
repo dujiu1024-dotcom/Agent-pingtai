@@ -138,14 +138,13 @@ class MultiExpertEndToEndAcceptanceTests(unittest.IsolatedAsyncioTestCase):
 
         claims = [entry for entry in entries if entry.kind is EntryKind.CLAIM]
         self.assertEqual({entry.author_id for entry in claims}, {"researcher", "critic"})
-        archive = next(
-            entry for entry in entries
-            if entry.kind is EntryKind.ARTIFACT
-            and entry.content.get("artifact_type") == "final"
-        )
+        archive = await repository.get(completed["final_result"]["blackboard_entry_id"])
+        self.assertEqual(archive.content["final_result"]["result"], "report archived")
         referenced = set(archive.source_refs)
         self.assertEqual(len(referenced), len(archive.source_refs))
         self.assertTrue(all(entry.entry_id in referenced for entry in claims))
+        self.assertTrue(any(entry.kind is EntryKind.CONFLICT and entry.entry_id in referenced for entry in entries))
+        self.assertTrue(any(entry.kind is EntryKind.CHALLENGE and entry.entry_id in referenced for entry in entries))
         self.assertTrue(any(entry.kind is EntryKind.DECISION and entry.entry_id in referenced for entry in entries))
         self.assertTrue(any(entry.kind is EntryKind.NOTE and entry.entry_id in referenced for entry in entries))
 
