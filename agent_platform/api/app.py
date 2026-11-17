@@ -247,7 +247,8 @@ def create_platform_app(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_dataset_repository, evaluation_run_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
+        evaluation_dataset_repository, evaluation_run_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
