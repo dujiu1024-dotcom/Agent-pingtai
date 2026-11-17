@@ -102,7 +102,10 @@ class RunEventBroker:
             subscribers.add(queue)
         try:
             while True:
-                yield await queue.get()
+                event = await queue.get()
+                yield event
+                if event.data.get("event_type") in {"COMPLETE", "ERROR"}:
+                    return
         finally:
             async with self._lock:
                 self._subscribers[key].discard(queue)
