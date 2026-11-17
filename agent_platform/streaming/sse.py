@@ -11,8 +11,8 @@ from typing import Any, Literal
 
 from fastapi.responses import StreamingResponse
 
-SSEEventType = Literal["token_stream", "step_progress", "tool_output", "run_complete", "error"]
-SSE_EVENT_TYPES = frozenset({"token_stream", "step_progress", "tool_output", "run_complete", "error"})
+SSEEventType = Literal["token_stream", "step_progress", "tool_output", "run_complete", "error", "blackboard_update"]
+SSE_EVENT_TYPES = frozenset({"token_stream", "step_progress", "tool_output", "run_complete", "error", "blackboard_update"})
 DEFAULT_HEARTBEAT_INTERVAL = 15.0
 
 
