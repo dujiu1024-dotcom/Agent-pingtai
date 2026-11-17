@@ -73,6 +73,16 @@ def verify_parity(export_dir: Path, target_dir: Path, mapping_path: Path) -> dic
     manifest, source_by_table = load_export(export_dir)
     mappings = load_mapping(mapping_path, manifest)
 
+    expected_source_files = {"manifest.json"} | {item["file"] for item in manifest["tables"]}
+    actual_source_files = {item.name for item in export_dir.iterdir()}
+    if actual_source_files != expected_source_files:
+        missing = sorted(expected_source_files - actual_source_files)
+        extra = sorted(actual_source_files - expected_source_files)
+        raise ValueError(
+            "source export inventory mismatch "
+            f"(missing={missing}, extra={extra})"
+        )
+
     expected_files = {f"{item['target_schema']}__{item['target']}.jsonl" for item in mappings}
     actual_files = {item.name for item in target_dir.iterdir()}
     if actual_files != expected_files:
