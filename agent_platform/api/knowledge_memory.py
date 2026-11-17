@@ -187,6 +187,51 @@ def create_knowledge_memory_router(
             raise HTTPException(404, "document ACL grant not found")
         return {"document_id": document_id, "revoked": True}
 
+    @router.post("/knowledge/documents/{document_id}/chunks/{chunk_id}/acl", status_code=201)
+    async def grant_chunk_acl(document_id: str, chunk_id: str, request: Request):
+        principal = await resolve_knowledge_principal(request)
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "JSON object is required") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON object is required")
+        principal_type = body.get("principal_type")
+        principal_id = body.get("principal_id")
+        permission = body.get("permission", "read")
+        if not all(isinstance(value, str) and value.strip() for value in (principal_type, principal_id, permission)):
+            raise HTTPException(400, "principal_type, principal_id and permission are required strings")
+        try:
+            await knowledge.grant_chunk_access(
+                principal=principal, document_id=document_id, chunk_id=chunk_id,
+                principal_type=principal_type, principal_id=principal_id, permission=permission,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404 if str(exc) in {"document not found", "chunk not found"} else 400, str(exc)) from exc
+        return {"document_id": document_id, "chunk_id": chunk_id, "principal_type": principal_type,
+                "principal_id": principal_id, "permission": permission}
+
+    @router.delete("/knowledge/documents/{document_id}/chunks/{chunk_id}/acl/{principal_type}/{principal_id}")
+    async def revoke_chunk_acl(
+        document_id: str, chunk_id: str, principal_type: str, principal_id: str,
+        request: Request, permission: str = "read",
+    ):
+        principal = await resolve_knowledge_principal(request)
+        try:
+            revoked = await knowledge.revoke_chunk_access(
+                principal=principal, document_id=document_id, chunk_id=chunk_id,
+                principal_type=principal_type, principal_id=principal_id, permission=permission,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404 if str(exc) == "document not found" else 400, str(exc)) from exc
+        if not revoked:
+            raise HTTPException(404, "chunk ACL grant not found")
+        return {"document_id": document_id, "chunk_id": chunk_id, "revoked": True}
+
     if rag is not None:
         @router.post("/knowledge/answer")
         async def answer_knowledge(request: Request):
