@@ -20,7 +20,7 @@ class FakeApprovalVerifier:
         self.calls = []
 
     async def consume(self, *, tenant_id, approval_id, action_digest, policy_version="1"):
-        self.calls.append((tenant_id, approval_id, action_digest))
+        self.calls.append((tenant_id, approval_id, action_digest, policy_version))
         return self.valid
 
 
@@ -100,6 +100,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 ToolDefinition(
                     "send", RiskLevel.EXTERNAL_OR_IRREVERSIBLE, handler,
+                    policy_version="policy-v2",
                     resource_resolver=resolve_resource,
                     resource_authorizer=authorize_resource,
                 ),
@@ -199,6 +200,7 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         result = await self.call("send", approval_id="approval-1")
         self.assertTrue(result["ok"])
         self.assertEqual(len(self.approvals.calls), 1)
+        self.assertEqual(self.approvals.calls[0][3], "policy-v2")
 
     async def test_external_action_replay_returns_cached_result_without_reexecution(self):
         self.approvals.valid = True
