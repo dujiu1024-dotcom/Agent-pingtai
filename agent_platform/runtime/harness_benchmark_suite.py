@@ -6,8 +6,8 @@ test adapters while provider-backed execution remains an explicit operator actio
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Mapping, Sequence
+from dataclasses import asdict, dataclass, replace
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 
 from agent_platform.runtime.harness_benchmark import (
     HarnessBenchmarkCase,
@@ -26,6 +26,7 @@ class HarnessCandidateScorecard:
     timeout: bool
     resume: bool
     tool_gateway: bool
+    cancellation_probe_passed: bool | None = None
 
     @classmethod
     def from_adapter(cls, name: str, adapter: HarnessAdapter) -> "HarnessCandidateScorecard":
@@ -76,6 +77,13 @@ FIXED_HARNESS_CASES: tuple[HarnessBenchmarkCase, ...] = (
         "Deployment completed; health checks are passing.",
         ("completed",), quality_threshold=1.0, streaming=True,
     ),
+    HarnessBenchmarkCase(
+        "gateway-tool-call",
+        "Call the approved knowledge.search tool exactly once. Return its result.",
+        "Use the available approved tool; do not simulate a tool call in text.",
+        ("benchmark-tool-result",),
+        required_tools=("knowledge.search",),
+    ),
 )
 
 
@@ -97,15 +105,27 @@ async def run_fixed_harness_benchmark(
     pricing: Mapping[str, Any] | None = None,
     gateway_tool_verifier: Any = None,
     recovery_attempts: int = 1,
+    cancellation_probes: Mapping[str, Callable[[HarnessAdapter], Awaitable[bool]]] | None = None,
 ) -> tuple[tuple[HarnessCandidateScorecard, ...], HarnessBenchmarkReport]:
     """Run the same fixed cases sequentially against each candidate."""
     scorecards = candidate_scorecards(adapters)
+    probe_results: dict[str, bool | None] = {}
+    for name, adapter in sorted(adapters.items()):
+        probe = (cancellation_probes or {}).get(name)
+        probe_results[name] = bool(await probe(adapter)) if probe is not None else None
+    scorecards = tuple(
+        replace(item, cancellation_probe_passed=probe_results[item.candidate])
+        for item in scorecards
+    )
     observations: list[HarnessBenchmarkObservation] = []
     for name, adapter in sorted(adapters.items()):
         capabilities = getattr(adapter, "capabilities", None)
         cases = tuple(
             case for case in FIXED_HARNESS_CASES
-            if not case.streaming or bool(getattr(capabilities, "streaming", False))
+            if (
+                (not case.streaming or bool(getattr(capabilities, "streaming", False)))
+                and (not case.required_tools or bool(getattr(capabilities, "tool_gateway", False)))
+            )
         )
         candidate_report = await HarnessBenchmarkRunner(
             adapters={name: adapter},
@@ -130,10 +150,10 @@ def benchmark_evidence_payload(
         "summary": report.summary(),
         "observations": [asdict(row) for row in report.observations],
         "limitations": [
-            "Cancellation is reported as a declared capability; a provider-backed "
-            "cancellation probe must be run separately before claiming process termination.",
-            "Tool Gateway is capability-gated; use a run-scoped Gateway verifier for "
-            "tool-enabled benchmark requests.",
+            "Cancellation capability and cancellation_probe_passed are separate: only a supplied "
+            "provider-backed probe can verify that cancellation terminates work.",
+            "The gateway-tool-call case requires a request factory to expose exactly "
+            "knowledge.search and a run-scoped Gateway verifier; tool_calls counts actual normalized calls.",
             "Estimated cost is computed only when explicit per-candidate token pricing is supplied.",
             "Exact-match quality anchors are deterministic screening metrics, not human preference evaluation.",
         ],

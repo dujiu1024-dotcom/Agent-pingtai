@@ -21,6 +21,7 @@ class HarnessBenchmarkCase:
     timeout_seconds: float = 120.0
     quality_threshold: float = 1.0
     streaming: bool = False
+    required_tools: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
@@ -84,6 +85,7 @@ class HarnessBenchmarkObservation:
     time_to_first_token_ms: int | None = None
     streamed_events: int = 0
     error_type: str | None = None
+    tool_calls_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -121,6 +123,7 @@ class HarnessBenchmarkReport:
                     2,
                 ),
                 "streamed_events": sum(row.streamed_events for row in rows),
+                "tool_calls": sum(row.tool_calls_count for row in rows),
             }
             if any(row.estimated_cost_usd is not None for row in rows):
                 result[runtime]["estimated_cost_usd"] = round(
@@ -188,6 +191,8 @@ class HarnessBenchmarkRunner:
         for case in cases:
             for runtime, adapter in self.adapters.items():
                 request = self.request_factory(runtime, case)
+                if case.required_tools and tuple(request.allowed_tools) != case.required_tools:
+                    raise ValueError("benchmark request must expose exactly the case-required Gateway tools")
                 if request.allowed_tools:
                     if self.gateway_tool_verifier is None:
                         raise ValueError(
@@ -308,6 +313,7 @@ class HarnessBenchmarkRunner:
                         missing_expectations=missing,
                         output_text=result.output_text,
                         quality_score=quality_score,
+                        tool_calls_count=len(result.tool_calls),
                         estimated_cost_usd=estimated_cost,
                         attempts=attempts,
                         recovered=attempts > 1,

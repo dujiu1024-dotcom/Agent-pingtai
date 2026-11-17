@@ -71,9 +71,11 @@ class HarnessBenchmarkSuiteTests(unittest.IsolatedAsyncioTestCase):
                 "instruction-following",
                 "long-context-recall",
                 "streaming-response",
+                "gateway-tool-call",
             ),
         )
-        self.assertTrue(FIXED_HARNESS_CASES[-1].streaming)
+        streaming_case = next(case for case in FIXED_HARNESS_CASES if case.case_id == "streaming-response")
+        self.assertTrue(streaming_case.streaming)
 
     def test_candidate_requires_declared_capabilities(self):
         with self.assertRaisesRegex(ValueError, "must declare Harness capabilities"):
@@ -94,6 +96,20 @@ class HarnessBenchmarkSuiteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload["candidate_capabilities"]), 2)
         self.assertTrue(any("Cancellation" in item for item in payload["limitations"]))
         self.assertEqual(payload["summary"]["candidate-b"]["passed"], 6)
+
+    async def test_runs_explicit_cancellation_probe_and_records_evidence(self):
+        candidate = CandidateAdapter()
+        async def probe(adapter):
+            self.assertIs(adapter, candidate)
+            return True
+        scorecards, report = await run_fixed_harness_benchmark(
+            adapters={"candidate": candidate},
+            request_factory=self.request_factory,
+            cancellation_probes={"candidate": probe},
+        )
+        self.assertTrue(scorecards[0].cancellation_probe_passed)
+        payload = benchmark_evidence_payload(scorecards, report)
+        self.assertTrue(payload["candidate_capabilities"][0]["cancellation_probe_passed"])
 
 
 if __name__ == "__main__":

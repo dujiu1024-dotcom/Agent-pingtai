@@ -31,3 +31,12 @@ Provider-backed 执行必须由隔离的实验调用方显式构造 adapter，�
 CI 使用确定性 adapter 测试固定任务集、候选能力差异、流式筛选和报告结构，不访问外部模型服务、不需要 API Key。此测试验证比较框架，不是模型质量/成本/延迟的真实测量。
 
 本次调度明确跳过真机和真实 Provider 验证，也不申请服务器、代理、密钥或其他外部资源。因此不能据此宣称 DeepSeek 与 Strands 的真实模型胜负、美元成本或生产取消可靠性已测定。需要真实模型结果时，应在已批准的隔离环境中运行同一固定任务集，并将实际模型 ID、模板版本、价格快照、时间戳和完整报告作为独立证据回填。
+
+
+## C-12-02 补充：工具调用与取消实测接口
+
+固定任务集新增 `gateway-tool-call`。候选仅在声明 `tool_gateway` 时纳入该项；request_factory 必须将 `case.required_tools` 原样映射为 `HarnessRequest.allowed_tools`，并提供 run-scoped `gateway_tool_verifier`。结果中的 `HarnessResult.tool_calls` 是真实归一化工具调用记录，报告按候选汇总 `tool_calls`，不以模型输出文本推断调用成功。
+
+`run_fixed_harness_benchmark` 可接收 `cancellation_probes`，由调用方对每个候选执行真实取消探针并返回是否确认停止。报告 scorecard 同时保留声明能力 `cancellation` 和实测结果 `cancellation_probe_passed`；未提供探针时为 `null`，不得将声明能力等同于实测成功。
+
+超时由每个固定 case 的 deadline 强制中止并记录错误类型；恢复仅按显式配置重试，调用方应仅对幂等或具备去重键的任务启用。真实 Provider 对比需要实验环境注入受控模型代理、实际模型模板与价格快照；本仓库 CI 仍使用无密钥确定性适配器，不能生成真实模型胜负结论。
