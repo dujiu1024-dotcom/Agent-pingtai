@@ -70,8 +70,10 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_output_fails_after_retry_budget(self):
         adapter = FakeAdapter(["{}", "{}"])
         validated = SchemaValidatedHarnessAdapter(adapter, max_retries=1)
-        with self.assertRaises(StructuredOutputValidationError):
+        with self.assertRaises(StructuredOutputValidationError) as raised:
             await validated.run(self.request)
+        self.assertEqual(raised.exception.attempts, 2)
+        self.assertEqual(len(adapter.requests), 2)
 
     async def test_versioned_schema_registry_resolves_pinned_version(self):
         registry = StructuredOutputSchemaRegistry()
@@ -157,8 +159,14 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
             await SchemaValidatedHarnessAdapter(adapter).run(request)
 
     async def test_retry_budget_is_bounded(self):
-        with self.assertRaises(ValueError):
-            SchemaValidatedHarnessAdapter(FakeAdapter([]), max_retries=4)
+        for retries in (4, True, -1):
+            with self.subTest(retries=retries), self.assertRaises(ValueError):
+                SchemaValidatedHarnessAdapter(FakeAdapter([]), max_retries=retries)
+
+    def test_overflowing_json_number_is_rejected(self):
+        value, errors = validate_structured_output('{"value":1e999}', {"type": "object"})
+        self.assertIsNone(value)
+        self.assertTrue(any("invalid JSON" in error for error in errors))
 
 
 if __name__ == "__main__":
