@@ -3,6 +3,8 @@
 The Python SDK is available from `agent_platform.sdk` and uses only the Python standard library.
 
 ```python
+import os
+
 from agent_platform.sdk import PlatformClient, RateLimitError, AuthenticationError
 
 client = PlatformClient(
