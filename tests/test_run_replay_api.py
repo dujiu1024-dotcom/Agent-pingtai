@@ -52,6 +52,17 @@ class RunReplayApiTests(unittest.TestCase):
         self.assertEqual(rerun.status_code,200)
         self.assertTrue(rerun.json()["result"]["ok"])
 
+    def test_seek_and_rerun_reject_boolean_or_malformed_sequences(self):
+        opened=self.client.post("/api/platform/v1/runs/run-api/replay")
+        session_id=opened.json()["session_id"]
+        base=f"/api/platform/v1/runs/run-api/replay/{session_id}"
+        for action in ("seek", "rerun"):
+            boolean=self.client.post(f"{base}/{action}",json={"sequence":True})
+            self.assertEqual(boolean.status_code,400)
+            malformed=self.client.post(
+                f"{base}/{action}",content="{",headers={"content-type":"application/json"})
+            self.assertEqual(malformed.status_code,400)
+
     def test_replay_routes_enforce_run_authorization(self):
         self.allowed=False
         response=self.client.post("/api/platform/v1/runs/run-api/replay")
