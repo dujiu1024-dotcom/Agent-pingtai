@@ -199,6 +199,7 @@ files = [
   "agent_platform/memory/retrieval.py",
   "tests/test_identity.py",
   "agent_platform/streaming/sse.py",
+  "agent_platform/streaming/client.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
