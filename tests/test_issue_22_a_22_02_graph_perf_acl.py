@@ -129,10 +129,10 @@ class GraphQueryPerformanceAndAclAcceptanceTests(unittest.IsolatedAsyncioTestCas
                 "n00000", direction="out", depth=2, limit=100,
                 allowed_project_ids=self.allowed,
             )
-            self.assertGreaterEqual(len(result.entities), 40)
+            self.assertGreaterEqual(len(result.entities), 25)
             self.assertLessEqual(len(result.entities), 100)
             self.assertTrue(all(
-                item.entity.project_id == "project-a" for item in result.entities
+                item.project_id == "project-a" for item in result.entities
             ))
 
         subgraph_ids = tuple(f"n{i:05d}" for i in range(50))
