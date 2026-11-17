@@ -62,6 +62,7 @@ class WebhookAttempt:
     attempt: int
     status: str
     next_attempt_at: datetime | None
+    lease_token: str = ""
     response_code: int | None = None
 
 
@@ -111,10 +112,13 @@ class WebhookEgressPolicy:
 
 class WebhookStore(Protocol):
     async def claim(self, *, limit: int) -> list[tuple[WebhookSubscription, WebhookPayload, WebhookAttempt]]: ...
-    async def complete(self, tenant_id: str, delivery_id: str, *, response_code: int) -> None: ...
+    async def complete(self, tenant_id: str, delivery_id: str, *, response_code: int,
+                       lease_token: str) -> None: ...
     async def retry(self, tenant_id: str, delivery_id: str, *, next_attempt_at: datetime,
-                    response_code: int | None) -> None: ...
-    async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None) -> None: ...
+                    response_code: int | None, lease_token: str,
+                    last_error_code: str | None) -> None: ...
+    async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None,
+                          lease_token: str, last_error_code: str | None) -> None: ...
 
 
 def signature(secret: bytes, timestamp: str, body: bytes) -> str:
@@ -227,7 +231,10 @@ class WebhookDispatcher:
             if code is not None and 200 <= code < 300:
                 # Do not reinterpret an audit persistence failure after a
                 # successful remote delivery as a transport failure/retry.
-                await self.store.complete(attempt.tenant_id, attempt.delivery_id, response_code=code)
+                await self.store.complete(
+                    attempt.tenant_id, attempt.delivery_id, response_code=code,
+                    lease_token=attempt.lease_token,
+                )
                 await self.audit_sink.record(
                     tenant_id=attempt.tenant_id,
                     actor_id=self.SYSTEM_ACTOR_ID,
@@ -245,13 +252,19 @@ class WebhookDispatcher:
                 result["delivered"] += 1
                 continue
             if attempt.attempt >= self.max_attempts:
-                await self.store.dead_letter(attempt.tenant_id, attempt.delivery_id, response_code=code)
+                await self.store.dead_letter(
+                    attempt.tenant_id, attempt.delivery_id, response_code=code,
+                    lease_token=attempt.lease_token,
+                    last_error_code=failure_type or "non_success_response",
+                )
                 result["dead_lettered"] += 1
             else:
                 delay = min(3600, 2 ** min(attempt.attempt, 10))
                 await self.store.retry(
                     attempt.tenant_id, attempt.delivery_id, next_attempt_at=self.clock() + timedelta(seconds=delay),
                     response_code=code,
+                    lease_token=attempt.lease_token,
+                    last_error_code=failure_type or "non_success_response",
                 )
                 result["retrying"] += 1
             await self.audit_sink.record(
@@ -395,7 +408,7 @@ class PostgresWebhookStore:
                          AND s.tenant_id=d.tenant_id AND s.subscription_id=d.subscription_id
                          AND s.status='active' AND d.topic=ANY(s.topics)
                        RETURNING d.tenant_id,d.delivery_id,d.event_id,d.topic,d.payload,
-                         d.attempts,s.subscription_id,s.target_url,s.secret_ref,s.topics""",
+                         d.attempts,d.lease_token,s.subscription_id,s.target_url,s.secret_ref,s.topics""",
                     (limit, lease, self.lease_seconds),
                 )
                 rows = await cursor.fetchall()
@@ -414,21 +427,33 @@ class PostgresWebhookStore:
             attempt = WebhookAttempt(
                 tenant_id=tenant_id, delivery_id=str(row["delivery_id"]),
                 event_id=str(row["event_id"]), attempt=row["attempts"], status="leased",
-                next_attempt_at=None,
+                next_attempt_at=None, lease_token=str(row["lease_token"]),
             )
             result.append((subscription, payload, attempt))
         return result
 
-    async def complete(self, tenant_id: str, delivery_id: str, *, response_code: int) -> None:
-        await self._update(tenant_id, delivery_id, "delivered", response_code=response_code)
+    async def complete(self, tenant_id: str, delivery_id: str, *, response_code: int,
+                       lease_token: str) -> None:
+        await self._update(
+            tenant_id, delivery_id, "delivered", response_code=response_code,
+            lease_token=lease_token, last_error_code=None,
+        )
 
     async def retry(self, tenant_id: str, delivery_id: str, *, next_attempt_at: datetime,
-                    response_code: int | None) -> None:
-        await self._update(tenant_id, delivery_id, "retrying", response_code=response_code,
-                           next_attempt_at=next_attempt_at)
+                    response_code: int | None, lease_token: str,
+                    last_error_code: str | None) -> None:
+        await self._update(
+            tenant_id, delivery_id, "retrying", response_code=response_code,
+            next_attempt_at=next_attempt_at, lease_token=lease_token,
+            last_error_code=last_error_code,
+        )
 
-    async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None) -> None:
-        await self._update(tenant_id, delivery_id, "dead_lettered", response_code=response_code)
+    async def dead_letter(self, tenant_id: str, delivery_id: str, *, response_code: int | None,
+                          lease_token: str, last_error_code: str | None) -> None:
+        await self._update(
+            tenant_id, delivery_id, "dead_lettered", response_code=response_code,
+            lease_token=lease_token, last_error_code=last_error_code,
+        )
 
 
     async def replay_dead_letter(
@@ -460,16 +485,21 @@ class PostgresWebhookStore:
                 return await cursor.fetchone() is not None
 
     async def _update(self, tenant_id: str, delivery_id: str, status: str, *,
-                      response_code: int | None,
+                      response_code: int | None, lease_token: str,
+                      last_error_code: str | None,
                       next_attempt_at: datetime | None = None) -> None:
+        if not isinstance(lease_token, str) or not lease_token:
+            raise ValueError("lease_token is required to finalize a webhook delivery")
         connection = await self._connect()
         async with connection:
             async with connection.transaction():
                 await connection.execute(
                     """UPDATE platform_webhook_deliveries
-                       SET status=%s,response_code=%s,next_attempt_at=%s,
+                       SET status=%s,response_code=%s,next_attempt_at=%s,last_error_code=%s,
                            delivered_at=CASE WHEN %s='delivered' THEN now() ELSE delivered_at END,
                            lease_token=NULL,lease_until=NULL
-                       WHERE tenant_id=%s AND delivery_id=%s AND status='leased'""",
-                    (status,response_code,next_attempt_at,status,tenant_id,UUID(delivery_id)),
+                       WHERE tenant_id=%s AND delivery_id=%s AND status='leased'
+                         AND lease_token=%s""",
+                    (status,response_code,next_attempt_at,last_error_code,status,
+                     tenant_id,UUID(delivery_id),lease_token),
                 )
