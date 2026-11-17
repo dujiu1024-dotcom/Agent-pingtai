@@ -26,3 +26,8 @@ Gateway 自身在授权/审批后、执行前写入 write-ahead audit；审计�
 ## 持久化 MCP Token 会话绑定
 
 使用持久化 `RunTokenService` 的 MCP HTTP 宿主必须将 Token 记录中的 tenant、Run、Agent、actor 和 endpoint 与该 MCP bridge 的可信会话上下文逐项比较。任一字段不匹配、scope 为空或 endpoint 不一致时，在创建 MCP AccessToken 前拒绝请求。TokenService 仍负责验证令牌摘要、有效期和撤销状态；会话绑定检查防止一个合法 Token 被复用到另一个 actor 或 Run 的固定 bridge。
+
+
+## MCP 每次调用的实时 Run 授权
+
+MCP bridge 必须注入异步 `authorize_run(session)` 回调。每次工具调用都在解析资源和进入 Tool Gateway 之前重新查询可信 Run/授权状态；Run 已终态、取消、租户/actor/agent 归属变化或授权被撤销时返回拒绝。缺少回调、回调返回非严格布尔 `True` 或回调抛错均 fail-closed。不得把建桥时的固定会话、MCP token 尚未过期或工具 allowlist 当作 Run 仍 active 的证明。生产宿主应将该回调接到 RunLifecycle/授权服务，而非静态配置或模型输入。

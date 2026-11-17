@@ -39,6 +39,8 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
             self.skipTest("jsonschema is installed in the dedicated platform CI job")
         self.executed = []
         self.execution_contexts = []
+        self.run_authorized = True
+        self.run_authorization_calls = []
         self.approvals = FakeApprovalVerifier()
         self.audit = FakeAuditSink()
 
@@ -120,6 +122,10 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
             idempotency_store=InMemoryToolEffectStore(),
         )
 
+    async def authorize_run(self, session):
+        self.run_authorization_calls.append((session.tenant_id, session.run_id, session.actor_id))
+        return self.run_authorized
+
     def bridge(self, **overrides):
         values = {
             "tenant_id": "tenant-a",
@@ -134,7 +140,48 @@ class GatewayMCPBridgeTests(unittest.IsolatedAsyncioTestCase):
         return GatewayMCPBridge(
             gateway=self.gateway,
             session=GatewaySessionContext(**values),
+            authorize_run=self.authorize_run,
         )
+
+
+    async def test_live_run_authorization_is_checked_before_each_dispatch(self):
+        bridge = self.bridge()
+        await bridge.call_tool(name="read_document", arguments={"document_id": "doc-1"})
+        self.assertEqual(len(self.run_authorization_calls), 1)
+        self.run_authorized = False
+        with self.assertRaisesRegex(ToolExecutionDenied, "Run is not active"):
+            await bridge.call_tool(name="read_document", arguments={"document_id": "doc-2"})
+        self.assertEqual(self.executed, [{"document_id": "doc-1"}])
+        self.assertEqual(len(self.run_authorization_calls), 2)
+
+    async def test_live_run_authorizer_exception_fails_closed(self):
+        async def broken_authorizer(_session):
+            raise RuntimeError("database unavailable")
+        values = {
+            "tenant_id": "tenant-a", "actor_id": "agent-researcher",
+            "actor_roles": ("analyst",), "run_id": "run-001",
+            "agent_id": "researcher", "allowed_tool_names": ("read_document",),
+            "approval_ids": {},
+        }
+        bridge = GatewayMCPBridge(
+            gateway=self.gateway, session=GatewaySessionContext(**values),
+            authorize_run=broken_authorizer,
+        )
+        with self.assertRaisesRegex(ToolExecutionDenied, "authorization failed"):
+            await bridge.call_tool(name="read_document", arguments={"document_id": "doc-1"})
+        self.assertEqual(self.executed, [])
+
+    async def test_missing_live_run_authorizer_fails_closed(self):
+        values = {
+            "tenant_id": "tenant-a", "actor_id": "agent-researcher",
+            "actor_roles": ("analyst",), "run_id": "run-001",
+            "agent_id": "researcher", "allowed_tool_names": ("read_document",),
+            "approval_ids": {},
+        }
+        bridge = GatewayMCPBridge(gateway=self.gateway, session=GatewaySessionContext(**values))
+        with self.assertRaisesRegex(ToolExecutionDenied, "not configured"):
+            await bridge.call_tool(name="read_document", arguments={"document_id": "doc-1"})
+        self.assertEqual(self.executed, [])
 
     async def test_session_correlation_id_reaches_contextual_tool_handler(self):
         bridge = self.bridge(correlation_id="corr-run-001")
