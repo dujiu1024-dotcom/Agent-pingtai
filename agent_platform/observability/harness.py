@@ -11,6 +11,7 @@ from agent_platform.observability.cost import ModelCostEstimator
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.redaction import redact_payload
 from agent_platform.observability.trace_context import current_trace_context
+from agent_platform.observability.trace_spans import current_trace_span
 from agent_platform.runtime.protocols import HarnessRequest, HarnessResult
 
 
@@ -107,6 +108,14 @@ class ObservedHarnessAdapter:
             "correlation_id": context.correlation_id,
         }
         trace_context = current_trace_context()
+        active_span = current_trace_span()
+        if active_span is not None:
+            metadata.update({
+                "trace_id": active_span.trace_id,
+                "span_id": active_span.span_id,
+                "parent_span_id": active_span.parent_span_id,
+                "trace_component": active_span.component,
+            })
         if trace_context is not None:
             metadata.update({
                 "trace_id": trace_context.trace_id,
