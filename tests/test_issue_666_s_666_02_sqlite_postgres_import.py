@@ -60,7 +60,7 @@ class SQLitePostgresImportTests(unittest.TestCase):
         manifest = {
             "format": "legacy-sqlite-jsonl-v1", "read_only": True,
             "tables": [{
-                "name": "records", "file": "records.jsonl", "rows_exported": 2,
+                "name": "records", "file": "records.jsonl", "rows_exported": 2, "primary_key": ["id"],
                 "sha256": hashlib.sha256(content).hexdigest(),
                 "columns": [{"name": "id"}, {"name": "name"}, {"name": "payload"}],
             }],
@@ -149,7 +149,7 @@ class SQLitePostgresImportTests(unittest.TestCase):
             # primary-key contract still has to be mapped.
             payload["tables"][0]["primary_key"] = ["missing"]
             mapping_path.write_text(json.dumps(payload), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "primary_key"):
+            with self.assertRaisesRegex(ValueError, "every exported source column"):
                 load_mapping(mapping_path, manifest)
 
 
