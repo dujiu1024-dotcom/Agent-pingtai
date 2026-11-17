@@ -7,6 +7,10 @@ from agent_platform.quotas.groups import (
 )
 from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
 from agent_platform.quotas.postgres import PostgresQuotaStore
+from agent_platform.quotas.policies import (
+    InMemoryQuotaPolicyRepository, PostgresQuotaPolicyRepository, QuotaPolicy,
+    QuotaPolicyAudit, QuotaPolicyContext, QuotaPolicyService, ResolvedQuotaPolicy,
+)
 from agent_platform.quotas.service import (
     Budget,
     BudgetExceeded,
@@ -20,5 +24,7 @@ __all__ = [
     "Budget", "BudgetExceeded", "InMemoryQuotaStore",
     "PostgresQuotaStore", "QuotaEnforcedHarnessAdapter", "QuotaReservation",
     "QuotaService", "UsageEvent", "QuotaScope", "QuotaReservationGroup",
+    "QuotaPolicy", "QuotaPolicyAudit", "QuotaPolicyContext", "QuotaPolicyService",
+    "ResolvedQuotaPolicy", "InMemoryQuotaPolicyRepository", "PostgresQuotaPolicyRepository",
     "QuotaReservationGroupService",
 ]
