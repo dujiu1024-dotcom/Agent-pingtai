@@ -14,6 +14,7 @@ from agent_platform.control_plane.skill_registry import (
 from agent_platform.control_plane.skill_sandbox import (
     InMemorySkillArtifactStore,
     SkillSandboxError,
+    SkillSandboxRuntime,
 )
 from tests.test_issue_28_a_28_01_skill_lifecycle_acceptance import (
     DependencyScanner,
@@ -45,8 +46,6 @@ class MaliciousSkillInstallAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.sandbox_runner = RecordingSandboxRunner()
         self.scanner = VerdictScanner()
         self.sandbox_audit: list[tuple[str, str, str]] = []
-        from agent_platform.control_plane.skill_sandbox import SkillSandboxRuntime
-
         self.sandbox = SkillSandboxRuntime(
             tenant_id="tenant-a",
             artifact_store=self.sandbox_artifacts,
