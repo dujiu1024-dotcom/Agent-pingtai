@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from agent_platform.api.graph import create_graph_router
+from agent_platform.api.graph import GraphAccessScope, create_graph_router
 from agent_platform.graph.query import GraphQueryResult
 from agent_platform.identity.models import Principal
 
@@ -69,7 +69,7 @@ class GraphAdminApiTests(unittest.TestCase):
             return self.service
 
         async def authorize_read(principal):
-            return ("project-a",)
+            return GraphAccessScope(project_ids=("project-a",))
 
         self.app = FastAPI()
         self.app.include_router(create_graph_router(
@@ -176,7 +176,7 @@ class GraphAdminApiTests(unittest.TestCase):
             return self.principal
 
         async def authorize_read(principal):
-            return ()
+            return GraphAccessScope()
 
         app = FastAPI()
         app.include_router(create_graph_router(
