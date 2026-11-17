@@ -24,7 +24,7 @@ from agent_platform.tools.gateway_mcp_http import create_authenticated_mcp_asgi_
 
 
 class FakeApprovalVerifier:
-    async def consume(self, *, tenant_id, approval_id, action_digest):
+    async def consume(self, *, tenant_id, approval_id, action_digest, policy_version="1"):
         return False
 
 
