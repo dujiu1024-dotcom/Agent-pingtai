@@ -242,22 +242,44 @@ class PostgresSessionRepository:
                     (self.tenant_id, _uuid(message.session_id)),
                 )
 
-    async def list_messages(self, tenant_id: str, session_id: str, limit: int = 100) -> tuple[ConversationMessage, ...]:
+    async def list_messages(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+        before_message_id: str | None = None,
+    ) -> tuple[ConversationMessage, ...]:
         if tenant_id != self.tenant_id:
             raise SessionNotFound("session not found")
         if limit < 1 or limit > 500:
             raise ValueError("limit must be between 1 and 500")
+        session_key = _uuid(session_id)
         connection = await self._connection_factory()
         async with connection:
-            cursor = await connection.execute(
-                """SELECT * FROM (
-                     SELECT * FROM platform_messages
-                     WHERE tenant_id=%s AND session_id=%s
-                     ORDER BY created_at DESC, message_id DESC LIMIT %s
-                   ) recent ORDER BY created_at, message_id""",
-                (self.tenant_id, _uuid(session_id), limit),
-            )
-            rows = await cursor.fetchall()
+            query = """SELECT * FROM (
+                         SELECT * FROM platform_messages
+                         WHERE tenant_id=%s AND session_id=%s
+                         ORDER BY created_at DESC, message_id DESC LIMIT %s
+                       ) recent ORDER BY created_at, message_id"""
+            params: tuple[object, ...] = (self.tenant_id, session_key, limit)
+            if before_message_id is not None:
+                cursor_row = await connection.execute(
+                    """SELECT created_at, message_id FROM platform_messages
+                       WHERE tenant_id=%s AND session_id=%s AND message_id=%s""",
+                    (self.tenant_id, session_key, _uuid(before_message_id)),
+                )
+                anchor = await cursor_row.fetchone()
+                if anchor is None:
+                    raise ValueError("message cursor does not belong to this session")
+                query = """SELECT * FROM (
+                             SELECT * FROM platform_messages
+                             WHERE tenant_id=%s AND session_id=%s
+                               AND (created_at, message_id) < (%s, %s)
+                             ORDER BY created_at DESC, message_id DESC LIMIT %s
+                           ) recent ORDER BY created_at, message_id"""
+                params = (
+                    self.tenant_id, session_key, anchor["created_at"],
+                    anchor["message_id"], limit,
+                )
+            result = await connection.execute(query, params)
+            rows = await result.fetchall()
         return tuple(ConversationMessage(
             tenant_id=row["tenant_id"], message_id=str(row["message_id"]),
             session_id=str(row["session_id"]), role=MessageRole(row["role"]),
