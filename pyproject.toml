@@ -49,6 +49,7 @@ include = [
   "tests/test_knowledge_memory_api.py",
   "tests/test_memory_service.py",
   "tests/test_memory_candidate_workflow.py",
+  "tests/test_memory_retrieval.py",
   "tests/test_structured_output.py",
   "tests/test_knowledge_memory_postgres_integration.py",
   "tests/test_platform_contracts.py",
@@ -157,6 +158,7 @@ files = [
   "agent_platform/quotas/*.py",
   "agent_platform/identity/*.py",
   "agent_platform/memory/review.py",
+  "agent_platform/memory/retrieval.py",
   "tests/test_identity.py",
 ]
 ignore_missing_imports = true
