@@ -1,6 +1,8 @@
 """Repeatable retrieval evaluation with Recall@K and citation coverage."""
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from math import log2
 from typing import Sequence
@@ -81,6 +83,7 @@ class RAGAnswerEvalResult:
     citation_precision: float
     citation_recall: float
     grounded: bool
+    citation_correctness: bool = False
 
 
 async def evaluate_answers(rag: RAGService, cases: Sequence[RAGAnswerEvalCase], *, k: int = 5) -> list[RAGAnswerEvalResult]:
@@ -98,10 +101,18 @@ async def evaluate_answers(rag: RAGService, cases: Sequence[RAGAnswerEvalCase], 
         overlap = len(cited & expected)
         citation_precision = overlap / len(cited) if cited else (1.0 if not expected else 0.0)
         citation_recall = overlap / len(expected) if expected else (1.0 if not cited else 0.0)
+        retrieved_citations = {hit.citation_id: hit for hit in response.retrieved}
+        citation_sources_valid = all(
+            str(item.get("citation_id", "")) in retrieved_citations
+            and str(item.get("document_id", "")) == retrieved_citations[str(item.get("citation_id", ""))].document_id
+            and str(item.get("chunk_id", "")) == retrieved_citations[str(item.get("citation_id", ""))].chunk_id
+            and str(item.get("source_uri", "")) == retrieved_citations[str(item.get("citation_id", ""))].source_uri
+            for item in response.citations
+        )
+        citation_correctness = citation_sources_valid and citation_precision == 1.0 and citation_recall == 1.0
         abstention_correct = response.abstained is case.expect_abstain
-        grounded = (
-            abstention_correct
-            and (response.abstained or (term_coverage == 1.0 and citation_precision == 1.0 and citation_recall == 1.0))
+        grounded = abstention_correct and (
+            response.abstained or (term_coverage == 1.0 and citation_correctness)
         )
         results.append(RAGAnswerEvalResult(
             case_id=case.case_id,
@@ -110,5 +121,18 @@ async def evaluate_answers(rag: RAGService, cases: Sequence[RAGAnswerEvalCase], 
             citation_precision=citation_precision,
             citation_recall=citation_recall,
             grounded=grounded,
+            citation_correctness=citation_correctness,
         ))
     return results
+
+
+def evaluation_fingerprint(payload: object) -> str:
+    """Stable SHA-256 for an evaluation request/dataset (canonical JSON, UTF-8)."""
+    try:
+        canonical = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("evaluation payload must be finite JSON data") from exc
+    return hashlib.sha256(canonical).hexdigest()
