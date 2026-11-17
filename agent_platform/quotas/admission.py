@@ -1,11 +1,9 @@
 """Tenant-fair queueing and reject/wait admission for concurrency quotas.
-
 The reservation store remains the cross-worker authority for hard concurrency
 limits. This scheduler provides FIFO-within-tenant, round-robin-across-tenant
 fairness among callers sharing one controller instance.
 """
 from __future__ import annotations
-
 import asyncio
 import math
 from collections import OrderedDict, deque
@@ -13,16 +11,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator
 from uuid import uuid4
-
 from agent_platform.quotas.concurrency import QuotaConcurrencyLimiter
 from agent_platform.quotas.service import BudgetExceeded, QuotaReservation
-
 
 @dataclass(frozen=True)
 class AdmissionKey:
     scope_type: str
     scope_id: str
-
 
 @dataclass(frozen=True)
 class AdmissionRequest:
@@ -33,17 +28,23 @@ class AdmissionRequest:
     strategy: str = "reject"
     wait_timeout_seconds: float | None = None
 
-
 class TenantFairQuotaAdmissionController:
-    """Round-robin tenant scheduler backed by atomic quota reservations.
-
-    Each tenant gets one turn per round; requests from a tenant retain FIFO
-    ordering. 'reject' fails immediately when capacity is unavailable, while
-    'queue' waits for a release/lease-expiry notification until its timeout.
-    """
-
-    def __init__(self, limiter: QuotaConcurrencyLimiter) -> None:
+    """Bounded round-robin tenant scheduler backed by atomic quota reservations."""
+    def __init__(
+        self, limiter: QuotaConcurrencyLimiter, *,
+        max_pending_total: int = 1000, max_pending_per_tenant: int = 100,
+    ) -> None:
+        for name, value in (
+            ("max_pending_total", max_pending_total),
+            ("max_pending_per_tenant", max_pending_per_tenant),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if max_pending_per_tenant > max_pending_total:
+            raise ValueError("per-tenant queue limit cannot exceed the global queue limit")
         self.limiter = limiter
+        self.max_pending_total = max_pending_total
+        self.max_pending_per_tenant = max_pending_per_tenant
         self._conditions: dict[AdmissionKey, asyncio.Condition] = {}
         self._queues: dict[AdmissionKey, OrderedDict[str, deque[str]]] = {}
         self._requests: dict[str, AdmissionRequest] = {}
@@ -71,16 +72,20 @@ class TenantFairQuotaAdmissionController:
         condition = self._conditions.setdefault(key, asyncio.Condition())
         queues = self._queues.setdefault(key, OrderedDict())
         ticket = str(uuid4())
-        self._requests[ticket] = request
         async with condition:
+            pending_total = sum(len(queue) for queue in queues.values())
+            pending_tenant = len(queues.get(request.tenant_id, ()))
+            if pending_total >= self.max_pending_total:
+                raise BudgetExceeded("quota admission queue is full")
+            if pending_tenant >= self.max_pending_per_tenant:
+                raise BudgetExceeded("tenant quota admission queue is full")
             tenant_queue = queues.setdefault(request.tenant_id, deque())
             tenant_queue.append(ticket)
+            self._requests[ticket] = request
             condition.notify_all()
             try:
                 async def wait_for_slot() -> QuotaReservation:
                     while True:
-                        # Only the head request of the next tenant may attempt
-                        # reservation. Store-level locking remains authoritative.
                         first_tenant = next(iter(queues), None)
                         is_turn = (
                             first_tenant == request.tenant_id
@@ -96,24 +101,17 @@ class TenantFairQuotaAdmissionController:
                             except BudgetExceeded:
                                 if request.strategy == "reject":
                                     raise
-                                # A saturated tenant must not block other tenants
-                                # sharing this queue. Rotate it and let the next
-                                # tenant use its independently scoped capacity.
                                 if request.tenant_id in queues:
                                     queues.move_to_end(request.tenant_id)
                                 attempted = self._attempted_tenants.setdefault(key, set())
                                 attempted.add(request.tenant_id)
                                 if set(queues).issubset(attempted):
-                                    # Every queued tenant has had one fair attempt;
-                                    # sleep until capacity is actually returned.
                                     await condition.wait()
                                 else:
                                     condition.notify_all()
                                     await condition.wait()
                                 continue
                             self._pop(queues, request.tenant_id, ticket)
-                            # Rotate this tenant behind every tenant already
-                            # waiting; an empty tenant is removed from the ring.
                             if request.tenant_id in queues:
                                 queues.move_to_end(request.tenant_id)
                             condition.notify_all()
@@ -150,7 +148,6 @@ class TenantFairQuotaAdmissionController:
             queues.pop(tenant_id, None)
 
     async def notify_capacity_changed(self, scope_type: str, scope_id: str) -> None:
-        """Wake queued callers after lease expiry or an external capacity change."""
         key = AdmissionKey(scope_type, scope_id)
         condition = self._conditions.get(key)
         if condition is not None:
@@ -160,7 +157,6 @@ class TenantFairQuotaAdmissionController:
 
     async def release(self, reservation: QuotaReservation) -> bool:
         released = await self.limiter.release(reservation)
-        # Wake waiters after capacity has actually been returned.
         key = AdmissionKey(reservation.scope_type, reservation.scope_id)
         condition = self._conditions.get(key)
         if condition is not None:
