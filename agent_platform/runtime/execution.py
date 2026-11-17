@@ -191,11 +191,15 @@ class LangGraphRunExecutor:
      await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
     elif current and current.status==RunStatus.RUNNING:
      ref=await self._checkpoint_ref(tenant_id,run_id)
+     if session is not None:
+      await self._session_checkpoint(tenant_id,run_id,config,session)
      await self.lifecycle.mark_interrupted(tenant_id,run_id,checkpoint_ref=ref,reason="execution task cancelled")
     # A deliberate human pause has already persisted PAUSED + checkpoint_ref.
     raise
    except Exception as exc:
     ref=await self._checkpoint_ref(tenant_id,run_id)
+    if session is not None:
+     await self._session_checkpoint(tenant_id,run_id,config,session)
     await self._finish(tenant_id,run_id,RunStatus.FAILED,checkpoint_ref=ref,error=str(exc)[:500])
     raise
    ref=await self._checkpoint_ref(tenant_id,run_id)
@@ -307,11 +311,19 @@ class LangGraphRunExecutor:
     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
    elif latest and latest.status==RunStatus.RUNNING:
     ref=await self._checkpoint_ref(tenant_id,run_id)
+    if session is not None:
+     await self._session_checkpoint(
+      tenant_id,run_id,await self._run_config(tenant_id,run_id,session_history=session_history),session,
+     )
     await self.lifecycle.mark_interrupted(
      tenant_id,run_id,checkpoint_ref=ref,reason="recovery execution cancelled")
    raise
   except Exception as exc:
    ref=await self._checkpoint_ref(tenant_id,run_id)
+   if session is not None:
+    await self._session_checkpoint(
+     tenant_id,run_id,await self._run_config(tenant_id,run_id,session_history=session_history),session,
+    )
    await self._finish(tenant_id,run_id,RunStatus.FAILED,
     checkpoint_ref=ref,error=str(exc)[:500])
    raise
