@@ -8,7 +8,6 @@ import unittest
 from uuid import uuid4
 
 from agent_platform.events.consumer import (
-    EventEnvelope,
     IdempotentEventHandler,
     RedisStreamsConsumer,
     RedisStreamsConsumerWorker,
