@@ -317,6 +317,7 @@ class OpenAICompatibleModelRouter:
         fallback_template_ids: Sequence[str] = (),
         request_parameters: Mapping[str, Any] | None = None,
         protected_context: Mapping[str, Any] | None = None,
+        on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
