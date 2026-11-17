@@ -11,7 +11,7 @@ The resolver never silently chooses by confidence or timestamp. The caller must 
 
 ## Provenance and audit
 
-Each decision captures tenant, conflict key, scope, actor, timestamp, resolution kind, selected source, resulting memory/version, and exact source memory IDs, versions, and source references. A merged memory also stores conflict_decision_id and merged_from metadata and uses a decision-specific source reference.
+Each decision captures tenant, conflict key, scope, actor, timestamp, resolution kind, selected source, resulting memory/version, and exact source memory IDs, versions, and source references. A merged memory stores `conflict_decision_id`, `merged_from`, and the complete `merged_source_refs` list in metadata. Its `source_ref` remains the selected source's canonical, version-pinned pointer; the decision audit records every contributing source/version. Synthetic conflict URIs are not used because they do not resolve to a record owned by Knowledge, Blackboard, or Session.
 
 Audit append is write-ahead: if the audit repository is unavailable, no memory transition is attempted. The included in-memory audit repository is for tests/local development; production must inject a durable append-only implementation and coordinate decision persistence and memory mutation transactionally.
 
