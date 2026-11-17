@@ -48,3 +48,53 @@ render=async function(){if(S.view==="registry"){try{await renderRegistry()}catch
 document.addEventListener("change",e=>{if(e.target.id==="registry-kind"){S.registryKind=e.target.value;renderRegistry().catch(x=>toast(x.message))}});
 document.addEventListener("submit",async e=>{const f=e.target;if(f.id!=="registry-create")return;e.preventDefault();const d=new FormData(f);let definition;try{definition=JSON.parse(d.get("definition"))}catch{toast("资源定义必须是合法 JSON");return}if(!definition||Array.isArray(definition)||typeof definition!=="object"){toast("资源定义必须是 JSON 对象");return}try{const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(d.get("item_id"))+"/versions",{method:"POST",body:JSON.stringify({definition})});toast("草稿已创建");await renderRegistry()}catch(x){toast(x.message)}});
 document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.regVersions){const kind=S.registryKind||"agent",id=b.dataset.regVersions,versions=await list(registryPath(kind)+"/"+encodeURIComponent(id)+"/versions");$("#view").insertAdjacentHTML("beforeend",panel("版本历史 · "+esc(id),table(["版本","状态","创建人","创建时间","发布时间"],versions.map(v=>"<tr><td>"+esc(v.version)+"</td><td>"+esc(v.status)+"</td><td>"+esc(v.created_by)+"</td><td>"+esc(v.created_at)+"</td><td>"+esc(v.published_at||"—")+"</td></tr>"))));return}if(b.dataset.regPublish){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regPublish)+"/versions/"+encodeURIComponent(b.dataset.version)+"/publish",{method:"POST",body:"{}"});toast("资源版本已发布并设为 active");await renderRegistry();return}if(b.dataset.regDisable){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regDisable)+"/disable",{method:"POST",body:"{}"});toast("资源已停用");await renderRegistry();return}}catch(x){toast(x.message)}});
+
+
+// C-14-04: tenant-scoped knowledge, memory, collaboration and operations views.
+const governanceBaseRender=render;
+const isoWindow=()=>{const end=new Date(),start=new Date(end.getTime()-30*86400000);return {start:start.toISOString(),end:end.toISOString()}};
+const rowsPanel=(title,items,fields)=>panel(title,table(fields,items.map(item=>"<tr>"+fields.map(k=>"<td>"+esc(item[k]??"—")+"</td>").join("")+"</tr>")));
+async function governanceLoad(path){return list(API+path)}
+async function renderGovernance(){
+ const root=$("#view");$("#title").textContent="知识、记忆与平台运营";$("#crumb").textContent="GOVERNANCE & OPERATIONS";
+ const window=isoWindow(),q="start="+encodeURIComponent(window.start)+"&end="+encodeURIComponent(window.end);
+ const jobs=[
+  ["knowledge",()=>governanceLoad("/knowledge/documents?limit=100")],
+  ["memory",()=>governanceLoad("/memories?limit=100")],
+  ["candidates",()=>governanceLoad("/memories/candidates")],
+  ["evaluations",()=>governanceLoad("/observability/evaluations?limit=50")],
+  ["alerts",()=>governanceLoad("/observability/alerts?limit=50")],
+  ["cost",()=>governanceLoad("/quotas/usage?"+q+"&limit=1000")],
+  ["audit",()=>governanceLoad("/audit/tool-events?limit=100")],
+  ["identityAudit",()=>governanceLoad("/audit/identity-events?limit=100")],
+  ["metrics",()=>api(API+"/observability/metrics")]
+ ];
+ const settled=await Promise.allSettled(jobs.map(x=>x[1]()));
+ const data=Object.fromEntries(jobs.map((x,i)=>[x[0],settled[i].status==="fulfilled"?settled[i].value:null]));
+ const errors=jobs.filter((x,i)=>settled[i].status==="rejected").map((x,i)=>"<li>"+esc(x[0])+": "+esc(settled[jobs.indexOf(x)].reason?.message||"不可用")+"</li>").join("");
+ const knowledge=data.knowledge?.items||[],memories=data.memory?.items||[],candidates=data.candidates?.items||[];
+ const evals=data.evaluations?.items||[],alerts=data.alerts?.items||[],costs=data.cost?.items||[],audit=data.audit?.items||[],identity=data.identityAudit?.items||[];
+ const totalCost=costs.reduce((n,x)=>n+Number(x.cost_usd||0),0),totalTokens=costs.reduce((n,x)=>n+Number(x.total_tokens||0),0);
+ const scopeId=esc(S.me?.tenant_id||"");
+ root.innerHTML=
+  "<div class='grid'><div class='stat'><small>知识库文档</small><strong>"+knowledge.length+"</strong></div><div class='stat'><small>有效记忆</small><strong>"+memories.length+"</strong></div><div class='stat'><small>待审核记忆</small><strong>"+candidates.length+"</strong></div><div class='stat'><small>近 30 天成本 USD</small><strong>"+totalCost.toFixed(4)+"</strong></div><div class='stat'><small>近 30 天 Token</small><strong>"+totalTokens+"</strong></div><div class='stat'><small>待处理告警</small><strong>"+alerts.filter(x=>!['resolved','closed'].includes(String(x.status).toLowerCase())).length+"</strong></div></div>"+
+  (errors?panel("部分数据源不可用","<ul class='error'>"+errors+"</ul>"):"")+
+  panel("知识库管理",rowsPanel("文档目录",knowledge,["document_id","title","version","scope","project_id","media_type"]))+
+  panel("记忆管理",rowsPanel("记忆记录",memories,["memory_id","scope","scope_id","content","confidence","version","status","expires_at"])+rowsPanel("待审核候选与冲突",candidates,["memory_id","scope","scope_id","content","confidence","status","version"]))+
+  panel("Blackboard 协作视图","<form id='blackboard-query' class='inline-form'><label>范围<select name='scope'><option value='tenant'>Tenant</option><option value='project'>Project</option><option value='run'>Run</option><option value='task'>Task</option></select></label><label>范围 ID<input name='scope_id' required value='"+scopeId+"' placeholder='Tenant / Project / Run / Task ID'></label><button class='button primary'>查询条目</button></form><div id='blackboard-results'></div>")+
+  panel("评测报告",rowsPanel("评测运行",evals,["eval_run_id","suite_id","status","created_at","completed_at"]))+
+  panel("成本与配额",rowsPanel("用量明细（近 30 天）",costs,["occurred_at","run_id","model_key","input_tokens","output_tokens","total_tokens","cost_usd","project_id","agent_id"]))+
+  panel("运营告警",rowsPanel("告警列表",alerts,["event_id","severity","status","title","created_at","resolved_at"]))+
+  panel("审计追踪",rowsPanel("工具事件",audit,["event_id","occurred_at","actor_id","run_id","tool_name","action","outcome"])+rowsPanel("身份事件",identity,["event_id","occurred_at","actor_id","action","target_id","outcome"]))+
+  panel("指标快照",data.metrics?pre(data.metrics):"<p class='subtle'>指标接口未配置或无权限。</p>")+
+  "<p class='subtle'>成本统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。所有数据通过当前会话身份访问；接口返回 403/404/503 时保留为数据源不可用，不绕过后端权限。</p>";
+}
+render=async function(){if(S.view==="governance"){try{await renderGovernance()}catch(e){$("#view").innerHTML=panel("运营视图加载失败","<p class='error'>"+esc(e.message)+"</p>"+btn("重试","data-retry='1'"))}return}return governanceBaseRender()};
+document.addEventListener("submit",async e=>{
+ const f=e.target;if(f.id!=="blackboard-query")return;e.preventDefault();
+ const d=new FormData(f),scope=String(d.get("scope")),scopeId=String(d.get("scope_id")||"").trim();
+ if(!scopeId){toast("请输入 Blackboard 范围 ID");return}
+ try{const result=await api(API+"/blackboard/entries?scope="+encodeURIComponent(scope)+"&scope_id="+encodeURIComponent(scopeId)+"&limit=100");
+ $("#blackboard-results").innerHTML=rowsPanel("Blackboard 条目",result.items||[],["entry_id","kind","status","version","author_id","created_at","content"]);
+ }catch(x){$("#blackboard-results").innerHTML="<p class='error'>"+esc(x.message)+"</p>"}
+});
