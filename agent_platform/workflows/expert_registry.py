@@ -78,9 +78,9 @@ class ControlPlaneExpertRegistry:
         raw_capabilities = definition.get("capabilities", ())
         if not isinstance(raw_capabilities, (list, tuple, set, frozenset)):
             raise ValueError("published Agent capabilities must be an array")
-        capabilities = frozenset(str(item) for item in raw_capabilities)
-        if any(not item.strip() for item in capabilities):
-            raise ValueError("published Agent capabilities must not be empty")
+        if any(not isinstance(item, str) or not item.strip() for item in raw_capabilities):
+            raise ValueError("published Agent capabilities must contain non-empty strings")
+        capabilities = frozenset(raw_capabilities)
         enabled = definition.get("enabled", True)
         if not isinstance(enabled, bool):
             raise ValueError("published Agent enabled flag must be boolean")
