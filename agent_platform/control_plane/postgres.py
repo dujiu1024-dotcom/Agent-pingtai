@@ -221,6 +221,24 @@ class PostgresSessionRepository:
             ),
         )
 
+    async def set_session_status(
+        self, tenant_id: str, session_id: str, status: str, *, expected_status: str,
+    ) -> bool:
+        self._check_tenant(tenant_id)
+        if status not in {"active", "archived", "deleted"}:
+            raise ValueError("session status is invalid")
+        if expected_status not in {"active", "archived"}:
+            raise ValueError("expected session status is invalid")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """UPDATE platform_conversation_sessions
+                   SET status=%s, updated_at=now()
+                   WHERE tenant_id=%s AND session_id=%s AND status=%s""",
+                (status, self.tenant_id, _uuid(session_id), expected_status),
+            )
+            return cursor.rowcount == 1
+
     async def append_message(self, message: ConversationMessage) -> None:
         self._check_tenant(message.tenant_id)
         connection = await self._connection_factory()
