@@ -48,7 +48,7 @@ class SSEEvent:
         if not isinstance(self.data, Mapping):
             raise TypeError("SSE event data must be a mapping")
         if self.event_id is not None and (
-            not self.event_id or any(char in self.event_id for char in "\\r\\n\\0")
+            not self.event_id or any(char in self.event_id for char in "\r\n\0")
         ):
             raise ValueError("SSE event id must be non-empty and single-line")
         if self.retry_ms is not None and (
@@ -71,10 +71,10 @@ def encode_sse(event: SSEEvent) -> bytes:
         lines.append(f"retry: {event.retry_ms}")
     lines.append(f"event: {event.event}")
     lines.extend(f"data: {line}" for line in payload.splitlines() or [""])
-    return ("\\n".join(lines) + "\\n\\n").encode("utf-8")
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
 
 
-HEARTBEAT_FRAME = b": heartbeat\\n\\n"
+HEARTBEAT_FRAME = b": heartbeat\n\n"
 
 
 async def iter_sse(
