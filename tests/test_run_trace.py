@@ -4,6 +4,7 @@ import unittest
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from uuid import uuid4
 
 from agent_platform.observability.run_trace import (
     InMemoryRunTraceRepository,
@@ -268,8 +269,16 @@ class PostgresRunTraceRepositoryTests(unittest.IsolatedAsyncioTestCase):
             event_type=RunTraceEventType.RUN_START,
             occurred_at=datetime.now(timezone.utc), payload={"origin": "executor"},
         ))
+        duplicate = await self.repository.append(RunTraceEvent(
+            tenant_id="tenant-a", run_id="run-uuid",
+            event_type=RunTraceEventType.RUN_START,
+            event_id=stored.event_id, occurred_at=stored.occurred_at,
+            payload={"origin": "executor"},
+        ))
         events = await self.repository.list_events("tenant-a", "run-uuid")
         self.assertEqual(stored.sequence, 1)
+        self.assertEqual(duplicate.sequence, stored.sequence)
+        self.assertEqual(len(events), 1)
         self.assertEqual(events[0].event_id, stored.event_id)
         self.assertTrue(any("CREATE TABLE IF NOT EXISTS platform_run_trace_events" in q for q in self.connection.sql))
         self.assertEqual(await self.repository.list_events("tenant-b", "run-uuid"), [])
