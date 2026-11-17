@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from agent_platform.observability.trace_context import current_trace_context
+from agent_platform.observability.trace_spans import current_trace_span
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 
 
@@ -79,6 +80,7 @@ class TraceContextMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(RuntimeError, "request failed"):
             await middleware({"type": "http", "headers": []}, receive, send)
         self.assertIsNone(current_trace_context())
+        self.assertIsNone(current_trace_span())
 
     async def test_non_http_scope_is_forwarded_without_trace_mutation(self):
         observed = {}
