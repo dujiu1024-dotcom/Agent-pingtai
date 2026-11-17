@@ -1,5 +1,12 @@
 """Governed cross-session memory, candidate review and version-aware retrieval."""
 
+from agent_platform.memory.conflicts import (
+    InMemoryMemoryConflictAuditRepository,
+    MemoryConflictDecision,
+    MemoryConflictResolution,
+    MemoryConflictResolver,
+    MemoryConflictSource,
+)
 from agent_platform.memory.retrieval import (
     MemoryCitation,
     MemoryRecallStrategy,
