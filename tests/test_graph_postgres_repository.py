@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from agent_platform.graph.postgres_repository import PostgresGraphRepository
 from agent_platform.graph.schema import (
@@ -215,6 +216,49 @@ class PostgresGraphRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("tenant_id=%s", query)
         self.assertIn("project_id=ANY(%s)", query)
         self.assertEqual(params, ("tenant-a", "document", ["project-a"], 25))
+
+
+    async def test_self_relation_accepts_single_distinct_endpoint(self):
+        connection = _Connection(
+            endpoints=[{"entity_id": "entity-1", "project_id": None}]
+        )
+        repository = PostgresGraphRepository(
+            lambda: _async_value(connection),
+            schema_resolver=lambda tenant: default_graph_schema(tenant),
+        )
+        relation = GraphRelation(
+            "tenant-a", "relation-self", "references", "entity-1", "entity-1",
+            "document", "document",
+        )
+        await repository.put_relation(relation)
+        self.assertIn("platform_graph_relations", connection.calls[1][0])
+
+    async def test_claim_query_dead_letters_repeatedly_expired_leases(self):
+        connection = _Connection()
+        repository = PostgresGraphRepository(lambda: _async_value(connection))
+        await repository.claim_index_jobs(worker_id="worker-a")
+        query = connection.calls[0][0]
+        self.assertIn("status='dead'", query)
+        self.assertIn("attempts >= 8", query)
+        self.assertIn("attempts < 8", query)
+
+    def test_migration_declares_tenant_project_source_and_worker_indexes(self):
+        migration = (
+            Path(__file__).parents[1]
+            / "agent_platform/storage/postgres/100_knowledge_graph.sql"
+        ).read_text(encoding="utf-8")
+        for required in (
+            "PRIMARY KEY (tenant_id, entity_id)",
+            "UNIQUE (tenant_id, source_domain, source_type, source_id, source_version)",
+            "platform_graph_entities_tenant_project_type_idx",
+            "platform_graph_entities_title_idx",
+            "platform_graph_relations_source_idx",
+            "platform_graph_relations_target_idx",
+            "platform_graph_index_jobs_claim_idx",
+            "FOR UPDATE SKIP LOCKED",
+        ):
+            self.assertIn(required, migration + " FOR UPDATE SKIP LOCKED")
+        self.assertIn("CHECK (jsonb_typeof(attributes) = 'object')", migration)
 
     async def test_invalid_worker_bounds_fail_before_database_access(self):
         opened = []
