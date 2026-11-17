@@ -246,7 +246,7 @@ class PostgresSessionRepository:
                          "completion_tokens": message.token_usage.completion_tokens,
                          "total_tokens": message.token_usage.total_tokens,
                          "model": message.token_usage.model,
-                     }) if message.token_usage is not None else _jsonb({}),
+                     }) if message.token_usage is not None else None,
                      message.created_at),
                 )
                 await connection.execute(
