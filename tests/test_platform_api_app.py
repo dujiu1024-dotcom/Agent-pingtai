@@ -107,6 +107,27 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertEqual(governance.kwargs["tenant_id"], "tenant-a")
         self.assertEqual(governance.kwargs["candidate_run_id"], "run-1")
 
+    def test_evaluation_gate_rejects_actor_without_gate_permission(self):
+        class Governance:
+            async def decide_release(self, **kwargs):
+                raise AssertionError("unauthorized actor must not reach governance service")
+
+        app = create_platform_app(
+            identity=self.identity, identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            evaluation_governance_service=Governance(),
+            evaluation_gate_manage_authorizer=lambda principal: False,
+        )
+        response = TestClient(app, base_url="https://testserver").post(
+            "/api/platform/v1/observability/evaluations/run-1/gate",
+            headers={"Authorization": "Bearer valid-session"},
+            json={"policy_id": "production", "policy_version": 1,
+                  "minimums": {"answer_term_f1": 0.9},
+                  "evidence_refs": ["ci://run/123"]},
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_evaluation_gate_requires_explicit_gate_authorizer(self):
         with self.assertRaisesRegex(ValueError, "gate manager authorizer"):
             create_platform_app(
