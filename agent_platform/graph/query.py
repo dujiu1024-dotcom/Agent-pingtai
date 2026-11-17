@@ -202,6 +202,7 @@ class GraphQueryService:
                             )
                             if node is None:
                                 continue
+                            self._validate_entity(node, adjacent, scope)
                             entities[adjacent] = node
                             next_frontier.append(adjacent)
                         if len(relations) >= limit:
@@ -387,5 +388,95 @@ class GraphQueryService:
                 if getattr(hit, "document_id", None) in candidate_set
             )[:result_limit]
             return GraphHybridResult(graph, safe_hits, tuple(candidate_ids))
+
+        return await asyncio.wait_for(run(), timeout=self._timeout(timeout_seconds))
+
+
+    async def match_subgraph(
+        self, entity_ids: Sequence[str], *,
+        relation_types: Sequence[str] = (),
+        allowed_project_ids: Sequence[str] = (),
+        require_connected: bool = False,
+        limit: int = 500,
+        timeout_seconds: float | None = None,
+    ) -> GraphQueryResult:
+        """Match the induced subgraph over an explicit, authorized set of entity IDs.
+
+        Every requested node is reloaded under the caller's project allow-list.
+        Only relations whose two endpoints are in that authorized node set are
+        returned. This bounded template avoids exposing arbitrary graph DSL/SQL.
+        """
+        if (
+            isinstance(entity_ids, (str, bytes))
+            or not 1 <= len(entity_ids) <= 50
+            or any(not isinstance(value, str) or not value.strip() for value in entity_ids)
+            or len(set(entity_ids)) != len(entity_ids)
+        ):
+            raise ValueError("entity_ids must contain 1-50 unique non-empty IDs")
+        self._positive_int(limit, "limit", 500)
+        if not isinstance(require_connected, bool):
+            raise ValueError("require_connected must be a boolean")
+        if isinstance(relation_types, (str, bytes)):
+            raise ValueError("relation_types must be a sequence of relation type names")
+        allowed_types = frozenset(relation_types)
+        if (
+            len(allowed_types) > 128
+            or any(not isinstance(item, str) or not item.strip() for item in allowed_types)
+        ):
+            raise ValueError("relation_types must contain at most 128 non-empty strings")
+        scope = self._scope(allowed_project_ids)
+
+        async def run() -> GraphQueryResult:
+            nodes: dict[str, Any] = {}
+            for entity_id in entity_ids:
+                record = await self.repository.get_entity(
+                    entity_id, allowed_project_ids=scope
+                )
+                if record is None:
+                    return GraphQueryResult((), (), False, 0)
+                nodes[entity_id] = self._validate_entity(record, entity_id, scope)
+
+            matched_relations: dict[str, Any] = {}
+            adjacency = {entity_id: set() for entity_id in entity_ids}
+            truncated = False
+            node_set = set(entity_ids)
+            for entity_id in entity_ids:
+                records = await self.repository.list_relations(
+                    entity_id, direction="both", allowed_project_ids=scope,
+                    limit=min(500, limit + 1),
+                )
+                for record in records:
+                    relation = self._validate_relation(record, scope)
+                    source, target, relation_id = self._relation_endpoints(relation)
+                    if source not in node_set or target not in node_set:
+                        continue
+                    if allowed_types and relation.relation_type not in allowed_types:
+                        continue
+                    adjacency[source].add(target)
+                    adjacency[target].add(source)
+                    if relation_id in matched_relations:
+                        continue
+                    if len(matched_relations) >= limit:
+                        truncated = True
+                        break
+                    matched_relations[relation_id] = record
+                if truncated:
+                    break
+
+            if require_connected and len(nodes) > 1:
+                reached = set()
+                frontier = [entity_ids[0]]
+                while frontier:
+                    current = frontier.pop()
+                    if current in reached:
+                        continue
+                    reached.add(current)
+                    frontier.extend(adjacency[current] - reached)
+                if len(reached) != len(nodes):
+                    return GraphQueryResult((), (), False, len(nodes))
+            return GraphQueryResult(
+                tuple(nodes.values()), tuple(matched_relations.values()),
+                truncated, len(nodes),
+            )
 
         return await asyncio.wait_for(run(), timeout=self._timeout(timeout_seconds))
