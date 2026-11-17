@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.verify_platform_backups import component_for, verify_artifact
+from scripts.verify_platform_backups import component_for, validate_tar, verify_artifact
 
 
 class BackupIntegrityVerificationTests(unittest.TestCase):
@@ -79,7 +79,6 @@ class BackupIntegrityVerificationTests(unittest.TestCase):
     def test_tar_validation_rejects_path_traversal(self):
         import io
         import tarfile
-        from scripts.verify_platform_backups import validate_tar
 
         archive = self.root / "unsafe.tar.gz"
         with tarfile.open(archive, "w:gz") as output:
