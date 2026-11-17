@@ -1,5 +1,14 @@
 """Governed cross-session memory, candidate review and version-aware retrieval."""
 
+from agent_platform.memory.boundaries import (
+    MEMORY_BOUNDARIES,
+    MemoryBoundaryPolicy,
+    MemoryLayer,
+    MemoryLayerBoundary,
+    MemorySourceDomain,
+    MemorySourceReference,
+    memory_boundary,
+)
 from agent_platform.memory.conflicts import (
     InMemoryMemoryConflictAuditRepository,
     MemoryConflictDecision,
@@ -30,6 +39,13 @@ from agent_platform.memory.service import (
 )
 
 __all__ = [
+    "MEMORY_BOUNDARIES",
+    "MemoryBoundaryPolicy",
+    "MemoryLayer",
+    "MemoryLayerBoundary",
+    "MemorySourceDomain",
+    "MemorySourceReference",
+    "memory_boundary",
     "MemoryCitation",
     "MemoryRecall",
     "MemoryRecallPolicy",
