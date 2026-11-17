@@ -93,6 +93,7 @@ jobs:
             tests.test_prompt_variants tests.test_prompt_store tests.test_prompt_management_api tests.test_prompt_api \
             tests.test_harness_benchmark_metrics \
             tests.test_outbox \
+            tests.test_connector_framework \
             tests.test_backup_recovery_scripts \
             tests.test_gateway_runtime_postgres_integration \
             tests.test_platform_postgres_integration \
