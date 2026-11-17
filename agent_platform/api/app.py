@@ -16,6 +16,7 @@ from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
   )
+from agent_platform.api.graph import create_graph_router
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
@@ -127,6 +128,10 @@ def create_platform_app(
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
     blackboard_evidence_verifier: Any | None = None,
+    graph_query_service_resolver: Any | None = None,
+    graph_read_authorizer: Any | None = None,
+    graph_governance_resolver: Any | None = None,
+    graph_visualization_url: str | None = None,
     readiness_checks: Any | None = None,
     locale_preference_service: Any | None = None,
     locale_manage_authorizer: Any | None = None,
@@ -376,6 +381,21 @@ def create_platform_app(
     batch_api_configured = batch_service_resolver is not None
     if batch_api_configured and task_authorizer is None:
         raise ValueError("batch service resolver requires the workbench task authorizer")
+    graph_configured = any(value is not None for value in (
+        graph_query_service_resolver, graph_read_authorizer,
+    ))
+    if graph_configured and (
+        graph_query_service_resolver is None or graph_read_authorizer is None
+    ):
+        raise ValueError("graph query service resolver and graph read authorizer must be configured together")
+    if graph_visualization_url is not None:
+        parsed_graph_url = urlsplit(graph_visualization_url)
+        if (
+            not graph_configured or parsed_graph_url.scheme != "https"
+            or not parsed_graph_url.hostname or parsed_graph_url.username is not None
+            or parsed_graph_url.password is not None or parsed_graph_url.query or parsed_graph_url.fragment
+        ):
+            raise ValueError("graph_visualization_url requires graph API configuration and an HTTPS URL without credentials or fragment")
     app.include_router(create_workbench_router(
         features={
             "knowledge": True,
@@ -385,6 +405,9 @@ def create_platform_app(
             "registry": registry_configured,
             "agent_management": registry_configured,
             "task_execution": task_center_configured,
+            "graph": graph_configured,
+            "graph_annotation": graph_governance_resolver is not None,
+            "graph_visualization": graph_visualization_url is not None,
             "batch_execution": batch_api_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
             "blackboard": blackboard_configured,
@@ -409,6 +432,16 @@ def create_platform_app(
             resolve_repository=blackboard_repository_resolver,
             authorize_scope=blackboard_authorizer,
             verify_evidence_refs=blackboard_evidence_verifier,
+        ))
+    if graph_configured:
+        graph_identity_context = IdentityContextResolver(identity_repository)
+        app.include_router(create_graph_router(
+            resolve_principal=_principal_from_request,
+            resolve_query_service=graph_query_service_resolver,
+            authorize_read=graph_read_authorizer,
+            resolve_governance=graph_governance_resolver,
+            resolve_knowledge_principal=graph_identity_context.knowledge,
+            visualization_url=graph_visualization_url,
         ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
     if approvals_configured:
