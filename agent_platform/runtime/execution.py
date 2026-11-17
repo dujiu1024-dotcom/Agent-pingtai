@@ -281,9 +281,10 @@ class LangGraphRunExecutor:
     runtime_prepared=True
    payload=None if running.checkpoint_ref else input
    with trace_span("run.resume", component="run", tenant_id=tenant_id, run_id=run_id):
-    result=await self._run_leased(
+    recovery_config=await self._run_config(tenant_id,run_id,session_history=session_history)
+   result=await self._run_leased(
      tenant_id,run_id,
-     self.graph.ainvoke(payload,config=await self._run_config(tenant_id,run_id,session_history=session_history)),
+     self.graph.ainvoke(payload,config=recovery_config),
      timeout=self.timeout_seconds,already_claimed=True,
     )
    ref=await self._checkpoint_ref(tenant_id,run_id)
@@ -291,6 +292,12 @@ class LangGraphRunExecutor:
    if latest is not None and latest.status==RunStatus.CANCELLING:
     await self.lifecycle.finish(tenant_id,run_id,RunStatus.CANCELLED)
     return None
+   if session is not None:
+    await self.session_persistence.append_assistant(
+     tenant_id=tenant_id,session_id=session["session_id"],run_id=run_id,
+     actor_id=session["actor_id"],result=result,
+    )
+    await self._session_checkpoint(tenant_id,run_id,recovery_config,session)
    await self._finish(tenant_id,run_id,RunStatus.SUCCEEDED,checkpoint_ref=ref)
    return result
   except asyncio.TimeoutError:
