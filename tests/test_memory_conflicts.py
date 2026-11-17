@@ -32,7 +32,7 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
     async def _conflict(self):
         first = MemoryCandidate(
             tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
-            content="prefers concise reports", source_ref="session:one",
+            content="prefers concise reports", source_ref="session://tenant-a/message-1@1",
             confidence=0.8, created_by="user-a", conflict_key="writing-style",
         )
         active = await self.memory.propose(first)
@@ -41,7 +41,7 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
         )
         second = MemoryCandidate(
             tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
-            content="prefers detailed reports", source_ref="session:two",
+            content="prefers detailed reports", source_ref="session://tenant-a/message-2@3",
             confidence=0.9, created_by="user-a", conflict_key="writing-style",
         )
         conflict = await self.memory.propose(second)
@@ -80,7 +80,15 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(result.status, MemoryStatus.ACTIVE)
         self.assertEqual(result.version, 2)
-        self.assertTrue(result.candidate.source_ref.startswith("memory-conflict-merge:"))
+        self.assertEqual(
+            result.candidate.source_ref,
+            active.candidate.source_ref,
+            "merged memory must retain a resolvable canonical source pointer",
+        )
+        self.assertEqual(
+            result.candidate.metadata["merged_source_refs"],
+            "session://tenant-a/message-1@1,session://tenant-a/message-2@3",
+        )
         self.assertIn(active.candidate.memory_id, result.candidate.metadata["merged_from"])
         self.assertIn(conflict.candidate.memory_id, result.candidate.metadata["merged_from"])
         self.assertEqual(result.candidate.metadata["conflict_decision_id"],
