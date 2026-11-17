@@ -35,14 +35,16 @@ async def _authorize_document_update(
     document_id: str,
     scope: KnowledgeScope,
     project_id: str | None,
+    collection_id: str | None = None,
 ) -> None:
     existing = await knowledge.repository.get_document(
         principal.tenant_id, document_id,
     )
     if existing is None:
         return
-    if existing.scope is not scope or existing.project_id != project_id:
-        raise HTTPException(409, "document access scope cannot be changed in place")
+    if (existing.scope is not scope or existing.project_id != project_id
+            or existing.collection_id != collection_id):
+        raise HTTPException(409, "document scope and collection membership cannot be changed in place")
     if existing.scope is KnowledgeScope.PRIVATE:
         allowed = (
             existing.owner_user_id == principal.user_id
@@ -165,14 +167,18 @@ def create_knowledge_memory_router(
         await _authorize_document_update(
             knowledge, principal, document_id=document_id,
             scope=scope, project_id=project_id,
+            collection_id=body.get("collection_id"),
         )
         if scope is KnowledgeScope.TENANT and "knowledge.manage" not in principal.permissions:raise HTTPException(403,"knowledge.manage role required")
         if scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:raise HTTPException(403,"project knowledge.manage permission required")
+        collection_id = body.get("collection_id")
+        if collection_id is not None and (not isinstance(collection_id, str) or not collection_id.strip()):
+            raise HTTPException(400, "collection_id must be a non-empty string")
         source_uri=body.get("source_uri") or ("upload://"+document_id)
         content=body.get("content")
         if not isinstance(content,str) or not content.strip():raise HTTPException(400,"text content is required")
         raw=content.encode("utf-8")
-        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"),collection_id=body.get("collection_id"))
+        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"),collection_id=collection_id)
         try:result=await knowledge.ingest(document=document,content=raw)
         except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
         return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"skipped_unchanged":result.skipped_unchanged}
