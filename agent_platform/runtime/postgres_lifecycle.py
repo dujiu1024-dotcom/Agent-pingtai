@@ -68,6 +68,22 @@ class PostgresRunStateStore(RunStateStore):
      raise ValueError("idempotency_key was already used with a different task request")
     return False
 
+ async def get_budget_lineage(self,tenant_id:str,run_id:str)->dict[str,Any]|None:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute(
+    """SELECT parent_run_id,budget_root_run_id,budget_lineage_kind,budget_lineage_key
+       FROM platform_runs WHERE tenant_id=%s AND run_id=%s""",
+    (tenant_id,UUID(run_id)),
+   )
+   row=await cur.fetchone()
+  if row is None:return None
+  return {
+   "parent_run_id":str(row["parent_run_id"]) if row["parent_run_id"] else None,
+   "budget_root_run_id":str(row["budget_root_run_id"]),
+   "kind":row["budget_lineage_kind"],"key":row["budget_lineage_key"],
+  }
+
  async def get_task_record(self, tenant_id:str, task_id:str, *, actor_id:str|None=None)->dict[str,Any]|None:
   c=await self._connect()
   async with c:

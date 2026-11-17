@@ -1,5 +1,6 @@
 """Tenant-scoped server-enforced quotas and cost accounting."""
 
+from agent_platform.quotas.inheritance import RunBudgetInheritanceService, RunBudgetLineage
 from agent_platform.quotas.groups import (
     QuotaReservationGroup,
     QuotaReservationGroupService,
@@ -20,5 +21,5 @@ __all__ = [
     "Budget", "BudgetExceeded", "InMemoryQuotaStore",
     "PostgresQuotaStore", "QuotaEnforcedHarnessAdapter", "QuotaReservation",
     "QuotaService", "UsageEvent", "QuotaScope", "QuotaReservationGroup",
-    "QuotaReservationGroupService",
+    "QuotaReservationGroupService", "RunBudgetInheritanceService", "RunBudgetLineage",
 ]
