@@ -233,12 +233,14 @@ def create_runs_router(
                 raise HTTPException(404, "Run not found")
             broker = await resolve_event_broker(principal)
             try:
-                events = broker.subscribe(
+                events = await broker.subscribe(
                     tenant_id=principal.tenant_id, run_id=run_id,
                     last_event_id=request.headers.get("last-event-id"),
                 )
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
+            except RuntimeError as exc:
+                raise HTTPException(503, str(exc)) from exc
             return sse_response(events)
 
     if resolve_tool_effects is not None:
