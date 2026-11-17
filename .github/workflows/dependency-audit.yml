@@ -1,0 +1,32 @@
+name: dependency-audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: python -m pip install --disable-pip-version-check pip-audit
+      - name: Audit platform dependencies
+        run: pip-audit -r requirements-platform.txt
+      - name: Audit optional runtime dependencies
+        run: |
+          pip-audit -r requirements-knowledge-parsers.txt
+          pip-audit -r requirements-harness-strands.txt
