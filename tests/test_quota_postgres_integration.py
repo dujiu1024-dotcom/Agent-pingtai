@@ -53,6 +53,13 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
                          AND column_name='hard_context_window_tokens'"""
                 )
             ).fetchall()
+            context_columns = await (
+                await conn.execute(
+                    """SELECT column_name FROM information_schema.columns
+                       WHERE table_name='platform_quota_budgets'
+                         AND column_name='hard_context_window_tokens'"""
+                )
+            ).fetchall()
         self.assertEqual({row[0] for row in rows}, {
             "platform_quota_reserve", "platform_quota_reserve_split",
             "platform_quota_settle", "platform_quota_release",
