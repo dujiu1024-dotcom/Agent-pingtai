@@ -1,7 +1,6 @@
 import re
 from pathlib import Path
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -28,7 +27,7 @@ EXPECTED_LEGACY_ROUTES = {
 
 def test_legacy_console_api_calls_remain_on_versioned_api_surface():
     source = (ROOT / "console.html").read_text(encoding="utf-8")
-    calls = set(re.findall(r"(?:fetch|api)\\(\\s*['\"]([^'\"]+)['\"]", source))
+    calls = set(re.findall(r"""(?:fetch|api)\(\s*['"]([^'"]+)['"]""", source))
     legacy_calls = {path for path in calls if path.startswith("/api/")}
     assert EXPECTED_LEGACY_ROUTES <= legacy_calls
     assert all(path.startswith("/api/v1/") for path in legacy_calls)
