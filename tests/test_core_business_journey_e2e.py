@@ -244,3 +244,50 @@ class CoreBusinessJourneyE2ETests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CoreBusinessAuthenticationNegativeE2ETests(unittest.TestCase):
+    def test_invalid_login_unauthenticated_identity_and_csrf_rejection(self):
+        try:
+            from fastapi.testclient import TestClient
+        except ImportError:
+            self.skipTest("FastAPI test client is installed in platform CI")
+
+        identity = JourneyIdentity()
+        app = FastAPI()
+        app.add_middleware(
+            IdentityASGIMiddleware, identity=identity,
+            allowed_origins=("https://platform.example.test",),
+        )
+        app.include_router(create_identity_router(identity=identity))
+
+        with TestClient(app, base_url="https://platform.example.test") as client:
+            invalid_login = client.post("/auth/login", json={
+                "email": "operator@example.test", "password": "wrong",
+                "tenant_id": "tenant-e2e",
+            })
+            self.assertEqual(invalid_login.status_code, 401)
+            self.assertNotIn("__Host-platform_session", client.cookies)
+
+            unauthenticated_me = client.get("/auth/me")
+            self.assertEqual(unauthenticated_me.status_code, 401)
+
+            login = client.post("/auth/login", json={
+                "email": "operator@example.test", "password": "valid",
+                "tenant_id": "tenant-e2e",
+            })
+            self.assertEqual(login.status_code, 200)
+            self.assertTrue(login.json()["authenticated"])
+
+            # A cookie-authenticated state-changing request must not pass without
+            # the matching CSRF header, even after a valid login.
+            csrf = client.cookies.get("__Host-platform_csrf")
+            self.assertTrue(csrf)
+            rejected_logout = client.post("/auth/logout")
+            self.assertEqual(rejected_logout.status_code, 403)
+
+            accepted_logout = client.post(
+                "/auth/logout", headers={"X-CSRF-Token": csrf},
+            )
+            self.assertEqual(accepted_logout.status_code, 200)
+            self.assertFalse(accepted_logout.json()["authenticated"])
