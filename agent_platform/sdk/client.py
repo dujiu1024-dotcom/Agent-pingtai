@@ -10,6 +10,7 @@ from typing import Any, Callable, Generic, Iterator, Mapping, Protocol, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from uuid import uuid4
 
 API_VERSION = "v1"
 _ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
@@ -188,7 +189,7 @@ class PlatformClient:
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
             "X-API-Version": "1",
-            "X-Request-ID": __import__("uuid").uuid4().hex,
+            "X-Request-ID": str(uuid4()),
             "User-Agent": "agent-platform-python/0.1",
         }
         data = None
@@ -266,7 +267,7 @@ class PlatformClient:
     ) -> Page[Any]:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("page limit must be between 1 and 200")
-        query = {"limit": limit}
+        query: dict[str, Any] = {"limit": limit}
         if cursor is not None:
             if not isinstance(cursor, str) or not cursor or len(cursor) > 2048:
                 raise ValueError("cursor must be a non-empty string up to 2048 characters")
