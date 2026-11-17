@@ -15,7 +15,7 @@ from agent_platform.streaming.sse import SSEEvent
 
 RUN_EVENT_NAMES = frozenset({
     "RUN_START", "STEP_START", "STEP_FINISH", "LLM_REQUEST", "LLM_RESPONSE",
-    "TOOL_CALL", "ERROR", "COMPLETE",
+    "TOOL_CALL", "TOOL_OUTPUT", "TOKEN_STREAM", "ERROR", "COMPLETE",
 })
 
 
