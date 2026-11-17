@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import Any
 
 from agent_platform.observability.prompts import tenant_prompt_key
+from agent_platform.observability.trace_spans import trace_span
 
 
 class PromptTemplateHarnessAdapter:
@@ -64,4 +65,11 @@ class PromptTemplateHarnessAdapter:
         prompted_request = replace(
             request, instructions=prompt_text, metadata=metadata,
         )
-        return await self.inner.run(prompted_request)
+        with trace_span(
+            "prompt.render", component="prompt", tenant_id=tenant_id,
+            run_id=request.context.run_id, agent_id=request.context.agent_id,
+            prompt_id=self.prompt_id, prompt_version=str(version.version),
+            attributes={"prompt_content_hash": str(version.content_hash),
+                        "variable_count": len(variables)},
+        ):
+            return await self.inner.run(prompted_request)

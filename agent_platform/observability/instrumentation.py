@@ -4,6 +4,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Any, Iterator
 
+from agent_platform.observability.trace_spans import current_trace_span
+
 
 class NoopObservation:
     def update(self, **kwargs: Any) -> None:
@@ -15,6 +17,14 @@ def safe_observation(
     observer: Any | None, *, name: str, input: dict[str, Any], metadata: dict[str, Any]
 ) -> Iterator[Any]:
     """Yield an observation span without allowing telemetry failure to break work."""
+    active_span = current_trace_span()
+    if active_span is not None:
+        metadata.update({
+            "trace_id": active_span.trace_id,
+            "span_id": active_span.span_id,
+            "parent_span_id": active_span.parent_span_id,
+            "trace_component": active_span.component,
+        })
     if observer is None:
         yield NoopObservation()
         return

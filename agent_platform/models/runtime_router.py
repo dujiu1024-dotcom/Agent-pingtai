@@ -21,6 +21,7 @@ from agent_platform.models.registry_resolver import (
 )
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
 from agent_platform.observability.trace_context import current_trace_context
+from agent_platform.observability.trace_spans import current_trace_span, trace_span
 
 
 class ModelRoutingError(RuntimeError):
@@ -336,6 +337,14 @@ class OpenAICompatibleModelRouter:
                 "model_template_version": config.template_version,
             }
             trace_context = current_trace_context()
+            active_span = current_trace_span()
+            if active_span is not None:
+                metadata.update({
+                    "trace_id": active_span.trace_id,
+                    "span_id": active_span.span_id,
+                    "parent_span_id": active_span.parent_span_id,
+                    "trace_component": active_span.component,
+                })
             if trace_context is not None:
                 metadata.update({
                     "trace_id": trace_context.trace_id,
@@ -427,7 +436,12 @@ class OpenAICompatibleModelRouter:
                     estimated_output_tokens=estimate.output_tokens,
                 )
             try:
-                with safe_observation(
+                with trace_span(
+                    "model.complete", component="model", tenant_id=tenant_id,
+                    request_id=request_id, run_id=run_id, model_id=config.model_id,
+                    attributes={"provider_id": config.provider_id,
+                                "model_template": config.template_id},
+                ), safe_observation(
                     self.observer, name="model.complete",
                     input=trace_input, metadata=metadata,
                 ) as span:

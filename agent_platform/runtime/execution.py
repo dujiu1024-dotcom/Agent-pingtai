@@ -5,6 +5,7 @@ import asyncio
 from typing import Any, Callable
 from uuid import uuid4
 
+from agent_platform.observability.trace_spans import trace_span
 from agent_platform.runtime.lifecycle import (
  RunLifecycleManager,
  RunSnapshot,
@@ -145,9 +146,10 @@ class LangGraphRunExecutor:
       required_tools=self.required_tools,
      )
      runtime_prepared=True
-    result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
-     timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
-     already_claimed=acquired)
+    with trace_span("run.execute", component="run", tenant_id=tenant_id, run_id=run_id):
+     result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
+      timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
+      already_claimed=acquired)
    except asyncio.TimeoutError:raise
    except WorkerLeaseLost:
     current=await self.lifecycle.store.get(tenant_id,run_id)
@@ -233,11 +235,12 @@ class LangGraphRunExecutor:
     )
     runtime_prepared=True
    payload=None if running.checkpoint_ref else input
-   result=await self._run_leased(
-    tenant_id,run_id,
-    self.graph.ainvoke(payload,config=await self._run_config(tenant_id,run_id)),
-    timeout=self.timeout_seconds,already_claimed=True,
-   )
+   with trace_span("run.resume", component="run", tenant_id=tenant_id, run_id=run_id):
+    result=await self._run_leased(
+     tenant_id,run_id,
+     self.graph.ainvoke(payload,config=await self._run_config(tenant_id,run_id)),
+     timeout=self.timeout_seconds,already_claimed=True,
+    )
    ref=await self._checkpoint_ref(tenant_id,run_id)
    latest=await self.lifecycle.store.get(tenant_id,run_id)
    if latest is not None and latest.status==RunStatus.CANCELLING:

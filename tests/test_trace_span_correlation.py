@@ -66,7 +66,8 @@ class TraceSpanCorrelationTests(unittest.IsolatedAsyncioTestCase):
             await adapter.run(request)
         metadata = observer.metadata[0]
         self.assertEqual(metadata["trace_id"], context.trace_id)
-        self.assertEqual(metadata["span_id"], context.span_id)
+        self.assertNotEqual(metadata["span_id"], context.span_id)
+        self.assertEqual(metadata["parent_span_id"], context.span_id)
         self.assertEqual(metadata["traceparent"], context.traceparent)
         self.assertEqual(metadata["correlation_id"], "http-request-7")
 

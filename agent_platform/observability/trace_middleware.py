@@ -8,6 +8,7 @@ from agent_platform.observability.trace_context import (
     extract_trace_context,
     new_trace_context,
 )
+from agent_platform.observability.trace_spans import trace_span
 
 
 class TraceContextASGIMiddleware:
@@ -43,6 +44,9 @@ class TraceContextASGIMiddleware:
         state = dict(request_scope.get("state") or {})
         state["trace_context"] = context
         state["correlation_id"] = context.correlation_id
+        request_id = headers.get("x-request-id")
+        if request_id and len(request_id) <= 256 and not any(ord(ch) < 32 or ord(ch) == 127 for ch in request_id):
+            state["request_id"] = request_id
         request_scope["state"] = state
 
         async def traced_send(message: dict[str, Any]) -> None:
@@ -60,4 +64,12 @@ class TraceContextASGIMiddleware:
             await send(message)
 
         with TraceContextScope(context):
-            await self.app(request_scope, receive, traced_send)
+            with trace_span(
+                "http.request", component="request",
+                request_id=state.get("request_id"),
+                correlation_id=context.correlation_id,
+                attributes={"http_method": scope.get("method", "UNKNOWN"),
+                            "http_path": scope.get("path", "")[:256]},
+            ) as request_span:
+                state["trace_span"] = request_span
+                await self.app(request_scope, receive, traced_send)

@@ -250,6 +250,8 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.observer.calls[0][1]["tool_name"], "read")
         self.assertNotIn("must-not-enter-trace", str(self.observer.calls[0][1]))
         self.assertEqual(self.observer.calls[0][2]["run_id"], "00000000-0000-0000-0000-000000000001")
+        self.assertEqual(self.observer.calls[0][2]["trace_component"], "tool")
+        self.assertTrue(self.observer.calls[0][2]["span_id"])
         counters = self.metrics.snapshot()["counters"]
         self.assertIn('tool_calls_total{component="tool",operation="read",status="succeeded"}', counters)
         self.assertIn("tool_call_duration_seconds", " ".join(self.metrics.snapshot()["observation_counts"]))

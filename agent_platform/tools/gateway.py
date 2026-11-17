@@ -16,6 +16,7 @@ from agent_platform.approval.policy import (
     SupervisedPolicy,
 )
 from agent_platform.observability.instrumentation import safe_metric, safe_observation, safe_update
+from agent_platform.observability.trace_spans import trace_span
 from agent_platform.tools.idempotency import ToolEffectStore
 
 
@@ -368,7 +369,12 @@ class SupervisedToolGateway:
         }
         try:
             try:
-                with safe_observation(
+                with trace_span(
+                    "tool.call", component="tool", tenant_id=tenant_id,
+                    run_id=run_id, agent_id=agent_id, tool_name=tool_name,
+                    correlation_id=correlation_id,
+                    attributes={"call_id": call_id, "resource": resource},
+                ), safe_observation(
                     self._observer,
                     name="tool.call",
                     input={"tool_name": tool_name, "argument_count": len(arguments)},
