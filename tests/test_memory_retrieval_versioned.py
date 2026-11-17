@@ -1,8 +1,20 @@
 from __future__ import annotations
+
 import unittest
 from datetime import datetime, timedelta, timezone
-from agent_platform.memory.retrieval import MemoryRecallStrategy, MemoryRetrievalQuery, MemoryRetrievalService
-from agent_platform.memory.service import InMemoryMemoryRepository, MemoryCandidate, MemoryPrincipal, MemoryScope, MemoryService
+
+from agent_platform.memory.retrieval import (
+    MemoryRecallStrategy,
+    MemoryRetrievalQuery,
+    MemoryRetrievalService,
+)
+from agent_platform.memory.service import (
+    InMemoryMemoryRepository,
+    MemoryCandidate,
+    MemoryPrincipal,
+    MemoryScope,
+    MemoryService,
+)
 
 class MemoryRetrievalVersionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
