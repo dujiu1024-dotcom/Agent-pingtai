@@ -411,7 +411,20 @@ class BlackboardMultiExpertServices:
         if parent_synthesis_id:
             resolved_synthesis.setdefault("parent_blackboard_entry_id", parent_synthesis_id)
         resolved_synthesis["blackboard_decision_entry_ids"] = decision_entry_ids
-        resolution_refs = tuple(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")) + tuple(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")) + tuple(decision_entry_ids) + ((parent_synthesis_id,) if parent_synthesis_id else ())
+        conflict_source_refs: list[str] = []
+        for item in conflicts:
+            conflict_id = item.get("blackboard_entry_id")
+            if conflict_id:
+                persisted_conflict = await self.repository.get(str(conflict_id))
+                if persisted_conflict is not None:
+                    conflict_source_refs.extend(persisted_conflict.source_refs)
+        resolution_refs = tuple(dict.fromkeys((
+            *(str(item["blackboard_entry_id"]) for item in conflicts if item.get("blackboard_entry_id")),
+            *(str(item["blackboard_challenge_entry_id"]) for item in conflicts if item.get("blackboard_challenge_entry_id")),
+            *decision_entry_ids,
+            *((parent_synthesis_id,) if parent_synthesis_id else ()),
+            *conflict_source_refs,
+        )))
         await self._validate_source_refs(
             scope=scope, scope_id=scope_id, refs=resolution_refs,
         )
