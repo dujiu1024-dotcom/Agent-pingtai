@@ -91,14 +91,12 @@ class ConnectorFrameworkTests(unittest.IsolatedAsyncioTestCase):
         store = FakeSecretStore()
         auth = self.make_authenticator(store)
         google = GoogleDriveKnowledgeConnector(
-            client=object(), credentials=FakeLegacyCredentials(),
-            credential_ref="secret://tenant-a/credentials/drive",
+            client=object(), credential_ref="secret://tenant-a/credentials/drive",
             document_factory=lambda *args: None, authenticator=auth,
             auth_scopes=("drive.readonly",),
         )
         sharepoint = SharePointKnowledgeConnector(
-            client=object(), credentials=FakeLegacyCredentials(),
-            credential_ref="secret://tenant-a/credentials/sharepoint",
+            client=object(), credential_ref="secret://tenant-a/credentials/sharepoint",
             drive_id="drive-1", document_factory=lambda *args: None,
             credential_revoker=lambda _ref: None, authenticator=auth,
             auth_scopes=("sites.read.all",),
