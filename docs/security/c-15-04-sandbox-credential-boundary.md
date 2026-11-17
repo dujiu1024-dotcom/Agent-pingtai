@@ -38,3 +38,8 @@ credential-name denylist and existing network/filesystem/namespace/resource
 flags. Live daemon isolation, host filesystem/network probes, and container
 escape testing remain deployment acceptance work and are intentionally not
 performed in this task.
+
+
+## A-15-02 acceptance evidence
+
+The host-environment allowlist additionally rejects database endpoint/DSN variables (`DATABASE_URL`, `DB_*`, `PG*`, `POSTGRES*`, `MYSQL*`, `REDIS*`, `SQLITE*`, JDBC/connection/URI forms). This prevents a trusted but overly broad environment allowlist from accidentally forwarding platform database coordinates or credentials. Unit coverage checks these names are rejected and that the generated OCI argv contains no host network, host namespaces, privileged mode, bind mounts, devices, env-file forwarding, runtime socket, or unapproved environment injection.
