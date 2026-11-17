@@ -91,8 +91,8 @@ class MemoryRetrievalService:
     def _text_score(content: str, text: str | None) -> float:
         if text is None:
             return 0.0
-        terms = set(re.findall(r"[\\w-]+", text.casefold()))
-        words = set(re.findall(r"[\\w-]+", content.casefold()))
+        terms = set(re.findall(r"[\w-]+", text.casefold()))
+        words = set(re.findall(r"[\w-]+", content.casefold()))
         return len(terms & words) / len(terms) if terms else 0.0
 
     async def search(
