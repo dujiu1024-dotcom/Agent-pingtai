@@ -34,8 +34,11 @@ This is the initial repository-owned production composition slice, not a
 claim that every optional API subsystem is wired. Run status/cancellation
 routes are connected to the PostgreSQL Run state store and agent-scoped
 authorization. The Workbench task API and LangGraph Run worker are installed
-when a trusted deployment package passes `run_execution_builder` to
-`create_production_app()`. That builder must supply the approved Registry,
+when a trusted deployment package registers exactly one `builder` entry point
+in the `agent_platform.production_run_execution` group. The Compose overlay
+requires this entry point by default and the ASGI process fails startup if it
+is absent. The same builder can be passed directly as `run_execution_builder`
+to `create_production_app()` outside Compose. It must supply the approved Registry,
 snapshot, budget-enforcing model router, Vault secret resolver, reviewed Skill
 store, trusted Tool handler catalog, shared quota limiter and Principal-derived
 task authorizer. The repository deliberately does not load an arbitrary
