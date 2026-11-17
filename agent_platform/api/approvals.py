@@ -12,7 +12,8 @@ from agent_platform.identity.models import Principal
 
 
 def create_approval_router(*, service: ApprovalService,
-                           authorize_approver: Callable[[Principal, str, str], Any]) -> APIRouter:
+                           authorize_approver: Callable[[Principal, str, str], Any],
+                           resolve_risk_level: Callable[[Principal, str, str], Any]) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/approvals", tags=["approvals"])
 
     def principal(request: Request) -> Principal:
@@ -37,18 +38,23 @@ def create_approval_router(*, service: ApprovalService,
             parameters = body.get("parameters", {})
             if not isinstance(parameters, dict):
                 raise ValueError("parameters must be an object")
+            action = str(body.get("action") or "")
+            resource = str(body.get("resource") or "")
+            risk_level = resolve_risk_level(actor, action, resource)
+            if inspect.isawaitable(risk_level):
+                risk_level = await risk_level
+            if not isinstance(risk_level, RiskLevel):
+                raise ValueError("trusted approval policy returned an invalid risk level")
             record = await service.request(
                 tenant_id=actor.tenant_id, actor_id=actor.user_id,
-                action=str(body.get("action") or ""),
-                resource=str(body.get("resource") or ""),
-                parameters=parameters,
-                risk_level=RiskLevel(int(body.get("risk_level", 0))),
+                action=action, resource=resource, parameters=parameters,
+                risk_level=risk_level,
                 run_id=str(body["run_id"]) if body.get("run_id") else None,
             )
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"approval_id": record.approval_id, "status": record.status,
-                "action_hash": record.action_hash, "expires_at": record.expires_at.isoformat()}
+                "action_hash": record.action_hash, "policy_version": record.policy_version, "expires_at": record.expires_at.isoformat()}
 
     @router.get("")
     async def pending_approvals(request: Request, limit: int = 100):
