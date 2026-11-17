@@ -1,6 +1,7 @@
 """Stable public HTTP API contract primitives shared by platform routers."""
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping
@@ -103,3 +104,49 @@ def rate_limit_headers(*, limit: int, remaining: int, reset_epoch: int,
             raise ValueError("retry_after must not be negative")
         headers["Retry-After"] = str(retry_after)
     return headers
+
+
+class PublicApiContractASGIMiddleware:
+    """Validate an optional version assertion and label every v1 API response.
+
+    The URL prefix is authoritative; the header is an assertion only, keeping
+    clients that omit it backward-compatible.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or not str(scope.get("path", "")).startswith(API_V1_PREFIX):
+            await self.app(scope, receive, send)
+            return
+
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        requested = headers.get(b"x-api-version")
+        if requested is not None:
+            try:
+                validate_api_version(requested.decode("ascii"))
+            except (UnicodeDecodeError, ValueError):
+                error = error_for_http_status(400, "Unsupported API version")
+                body = json.dumps(error.to_dict()).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 400,
+                    "headers": [
+                        (b"content-type", b"application/json; charset=utf-8"),
+                        (b"content-length", str(len(body)).encode("ascii")),
+                        (b"x-api-version", b"v1"),
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
+
+        async def versioned_send(message: dict[str, Any]) -> None:
+            if message.get("type") == "http.response.start":
+                outgoing = list(message.get("headers", []))
+                if not any(key.lower() == b"x-api-version" for key, _ in outgoing):
+                    outgoing.append((b"x-api-version", b"v1"))
+                message = {**message, "headers": outgoing}
+            await send(message)
+
+        await self.app(scope, receive, versioned_send)
