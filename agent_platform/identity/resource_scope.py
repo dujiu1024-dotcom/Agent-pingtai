@@ -40,8 +40,17 @@ class ResourceScopeAuthorizer:
             raise AuthorizationDenied("unsupported principal type")
         await self.identity.authorize(principal=principal, resource=resource, permission_key=scope.permission)
 
-    def gateway_authorizer(self, resolve_principal: Callable[[Any], Awaitable[Any]]) -> Callable[[Any, Mapping[str, Any]], Awaitable[bool]]:
+    def gateway_authorizer(
+        self, resolve_principal: Callable[[Any], Awaitable[Any]],
+        permission_for_resource: Callable[[str], str] | None = None,
+    ) -> Callable[[Any, Mapping[str, Any]], Awaitable[bool]]:
         """Build a Tool Gateway ACL callback from trusted execution context."""
+        permission_map = {
+            "document": "knowledge.read", "file": "file.read",
+            "project": "project.read", "session": "session.read",
+            "agent": "agent.read", "tenant": "tenant.read",
+        }
+        permission = permission_for_resource or (lambda kind: permission_map.get(kind, f"{kind}.read"))
         async def authorize(context: Any, _arguments: Mapping[str, Any]) -> bool:
             principal = await resolve_principal(context)
             actor_id = getattr(principal, "user_id", None) or getattr(principal, "service_account_id", None)
@@ -52,7 +61,7 @@ class ResourceScopeAuthorizer:
                 return False
             try:
                 await self.authorize(principal=principal, scope=ResourceScope(
-                    context.tenant_id, resource_type, resource_id, f"{resource_type}.read"))
+                    context.tenant_id, resource_type, resource_id, permission(resource_type)))
             except (PermissionError, ValueError):
                 return False
             return True
