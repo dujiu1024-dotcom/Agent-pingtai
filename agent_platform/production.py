@@ -18,11 +18,12 @@ from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.postgres_repository import PostgresMemoryRepository
 from agent_platform.memory.service import MemoryService
 from agent_platform.production_config import ProductionSettings, load_production_settings
+from agent_platform.runtime.lifecycle import RunLifecycleManager
+from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import QuotaService
-from agent_platform.runtime.lifecycle import RunLifecycleManager
-from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+from agent_platform.security.audit import PostgresAuditWriter
 
 
 def _postgres_connection_factory(dsn: str) -> Callable[[], Any]:
@@ -37,6 +38,25 @@ def _postgres_connection_factory(dsn: str) -> Callable[[], Any]:
         return await AsyncConnection.connect(dsn, row_factory=dict_row)
 
     return connect
+
+
+class _QuotaAuditAdapter:
+    """Adapt quota route events to the append-only production audit contract."""
+
+    def __init__(self, writer: PostgresAuditWriter) -> None:
+        self._writer = writer
+
+    async def __call__(self, event: dict[str, Any]) -> None:
+        await self._writer.record(
+            tenant_id=str(event["tenant_id"]),
+            actor_id=str(event["actor_id"]),
+            action=str(event["action"]),
+            subject_id=str(event["resource_id"]),
+            detail={
+                key: value for key, value in event.items()
+                if key not in {"tenant_id", "actor_id", "action", "resource_id"}
+            },
+        )
 
 
 def create_production_app(
@@ -71,11 +91,12 @@ def create_production_app(
     run_store = PostgresRunStateStore(connection_factory)
     run_lifecycle = RunLifecycleManager(run_store)
 
-    # Quota decisions and reservations must be shared across API/worker processes.
-    # Never use InMemoryQuotaStore in this production composition root.
+    # Quota decisions and usage reporting must share the same transactional
+    # PostgreSQL store across API processes. Never fall back to in-memory state.
     quota_store = PostgresQuotaStore(connection_factory)
     quota_service = QuotaService(quota_store)
-    quota_reservation_worker = QuotaReservationMaintenanceWorker(quota_service)
+    quota_maintenance_worker = QuotaReservationMaintenanceWorker(quota_service)
+    quota_audit_writer = _QuotaAuditAdapter(PostgresAuditWriter(connection_factory))
 
     async def resolve_run_lifecycle(_principal: Any) -> RunLifecycleManager:
         return run_lifecycle
@@ -107,15 +128,21 @@ def create_production_app(
             return False
         return True
 
-    async def authorize_quota_scope(
-        principal: Any, scope_type: str, scope_id: str,
-    ) -> bool:
-        if scope_type not in {"project", "agent"} or not scope_id:
+    async def authorize_quota_scope(principal: Any, scope_type: str, scope_id: str) -> bool:
+        resource_type = {
+            "project": "project",
+            "agent": "agent",
+            "run": "run",
+            "model": "model",
+            "queue": "queue",
+            "worker_pool": "worker_pool",
+        }.get(scope_type)
+        if resource_type is None or not scope_id:
             return False
         try:
             await identity_service.authorize(
                 principal=principal,
-                resource=ResourceRef(scope_type, scope_id),
+                resource=ResourceRef(resource_type, scope_id),
                 permission_key="quota.manage",
             )
         except AuthorizationDenied:
@@ -128,15 +155,6 @@ def create_production_app(
             await connection.execute("SELECT 1")
         return True
 
-    async def quota_schema_ready() -> bool:
-        connection = await connection_factory()
-        async with connection:
-            cursor = await connection.execute(
-                "SELECT to_regclass('public.platform_quota_budgets') IS NOT NULL AS ready"
-            )
-            row = await cursor.fetchone()
-        return bool(row and row["ready"])
-
     app = create_platform_app(
         identity=identity_service,
         identity_repository=identity_repository,
@@ -146,15 +164,14 @@ def create_production_app(
         allowed_origins=configured.allowed_origins,
         run_lifecycle_resolver=resolve_run_lifecycle,
         run_authorizer=authorize_run,
-        quota_store=quota_store,
         quota_reporting_store=quota_store,
         quota_service=quota_service,
-        quota_reservation_worker=quota_reservation_worker,
         quota_manage_authorizer=authorize_quota_manage,
         quota_scope_authorizer=authorize_quota_scope,
+        quota_audit_writer=quota_audit_writer,
+        quota_reservation_worker=quota_maintenance_worker,
         readiness_checks={
             "postgres": postgres_ready,
-            "quota_schema": quota_schema_ready,
             "redis": redis_client.ping,
         },
     )
@@ -166,7 +183,8 @@ def create_production_app(
     app.state.run_lifecycle = run_lifecycle
     app.state.quota_store = quota_store
     app.state.quota_service = quota_service
-    app.state.quota_reservation_worker = quota_reservation_worker
+    app.state.quota_reservation_worker = quota_maintenance_worker
+    app.state.quota_audit_writer = quota_audit_writer
     if close_redis_on_shutdown:
         async def close_production_resources() -> None:
             await redis_client.aclose()
