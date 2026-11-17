@@ -140,7 +140,7 @@ class RegistryRuntimeAssemblyTests(unittest.IsolatedAsyncioTestCase):
         class BrokenEstimatorRouter(ModelRouter):
             token_estimator = object()
 
-        with self.assertRaisesRegex(RegistryRuntimeError, "callable_token_estimator"):
+        with self.assertRaisesRegex(RegistryRuntimeError, "token_estimator.estimate"):
             RegistryRuntimeAssembler(
                 snapshots=SnapshotService(SimpleNamespace()),
                 model_router=BrokenEstimatorRouter(),
