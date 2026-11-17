@@ -2,13 +2,8 @@ import unittest
 from contextlib import contextmanager
 
 from agent_platform.approval.policy import RiskLevel
-from agent_platform.observability.metrics import InMemoryMetricsRecorder
-from agent_platform.tools.gateway import (
-    SupervisedToolGateway,
-    ToolDefinition,
-    ToolExecutionDenied,
-)
 from agent_platform.contracts import ModelTemplateRef, RunContext
+from agent_platform.observability.metrics import InMemoryMetricsRecorder
 from agent_platform.observability.trace_context import TraceContext, TraceContextScope
 from agent_platform.observability.trace_spans import current_trace_span, trace_span
 from agent_platform.runtime.tool_gateway import (
@@ -19,11 +14,15 @@ from agent_platform.runtime.tool_gateway import (
     ToolPrincipal,
     ToolRunBinding,
 )
+from agent_platform.tools.gateway import (
+    SupervisedToolGateway,
+    ToolDefinition,
+    ToolExecutionDenied,
+)
 from agent_platform.tools.idempotency import (
     InMemoryToolEffectStore,
     ToolEffectReconciliationService,
 )
-
 
 class FakeApprovalVerifier:
     def __init__(self, valid=False):
