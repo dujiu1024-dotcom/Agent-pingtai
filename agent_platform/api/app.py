@@ -10,8 +10,8 @@ from fastapi.responses import JSONResponse
 
 from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
-from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.batch import create_batch_router
+from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
