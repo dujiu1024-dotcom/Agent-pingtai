@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import unittest
 
 from fastapi import FastAPI
@@ -28,11 +27,11 @@ class SSEProtocolTests(unittest.IsolatedAsyncioTestCase):
             retry_ms=1200,
         )
         encoded = encode_sse(event).decode("utf-8")
-        self.assertTrue(encoded.startswith("id: run-42:7\\nretry: 1200\\nevent: run_error\\n"))
+        self.assertTrue(encoded.startswith("id: run-42:7\nretry: 1200\nevent: run_error\n"))
         self.assertIn('data: {"message":"模型调用失败","retryable":false}', encoded)
-        self.assertTrue(encoded.endswith("\\n\\n"))
+        self.assertTrue(encoded.endswith("\n\n"))
 
-        for invalid in ("", "two\\nlines", "bad\\0id"):
+        for invalid in ("", "two\nlines", "bad\0id"):
             with self.assertRaises(ValueError):
                 SSEEvent(event="run_complete", data={}, event_id=invalid)
         with self.assertRaises(ValueError):
@@ -90,8 +89,8 @@ class SSEClientContractTests(unittest.TestCase):
     def test_incremental_utf8_decode_and_reconnect_cursor(self):
         client = SSEClient(default_retry_ms=2500)
         frame = (
-            'id: run-7:9\\nretry: 800\\nevent: run_error\\n'
-            'data: {"message":"连接失败：请重试"}\\n\\n'
+            'id: run-7:9\nretry: 800\nevent: run_error\n'
+            'data: {"message":"连接失败：请重试"}\n\n'
         ).encode("utf-8")
         split = frame.index("失败".encode("utf-8")) + 1
         self.assertEqual(client.feed(frame[:split]), [])
@@ -109,11 +108,11 @@ class SSEClientContractTests(unittest.TestCase):
     def test_unknown_event_and_non_object_payload_are_rejected(self):
         client = SSEClient()
         with self.assertRaises(ValueError):
-            client.feed(b"event: unsupported\\ndata: {}\\n\\n")
+            client.feed(b"event: unsupported\ndata: {}\n\n")
         client = SSEClient()
         with self.assertRaises(ValueError):
-            client.feed(b"event: run_complete\\ndata: []\\n\\n")
+            client.feed(b"event: run_complete\ndata: []\n\n")
 
 
-if __name__:
+if __name__ == "__main__":
     unittest.main()
