@@ -39,7 +39,55 @@ services:
       - redis_password
       - minio_root_password
     depends_on:
+      platform-alert-dispatcher:
+    profiles: ["alerts"]
+    image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    command: ["python", "-m", "agent_platform.observability.production_alert_worker"]
+    environment:
+      AGENT_PLATFORM_DSN: ${AGENT_PLATFORM_DSN:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set exact HTTPS ALLOWED_ORIGINS}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_WEBHOOK_ALLOWED_HOSTS: ${ALERT_WEBHOOK_ALLOWED_HOSTS:-}
+      ALERT_WEBHOOK_AUTHORIZATION_FILE: ${ALERT_WEBHOOK_AUTHORIZATION_FILE:-}
+      ALERT_DISPATCH_POLL_INTERVAL_SECONDS: ${ALERT_DISPATCH_POLL_INTERVAL_SECONDS:-5}
+      ALERT_DISPATCH_BATCH_SIZE: ${ALERT_DISPATCH_BATCH_SIZE:-100}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      http_proxy: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      https_proxy: ${EGRESS_PROXY_URL:?Set managed outbound egress proxy}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:?Set explicit outbound hostname allowlist}
+      NO_PROXY: postgres,redis,localhost,127.0.0.1
+      no_proxy: postgres,redis,localhost,127.0.0.1
+    secrets: [postgres_password, redis_password]
+    volumes:
+      - ${ALERT_WEBHOOK_AUTHORIZATION_HOST_PATH:-/dev/null}:/run/secrets/alert_webhook_authorization:ro
+    depends_on:
       postgres:
+        condition: service_healthy
+    stop_grace_period: 60s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: ${ALERT_WORKER_MEMORY_LIMIT:-512m}
+    cpus: ${ALERT_WORKER_CPU_LIMIT:-1.0}
+    networks: [platform]
+
+  postgres:
         condition: service_healthy
       redis:
         condition: service_healthy

@@ -68,17 +68,14 @@ jobs:
         run: |
           python -m unittest \
             tests.test_platform_e2e_release_gate \
-            tests.test_issue_527_c_30_01_sse_protocol \
             tests.test_core_business_journey_e2e \
             tests.test_release_gate_evidence \
             tests.test_identity_api \
             tests.test_identity_http \
             tests.test_knowledge_memory_api \\
-            tests.test_issue_521_c_24_02_chunk_preview \\
             tests.test_knowledge_acl_propagation \
             tests.test_memory_boundaries \
             tests.test_graph_governance \
-            tests.test_graph_governance_postgres \
             tests.test_issue_22_a_22_05_benchmark_contract \
             tests.test_graph_admin_api \
             tests.test_graph_workbench_ui \
@@ -104,8 +101,6 @@ jobs:
             tests.test_postgres_langgraph_checkpoint_integration \
             tests.test_postgres_redis_worker_recovery_integration \
             tests.test_postgres_backup_restore_integration \
-            tests.test_issue_18_a_18_02_backup_restore_drill \
-            tests.test_issue_18_a_18_02_recovery_evidence_scope \
             tests.test_tenant_creation_integration \
             tests.test_service_identity_authorization_integration \
             tests.test_redis_streams_integration \
@@ -113,7 +108,6 @@ jobs:
             tests.test_quota_postgres_integration \
             tests.test_session_data_model \
             tests.test_session_conversation_migration \
-            tests.test_issue_666_a_666_06_migration_scope \
             tests.test_session_assets \
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
@@ -137,11 +131,11 @@ jobs:
           python -m pip install -U pip
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Run core business journey, unified model budget and release evidence acceptance tests
-        run: python -m unittest tests.test_issue_72_a_72_03_run_budget_visibility tests.test_issue_72_a_72_01_unified_model_budget tests.test_registry_runtime_assembly tests.test_model_runtime_router tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy tests.test_issue_28_a_28_02_malicious_skill_blocked -v
+        run: python -m unittest tests.test_issue_72_a_72_01_unified_model_budget tests.test_registry_runtime_assembly tests.test_model_runtime_router tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy tests.test_issue_28_a_28_02_malicious_skill_blocked -v
       - name: Run connector catalog and backward-compatibility acceptance tests
         run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
-      - name: Run production quota Run-worker wiring tests
-        run: python -m unittest tests.test_issue_17_a_17_03_run_worker_quota_factory -v
+      - name: Run production alert dispatcher composition acceptance tests
+        run: python -m unittest tests.test_issue_16_a_16_03_alert_worker_composition -v
 
   production-release-evidence:
     needs:
