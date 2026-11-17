@@ -33,13 +33,19 @@ graceful worker shutdown.
 This is the initial repository-owned production composition slice, not a
 claim that every optional API subsystem is wired. Run status/cancellation
 routes are connected to the PostgreSQL Run state store and agent-scoped
-authorization. Run submission/preparation, LangGraph/Harness execution,
-pause/intervention, replay, connector, evaluation and quota-administration
-services still require their explicit dependencies in `create_platform_app()`.
-The worker currently runs the Outbox relay; it is not a general-purpose
-consumer for every event topic or a LangGraph Run executor. Those integrations
-must be enabled and separately acceptance-tested before claiming the complete
-Agent execution journey is production-ready.
+authorization. The Workbench task API and LangGraph Run worker are installed
+when a trusted deployment package passes `run_execution_builder` to
+`create_production_app()`. That builder must supply the approved Registry,
+snapshot, budget-enforcing model router, Vault secret resolver, reviewed Skill
+store, trusted Tool handler catalog, shared quota limiter and Principal-derived
+task authorizer. The repository deliberately does not load an arbitrary
+factory path or invent executable graph/tool semantics. See
+`docs/deployment/issue-614-run-execution-composition.md` for the contract.
+Without that builder, task execution is not enabled; the Outbox worker remains
+a separate PostgreSQL-to-Redis relay and is not a LangGraph Run executor.
+Live Provider, Vault, checkpoint, multi-process and production execution
+evidence is still required before claiming the complete Agent journey is
+production-ready.
 
 ## First deployment
 
