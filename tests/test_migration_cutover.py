@@ -24,6 +24,7 @@ def evidence(**overrides):
         "write_error_rate": 0.0,
         "observed_seconds": 1800.0,
         "legacy_write_rate": 0.0,
+        "evidence_age_seconds": 0.0,
     }
     values.update(overrides)
     return ConsistencyEvidence(**values)
@@ -135,6 +136,35 @@ class MigrationCutoverTests(unittest.TestCase):
         self.assertTrue(rollback_required(
             evidence=evidence(sampled_rows=0), policy=CutoverPolicy(),
         ))
+
+
+    def test_stale_evidence_blocks_cutover_advancement(self):
+        decision = evaluate_cutover(
+            current=CutoverPhase.DUAL_WRITE,
+            requested=CutoverPhase.CANARY,
+            evidence=evidence(evidence_age_seconds=61),
+            policy=CutoverPolicy(max_evidence_age_seconds=60),
+        )
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.phase, CutoverPhase.DUAL_WRITE)
+        self.assertIn("evidence_stale", decision.reasons)
+
+    def test_stale_evidence_during_canary_requires_rollback(self):
+        decision = evaluate_cutover(
+            current=CutoverPhase.CANARY,
+            requested=CutoverPhase.TARGET_PRIMARY,
+            evidence=evidence(evidence_age_seconds=61),
+            policy=CutoverPolicy(max_evidence_age_seconds=60),
+        )
+        self.assertEqual(decision.phase, CutoverPhase.ROLLED_BACK)
+        self.assertTrue(decision.rollback_required)
+        self.assertIn("evidence_stale", decision.reasons)
+
+    def test_evidence_age_must_be_finite_and_non_negative(self):
+        with self.assertRaises(ValueError):
+            evidence(evidence_age_seconds=-1)
+        with self.assertRaises(ValueError):
+            evidence(evidence_age_seconds=float("nan"))
 
     def test_invalid_metric_values_are_rejected(self):
         with self.assertRaises(ValueError):
