@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Operator-assisted lifecycle checks and evidence validation; no production mutations."""
 from __future__ import annotations
+
 import argparse
 import json
 import shutil
