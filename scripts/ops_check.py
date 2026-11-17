@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-_SHA256_LINE = re.compile(r"^([0-9a-fA-F]{64})\\s+\\*?(.+?)\\s*$")
+_SHA256_LINE = re.compile(r"^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$")
 
 
 class OpsCheckError(RuntimeError):
