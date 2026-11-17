@@ -140,8 +140,6 @@ include = [
   "tests/test_quota_token_estimator.py",
   "tests/test_quotas.py",
   "tests/test_quota_reporting_api.py",
-  "tests/test_issue_17_a_17_03_delivery_readiness.py",
-  "tests/test_issue_17_a_17_03_production_quota_wiring.py",
   "tests/test_quota_harness_enforcement.py",
   "tests/test_quota_postgres_integration.py",
   "tests/test_file_download_api.py",
@@ -192,7 +190,7 @@ include = [
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
-  "tests/test_issue_665_s_665_01_e2e.py",
+  "tests/test_issue_665_a_665_07_fault_degradation.py",
 ]
 
 [tool.ruff.lint]
