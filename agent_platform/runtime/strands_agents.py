@@ -508,23 +508,9 @@ class StrandsAgentsAdapter:
                         async for stream_event in consume_events():
                             yield stream_event
                 if completed_result is None:
-                    output = "".join(text_parts)
-                    if output and "text" not in self.capabilities.output_modalities:
-                        raise UnsupportedHarnessCapability(
-                            "Strands Harness does not declare text output support"
-                        )
-                    completed_result = HarnessResult(
-                        output_text=output,
-                        trace_id=request.context.correlation_id,
-                        metadata={
-                            "provider": template.provider,
-                            "model": template.model,
-                            "runtime": "strands-agents",
-                            "stream_result_missing": True,
-                        },
-                    )
-                    yield HarnessStreamEvent(
-                        event_type="completed", result=completed_result
+                    raise RuntimeError(
+                        "Strands stream ended without a provider completion result; "
+                        "multimodal outputs and final usage cannot be verified"
                     )
             except TimeoutError as exc:
                 raise TimeoutError(
