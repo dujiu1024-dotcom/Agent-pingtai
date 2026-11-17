@@ -111,10 +111,6 @@ class GatewayMCPHttpTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(revoked.status_code, 401)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PersistentRunTokenVerifierTests(unittest.IsolatedAsyncioTestCase):
     async def test_persistent_token_must_match_every_mcp_session_identity_claim(self):
         expected = {
@@ -192,3 +188,7 @@ class PersistentRunTokenVerifierTests(unittest.IsolatedAsyncioTestCase):
                 expected_actor_id=expected["actor_id"],
             )
             self.assertIsNone(await verifier.verify_token("opaque-token"))
+
+
+if __name__ == "__main__":
+    unittest.main()
