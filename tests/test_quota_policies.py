@@ -18,6 +18,38 @@ class HierarchicalQuotaPolicyTests(unittest.IsolatedAsyncioTestCase):
         self.repository = InMemoryQuotaPolicyRepository()
         self.service = QuotaPolicyService(self.repository)
 
+    async def test_static_defaults_fill_only_unconfigured_dimensions(self):
+        repository = InMemoryQuotaPolicyRepository(defaults={
+            "tokens": 1000, "requests": 200, "storage_bytes": 4096,
+        })
+        service = QuotaPolicyService(repository)
+        await service.configure(
+            QuotaPolicy("tenant-policy", "tenant", "t-1",
+                        {"tokens": 500, "cost_usd": 25}, tenant_id="t-1"),
+            actor_id="admin", authorize=lambda _: True,
+        )
+        resolved = await service.resolve(QuotaPolicyContext("t-1"))
+        self.assertEqual(resolved.limits, {
+            "tokens": 500, "cost_usd": 25, "requests": 200,
+            "storage_bytes": 4096,
+        })
+        self.assertEqual(resolved.sources["tokens"], "tenant-policy")
+        self.assertEqual(resolved.sources["requests"], "system-default")
+        self.assertEqual(resolved.policy_versions["requests"], 0)
+
+    async def test_static_defaults_apply_without_persisted_policies(self):
+        service = QuotaPolicyService(
+            InMemoryQuotaPolicyRepository(defaults={"tokens": 100}),
+        )
+        resolved = await service.resolve(QuotaPolicyContext("t-1"))
+        self.assertEqual(resolved.limits, {"tokens": 100})
+        self.assertEqual(resolved.sources, {"tokens": "system-default"})
+
+    async def test_invalid_static_default_is_rejected_at_repository_creation(self):
+        with self.assertRaises(ValueError):
+            InMemoryQuotaPolicyRepository(defaults={"unknown_resource": 1})
+        with self.assertRaises(ValueError):
+            InMemoryQuotaPolicyRepository(defaults={"tokens": float("inf")})
     async def test_specificity_overrides_parent_and_merges_resource_dimensions(self):
         for policy in (
             QuotaPolicy("defaults", "default", "*", {"tokens": 1000, "requests": 100}),
