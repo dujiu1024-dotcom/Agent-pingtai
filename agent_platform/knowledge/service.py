@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from dataclasses import replace
-from typing import Protocol, Sequence
+from typing import Mapping, Protocol, Sequence
 from uuid import uuid4
 
 from agent_platform.knowledge.chunking import clean_document_text, chunk_document, sha256_text
@@ -452,7 +452,7 @@ class KnowledgeService:
                 raise ValueError("connector must return next_cursor when has_more is true")
         return {"connector_id":connector.connector_id,"pages":page_count,"documents":document_count,"deleted_documents":deleted_count,"cursor":cursor,"has_more":page_count==max_pages and bool(page.has_more)}
 
-    async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8,filters: RetrievalFilters|None=None,strategy: RetrievalStrategy|str=RetrievalStrategy.HYBRID)->list[RetrievalHit]:
+    async def retrieve(self,*,principal: KnowledgePrincipal,query: str,limit: int=8,filters: RetrievalFilters|None=None,strategy: RetrievalStrategy|str=RetrievalStrategy.HYBRID,trace_context: Mapping[str, str]|None=None)->list[RetrievalHit]:
         if not isinstance(query, str):
             raise TypeError("query must be a string")
         if not query.strip():
@@ -469,7 +469,7 @@ class KnowledgeService:
         from time import monotonic
         started=monotonic()
         status="failed"
-        retrieval_id=str(uuid4())
+        retrieval_id=(trace_context or {}).get("retrieval_id") or str(uuid4())
         query_fingerprint=hashlib.sha256(query.strip().encode("utf-8")).hexdigest()
         candidate_limit=max(limit*4,20)
         metadata={"tenant_id":principal.tenant_id,"query_chars":len(query),"limit":limit,"retrieval_id":retrieval_id}
@@ -505,7 +505,10 @@ class KnowledgeService:
                         **dict(hit.retrieval_trace),
                         "retrieval_id":retrieval_id,
                         "query_fingerprint":query_fingerprint,
-                        "strategy":strategy.value,
+                        "requested_strategy":strategy.value,
+                        "run_id":(trace_context or {}).get("run_id"),
+                        "request_id":(trace_context or {}).get("request_id"),
+                        "agent_id":(trace_context or {}).get("agent_id"),
                         "candidate_limit":candidate_limit,
                         "result_limit":limit,
                         "result_rank":rank,
