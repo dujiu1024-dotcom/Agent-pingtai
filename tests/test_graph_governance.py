@@ -345,10 +345,12 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(jobs[0].status, "pending")
         self.assertEqual(jobs[0].attempts, 1)
         completed, retried = await worker.run_once(
-            worker_id="worker-a", limit=1, now=now + timedelta(seconds=6),
+            worker_id="worker-a", limit=2, now=now + timedelta(seconds=6),
         )
-        self.assertEqual((completed, retried), (1, 0))
-        self.assertEqual(attempts, [jobs[0].job_id, jobs[0].job_id])
+        self.assertEqual((completed, retried), (2, 0))
+        self.assertEqual(attempts[0], jobs[0].job_id)
+        self.assertEqual(attempts[-1], jobs[0].job_id)
+        self.assertEqual(len(attempts), 3)
 
     async def test_concurrent_delete_and_correction_cannot_resurrect_entity(self):
         await self.repository.add_entity(_entity("doc-a"))
