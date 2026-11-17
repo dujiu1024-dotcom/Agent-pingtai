@@ -151,6 +151,7 @@ class KnowledgeCatalogApiTests(unittest.TestCase):
         for payload in (
             {"index_name": "bad-dim", "embedding_model": "model-v1", "dimensions": True},
             {"index_name": "bad-schema", "embedding_model": "model-v1", "dimensions": 1536, "schema_version": True},
+            {"index_name": 7, "embedding_model": "model-v1", "dimensions": 1536},
         ):
             response = self.client.post(
                 url, json=payload, headers={"x-permissions": "knowledge.manage"},
