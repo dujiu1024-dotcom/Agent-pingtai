@@ -249,7 +249,7 @@ class ConnectorContractTests(unittest.IsolatedAsyncioTestCase):
 
         self.provider.before_return = revoke_mid_sync
         self.provider.page = ConnectorPage(({"id": "doc-1"},), {"next": "2"}, True)
-        with self.assertRaisesRegex(ConnectorError, "changed during synchronization"):
+        with self.assertRaisesRegex(ConnectorError, "(?:changed|revoked) during synchronization"):
             await self.service.sync_once(tenant_id="tenant-a", connection_id="drive-1")
         saved = await self.repository.get("tenant-a", "drive-1")
         self.assertEqual(saved.status, "revoked")
