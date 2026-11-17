@@ -3,13 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent_platform.observability.trace_spans import trace_span
-
 from agent_platform.observability.trace_context import (
     TraceContextScope,
     extract_trace_context,
     new_trace_context,
 )
+from agent_platform.observability.trace_spans import trace_span
 
 
 class TraceContextASGIMiddleware:
