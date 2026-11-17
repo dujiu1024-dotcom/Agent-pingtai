@@ -222,3 +222,86 @@ class PromptABExperimentTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakePostgresCursor:
+    def __init__(self, row):
+        self.row = row
+
+    async def fetchone(self):
+        return self.row
+
+
+class FakePostgresConnection:
+    def __init__(self, store):
+        self.store = store
+        self.last_query = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def execute(self, query, params):
+        self.last_query = query
+        if query.lstrip().startswith("INSERT"):
+            tenant_id, experiment_id, *_rest, encoded = params
+            key = (tenant_id, experiment_id)
+            if key in self.store:
+                raise ValueError("duplicate key")
+            import json
+            self.store[key] = json.loads(encoded)
+            return FakePostgresCursor(None)
+        tenant_id, experiment_id = params
+        payload = self.store.get((tenant_id, experiment_id))
+        return FakePostgresCursor({"report": payload} if payload else None)
+
+
+class PromptExperimentPostgresRepositoryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_postgres_repository_round_trips_full_matrix_and_is_tenant_scoped(self):
+        from agent_platform.observability.prompt_experiments import (
+            PostgresPromptExperimentRepository,
+        )
+
+        registry, _ = setup_registry()
+        repository_data = {}
+        repository = PostgresPromptExperimentRepository(
+            lambda: FakePostgresConnection(repository_data),
+        )
+        service = PromptABTestService(
+            registry=registry, executor=FakeExecutor(), repository=repository,
+            judge=FakeJudge(0.8),
+        )
+        report = await service.run(
+            tenant_id="tenant-a", prompt_id="support", dataset=dataset(),
+            variants=("control", "candidate"), baseline_variant="control",
+        )
+        restored = await repository.get("tenant-a", report.experiment_id)
+        self.assertEqual(restored, report)
+        self.assertIsNone(await repository.get("tenant-b", report.experiment_id))
+        self.assertEqual(len(restored.matrix), len(dataset().cases) * 2)
+
+    async def test_postgres_repository_rejects_non_finite_report_values(self):
+        from dataclasses import replace
+        from agent_platform.observability.prompt_experiments import (
+            PostgresPromptExperimentRepository, PromptExperimentReport,
+        )
+
+        bad = PromptExperimentReport(
+            experiment_id="8b7b2b75-4f5e-4f3e-a4b8-6a8e67e4f6d1",
+            tenant_id="tenant-a", prompt_id="support", dataset_id="d", dataset_version=1,
+            baseline_variant="control", matrix=(), metrics=(),
+            comparison={"score": float("nan")}, created_at_epoch_ms=1,
+        )
+        repository = PostgresPromptExperimentRepository(lambda: FakePostgresConnection({}))
+        with self.assertRaisesRegex(ValueError, "finite JSON"):
+            await repository.save(bad)
+
+    async def test_postgres_repository_requires_tenant_on_reads(self):
+        from agent_platform.observability.prompt_experiments import (
+            PostgresPromptExperimentRepository,
+        )
+        repository = PostgresPromptExperimentRepository(lambda: FakePostgresConnection({}))
+        with self.assertRaisesRegex(ValueError, "tenant_id"):
+            await repository.get(" ", "8b7b2b75-4f5e-4f3e-a4b8-6a8e67e4f6d1")
