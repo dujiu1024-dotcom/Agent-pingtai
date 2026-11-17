@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
-from agent_platform.contracts import BlackboardEntry, EntryKind, Scope
+from agent_platform.contracts import BlackboardEntry, EntryKind, EntryStatus, Scope
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 from agent_platform.workflows.expert_registry import ExpertProfile, InMemoryExpertRegistry
 
@@ -209,10 +210,14 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         growth_conflict = next(c for c in review["conflicts"] if c["conflict_key"] == "growth")
         revenue_conflict = next(c for c in review["conflicts"] if c["conflict_key"] == "revenue")
         self.assertEqual(growth.source_refs, (
-            growth_conflict["blackboard_entry_id"], "source:growth-decision",
+            growth_conflict["blackboard_entry_id"],
+            growth_conflict["blackboard_challenge_entry_id"],
+            "source:growth-decision",
         ))
         self.assertEqual(revenue.source_refs, (
-            revenue_conflict["blackboard_entry_id"], "source:revenue-decision",
+            revenue_conflict["blackboard_entry_id"],
+            revenue_conflict["blackboard_challenge_entry_id"],
+            "source:revenue-decision",
         ))
 
     async def test_approval_requires_a_persisted_request_and_boolean_decision(self):
@@ -717,6 +722,77 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
                 objective="analyze",
                 run_context={**context, "run_id": "dispatch-overflow"},
             )
+
+
+    async def test_conflict_decision_rejects_unresolved_blackboard_evidence_uuid(self):
+        class MissingEvidenceCallbacks(WorkflowCallbacks):
+            async def resolve_conflicts(self, *, synthesis, conflicts, run_context):
+                return {"decisions": [{
+                    "conflict_key": "market-growth",
+                    "outcome": "accept",
+                    "rationale": "decision cites a missing Blackboard record",
+                    "evidence_refs": ["abcdefab-cdef-abcd-efab-cdefabcdef99"],
+                }]}
+
+        repository = InMemoryBlackboard()
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository,
+            callbacks=MissingEvidenceCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task", "run_id": "missing-evidence"}
+        contribution = await services.run_expert(
+            assignment={"expert_id": "researcher"}, objective="resolve", run_context=context,
+        )
+        synthesis = await services.synthesize(
+            objective="resolve", contributions=[contribution], run_context=context,
+        )
+        review = await services.review(
+            synthesis=synthesis, contributions=[contribution], run_context=context,
+        )
+        with self.assertRaisesRegex(ValueError, "evidence reference does not exist"):
+            await services.resolve_conflicts(
+                synthesis=synthesis, conflicts=review["conflicts"], run_context=context,
+            )
+
+    async def test_conflict_decision_rejects_forged_conflict_or_challenge_record(self):
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task", "run_id": "forged-conflict"}
+        forged = [{
+            "conflict_key": "market-growth",
+            "conflict_instance_id": "market-growth:0",
+            "blackboard_entry_id": "abcdefab-cdef-abcd-efab-cdefabcdef98",
+            "blackboard_challenge_entry_id": "abcdefab-cdef-abcd-efab-cdefabcdef97",
+        }]
+        with self.assertRaisesRegex(ValueError, "persisted Blackboard conflict"):
+            await services.resolve_conflicts(
+                synthesis={"summary": "x"}, conflicts=forged, run_context=context,
+            )
+
+    async def test_idempotent_decision_record_cannot_be_mutated_after_acceptance(self):
+        repository = InMemoryBlackboard()
+        services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=repository, callbacks=WorkflowCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "task_id": "task", "run_id": "immutable-decision"}
+        contribution = await services.run_expert(
+            assignment={"expert_id": "researcher"}, objective="resolve", run_context=context,
+        )
+        synthesis = await services.synthesize(
+            objective="resolve", contributions=[contribution], run_context=context,
+        )
+        review = await services.review(
+            synthesis=synthesis, contributions=[contribution], run_context=context,
+        )
+        resolution = await services.resolve_conflicts(
+            synthesis=synthesis, conflicts=review["conflicts"], run_context=context,
+        )
+        decision = await repository.get(resolution["synthesis"]["blackboard_decision_entry_ids"][0])
+        mutated = replace(decision, status=EntryStatus.REJECTED)
+        with self.assertRaisesRegex(RuntimeError, "idempotency conflict"):
+            await services._propose_once(mutated)
 
 
 if __name__ == "__main__":
