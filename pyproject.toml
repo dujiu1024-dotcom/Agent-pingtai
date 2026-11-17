@@ -89,6 +89,7 @@ include = [
   "tests/test_model_templates.py",
   "tests/test_deepseek_harness_adapter.py",
   "tests/test_event_consumer.py",
+  "tests/test_issue_21_c_21_03_fault_injection.py",
   "tests/test_platform_postgres_integration.py",
   "tests/test_tenant_creation_integration.py",
   "tests/test_service_identity_authorization_integration.py",
