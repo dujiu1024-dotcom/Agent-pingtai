@@ -393,7 +393,7 @@ def create_platform_app(
         if (
             not graph_configured or parsed_graph_url.scheme != "https"
             or not parsed_graph_url.hostname or parsed_graph_url.username is not None
-            or parsed_graph_url.password is not None or parsed_graph_url.fragment
+            or parsed_graph_url.password is not None or parsed_graph_url.query or parsed_graph_url.fragment
         ):
             raise ValueError("graph_visualization_url requires graph API configuration and an HTTPS URL without credentials or fragment")
     app.include_router(create_workbench_router(
