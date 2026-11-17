@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import unittest
 
+from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
+
 from agent_platform.graph.pipeline import (
     CandidateStatus,
     ExtractedEntity,
@@ -13,6 +15,7 @@ from agent_platform.graph.pipeline import (
     GraphSource,
     GraphSourceKind,
     InMemoryGraphCandidateRepository,
+    MemoryServiceGraphCandidateRepository,
     graph_pipeline_schema,
 )
 
@@ -95,6 +98,26 @@ class GraphBuildPipelineTests(unittest.IsolatedAsyncioTestCase):
         candidate = await self.pipeline.propose(source=self.source, allowed_project_ids=("project-a",))
         with self.assertRaises(ValueError):
             await self.pipeline.review(principal=other, candidate_id=candidate.candidate_id, approve=True)
+
+    async def test_memory_candidate_adapter_persists_review_state_without_source_text(self) -> None:
+        memory = MemoryService(InMemoryMemoryRepository())
+        candidate_store = MemoryServiceGraphCandidateRepository(memory=memory)
+        pipeline = GraphBuildPipeline(
+            schema=self.pipeline.schema, extractor=FakeExtractor(self.batch),
+            candidates=candidate_store, graph=self.graph,
+        )
+        candidate = await pipeline.propose(
+            source=self.source, allowed_project_ids=("project-a",),
+        )
+        stored = await memory.repository.get("tenant-a", candidate.candidate_id)
+        self.assertIsNotNone(stored)
+        self.assertNotIn(self.source.content, stored.candidate.content)
+        approved = await pipeline.review(
+            principal=self.reviewer, candidate_id=candidate.candidate_id, approve=True,
+        )
+        self.assertEqual(approved.status, CandidateStatus.APPROVED)
+        stored = await memory.repository.get("tenant-a", candidate.candidate_id)
+        self.assertEqual(stored.status.value, "active")
 
     async def test_conflicting_candidates_require_explicit_resolution(self) -> None:
         first = await self.pipeline.propose(source=self.source, allowed_project_ids=("project-a",))
