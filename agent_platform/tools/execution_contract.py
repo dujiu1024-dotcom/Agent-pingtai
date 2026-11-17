@@ -21,7 +21,7 @@ class ToolCallTimedOut(TimeoutError):
     """The Gateway call exceeded its configured deadline."""
 
 
-class ToolCallCancelled(asyncio.CancelledError):
+class ToolCallCancelled(RuntimeError):
     """The Run or caller cancelled the Gateway call."""
 
 
