@@ -445,6 +445,48 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertEqual(response.json()["prompt_id"], "support")
 
 
+    def test_evaluation_run_service_is_wired_with_tenant_authorization(self):
+        from types import SimpleNamespace
+
+        class EvaluationService:
+            async def run(self, **kwargs):
+                self.kwargs = kwargs
+                report = SimpleNamespace(
+                    dataset_id=kwargs["dataset_id"], dataset_version=kwargs["dataset_version"],
+                    pass_rate=1.0, average_score=1.0, average_recall_at_k=None,
+                )
+                return SimpleNamespace(
+                    eval_run_id="eval-run-1", report=report,
+                    gate_passed=True, gate_failures=(),
+                )
+
+        service = EvaluationService()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            evaluation_repository=object(),
+            evaluation_run_service=service,
+            evaluation_manage_authorizer=lambda principal: True,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.post(
+            "/api/platform/v1/observability/evaluations/run",
+            json={
+                "dataset_id": "release-smoke",
+                "dataset_version": 3,
+                "model_key": "provider/model@1",
+            },
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["gate_passed"])
+        self.assertEqual(service.kwargs["tenant_id"], "tenant-a")
+
+
 
     def test_quota_reservation_worker_is_started_and_stopped(self):
         class Worker:
@@ -471,6 +513,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
         with TestClient(app, base_url="https://testserver"):
             self.assertTrue(worker.started)
         self.assertTrue(worker.stopped)
+
 
 
 

@@ -40,18 +40,20 @@ class PostgresQuotaStore:
                     """INSERT INTO platform_quota_budgets
                     (tenant_id,scope_type,scope_id,period_start,period_end,hard_tokens,
                      hard_cost_usd,hard_concurrency,soft_tokens,soft_cost_usd,
-                     hard_input_tokens,hard_output_tokens)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                     hard_input_tokens,hard_output_tokens,hard_context_window_tokens)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (tenant_id,scope_type,scope_id,period_start)
                     DO UPDATE SET period_end=EXCLUDED.period_end,
                     hard_tokens=EXCLUDED.hard_tokens,hard_cost_usd=EXCLUDED.hard_cost_usd,
                     hard_concurrency=EXCLUDED.hard_concurrency,soft_tokens=EXCLUDED.soft_tokens,
                     soft_cost_usd=EXCLUDED.soft_cost_usd,hard_input_tokens=EXCLUDED.hard_input_tokens,
-                    hard_output_tokens=EXCLUDED.hard_output_tokens,updated_at=now()""",
+                    hard_output_tokens=EXCLUDED.hard_output_tokens,
+                    hard_context_window_tokens=EXCLUDED.hard_context_window_tokens,updated_at=now()""",
                     (budget.tenant_id,budget.scope_type,budget.scope_id,budget.period_start,
                      budget.period_end,budget.hard_tokens,budget.hard_cost_usd,
                      budget.hard_concurrency,budget.soft_tokens,budget.soft_cost_usd,
-                     budget.hard_input_tokens,budget.hard_output_tokens),
+                     budget.hard_input_tokens,budget.hard_output_tokens,
+                     budget.hard_context_window_tokens),
                 )
 
     async def get_budget(self, tenant_id: str, scope_type: str, scope_id: str, now: datetime) -> Budget | None:
@@ -76,6 +78,7 @@ class PostgresQuotaStore:
             soft_cost_usd=Decimal(row["soft_cost_usd"]) if row["soft_cost_usd"] is not None else None,
             hard_input_tokens=row.get("hard_input_tokens"),
             hard_output_tokens=row.get("hard_output_tokens"),
+            hard_context_window_tokens=row.get("hard_context_window_tokens"),
         )
 
     async def reserve(self, reservation: QuotaReservation) -> tuple[QuotaReservation, tuple[str, ...]]:
