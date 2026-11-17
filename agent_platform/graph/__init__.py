@@ -5,6 +5,7 @@ from agent_platform.graph.schema import (
     GraphSchemaRegistry, GraphSourceDomain, PropertyDefinition, PropertyKind,
     RelationTypeDefinition, SourceTypeMapping, default_graph_schema,
 )
+from agent_platform.graph.extraction import GraphEvidenceSpan
 from agent_platform.graph.pipeline import (
     GraphCandidateStatus, GraphExtractionCandidate, GraphExtractionDraft,
     GraphExtractionPipeline, GraphPrincipal, GraphSourceRecord,
@@ -18,4 +19,5 @@ __all__ = [
     "default_graph_schema", "GraphCandidateStatus", "GraphExtractionCandidate",
     "GraphExtractionDraft", "GraphExtractionPipeline", "GraphPrincipal",
     "GraphSourceRecord", "GraphSourceReference", "InMemoryGraphCandidateRepository",
+    "GraphEvidenceSpan",
 ]
