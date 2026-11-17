@@ -6,12 +6,19 @@ from typing import Protocol, Sequence
 from agent_platform.knowledge.contracts import (
     Document,
     DocumentChunk,
+    KnowledgeCollection,
+    KnowledgeIndex,
     KnowledgePrincipal,
     RetrievalHit,
 )
 
 
 class KnowledgeRepository(Protocol):
+    async def create_collection(self, collection: KnowledgeCollection) -> KnowledgeCollection: ...
+    async def get_collection(self, tenant_id: str, collection_id: str) -> KnowledgeCollection | None: ...
+    async def list_collections(self, principal: KnowledgePrincipal, limit: int = 100) -> list[KnowledgeCollection]: ...
+    async def create_index(self, index: KnowledgeIndex) -> KnowledgeIndex: ...
+    async def list_indexes(self, tenant_id: str, collection_id: str) -> list[KnowledgeIndex]: ...
     async def save_document(
         self, document: Document, chunks: Sequence[DocumentChunk]
     ) -> bool: ...
@@ -55,15 +62,74 @@ class InMemoryKnowledgeRepository:
     """Test adapter; production uses PostgreSQL ACL predicates before returning chunk text."""
 
     def __init__(self) -> None:
+        self.collections: dict[tuple[str, str], KnowledgeCollection] = {}
+        self.indexes: dict[tuple[str, str], KnowledgeIndex] = {}
         self.documents: dict[tuple[str, str, int], Document] = {}
         self.chunks: dict[tuple[str, str, int], list[DocumentChunk]] = {}
         self.connector_cursors: dict[tuple[str, str], str] = {}
         self.document_acl: dict[tuple[str, str], set[tuple[str, str, str]]] = {}
         self.document_acl_enforced: set[tuple[str, str]] = set()
 
+    async def create_collection(self, collection: KnowledgeCollection) -> KnowledgeCollection:
+        key = (collection.tenant_id, collection.collection_id)
+        if key in self.collections:
+            raise ValueError("collection already exists")
+        if any(
+            item.tenant_id == collection.tenant_id
+            and item.project_id == collection.project_id
+            and item.name.casefold() == collection.name.casefold()
+            and item.deleted_at is None
+            for item in self.collections.values()
+        ):
+            raise ValueError("collection name already exists in this scope")
+        self.collections[key] = collection
+        default_index = KnowledgeIndex(
+            tenant_id=collection.tenant_id, collection_id=collection.collection_id,
+        )
+        self.indexes[(default_index.tenant_id, default_index.index_id)] = default_index
+        return collection
+
+    async def get_collection(self, tenant_id: str, collection_id: str) -> KnowledgeCollection | None:
+        item = self.collections.get((tenant_id, collection_id))
+        return item if item is not None and item.deleted_at is None else None
+
+    async def list_collections(self, principal: KnowledgePrincipal, limit: int = 100) -> list[KnowledgeCollection]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        visible = []
+        for item in self.collections.values():
+            if item.tenant_id != principal.tenant_id or item.deleted_at is not None:
+                continue
+            if item.project_id is not None and item.project_id not in principal.project_ids and item.project_id not in principal.manage_project_ids:
+                continue
+            visible.append(item)
+        return sorted(visible, key=lambda item: item.created_at, reverse=True)[:limit]
+
+    async def create_index(self, index: KnowledgeIndex) -> KnowledgeIndex:
+        if await self.get_collection(index.tenant_id, index.collection_id) is None:
+            raise ValueError("collection not found")
+        key = (index.tenant_id, index.index_id)
+        if key in self.indexes:
+            raise ValueError("index already exists")
+        self.indexes[key] = index
+        return index
+
+    async def list_indexes(self, tenant_id: str, collection_id: str) -> list[KnowledgeIndex]:
+        if await self.get_collection(tenant_id, collection_id) is None:
+            raise ValueError("collection not found")
+        return sorted(
+            (item for item in self.indexes.values()
+             if item.tenant_id == tenant_id and item.collection_id == collection_id),
+            key=lambda item: item.created_at,
+        )
+
     async def save_document(
         self, document: Document, chunks: Sequence[DocumentChunk]
     ) -> bool:
+        if document.collection_id is not None and await self.get_collection(
+            document.tenant_id, document.collection_id
+        ) is None:
+            raise ValueError("collection not found in tenant")
         key = (document.tenant_id, document.document_id, document.version)
         if key in self.documents:
             return False
@@ -106,6 +172,10 @@ class InMemoryKnowledgeRepository:
             ):
                 continue
             if document.scope.value == "project" and document.project_id not in principal.project_ids:
+                continue
+            if document.collection_id is not None and await self.get_collection(document.tenant_id, document.collection_id) is None:
+                continue
+            if document.collection_id is not None and await self.get_collection(document.tenant_id, document.collection_id) is None:
                 continue
             grants = self.document_acl.get((document.tenant_id, document.document_id), set())
             acl_key = (document.tenant_id, document.document_id)
