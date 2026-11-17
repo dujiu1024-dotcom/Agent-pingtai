@@ -1,0 +1,43 @@
+name: quality-capacity-baseline
+
+on:
+  pull_request:
+    paths:
+      - "agent_platform/observability/quality_capacity_baseline.py"
+      - "tests/test_issue_21_c_21_04_quality_capacity.py"
+      - "scripts/run_quality_capacity_baseline.py"
+      - ".github/workflows/quality-capacity-baseline.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-capacity-baseline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deterministic-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install platform dependencies
+        run: |
+          python -m pip install -U pip ruff
+          python -m pip install -r requirements-platform.txt
+      - name: Run C-21-04 unit regressions
+        run: python -m unittest tests.test_issue_21_c_21_04_quality_capacity tests.test_agent_rag_evaluation tests.test_harness_benchmark_metrics -v
+      - name: Run repeatable offline baseline
+        run: python scripts/run_quality_capacity_baseline.py --operations 1024 --concurrency 32 --output quality-capacity-baseline.json
+      - name: Lint baseline implementation
+        run: ruff check agent_platform/observability/quality_capacity_baseline.py tests/test_issue_21_c_21_04_quality_capacity.py scripts/run_quality_capacity_baseline.py
+      - name: Publish baseline evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: c21-04-quality-capacity-baseline
+          path: quality-capacity-baseline.json
+          if-no-files-found: error
