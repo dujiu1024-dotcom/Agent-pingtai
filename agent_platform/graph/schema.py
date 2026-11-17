@@ -219,6 +219,7 @@ class GraphEntity:
 
     def validate(self, schema: GraphSchema) -> None:
         _validate_same_tenant(self.tenant_id, schema.tenant_id)
+        _validate_record_id(self.entity_id, "entity_id")
         schema.validate_attributes(schema.entity_type(self.entity_type).properties, self.attributes)
         if self.project_id is not None and (
             not isinstance(self.project_id, str) or not self.project_id.strip()
@@ -240,6 +241,8 @@ class GraphRelation:
 
     def validate(self, schema: GraphSchema) -> None:
         _validate_same_tenant(self.tenant_id, schema.tenant_id)
+        for name in ("relation_id", "source_entity_id", "target_entity_id"):
+            _validate_record_id(getattr(self, name), name)
         definition = schema.relation_type(self.relation_type)
         if self.source_entity_type not in definition.source_types:
             raise ValueError("source entity type is not allowed by relation schema")
@@ -250,6 +253,11 @@ class GraphRelation:
             not isinstance(self.project_id, str) or not self.project_id.strip()
         ):
             raise ValueError("project_id must not be empty")
+
+
+def _validate_record_id(value: str, label: str) -> None:
+    if not isinstance(value, str) or not value.strip() or len(value) > 200:
+        raise ValueError(f"{label} must contain 1-200 non-whitespace characters")
 
 
 def _validate_same_tenant(actual: str, expected: str) -> None:
