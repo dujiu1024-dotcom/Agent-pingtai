@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS platform_trusted_publisher_keys (
     not_before timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz,
     revoked_at timestamptz,
+    revoked_by text,
     created_by text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, extension_id, key_id),
