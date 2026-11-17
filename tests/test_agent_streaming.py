@@ -74,7 +74,7 @@ class AgentStreamingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, {"answer": "Hello"})
         self.assertEqual((await store.get("tenant", "run-stream")).status, RunStatus.SUCCEEDED)
 
-        stream = broker.subscribe(tenant_id="tenant", run_id="run-stream")
+        stream = await broker.subscribe(tenant_id="tenant", run_id="run-stream")
         events = []
         async for event in stream:
             events.append(event)
