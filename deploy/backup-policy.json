@@ -9,8 +9,16 @@
   },
   "integrity": {
     "algorithm": "SHA-256",
-    "artifacts": ["encrypted_payload", "sidecar_checksum", "JSON_manifest"],
-    "publish_order": ["encrypted_payload", "checksum", "manifest_last"],
+    "artifacts": [
+      "encrypted_payload",
+      "sidecar_checksum",
+      "JSON_manifest"
+    ],
+    "publish_order": [
+      "encrypted_payload",
+      "checksum",
+      "manifest_last"
+    ],
     "rule": "A backup without all three artifacts or with any digest mismatch is invalid."
   },
   "components": {
@@ -45,5 +53,18 @@
     "objects": "MinIO mirror is a point-in-time traversal, not a version-preserving atomic snapshot",
     "configuration": "Captured at backup invocation; secrets encrypted and excluded from repository history",
     "cross_component": "No cross-component atomic checkpoint is claimed; record run timestamps and reconcile references before production cutover."
+  },
+  "verification": {
+    "routine": "after each backup batch and at least daily",
+    "command": "python scripts/verify_platform_backups.py --backup-dir <backup-dir>",
+    "deep_validation": "AGE_IDENTITY=<offline-identity> python scripts/verify_platform_backups.py --backup-dir <backup-dir> --decrypt",
+    "checks": [
+      "regular artifact and sidecar files",
+      "SHA-256 sidecar digest",
+      "JSON manifest format and artifact name",
+      "manifest digest equals encrypted payload digest",
+      "age authentication and native payload format when decrypt enabled"
+    ],
+    "failure_action": "quarantine failed artifact from restore selection; investigate and rerun backup"
   }
 }

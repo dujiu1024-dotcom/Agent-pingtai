@@ -143,3 +143,36 @@ unavailable, artifact/target identity differs, PostgreSQL migration compatibilit
 is unknown, Redis cannot be confirmed stopped, object archive paths are unsafe,
 the former primary cannot be fenced, or cross-component reconciliation detects
 unexplained loss. Do not bypass confirmation tokens to meet an RTO target.
+
+
+## Executable recovery plan and drill evidence gate
+
+The approved objectives and mandatory gates are machine-readable in
+`deploy/disaster-recovery-policy.json`. Print the current recovery plan:
+
+```sh
+python scripts/disaster_recovery.py --plan
+```
+
+After an isolated exercise, copy
+`docs/disaster-recovery-drill-template.md` into a JSON record using the field
+names exercised in `tests/test_disaster_recovery_evidence.py`, then validate it:
+
+```sh
+python scripts/disaster_recovery.py --validate-record /secure/drills/DR-YYYY-NNN.json
+```
+
+The validator requires timezone-aware incident, last-known-good-write and
+traffic-resumed timestamps. It computes measured RPO from the last known good
+write to incident declaration and measured RTO from incident declaration to
+traffic resumption. Full-platform records must include successful checks for
+configuration, PostgreSQL, Redis and objects; database/object, outbox/event and
+tenant authorization reconciliation; primary fencing and routing validation;
+independent reviewer sign-off; and evidence references. Exit status is 0 for
+a passing record, 1 for evidence/objective failures, and 2 for malformed input
+or policy errors. Component-only scopes can declare their in-scope components.
+
+A passing result evaluates the submitted record; it is not a live probe and
+does not prove that a production restore, replica promotion or DNS failover
+actually occurred. Keep raw logs, manifests and screenshots in the restricted
+evidence system and put references—not secrets or customer data—in the record.
