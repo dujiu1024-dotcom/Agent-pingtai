@@ -1,5 +1,13 @@
 """Tenant-scoped server-enforced quotas and cost accounting."""
 
+from agent_platform.quotas.admission import (
+    AdmissionRequest,
+    TenantFairQuotaAdmissionController,
+)
+from agent_platform.quotas.concurrency import (
+    QuotaConcurrencyLimiter,
+    QuotaReservationMaintenanceWorker,
+)
 from agent_platform.quotas.groups import (
     QuotaReservationGroup,
     QuotaReservationGroupService,
@@ -20,5 +28,7 @@ __all__ = [
     "Budget", "BudgetExceeded", "InMemoryQuotaStore",
     "PostgresQuotaStore", "QuotaEnforcedHarnessAdapter", "QuotaReservation",
     "QuotaService", "UsageEvent", "QuotaScope", "QuotaReservationGroup",
-    "QuotaReservationGroupService",
+    "QuotaReservationGroupService", "AdmissionRequest",
+    "TenantFairQuotaAdmissionController", "QuotaConcurrencyLimiter",
+    "QuotaReservationMaintenanceWorker",
 ]
