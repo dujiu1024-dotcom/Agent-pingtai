@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from agent_platform.api.blackboard import create_blackboard_router
+from agent_platform.identity.models import Principal
 from agent_platform.blackboard.replay import BlackboardReplayCursor
 from agent_platform.blackboard.sse import (
     decode_blackboard_cursor,
@@ -82,6 +88,67 @@ class BlackboardSseBridgeTests(unittest.IsolatedAsyncioTestCase):
         await anext(stream)
         self.assertEqual(replay.last_cursor, replay.base)
         await stream.aclose()
+
+
+class BlackboardSseApiTests(unittest.TestCase):
+    def _client(self, *, replay_tenant="tenant-a", allowed=True):
+        replay = FakeReplay()
+        replay.tenant_id = replay_tenant
+
+        async def resolve_principal(request):
+            return Principal(
+                user_id="user-a", tenant_id="tenant-a", session_id="session-a",
+                email="user@example.com", display_name="User",
+            )
+
+        async def resolve_repository(principal):
+            return type("Repository", (), {"tenant_id": "tenant-a"})()
+
+        async def authorize_scope(principal, scope, scope_id, action):
+            return allowed and scope is Scope.TASK and scope_id == "task-a" and action == "read"
+
+        async def resolve_event_replay(principal):
+            return replay
+
+        app = FastAPI()
+        app.include_router(create_blackboard_router(
+            resolve_principal=resolve_principal,
+            resolve_repository=resolve_repository,
+            authorize_scope=authorize_scope,
+            resolve_event_replay=resolve_event_replay,
+        ))
+        return TestClient(app), replay
+
+    def test_authorized_scope_receives_blackboard_sse_event(self):
+        client, replay = self._client()
+        with client.stream(
+            "GET",
+            "/api/platform/v1/blackboard/events/stream?scope=task&scope_id=task-a",
+        ) as response:
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
+            lines = iter(response.iter_lines())
+            event_line = next(line for line in lines if line.startswith("event:"))
+            data_line = next(line for line in lines if line.startswith("data:"))
+            self.assertEqual(event_line, "event: blackboard_update")
+            payload = json.loads(data_line.removeprefix("data: "))
+            self.assertEqual(payload["scope_id"], "task-a")
+            self.assertEqual(payload["entry_version"], 2)
+            self.assertNotIn("payload", payload)
+        self.assertTrue(replay.delivered)
+
+    def test_scope_authorization_and_replay_tenant_are_enforced(self):
+        denied_client, _ = self._client(allowed=False)
+        denied = denied_client.get(
+            "/api/platform/v1/blackboard/events/stream?scope=task&scope_id=task-a",
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        mismatch_client, _ = self._client(replay_tenant="tenant-b")
+        mismatch = mismatch_client.get(
+            "/api/platform/v1/blackboard/events/stream?scope=task&scope_id=task-a",
+        )
+        self.assertEqual(mismatch.status_code, 403)
 
 
 if __name__ == "__main__":
