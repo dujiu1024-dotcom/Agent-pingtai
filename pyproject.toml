@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 
 [project.optional-dependencies]
 tokenizer = ["tiktoken>=0.7,<1"]
+reports = ["reportlab>=4,<5"]
 
 [tool.ruff]
 line-length = 100
@@ -165,6 +166,8 @@ include = [
   "tests/test_sse_protocol.py",
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
+  "tests/test_evaluation_comparison.py",
+  "tests/test_evaluation_comparison_api.py",
 ]
 
 [tool.ruff.lint]

@@ -98,6 +98,7 @@ def create_platform_app(
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
+    evaluation_comparison_service: Any | None = None,
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
@@ -241,7 +242,7 @@ def create_platform_app(
         )
     )
     evaluation_configured = any(value is not None for value in (
-        evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
+        evaluation_repository, evaluation_run_service,
     ))
     if evaluation_configured and any(value is None for value in (
         evaluation_repository, evaluation_manage_authorizer,
@@ -249,8 +250,11 @@ def create_platform_app(
         raise ValueError(
             "evaluation repository and evaluation manager authorizer must be configured together"
         )
+    if evaluation_comparison_service is not None and evaluation_manage_authorizer is None:
+        raise ValueError("evaluation comparison service requires the evaluation manager authorizer")
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
+        evaluation_run_service, evaluation_comparison_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
@@ -260,6 +264,7 @@ def create_platform_app(
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
             evaluation_run_service=evaluation_run_service,
+            evaluation_comparison_service=evaluation_comparison_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
         ))
