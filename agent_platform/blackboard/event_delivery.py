@@ -60,6 +60,18 @@ class BlackboardEventDeliveryStore:
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
+                await connection.execute(
+                    """
+                    UPDATE blackboard_event_deliveries
+                    SET status = 'manual', worker_id = NULL, lease_token = NULL,
+                        lease_expires_at = NULL,
+                        last_error = COALESCE(last_error, 'worker lease expired at retry limit'),
+                        updated_at = now()
+                    WHERE tenant_id = %s AND status = 'processing'
+                      AND lease_expires_at <= now() AND attempts >= %s
+                    """,
+                    (self.tenant_id, self.max_attempts),
+                )
                 cursor = await connection.execute(
                     """
                     WITH candidate AS (
@@ -68,7 +80,7 @@ class BlackboardEventDeliveryStore:
                         WHERE tenant_id = %s
                           AND (
                             (status = 'pending' AND next_attempt_at <= now())
-                            OR (status = 'processing' AND lease_expires_at <= now())
+                            OR (status = 'processing' AND lease_expires_at <= now() AND attempts < %s)
                           )
                         ORDER BY next_attempt_at, event_id
                         FOR UPDATE SKIP LOCKED
@@ -93,7 +105,7 @@ class BlackboardEventDeliveryStore:
                       event.entry_version, event.actor_id, event.payload,
                       event.correlation_id, event.occurred_at
                     """,
-                    (self.tenant_id, worker_id, token, self.lease_seconds),
+                    (self.tenant_id, self.max_attempts, worker_id, token, self.lease_seconds),
                 )
                 row = await cursor.fetchone()
         if row is None:
