@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "release_id": "replace-with-release-id",
   "environment": "production",
   "commit_sha": "0000000000000000000000000000000000000000",
