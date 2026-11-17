@@ -48,12 +48,20 @@ def create_sessions_router(
             session = await service.repository.get_session(
                 principal.tenant_id, resource_id,
             )
-            if session is None or session.status == "deleted":
+            if session is None or (session.status == "deleted" and action != "delete"):
                 raise HTTPException(404, "session not found")
             if session.project_id and not await authorize(
                 principal, "project", session.project_id, action,
             ):
                 raise HTTPException(403, "linked project session access denied")
+        if resource_type == "file":
+            asset = await service.repository.get_asset(principal.tenant_id, resource_id)
+            if asset is not None and asset.session_id:
+                linked_session = await service.repository.get_session(
+                    principal.tenant_id, asset.session_id,
+                )
+                if linked_session is None or linked_session.status == "deleted":
+                    raise HTTPException(404, "linked session not found")
         if audit_writer is not None:
             trace = getattr(request.state, "trace_context", None)
             await audit_writer.record(
@@ -915,15 +923,36 @@ def create_sessions_router(
     async def delete_session(session_id: str, request: Request):
         principal, service = await context(request, "session", session_id, "delete")
         session = await service.repository.get_session(principal.tenant_id, session_id)
-        if session is None or session.status == "deleted":
+        if session is None:
             raise HTTPException(404, "session not found")
-        changed = await service.repository.set_session_status(
-            principal.tenant_id, session_id, "deleted",
-            expected_status=session.status,
-        )
-        if not changed:
-            raise HTTPException(409, "session lifecycle changed; retry deletion")
-        if audit_writer is not None:
+        if session.status != "deleted":
+            changed = await service.repository.set_session_status(
+                principal.tenant_id, session_id, "deleted",
+                expected_status=session.status,
+            )
+            if not changed:
+                raise HTTPException(409, "session lifecycle changed; retry deletion")
+        # Tombstone every file attached to the session and remove its indexed and
+        # binary content. The deleted session is hidden before cleanup begins.
+        try:
+            linked_assets = await service.repository.list_session_assets_for_deletion(
+                principal.tenant_id, session_id,
+            )
+            for asset in linked_assets:
+                await service.delete_asset(
+                    tenant_id=principal.tenant_id, asset_id=asset.asset_id,
+                )
+        except SessionNotFound:
+            pass
+        except SessionError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        try:
+            await service.repository.delete_session_history(
+                principal.tenant_id, session_id,
+            )
+        except SessionNotFound:
+            raise HTTPException(404, "session not found")
+        if audit_writer is not None and session.status != "deleted":
             await audit_writer.record(
                 tenant_id=principal.tenant_id, actor_id=principal.user_id,
                 action="session.deleted", subject_id=session_id,

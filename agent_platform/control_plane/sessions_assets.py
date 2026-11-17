@@ -223,6 +223,10 @@ class SessionRepository(Protocol):
     async def set_session_status(
         self, tenant_id: str, session_id: str, status: str, *, expected_status: str,
     ) -> bool: ...
+    async def delete_session_history(self, tenant_id: str, session_id: str) -> None: ...
+    async def list_session_assets_for_deletion(
+        self, tenant_id: str, session_id: str,
+    ) -> tuple[FileAsset, ...]: ...
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
     async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None: ...
@@ -327,6 +331,25 @@ class InMemorySessionRepository:
         )
         return True
 
+    async def delete_session_history(self, tenant_id: str, session_id: str) -> None:
+        key = (tenant_id, session_id)
+        if key not in self.sessions:
+            raise SessionNotFound("session not found")
+        self.messages.pop(key, None)
+        self.context_snapshots.pop(key, None)
+
+    async def list_session_assets_for_deletion(
+        self, tenant_id: str, session_id: str,
+    ) -> tuple[FileAsset, ...]:
+        return tuple(
+            sorted(
+                (row for (tenant, _), row in self.assets.items()
+                 if tenant == tenant_id and row.session_id == session_id),
+                key=lambda row: row.created_at,
+                reverse=True,
+            )
+        )
+
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]:
         if not 1 <= limit <= 500:
             raise SessionError("limit must be between 1 and 500")
@@ -381,6 +404,10 @@ class InMemorySessionRepository:
         key = (asset.tenant_id, asset.asset_id)
         if key in self.assets:
             raise SessionError("asset already exists")
+        if asset.session_id is not None:
+            session = self.sessions.get((asset.tenant_id, asset.session_id))
+            if session is None or session.status != "active":
+                raise SessionNotFound("session not found or inactive")
         self.assets[key] = asset
         self.asset_versions[key] = [FileAssetVersion(
             asset.tenant_id, asset.asset_id, asset.version, asset.object_key,
@@ -564,8 +591,8 @@ class SessionAssetService:
             raise SessionError("media type is not allowed")
         if session_id is not None:
             session = await self.repository.get_session(tenant_id, session_id)
-            if session is None:
-                raise SessionNotFound("session not found")
+            if session is None or session.status != "active":
+                raise SessionNotFound("session not found or inactive")
             if project_id is None:
                 project_id = session.project_id
             elif project_id != session.project_id:

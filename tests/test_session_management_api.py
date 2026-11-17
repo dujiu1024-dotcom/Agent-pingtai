@@ -11,8 +11,9 @@ class SessionManagementApiTests(unittest.TestCase):
             from fastapi.testclient import TestClient
             from agent_platform.api.sessions import create_sessions_router
             from agent_platform.control_plane.sessions_assets import (
-                AssetStatus, FileAsset, InMemoryObjectStorage,
+                AssetStatus, ContextWindowSnapshot, FileAsset, InMemoryObjectStorage,
                 InMemorySessionRepository, MessageRole, SessionAssetService,
+                SessionNotFound,
             )
         except ImportError:
             self.skipTest("FastAPI is installed in the platform API test environment")
@@ -39,6 +40,7 @@ class SessionManagementApiTests(unittest.TestCase):
         ))
         self.client = TestClient(app)
         self.MessageRole = MessageRole
+        self.ContextWindowSnapshot = ContextWindowSnapshot
 
     def _create_session(self):
         import asyncio
@@ -115,8 +117,68 @@ class SessionManagementApiTests(unittest.TestCase):
             404,
         )
 
-    def test_session_permissions_and_tenant_isolation_fail_closed(self):
+    def test_session_delete_propagates_to_linked_assets_and_blocks_file_routes(self):
+        import asyncio
         session = self._create_session()
+        asset = asyncio.run(self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="session-private.txt",
+            media_type="text/plain", content=b"private session attachment",
+            session_id=session.session_id,
+        ))
+        message = asyncio.run(self.service.append_message(
+            tenant_id="tenant-a", actor_id="user-a", session_id=session.session_id,
+            role=self.MessageRole.USER, content="attached evidence",
+            asset_ids=(asset.asset_id,),
+        ))
+        asyncio.run(self.repository.create_context_snapshot(self.ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id=session.session_id,
+            snapshot_id="snapshot-delete-propagation", version=1, snapshot={},
+            token_count=0, max_tokens=100, created_by="user-a",
+            last_message_id=message.message_id,
+        )))
+
+        deleted = self.client.delete(f"/api/platform/v1/sessions/{session.session_id}")
+        self.assertEqual(deleted.status_code, 204)
+        saved_asset = asyncio.run(self.repository.get_asset("tenant-a", asset.asset_id))
+        self.assertEqual(saved_asset.status.value, "deleted")
+        self.assertNotIn(asset.object_key, self.service.storage.objects)
+        self.assertEqual(
+            self.client.get(f"/api/platform/v1/files/{asset.asset_id}/metadata").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/api/platform/v1/files/{asset.asset_id}/download-url").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/api/platform/v1/sessions/{session.session_id}/messages",
+            ).status_code,
+            404,
+        )
+        key = ("tenant-a", session.session_id)
+        self.assertNotIn(key, self.repository.messages)
+        self.assertNotIn(key, self.repository.context_snapshots)
+        # Repeated DELETE retries cleanup for already-tombstoned assets safely.
+        self.assertEqual(
+            self.client.delete(f"/api/platform/v1/sessions/{session.session_id}").status_code,
+            204,
+        )
+        with self.assertRaises(SessionNotFound):
+            asyncio.run(self.service.upload_asset(
+                tenant_id="tenant-a", owner_id="user-a", filename="late.txt",
+                media_type="text/plain", content=b"must not attach",
+                session_id=session.session_id,
+            ))
+
+    def test_session_permissions_and_tenant_isolation_fail_closed(self):
+        import asyncio
+        session = self._create_session()
+        asset = asyncio.run(self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="tenant-private.txt",
+            media_type="text/plain", content=b"tenant-a only",
+            session_id=session.session_id,
+        ))
         self.denied_actions.add("read")
         self.assertEqual(
             self.client.get(f"/api/platform/v1/sessions/{session.session_id}").status_code,
@@ -128,3 +190,14 @@ class SessionManagementApiTests(unittest.TestCase):
             self.client.get(f"/api/platform/v1/sessions/{session.session_id}").status_code,
             404,
         )
+        self.assertEqual(
+            self.client.delete(f"/api/platform/v1/sessions/{session.session_id}").status_code,
+            404,
+        )
+        self.assertEqual(
+            self.client.get(f"/api/platform/v1/files/{asset.asset_id}/metadata").status_code,
+            404,
+        )
+        remaining = asyncio.run(self.repository.get_asset("tenant-a", asset.asset_id))
+        self.assertEqual(remaining.status.value, "available")
+        self.assertIn(asset.object_key, self.service.storage.objects)
