@@ -120,6 +120,19 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.source.archived, [("t1", "asset", "old-asset")])
         self.assertTrue(await self.repo.is_tombstoned("t1", "asset", "old-asset"))
 
+    async def test_direct_delete_request_is_blocked_by_legal_hold(self):
+        await self.service.set_policy(
+            policy=RetentionPolicy("t1", "asset", 30, legal_hold=True),
+            actor_id="admin",
+        )
+        with self.assertRaisesRegex(PermissionError, "legal hold"):
+            await self.service.delete_request(
+                tenant_id="t1", actor_id="admin", resource_type="asset",
+                resource_id="protected", reason="manual deletion",
+            )
+        self.assertEqual(self.repo.tombstones, {})
+        self.assertEqual(self.repo.jobs, [])
+
     async def test_delete_requires_authorization_and_creates_all_sink_jobs(self):
         with self.assertRaises(PermissionError):
             await self.service.delete_request(
