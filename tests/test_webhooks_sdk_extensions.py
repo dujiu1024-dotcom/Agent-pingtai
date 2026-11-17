@@ -9,7 +9,7 @@ from urllib.request import Request
 
 from agent_platform.events.webhooks import (
     WebhookAttempt, WebhookDispatcher, WebhookEgressPolicy, WebhookPayload,
-    WebhookSubscription, signature, verify_signature,
+    PostgresWebhookStore, WebhookSubscription, signature, verify_signature,
 )
 from agent_platform.sdk.client import ApiResponse, PlatformApiError, PlatformClient
 from agent_platform.extensions.manifest import ExtensionManifest, validate_platform_compatibility
@@ -246,6 +246,60 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.dead[0][3:], ("lease-1", "non_success_response"))
         self.assertEqual(audit.events[-1]["outcome"], "failed")
         self.assertTrue(audit.events[-1]["detail"]["dead_lettered"])
+
+
+class _Transaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class _RecordingConnection:
+    def __init__(self):
+        self.query = None
+        self.params = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    def transaction(self):
+        return _Transaction()
+
+    async def execute(self, query, params):
+        self.query = query
+        self.params = params
+        return None
+
+
+class WebhookLeaseFencingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_finalization_updates_require_the_current_lease_token(self):
+        connection = _RecordingConnection()
+        store = PostgresWebhookStore(lambda: _async_value(connection))
+        await store.complete(
+            "tenant-a", "00000000-0000-0000-0000-000000000001",
+            response_code=204, lease_token="lease-current",
+        )
+        self.assertIn("AND lease_token=%s", connection.query)
+        self.assertEqual(connection.params[-1], "lease-current")
+        self.assertIn("last_error_code=%s", connection.query)
+        self.assertIsNone(connection.params[3])
+
+    async def test_finalization_rejects_missing_lease_token(self):
+        store = PostgresWebhookStore(lambda: _async_value(_RecordingConnection()))
+        with self.assertRaisesRegex(ValueError, "lease_token is required"):
+            await store.complete(
+                "tenant-a", "00000000-0000-0000-0000-000000000001",
+                response_code=204, lease_token="",
+            )
+
+
+async def _async_value(value):
+    return value
 
 
 class FakeSdkTransport:
