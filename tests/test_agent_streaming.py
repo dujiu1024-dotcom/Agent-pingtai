@@ -44,7 +44,7 @@ class _FakeResponse:
     def __exit__(self, *_args):
         return None
 
-    def readline(self):
+    def readline(self, _size=-1):
         return next(self.lines, b"")
 
 
