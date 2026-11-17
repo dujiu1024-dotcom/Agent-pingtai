@@ -74,7 +74,7 @@ class BlackboardMultiExpertServices:
         # Deterministic IDs make retries idempotent only when the retried
         # operation has the same semantic payload. Never silently accept a
         # different model result under an already-used run/stage key.
-        fields = ("scope", "scope_id", "kind", "content", "author_id", "source_refs")
+        fields = ("scope", "scope_id", "kind", "content", "author_id", "source_refs", "version", "status", "created_at", "correlation_id")
         if any(getattr(existing, field) != getattr(proposed, field) for field in fields):
             raise RuntimeError(
                 f"Blackboard idempotency conflict for entry {proposed.entry_id}"
@@ -104,7 +104,7 @@ class BlackboardMultiExpertServices:
         return tuple(str(ref) for ref in refs if str(ref).strip())
 
     async def _validate_source_refs(
-        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
+        self, *, scope: Scope, scope_id: str, refs: Sequence[str], require_existing: bool = False
     ) -> None:
         """Reject references to Blackboard entries outside the active workflow scope.
 
@@ -119,9 +119,11 @@ class BlackboardMultiExpertServices:
                 # not by the UUID-keyed Blackboard repository.
                 continue
             source = await self.repository.get(normalized_ref)
-            if source is not None and (
-                source.scope is not scope or source.scope_id != scope_id
-            ):
+            if source is None:
+                if require_existing:
+                    raise ValueError("Blackboard evidence reference does not exist")
+                continue
+            if source.scope is not scope or source.scope_id != scope_id:
                 raise PermissionError(
                     "Blackboard source reference crosses the active workflow scope"
                 )
@@ -324,16 +326,22 @@ class BlackboardMultiExpertServices:
         decision_entry_ids = []
         for index, conflict in enumerate(conflicts):
             conflict_entry_id = conflict.get("blackboard_entry_id")
-            if not conflict_entry_id:
-                raise ValueError("conflict is missing its durable Blackboard entry")
+            challenge_entry_id = conflict.get("blackboard_challenge_entry_id")
+            if not conflict_entry_id or not challenge_entry_id:
+                raise ValueError("conflict is missing its durable conflict or challenge entry")
+            persisted_conflict = await self.repository.get(str(conflict_entry_id))
+            persisted_challenge = await self.repository.get(str(challenge_entry_id))
+            if persisted_conflict is None or persisted_conflict.kind is not EntryKind.CONFLICT:
+                raise ValueError("conflict must reference a persisted Blackboard conflict entry")
+            if persisted_challenge is None or persisted_challenge.kind is not EntryKind.CHALLENGE:
+                raise ValueError("conflict must reference a persisted Blackboard challenge entry")
             decision = indexed_conflicts[index]
             evidence_refs = tuple(decision.get("evidence_refs", ()))
-            # The decision must be durably linked to the exact conflict it
-            # resolves, not merely mention that entry ID in opaque content.
-            # Keep evidence lineage alongside the conflict reference.
-            decision_refs = (str(conflict_entry_id), *evidence_refs)
+            # Preserve conflict and challenge lineage; UUID evidence must resolve in-scope.
+            decision_refs = (str(conflict_entry_id), str(challenge_entry_id), *evidence_refs)
             await self._validate_source_refs(
                 scope=scope, scope_id=scope_id, refs=decision_refs,
+                require_existing=True,
             )
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),
