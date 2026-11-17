@@ -7,12 +7,13 @@ import unittest
 import zipfile
 from types import SimpleNamespace
 
-from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService
+from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService, RegistryVersion
 from agent_platform.control_plane.skill_dependency_review import (
     InMemorySkillDependencyReviewStore,
     SkillDependencyReviewer,
 )
 from agent_platform.control_plane.skill_registry import (
+    AgentSkillInstallation,
     InMemoryAgentSkillStore,
     SkillPackageRegistry,
 )
@@ -72,7 +73,7 @@ class FaultInjectingAgentSkillStore(InMemoryAgentSkillStore):
         self.fail_next_put = False
         self.fail_next_remove = False
 
-    async def put(self, item) -> None:
+    async def put(self, item: AgentSkillInstallation) -> None:
         if self.fail_next_put:
             self.fail_next_put = False
             raise RuntimeError("injected Agent skill store put failure")
@@ -179,7 +180,7 @@ class SkillLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             audit=lambda *event: self.audit.append(event),
         )
 
-    async def _publish_test_skill(self):
+    async def _publish_test_skill(self) -> RegistryVersion:
         draft = await self.service.upload(
             tenant_id="tenant-a", archive=skill_package(), actor_id="publisher",
         )
