@@ -43,7 +43,7 @@ class RunAccessAndCheckpointResumeTests(unittest.TestCase):
             return (
                 p.tenant_id == "tenant-a"
                 and resource_type == "run"
-                and resource_id == "run-1"
+                and resource_id in {"run-1", "run-running"}
                 and action in {"read", "cancel", "resume", "intervene", "pause"}
                 and not denied
             )
@@ -153,12 +153,23 @@ class RunAccessAndCheckpointResumeTests(unittest.TestCase):
         asyncio.run(self.store.create("tenant-a", "run-running"))
         manager = RunLifecycleManager(self.store)
         asyncio.run(manager.start("tenant-a", "run-running"))
-        # This endpoint's resource authorization is intentionally bound to run-1;
-        # verify the lifecycle contract directly for the second active Run.
-        result = asyncio.run(manager.cancel("tenant-a", "run-running"))
-        self.assertEqual(result.status, RunStatus.CANCELLING)
+        response = self.client.post("/api/platform/v1/runs/run-running/cancel")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "cancelling")
+        self.assertEqual(
+            asyncio.run(self.store.get("tenant-a", "run-running")).status,
+            RunStatus.CANCELLING,
+        )
 
-    def test_resume_requires_and_preserves_the_explicit_checkpoint(self):
+    def test_human_intervention_can_be_submitted_before_checkpoint_resume(self):
+        submitted = self.client.post(
+            "/api/platform/v1/runs/run-1/interventions",
+            json={"kind": "context", "payload": {"instruction": "use approved figures"}},
+        )
+        self.assertEqual(submitted.status_code, 201)
+        self.assertEqual(submitted.json()["status"], "pending")
+        self.assertEqual(self.intervention_calls[0][0], "submit")
+
         response = self.client.post("/api/platform/v1/runs/run-1/resume")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "interrupted")
