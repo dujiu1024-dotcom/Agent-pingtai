@@ -48,7 +48,7 @@ def create_sessions_router(
             session = await service.repository.get_session(
                 principal.tenant_id, resource_id,
             )
-            if session is None:
+            if session is None or session.status == "deleted":
                 raise HTTPException(404, "session not found")
             if session.project_id and not await authorize(
                 principal, "project", session.project_id, action,
@@ -225,6 +225,9 @@ def create_sessions_router(
     @router.post("/sessions/{session_id}/messages", status_code=201)
     async def append_message(session_id: str, request: Request):
         principal, service = await context(request, "session", session_id, "write")
+        session = await service.repository.get_session(principal.tenant_id, session_id)
+        if session is None or session.status != "active":
+            raise HTTPException(409, "messages can only be appended to active sessions")
         try:
             body = await request.json()
         except Exception as exc:
@@ -358,8 +361,10 @@ def create_sessions_router(
             linked_session = await service.repository.get_session(
                 principal.tenant_id, session_id,
             )
-            if linked_session is None:
+            if linked_session is None or linked_session.status == "deleted":
                 raise HTTPException(404, "session not found")
+            if linked_session.status != "active":
+                raise HTTPException(409, "files can only be attached to active sessions")
         # A project inherited from the linked session is still a project-scoped
         # write. Do not let session-write permission bypass project file.create.
         effective_project_id = project_id or (
