@@ -9,7 +9,7 @@ services:
     user: "10001:10001"
     entrypoint: ["/bin/sh", "-ec"]
     command:
-      - exec uvicorn "$${PLATFORM_ASGI_APP:-agent_platform.production:app}" --host 0.0.0.0 --port 8080 --workers "$${WEB_CONCURRENCY:-2}"
+      - exec uvicorn "${PLATFORM_ASGI_APP}" --host 0.0.0.0 --port 8080 --workers "$${WEB_CONCURRENCY:-2}"
     environment:
       PLATFORM_ASGI_APP: ${PLATFORM_ASGI_APP:-agent_platform.production:app}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
@@ -75,7 +75,7 @@ services:
     user: "10001:10001"
     entrypoint: ["/bin/sh", "-ec"]
     command:
-      - exec python -m "$${PLATFORM_WORKER_MODULE:-agent_platform.worker}"
+      - exec python -m "${PLATFORM_WORKER_MODULE}"
     environment:
       PLATFORM_WORKER_MODULE: ${PLATFORM_WORKER_MODULE:-agent_platform.worker}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
