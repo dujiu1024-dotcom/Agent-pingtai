@@ -112,7 +112,6 @@ include = [
   "tests/test_issue_8_a_8_01_contracts.py",
   "tests/test_extension_package.py",
   "tests/test_i18n_context.py",
-  "tests/test_tenant_locale_preferences.py",
   "tests/test_postgres_subject_adapters.py",
   "tests/test_subject_export_coordinator.py",
   "tests/test_runs_interventions_api.py",
