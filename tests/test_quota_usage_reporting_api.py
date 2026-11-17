@@ -59,5 +59,75 @@ class UsageSummaryApiTests(unittest.TestCase):
         self.assertEqual(body["provider_reported_cost_usd"], "0")
 
 
+    def test_budget_mutation_fails_closed_without_audit_writer(self):
+        class Service:
+            def __init__(self):
+                self.configured = []
+            async def configure(self, budget):
+                self.configured.append(budget)
+
+        service = Service()
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=Store(), quota_service=service,
+            authorize_manage=lambda _principal: True,
+        ))
+
+        @app.middleware("http")
+        async def identity(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="admin", tenant_id="tenant-1", session_id="s",
+                    email="admin@example.test", display_name="Admin",
+                )
+            })()
+            return await call_next(request)
+
+        response = TestClient(app).post("/api/platform/v1/quotas/budgets", json={
+            "scope_type": "tenant", "scope_id": "tenant-1",
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "hard_tokens": 100,
+        })
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(service.configured, [])
+
+    def test_budget_mutation_fails_closed_when_audit_write_fails(self):
+        class Service:
+            def __init__(self):
+                self.configured = []
+            async def configure(self, budget):
+                self.configured.append(budget)
+
+        service = Service()
+        def broken_audit(_event):
+            raise RuntimeError("audit unavailable")
+
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(
+            quota_store=Store(), quota_service=service,
+            authorize_manage=lambda _principal: True, audit_writer=broken_audit,
+        ))
+
+        @app.middleware("http")
+        async def identity(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="admin", tenant_id="tenant-1", session_id="s",
+                    email="admin@example.test", display_name="Admin",
+                )
+            })()
+            return await call_next(request)
+
+        response = TestClient(app).post("/api/platform/v1/quotas/budgets", json={
+            "scope_type": "tenant", "scope_id": "tenant-1",
+            "period_start": "2026-11-01T00:00:00+00:00",
+            "period_end": "2026-12-01T00:00:00+00:00",
+            "hard_tokens": 100,
+        })
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertEqual(service.configured, [])
+
+
 if __name__ == "__main__":
     unittest.main()
