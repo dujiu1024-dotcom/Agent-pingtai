@@ -470,7 +470,7 @@ async function renderObservability(){
  const jobs=[
   ["capacity",()=>api(API+"/observability/health/capacity")],
   ["alerts",()=>list(API+"/observability/alerts?limit=100")],
-  ["metrics",()=>api(API+"/observability/metrics")],
+  ["metrics",async()=>{const response=await api(API+"/observability/metrics");return await response.text()}],
   ["usage",()=>list(API+"/quotas/usage?"+q+"&limit=1000")],
   ["audit",()=>list(API+"/audit/tool-events?limit=100")],
   ["identity",()=>list(API+"/audit/identity-events?limit=100")]
@@ -502,7 +502,7 @@ async function renderObservability(){
   panel("用量明细",rowsPanel("模型与 Run 用量",usage,["occurred_at","run_id","model_key","input_tokens","output_tokens","total_tokens","cost_usd","project_id","agent_id"]))+
   panel("审计追踪",rowsPanel("工具事件",audit,["event_id","occurred_at","actor_id","run_id","tool_name","action","outcome"])+
    rowsPanel("身份事件",identity,["event_id","occurred_at","actor_id","action","target_id","outcome"]))+
-  panel("Prometheus 指标",data.metrics?pre(data.metrics):"<p class='subtle'>指标 exporter 未配置或无权限。</p>")+
+  panel("Prometheus 指标",data.metrics?"<pre class='json'>"+esc(data.metrics)+"</pre>":"<p class='subtle'>指标 exporter 未配置或无权限。</p>")+
   "<p class='subtle'>统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。数据源错误会显式显示；所有读取与告警变更均由服务端认证、租户隔离和权限策略控制。</p>";
 }
 const workbenchPagesBaseRender=render;
