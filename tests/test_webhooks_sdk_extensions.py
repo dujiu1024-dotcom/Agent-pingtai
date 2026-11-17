@@ -30,7 +30,7 @@ class FakeWebhookStore:
         )
         self.attempt = WebhookAttempt(
             "tenant-a", "delivery-1", "event-1", attempt, "leased", None,
-            lease_token="lease-1",
+            lease_token="00000000-0000-0000-0000-0000000000aa",
         )
         self.completed = []
         self.retried = []
@@ -162,7 +162,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             now=int(headers["X-Platform-Timestamp"]),
         ))
         self.assertEqual(json.loads(body)["id"], "event-1")
-        self.assertEqual(store.completed[0], ("tenant-a", "delivery-1", 204, "lease-1"))
+        self.assertEqual(store.completed[0], ("tenant-a", "delivery-1", 204, "00000000-0000-0000-0000-0000000000aa"))
         self.assertEqual([event["action"] for event in audit.events], [
             "webhook.delivery.attempt", "webhook.delivery",
         ])
@@ -242,7 +242,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         result = await dispatcher.dispatch()
         self.assertEqual(result["retrying"], 1)
         self.assertEqual(len(store.retried), 1)
-        self.assertEqual(store.retried[0][3:], (503, "lease-1", "non_success_response"))
+        self.assertEqual(store.retried[0][3:], (503, "00000000-0000-0000-0000-0000000000aa", "non_success_response"))
 
     async def test_dispatch_retries_then_dead_letters(self):
         store = FakeWebhookStore(attempt=8)
@@ -259,7 +259,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         result = await dispatcher.dispatch()
         self.assertEqual(result["dead_lettered"], 1)
         self.assertEqual(len(store.dead), 1)
-        self.assertEqual(store.dead[0][3:], ("lease-1", "non_success_response"))
+        self.assertEqual(store.dead[0][3:], ("00000000-0000-0000-0000-0000000000aa", "non_success_response"))
         self.assertEqual(audit.events[-1]["outcome"], "failed")
         self.assertTrue(audit.events[-1]["detail"]["dead_lettered"])
 
@@ -298,10 +298,10 @@ class WebhookLeaseFencingTests(unittest.IsolatedAsyncioTestCase):
         store = PostgresWebhookStore(lambda: _async_value(connection))
         await store.complete(
             "tenant-a", "00000000-0000-0000-0000-000000000001",
-            response_code=204, lease_token="lease-current",
+            response_code=204, lease_token="00000000-0000-0000-0000-0000000000bb",
         )
         self.assertIn("AND lease_token=%s", connection.query)
-        self.assertEqual(connection.params[-1], "lease-current")
+        self.assertEqual(str(connection.params[-1]), "00000000-0000-0000-0000-0000000000bb")
         self.assertIn("last_error_code=%s", connection.query)
         self.assertIsNone(connection.params[3])
 
