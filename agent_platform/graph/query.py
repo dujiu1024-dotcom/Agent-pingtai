@@ -11,6 +11,8 @@ from agent_platform.graph.schema import GraphSourceDomain
 class GraphQueryRepository(Protocol):
     """Tenant-bound graph storage interface; implementations enforce project scope."""
 
+    tenant_id: str
+
     async def get_entity(
         self, entity_id: str, *, allowed_project_ids: Sequence[str] = ()
     ) -> Any: ...
@@ -71,7 +73,7 @@ class GraphQueryService:
             or not 0 < default_timeout_seconds <= 30
         ):
             raise ValueError("default_timeout_seconds must be in (0, 30]")
-        repository_tenant = getattr(repository, "tenant_id", tenant_id)
+        repository_tenant = getattr(repository, "tenant_id", None)
         if repository_tenant != tenant_id:
             raise ValueError("graph repository tenant does not match query service tenant")
         self.tenant_id = tenant_id
