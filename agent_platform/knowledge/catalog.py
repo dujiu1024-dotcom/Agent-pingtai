@@ -139,7 +139,6 @@ class InMemoryKnowledgeCatalog:
         return True
 
 
-
 class PostgresKnowledgeCatalog:
     """PostgreSQL-backed collection/index catalog with tenant-first predicates."""
 
