@@ -1,6 +1,12 @@
 """Tenant-scoped knowledge graph schema contracts."""
 
-from agent_platform.graph.query import (\n    GraphHybridResult,\n    GraphPath,\n    GraphQueryResult,\n    GraphQueryService,\n)\nfrom agent_platform.graph.schema import (
+from agent_platform.graph.query import (
+    GraphHybridResult,
+    GraphPath,
+    GraphQueryResult,
+    GraphQueryService,
+)
+from agent_platform.graph.schema import (
     EntityTypeDefinition,
     GraphEntity,
     GraphRelation,
@@ -16,7 +22,11 @@ from agent_platform.graph.query import (\n    GraphHybridResult,\n    GraphPath,
 
 __all__ = [
     "EntityTypeDefinition",
-    "GraphEntity",\n    "GraphHybridResult",\n    "GraphPath",\n    "GraphQueryResult",\n    "GraphQueryService",
+    "GraphEntity",
+    "GraphHybridResult",
+    "GraphPath",
+    "GraphQueryResult",
+    "GraphQueryService",
     "GraphRelation",
     "GraphSchema",
     "GraphSchemaRegistry",
