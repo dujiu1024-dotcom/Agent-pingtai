@@ -13,6 +13,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
 API_VERSION = "v1"
+API_VERSION_HEADER = "1"
 _ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 
 
@@ -188,7 +189,7 @@ class PlatformClient:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/json",
-            "X-API-Version": API_VERSION,
+            "X-API-Version": API_VERSION_HEADER,
             "X-Request-ID": str(uuid4()),
             "User-Agent": "agent-platform-python/0.1",
         }
@@ -261,6 +262,21 @@ class PlatformClient:
         idempotency_key: str | None = None,
     ) -> Any:
         return self.request("POST", path, body=body, idempotency_key=idempotency_key)
+
+    def put(self, path: str, body: Mapping[str, Any]) -> Any:
+        return self.request("PUT", path, body=body)
+
+    def patch(
+        self,
+        path: str,
+        body: Mapping[str, Any],
+        *,
+        idempotency_key: str | None = None,
+    ) -> Any:
+        return self.request("PATCH", path, body=body, idempotency_key=idempotency_key)
+
+    def delete(self, path: str) -> Any:
+        return self.request("DELETE", path)
 
     def get_page(
         self, path: str, *, limit: int = 100, cursor: str | None = None,
