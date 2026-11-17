@@ -128,6 +128,7 @@ include = [
   "tests/test_runtime_self_monitor.py",
   "tests/test_hot_configuration_reload.py",
   "agent_platform/api/health.py",
+  "tests/test_core_business_journey_e2e.py",
 ]
 
 [tool.ruff.lint]
