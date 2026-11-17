@@ -6,5 +6,27 @@ from typing import Sequence
 from agent_platform.knowledge.contracts import RetrievalHit
 
 
-def citation_context(hits: Sequence[RetrievalHit])->list[dict[str,object]]:
-    return [{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":dict(h.retrieval_trace)} for h in hits]
+def citation_context(hits: Sequence[RetrievalHit]) -> list[dict[str, object]]:
+    """Serialize immutable source coordinates alongside the exact retrieved chunk."""
+    return [
+        {
+            "citation_id": hit.citation_id,
+            "document_id": hit.document_id,
+            "document_version": hit.document_version,
+            "chunk_id": hit.chunk_id,
+            "title": hit.title,
+            "source_uri": hit.source_uri,
+            "source_locator": {
+                "page_number": hit.page_number,
+                "start_offset": hit.start_offset,
+                "end_offset": hit.end_offset,
+            },
+            "page_number": hit.page_number,
+            "start_offset": hit.start_offset,
+            "end_offset": hit.end_offset,
+            "text": hit.text,
+            "score": hit.score,
+            "retrieval_trace": dict(hit.retrieval_trace),
+        }
+        for hit in hits
+    ]
