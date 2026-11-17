@@ -310,6 +310,16 @@ class RegistryBackedTaskCenterService:
             except (ValueError, TypeError, AttributeError) as exc:
                 raise WorkbenchTaskError("run_id must be a UUID") from exc
 
+        if (parent_run_id is None) != (budget_lineage_key is None):
+            raise WorkbenchTaskError("parent_run_id and budget_lineage_key must be supplied together")
+        if parent_run_id is not None:
+            try:
+                parent_run_id = str(UUID(parent_run_id))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise WorkbenchTaskError("parent_run_id must be a UUID") from exc
+            if not isinstance(budget_lineage_key, str) or not budget_lineage_key.strip():
+                raise WorkbenchTaskError("budget_lineage_key must be non-empty")
+
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
@@ -371,7 +381,11 @@ class RegistryBackedTaskCenterService:
                 {"kind": item.kind, "item_id": item.item_id, "version": item.version}
                 for item in [agent, template, provider, *tools, *skills, *([workflow] if workflow is not None else [])]
             ],
-        )
+        }
+        if parent_run_id is not None:
+            create_run_args["parent_run_id"] = parent_run_id
+            create_run_args["budget_lineage_key"] = budget_lineage_key
+        created = await self.run_store.create_task_run(**create_run_args)
         if not created:
             existing = await self.run_store.get_task_by_idempotency(
                 tenant_id, actor_id, idempotency_key,
