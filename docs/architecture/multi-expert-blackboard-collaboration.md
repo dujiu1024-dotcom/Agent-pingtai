@@ -19,3 +19,7 @@ The common context carries workflow-scoped metadata; tenant/task/run identity is
 ## Failure semantics and boundaries
 
 An unregistered, disabled or insufficiently capable expert is rejected before its callback runs. Registry changes after planning are rechecked at execution. Fan-out validation fails the plan as a whole rather than silently dropping invalid assignments. Parallel orchestration is provided by LangGraph; durable Blackboard writes are idempotent. This contract does not claim provider-backed execution or multi-instance production validation; those require their own integration evidence.
+
+## Deterministic parallel aggregation and conflict review
+
+Parallel expert branches are collected by the additive reducer, whose completion order is not stable. Before synthesis and review, the workflow creates an isolated deep-copied view sorted by canonical expert ID and then Blackboard entry ID. This makes aggregation reproducible across different branch completion schedules and prevents downstream callbacks from mutating the collected state. Ordering is not a conflict-resolution policy: contradictory claims remain explicit review conflicts and must pass the existing one-decision-per-conflict validation, with durable decision records linked to the conflict and its evidence.
