@@ -59,6 +59,7 @@ The repository already contains separate encrypted, checksummed scripts:
 
 - PostgreSQL: `scripts/backup_postgres.sh` / `scripts/restore_postgres.sh`
 - Redis RDB: `scripts/backup_redis.sh` / `scripts/restore_redis.sh`
+- Deployment secrets, Compose definition and PostgreSQL migration baseline: `scripts/backup_platform_config.sh` (age-encrypted archive; no plaintext export)
 - MinIO current object state: `scripts/backup_object_storage.sh` /
   `scripts/restore_object_storage.sh`
 
