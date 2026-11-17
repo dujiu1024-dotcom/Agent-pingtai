@@ -92,7 +92,6 @@ include = [
   "tests/test_blackboard_multi_expert_services.py",
   "tests/test_blackboard_api.py",
   "tests/test_mcp_adapter.py",
-  "tests/test_model_runtime_router.py",
   "tests/test_mcp_health.py",
   "tests/test_skill_dependency_review.py",
   "tests/test_registry_runtime_assembly.py",
@@ -218,9 +217,6 @@ files = [
   "agent_platform/streaming/run_events.py",
   "agent_platform/models/runtime_router.py",
   "agent_platform/runtime/registry_runtime.py",
-  "agent_platform/runtime/workbench_tasks.py",
-  "agent_platform/api/runs.py",
-  "agent_platform/api/app.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
