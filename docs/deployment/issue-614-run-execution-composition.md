@@ -13,7 +13,7 @@ create_production_app() accepts a run_execution_builder callback. It invokes the
 
 ## Trusted deployment boundary
 
-The callback is ordinary trusted Python supplied by the deployment package; it is not an Agent-authored import string or environment-controlled module path. It must construct the approved runtime dependencies and return build_production_run_execution(...) with:
+The callback is ordinary trusted Python supplied by an installed deployment package through the single Python entry point group `agent_platform.production_run_execution` with entry name `builder`; it is not an Agent-authored import string or environment-controlled module path. The production Compose overlay sets `AGENT_PLATFORM_REQUIRE_RUN_EXECUTION=true` by default, so startup fails if the deployment package does not install exactly one builder. The callback must construct the approved runtime dependencies and return build_production_run_execution(...) with:
 
 - a tenant-bound registry resolver and Run snapshot resolver;
 - a RegistryLangGraphExecutorResolver backed by the approved RegistryRuntimeAssembler, Vault/secret resolver, budget-enforcing model router, reviewed Skill store and trusted Tool handler catalog;
@@ -24,7 +24,7 @@ The helper rejects a missing executor resolver, task authorizer, queue scope res
 
 ## Example deployment composition
 
-The deployment-owned package should define a trusted builder in its own code and pass it directly to create_production_app:
+The deployment-owned package should register a trusted builder in its package metadata and can also pass it directly to create_production_app for non-Compose deployments:
 
 \`\`\`python
 from uuid import uuid4
@@ -60,7 +60,7 @@ def build_run_execution(*, run_store, lifecycle, quota_service,
         worker_id=uuid4().hex,
     )
 
-app = create_production_app(run_execution_builder=build_run_execution)
+app = create_production_app(run_execution_builder=build_run_execution)\n\n# For the default agent_platform.production:app entrypoint, register the same\n# callable as the 'builder' entry in group\n# 'agent_platform.production_run_execution'.
 \`\`\`
 
 The build_registry_ports, build_approved_executor_resolver, quota limiter and authorization functions above are deployment integration functions, not repository defaults. They must be implemented using the approved services and reviewed Tool catalog; this repository intentionally does not guess production secret references, provider credentials, executable tools or model graph semantics.
