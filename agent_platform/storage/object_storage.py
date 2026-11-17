@@ -6,8 +6,8 @@ import hashlib
 import inspect
 import re
 from pathlib import PurePosixPath
-from urllib.parse import quote
 from typing import Any, Protocol
+from urllib.parse import quote
 
 
 class S3Client(Protocol):
@@ -102,7 +102,11 @@ class S3ObjectStorage:
     ) -> str:
         """Create a short-lived URL with safe browser download metadata."""
         key = self._validate_key(object_key)
-        if isinstance(expires_in, bool) or not isinstance(expires_in, int) or not 1 <= expires_in <= 900:
+        if (
+            isinstance(expires_in, bool)
+            or not isinstance(expires_in, int)
+            or not 1 <= expires_in <= 900
+        ):
             raise ValueError("presigned URL TTL must be between 1 and 900 seconds")
         params: dict[str, Any] = {"Bucket": self.bucket, "Key": key}
         if filename is not None:
