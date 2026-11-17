@@ -15,6 +15,7 @@ from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
   )
+from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
@@ -124,6 +125,8 @@ def create_platform_app(
     readiness_checks: Any | None = None,
     locale_preference_service: Any | None = None,
     locale_manage_authorizer: Any | None = None,
+    publisher_key_registry: Any | None = None,
+    publisher_key_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -271,6 +274,26 @@ def create_platform_app(
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
     ))
+    publisher_keys_configured = any(value is not None for value in (
+        publisher_key_registry, publisher_key_authorizer,
+    ))
+    if publisher_keys_configured:
+        if publisher_key_registry is None or publisher_key_authorizer is None:
+            raise ValueError("publisher key registry and authorizer must be configured together")
+        if not callable(getattr(publisher_key_registry, "resolve", None)):
+            raise ValueError("publisher key registry must expose resolve() for extension runtime use")
+        publisher_audit_writer = resource_audit_writer or audit_request_sink
+        if publisher_audit_writer is None:
+            raise ValueError("publisher key management requires an append-only audit writer")
+        app.state.trusted_publisher_key_resolver = publisher_key_registry
+        app.include_router(create_extension_publisher_router(
+            registry=publisher_key_registry,
+            authorize_manage=publisher_key_authorizer,
+            audit_writer=publisher_audit_writer,
+        ))
+    else:
+        app.state.trusted_publisher_key_resolver = None
+
     registry_configured = any(value is not None for value in (registry_service_resolver, registry_authorizer))
     sessions_configured = any(value is not None for value in (session_service_resolver, session_authorizer))
     if registry_configured:
