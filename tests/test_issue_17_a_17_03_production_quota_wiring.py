@@ -21,6 +21,8 @@ class ProductionQuotaCompositionTests(unittest.TestCase):
         }
         self.assertIn("PostgresQuotaStore", imports)
         self.assertIn("QuotaService", imports)
+        self.assertIn("PostgresQuotaPolicyRepository", imports)
+        self.assertIn("QuotaPolicyService", imports)
         self.assertIn("QuotaReservationMaintenanceWorker", imports)
         self.assertNotIn("InMemoryQuotaStore", imports)
 
@@ -65,6 +67,7 @@ class ProductionQuotaCompositionTests(unittest.TestCase):
     def test_quota_mutations_use_append_only_audit_adapter(self):
         source = (ROOT / "agent_platform" / "production.py").read_text(encoding="utf-8")
         self.assertIn("PostgresAuditWriter(connection_factory)", source)
+        self.assertIn("quota_policy_service = QuotaPolicyService(quota_policy_repository)", source)
         self.assertIn("await self._writer.record(", source)
         self.assertIn('permission_key="quota.manage"', source)
 
