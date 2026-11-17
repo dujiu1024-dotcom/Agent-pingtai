@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol, Sequence
 
-from agent_platform.knowledge.chunking import chunk_document, sha256_text
+from agent_platform.knowledge.chunking import clean_document_text, chunk_document, sha256_text
 from agent_platform.knowledge.connectors import KnowledgeConnector
 from agent_platform.knowledge.contracts import (
     Document,
@@ -134,61 +134,76 @@ class KnowledgeService:
             raise PermissionError("collection access denied")
         return await self.repository.list_indexes(principal.tenant_id, collection_id)
 
-    async def ingest(self,*,document: Document,content: bytes,max_chars: int=1200,overlap: int=160)->IngestResult:
+    async def ingest(
+        self, *, document: Document, content: bytes, max_chars: int = 1200, overlap: int = 160,
+    ) -> IngestResult:
         if not isinstance(content, bytes):
             raise TypeError("content must be bytes")
-        if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 1:
-            raise ValueError("max_chars must be a positive integer")
+        if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 100:
+            raise ValueError("max_chars must be an integer >= 100")
         if isinstance(overlap, bool) or not isinstance(overlap, int) or overlap < 0:
             raise ValueError("overlap must be a non-negative integer")
         if overlap >= max_chars:
             raise ValueError("overlap must be smaller than max_chars")
-        if len(content)>self.max_upload_bytes:
+        if len(content) > self.max_upload_bytes:
             raise ValueError("document exceeds configured upload size limit")
         from dataclasses import replace
-        # Parser adapters are synchronous by contract; keep remote OCR polling off the event loop.
-        text=await asyncio.to_thread(self.parsers.parse,content,document.media_type)
-        digest=sha256_text(text)
+
+        extracted = await asyncio.to_thread(self.parsers.parse, content, document.media_type)
+        text = clean_document_text(extracted)
+        digest = sha256_text(text)
+        if not text:
+            raise ValueError("document contains no text after cleaning")
         if document.collection_id is not None:
             collection = await self.repository.get_collection(document.tenant_id, document.collection_id)
             if collection is None:
                 raise ValueError("collection not found in tenant")
             if collection.project_id is not None and (
-                collection.project_id != document.project_id
-                or document.scope.value != "project"
+                collection.project_id != document.project_id or document.scope.value != "project"
             ):
                 raise ValueError("project collections require project-scoped documents in the same project")
-        existing=await self.repository.get_document(document.tenant_id,document.document_id)
+
+        existing = await self.repository.get_document(document.tenant_id, document.document_id)
+        unchanged = False
         if existing is not None:
-            unchanged=(
-                existing.content_hash==digest
-                and existing.title==document.title
-                and existing.source_uri==document.source_uri
+            unchanged = (
+                existing.content_hash == digest
+                and existing.title == document.title
+                and existing.source_uri == document.source_uri
                 and existing.scope is document.scope
-                and existing.project_id==document.project_id
-                and existing.owner_user_id==document.owner_user_id
-                and existing.media_type==document.media_type
-                and existing.metadata==document.metadata
-                and existing.collection_id==document.collection_id
+                and existing.project_id == document.project_id
+                and existing.owner_user_id == document.owner_user_id
+                and existing.media_type == document.media_type
+                and existing.metadata == document.metadata
+                and existing.collection_id == document.collection_id
             )
             if unchanged:
-                document=existing
-            elif document.version<=existing.version:
-                document=replace(document,version=existing.version+1)
-        document=replace(document,content_hash=digest)
-        chunks=chunk_document(document,text,max_chars=max_chars,overlap=overlap)
-        created=await self.repository.save_document(document,chunks)
-        # Deterministic chunk IDs let retries repair embeddings after a partial failure.
+                document = existing
+            elif document.version <= existing.version:
+                document = replace(document, version=existing.version + 1)
+        document = replace(document, content_hash=digest)
+        if unchanged:
+            chunks = tuple(await self.repository.list_chunks(
+                document.tenant_id, document.document_id, document.version,
+            ))
+        else:
+            chunks = chunk_document(document, text, max_chars=max_chars, overlap=overlap)
+            await self.repository.save_document(document, chunks)
+
+        # Deterministic chunk IDs let retries repair missing or stale embeddings.
         if chunks and self.embedder is not None:
-            save_embeddings=getattr(self.repository,"save_embeddings",None)
-            if save_embeddings is None:raise RuntimeError("repository does not support embedding persistence")
-            vectors=await self.embedder.embed_documents([chunk.text for chunk in chunks])
-            if len(vectors)!=len(chunks):raise ValueError("embedding count must match chunks")
-            dimensions=getattr(self.embedder,"dimensions",None)
-            if dimensions is not None and any(len(vector)!=dimensions for vector in vectors):
+            save_embeddings = getattr(self.repository, "save_embeddings", None)
+            if save_embeddings is None:
+                raise RuntimeError("repository does not support embedding persistence")
+            vectors = await self.embedder.embed_documents([chunk.text for chunk in chunks])
+            if len(vectors) != len(chunks):
+                raise ValueError("embedding count must match chunks")
+            dimensions = getattr(self.embedder, "dimensions", None)
+            if dimensions is not None and any(len(vector) != dimensions for vector in vectors):
                 raise ValueError("embedding dimension mismatch")
-            await save_embeddings(tenant_id=document.tenant_id,chunks=chunks,vectors=vectors)
-        return IngestResult(document=document,chunks=chunks,skipped_unchanged=not created)
+            await save_embeddings(tenant_id=document.tenant_id, chunks=chunks, vectors=vectors)
+        return IngestResult(document=document, chunks=chunks, skipped_unchanged=unchanged)
+
     async def list_documents(self,*,principal: KnowledgePrincipal,limit: int=100):
         return await self.repository.list_documents(principal,limit=limit)
     @staticmethod
