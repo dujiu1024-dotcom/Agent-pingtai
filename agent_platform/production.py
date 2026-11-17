@@ -5,6 +5,7 @@ import so an incorrectly configured process never becomes a healthy API.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 
 from fastapi import FastAPI
@@ -20,7 +21,10 @@ from agent_platform.memory.service import MemoryService
 from agent_platform.production_config import ProductionSettings, load_production_settings
 from agent_platform.runtime.lifecycle import RunLifecycleManager
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
-from agent_platform.runtime.production_composition import ProductionRunExecution
+from agent_platform.runtime.production_composition import (
+    ProductionRunExecution,
+    load_trusted_run_execution_builder,
+)
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
@@ -221,4 +225,13 @@ def create_production_app(
     return app
 
 
-app = create_production_app()
+def _production_app() -> FastAPI:
+    required_value = os.environ.get("AGENT_PLATFORM_REQUIRE_RUN_EXECUTION", "false").strip().lower()
+    if required_value not in {"true", "false", "1", "0", "yes", "no"}:
+        raise RuntimeError("AGENT_PLATFORM_REQUIRE_RUN_EXECUTION must be a boolean")
+    required = required_value in {"true", "1", "yes"}
+    builder = load_trusted_run_execution_builder(required=required)
+    return create_production_app(run_execution_builder=builder)
+
+
+app = _production_app()
