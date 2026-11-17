@@ -25,6 +25,7 @@ from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.evaluation_variants import create_eval_variants_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
@@ -97,6 +98,7 @@ def create_platform_app(
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
+    evaluation_variant_run_service: Any | None = None,
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
@@ -261,6 +263,13 @@ def create_platform_app(
             evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
+        ))
+    if evaluation_variant_run_service is not None:
+        if evaluation_manage_authorizer is None:
+            raise ValueError("multi-variant evaluation requires the evaluation manager authorizer")
+        app.include_router(create_eval_variants_router(
+            service=evaluation_variant_run_service,
+            authorize_manage=evaluation_manage_authorizer,
         ))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
