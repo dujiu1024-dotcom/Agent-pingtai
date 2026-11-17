@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import re
+import inspect
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
@@ -62,7 +63,7 @@ class ConnectorManifest:
             raise ConnectorManifestError("version must be semantic MAJOR.MINOR.PATCH")
         if not isinstance(description, str) or len(description) > 2000:
             raise ConnectorManifestError("description must be a string of at most 2000 characters")
-        if auth_type not in _AUTH_TYPES:
+        if not isinstance(auth_type, str) or auth_type not in _AUTH_TYPES:
             raise ConnectorManifestError("auth_type is unsupported")
         raw_operations = value.get("operations")
         if not isinstance(raw_operations, list) or not raw_operations:
@@ -278,13 +279,13 @@ class ConnectorCatalog:
                 return loaded
             manifest = await self.get_manifest(tenant_id=tenant_id, connector_id=connector_id)
             connector = self.connector_factory(manifest)
-            if asyncio.iscoroutine(connector):
+            if inspect.isawaitable(connector):
                 connector = await connector
             start = getattr(connector, "start", None)
             try:
                 if callable(start):
                     result = start()
-                    if asyncio.iscoroutine(result):
+                    if inspect.isawaitable(result):
                         await result
             except Exception:
                 close = getattr(connector, "close", None) or getattr(connector, "stop", None)
