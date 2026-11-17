@@ -162,6 +162,7 @@ include = [
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
   "tests/test_connector_catalog.py",
+  "tests/test_connector_framework.py",
 ]
 
 [tool.ruff.lint]
@@ -188,6 +189,7 @@ files = [
   "agent_platform/sandbox/lifecycle.py",
   "agent_platform/tools/gateway_mcp.py",
   "agent_platform/tools/connector_catalog.py",
+  "agent_platform/connectors/base.py",
   "agent_platform/blackboard/postgres_repository.py",
   "agent_platform/approval/postgres.py",
   "agent_platform/security/*.py",
