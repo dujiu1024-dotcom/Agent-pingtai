@@ -30,6 +30,7 @@ from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
+from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
@@ -82,12 +83,12 @@ def create_platform_app(
     connector_sync_worker: Any | None = None,
     connector_cleanup_worker: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
+    run_replay_resolver: Any | None = None,
     run_authorizer: Any | None = None,
     run_intervention_resolver: Any | None = None,
     run_detail_resolver: Any | None = None,
     run_executor_resolver: Any | None = None,
     tool_effect_reconciliation_resolver: Any | None = None,
-    run_event_broker_resolver: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
@@ -95,7 +96,6 @@ def create_platform_app(
     alert_store: Any | None = None,
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
-    evaluation_dataset_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
@@ -239,18 +239,16 @@ def create_platform_app(
         )
     )
     evaluation_configured = any(value is not None for value in (
-        evaluation_repository, evaluation_dataset_repository, evaluation_run_service, evaluation_manage_authorizer,
+        evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
     ))
-    if evaluation_configured and (
-        (evaluation_repository is None and evaluation_dataset_repository is None)
-        or evaluation_manage_authorizer is None
-    ):
+    if evaluation_configured and any(value is None for value in (
+        evaluation_repository, evaluation_manage_authorizer,
+    )):
         raise ValueError(
-            "an evaluation repository and evaluation manager authorizer must be configured"
+            "evaluation repository and evaluation manager authorizer must be configured together"
         )
     observability_api_configured = any(value is not None for value in (
-        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
-        evaluation_dataset_repository, evaluation_run_service,
+        metrics_exporter, operational_health_monitor, alert_store, evaluation_repository, evaluation_run_service,
     ))
     if observability_api_configured:
         app.include_router(create_observability_router(
@@ -259,7 +257,6 @@ def create_platform_app(
             alert_store=alert_store,
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
-            evaluation_dataset_repository=evaluation_dataset_repository,
             evaluation_run_service=evaluation_run_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
@@ -567,7 +564,6 @@ def create_platform_app(
             app.router.on_shutdown.append(worker.stop)
     runs_configured = any(value is not None for value in (
         run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
-        run_event_broker_resolver,
     ))
     if runs_configured:
         if run_lifecycle_resolver is None or run_authorizer is None:
@@ -580,7 +576,14 @@ def create_platform_app(
             resolve_details=run_detail_resolver,
             resolve_executor=run_executor_resolver,
             resolve_tool_effects=tool_effect_reconciliation_resolver,
-            resolve_event_broker=run_event_broker_resolver,
+        ))
+    if run_replay_resolver is not None:
+        if run_authorizer is None:
+            raise ValueError("Run replay resolver requires the Run authorizer")
+        app.include_router(create_run_replay_router(
+            resolve_principal=_principal_from_request,
+            resolve_replay=run_replay_resolver,
+            authorize=run_authorizer,
         ))
     locale_configured = any(value is not None for value in (
         locale_preference_service, locale_manage_authorizer,
