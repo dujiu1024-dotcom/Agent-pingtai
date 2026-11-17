@@ -4,7 +4,6 @@ import unittest
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from uuid import uuid4
 
 from agent_platform.observability.run_trace import (
     InMemoryRunTraceRepository,
