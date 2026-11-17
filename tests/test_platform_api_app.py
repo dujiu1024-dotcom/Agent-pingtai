@@ -9,7 +9,9 @@ from agent_platform.control_plane.sessions_assets import (
     InMemorySessionRepository,
     SessionAssetService,
 )
+from agent_platform.graph.query import GraphQueryService
 from agent_platform.identity.models import AuthorizationContext, Principal
+from agent_platform.knowledge.contracts import KnowledgePrincipal
 from agent_platform.identity.service import AuthenticationError
 from agent_platform.knowledge.catalog import InMemoryKnowledgeCatalog
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
@@ -603,6 +605,62 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertEqual(response.json()["error"]["message"], "Request validation failed")
 
 
+
+
+    def test_graph_query_routes_are_optional_and_use_authenticated_principal_resolver(self):
+        class Repository:
+            async def execute_query(self, *, tenant_id, project_ids, spec):
+                return [{
+                    "tenant_id": tenant_id, "project_id": None,
+                    "entity_id": "graph-entity-1",
+                }]
+
+        async def resolve_graph_principal(request):
+            principal = request.state.identity.principal
+            return KnowledgePrincipal(
+                tenant_id=principal.tenant_id, user_id=principal.user_id,
+            )
+
+        async def authorize_graph_query(principal):
+            return principal.tenant_id == "tenant-a"
+
+        arguments = {
+            "identity": self.identity,
+            "identity_repository": FakeIdentityRepository(),
+            "knowledge": self.knowledge,
+            "memory": self.memory,
+            "redis": FakeRedis(),
+            "allowed_origins": ("https://console.example.com",),
+            "graph_query_service": GraphQueryService(Repository()),
+            "graph_query_principal_resolver": resolve_graph_principal,
+            "graph_query_authorizer": authorize_graph_query,
+        }
+        app = create_platform_app(**arguments)
+        client = TestClient(app, base_url="https://testserver")
+        unauthenticated = client.post(
+            "/api/platform/v1/graph/query",
+            json={"start_entity_ids": ["root-1"]},
+        )
+        self.assertEqual(unauthenticated.status_code, 401)
+        response = client.post(
+            "/api/platform/v1/graph/query",
+            json={"start_entity_ids": ["root-1"]},
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"][0]["entity_id"], "graph-entity-1")
+
+    def test_graph_query_composition_rejects_partial_configuration(self):
+        with self.assertRaisesRegex(ValueError, "must be configured together"):
+            create_platform_app(
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                graph_query_service=object(),
+            )
 
     def test_publisher_key_registry_requires_authorizer_and_audit_and_is_exposed_to_runtime(self):
         class Registry:
