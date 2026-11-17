@@ -110,6 +110,18 @@ class RunReplayService:
             "event": self._event(event) if event is not None else None,
             "context": dict(session.context)}
 
+    async def list_events(
+        self, *, tenant_id: str, run_id: str, session_id: str, limit: int = 500,
+    ) -> dict[str, Any]:
+        """Return the persisted trace timeline for the authorized replay session."""
+        if not 1 <= limit <= 2000:
+            raise ValueError("timeline limit must be between 1 and 2000")
+        session = await self._session(tenant_id, run_id, session_id)
+        return {
+            "items": [self._event(event) for event in session.events[:limit]],
+            "total": len(session.events),
+        }
+
     async def step(self, *, tenant_id: str, run_id: str, session_id: str) -> dict[str, Any]:
         session = await self._session(tenant_id, run_id, session_id)
         if session.paused or session.cursor >= len(session.events):
