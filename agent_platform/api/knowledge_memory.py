@@ -93,6 +93,66 @@ def create_knowledge_memory_router(
         try:documents=await knowledge.list_documents(principal=principal,limit=limit)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
         return {"items":[{"document_id":d.document_id,"version":d.version,"title":d.title,"source_uri":d.source_uri,"scope":d.scope.value,"project_id":d.project_id,"media_type":d.media_type,"content_hash":d.content_hash} for d in documents]}
+    @router.get("/knowledge/collections")
+    async def list_knowledge_collections(request: Request, limit: int = 100):
+        principal = await resolve_knowledge_principal(request)
+        try:
+            items = await knowledge.list_collections(principal=principal, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"items": [
+            {"collection_id": item.collection_id, "name": item.name,
+             "description": item.description, "project_id": item.project_id,
+             "metadata": item.metadata, "created_at": item.created_at.isoformat()}
+            for item in items
+        ]}
+
+    @router.post("/knowledge/collections", status_code=201)
+    async def create_knowledge_collection(request: Request):
+        principal = await resolve_knowledge_principal(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise HTTPException(400, "JSON object is required")
+        name = body.get("name")
+        project_id = body.get("project_id")
+        description = body.get("description", "")
+        metadata = body.get("metadata", {})
+        if not isinstance(name, str) or not name.strip():
+            raise HTTPException(400, "name is required")
+        if not isinstance(description, str) or not isinstance(metadata, dict):
+            raise HTTPException(400, "description must be a string and metadata an object")
+        if project_id is not None and not isinstance(project_id, str):
+            raise HTTPException(400, "project_id must be a string")
+        try:
+            item = await knowledge.create_collection(
+                principal=principal, name=name, description=description,
+                project_id=project_id, metadata=metadata,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"collection_id": item.collection_id, "name": item.name,
+                "description": item.description, "project_id": item.project_id}
+
+    @router.get("/knowledge/collections/{collection_id}/indexes")
+    async def list_knowledge_indexes(collection_id: str, request: Request):
+        principal = await resolve_knowledge_principal(request)
+        try:
+            indexes = await knowledge.list_collection_indexes(
+                principal=principal, collection_id=collection_id,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"items": [
+            {"index_id": item.index_id, "name": item.name,
+             "index_type": item.index_type, "embedding_model": item.embedding_model,
+             "dimensions": item.dimensions, "status": item.status}
+            for item in indexes
+        ]}
+
     @router.post("/knowledge/documents")
     async def ingest_document(request: Request):
         principal=await resolve_knowledge_principal(request);body=await request.json()
@@ -112,7 +172,7 @@ def create_knowledge_memory_router(
         content=body.get("content")
         if not isinstance(content,str) or not content.strip():raise HTTPException(400,"text content is required")
         raw=content.encode("utf-8")
-        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"))
+        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=str(body.get("title") or "Untitled"),source_uri=source_uri,content_hash=hashlib.sha256(raw).hexdigest(),scope=scope,project_id=project_id,owner_user_id=principal.user_id if scope is KnowledgeScope.PRIVATE else None,media_type=str(body.get("media_type") or "text/plain"),collection_id=body.get("collection_id"))
         try:result=await knowledge.ingest(document=document,content=raw)
         except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
         return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"skipped_unchanged":result.skipped_unchanged}
