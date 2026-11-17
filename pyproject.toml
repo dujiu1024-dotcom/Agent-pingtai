@@ -92,7 +92,6 @@ include = [
   "tests/test_blackboard_multi_expert_services.py",
   "tests/test_blackboard_api.py",
   "tests/test_mcp_adapter.py",
-  "tests/test_model_runtime_router.py",
   "tests/test_mcp_health.py",
   "tests/test_skill_dependency_review.py",
   "tests/test_registry_runtime_assembly.py",
@@ -157,6 +156,11 @@ include = [
   "tests/test_session_management_api.py",
   "tests/test_session_conversation_migration.py",
   "tests/test_sse_protocol.py",
+  "tests/test_run_event_streaming.py",
+  "tests/test_agent_streaming.py",
+  "tests/test_run_stream_api.py",
+  "tests/test_streaming_workbench_ui.py",
+  "tests/test_model_runtime_router.py",
 ]
 
 [tool.ruff.lint]
@@ -209,6 +213,10 @@ files = [
   "tests/test_identity.py",
   "agent_platform/streaming/sse.py",
   "agent_platform/streaming/client.py",
+  "agent_platform/streaming/context.py",
+  "agent_platform/streaming/run_events.py",
+  "agent_platform/models/runtime_router.py",
+  "agent_platform/runtime/registry_runtime.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）

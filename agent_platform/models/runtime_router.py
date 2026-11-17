@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from time import monotonic
 from types import SimpleNamespace
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
 
 from agent_platform.models.circuit_breaker import CircuitOpenError
 from agent_platform.models.context_overflow import (
@@ -57,6 +57,7 @@ class OpenAICompatibleTransport(Protocol):
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> Mapping[str, Any]: ...
 
 
@@ -135,7 +136,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class OpenAICompatibleHTTPTransport:
-    """Small stdlib HTTP transport; redirects are rejected and secrets never logged."""
+    """OpenAI-compatible JSON and SSE transport with bounded streaming reads."""
 
     def __init__(self, *, max_response_bytes: int = 4 * 1024 * 1024) -> None:
         if max_response_bytes < 1024:
@@ -148,14 +149,25 @@ class OpenAICompatibleHTTPTransport:
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> Mapping[str, Any]:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        reserved = {"model", "messages", "stream", "tools", "tool_choice", "api_key", "authorization", "base_url"}
+        reserved = {"model", "messages", "stream", "stream_options", "tools", "tool_choice", "api_key", "authorization", "base_url"}
         if reserved.intersection(request_parameters):
             raise ModelTransportError("request parameters cannot override model routing or credentials")
+        if on_token is None:
+            return await asyncio.to_thread(
+                self._complete_sync, config, messages, request_parameters, timeout_seconds,
+            )
+        loop = asyncio.get_running_loop()
+
+        def emit(token: str) -> None:
+            future = asyncio.run_coroutine_threadsafe(on_token(token), loop)
+            future.result(timeout=timeout_seconds)
+
         return await asyncio.to_thread(
-            self._complete_sync, config, messages, request_parameters, timeout_seconds,
+            self._complete_sync, config, messages, request_parameters, timeout_seconds, emit,
         )
 
     def _complete_sync(
@@ -163,16 +175,21 @@ class OpenAICompatibleHTTPTransport:
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        emit_token: Callable[[str], None] | None = None,
     ) -> Mapping[str, Any]:
-        reserved = {"model", "messages", "stream", "tools", "tool_choice", "api_key", "authorization", "base_url"}
+        reserved = {"model", "messages", "stream", "stream_options", "tools", "tool_choice", "api_key", "authorization", "base_url"}
         if reserved.intersection(config.parameters) or reserved.intersection(request_parameters):
             raise ModelTransportError("model parameters cannot override routing or tool controls")
+        streaming = emit_token is not None
         payload = {
             **dict(config.parameters),
             **dict(request_parameters),
             "model": config.model_id,
             "messages": [dict(message) for message in messages],
         }
+        if streaming:
+            payload["stream"] = True
+            payload["stream_options"] = {"include_usage": True}
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
         request = urllib.request.Request(
             config.base_url.rstrip("/") + "/chat/completions",
@@ -180,26 +197,69 @@ class OpenAICompatibleHTTPTransport:
             headers={
                 "Authorization": "Bearer " + config.api_key,
                 "Content-Type": "application/json",
-                "Accept": "application/json",
+                "Accept": "text/event-stream" if streaming else "application/json",
             },
             method="POST",
         )
         try:
             with self._opener.open(request, timeout=timeout_seconds) as response:
-                raw = response.read(self.max_response_bytes + 1)
+                if not streaming:
+                    raw = response.read(self.max_response_bytes + 1)
+                    if len(raw) > self.max_response_bytes:
+                        raise ModelTransportError("model provider response exceeded size limit")
+                    result = json.loads(raw)
+                    if not isinstance(result, dict):
+                        raise ModelTransportError("model provider returned an invalid response")
+                    return result
+
+                content: list[str] = []
+                usage: Mapping[str, Any] | None = None
+                consumed = 0
+                while True:
+                    remaining = self.max_response_bytes - consumed
+                    raw_line = response.readline(remaining + 1)
+                    if not raw_line:
+                        break
+                    if len(raw_line) > remaining:
+                        raise ModelTransportError("model provider stream exceeded size limit")
+                    consumed += len(raw_line)
+                    line = raw_line.decode("utf-8").rstrip("\r\n")
+                    if not line or line.startswith(":") or not line.startswith("data:"):
+                        continue
+                    data = line[5:].lstrip(" ")
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        raise ModelTransportError("model provider returned invalid stream JSON") from None
+                    if not isinstance(chunk, Mapping):
+                        raise ModelTransportError("model provider returned an invalid stream chunk")
+                    chunk_usage = chunk.get("usage")
+                    if isinstance(chunk_usage, Mapping):
+                        usage = chunk_usage
+                    choices = chunk.get("choices", [])
+                    if not isinstance(choices, list):
+                        raise ModelTransportError("model provider returned invalid stream choices")
+                    for choice in choices:
+                        if not isinstance(choice, Mapping):
+                            continue
+                        delta = choice.get("delta")
+                        token = delta.get("content") if isinstance(delta, Mapping) else None
+                        if isinstance(token, str) and token:
+                            content.append(token)
+                            if emit_token is not None:
+                                emit_token(token)
+                return {
+                    "choices": [{"message": {"content": "".join(content)}}],
+                    "usage": dict(usage or {}),
+                }
         except urllib.error.HTTPError as exc:
             raise ModelTransportError(f"model provider returned HTTP {exc.code}") from None
         except (urllib.error.URLError, TimeoutError, OSError):
             raise ModelTransportError("model provider request failed") from None
-        if len(raw) > self.max_response_bytes:
-            raise ModelTransportError("model provider response exceeded size limit")
-        try:
-            result = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise ModelTransportError("model provider returned invalid JSON") from None
-        if not isinstance(result, dict):
-            raise ModelTransportError("model provider returned an invalid response")
-        return result
 
 
 class OpenAICompatibleModelRouter:
@@ -256,6 +316,7 @@ class OpenAICompatibleModelRouter:
         fallback_template_ids: Sequence[str] = (),
         request_parameters: Mapping[str, Any] | None = None,
         protected_context: Mapping[str, Any] | None = None,
+        on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
             raise ValueError("tenant_id, run_id and request_id are required")
@@ -294,6 +355,7 @@ class OpenAICompatibleModelRouter:
         if len(candidates) != len(set(candidates)):
             raise ValueError("model route candidates must be unique")
         last_error: Exception | None = None
+        stream_tokens_emitted = False
         for index, candidate in enumerate(candidates):
             # Write-ahead audit before registry resolution and quota checks so
             # rejected attempts are visible and no Provider can run unaudited.
@@ -536,11 +598,23 @@ class OpenAICompatibleModelRouter:
                     input=trace_input, metadata=metadata,
                 ) as span:
                     try:
-                        raw = await self.transport.complete(
-                            config=config, messages=dispatch_messages,
-                            request_parameters=parameters,
-                            timeout_seconds=self.timeout_seconds,
-                        )
+                        if on_token is None:
+                            raw = await self.transport.complete(
+                                config=config, messages=dispatch_messages,
+                                request_parameters=parameters,
+                                timeout_seconds=self.timeout_seconds,
+                            )
+                        else:
+                            async def emit_stream_token(token: str) -> None:
+                                nonlocal stream_tokens_emitted
+                                stream_tokens_emitted = True
+                                await on_token(token)
+                            raw = await self.transport.complete(
+                                config=config, messages=dispatch_messages,
+                                request_parameters=parameters,
+                                timeout_seconds=self.timeout_seconds,
+                                on_token=emit_stream_token,
+                            )
                     except ModelTransportError as exc:
                         if self.circuit_breaker is not None:
                             await self.circuit_breaker.record_failure(breaker_key)
@@ -568,11 +642,11 @@ class OpenAICompatibleModelRouter:
                     status = "response_received"
                     safe_update(span, output={"status": status})
             except ModelTransportError as exc:
-                if quota_reservation is not None:
-                    # The provider may have accepted the request before the transport failed.
-                    # Keep the reservation and prohibit automatic fallback to avoid duplicate billing.
+                if quota_reservation is not None or stream_tokens_emitted:
+                    # Once tokens are visible, fallback would duplicate partial user output.
+                    # Keep any reservation and let reconciliation handle ambiguous billing.
                     raise ModelUsageRecordingError(
-                        "model transport outcome is ambiguous; quota reservation retained for reconciliation"
+                        "streaming model outcome is ambiguous; fallback is prohibited"
                     ) from exc
                 last_error = exc
                 safe_metric(

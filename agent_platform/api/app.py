@@ -87,6 +87,7 @@ def create_platform_app(
     run_detail_resolver: Any | None = None,
     run_executor_resolver: Any | None = None,
     tool_effect_reconciliation_resolver: Any | None = None,
+    run_event_broker_resolver: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
     metrics_exporter: Any | None = None,
@@ -562,6 +563,7 @@ def create_platform_app(
             app.router.on_shutdown.append(worker.stop)
     runs_configured = any(value is not None for value in (
         run_lifecycle_resolver, run_authorizer, tool_effect_reconciliation_resolver,
+        run_event_broker_resolver,
     ))
     if runs_configured:
         if run_lifecycle_resolver is None or run_authorizer is None:
@@ -574,6 +576,7 @@ def create_platform_app(
             resolve_details=run_detail_resolver,
             resolve_executor=run_executor_resolver,
             resolve_tool_effects=tool_effect_reconciliation_resolver,
+            resolve_event_broker=run_event_broker_resolver,
         ))
     locale_configured = any(value is not None for value in (
         locale_preference_service, locale_manage_authorizer,
