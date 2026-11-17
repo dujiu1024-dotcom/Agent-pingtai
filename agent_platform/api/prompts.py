@@ -109,7 +109,10 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         gate = await require_evaluation_gate(actor, prompt_id, version, "activate")
         try:
-            await registry.activate(storage_key, version, updated_by=actor.user_id)
+            await registry.activate(
+                storage_key, version, updated_by=actor.user_id,
+                evaluation_run_id=gate["eval_run_id"],
+            )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         return {"prompt_id": prompt_id, "active_version": version, "updated_by": actor.user_id,
@@ -133,6 +136,7 @@ def create_prompt_registry_router(
         try:
             await registry.set_canary(
                 storage_key, version, float(percentage), updated_by=actor.user_id,
+                evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
@@ -156,7 +160,10 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         gate = await require_evaluation_gate(actor, prompt_id, version, "rollback")
         try:
-            await registry.rollback(storage_key, version, updated_by=actor.user_id)
+            await registry.rollback(
+                storage_key, version, updated_by=actor.user_id,
+                evaluation_run_id=gate["eval_run_id"],
+            )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         return {"prompt_id": prompt_id, "active_version": version,
