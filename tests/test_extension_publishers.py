@@ -122,6 +122,8 @@ class TrustedPublisherRegistryTests(unittest.IsolatedAsyncioTestCase):
             await self.registry.register(**dict(self.values, key_id="../bad"))
         with self.assertRaises(ValueError):
             await self.registry.register(**dict(self.values, expires_at=99.0))
+        with self.assertRaises(ValueError):
+            await self.registry.register(**dict(self.values, not_before=float('nan')))
         self.assertEqual(self.repository.items, {})
 
     async def test_revoke_is_idempotent_and_visible_to_runtime_resolver(self):
