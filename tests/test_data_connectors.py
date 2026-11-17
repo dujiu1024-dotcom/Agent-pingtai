@@ -268,6 +268,58 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(queue.completed, ["drive-1"])
         self.assertEqual(len(self.sink.revocations), 2)
 
+    async def test_remote_revoke_failure_still_cleans_sink_and_schedules_retry(self):
+        class FakeRetryQueue:
+            def __init__(self):
+                self.jobs = []
+
+            async def enqueue(self, **kwargs):
+                self.jobs.append(kwargs)
+
+        retry_queue = FakeRetryQueue()
+        self.provider.fail_revoke = True
+        service = DataConnectorService(
+            repository=self.repo, providers={"drive": self.provider},
+            secrets=FakeSecrets(), sink=self.sink, sync_queue=retry_queue,
+        )
+
+        self.assertTrue(await service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+            revocation_disposition="delete",
+        ))
+
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.status, "revoked")
+        self.assertEqual(
+            self.sink.revocations,
+            [("tenant-a", "drive-1", "delete")],
+        )
+        self.assertIn("remote revoke", saved.last_error)
+        self.assertNotIn("unavailable", saved.last_error)
+        self.assertEqual(retry_queue.jobs, [{
+            "tenant_id": "tenant-a", "connection_id": "drive-1",
+            "job_type": "revoke_cleanup", "disposition": "delete",
+        }])
+
+    async def test_missing_provider_still_applies_local_sink_disposition(self):
+        service = DataConnectorService(
+            repository=self.repo, providers={},
+            secrets=FakeSecrets(), sink=self.sink,
+        )
+
+        self.assertTrue(await service.revoke(
+            tenant_id="tenant-a", connection_id="drive-1",
+            revocation_disposition="delete",
+        ))
+
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.status, "revoked")
+        self.assertEqual(
+            self.sink.revocations,
+            [("tenant-a", "drive-1", "delete")],
+        )
+        self.assertIsNone(saved.last_error)
+
     async def test_tenant_isolation(self):
         with self.assertRaises(ConnectorError):
             await self.service.sync_once(
