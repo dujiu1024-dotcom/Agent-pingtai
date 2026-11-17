@@ -164,7 +164,11 @@ def create_platform_app(
     )
     app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
-    app.include_router(create_health_router(\n        readiness_checks=(\n            readiness_checks if readiness_checks is not None else {"redis": redis.ping}\n        )\n    ))
+    app.include_router(create_health_router(
+        readiness_checks=(
+            readiness_checks if readiness_checks is not None else {"redis": redis.ping}
+        )
+    ))
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
     ))
