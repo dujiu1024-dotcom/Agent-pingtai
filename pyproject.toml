@@ -194,8 +194,7 @@ include = [
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_665_s_665_01_e2e.py",
   "tests/test_api_v1_compatibility_middleware.py",
-  "tests/test_issue_666_s_666_03_legacy_archive.py",
-  "tests/test_issue_666_a_666_07_archive_history.py",
+  "tests/test_issue_667_a_667_06_legacy_404_redirect.py",
 ]
 
 [tool.ruff.lint]
