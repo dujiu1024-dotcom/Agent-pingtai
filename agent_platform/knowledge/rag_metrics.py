@@ -14,14 +14,13 @@ from math import log2
 from statistics import mean
 from typing import Sequence
 
-from agent_platform.knowledge.contracts import KnowledgePrincipal, RetrievalHit
 from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.knowledge.evaluation_dataset import RAGEvaluationDataset
 
 
 _TOKENIZER = "unicode-word-v1"
-_TOKEN_PATTERN = re.compile(r"[^\\W_]+(?:['’][^\\W_]+)?", re.UNICODE)
+_TOKEN_PATTERN = re.compile(r"[^\W_]+(?:['’][^\W_]+)?", re.UNICODE)
 
 
 @dataclass(frozen=True)
