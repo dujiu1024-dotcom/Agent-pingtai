@@ -72,6 +72,9 @@ class ConnectorFrameworkTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaises(ConnectorAuthenticationError):
             await connector.authenticate(tenant_id="tenant-a")
+        connector.credential_ref = "secret://tenant-a/credentials/cred-1"
+        with self.assertRaises(ConnectorAuthenticationError):
+            await connector.authenticate(tenant_id="tenant-a", required_scopes=())
         self.assertEqual(store.calls, [])
 
     async def test_secret_store_failure_is_sanitized_and_fail_closed(self):
@@ -171,6 +174,12 @@ class ConnectorFrameworkTests(unittest.IsolatedAsyncioTestCase):
         auth = self.make_authenticator(store)
         with self.assertRaises(ValueError):
             BaseConnector(connector_id="invalid", authenticator=auth)
+        with self.assertRaises(ValueError):
+            BaseConnector(
+                connector_id="missing-scopes",
+                credential_ref="secret://tenant-a/credentials/cred-1",
+                authenticator=auth,
+            )
         with self.assertRaises(ConnectorAuthenticationError):
             connector = BaseConnector(connector_id="missing", credentials=None)
             await connector.authenticate(tenant_id="tenant-a")
