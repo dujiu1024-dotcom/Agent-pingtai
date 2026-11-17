@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from string import Formatter
 
 _VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -29,6 +30,16 @@ class PromptVersion:
     content_hash: str
 
 
+@dataclass(frozen=True)
+class PromptAuditEvent:
+    event_id: int
+    prompt_id: str
+    action: str
+    actor_id: str
+    details: tuple[tuple[str, str | int | float | None], ...]
+    created_at: datetime
+
+
 class PromptRegistry:
     """In-memory registry contract; persistence can be supplied by a later store adapter."""
 
@@ -38,6 +49,28 @@ class PromptRegistry:
         self._canary: dict[str, tuple[int, float]] = {}
         self._variants: dict[str, dict[str, PromptVariant]] = {}
         self._variant_history: dict[tuple[str, str], list[int]] = {}
+        self._audit_events: list[PromptAuditEvent] = []
+
+    def _record_audit(
+        self, prompt_id: str, action: str, actor_id: str,
+        details: dict[str, str | int | float | None],
+    ) -> None:
+        self._audit_events.append(PromptAuditEvent(
+            event_id=len(self._audit_events) + 1,
+            prompt_id=prompt_id,
+            action=action,
+            actor_id=actor_id,
+            details=tuple(sorted(details.items())),
+            created_at=datetime.now(timezone.utc),
+        ))
+
+    def list_audit(self, prompt_id: str, *, limit: int = 100) -> tuple[PromptAuditEvent, ...]:
+        if not isinstance(prompt_id, str) or not prompt_id.strip():
+            raise ValueError("prompt_id is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        events = [event for event in self._audit_events if event.prompt_id == prompt_id]
+        return tuple(events[-limit:])
 
     @staticmethod
     def _variables(template: str) -> tuple[str, ...]:
@@ -53,15 +86,22 @@ class PromptRegistry:
             raise ValueError(f"invalid prompt template: {exc}") from exc
         return tuple(sorted(names))
 
-    def register(self, prompt_id: str, template: str) -> PromptVersion:
+    def register(
+        self, prompt_id: str, template: str, *, created_by: str = "system",
+    ) -> PromptVersion:
         if not prompt_id.strip() or not template.strip():
             raise ValueError("prompt_id and template are required")
+        if not isinstance(created_by, str) or not created_by.strip():
+            raise ValueError("created_by is required")
         versions = self._versions.setdefault(prompt_id, {})
         version = max(versions, default=0) + 1
         variables = self._variables(template)
         content_hash = hashlib.sha256(template.encode("utf-8")).hexdigest()
         record = PromptVersion(prompt_id, version, template, variables, content_hash)
         versions[version] = record
+        self._record_audit(prompt_id, "version.registered", created_by, {
+            "version": version, "content_hash": content_hash,
+        })
         return record
 
     def list_versions(self, prompt_id: str) -> tuple[PromptVersion, ...]:
@@ -93,6 +133,9 @@ class PromptRegistry:
         variant = PromptVariant(prompt_id, name, version, "active", created_by, created_by)
         variants[name] = variant
         self._variant_history[(prompt_id, name)] = [version]
+        self._record_audit(prompt_id, "variant.created", created_by, {
+            "variant": name, "version": version,
+        })
         return variant
 
     def assign_variant(
@@ -118,6 +161,10 @@ class PromptRegistry:
         history = self._variant_history[(prompt_id, name)]
         if not history or history[-1] != version:
             history.append(version)
+        self._record_audit(prompt_id, "variant.version_assigned", updated_by, {
+            "variant": name, "previous_version": variant.current_version,
+            "version": version,
+        })
         return updated
 
     def deprecate_variant(
@@ -143,6 +190,9 @@ class PromptRegistry:
             variant.created_by, updated_by,
         )
         variants[name] = updated
+        self._record_audit(prompt_id, "variant.deprecated", updated_by, {
+            "variant": name, "version": variant.current_version,
+        })
         return updated
 
     def list_variants(self, prompt_id: str) -> tuple[PromptVariant, ...]:
@@ -157,11 +207,31 @@ class PromptRegistry:
             raise KeyError("prompt variant does not exist")
         return tuple(self._variant_history[(prompt_id, name)])
 
-    def activate(self, prompt_id: str, version: int) -> None:
+    def activate(
+        self, prompt_id: str, version: int, *, updated_by: str = "system",
+    ) -> None:
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
         if version not in self._versions.get(prompt_id, {}):
             raise KeyError("prompt version does not exist")
         self._active[prompt_id] = version
         self._canary.pop(prompt_id, None)
+        self._record_audit(prompt_id, "version.activated", updated_by, {
+            "active_version": version,
+        })
+
+    def rollback(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("version must be a positive integer")
+        if version not in self._versions.get(prompt_id, {}):
+            raise KeyError("prompt version does not exist")
+        self._active[prompt_id] = version
+        self._canary.pop(prompt_id, None)
+        self._record_audit(prompt_id, "version.rolled_back", updated_by, {
+            "active_version": version,
+        })
 
     def set_canary(self, prompt_id: str, candidate_version: int, percentage: float) -> None:
         if prompt_id not in self._active:
