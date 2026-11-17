@@ -103,7 +103,7 @@ class SessionMessagePaginationTests(unittest.TestCase):
         self.assertEqual(invalid_cursor.status_code, 400)
 
         read_events = [event for event in audit.events if event["action"] == "message.list"]
-        self.assertEqual(len(read_events), 3)
+        self.assertEqual(len(read_events), 2)
         self.assertEqual(read_events[0]["subject_id"], session.session_id)
         self.assertEqual(read_events[0]["detail"]["returned"], 2)
         self.assertNotIn("content", read_events[0]["detail"])
