@@ -15,7 +15,6 @@ from uuid import uuid4
 from agent_platform.memory.service import (
     MemoryPrincipal,
     MemoryRecord,
-    MemoryScope,
     MemoryService,
     MemoryStatus,
 )
