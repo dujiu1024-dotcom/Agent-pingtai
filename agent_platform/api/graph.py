@@ -11,6 +11,8 @@ from agent_platform.identity.models import Principal
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 QueryServiceResolver = Callable[[Principal], Awaitable[GraphQueryService]]
+
+
 @dataclass(frozen=True)
 class GraphAccessScope:
     project_ids: tuple[str, ...] = ()
@@ -104,7 +106,7 @@ def create_graph_router(
         entity_id: str, request: Request, direction: str = "both",
         depth: int = 1, limit: int = 100,
     ):
-        _, service, allowed = await context(request)
+        _, service, access, allowed = await context(request)
         try:
             result = await service.neighbors(
                 entity_id, direction=direction, depth=depth,
@@ -145,7 +147,7 @@ def create_graph_router(
             raise HTTPException(400, "q must contain 1-200 non-whitespace characters")
         if not 1 <= limit <= 100:
             raise HTTPException(400, "limit must be between 1 and 100")
-        _, service, allowed = await context(request)
+        _, service, access, allowed = await context(request)
         try:
             records = await service.repository.search_entities(
                 q.strip(), allowed_project_ids=allowed, limit=limit,
