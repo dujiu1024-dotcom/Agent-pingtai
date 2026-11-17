@@ -194,8 +194,8 @@ include = [
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_665_s_665_01_e2e.py",
   "tests/test_api_v1_compatibility_middleware.py",
-  "tests/test_issue_667_s_34_02_workbench_pages.py",
-  "tests/test_issue_667_s_34_05_legacy_panel_coverage.py",
+  "scripts/evaluate_switch_performance_parity.py",
+  "tests/test_issue_665_a_665_06_performance_parity.py",
 ]
 
 [tool.ruff.lint]
