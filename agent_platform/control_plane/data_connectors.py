@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
 
+from agent_platform.connectors.base import BaseConnector
+
 
 class ConnectorError(RuntimeError):
     pass
@@ -174,6 +176,15 @@ class DataConnectorService:
         self.cleanup_queue = cleanup_queue
         self.sync_queue = sync_queue
 
+    async def _resolve_provider_credential(
+        self, connection: DataConnection, provider: ConnectorProvider,
+    ) -> str:
+        if isinstance(provider, BaseConnector):
+            return await provider.authenticate(
+                tenant_id=connection.tenant_id, required_scopes=connection.scopes,
+            )
+        return await self.secrets.resolve(connection.secret_ref)
+
     async def request_sync(self, *, tenant_id: str, connection_id: str) -> None:
         connection = await self.repository.get(tenant_id, connection_id)
         if connection is None or connection.status != "active":
@@ -246,7 +257,7 @@ class DataConnectorService:
         if provider is None:
             raise ConnectorError("connector provider is not registered")
         try:
-            credential = await self.secrets.resolve(connection.secret_ref)
+            credential = await self._resolve_provider_credential(connection, provider)
             page = await provider.fetch_page(
                 credential=credential, scopes=connection.scopes, cursor=connection.cursor,
             )
@@ -315,7 +326,7 @@ class DataConnectorService:
         provider = self.providers.get(connection.provider)
         if provider is not None:
             try:
-                credential = await self.secrets.resolve(connection.secret_ref)
+                credential = await self._resolve_provider_credential(connection, provider)
                 await provider.revoke(credential=credential)
             except Exception as exc:
                 # Never persist provider responses or credential material.
@@ -363,7 +374,7 @@ class DataConnectorService:
             provider = self.providers.get(connection.provider)
             if provider is None:
                 raise ConnectorError("connector provider is not registered")
-            credential = await self.secrets.resolve(connection.secret_ref)
+            credential = await self._resolve_provider_credential(connection, provider)
             await provider.revoke(credential=credential)
             await queue.mark_remote_revoked(job)
         if not job.sink_cleaned:
