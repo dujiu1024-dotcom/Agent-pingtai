@@ -177,6 +177,42 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.entities, ())
         self.assertEqual(result.relations, ())
 
+    async def test_rejects_repository_entity_outside_tenant_or_project_scope(self):
+        class CrossTenantRepository(FakeGraphRepository):
+            async def get_entity(self, entity_id, *, allowed_project_ids=()):
+                if entity_id == "a":
+                    return EntityRecord(
+                        GraphEntity("tenant-b", "a", "document", {}, "project-a"), "a"
+                    )
+                return await super().get_entity(
+                    entity_id, allowed_project_ids=allowed_project_ids
+                )
+
+        service = GraphQueryService(
+            tenant_id="tenant-a", repository=CrossTenantRepository()
+        )
+        with self.assertRaisesRegex(PermissionError, "outside the tenant"):
+            await service.neighbors("a", allowed_project_ids=("project-a",))
+
+    async def test_shortest_path_does_not_disclose_hidden_intermediate_nodes(self):
+        class HiddenIntermediateRepository(FakeGraphRepository):
+            async def get_entity(self, entity_id, *, allowed_project_ids=()):
+                if entity_id == "b":
+                    return EntityRecord(
+                        GraphEntity("tenant-a", "b", "document", {}, "secret-project"), "b"
+                    )
+                return await super().get_entity(
+                    entity_id, allowed_project_ids=allowed_project_ids
+                )
+
+        service = GraphQueryService(
+            tenant_id="tenant-a", repository=HiddenIntermediateRepository()
+        )
+        path = await service.shortest_path(
+            "a", "c", allowed_project_ids=("project-a",)
+        )
+        self.assertIsNone(path)
+
     async def test_hybrid_retrieval_rechecks_acl_and_filters_unrelated_hits(self):
         record = self.repository.entities["a"]
         self.repository.entities["a"] = EntityRecord(
