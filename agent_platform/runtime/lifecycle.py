@@ -46,6 +46,13 @@ class InMemoryRunStateStore:
    if snapshot.status not in _ALLOWED[old.status]: raise ValueError(f"illegal Run transition {old.status.value} -> {snapshot.status.value}")
    row=RunSnapshot(snapshot.tenant_id,snapshot.run_id,snapshot.status,old.version+1,snapshot.checkpoint_ref,snapshot.last_error,_now())
    self._rows[key]=row; return row
+ async def heartbeat(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60)->bool:
+  """In-memory adapter heartbeat; durable ownership is enforced by PostgresRunStateStore."""
+  if lease_seconds<5 or not worker_id.strip():
+   raise ValueError("invalid worker lease parameters")
+  async with self._lock:
+   row=self._rows.get((tenant_id,run_id))
+   return row is not None and row.status==RunStatus.RUNNING
  async def recoverable(self,limit:int=100)->list[RunSnapshot]:
   if limit<1: raise ValueError("limit must be positive")
   async with self._lock: return [r for r in self._rows.values() if r.status in {RunStatus.QUEUED,RunStatus.INTERRUPTED,RunStatus.PAUSED}][:limit]
