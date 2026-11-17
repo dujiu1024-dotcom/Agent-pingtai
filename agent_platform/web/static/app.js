@@ -282,3 +282,99 @@ document.addEventListener("click",async e=>{
   }
  }catch(x){toast(x.message)}
 });
+
+
+/* C-29-03: persisted Run timeline, replay controls, Blackboard snapshots and Agent message flow. */
+S.replay=null;
+const replayEndpoint=runId=>API+"/runs/"+encodeURIComponent(runId)+"/replay";
+const replayEventType=e=>String(e.event_type||e.type||"EVENT").toUpperCase();
+const replayPayload=e=>e.payload&&typeof e.payload==="object"?e.payload:{};
+function replayMessage(e){
+ const p=replayPayload(e),type=replayEventType(e);
+ const content=p.content??p.message??p.output??p.token??p.text;
+ if(!/LLM|AGENT|MESSAGE|TOKEN|TOOL/.test(type)&&content===undefined)return null;
+ return {type,role:p.role||(/TOOL/.test(type)?"tool":/LLM|AGENT/.test(type)?"agent":"system"),
+  name:p.tool_name||p.name||p.agent_id||"",content:content??p.arguments??p.input??p};
+}
+function replayTimelineRows(events,cursor){
+ return events.map((event,index)=>{
+  const seq=Number(event.sequence??index+1),type=replayEventType(event);
+  return "<tr class='"+(index<cursor?"replay-consumed":"")+"'><td>"+esc(seq)+"</td><td>"+esc(type)+"</td><td>"+esc(event.occurred_at||event.created_at||"—")+"</td><td>"+esc(event.step_id||"—")+"</td><td>"+btn("定位","data-replay-seek='"+(index+1)+"'")+"</td></tr>";
+ });
+}
+function replayBlackboardContent(event){
+ const p=replayPayload(event);
+ return p.blackboard_snapshot??p.blackboard??p.snapshot?.blackboard??p.state?.blackboard??null;
+}
+async function openReplay(runId){
+ const opened=await api(replayEndpoint(runId),{method:"POST",body:"{}"});
+ const [timeline,blackboard]=await Promise.all([
+  api(replayEndpoint(runId)+"/"+encodeURIComponent(opened.session_id)+"/events?limit=500"),
+  api(API+"/blackboard/entries?scope=run&scope_id="+encodeURIComponent(runId)+"&limit=100").catch(error=>({items:[],error:error.message}))
+ ]);
+ const events=(timeline.items||[]).map((item,index)=>({
+  ...item,sequence:Number(item.sequence??index+1),
+  event_type:item.event_type||"RUN_EVENT",
+  payload:item.payload||{}
+ }));
+ S.replay={...opened,runId,events,timelineTotal:timeline.total??events.length,
+  blackboardItems:blackboard.items||[],blackboardError:blackboard.error||null,currentEvent:null};
+ await renderReplay();
+}
+async function replayAction(action,body={}){
+ if(!S.replay?.session_id)throw Error("请先打开 Run 回放");
+ const result=await api(replayEndpoint(S.replay.runId)+"/"+encodeURIComponent(S.replay.session_id)+"/"+action,
+  {method:"POST",body:JSON.stringify(body)});
+ S.replay={...S.replay,...result,currentEvent:result.event||S.replay.currentEvent};
+ await renderReplay();
+}
+async function renderReplay(){
+ const r=S.replay,root=$("#view");
+ $("#title").textContent="Run 时间线与回放";$("#crumb").textContent="WORKFLOW REPLAY";
+ if(!r){
+  root.innerHTML=panel("打开 Run 回放","<form id='replay-open-form' class='inline-form'><label>Run ID<input name='run_id' required placeholder='输入已有 Run ID'></label><button class='button primary'>加载时间线</button></form><p class='subtle'>从持久化 Run 事件、上下文快照和 Blackboard 数据重建视图；所有读取与回放操作继续由服务端租户权限校验。</p>");
+  return;
+ }
+ const events=r.events||[],cursor=Number(r.cursor||0),current=r.currentEvent||null;
+ const selected=current||events[Math.max(0,cursor-1)]||null,payload=replayPayload(selected||{});
+ const messages=events.map(replayMessage).filter(Boolean);
+ const blackboardSnapshot=replayBlackboardContent(selected);
+ const snapshot=blackboardSnapshot??(r.blackboardItems||[]);
+ const controls=btn("上一步","data-replay-action='back'")+
+  btn("单步","data-replay-action='step'","primary")+
+  btn(r.paused?"继续":"暂停","data-replay-action='"+(r.paused?"resume":"pause")+"'")+
+  btn("快进至结束","data-replay-action='fast-forward'")+
+  btn("重新加载","data-replay-reopen='1'");
+ const selectedSequence=Number(selected?.sequence||0);
+ const canRerun=Boolean(selected?.step_id&&(payload.replay_input!==undefined||payload.replay_input_ref));
+ root.innerHTML=
+  panel("Run 回放控制","<p>Run：<code>"+esc(r.runId)+"</code> · Session：<code>"+esc(r.session_id)+"</code></p><p>游标："+cursor+" / "+Number(r.total||events.length)+" · "+(r.paused?"已暂停":"播放就绪")+"</p>"+controls+(canRerun?btn("重跑当前步骤","data-replay-rerun='"+selectedSequence+"'"):"<p class='subtle'>当前事件没有持久化 step_id 与 replay_input/ref，不提供重跑入口。</p>"))+
+  panel("Run 时间线",table(["序号","事件","发生时间","Step","操作"],replayTimelineRows(events,cursor)))+
+  panel("当前事件与重建上下文","<p>事件："+esc(selected?replayEventType(selected):"尚未定位")+" · Step："+esc(selected?.step_id||"—")+"</p>"+pre({event:selected,context:r.context||{}}))+
+  panel("Blackboard 快照",blackboardSnapshot!==null?pre(blackboardSnapshot):
+   (r.blackboardError?"<p class='error'>Blackboard 数据不可用："+esc(r.blackboardError)+"</p>":pre(snapshot)))+
+  panel("Agent / Tool 消息流转",messages.length?messages.map(m=>"<article class='message'><header><b>"+esc(m.role)+" · "+esc(m.type)+"</b><small>"+esc(m.name)+"</small></header>"+pre(m.content)+"</article>").join(""):"<p class='subtle'>当前 Run 事件中没有可识别的 Agent/LLM/Tool 消息载荷。</p>");
+}
+const replayBaseRender=render;
+render=async function(){
+ if(S.view==="replay"){try{await renderReplay()}catch(e){$("#view").innerHTML=panel("Replay UI 加载失败","<p class='error'>"+esc(e.message)+"</p>")}return}
+ return replayBaseRender();
+};
+document.addEventListener("submit",async e=>{
+ const f=e.target;if(f.id!=="replay-open-form")return;e.preventDefault();
+ const runId=String(new FormData(f).get("run_id")||"").trim();if(!runId){toast("请输入 Run ID");return}
+ try{await openReplay(runId)}catch(x){toast(x.message)}
+});
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("button");if(!b)return;
+ try{
+  if(b.dataset.replayAction){await replayAction(b.dataset.replayAction);return}
+  if(b.dataset.replaySeek!==undefined){await replayAction("seek",{sequence:Number(b.dataset.replaySeek)});return}
+  if(b.dataset.replayRerun!==undefined){
+   const result=await api(replayEndpoint(S.replay.runId)+"/"+encodeURIComponent(S.replay.session_id)+"/rerun",
+    {method:"POST",body:JSON.stringify({sequence:Number(b.dataset.replayRerun)})});
+   $("#view").insertAdjacentHTML("beforeend",panel("步骤重跑结果",pre(result)));return;
+  }
+  if(b.dataset.replayReopen){await openReplay(S.replay.runId)}
+ }catch(x){toast(x.message)}
+});

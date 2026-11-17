@@ -6,7 +6,6 @@ requires-python = ">=3.11"
 
 [project.optional-dependencies]
 tokenizer = ["tiktoken>=0.7,<1"]
-reports = ["reportlab>=4,<5"]
 
 [tool.ruff]
 line-length = 100
@@ -47,7 +46,6 @@ include = [
   "tests/test_identity_audit_contract.py",
   "tests/test_approval_service.py",
   "tests/test_secret_manager.py",
-  "tests/test_credentials.py",
   "tests/test_approval_workbench_ui.py",
   "tests/test_identity_audit_contract.py",
   "tests/test_platform_api_app.py",
@@ -57,7 +55,6 @@ include = [
   "tests/test_legacy_identity_audit.py",
   "tests/test_legacy_identity_revoke.py",
   "tests/test_knowledge_service.py",
-  "tests/test_knowledge_upload_api.py",
   "tests/test_knowledge_evaluation_dataset.py",
   "tests/test_rag_metrics.py",
   "tests/test_rag_metrics_api.py",
@@ -81,7 +78,7 @@ include = [
   "tests/test_run_trace.py",
   "tests/test_run_replay.py",
   "tests/test_run_replay_api.py",
-  "tests/test_run_replay_acceptance.py",
+  "tests/test_replay_workbench_ui.py",
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
@@ -108,7 +105,6 @@ include = [
   "tests/test_strands_gateway_mcp_http_integration.py",
   "tests/test_runtime_adapter_contract.py",
   "tests/test_harness_benchmark_suite.py",
-  "tests/test_harness_baseline_gate.py",
   "tests/test_model_templates.py",
   "tests/test_deepseek_harness_adapter.py",
   "tests/test_event_consumer.py",
@@ -121,7 +117,6 @@ include = [
   "tests/test_gateway_runtime_postgres_integration.py",
   "tests/test_gateway_service.py",
   "tests/test_run_lifecycle.py",
-  "tests/test_issue_9_a_9_02_run_access_resume.py",
   "tests/test_run_context_postgres.py",
   "tests/test_run_token_service.py",
   "tests/test_langgraph_run_executor.py",
@@ -142,7 +137,6 @@ include = [
   "tests/test_s3_object_storage.py",
   "tests/test_data_connectors.py",
   "tests/test_issue_8_c_8_05.py",
-  "tests/test_legacy_conversation_adapter.py",
   "tests/test_issue_8_a_8_01_contracts.py",
   "tests/test_extension_package.py",
   "tests/test_i18n_context.py",
@@ -168,8 +162,6 @@ include = [
   "tests/test_sse_protocol.py",
   "tests/test_blackboard_sse.py",
   "tests/test_blackboard_event_replay.py",
-  "tests/test_evaluation_comparison.py",
-  "tests/test_evaluation_comparison_api.py",
 ]
 
 [tool.ruff.lint]
@@ -212,7 +204,6 @@ files = [
   "agent_platform/models/templates.py",
   "agent_platform/runtime/deepseek_harness.py",
   "agent_platform/runtime/harness_benchmark_suite.py",
-  "agent_platform/runtime/harness_baseline_gate.py",
   "agent_platform/runtime/strands_mcp_provider.py",
   "agent_platform/tools/gateway_mcp_http.py",
   "agent_platform/quotas/*.py",
