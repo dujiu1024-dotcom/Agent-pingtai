@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.knowledge.contracts import KnowledgePrincipal
+from agent_platform.knowledge.evaluation_dataset import parse_evaluation_dataset
+from agent_platform.knowledge.rag_metrics import evaluate_rag_dataset
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 
@@ -103,5 +105,62 @@ def create_rag_playground_router(
             "reason": result.reason, "retrieved": hits,
             "citations": list(result.citations),
         }
+
+
+    @router.post("/evaluate")
+    async def evaluate(request: Request) -> dict[str, Any]:
+        principal = await principal_for(request)
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "JSON object required") from exc
+        if not isinstance(payload, dict) or set(payload) - {
+            "dataset", "top_k", "min_score", "embedding_model", "rerank",
+        }:
+            raise HTTPException(400, "evaluation request has an invalid shape")
+        try:
+            dataset_payload = payload.get("dataset")
+            dataset = parse_evaluation_dataset(dataset_payload)
+            if len(dataset.cases) > 100 or len(dataset.documents) > 1000:
+                raise ValueError("evaluation dataset exceeds 100 cases or 1000 documents")
+            if any(len(document.content) > 200000 for document in dataset.documents):
+                raise ValueError("evaluation document content exceeds 200000 characters")
+            if any(len(case.query) > 4096 or len(case.answer) > 20000 for case in dataset.cases):
+                raise ValueError("evaluation query or reference answer is too long")
+            top_k = payload.get("top_k", 5)
+            if isinstance(top_k, bool) or not isinstance(top_k, int) or not 1 <= top_k <= 20:
+                raise ValueError("top_k must be an integer between 1 and 20")
+            threshold = payload.get("min_score", 0.0)
+            if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
+                raise ValueError("min_score must be between 0 and 1")
+            model = payload.get("embedding_model", models[0])
+            if not isinstance(model, str) or model not in models:
+                raise ValueError("embedding_model is not an enabled model")
+            rerank = payload.get("rerank", False)
+            if not isinstance(rerank, bool):
+                raise ValueError("rerank must be a boolean")
+            service = resolve_rag(principal, model, rerank)
+            if hasattr(service, "__await__"):
+                service = await service
+            if not isinstance(service, RAGService):
+                raise RuntimeError("RAG resolver did not return a RAGService")
+            report = await evaluate_rag_dataset(
+                knowledge=service.knowledge,
+                principal=principal,
+                dataset=dataset,
+                top_k=top_k,
+                embedding_model=model,
+                rerank=rerank,
+                min_score=float(threshold),
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, "RAG evaluation is not authorized") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "RAG evaluation provider is unavailable") from exc
+        return report.to_dict()
 
     return router
