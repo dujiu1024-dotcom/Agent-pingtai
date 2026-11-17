@@ -38,7 +38,7 @@ def create_prompt_operations_router(
         try:
             result = audit_writer.record(
                 tenant_id=actor.tenant_id, actor_id=actor.user_id,
-                action=action, subject_id=prompt_id, outcome="succeeded", detail=detail,
+                action=action, subject_id=prompt_id, outcome="requested", detail=detail,
             )
             if inspect.isawaitable(result):
                 await result
@@ -56,9 +56,9 @@ def create_prompt_operations_router(
             raise HTTPException(503, "prompt evaluation gate unavailable") from exc
         passed = getattr(evidence, "passed", None)
         evidence_id = getattr(evidence, "evidence_id", None)
-        if not isinstance(evidence, dict):
-            passed = evidence.get("passed") if isinstance(evidence, dict) else passed
-            evidence_id = evidence.get("evidence_id") if isinstance(evidence, dict) else evidence_id
+        if isinstance(evidence, dict):
+            passed = evidence.get("passed")
+            evidence_id = evidence.get("evidence_id")
         if passed is not True or not isinstance(evidence_id, str) or not evidence_id.strip():
             raise HTTPException(409, "prompt candidate did not pass evaluation gate")
         return {"evidence_id": evidence_id, "passed": True}
