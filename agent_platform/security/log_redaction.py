@@ -85,6 +85,13 @@ class SecretRedactionFilter(logging.Filter):
             rendered = str(record.msg)
         record.msg = self.redactor.redact_text(rendered)
         record.args = ()
+        if record.exc_info:
+            try:
+                record.exc_text = self.redactor.redact_text(
+                    logging.Formatter().formatException(record.exc_info)
+                )
+            finally:
+                record.exc_info = None
         if record.exc_text:
             record.exc_text = self.redactor.redact_text(record.exc_text)
         if record.stack_info:
@@ -102,4 +109,7 @@ def configure_secret_log_redaction(
     target = logger or logging.getLogger()
     filter_instance = SecretRedactionFilter(redactor)
     target.addFilter(filter_instance)
+    # Propagated records bypass ancestor logger filters; sanitize every output.
+    for handler in target.handlers:
+        handler.addFilter(filter_instance)
     return filter_instance
