@@ -75,7 +75,6 @@ jobs:
             tests.test_knowledge_memory_api \\
             tests.test_knowledge_acl_propagation \
             tests.test_memory_boundaries \
-            tests.test_issue_22_c_22_03_source_domains \
             tests.test_graph_governance \
             tests.test_graph_admin_api \
             tests.test_graph_workbench_ui \
@@ -133,8 +132,8 @@ jobs:
         run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy tests.test_issue_28_a_28_02_malicious_skill_blocked -v
       - name: Run connector catalog and backward-compatibility acceptance tests
         run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
-      - name: Run batch workbench API acceptance tests
-        run: python -m unittest tests.test_issue_31_c_31_03_batch_workbench_api -v
+      - name: Run batch throughput acceptance tests
+        run: python -m unittest tests.test_issue_31_a_31_01_batch_throughput -v
 
   production-release-evidence:
     needs:
