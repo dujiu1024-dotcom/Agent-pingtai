@@ -6,7 +6,7 @@
 
 ## 生产证据（fail-closed）
 
-生产发布必须提供完整证据文件，模板见 [RELEASE_EVIDENCE_TEMPLATE.json](RELEASE_EVIDENCE_TEMPLATE.json)。九类证据均为必需项：
+生产发布必须提供完整证据文件，模板见 [RELEASE_EVIDENCE_TEMPLATE.json](RELEASE_EVIDENCE_TEMPLATE.json)。九类证据均为必需项（证据 schema v2）：
 
 - `deployment_preflight`：目标环境、配置/密钥引用、依赖健康、镜像/制品摘要、变更窗口及回滚就绪检查
 - `e2e`：核心用户旅程端到端报告
@@ -14,6 +14,8 @@
 - `performance`：并发、延迟、成本和资源基线
 - `security`：租户隔离、越权、Prompt 注入、工具滥用和沙箱边界回归
 - `backup_restore`：加密备份、校验及隔离环境恢复演练
+- `migration`：迁移前后兼容性、锁/顺序、数据校验和耗时记录
+- `rollback`：回滚触发条件、回退制品/迁移策略及恢复演练证据
 - `production_smoke`：目标生产环境部署后冒烟验收
 
 每项必须填写 `status=passed`、责任人、UTC 验证时间和可审计的证据引用。顶层 `release_owner` 必须是实际承担发布责任的人员/团队，且 `release_decision` 必须在全部证据核验后显式设为 `go`；模板默认 `pending`，不能直接用于放行。缺项、失败、时间戳不规范、证据超过 7 天或 commit SHA 与候选版本不一致，均阻断发布。
