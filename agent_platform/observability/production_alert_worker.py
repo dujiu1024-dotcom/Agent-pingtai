@@ -10,12 +10,13 @@ import asyncio
 import logging
 import os
 import signal
+
+import httpx
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_platform.observability.alert_dispatch import AlertNotificationDispatcher
 from agent_platform.observability.alert_notifications import (
     AlertNotificationDispatcher as DurableAlertNotificationDispatcher,
     WebhookAlertNotificationProvider,
@@ -121,7 +122,7 @@ async def _postgres_connection(dsn: str) -> Any:
 async def run_alert_dispatcher() -> None:
     settings = load_production_settings()
     dispatch_settings = load_alert_dispatch_settings()
-    async with __import__("httpx").AsyncClient(follow_redirects=False) as client:
+    async with httpx.AsyncClient(follow_redirects=False) as client:
         async def connection_factory() -> Any:
             return await _postgres_connection(settings.postgres_dsn)
 
