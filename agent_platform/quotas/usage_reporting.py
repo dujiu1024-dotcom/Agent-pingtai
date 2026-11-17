@@ -15,6 +15,7 @@ def build_usage_report(events: Iterable[UsageEvent]) -> dict[str, object]:
     reported as separate resource counters because their prices may be supplied by
     independent billing systems and must not be fabricated from model token prices.
     """
+    events = tuple(events)
     totals = {
         "events": 0,
         "input_tokens": 0,
