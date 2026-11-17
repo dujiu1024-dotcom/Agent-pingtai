@@ -51,11 +51,9 @@ case "${1:-help}" in
     exec "$ROOT/scripts/deploy_infrastructure.sh"
     ;;
   backup)
-    mkdir -p "$BACKUP_DIR"
-    chmod 700 "$BACKUP_DIR"
-    BACKUP_DIR="$BACKUP_DIR" "$ROOT/scripts/backup_postgres.sh"
-    BACKUP_DIR="$BACKUP_DIR" "$ROOT/scripts/backup_redis.sh"
-    BACKUP_DIR="$BACKUP_DIR" "$ROOT/scripts/backup_object_storage.sh"
+    # A successful component command is not enough: require a fresh artifact,
+    # matching checksum/manifest, and format verification before returning success.
+    python3 "$ROOT/scripts/run_platform_backup.py" --backup-dir "$BACKUP_DIR"
     ;;
   restore)
     component="${2:-}"
