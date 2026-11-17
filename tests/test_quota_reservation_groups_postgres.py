@@ -84,6 +84,56 @@ class QuotaReservationGroupPostgresTests(unittest.IsolatedAsyncioTestCase):
                 (50, Decimal("0.25"), 0),
             )
 
+    async def test_idempotent_reservation_and_settlement_replay_do_not_double_charge(self):
+        from agent_platform.quotas import (
+            Budget, PostgresQuotaStore, QuotaReservationGroupService, QuotaScope,
+        )
+
+        tenant_id = f"quota-group-replay-it-{uuid4().hex}"
+        root_run_id, child_run_id = uuid4(), uuid4()
+        await self._seed(tenant_id, root_run_id, child_run_id)
+        start = datetime.now(timezone.utc) - timedelta(minutes=1)
+        end = start + timedelta(hours=1)
+        store = PostgresQuotaStore.from_dsn(DSN)
+        service = QuotaReservationGroupService(store)
+        for scope_type, scope_id in (("tenant", tenant_id), ("run", str(root_run_id))):
+            await store.put_budget(Budget(
+                tenant_id=tenant_id, scope_type=scope_type, scope_id=scope_id,
+                period_start=start, period_end=end, hard_tokens=100,
+                hard_cost_usd=Decimal("2.00"),
+            ))
+        kwargs = dict(
+            tenant_id=tenant_id, run_id=str(child_run_id), root_run_id=str(root_run_id),
+            scopes=(QuotaScope("tenant", tenant_id), QuotaScope("run", str(root_run_id))),
+            estimated_tokens=80, estimated_cost_usd=Decimal("0.80"),
+            estimated_input_tokens=60, estimated_output_tokens=20,
+            idempotency_key="provider-attempt-1",
+        )
+        group, _ = await service.reserve_run(**kwargs)
+        replay, _ = await service.reserve_run(**kwargs)
+        self.assertEqual(group.group_id, replay.group_id)
+        self.assertEqual(
+            await store.usage(tenant_id, "tenant", tenant_id, start, end),
+            (80, Decimal("0.80"), 1),
+        )
+        first = await service.settle_run(
+            group, model_key="model-group-replay", input_tokens=30, output_tokens=20,
+            cost_usd=Decimal("0.25"),
+        )
+        second = await service.settle_run(
+            replay, model_key="model-group-replay", input_tokens=30, output_tokens=20,
+            cost_usd=Decimal("0.25"),
+        )
+        self.assertEqual(first.event_id, second.event_id)
+        rows = await store.list_usage(tenant_id, start, end)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].total_tokens, 50)
+        with self.assertRaisesRegex(ValueError, "different usage"):
+            await service.settle_run(
+                replay, model_key="model-group-replay", input_tokens=31, output_tokens=20,
+                cost_usd=Decimal("0.25"),
+            )
+
     async def test_second_scope_failure_rolls_back_first_scope_reservation(self):
         from agent_platform.quotas import (
             Budget, BudgetExceeded, PostgresQuotaStore,
