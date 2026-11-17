@@ -334,16 +334,9 @@ class MemoryServiceGraphCandidateRepository:
         return self._decode(record)
 
     async def find_source_revision(self, tenant_id: str, source_kind: str, source_id: str, source_version: int) -> GraphCandidate | None:
-        records = await self.memory.repository.list(tenant_id, limit=5000)
-        for record in records:
-            if record.candidate.metadata.get("kind") != "graph_candidate":
-                continue
-            candidate = self._decode(record)
-            if (candidate.source.source_kind.value == source_kind
-                and candidate.source.source_id == source_id
-                and candidate.source.source_version == source_version):
-                return candidate
-        return None
+        raw = f"{tenant_id}:{source_kind}:{source_id}:{source_version}"
+        candidate_id = hashlib.sha256(raw.encode()).hexdigest()
+        return await self.get(tenant_id, candidate_id)
 
     async def find_conflicts(self, tenant_id: str, project_id: str | None, keys: Sequence[str]) -> Sequence[GraphCandidate]:
         records = await self.memory.repository.list(tenant_id, limit=5000)
@@ -425,7 +418,12 @@ class GraphBuildPipeline:
             _confidence(item.confidence)
             self.schema.entity_type(item.entity_type)
             self.schema.validate_attributes(self.schema.entity_type(item.entity_type).properties, item.attributes)
-            if item.start is not None and (item.start < 0 or item.end is None or item.end <= item.start or item.end > len(source.content)):
+            if item.start is not None and (
+                isinstance(item.start, bool) or not isinstance(item.start, int)
+                or isinstance(item.end, bool) or not isinstance(item.end, int)
+                or item.start < 0 or item.end <= item.start
+                or item.end > len(source.content) or item.end - item.start > MAX_SPAN_CHARS
+            ):
                 raise ValueError("entity source span is invalid")
             entities.setdefault(_entity_key(item), item)
         relations: list[ExtractedRelation] = []
@@ -441,7 +439,12 @@ class GraphBuildPipeline:
             if "concept" not in relation_type.source_types or "concept" not in relation_type.target_types:
                 raise ValueError("relation schema does not permit extracted concept endpoints")
             self.schema.validate_attributes(relation_type.properties, item.attributes)
-            if item.start is not None and (item.start < 0 or item.end is None or item.end <= item.start or item.end > len(source.content)):
+            if item.start is not None and (
+                isinstance(item.start, bool) or not isinstance(item.start, int)
+                or isinstance(item.end, bool) or not isinstance(item.end, int)
+                or item.start < 0 or item.end <= item.start
+                or item.end > len(source.content) or item.end - item.start > MAX_SPAN_CHARS
+            ):
                 raise ValueError("relation source span is invalid")
             relations.append(item)
         normalized = tuple(sorted(entities.values(), key=_entity_key))
@@ -466,6 +469,8 @@ class GraphBuildPipeline:
         return candidate
 
     async def review(self, *, principal: GraphReviewer, candidate_id: str, approve: bool) -> GraphCandidate:
+        if not isinstance(principal.user_id, str) or not principal.user_id.strip():
+            raise PermissionError("authenticated reviewer identity is required")
         current = await self.candidates.get(principal.tenant_id, candidate_id)
         if current is None or current.status not in {CandidateStatus.PENDING, CandidateStatus.CONFLICT}:
             raise ValueError("graph candidate is not awaiting review")
