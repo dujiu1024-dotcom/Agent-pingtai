@@ -22,6 +22,7 @@ from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
+from agent_platform.web.app import create_platform_web_router
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
@@ -144,6 +145,8 @@ def create_platform_app(
         raise ValueError("audit request sink and actor resolver must be configured together")
 
     app = FastAPI()
+    # Independent first-party UI; no dependency on legacy console/gui.
+    app.include_router(create_platform_web_router())
     # Add request auditing before Identity middleware so it executes inside the
     # authenticated identity boundary and sees the verified principal.
     if audit_request_configured:
