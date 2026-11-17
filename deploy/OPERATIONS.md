@@ -1,57 +1,69 @@
-# Platform infrastructure deployment
+# Platform deployment and operations
 
-This runbook uses the existing `scripts/deploy_infrastructure.sh` and
-`deploy/compose.yaml`; it does not introduce a second deployment system.
-The Compose stack currently contains PostgreSQL, Redis and MinIO only. It does
-**not** start the FastAPI application or workers. The repository does not yet
-provide a production application image or complete runtime composition
-entrypoint, so a healthy infrastructure stack must not be reported as a
-deployed application.
+The infrastructure-only stack in `deploy/compose.yaml` contains PostgreSQL,
+Redis and MinIO. It does not start the application. The production overlay
+`deploy/production.compose.yaml` adds the repository-owned FastAPI and Outbox
+worker entrypoints; a healthy infrastructure-only stack must not be reported
+as a deployed application.
 
 ## Requirements
 
 - Docker Engine with Docker Compose v2.17+ (`docker compose up --wait`)
-- A reviewed `deploy/.env` created from `deploy/.env.example`
-- Outbound access to configured container registries
+- An immutable, digest-pinned application image containing this repository,
+  `requirements-platform.txt`, and `uvicorn`
+- A reviewed `deploy/.env.production` based on
+  `deploy/.env.production.example`
+- Managed PostgreSQL, Redis, MinIO secrets and outbound egress proxy
+
+## Production composition
+
+The production Compose overlay defaults to these repository-owned entrypoints:
+
+- ASGI: `agent_platform.production:app`
+- Worker: `python -m agent_platform.worker`
+
+Both processes read the same PostgreSQL, Redis and HTTPS Origin configuration.
+The API composes the existing PostgreSQL identity, knowledge and memory
+repositories/services with the Redis-backed identity/API rate limiter. Its
+readiness endpoint checks both PostgreSQL and Redis. The worker runs the
+durable PostgreSQL Outbox to Redis Streams relay and writes publish audit
+records to the append-only PostgreSQL audit ledger. SIGTERM/SIGINT triggers
+graceful worker shutdown.
+
+This is the initial repository-owned production composition slice, not a
+claim that every optional API subsystem is wired. Run, replay, connector,
+evaluation, quota administration and other routers remain conditional on
+their explicit service/authorizer dependencies in `create_platform_app()`.
+The worker currently runs the Outbox relay; it is not a general-purpose
+consumer for every event topic or a LangGraph Run executor. Those integrations
+must be enabled and separately acceptance-tested before claiming the complete
+Agent execution journey is production-ready.
 
 ## First deployment
 
 From the repository root:
 
 ```bash
-cp deploy/.env.example deploy/.env
-# Replace every REPLACE_WITH_* value with an independent random secret.
-chmod 600 deploy/.env
-scripts/deploy_infrastructure.sh --check
-scripts/deploy_infrastructure.sh
-docker compose --project-directory . --env-file deploy/.env -f deploy/compose.yaml ps
+cp deploy/.env.production.example deploy/.env.production
+# Replace the image digest, hostnames, proxy and secret paths with reviewed values.
+chmod 600 deploy/.env.production
+docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml config
+docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml up -d --wait
+docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml ps
 ```
 
-The deployment script rejects placeholder credentials and symlinked env files,
-sets the env file to mode 0600, validates the fully rendered Compose config,
-and stores a private snapshot of the environment used by each deployment.
-Never commit `deploy/.env` or include it in an application image.
+The Compose file requires an immutable image reference and explicit secret
+files. Never commit `deploy/.env.production` or include it in an application
+image. Apply PostgreSQL migrations using `scripts/migrate_postgres.sh` before
+starting application traffic; the production composition does not silently
+run schema migrations during process import.
 
 ## Repeat deployment and rollback
 
-```bash
-scripts/deploy_infrastructure.sh
-# Use only cached, previously reviewed images:
-scripts/deploy_infrastructure.sh --no-pull
-```
-
-The script pulls configured images, starts services and waits for health
-checks. A successful deployment is marked as a rollback candidate. If an
-upgrade fails, the script restores the most recent successful environment
-snapshot and attempts to restore service health. A failed first deployment
-has no automatic rollback candidate and requires operator recovery.
-
-Pin image versions in `deploy/.env` before a production change; avoid floating
-tags. Review schema migrations and take a verified backup before upgrading.
-The migration runner is `scripts/migrate_postgres.sh`; it checks migration
-checksums and serializes application with a PostgreSQL advisory lock. Use
-forward-compatible expand/migrate/contract changes: code rollback does not
-reverse schema changes.
+Pin image versions in `deploy/.env.production` before a production change;
+avoid floating tags. Review schema migrations and take a verified backup
+before upgrading. Use forward-compatible expand/migrate/contract changes:
+code rollback does not reverse schema changes.
 
 ## Existing data protection scripts
 
@@ -59,7 +71,8 @@ The repository already contains separate encrypted, checksummed scripts:
 
 - PostgreSQL: `scripts/backup_postgres.sh` / `scripts/restore_postgres.sh`
 - Redis RDB: `scripts/backup_redis.sh` / `scripts/restore_redis.sh`
-- Deployment secrets, Compose definition and PostgreSQL migration baseline: `scripts/backup_platform_config.sh` (age-encrypted archive; no plaintext export)
+- Deployment secrets, Compose definition and PostgreSQL migration baseline:
+  `scripts/backup_platform_config.sh` (age-encrypted archive; no plaintext export)
 - MinIO current object state: `scripts/backup_object_storage.sh` /
   `scripts/restore_object_storage.sh`
 
@@ -80,13 +93,14 @@ the durable event source and can republish events after Redis loss.
   is bound to loopback and its data uses `redis_data`.
 - MinIO provides S3-compatible object storage; its API and console ports are
   bound to loopback and its data uses `object_data`.
-- All three services use health checks, restart policies and configurable
-  CPU/memory limits. A Docker volume is not a backup.
+- Stateful services and application workloads use health checks, restart
+  policies, CPU/memory limits and restricted container privileges. A Docker
+  volume is not a backup.
 
 ```bash
-docker compose --project-directory . --env-file deploy/.env -f deploy/compose.yaml ps
-docker compose --project-directory . --env-file deploy/.env -f deploy/compose.yaml logs --tail=200 postgres redis minio
+docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml ps
+docker compose --env-file deploy/.env.production -f deploy/production.compose.yaml logs --tail=200 platform-api platform-worker postgres redis minio
 ```
 
-A healthy infrastructure stack does not prove application readiness,
-migration success, object-store/database consistency or disaster recovery.
+A healthy infrastructure stack does not prove migration success, object-store/
+database consistency, all optional subsystem availability or disaster recovery.
