@@ -59,17 +59,17 @@ async function renderGraph(){
  const root=$("#view"),q=String(S.graphQuery||"");
  root.innerHTML=panel("知识图谱浏览","<form id='graph-search-form' class='inline-form'><label>实体名称前缀<input name='q' required maxlength='200' value='"+esc(q)+"' placeholder='输入实体名称或关键词'></label><button class='button primary'>搜索图谱</button></form><p class='subtle'>实体与关系仅返回当前身份可访问的项目范围；展开邻居时再次执行服务端授权过滤。</p><div id='graph-metrics'></div><div id='graph-canvas' class='graph-canvas'><p class='empty'>输入名称开始浏览。</p></div><div id='graph-details'></div>");
  if(!q)return;
- const [found,metrics]=await Promise.all([api(API+"/graph/entities?q="+encodeURIComponent(q)+"&limit=40"),api(API+"/graph/metrics?q="+encodeURIComponent(q)+"&limit=100")]);
- S.graphEntities=found.items||[];S.graphRelations=[];
+ const [found,metrics,visualization]=await Promise.all([api(API+"/graph/entities?q="+encodeURIComponent(q)+"&limit=40"),api(API+"/graph/metrics?q="+encodeURIComponent(q)+"&limit=100"),api(API+"/graph/visualization")]);
+ S.graphEntities=found.items||[];S.graphRelations=[];S.graphVisualizationUrl=visualization.configured?visualization.url:null;
  $("#graph-metrics").innerHTML=panel("图谱质量指标（授权搜索样本）","<div class='grid'><div class='stat'><small>实体</small><strong>"+metrics.entity_count+"</strong></div><div class='stat'><small>关系</small><strong>"+metrics.relation_count+"</strong></div><div class='stat'><small>孤立实体占比</small><strong>"+(metrics.isolated_entity_ratio*100).toFixed(1)+"%</strong></div><div class='stat'><small>关系密度</small><strong>"+metrics.relation_density.toFixed(4)+"</strong></div><div class='stat'><small>连通子图</small><strong>"+metrics.active_subgraph_count+"</strong></div></div><p class='subtle'>样本 "+metrics.sampled+" / 上限 "+metrics.sample_limit+(metrics.truncated?"（可能截断）":"")+"；不代表全租户统计。</p>");
  drawGraph();
 }
 function drawGraph(){
- const nodes=S.graphEntities||[],edges=S.graphRelations||[],w=760,h=380,cx=w/2,cy=h/2,r=Math.min(145,45+nodes.length*5),pos=new Map();
- nodes.forEach((n,i)=>pos.set(n.entity_id,{x:cx+r*Math.cos(2*Math.PI*i/Math.max(nodes.length,1)),y:cy+r*Math.sin(2*Math.PI*i/Math.max(nodes.length,1))}));
- const lines=edges.map(e=>{const a=pos.get(e.source_entity_id),b=pos.get(e.target_entity_id);return a&&b?"<line x1='"+a.x+"' y1='"+a.y+"' x2='"+b.x+"' y2='"+b.y+"' stroke='#94a3b8' stroke-width='2'/>":""}).join("");
- const circles=nodes.map(n=>{const p=pos.get(n.entity_id);return "<g><circle cx='"+p.x+"' cy='"+p.y+"' r='22' fill='#dbeafe' stroke='#2563eb' stroke-width='2'/><text x='"+p.x+"' y='"+(p.y+38)+"' text-anchor='middle' font-size='12'>"+esc(n.name).slice(0,18)+"</text></g>"}).join("");
- $("#graph-canvas").innerHTML=nodes.length?"<svg viewBox='0 0 "+w+" "+h+"' role='img' aria-label='知识图谱实体关系图' style='width:100%;min-height:260px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px'>"+lines+circles+"</svg>":"<p class='empty'>没有匹配实体</p>";
+ const nodes=S.graphEntities||[],edges=S.graphRelations||[];
+ const visual=S.graphVisualizationUrl
+  ? "<iframe title='LightRAG Server 知识图谱' src='"+esc(S.graphVisualizationUrl)+"' loading='lazy' referrerpolicy='no-referrer' sandbox='allow-scripts' style='width:100%;height:520px;border:1px solid #e2e8f0;border-radius:12px'></iframe>"
+  : "<p class='subtle'>尚未配置 LightRAG Server 可视化地址。配置 graph_visualization_url 后，此处嵌入 LightRAG Server 原生图谱视图；当前不自建替代可视化引擎。</p>";
+ $("#graph-canvas").innerHTML=visual;
  $("#graph-details").innerHTML=panel("实体与关系",table(["实体","类型","项目","来源","操作"],nodes.map(n=>"<tr><td>"+esc(n.name)+"<small class='subline'>"+esc(n.entity_id)+"</small></td><td>"+esc(n.entity_type)+"</td><td>"+esc(n.project_id||"租户")+"</td><td>"+esc(n.source_ref?.source_id||"—")+"</td><td>"+btn("展开邻居","data-graph-expand='"+esc(n.entity_id)+"'")+" "+(S.features.graph_annotation?btn("人工修正","data-graph-correct='"+esc(n.entity_id)+"'"):"")+"</td></tr>"))+table(["关系类型","起点","终点"],edges.map(e=>"<tr><td>"+esc(e.relation_type)+"</td><td>"+esc(e.source_entity_id)+"</td><td>"+esc(e.target_entity_id)+"</td></tr>")));
 }
 document.addEventListener("submit",async e=>{const f=e.target;if(f.id!=="graph-search-form")return;e.preventDefault();S.graphQuery=String(new FormData(f).get("q")||"").trim();try{await renderGraph()}catch(x){$("#view").innerHTML=panel("图谱查询失败","<p class='error'>"+esc(x.message)+"</p>")}});
