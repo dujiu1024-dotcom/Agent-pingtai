@@ -11,7 +11,7 @@ class RunEventBrokerTests(unittest.IsolatedAsyncioTestCase):
         broker = RunEventBroker()
         await broker.publish(tenant_id="t", run_id="r", event_type="RUN_START")
         await broker.publish(tenant_id="t", run_id="r", event_type="TOKEN_STREAM", data={"token": "A"})
-        stream = broker.subscribe(tenant_id="t", run_id="r", last_event_id="r:1")
+        stream = await broker.subscribe(tenant_id="t", run_id="r", last_event_id="r:1")
         event = await anext(stream)
         self.assertEqual(event.event, "token_stream")
         self.assertEqual(event.data["token"], "A")
@@ -33,7 +33,7 @@ class RunEventBrokerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_slow_subscriber_is_detached_without_blocking_publish(self):
         broker = RunEventBroker(history_limit=10, subscriber_limit=1)
-        stream = broker.subscribe(tenant_id="t", run_id="r")
+        stream = await broker.subscribe(tenant_id="t", run_id="r")
         first = asyncio.create_task(anext(stream))
         await asyncio.sleep(0)
         await broker.publish(tenant_id="t", run_id="r", event_type="RUN_START")
