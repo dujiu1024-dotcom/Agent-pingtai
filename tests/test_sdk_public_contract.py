@@ -44,7 +44,7 @@ class PythonSdkContractTests(unittest.TestCase):
         self.assertEqual(raised.exception.request_id, "req-1")
         self.assertEqual(raised.exception.details, {"hint": "renew"})
         with self.assertRaises(ConflictError):
-            PlatformClient._raise_api_error if False else self._raise_conflict()
+            self._raise_conflict()
 
     @staticmethod
     def _raise_conflict():
@@ -71,6 +71,17 @@ class PythonSdkContractTests(unittest.TestCase):
             client.post("/items", {"name": "x"})
         self.assertEqual(len(transport.requests), 1)
 
+    def test_rate_limit_error_after_retry_budget(self):
+        transport = FakeTransport([
+            ApiResponse(429, {}, {"error": {"code": "rate_limited", "message": "slow"}}),
+            ApiResponse(429, {}, {"error": {"code": "rate_limited", "message": "slow"}}),
+        ])
+        client = PlatformClient(base_url="https://api.example.test", token="secret",
+                                transport=transport, retry_attempts=1, sleep=lambda _: None)
+        with self.assertRaises(RateLimitError):
+            client.get("/items")
+        self.assertEqual(len(transport.requests), 2)
+
     def test_page_iteration(self):
         transport = FakeTransport([
             ApiResponse(200, {}, {"items": [{"id": 1}], "next_cursor": "next", "has_more": True}),
@@ -80,7 +91,7 @@ class PythonSdkContractTests(unittest.TestCase):
                                 transport=transport, retry_attempts=0)
         self.assertEqual(list(client.iter_pages("/items", limit=1)), [{"id": 1}, {"id": 2}])
         self.assertIn("cursor=next", transport.requests[1][0].full_url)
-        self.assertIsInstance(client.get_page if False else Page((), None, False), Page)
+        self.assertIsInstance(Page((), None, False), Page)
 
 
 if __name__ == "__main__":
