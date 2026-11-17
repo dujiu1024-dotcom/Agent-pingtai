@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS platform_eval_gate_evidence (
     baseline_run_id uuid REFERENCES platform_eval_runs(eval_run_id),
     policy_id text NOT NULL,
     policy_version integer NOT NULL CHECK (policy_version > 0),
+    policy_snapshot jsonb NOT NULL,
     passed boolean NOT NULL,
     failures text[] NOT NULL DEFAULT '{}',
     comparison_id uuid REFERENCES platform_eval_comparisons(comparison_id),
