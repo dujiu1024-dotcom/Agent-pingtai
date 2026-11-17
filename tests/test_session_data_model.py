@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 
 from agent_platform.control_plane.sessions_assets import (
     ContextWindowSnapshot,
