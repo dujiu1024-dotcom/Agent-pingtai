@@ -718,7 +718,6 @@ def create_sessions_router(
                 "status": session.status, "created_at": session.created_at.isoformat(),
                 "updated_at": session.updated_at.isoformat(),
             },
-            "assets": exported_assets,
             "messages": [{
                 "message_id": m.message_id, "role": m.role.value, "content": m.content,
                 "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
@@ -808,6 +807,7 @@ def create_sessions_router(
                 "status": session.status, "created_at": session.created_at.isoformat(),
                 "updated_at": session.updated_at.isoformat(),
             },
+            "assets": exported_assets,
             "messages": [{
                 "message_id": m.message_id, "role": m.role.value, "content": m.content,
                 "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
