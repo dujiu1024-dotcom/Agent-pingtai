@@ -21,6 +21,7 @@ from agent_platform.memory.service import MemoryService
 from agent_platform.production_config import ProductionSettings, load_production_settings
 from agent_platform.runtime.lifecycle import RunLifecycleManager
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+from agent_platform.runtime.production_composition import ProductionRunExecution
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
@@ -67,6 +68,7 @@ def create_production_app(
     settings: ProductionSettings | None = None,
     connection_factory: Any | None = None,
     redis_client: Any | None = None,
+    run_execution: ProductionRunExecution | None = None,
 ) -> FastAPI:
     """Build the production API graph; optional arguments are test seams only."""
     configured = settings or load_production_settings()
@@ -93,6 +95,8 @@ def create_production_app(
     memory_service = MemoryService(PostgresMemoryRepository(connection_factory))
     run_store = PostgresRunStateStore(connection_factory)
     run_lifecycle = RunLifecycleManager(run_store)
+    if run_execution is not None and run_execution.run_store is not run_store:
+        raise ValueError("production Run execution must share the API PostgreSQL RunStateStore")
 
     # Quota decisions and usage reporting must share the same transactional
     # PostgreSQL store across API processes. Never fall back to in-memory state.
@@ -169,6 +173,10 @@ def create_production_app(
         allowed_origins=configured.allowed_origins,
         run_lifecycle_resolver=resolve_run_lifecycle,
         run_authorizer=authorize_run,
+        run_executor_resolver=(run_execution.run_executor_resolver if run_execution else None),
+        task_service_resolver=(run_execution.task_service_resolver if run_execution else None),
+        task_authorizer=(run_execution.task_authorizer if run_execution else None),
+        task_worker=(run_execution.task_worker if run_execution else None),
         quota_reporting_store=quota_store,
         quota_service=quota_service,
         quota_manage_authorizer=authorize_quota_manage,
@@ -186,6 +194,7 @@ def create_production_app(
     app.state.memory_service = memory_service
     app.state.run_state_store = run_store
     app.state.run_lifecycle = run_lifecycle
+    app.state.run_execution = run_execution
     app.state.quota_store = quota_store
     app.state.quota_service = quota_service
     app.state.quota_policy_repository = quota_policy_repository
