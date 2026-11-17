@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import base64
 import hashlib
+import hashlib
 import hmac
 import re
 import time
@@ -192,8 +193,24 @@ def rate_limit_headers(*, limit: int, remaining: int, reset_epoch: int,
     return headers
 
 
+def api_rate_limit_key(*, client_ip: str, method: str, path: str,
+                       authorization: bytes | None = None,
+                       cookie: bytes | None = None) -> str:
+    """Build a bounded, non-secret rate-limit key for IP + tenant-bound credential + route."""
+    credential = authorization or cookie or b""
+    credential_fingerprint = (
+        hashlib.sha256(credential).hexdigest()[:24] if credential else "anonymous"
+    )
+    segments = [part for part in path.split("/") if part]
+    resource = segments[3] if len(segments) > 3 else "root"
+    safe_method = method.upper() if method.upper() in {
+        "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+    } else "OTHER"
+    return f"{client_ip}:credential:{credential_fingerprint}:{safe_method}:{resource}"
+
+
 class PublicApiContractASGIMiddleware:
-    """Enforce URL/header version agreement, request correlation and shared IP limits."""
+    """Enforce versioning, correlation and shared IP/credential/route rate limits."""
 
     def __init__(self, app: Any, *, rate_limiter: Any, limit: int = 120,
                  window_seconds: int = 60) -> None:
@@ -255,7 +272,13 @@ class PublicApiContractASGIMiddleware:
                 return
 
         client = scope.get("client") or ("unknown", 0)
-        rate_key = f"{client[0]}:{scope.get('method', 'GET').upper()}"
+        rate_key = api_rate_limit_key(
+            client_ip=str(client[0]),
+            method=str(scope.get("method", "GET")),
+            path=path,
+            authorization=headers.get(b"authorization"),
+            cookie=headers.get(b"cookie"),
+        )
         try:
             allowed = await self.rate_limiter.allow(
                 rate_key, limit=self.limit, window_seconds=self.window_seconds,

@@ -9,6 +9,7 @@ from agent_platform.api.contract import (
     error_for_http_status,
     idempotency_scope,
     rate_limit_headers,
+    api_rate_limit_key,
     validate_api_version,
     validate_idempotency_key,
     validate_page,
@@ -149,7 +150,14 @@ class PublicApiMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         response_headers = dict(response[0]["headers"])
         self.assertEqual(response_headers[b"x-api-version"], b"v1")
         self.assertEqual(response_headers[b"x-request-id"], b"request-7")
-        self.assertEqual(limiter.last, ("192.0.2.10:GET", 120, 60))
+        self.assertEqual(
+            limiter.last,
+            (api_rate_limit_key(
+                client_ip="192.0.2.10", method="GET",
+                path="/api/platform/v1/runs",
+                authorization=None, cookie=None,
+            ), 120, 60),
+        )
         self.assertEqual(scope["state"]["api.request_id"], "request-7")
 
     async def test_unsupported_path_and_mismatched_header_are_rejected(self):
@@ -169,6 +177,27 @@ class PublicApiMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(mismatch[0]["status"], 400)
         self.assertIn(b"UNSUPPORTED_API_VERSION", mismatch[1]["body"])
+
+    async def test_rate_limit_key_scopes_credentials_without_exposing_tokens(self):
+        first = api_rate_limit_key(
+            client_ip="192.0.2.10", method="POST",
+            path="/api/platform/v1/webhooks",
+            authorization=b"Bearer tenant-a-secret",
+        )
+        second = api_rate_limit_key(
+            client_ip="192.0.2.10", method="POST",
+            path="/api/platform/v1/webhooks",
+            authorization=b"Bearer tenant-b-secret",
+        )
+        other_resource = api_rate_limit_key(
+            client_ip="192.0.2.10", method="POST",
+            path="/api/platform/v1/runs",
+            authorization=b"Bearer tenant-a-secret",
+        )
+        self.assertNotEqual(first, second)
+        self.assertNotEqual(first, other_resource)
+        self.assertNotIn("tenant-a-secret", first)
+        self.assertIn("192.0.2.10", first)
 
     async def test_rate_limit_returns_retry_headers_and_stable_error(self):
         class Limiter:
