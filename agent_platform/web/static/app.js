@@ -1,3 +1,8 @@
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/app/sw.js", {scope: "/app/"}).catch(() => {});
+  });
+}
 const API="/api/platform/v1",$=s=>document.querySelector(s),S={features:{},view:"overview",session:null,task:null,approval:null};
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const json=v=>esc(JSON.stringify(v??{},null,2));
