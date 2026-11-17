@@ -20,7 +20,8 @@ class FakeIdentityAuditReader:
 class FakeAuditReader:
     async def list_events(self, *, tenant_id, limit, actor_id=None, run_id=None):
         return ({"tenant_id": tenant_id, "actor_id": actor_id or "actor-a",
-                 "run_id": run_id, "action": "tool.invoke"},)
+                 "run_id": run_id, "action": "tool.invoke",
+                 "detail": {"api_key": "secret-token", "safe": "ok"}},)
 
 
 class AuditApiTests(unittest.TestCase):
@@ -47,6 +48,9 @@ class AuditApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["tenant_id"], "tenant-a")
         self.assertEqual(response.json()["items"][0]["run_id"], "run-1")
+        detail = response.json()["items"][0]["detail"]
+        self.assertNotIn("secret-token", str(detail))
+        self.assertEqual(detail["safe"], "ok")
 
     def test_identity_audit_query_is_tenant_scoped_and_filterable(self):
         response = self.client(True).get(
