@@ -54,16 +54,20 @@ class PostgresPromptRegistry:
             (prompt_id, action, actor_id, json.dumps(details, sort_keys=True)),
         )
 
-    async def activate(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+    async def activate(self, prompt_id: str, version: int, *, updated_by: str,
+                      evaluation_run_id: str | None = None) -> None:
         await self._set_active(prompt_id, version, updated_by=updated_by,
-                               action="version.activated")
+                               action="version.activated",
+                               evaluation_run_id=evaluation_run_id)
 
-    async def rollback(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+    async def rollback(self, prompt_id: str, version: int, *, updated_by: str,
+                       evaluation_run_id: str | None = None) -> None:
         await self._set_active(prompt_id, version, updated_by=updated_by,
-                               action="version.rolled_back")
+                               action="version.rolled_back",
+                               evaluation_run_id=evaluation_run_id)
 
     async def _set_active(self, prompt_id: str, version: int, *,
-                          updated_by: str, action: str) -> None:
+                          updated_by: str, action: str, evaluation_run_id: str | None) -> None:
         if not isinstance(version, int) or isinstance(version, bool) or version < 1:
             raise ValueError("version must be a positive integer")
         if not isinstance(updated_by, str) or not updated_by.strip():
@@ -87,10 +91,12 @@ class PostgresPromptRegistry:
                     (prompt_id, version, updated_by),
                 )
                 await self._audit(connection, prompt_id, action, updated_by,
-                                  {"active_version": version})
+                                  {"active_version": version,
+                                   "evaluation_run_id": evaluation_run_id})
 
     async def set_canary(self, prompt_id: str, candidate_version: int,
-                         percentage: float, *, updated_by: str) -> None:
+                         percentage: float, *, updated_by: str,
+                         evaluation_run_id: str | None = None) -> None:
         if not 0 < percentage <= 100:
             raise ValueError("canary percentage must be in (0, 100]")
         connection = await self._connect()
@@ -116,7 +122,8 @@ class PostgresPromptRegistry:
                 )
                 await self._audit(
                     connection, prompt_id, "canary.configured", updated_by,
-                    {"canary_version": candidate_version, "percentage": float(percentage)},
+                    {"canary_version": candidate_version, "percentage": float(percentage),
+                     "evaluation_run_id": evaluation_run_id},
                 )
 
     async def list_audit(self, prompt_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
