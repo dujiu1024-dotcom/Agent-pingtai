@@ -195,6 +195,8 @@ include = [
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_665_s_665_01_e2e.py",
+  "scripts/rollback_cutover.py",
+  "tests/test_issue_666_s_666_04_rollback_orchestrator.py",
   "tests/test_api_v1_compatibility_middleware.py",
   "tests/test_issue_667_s_667_01_legacy_route_contract.py",
 ]
