@@ -477,6 +477,27 @@ class OpenAICompatibleModelRouter:
                     estimated_input_tokens=estimate.input_tokens,
                     estimated_output_tokens=estimate.output_tokens,
                 )
+            # Write-ahead model audit is mandatory. Never dispatch to a provider
+            # when the platform cannot durably record the attempt.
+            try:
+                await self.audit_sink.record(
+                    tenant_id=tenant_id, actor_id="system:model-router",
+                    action="model.request", subject_id=request_id,
+                    outcome="succeeded",
+                    detail={
+                        "phase": "started", "run_id": run_id,
+                        "provider_id": config.provider_id,
+                        "provider_version": config.provider_version,
+                        "model_id": config.model_id,
+                        "template_id": config.template_id,
+                        "template_version": config.template_version,
+                        "fallback_attempt": index > 0,
+                    },
+                )
+            except Exception as exc:
+                raise ModelUsageRecordingError(
+                    "model request was not dispatched because write-ahead audit failed"
+                ) from exc
             try:
                 with trace_span(
                     "model.complete", component="model", tenant_id=tenant_id,
