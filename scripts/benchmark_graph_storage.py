@@ -11,7 +11,6 @@ import asyncio
 import json
 import os
 import resource
-import statistics
 import time
 import tracemalloc
 import uuid
