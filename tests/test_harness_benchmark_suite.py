@@ -71,6 +71,7 @@ class HarnessBenchmarkSuiteTests(unittest.IsolatedAsyncioTestCase):
                 "instruction-following",
                 "long-context-recall",
                 "streaming-response",
+                "gateway-tool-call",
             ),
         )
         self.assertTrue(FIXED_HARNESS_CASES[-1].streaming)
