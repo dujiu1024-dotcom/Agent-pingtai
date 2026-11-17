@@ -714,7 +714,7 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
             source_uri="s3://bucket/report.pdf", content_hash="pending",
             document_id="report-1",
         )
-        source = "[page:1] " + ("first page evidence " * 8) + "\\n[page:2] " + ("second page evidence " * 8)
+        source = "[page:1] " + ("first page evidence " * 8) + "\n[page:2] " + ("second page evidence " * 8)
         normalized = clean_document_text(source)
         chunks = chunk_document(document, source, max_chars=120, overlap=12)
 
