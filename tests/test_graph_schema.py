@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import unittest
 
 from agent_platform.graph.schema import (
@@ -48,6 +49,21 @@ class GraphSchemaTests(unittest.TestCase):
             GraphEntity("tenant-a", "person-3", "person", {"name": "Ada", "age": True}).validate(schema)
         with self.assertRaisesRegex(ValueError, "maximum"):
             GraphEntity("tenant-a", "person-4", "person", {"name": "Ada", "age": 151}).validate(schema)
+        with self.assertRaisesRegex(ValueError, "finite number"):
+            PropertyDefinition("score", PropertyKind.NUMBER, minimum=math.nan)
+        with self.assertRaisesRegex(ValueError, "must be number"):
+            GraphSchemaRegistry().register_entity_type(
+                "tenant-a",
+                EntityTypeDefinition(
+                    "measurement",
+                    (PropertyDefinition("score", PropertyKind.NUMBER),),
+                ),
+            )
+            GraphEntity(
+                "tenant-a", "measurement-1", "measurement", {"score": math.inf}
+            ).validate(GraphSchemaRegistry().register_entity_type(
+                "tenant-b", EntityTypeDefinition("measurement")
+            ))
 
     def test_relation_endpoint_types_are_constrained(self):
         registry = GraphSchemaRegistry()
