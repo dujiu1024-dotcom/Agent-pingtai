@@ -110,7 +110,7 @@ class PostgresKnowledgeCatalogTests(unittest.IsolatedAsyncioTestCase):
         query, params = connection.calls[0]
         self.assertIn("FROM knowledge_collections c", query)
         self.assertIn("c.tenant_id = %s", query)
-        self.assertIn("ON CONFLICT (tenant_id, collection_id, index_name)", query)
+        self.assertIn("ON CONFLICT DO NOTHING", query)
         self.assertEqual(params[-2:], ("tenant-a", "collection-a"))
 
 
