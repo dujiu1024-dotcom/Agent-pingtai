@@ -167,7 +167,7 @@ class FileAssetContractTests(unittest.IsolatedAsyncioTestCase):
         repository = InMemorySessionRepository()
         storage = InMemoryObjectStorage()
         service = SessionAssetService(repository, storage)
-        for invalid in ("", "text", "text/plain\\nX-Injected: yes", " text/plain", "text/plain "):
+        for invalid in ("", "text", "text/plain\nX-Injected: yes", " text/plain", "text/plain "):
             with self.subTest(media_type=invalid), self.assertRaisesRegex(SessionError, "invalid media type"):
                 await service.upload_asset(
                     tenant_id="tenant-a", owner_id="user-a", filename="bad.txt",
@@ -187,7 +187,7 @@ class FileAssetContractTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a", owner_id="user-a", filename="base.txt",
             media_type="text/plain", content=b"base",
         )
-        for invalid in ("text", "text/plain\\r\\nX: injected"):
+        for invalid in ("text", "text/plain\r\nX: injected"):
             with self.subTest(media_type=invalid), self.assertRaisesRegex(SessionError, "invalid media type"):
                 await service.create_asset_version(
                     tenant_id="tenant-a", asset_id=asset.asset_id,
