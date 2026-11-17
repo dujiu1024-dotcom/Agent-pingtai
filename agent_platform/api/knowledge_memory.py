@@ -220,6 +220,7 @@ def create_knowledge_memory_router(
         from agent_platform.knowledge.evaluation import (
             RAGAnswerEvalCase,
             RAGEvalCase,
+            evaluation_fingerprint,
             evaluate_answers,
             evaluate_retrieval,
         )
@@ -272,8 +273,17 @@ def create_knowledge_memory_router(
                 "mean_answer_term_coverage": sum(item.answer_term_coverage for item in answers) / len(answers),
                 "mean_citation_precision": sum(item.citation_precision for item in answers) / len(answers),
                 "mean_citation_recall": sum(item.citation_recall for item in answers) / len(answers),
+                "answer_accuracy": sum(1 for item in answers if item.grounded) / len(answers),
+                "citation_correctness_rate": sum(1 for item in answers if item.citation_correctness) / len(answers),
             }
+        try:
+            fingerprint = evaluation_fingerprint(body)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         return {
+            "evaluation_fingerprint": fingerprint,
+            "dataset_id": body.get("dataset_id"),
+            "dataset_version": body.get("dataset_version"),
             "k": k, "retrieval_summary": retrieval_summary,
             "retrieval_results": [asdict(item) for item in retrieval],
             "answer_summary": answer_summary,
