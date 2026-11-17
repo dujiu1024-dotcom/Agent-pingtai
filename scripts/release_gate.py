@@ -20,7 +20,7 @@ REQUIRED_CHECKS = (
 )
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PLACEHOLDER_RE = re.compile(
-    r"(?:^|[\\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\\s/_-])",
+    r"(?:^|[\s/_-])(?:replace[-_ ]with|todo|tbd|changeme|placeholder|pending)(?:$|[\s/_-])",
     re.IGNORECASE,
 )
 
