@@ -223,6 +223,7 @@ class SessionRepository(Protocol):
     async def set_session_status(
         self, tenant_id: str, session_id: str, status: str, *, expected_status: str,
     ) -> bool: ...
+    async def delete_session_history(self, tenant_id: str, session_id: str) -> None: ...
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
     async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None: ...
@@ -326,6 +327,13 @@ class InMemorySessionRepository:
             current, status=status, updated_at=datetime.now(timezone.utc),
         )
         return True
+
+    async def delete_session_history(self, tenant_id: str, session_id: str) -> None:
+        key = (tenant_id, session_id)
+        if key not in self.sessions:
+            raise SessionNotFound("session not found")
+        self.messages.pop(key, None)
+        self.context_snapshots.pop(key, None)
 
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]:
         if not 1 <= limit <= 500:
