@@ -27,3 +27,12 @@
 ## Operational boundary
 
 No live server, production database, external OAuth provider, or real object store is provisioned by this change. CI PostgreSQL/Redis integration tests are the automated evidence; real-device validation is intentionally skipped.
+
+
+## A-8-03 acceptance clarification: legacy conversation and docs tables
+
+- `conversation.py` plus SQLite `conversations`/`config_kv` are compatibility inputs only. `LegacyConversationAdapter` maps approved source rows into canonical `ConversationSession` / `ConversationMessage` values; it is pure and read-only. The adapter must receive an explicit tenant mapping, approved platform owner mapping, actor mapping, and approved project mapping where a legacy project is present. Legacy `open_id`, `user_id`, or owner identifiers are provenance, not platform principal IDs.
+- The legacy SQLite `docs` table is a file-path/hash/classification/sync-metadata inventory, not the new platform's document or file-asset store. Its rows are migration candidates into the Knowledge domain only after source ownership, tenant/project ACL, content availability, classification, source hash, and document-version semantics are resolved. A row in `docs` does not prove that the referenced file exists, is authorized, or has been ingested/chunked/embedded.
+- `docs` rows must not be inserted directly as `platform_file_assets`, `platform_documents`, chunks, or embeddings. A future Knowledge import must use the Knowledge ingestion contract and preserve the legacy row ID/path as provenance; missing content, ambiguous ownership, and missing ACL are quarantined rather than guessed. Filesystem paths are never exposed as platform download URLs.
+- The new platform's canonical writes remain owned by `SessionAssetService` / tenant-bound PostgreSQL repositories for sessions, messages, and file assets, and by the Knowledge ingestion/repository boundary for documents. No legacy table is a fallback write store and no dual-write is permitted.
+- Migration execution is a separate, explicitly approved operation: read-only inventory/export, versioned mapping file, deterministic/idempotent batch, row-level audit, diff/reconciliation, shadow-read validation, a single-writer cutover window, and a tested rollback plan. The adapter only maps records; it does not execute imports or choose cutover authority.

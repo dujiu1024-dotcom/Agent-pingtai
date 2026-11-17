@@ -1,7 +1,7 @@
 """Read-only compatibility mapper for explicit legacy conversation imports.
 
 This module never reads or writes legacy tables and never persists adapted objects.
-Callers must supply an approved tenant mapping and, when applicable, project mapping.
+Callers must supply approved tenant and platform-owner mappings and, when applicable, an approved project mapping.
 """
 from __future__ import annotations
 
@@ -32,16 +32,16 @@ class LegacyConversationAdapter:
 
     def adapt_session(
         self, row: Mapping[str, object], *, tenant_id: str,
+        approved_owner_id: str,
         approved_project_id: str | None = None,
     ) -> ConversationSession:
         if not isinstance(tenant_id, str) or not tenant_id.strip():
             raise LegacyMappingError("an explicit tenant mapping is required")
         source_id = row.get("conversation_id") or row.get("id")
-        owner_id = row.get("owner_id") or row.get("user_id")
         if not isinstance(source_id, str) or not source_id.strip():
             raise LegacyMappingError("legacy conversation identifier is required")
-        if not isinstance(owner_id, str) or not owner_id.strip():
-            raise LegacyMappingError("legacy conversation owner mapping is required")
+        if not isinstance(approved_owner_id, str) or not approved_owner_id.strip():
+            raise LegacyMappingError("an explicit approved platform owner mapping is required")
         legacy_project = row.get("project_id")
         if legacy_project is not None and not approved_project_id:
             raise LegacyMappingError("legacy project requires an explicit approved project mapping")
@@ -54,7 +54,7 @@ class LegacyConversationAdapter:
         return ConversationSession(
             tenant_id=tenant_id,
             session_id=self._stable_id(tenant_id, "session", source_id),
-            owner_id=owner_id,
+            owner_id=approved_owner_id,
             title=title[:200],
             project_id=approved_project_id,
             status=str(status),
