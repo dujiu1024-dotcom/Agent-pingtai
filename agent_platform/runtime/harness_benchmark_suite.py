@@ -120,21 +120,45 @@ async def run_fixed_harness_benchmark(
     observations: list[HarnessBenchmarkObservation] = []
     for name, adapter in sorted(adapters.items()):
         capabilities = getattr(adapter, "capabilities", None)
-        cases = tuple(
-            case for case in FIXED_HARNESS_CASES
-            if (
-                (not case.streaming or bool(getattr(capabilities, "streaming", False)))
-                and (not case.required_tools or bool(getattr(capabilities, "tool_gateway", False)))
-            )
+        runnable_cases: list[HarnessBenchmarkCase] = []
+        skipped_by_case: dict[str, HarnessBenchmarkObservation] = {}
+        for case in FIXED_HARNESS_CASES:
+            unsupported: list[str] = []
+            if case.streaming and not bool(getattr(capabilities, "streaming", False)):
+                unsupported.append("streaming")
+            if case.required_tools and not bool(getattr(capabilities, "tool_gateway", False)):
+                unsupported.append("Tool Gateway")
+            if unsupported:
+                skipped_by_case[case.case_id] = HarnessBenchmarkObservation(
+                    runtime=name,
+                    case_id=case.case_id,
+                    passed=False,
+                    duration_ms=0,
+                    finish_reason="unsupported",
+                    usage={},
+                    matched_expectations=(),
+                    missing_expectations=case.expected_contains,
+                    output_text="",
+                    error_type="UnsupportedHarnessCapability",
+                    skipped=True,
+                )
+            else:
+                runnable_cases.append(case)
+        candidate_report = (
+            await HarnessBenchmarkRunner(
+                adapters={name: adapter},
+                request_factory=request_factory,
+                pricing={name: pricing[name]} if pricing and name in pricing else None,
+                gateway_tool_verifier=gateway_tool_verifier,
+                recovery_attempts=recovery_attempts,
+            ).run(runnable_cases)
+            if runnable_cases else HarnessBenchmarkReport(())
         )
-        candidate_report = await HarnessBenchmarkRunner(
-            adapters={name: adapter},
-            request_factory=request_factory,
-            pricing={name: pricing[name]} if pricing and name in pricing else None,
-            gateway_tool_verifier=gateway_tool_verifier,
-            recovery_attempts=recovery_attempts,
-        ).run(cases)
-        observations.extend(candidate_report.observations)
+        executed_by_case = {row.case_id: row for row in candidate_report.observations}
+        observations.extend(
+            executed_by_case.get(case.case_id) or skipped_by_case[case.case_id]
+            for case in FIXED_HARNESS_CASES
+        )
     return scorecards, HarnessBenchmarkReport(tuple(observations))
 
 
