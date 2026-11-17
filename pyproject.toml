@@ -195,6 +195,7 @@ include = [
   "tests/test_issue_665_s_665_01_e2e.py",
   "tests/test_api_v1_compatibility_middleware.py",
   "tests/test_issue_667_s_34_02_workbench_pages.py",
+  "tests/test_issue_667_s_34_05_legacy_panel_coverage.py",
 ]
 
 [tool.ruff.lint]
