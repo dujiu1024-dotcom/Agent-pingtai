@@ -159,7 +159,12 @@ def _sql_table(schema: str, table: str) -> str:
 
 def migrate(connection: Any, rows_by_table: Mapping[str, list[dict[str, Any]]],
             mappings: list[dict[str, Any]], *, dry_run: bool) -> dict[str, Any]:
-    connection.execute("BEGIN READ ONLY" if dry_run else "BEGIN")
+    # psycopg starts a transaction implicitly on the first statement. SET
+    # TRANSACTION must be the first statement to make the whole dry-run truly
+    # read-only; issuing BEGIN READ ONLY here would be a nested BEGIN and can be
+    # ignored by PostgreSQL after the driver has opened its transaction.
+    if dry_run:
+        connection.execute("SET TRANSACTION READ ONLY")
     report: dict[str, Any] = {"mode": "dry-run" if dry_run else "apply", "tables": [], "total_rows": 0}
     try:
         for mapping in mappings:
