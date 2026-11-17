@@ -1,6 +1,7 @@
 -- Canonical budget lineage for root, retried and delegated Runs.
 BEGIN;
 ALTER TABLE platform_runs
+    ADD COLUMN IF NOT EXISTS retry_of_run_id uuid,
     ADD COLUMN IF NOT EXISTS parent_run_id uuid,
     ADD COLUMN IF NOT EXISTS budget_root_run_id uuid,
     ADD COLUMN IF NOT EXISTS budget_lineage_kind text NOT NULL DEFAULT 'root',
@@ -19,6 +20,7 @@ UPDATE platform_runs r SET budget_root_run_id=roots.root_run_id,
   FROM run_roots roots WHERE roots.tenant_id=r.tenant_id AND roots.run_id=r.run_id AND r.budget_root_run_id IS NULL;
 UPDATE platform_runs SET budget_root_run_id=run_id WHERE budget_root_run_id IS NULL;
 ALTER TABLE platform_runs ALTER COLUMN budget_root_run_id SET NOT NULL;
+ALTER TABLE platform_runs ADD CONSTRAINT fk_platform_run_retry_source FOREIGN KEY (tenant_id,retry_of_run_id) REFERENCES platform_runs(tenant_id,run_id);
 ALTER TABLE platform_runs ADD CONSTRAINT fk_platform_run_budget_parent FOREIGN KEY (tenant_id,parent_run_id) REFERENCES platform_runs(tenant_id,run_id);
 ALTER TABLE platform_runs ADD CONSTRAINT fk_platform_run_budget_root FOREIGN KEY (tenant_id,budget_root_run_id) REFERENCES platform_runs(tenant_id,run_id);
 ALTER TABLE platform_runs ADD CONSTRAINT ck_platform_run_budget_lineage_kind CHECK (budget_lineage_kind IN ('root','retry','delegation'));
