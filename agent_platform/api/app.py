@@ -35,6 +35,7 @@ from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
 from agent_platform.security.audit_http import AuditRequestASGIMiddleware
+from agent_platform.web.app import create_platform_web_router
 
 
 async def _principal_from_request(request: Any) -> Any:
@@ -146,6 +147,8 @@ def create_platform_app(
         raise ValueError("audit request sink and actor resolver must be configured together")
 
     app = FastAPI()
+    # Independent first-party UI; no dependency on legacy console/gui.
+    app.include_router(create_platform_web_router())
     # Add request auditing before Identity middleware so it executes inside the
     # authenticated identity boundary and sees the verified principal.
     if audit_request_configured:

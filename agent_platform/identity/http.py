@@ -184,7 +184,7 @@ class IdentityASGIMiddleware:
             (b"x-content-type-options", b"nosniff"),
             (b"referrer-policy", b"strict-origin-when-cross-origin"),
             (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-            (b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'"),
+            (b"content-security-policy", b"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'"),
             (b"cache-control", b"no-store"),
             (b"strict-transport-security", b"max-age=31536000; includeSubDomains"),
         ]
