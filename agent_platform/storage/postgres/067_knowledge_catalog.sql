@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS knowledge_collection_documents (
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, collection_id, document_id),
     FOREIGN KEY (tenant_id, collection_id)
-        REFERENCES knowledge_collections (tenant_id, collection_id) ON DELETE CASCADE,
+        REFERENCES knowledge_collections (tenant_id, collection_id) ON DELETE CASCADE
     -- Document identity is tenant-scoped; lifecycle cleanup is coordinated by the repository.
 );
 CREATE INDEX IF NOT EXISTS idx_knowledge_collection_documents_document
