@@ -84,6 +84,7 @@ def create_platform_app(
     alert_dispatch_worker: Any | None = None,
     alert_evaluation_worker: Any | None = None,
     audit_reader: Any | None = None,
+    identity_audit_reader: Any | None = None,
     audit_authorizer: Any | None = None,
     audit_request_sink: Any | None = None,
     audit_actor_resolver: Any | None = None,
@@ -314,7 +315,8 @@ def create_platform_app(
         if audit_reader is None or audit_authorizer is None:
             raise ValueError("audit reader and audit authorizer must be configured together")
         app.include_router(create_audit_router(
-            reader=audit_reader, authorize_read=audit_authorizer,
+            reader=audit_reader, identity_reader=identity_audit_reader,
+            authorize_read=audit_authorizer,
         ))
     quota_configured = any(value is not None for value in (
         quota_reporting_store, quota_service, quota_manage_authorizer, quota_scope_authorizer,
