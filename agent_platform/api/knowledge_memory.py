@@ -220,9 +220,9 @@ def create_knowledge_memory_router(
         from agent_platform.knowledge.evaluation import (
             RAGAnswerEvalCase,
             RAGEvalCase,
-            evaluation_fingerprint,
             evaluate_answers,
             evaluate_retrieval,
+            evaluation_fingerprint,
         )
         retrieval_cases = []
         answer_cases = []
