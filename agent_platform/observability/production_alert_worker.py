@@ -10,12 +10,12 @@ import asyncio
 import logging
 import os
 import signal
-
-import httpx
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from agent_platform.observability.alert_notifications import (
     AlertNotificationDispatcher as DurableAlertNotificationDispatcher,
