@@ -5,6 +5,7 @@ import base64
 import inspect
 import json
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
@@ -16,13 +17,37 @@ from agent_platform.sandbox.oci import SandboxResult
 
 @dataclass(frozen=True)
 class SignedExtensionPackage:
+    """Untrusted package metadata; it may identify a key but never supply one."""
+
     archive: bytes
     signature: bytes
-    trusted_public_key_pem: bytes
+    publisher_key_id: str
+
+
+@dataclass(frozen=True)
+class TrustedPublisherKey:
+    """A publisher key record returned only by the platform trust registry."""
+
+    publisher_id: str
+    key_id: str
+    public_key_pem: bytes
+    extension_ids: frozenset[str]
+    tenant_ids: frozenset[str] | None = None
+    not_before: float = 0.0
+    expires_at: float | None = None
+    revoked: bool = False
 
 
 class ExtensionPackageResolver(Protocol):
     async def resolve(self, manifest: ExtensionManifest) -> SignedExtensionPackage: ...
+
+
+class TrustedPublisherKeyResolver(Protocol):
+    """Resolve a platform-controlled key binding, not key material from a package."""
+
+    async def resolve(
+        self, tenant_id: str, extension_id: str, key_id: str,
+    ) -> TrustedPublisherKey | None: ...
 
 
 class ExtensionArtifactStore(Protocol):
@@ -49,20 +74,22 @@ async def _call(callback: Callable[..., Any], *args: Any) -> Any:
 
 def _verify_signed_package(
     package: SignedExtensionPackage,
+    trusted_key: TrustedPublisherKey,
     *,
     verifier: Callable[[Path, bytes, bytes], str] | None = None,
 ) -> str:
     if not isinstance(package.archive, bytes) or not package.archive or len(package.archive) > 64 * 1024 * 1024:
         raise ValueError("extension package must be non-empty and at most 64 MiB")
-    verify = verifier
+    if not isinstance(package.signature, bytes) or not isinstance(package.publisher_key_id, str) or not package.publisher_key_id:
+        raise ValueError("extension package signature and publisher key id are required")
+    if not isinstance(trusted_key.public_key_pem, bytes) or b"-----BEGIN PUBLIC KEY-----" not in trusted_key.public_key_pem:
+        raise ValueError("trusted publisher registry returned an invalid PEM public key")
     with tempfile.TemporaryDirectory(prefix="extension-verify-") as directory:
         archive = Path(directory) / "package.zip"
         archive.write_bytes(package.archive)
-        if verify is not None:
-            return verify(archive, package.signature, package.trusted_public_key_pem)
-        return verify_extension_signature(
-            archive, package.signature, package.trusted_public_key_pem,
-        )
+        if verifier is not None:
+            return verifier(archive, package.signature, trusted_key.public_key_pem)
+        return verify_extension_signature(archive, package.signature, trusted_key.public_key_pem)
 
 
 _BOOTSTRAP = r"""
@@ -118,12 +145,12 @@ sys.stdout.write(json.dumps({"result": result}, ensure_ascii=False, separators=(
 
 
 class SandboxedExtensionRuntime:
-    """Extension lifecycle adapter; untrusted entrypoint code runs only in OCI.
+    """Run signed extensions in OCI, trusting keys only from the platform registry.
 
-    Install verifies the detached signature against a trusted publisher key and
-    stores the immutable package. Invocation re-verifies it, checks every
-    declared permission against the caller, and starts a network-isolated OCI
-    sandbox. No host paths, credentials, or Docker socket are mounted.
+    The package's key id is an untrusted lookup hint. The registry must bind it
+    to the extension and tenant and provide the authoritative public key.
+    Registry lookup is repeated on invocation so revocation/expiry takes effect
+    for already-installed artifacts.
     """
 
     def __init__(
@@ -131,12 +158,14 @@ class SandboxedExtensionRuntime:
         *,
         tenant_id: str,
         package_resolver: ExtensionPackageResolver,
+        publisher_key_resolver: TrustedPublisherKeyResolver,
         artifact_store: ExtensionArtifactStore,
         sandbox_runner: ExtensionSandboxRunner,
         authorize_permission: Callable[[Any, ExtensionManifest, str], Any],
         audit: Callable[[Any, ExtensionManifest, str, str], Any],
         signature_verifier: Callable[[Path, bytes, bytes], str] | None = None,
         timeout_seconds: float = 30.0,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         if not 0 < timeout_seconds <= 120:
             raise ValueError("extension sandbox timeout must be in (0, 120]")
@@ -144,16 +173,38 @@ class SandboxedExtensionRuntime:
             raise ValueError("a tenant-scoped extension runtime is required")
         self.tenant_id = tenant_id
         self.package_resolver = package_resolver
+        self.publisher_key_resolver = publisher_key_resolver
         self.artifact_store = artifact_store
         self.sandbox_runner = sandbox_runner
         self.authorize_permission = authorize_permission
         self.audit = audit
         self.signature_verifier = signature_verifier
         self.timeout_seconds = timeout_seconds
+        self.clock = clock
+
+    async def _trusted_key(self, manifest: ExtensionManifest, package: SignedExtensionPackage) -> TrustedPublisherKey:
+        key = await self.publisher_key_resolver.resolve(
+            self.tenant_id, manifest.extension_id, package.publisher_key_id,
+        )
+        if key is None:
+            raise PermissionError("extension publisher key is not trusted")
+        now = self.clock()
+        if (
+            key.key_id != package.publisher_key_id
+            or not key.publisher_id
+            or manifest.extension_id not in key.extension_ids
+            or (key.tenant_ids is not None and self.tenant_id not in key.tenant_ids)
+            or key.revoked
+            or now < key.not_before
+            or (key.expires_at is not None and now >= key.expires_at)
+        ):
+            raise PermissionError("extension publisher key is not valid for this extension and tenant")
+        return key
 
     async def install(self, manifest: ExtensionManifest) -> None:
         package = await self.package_resolver.resolve(manifest)
-        _verify_signed_package(package, verifier=self.signature_verifier)
+        trusted_key = await self._trusted_key(manifest, package)
+        _verify_signed_package(package, trusted_key, verifier=self.signature_verifier)
         await self.artifact_store.put(self.tenant_id, manifest, package)
 
     async def uninstall(self, manifest: ExtensionManifest) -> None:
@@ -174,16 +225,15 @@ class SandboxedExtensionRuntime:
         if not isinstance(payload, Mapping):
             raise TypeError("extension payload must be a mapping")
         for permission in manifest.permissions:
-            allowed = await _call(
-                self.authorize_permission, principal, manifest, permission,
-            )
+            allowed = await _call(self.authorize_permission, principal, manifest, permission)
             if allowed is not True:
                 raise PermissionError("extension permission denied")
 
         package = await self.artifact_store.get(self.tenant_id, manifest)
         if package is None:
             raise LookupError("extension package is not installed")
-        _verify_signed_package(package, verifier=self.signature_verifier)
+        trusted_key = await self._trusted_key(manifest, package)
+        _verify_signed_package(package, trusted_key, verifier=self.signature_verifier)
         await _call(self.audit, principal, manifest, action, "requested")
 
         request = json.dumps(
