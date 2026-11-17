@@ -153,7 +153,7 @@ class WebhookSubscriptionService:
         if isinstance(limit, bool) or not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         pending = await self._claim_pending_secret_revocations(limit=limit)
-        result = {"claimed": len(pending), "revoked": 0, "failed": 0, "lease_lost": 0}
+        result = {"claimed": len(pending), "revoked": 0, "failed": 0}
         for item in pending:
             try:
                 await _await(self.secrets.revoke(secret_ref=item["secret_ref"]))
@@ -165,7 +165,7 @@ class WebhookSubscriptionService:
             else:
                 # A reclaimed/expired lease fences this worker from deleting
                 # the new owner's queue row. Secret revoke remains idempotent.
-                result["lease_lost"] += 1
+                result["failed"] += 1
         return result
 
     async def disable(self, *, tenant_id: str, subscription_id: str) -> bool:
