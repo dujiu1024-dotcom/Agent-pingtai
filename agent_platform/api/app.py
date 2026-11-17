@@ -10,8 +10,8 @@ from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
-from agent_platform.api.identity import create_identity_router
 from agent_platform.api.health import create_health_router
+from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
@@ -164,7 +164,11 @@ def create_platform_app(
     )
     app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
-    app.include_router(create_health_router(readiness_checks=(\n        readiness_checks if readiness_checks is not None else {\"redis\": redis.ping}\n    )))
+    app.include_router(create_health_router(
+        readiness_checks=(
+            readiness_checks if readiness_checks is not None else {"redis": redis.ping}
+        )
+    ))
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
     ))
