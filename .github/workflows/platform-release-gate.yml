@@ -115,7 +115,7 @@ jobs:
           python -m pip install -U pip
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Run core business journey E2E and release evidence contract tests
-        run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence -v
+        run: python -m unittest tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence -v tests.test_release_acceptance_report -v
 
   production-release-evidence:
     needs:
