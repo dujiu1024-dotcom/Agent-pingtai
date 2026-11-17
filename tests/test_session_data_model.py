@@ -9,7 +9,9 @@ from agent_platform.control_plane.sessions_assets import (
     ConversationSession,
     MessageRole,
     MessageTokenUsage,
+    SessionError,
     SessionIsolationScope,
+    InMemorySessionRepository,
 )
 
 
@@ -99,6 +101,78 @@ class SessionDataModelTests(unittest.TestCase):
                 version=1, snapshot={}, token_count=0, max_tokens=100,
                 created_by="user-a", created_at=datetime(2026, 1, 1),
             )
+
+
+class ContextSnapshotRepositoryTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.repository = InMemorySessionRepository()
+        await self.repository.create_session(ConversationSession(
+            tenant_id="tenant-a", session_id="session-a", owner_id="user-a",
+        ))
+
+    async def test_snapshot_round_trip_and_version_order_are_session_scoped(self):
+        older = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-1",
+            version=1, snapshot={"messages": []}, token_count=0, max_tokens=100,
+            created_by="user-a",
+        )
+        newer = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-2",
+            version=2, snapshot={"messages": [{"role": "user", "content": "hi"}]},
+            token_count=2, max_tokens=100, created_by="user-a",
+        )
+        await self.repository.create_context_snapshot(older)
+        await self.repository.create_context_snapshot(newer)
+
+        self.assertEqual(
+            await self.repository.get_context_snapshot("tenant-a", "session-a", "snapshot-2"),
+            newer,
+        )
+        self.assertEqual(
+            await self.repository.list_context_snapshots("tenant-a", "session-a"),
+            (newer, older),
+        )
+        self.assertIsNone(
+            await self.repository.get_context_snapshot("tenant-b", "session-a", "snapshot-2")
+        )
+
+    async def test_snapshot_rejects_duplicate_id_and_duplicate_session_version(self):
+        first = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-1",
+            version=1, snapshot={}, token_count=0, max_tokens=100, created_by="user-a",
+        )
+        await self.repository.create_context_snapshot(first)
+        duplicate_version = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-2",
+            version=1, snapshot={}, token_count=0, max_tokens=100, created_by="user-a",
+        )
+        with self.assertRaisesRegex(SessionError, "version already exists"):
+            await self.repository.create_context_snapshot(duplicate_version)
+        duplicate_id = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-1",
+            version=2, snapshot={}, token_count=0, max_tokens=100, created_by="user-a",
+        )
+        with self.assertRaisesRegex(SessionError, "already exists"):
+            await self.repository.create_context_snapshot(duplicate_id)
+
+    async def test_snapshot_message_cursor_must_belong_to_same_tenant_and_session(self):
+        await self.repository.append_message(ConversationMessage(
+            tenant_id="tenant-a", message_id="message-a", session_id="session-a",
+            role=MessageRole.USER, content="hello", actor_id="user-a",
+        ))
+        valid = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-valid",
+            version=1, snapshot={}, token_count=0, max_tokens=100, created_by="user-a",
+            last_message_id="message-a",
+        )
+        await self.repository.create_context_snapshot(valid)
+        invalid = ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id="session-a", snapshot_id="snapshot-invalid",
+            version=2, snapshot={}, token_count=0, max_tokens=100, created_by="user-a",
+            last_message_id="message-from-other-session",
+        )
+        with self.assertRaisesRegex(ValueError, "does not belong"):
+            await self.repository.create_context_snapshot(invalid)
 
 
 if __name__ == "__main__":
