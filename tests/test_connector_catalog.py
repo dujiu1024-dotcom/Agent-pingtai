@@ -185,6 +185,31 @@ class ConnectorCatalogTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ConnectorManifestError):
             ConnectorManifest.from_mapping(unsafe)
 
+    async def test_manifest_storage_payload_round_trips_without_provenance_field(self):
+        original = ConnectorManifest.from_mapping(manifest(), source="mcp-registry")
+        payload = original.to_dict()
+        self.assertNotIn("source", payload)
+        restored = ConnectorManifest.from_mapping(payload, source="mcp-registry")
+        self.assertEqual(restored, original)
+
+    async def test_semver_rejects_leading_zeroes_and_empty_identifiers(self):
+        invalid_versions = (
+            "01.2.3", "1.02.3", "1.2.03", "1.2.3-", "1.2.3+",
+            "1.2.3-01", "1.2.3-alpha..1", "1.2.3+build..1",
+        )
+        for version in invalid_versions:
+            with self.subTest(version=version):
+                with self.assertRaises(ConnectorManifestError):
+                    ConnectorManifest.from_mapping({**manifest(), "version": version})
+
+    async def test_semver_accepts_prerelease_and_build_metadata(self):
+        for version in ("1.2.3-alpha", "1.2.3-rc.1", "1.2.3+build.7", "1.2.3-beta.2+build.9"):
+            with self.subTest(version=version):
+                self.assertEqual(
+                    ConnectorManifest.from_mapping({**manifest(), "version": version}).version,
+                    version,
+                )
+
     async def test_manifest_rejects_executable_operation_fields(self):
         unsafe = manifest()
         unsafe["operations"][0]["url"] = "https://untrusted.invalid"
