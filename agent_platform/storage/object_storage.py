@@ -1,8 +1,11 @@
 """S3-compatible durable object storage adapter (AWS S3 / MinIO)."""
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import inspect
 from pathlib import PurePosixPath
+from urllib.parse import quote
 from typing import Any, Protocol
 
 
@@ -65,7 +68,9 @@ class S3ObjectStorage:
             raise ObjectStorageError("empty object payload is not allowed")
         await self.client.put_object(
             Bucket=self.bucket, Key=key, Body=bytes(content),
-            ContentType=media_type, **self._encryption_args(),
+            ContentType=media_type,
+            Metadata={"sha256": hashlib.sha256(content).hexdigest()},
+            **self._encryption_args(),
         )
 
     async def get(self, object_key: str) -> bytes:

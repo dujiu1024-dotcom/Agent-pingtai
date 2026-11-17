@@ -63,5 +63,26 @@ class S3ObjectStorageTests(unittest.IsolatedAsyncioTestCase):
                 await storage.delete(key)
 
 
+    async def test_presigned_download_is_short_lived_and_filename_safe(self):
+        client = FakeS3Client()
+        storage = S3ObjectStorage(client=client, bucket="assets")
+        url = await storage.presign_get(
+            "tenant/tenant-a/assets/file-1/hash",
+            filename="monthly report.pdf", media_type="application/pdf",
+            expires_in=300,
+        )
+        self.assertTrue(url.startswith("https://"))
+        method, params, expiry = client.presign_calls[0]
+        self.assertEqual(method, "get_object")
+        self.assertEqual(expiry, 300)
+        self.assertIn("monthly%20report.pdf", params["ResponseContentDisposition"])
+        with self.assertRaises(ValueError):
+            await storage.presign_get(
+                "tenant/tenant-a/assets/file-1/hash",
+                filename="x.pdf", media_type="application/pdf", expires_in=7200,
+            )
+
+
+
 if __name__ == "__main__":
     unittest.main()
