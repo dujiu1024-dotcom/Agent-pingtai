@@ -362,5 +362,37 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.cancelled, ["run-1"])
 
 
+    async def test_declared_timeout_is_enforced_and_recorded_for_run(self):
+        class BlockingAdapter(FakeAdapter):
+            async def run(self, _request):
+                await asyncio.Event().wait()
+
+        lifecycle = Lifecycle()
+        managed = LifecycleManagedHarnessAdapter(
+            adapter=BlockingAdapter(),
+            descriptor=descriptor(capabilities=HarnessCapabilities(timeout=True)),
+            lifecycle=lifecycle,
+        )
+        with self.assertRaises(TimeoutError):
+            await managed.run(request(timeout_seconds=0.01))
+        self.assertEqual([event[0] for event in lifecycle.events], ["started", "timed_out"])
+
+    async def test_declared_timeout_is_enforced_and_recorded_for_stream(self):
+        class BlockingStreamAdapter(FakeAdapter):
+            async def stream(self, _request):
+                yield HarnessStreamEvent(event_type="text_delta", text_delta="partial")
+                await asyncio.Event().wait()
+
+        lifecycle = Lifecycle()
+        managed = LifecycleManagedHarnessAdapter(
+            adapter=BlockingStreamAdapter(),
+            descriptor=descriptor(capabilities=HarnessCapabilities(streaming=True, timeout=True)),
+            lifecycle=lifecycle,
+        )
+        with self.assertRaises(TimeoutError):
+            _ = [event async for event in managed.stream(request(timeout_seconds=0.01))]
+        self.assertEqual([event[0] for event in lifecycle.events], ["started", "timed_out"])
+
+
 if __name__ == "__main__":
     unittest.main()
