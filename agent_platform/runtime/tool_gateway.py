@@ -182,7 +182,7 @@ class ToolGateway:
         if trace_exporter is not None and not callable(trace_exporter):
             raise TypeError("trace_exporter must be callable")
         self.trace_exporter = trace_exporter
-        self._tools: dict[str, ToolDefinition] = {};
+        self._tools: dict[str, ToolDefinition] = {}
         self._active: dict[tuple[str, str, str], asyncio.Task] = {}
         self._cancelled: set[tuple[str, str, str]] = set()
 
