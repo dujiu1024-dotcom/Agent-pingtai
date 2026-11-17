@@ -32,7 +32,6 @@ class MemoryRecallQuery:
     source_ref_prefix: str | None = None
     strategy: MemoryRecallStrategy = MemoryRecallStrategy.RELEVANCE
     limit: int = 20
-    version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -127,19 +126,7 @@ class MemoryRetrievalService:
         self._validate(policy)
         at = policy.as_of or datetime.now(timezone.utc)
 
-        if policy.version is None:
-            records = await self.memory.retrieve(
-                principal=principal, limit=1000,
-            )
-        else:
-            # Historical versions are never implicitly recalled. An explicit
-            # version request is still checked against the current scope policy.
-            current = await self.memory.repository.get(principal.tenant_id, "")
-            del current
-            versions: list[MemoryRecord] = []
-            # The caller must name a memory ID for version-specific reads via
-            # retrieve_version(), avoiding an unbounded history scan.
-            raise ValueError("version-specific reads require retrieve_version(memory_id=...)")
+        records = await self.memory.retrieve(principal=principal, limit=1000)
 
         hits: list[MemoryRecallHit] = []
         terms = _terms(policy.text)
