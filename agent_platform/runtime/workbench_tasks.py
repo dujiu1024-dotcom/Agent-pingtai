@@ -287,7 +287,8 @@ class RegistryBackedTaskCenterService:
         self, *, tenant_id: str, actor_id: str, agent_id: str,
         project_id: str | None, session_id: str | None,
         input: Mapping[str, Any], idempotency_key: str | None = None,
-        run_id: str | None = None,
+        run_id: str | None = None, parent_run_id: str | None = None,
+        budget_lineage_key: str | None = None,
     ) -> Mapping[str, Any]:
         self._check_tenant(tenant_id)
         if not actor_id.strip():
@@ -306,10 +307,23 @@ class RegistryBackedTaskCenterService:
             except (ValueError, TypeError, AttributeError) as exc:
                 raise WorkbenchTaskError("run_id must be a UUID") from exc
 
+        if (parent_run_id is None) != (budget_lineage_key is None):
+            raise WorkbenchTaskError("parent_run_id and budget_lineage_key must be supplied together")
+        if parent_run_id is not None:
+            try:
+                parent_run_id = str(UUID(parent_run_id))
+            except (ValueError, TypeError, AttributeError) as exc:
+                raise WorkbenchTaskError("parent_run_id must be a UUID") from exc
+            if not isinstance(budget_lineage_key, str) or not budget_lineage_key.strip():
+                raise WorkbenchTaskError("budget_lineage_key must be non-empty")
+
         request_body = {
             "tenant_id": tenant_id, "actor_id": actor_id, "agent_id": agent_id,
             "project_id": project_id, "session_id": session_id, "input": dict(input),
         }
+        if parent_run_id is not None:
+            request_body["parent_run_id"] = parent_run_id
+            request_body["budget_lineage_key"] = budget_lineage_key
         # Preserve the pre-existing idempotency digest for ordinary submissions;
         # deterministic child Run IDs are included only when explicitly supplied.
         if run_id is not None:
