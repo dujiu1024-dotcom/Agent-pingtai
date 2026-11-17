@@ -270,6 +270,22 @@ class KnowledgeService:
             raise RuntimeError("repository does not support chunk ACLs")
         return await revoke(principal.tenant_id, chunk_id, principal_type, principal_id, permission)
 
+    async def list_document_chunks(self, *, principal: KnowledgePrincipal, document_id: str):
+        document = await self.repository.get_document(principal.tenant_id, document_id)
+        if document is None: raise ValueError("document not found")
+        visible = await self.repository.list_documents(principal, limit=500)
+        if not any(item.document_id == document_id and item.version == document.version for item in visible):
+            raise PermissionError("document read is not authorized")
+        return await self.repository.list_chunks(principal.tenant_id, document_id, document.version)
+
+    async def update_document_chunk(self, *, principal: KnowledgePrincipal, document_id: str, chunk_id: str, text: str):
+        document = await self.repository.get_document(principal.tenant_id, document_id)
+        if document is None: raise ValueError("document not found")
+        if not self._can_manage_document(document, principal): raise PermissionError("chunk editing is not authorized")
+        update = getattr(self.repository, "update_chunk", None)
+        if not callable(update): raise RuntimeError("repository does not support chunk editing")
+        return await update(principal.tenant_id, document_id, document.version, chunk_id, text)
+
     async def delete_document(self,*,principal: KnowledgePrincipal,document_id: str)->bool:
         document=await self.repository.get_document(principal.tenant_id,document_id)
         if document is None:

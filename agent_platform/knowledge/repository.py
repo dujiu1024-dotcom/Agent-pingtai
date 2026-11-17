@@ -58,6 +58,9 @@ class KnowledgeRepository(Protocol):
         grants: Sequence[tuple[str, str, str]], granted_by: str,
     ) -> None: ...
 
+    async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]: ...
+    async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None: ...
+
     async def delete_document(self, tenant_id: str, document_id: str) -> bool: ...
 
 
@@ -348,6 +351,22 @@ class InMemoryKnowledgeRepository:
         key = (tenant_id, document_id)
         self.document_acl_enforced.add(key)
         self.document_acl[key] = normalized
+
+    async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]:
+        return list(self.chunks.get((tenant_id, document_id, version), []))
+
+    async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None:
+        from dataclasses import replace
+        from agent_platform.knowledge.chunking import sha256_text
+        if not isinstance(text, str) or not text.strip() or len(text) > 20000:
+            raise ValueError("chunk text must contain 1-20000 characters")
+        items = self.chunks.get((tenant_id, document_id, version), [])
+        for index, chunk in enumerate(items):
+            if chunk.chunk_id == chunk_id:
+                updated = replace(chunk, text=text, content_hash=sha256_text(text), end_offset=chunk.start_offset + len(text), metadata={**chunk.metadata, "embedding_status": "stale"})
+                items[index] = updated
+                return updated
+        return None
 
     async def delete_document(self, tenant_id: str, document_id: str) -> bool:
         from dataclasses import replace

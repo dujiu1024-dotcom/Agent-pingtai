@@ -96,6 +96,21 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         self.assertEqual(result.json()["answer_summary"]["answer_accuracy"], 1.0)
         self.assertEqual(result.json()["answer_summary"]["citation_correctness_rate"], 1.0)
 
+    def test_chunk_preview_and_manual_edit_are_acl_scoped(self):
+        created = self.client.post("/api/platform/v1/knowledge/documents", json={"title":"chunk source", "scope":"private", "content":"alpha beta gamma delta"})
+        document_id = created.json()["document_id"]
+        preview = self.client.get(f"/api/platform/v1/knowledge/documents/{document_id}/chunks")
+        self.assertEqual(preview.status_code, 200)
+        chunk = preview.json()["items"][0]
+        self.assertEqual(chunk["token_count"], 4)
+        denied = self.client.patch(f"/api/platform/v1/knowledge/documents/{document_id}/chunks/{chunk['chunk_id']}", json={"text":"tampered"}, headers={"x-user":"user-b"})
+        self.assertEqual(denied.status_code, 403)
+        updated = self.client.patch(f"/api/platform/v1/knowledge/documents/{document_id}/chunks/{chunk['chunk_id']}", json={"text":"edited chunk body"})
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["embedding_status"], "stale")
+        refreshed = self.client.get(f"/api/platform/v1/knowledge/documents/{document_id}/chunks")
+        self.assertEqual(refreshed.json()["items"][0]["text"], "edited chunk body")
+
     def test_private_document_upload_and_search_are_user_scoped(self):
         response = self.client.post(
             "/api/platform/v1/knowledge/documents",

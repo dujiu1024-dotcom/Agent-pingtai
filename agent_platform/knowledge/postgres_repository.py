@@ -430,6 +430,27 @@ class PostgresKnowledgeRepository:
                         (tenant_id, document_id, kind, identifier, permission, granted_by),
                     )
 
+    async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]:
+        conn = await self._connect()
+        async with conn:
+            cur = await conn.execute("SELECT * FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s AND document_version=%s ORDER BY ordinal", (tenant_id, document_id, version))
+            rows = await cur.fetchall()
+        return [DocumentChunk(tenant_id=r["tenant_id"], document_id=str(r["document_id"]), document_version=r["document_version"], ordinal=r["ordinal"], text=r["body"], content_hash=r["content_hash"], start_offset=r["start_offset"], end_offset=r["end_offset"], page_number=r["page_number"], chunk_id=str(r["chunk_id"]), metadata=dict(r["metadata"] or {})) for r in rows]
+
+    async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None:
+        if not isinstance(text, str) or not text.strip() or len(text) > 20000:
+            raise ValueError("chunk text must contain 1-20000 characters")
+        from agent_platform.knowledge.chunking import sha256_text
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute("UPDATE knowledge_chunks SET body=%s, content_hash=%s, end_offset=start_offset+char_length(%s), metadata=metadata || %s WHERE tenant_id=%s AND document_id=%s AND document_version=%s AND chunk_id=%s RETURNING *", (text, sha256_text(text), text, _jsonb({"embedding_status":"stale"}), tenant_id, document_id, version, chunk_id))
+                row = await cur.fetchone()
+                if row is None: return None
+                await conn.execute("DELETE FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id=%s", (tenant_id, chunk_id))
+                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'content_edited')", (tenant_id, chunk_id))
+        return DocumentChunk(tenant_id=row["tenant_id"], document_id=str(row["document_id"]), document_version=row["document_version"], ordinal=row["ordinal"], text=row["body"], content_hash=row["content_hash"], start_offset=row["start_offset"], end_offset=row["end_offset"], page_number=row["page_number"], chunk_id=str(row["chunk_id"]), metadata=dict(row["metadata"] or {}))
+
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
         conn=await self._connect()
         async with conn:
