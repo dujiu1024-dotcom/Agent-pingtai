@@ -1,5 +1,12 @@
-"""Governed cross-session memory."""
-from agent_platform.memory.review import (\n    InMemoryMemoryReviewAuditRepository,\n    MemoryCandidateWorkflow,\n    MemoryReviewDecision,\n    MemoryReviewEvent,\n)\nfrom agent_platform.memory.service import (
+"""Governed cross-session memory and candidate review."""
+
+from agent_platform.memory.review import (
+    InMemoryMemoryReviewAuditRepository,
+    MemoryCandidateWorkflow,
+    MemoryReviewDecision,
+    MemoryReviewEvent,
+)
+from agent_platform.memory.service import (
     InMemoryMemoryRepository,
     MemoryCandidate,
     MemoryPrincipal,
@@ -9,4 +16,16 @@ from agent_platform.memory.review import (\n    InMemoryMemoryReviewAuditReposit
     MemoryStatus,
 )
 
-__all__=["InMemoryMemoryRepository","MemoryCandidate","MemoryPrincipal","MemoryRecord","MemoryScope","MemoryService","MemoryStatus","InMemoryMemoryReviewAuditRepository","MemoryCandidateWorkflow","MemoryReviewDecision","MemoryReviewEvent"]
+__all__ = [
+    "InMemoryMemoryRepository",
+    "MemoryCandidate",
+    "MemoryPrincipal",
+    "MemoryRecord",
+    "MemoryScope",
+    "MemoryService",
+    "MemoryStatus",
+    "InMemoryMemoryReviewAuditRepository",
+    "MemoryCandidateWorkflow",
+    "MemoryReviewDecision",
+    "MemoryReviewEvent",
+]
