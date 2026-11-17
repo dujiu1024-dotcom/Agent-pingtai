@@ -699,7 +699,8 @@ class RunExecutionWorker:
         actor_id = record.get("created_by") or record.get("actor_id")
         session_context = None
         if session_id is not None:
-            if not isinstance(session_id, str) or not session_id.strip():
+            session_id = str(session_id)
+            if not session_id.strip():
                 raise WorkbenchTaskError("persisted session_id is invalid")
             if not isinstance(actor_id, str) or not actor_id.strip():
                 raise WorkbenchTaskError("session-backed Run is missing its actor identity")
