@@ -77,6 +77,7 @@ jobs:
             tests.test_multi_expert_workflow_integration \
             tests.test_tool_gateway \
             tests.test_sandbox_oci \
+            tests.test_issue_21_c_21_02_security_negative \
             tests.test_run_lifecycle \
             tests.test_event_consumer \
             tests.test_outbox \
