@@ -52,6 +52,7 @@ include = [
   "tests/test_approval_workbench_ui.py",
   "tests/test_identity_audit_contract.py",
   "tests/test_platform_api_app.py",
+  "tests/test_issue_14_c_14_05_responsive_workbench.py",
   "tests/test_identity_http.py",
   "tests/test_identity_api.py",
   "tests/test_identity_context.py",
