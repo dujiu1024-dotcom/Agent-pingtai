@@ -1,11 +1,19 @@
-# Structured output schema contract
+# Structured output schema contract (C-12-04)
 
-Schemas are registered by stable ID and positive integer version. A registered version is immutable; incompatible revisions require a new version. Omitting a requested version selects the latest registered version. Registration rejects unsupported JSON Schema keywords rather than silently ignoring them.
+The runtime's `SchemaValidatedHarnessAdapter` is the enforcement boundary: it validates model output before returning a successful Harness result and performs only a bounded number of repair attempts through the same adapter.
 
-The built-in validator supports primitive types, object properties/required/additionalProperties, array items, enum/const, numeric bounds, string length/pattern, and object/array size bounds. Deployments needing the full JSON Schema specification should inject a conforming validator in a later extension rather than assume unsupported keywords work.
+## Schema registration and versions
+- `StructuredOutputSchemaRegistry` registers schemas by stable ID and positive integer version. A version is immutable and resolution is explicitly pinned to the requested version.
+- `PostgresStructuredOutputSchemaRegistry` provides tenant-scoped, append-only persistence. Registration stores a canonical JSON representation and SHA-256 digest; conflicting re-registration fails. Resolution verifies the stored digest.
+- Schema validation rejects unsupported keywords and malformed constraints rather than silently ignoring them.
 
-Repair is opt-in and bounded to 0–5 retries. A repair callback receives the raw output, schema version, validation issues and attempt number; synchronous and asynchronous callbacks are accepted. Every repaired response is parsed and validated again. Unvalidated output is never returned.
+## Validation and repair
+- JSON parsing rejects non-standard constants and non-finite numeric values.
+- Validation covers primitive types, enums, object required/properties/additionalProperties, arrays/items and bounds for strings, arrays and numbers.
+- Repair retries are bounded (0–3) and re-enter the Harness adapter with validation errors in the instructions. The result is validated again; invalid output never becomes a successful result.
+- A terminal `StructuredOutputValidationError` carries diagnostics and attempt count. Schema lookup/registration failures are fail-closed.
 
-Stable failure codes: schema_registration_error, schema_not_found, schema_version_conflict, output_parse_error, output_validation_error, output_repair_exhausted. Errors expose attempt count and issue details. Exhaustion fails explicitly; callers choose whether to fail the Run, request human review or use an explicitly configured fallback.
+## Failure semantics
+A schema lookup failure, malformed schema, invalid JSON, schema mismatch or exhausted retry budget fails the Harness call. The adapter does not silently return raw text as a valid structured result. The caller decides whether the Run should fail or be routed for human review.
 
-The included registry is in-memory. Production should persist schemas with tenant/project authorization and immutable version constraints. Repair input/output is untrusted model content.
+The in-memory registry is suitable for tests and single-process use. Multi-worker production deployments should use the PostgreSQL registry and tenant-scoped authorization.
