@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 import types
 import unittest
-from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 from agent_platform.graph.postgres_repository import PostgresGraphRepository
@@ -12,9 +11,9 @@ from agent_platform.graph.schema import (
     GraphEntity,
     GraphRelation,
     GraphSchemaRegistry,
-    RelationTypeDefinition,
     PropertyDefinition,
     PropertyKind,
+    RelationTypeDefinition,
 )
 
 
