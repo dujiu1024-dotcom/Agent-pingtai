@@ -15,7 +15,7 @@ from agent_platform.identity.models import Principal
 from agent_platform.quotas.service import Budget, QuotaService
 
 
-def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None, quota_policy_service: Any | None = None, authorize_policy_scope: Any | None = None) -> APIRouter:
+def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None, quota_policy_service: Any | None = None, authorize_policy_scope: Any | None = None, authorize_default_policy: Any | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/quotas", tags=["quotas"])
 
     def actor(request: Request) -> Principal:
@@ -206,6 +206,13 @@ def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaServi
             if scope_type == "default":
                 if scope_id != "*":
                     raise ValueError("default policy scope_id must be '*'")
+                if authorize_default_policy is None:
+                    raise PermissionError("platform default policy authorization is not configured")
+                default_allowed = authorize_default_policy(principal)
+                if inspect.isawaitable(default_allowed):
+                    default_allowed = await default_allowed
+                if default_allowed is not True:
+                    raise PermissionError("platform default policy permission required")
                 tenant_id = None
             elif scope_type == "tenant":
                 if scope_id != principal.tenant_id:
