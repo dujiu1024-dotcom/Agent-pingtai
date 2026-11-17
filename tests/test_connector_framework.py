@@ -7,6 +7,7 @@ from agent_platform.connectors.base import (
     ConnectorAuthenticationError,
     SecretStoreConnectorAuthenticator,
 )
+from agent_platform.control_plane.data_connectors import DataConnection, DataConnectorService, InMemoryConnectorRepository
 from agent_platform.control_plane.http_connector_provider import (
     HTTPJSONConnectorProvider,
     JSONHTTPResponse,
@@ -122,6 +123,43 @@ class ConnectorFrameworkTests(unittest.IsolatedAsyncioTestCase):
             [("drive.readonly",), ("sites.read.all",), ("files.read",)],
         )
         self.assertEqual(http_client.calls[0][2]["headers"]["Authorization"], "Bearer short-lived-token")
+
+    async def test_data_connector_service_uses_shared_auth_for_migrated_provider(self):
+        store = FakeSecretStore()
+        auth = self.make_authenticator(store)
+        client = FakeHTTPClient()
+        provider = HTTPJSONConnectorProvider(
+            list_endpoint="https://connector.example.test/files",
+            revoke_endpoint="https://connector.example.test/revoke",
+            allowed_hosts=frozenset({"connector.example.test"}), client=client,
+            credential_ref="secret://tenant-a/credentials/http",
+            authenticator=auth, auth_scopes=("files.read",),
+        )
+        repository = InMemoryConnectorRepository()
+        await repository.add(DataConnection(
+            tenant_id="tenant-a", connection_id="http-1", provider="http",
+            secret_ref="secret://tenant-a/credentials/http", scopes=("files.read",),
+        ))
+
+        class Sink:
+            async def upsert_page(self, **kwargs):
+                self.last_page = kwargs
+            async def revoke_connection(self, **kwargs):
+                self.last_revocation = kwargs
+
+        class MustNotResolveLegacySecrets:
+            async def resolve(self, secret_ref):
+                raise AssertionError("legacy resolver must not bypass BaseConnector auth")
+
+        service = DataConnectorService(
+            repository=repository, providers={"http": provider},
+            secrets=MustNotResolveLegacySecrets(), sink=Sink(),
+        )
+        self.assertEqual(await service.sync_once(tenant_id="tenant-a", connection_id="http-1"), 0)
+        self.assertEqual(len(store.calls), 1)
+        self.assertEqual(
+            client.calls[0][2]["headers"]["Authorization"], "Bearer short-lived-token",
+        )
 
     async def test_legacy_resolver_path_remains_compatible(self):
         connector = BaseConnector(
