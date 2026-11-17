@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 
 class ProductionConfigurationError(ValueError):
@@ -95,7 +95,21 @@ def load_production_settings(
             "missing required configuration: ALLOWED_ORIGINS"
         )
     for origin in origins:
-        if not origin.startswith("https://") or "*" in origin:
+        try:
+            parsed = urlsplit(origin)
+            valid = (
+                parsed.scheme == "https"
+                and bool(parsed.hostname)
+                and parsed.username is None
+                and parsed.password is None
+                and not parsed.path
+                and not parsed.query
+                and not parsed.fragment
+                and "*" not in parsed.netloc
+            )
+        except ValueError:
+            valid = False
+        if not valid:
             raise ProductionConfigurationError(
                 "ALLOWED_ORIGINS must contain exact HTTPS origins"
             )
