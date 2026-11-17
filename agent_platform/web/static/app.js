@@ -102,7 +102,7 @@ document.addEventListener("submit",async e=>{
 
 // Capability visibility is presentation-only; every API still enforces authorization.
 const VIEW_CAPABILITIES={
- sessions:["sessions"],tasks:["task_execution"],approvals:["approvals"],
+ sessions:["sessions"],tasks:["task_execution","batch_execution"],approvals:["approvals"],
  registry:["registry","resource_registry"],
  governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"]
 };
@@ -128,3 +128,39 @@ const capabilityBaseNav=nav;
 nav=function(view){if(!viewCapabilityEnabled(view)){toast("该工作台能力当前未启用");return}return capabilityBaseNav(view)};
 
 refresh().then(()=>{if(S.me){applyCapabilityGate();if(!viewCapabilityEnabled(S.view))nav("overview")}});
+
+
+// C-31-03: Batch Execution is exposed inside the existing #14 task-center workbench.
+const taskBatchBaseRender=render;
+async function renderBatchWorkbench(){
+ const root=$("#view");
+ if(!S.features.batch_execution)return;
+ let items=[];
+ try{items=await list(API+"/workbench/batches?limit=100")}catch(e){
+  root.insertAdjacentHTML("beforeend",panel("批量执行","<p class='error'>批量 API 不可用："+esc(e.message)+"</p>"));return;
+ }
+ const rows=items.map(x=>"<tr><td>"+esc(x.batch_id)+"</td><td>"+esc(x.template_id)+"</td><td>"+esc(x.status)+"</td><td>"+esc(x.total??"—")+"</td><td>"+esc(x.succeeded??"—")+"</td><td>"+esc(x.failed??"—")+"</td><td>"+btn("详情","data-batch='"+esc(x.batch_id)+"'")+" "+btn("取消","data-batch-cancel='"+esc(x.batch_id)+"'")+" "+btn("重试失败项","data-batch-retry='"+esc(x.batch_id)+"'")+"</td></tr>").join("");
+ root.insertAdjacentHTML("beforeend",
+  panel("批量 Agent 执行",
+   "<form id='batch-submit-form'><div class='form-grid'><label>模板 ID<input name='template_id' required></label><label>最大并发<input name='max_concurrency' type='number' min='1' max='1000' value='8'></label></div><label>输入数据集（JSON 数组，每项为对象）<textarea name='dataset' required>[{\"prompt\":\"任务一\"},{\"prompt\":\"任务二\"}]</textarea></label><label>幂等键（可选）<input name='idempotency_key' maxlength='200'></label><button class='button primary'>提交批量任务</button></form>")+
+  panel("批量任务队列",table(["Batch","模板","状态","总数","成功","失败","操作"],items.map(x=>"<tr><td>"+esc(x.batch_id)+"</td><td>"+esc(x.template_id)+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.total??"—")+"</td><td>"+esc(x.succeeded??"—")+"</td><td>"+esc(x.failed??"—")+"</td><td>"+btn("详情","data-batch='"+esc(x.batch_id)+"'")+" "+btn("取消","data-batch-cancel='"+esc(x.batch_id)+"'")+" "+btn("重试失败项","data-batch-retry='"+esc(x.batch_id)+"'")+"</td></tr>"))+
+  "<div id='batch-detail'></div>"
+ );
+}
+render=async function(){await taskBatchBaseRender();if(S.view==="tasks")await renderBatchWorkbench()};
+document.addEventListener("submit",async e=>{
+ const f=e.target;if(f.id!=="batch-submit-form")return;e.preventDefault();
+ const d=new FormData(f);let dataset;
+ try{dataset=JSON.parse(String(d.get("dataset")||""))}catch(_){toast("数据集 JSON 格式无效");return}
+ const body={template_id:String(d.get("template_id")||"").trim(),dataset,max_concurrency:Number(d.get("max_concurrency")||8)};
+ const key=String(d.get("idempotency_key")||"").trim();if(key)body.idempotency_key=key;
+ try{const result=await api(API+"/workbench/batches",{method:"POST",body:JSON.stringify(body)});toast("批量任务已提交："+result.batch_id);await renderBatchWorkbench()}catch(x){toast(x.message)}
+});
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("[data-batch],[data-batch-cancel],[data-batch-retry]");if(!b)return;
+ try{
+  if(b.dataset.batch){const detail=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batch));$("#batch-detail").innerHTML=panel("批量任务详情",pre(detail));return}
+  if(b.dataset.batchCancel){const result=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batchCancel)+"/cancel",{method:"POST",body:"{}"});toast("批量任务已取消");await renderBatchWorkbench();return}
+  if(b.dataset.batchRetry){const result=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batchRetry)+"/retry",{method:"POST",body:JSON.stringify({idempotency_key:"workbench-retry-"+Date.now()})});toast("失败任务已重新提交："+(result.batch_id||""));await renderBatchWorkbench()}
+ }catch(x){toast(x.message)}
+});
