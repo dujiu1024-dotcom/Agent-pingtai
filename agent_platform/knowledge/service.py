@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+from dataclasses import replace
 from typing import Protocol, Sequence
+from uuid import uuid4
 
 from agent_platform.knowledge.chunking import clean_document_text, chunk_document, sha256_text
 from agent_platform.knowledge.connectors import KnowledgeConnector
@@ -466,11 +469,14 @@ class KnowledgeService:
         from time import monotonic
         started=monotonic()
         status="failed"
-        metadata={"tenant_id":principal.tenant_id,"query_chars":len(query),"limit":limit}
+        retrieval_id=str(uuid4())
+        query_fingerprint=hashlib.sha256(query.strip().encode("utf-8")).hexdigest()
+        candidate_limit=max(limit*4,20)
+        metadata={"tenant_id":principal.tenant_id,"query_chars":len(query),"limit":limit,"retrieval_id":retrieval_id}
         try:
             with safe_observation(
                 self.observer,name="knowledge.retrieve",
-                input={"query_chars":len(query),"limit":limit},metadata=metadata,
+                input={"query_chars":len(query),"limit":limit,"retrieval_id":retrieval_id},metadata=metadata,
             ) as span:
                 rewritten = query.strip()
                 rewrite_applied = False
@@ -489,11 +495,28 @@ class KnowledgeService:
                 if vector is not None and dimensions is not None and len(vector)!=dimensions:
                     raise ValueError("embedding dimension mismatch")
                 # Tenant and resource ACLs are applied inside the repository query before chunk bodies leave storage.
-                hits=await self.repository.search(principal=principal,query=rewritten,query_vector=vector,limit=max(limit*4,20))
-                if self.reranker and hits:hits=list(await self.reranker.rerank(query,hits))
-                result=list(hits[:limit])
+                hits=await self.repository.search(principal=principal,query=rewritten,query_vector=vector,limit=candidate_limit)
+                reranked = bool(self.reranker and hits)
+                if reranked:
+                    hits=list(await self.reranker.rerank(query,hits))
+                result=[]
+                for rank, hit in enumerate(hits[:limit], start=1):
+                    trace={
+                        **dict(hit.retrieval_trace),
+                        "retrieval_id":retrieval_id,
+                        "query_fingerprint":query_fingerprint,
+                        "strategy":strategy.value,
+                        "candidate_limit":candidate_limit,
+                        "result_limit":limit,
+                        "result_rank":rank,
+                        "query_rewritten":rewrite_applied,
+                        "embedding_model":getattr(self.embedder,"storage_key",getattr(self.embedder,"model_id",None)),
+                        "reranker_applied":reranked,
+                        "acl_filtered_before_ranking":True,
+                    }
+                    result.append(replace(hit,retrieval_trace=trace))
                 status="succeeded"
-                safe_update(span,output={"status":status,"result_count":len(result),"query_rewritten":rewrite_applied})
+                safe_update(span,output={"status":status,"result_count":len(result),"query_rewritten":rewrite_applied,"retrieval_id":retrieval_id,"reranker_applied":reranked})
                 return result
         except Exception as exc:
             # Do not put the query or provider exception text into trace payloads.
