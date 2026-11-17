@@ -370,8 +370,9 @@ def migration_diff_report(
             "consistent": consistent,
             "consistency_rate": (
                 1.0 if consistent and totals["source_rows"] == totals["target_rows"]
-                else (totals["matched_rows"] / totals["source_rows"]
-                      if totals["source_rows"] else 0.0)
+                else (totals["matched_rows"] / max(
+                    totals["source_rows"], totals["target_rows"]
+                ) if max(totals["source_rows"], totals["target_rows"]) else 0.0)
             ),
             "values_included": False,
         }
