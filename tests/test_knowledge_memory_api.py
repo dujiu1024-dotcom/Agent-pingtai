@@ -75,7 +75,7 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         document_id = response.json()["document_id"]
-        payload = {"k": 3, "cases": [{
+        payload = {"dataset_id": "api-smoke", "dataset_version": 1, "k": 3, "cases": [{
             "case_id": "alpha-case", "query": "alpha evidence",
             "expected_document_ids": [document_id],
             "expected_answer_terms": ["Evidence-backed"],
@@ -89,7 +89,12 @@ class KnowledgeMemoryApiTests(unittest.TestCase):
         )
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.json()["retrieval_summary"]["case_count"], 1)
+        self.assertEqual(result.json()["dataset_id"], "api-smoke")
+        self.assertEqual(result.json()["dataset_version"], 1)
+        self.assertEqual(len(result.json()["evaluation_fingerprint"]), 64)
         self.assertEqual(result.json()["answer_summary"]["grounded_cases"], 1)
+        self.assertEqual(result.json()["answer_summary"]["answer_accuracy"], 1.0)
+        self.assertEqual(result.json()["answer_summary"]["citation_correctness_rate"], 1.0)
 
     def test_private_document_upload_and_search_are_user_scoped(self):
         response = self.client.post(
