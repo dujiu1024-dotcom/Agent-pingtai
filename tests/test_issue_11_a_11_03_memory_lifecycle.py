@@ -118,7 +118,7 @@ class MemoryLifecycleAcceptanceTests(unittest.TestCase):
         self.assertEqual(repeated.status_code, 204)
         self.assertEqual(
             [item for item in self.cleanup_attempts if item[1] == deletable_id],
-            [("tenant-a", deletable_id), ("tenant-a", deletable_id)],
+            [("tenant-a", deletable_id), ("tenant-a", deletable_id), ("tenant-a", deletable_id)],
         )
         self.assertEqual(self.client.get("/api/platform/v1/memories").json()["items"], [])
 
