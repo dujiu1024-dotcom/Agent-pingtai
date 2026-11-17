@@ -6,7 +6,7 @@ from agent_platform.runtime.harness_benchmark import HarnessBenchmarkObservation
 
 def observation(*, passed=True, duration=100, quality=1.0, cost=0.001, skipped=False):
     return HarnessBenchmarkObservation(
-        runtime="candidate", case_id="case", passed=passed, duration_ms=duration,
+        runtime="candidate", case_id=f"case-{duration}", passed=passed, duration_ms=duration,
         finish_reason="completed", usage={"input_tokens": 10}, matched_expectations=("ok",),
         missing_expectations=(), output_text="ok", quality_score=quality,
         estimated_cost_usd=cost, skipped=skipped,
@@ -49,6 +49,43 @@ class HarnessBaselineGateTests(unittest.TestCase):
         self.assertFalse(result["checks"]["quality"])
         self.assertFalse(result["checks"]["p95_latency"])
         self.assertFalse(result["checks"]["skipped_rate"])
+
+    def test_single_smoke_observation_cannot_pass_default_production_baseline(self):
+        # A perfect one-off smoke result is insufficient production-selection evidence.
+        result = evaluate_harness_baseline(
+            HarnessBenchmarkReport((observation(),)),
+            runtime="candidate",
+        )
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["minimum_eligible_cases"])
+        self.assertEqual(result["baseline"]["min_eligible_cases"], 5)
+        self.assertEqual(result["metrics"]["distinct_eligible_cases"], 1)
+
+    def test_repeated_smoke_case_does_not_fake_representative_task_coverage(self):
+        # Re-running the same case does not count as distinct task coverage.
+        report = HarnessBenchmarkReport(tuple(observation() for _ in range(5)))
+        result = evaluate_harness_baseline(report, runtime="candidate")
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["minimum_eligible_cases"])
+        self.assertEqual(result["metrics"]["eligible_cases"], 5)
+        self.assertEqual(result["metrics"]["distinct_eligible_cases"], 1)
+
+    def test_representative_multi_case_evidence_can_pass_default_baseline(self):
+        rows = tuple(
+            HarnessBenchmarkObservation(
+                runtime="candidate", case_id=f"case-{index}", passed=True,
+                duration_ms=100 + index, finish_reason="completed",
+                usage={"input_tokens": 10}, matched_expectations=("ok",),
+                missing_expectations=(), output_text="ok", quality_score=1.0,
+                estimated_cost_usd=0.001,
+            )
+            for index in range(5)
+        )
+        result = evaluate_harness_baseline(
+            HarnessBenchmarkReport(rows), runtime="candidate"
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["metrics"]["distinct_eligible_cases"], 5)
 
     def test_rejects_invalid_thresholds(self):
         with self.assertRaisesRegex(ValueError, "min_pass_rate"):
