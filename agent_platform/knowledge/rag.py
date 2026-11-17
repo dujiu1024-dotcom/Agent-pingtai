@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import uuid4
 from time import monotonic
 from typing import Any, Mapping, Protocol, Sequence
+from uuid import uuid4
 
 from agent_platform.knowledge.citations import citation_context
 from agent_platform.knowledge.contracts import KnowledgePrincipal, RetrievalHit
