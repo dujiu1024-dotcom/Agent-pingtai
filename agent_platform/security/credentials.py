@@ -51,7 +51,7 @@ class CredentialRepository(Protocol):
         consumer_type: str, consumer_id: str,
     ) -> CredentialGrant | None: ...
     async def revoke(self, *, tenant_id: str, credential_id: str) -> bool: ...
-
+    async def revoke_grant(\n        self, *, tenant_id: str, credential_id: str, consumer_type: str, consumer_id: str,\n    ) -> None: ...\n
 
 class CredentialService:
     """Create, share and resolve credentials with explicit tenant/scope checks."""
@@ -88,7 +88,7 @@ class CredentialService:
             raise ValueError("tenant_id contains unsupported characters")
         clean_name = self._required(name, "name")
         actor = self._required(created_by, "created_by")
-        if credential_type not in _CREDENTIAL_TYPES:
+        if not isinstance(credential_type, str) or credential_type not in _CREDENTIAL_TYPES:
             raise ValueError("credential_type must be oauth, api_key or service_account")
         tags = self._scopes(scopes)
         credential_id = str(uuid4())
@@ -111,6 +111,10 @@ class CredentialService:
             # Do not leave an unindexed active secret if metadata/audit commit fails.
             try:
                 await self._secrets.revoke(secret_ref=secret_ref)
+            except Exception:
+                pass
+            try:
+                await self._repository.revoke(tenant_id=tenant, credential_id=credential_id)
             except Exception:
                 pass
             raise
@@ -139,12 +143,19 @@ class CredentialService:
             scopes=requested, granted_by=actor, created_at=datetime.now(timezone.utc),
         )
         await self._repository.grant(grant)
-        await self._audit.record(
+        try:
+            await self._audit.record(
             tenant_id=tenant, actor_id=actor, action="credential.granted",
             subject_id=credential,
-            detail={"consumer_type": consumer_type, "consumer_id": consumer,
-                    "scopes": list(requested)},
-        )
+                detail={"consumer_type": consumer_type, "consumer_id": consumer,
+                        "scopes": list(requested)},
+            )
+        except Exception:
+            await self._repository.revoke_grant(
+                tenant_id=tenant, credential_id=credential,
+                consumer_type=consumer_type, consumer_id=consumer,
+            )
+            raise
         return grant
 
     async def resolve(
@@ -284,6 +295,17 @@ class PostgresCredentialRepository:
             scopes=tuple(row["scopes"] or ()), granted_by=row["granted_by"],
             created_at=row["created_at"],
         )
+
+    async def revoke_grant(self, *, tenant_id: str, credential_id: str,
+                           consumer_type: str, consumer_id: str) -> None:
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """DELETE FROM platform_credential_grants
+                   WHERE tenant_id=%s AND credential_id=%s
+                     AND consumer_type=%s AND consumer_id=%s""",
+                (tenant_id, credential_id, consumer_type, consumer_id),
+            )
 
     async def revoke(self, *, tenant_id: str, credential_id: str) -> bool:
         connection = await self._connect()
