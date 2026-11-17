@@ -179,7 +179,7 @@ include = [
   "tests/test_evaluation_comparison.py",
   "tests/test_evaluation_comparison_api.py",
   "tests/test_issue_27_a_27_01_credential_acceptance.py",
-  "tests/test_production_composition_root.py",
+  "tests/test_issue_24_a_24_01_rag_e2e_acceptance.py",
 ]
 
 [tool.ruff.lint]
