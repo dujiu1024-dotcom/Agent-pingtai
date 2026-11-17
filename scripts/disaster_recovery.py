@@ -55,8 +55,8 @@ def validate_record(record: dict[str, Any], policy: dict[str, Any]) -> dict[str,
     if resumed < incident:
         raise ValueError("traffic_resumed_at cannot be before incident_declared_at")
 
-    measured_rpo = (incident - last_good).total_seconds()
-    measured_rto = (resumed - incident).total_seconds()
+    measured_rpo = round((incident - last_good).total_seconds(), 3)
+    measured_rto = round((resumed - incident).total_seconds(), 3)
     scope = record.get("scope", "full_platform")
     objectives = policy["objectives"]
     objective = objectives.get(scope)
@@ -75,7 +75,10 @@ def validate_record(record: dict[str, Any], policy: dict[str, Any]) -> dict[str,
             failures.append(f"component check missing or failed: {component}")
 
     consistency = record.get("consistency_checks", {})
-    for gate in policy["consistency_gates"]:
+    consistency_gates = policy.get("consistency_gates_by_scope", {}).get(
+        scope, policy["consistency_gates"]
+    )
+    for gate in consistency_gates:
         if consistency.get(gate) is not True:
             failures.append(f"consistency gate missing or failed: {gate}")
 
@@ -103,8 +106,8 @@ def validate_record(record: dict[str, Any], policy: dict[str, Any]) -> dict[str,
     return {
         "exercise_id": record.get("exercise_id"),
         "scope": scope,
-        "measured_rpo_seconds": int(measured_rpo),
-        "measured_rto_seconds": int(measured_rto),
+        "measured_rpo_seconds": measured_rpo,
+        "measured_rto_seconds": measured_rto,
         "target_rpo_seconds": rpo_target,
         "target_rto_seconds": rto_target,
         "passed": not failures,
