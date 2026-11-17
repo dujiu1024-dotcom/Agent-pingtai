@@ -67,6 +67,26 @@ document.addEventListener("submit",async e=>{
  }catch(x){target.innerHTML=panel("质量评测失败","<p class='error'>"+esc(x.message)+"</p>")}
 });
 
+document.addEventListener("submit",async e=>{
+ const form=e.target;if(form.id!=="rag-eval-form")return;e.preventDefault();
+ const d=new FormData(form),target=$("#rag-eval-results");
+ let dataset;try{dataset=JSON.parse(String(d.get("dataset")||""))}catch(_){target.innerHTML=panel("测试集格式错误","<p class='error'>请输入有效 JSON。</p>");return}
+ const topK=Number(d.get("top_k")),threshold=Number(d.get("min_score"));
+ if(!Number.isInteger(topK)||topK<1||topK>20||!Number.isFinite(threshold)||threshold<0||threshold>1){toast("Top-K 或相似度阈值无效");return}
+ target.innerHTML="<section class='panel'>正在批量检索并计算质量指标…</section>";
+ try{
+  const report=await api(API+"/rag-playground/evaluate",{method:"POST",body:JSON.stringify({
+   dataset,top_k:topK,min_score:threshold,embedding_model:String(d.get("embedding_model")||""),
+   rerank:d.get("rerank")==="on"
+  })});
+  const metric=v=>v===null||v===undefined?"N/A":(Number(v)*100).toFixed(2)+"%";
+  const rows=[["Hit Rate@K",metric(report.hit_rate_at_k)],["MRR",metric(report.mrr)],["NDCG@K",metric(report.ndcg_at_k)],["Token 覆盖比",metric(report.token_coverage)]].map(x=>"<tr><td>"+esc(x[0])+"</td><td><strong>"+esc(x[1])+"</strong></td></tr>");
+  const details=(report.cases||[]).map(c=>"<tr><td>"+esc(c.case_id)+"</td><td>"+metric(c.hit_rate_at_k)+"</td><td>"+metric(c.reciprocal_rank)+"</td><td>"+metric(c.ndcg_at_k)+"</td><td>"+metric(c.token_coverage)+"</td><td>"+esc((c.retrieved_source_uris||[]).join(", "))+"</td></tr>");
+  const meta="<p class='subtle'>数据集："+esc(report.dataset_id)+" v"+esc(report.dataset_version)+" · Cases："+esc(report.evaluated_cases)+" · Top-K："+esc(report.top_k)+" · Embedding："+esc(report.embedding_model)+" · Rerank："+(report.rerank?"开启":"关闭")+" · Tokenizer："+esc(report.tokenizer)+"</p><p class='subtle'>Run fingerprint："+esc(report.run_fingerprint)+"</p>";
+  target.innerHTML=panel("质量指标汇总",meta+table(["指标","得分"],rows))+panel("逐题结果",table(["Case","Hit Rate@K","MRR","NDCG@K","Token 覆盖比","召回来源"],details));
+ }catch(x){target.innerHTML=panel("质量评测失败","<p class='error'>"+esc(x.message)+"</p>")}
+});
+
 document.addEventListener("submit",async e=>{const f=e.target;if(f.id!=="registry-create")return;e.preventDefault();const d=new FormData(f);let definition;try{definition=JSON.parse(d.get("definition"))}catch{toast("资源定义必须是合法 JSON");return}if(!definition||Array.isArray(definition)||typeof definition!=="object"){toast("资源定义必须是 JSON 对象");return}try{const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(d.get("item_id"))+"/versions",{method:"POST",body:JSON.stringify({definition})});toast("草稿已创建");await renderRegistry()}catch(x){toast(x.message)}});
 document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.regVersions){const kind=S.registryKind||"agent",id=b.dataset.regVersions,versions=await list(registryPath(kind)+"/"+encodeURIComponent(id)+"/versions");$("#view").insertAdjacentHTML("beforeend",panel("版本历史 · "+esc(id),table(["版本","状态","创建人","创建时间","发布时间"],versions.map(v=>"<tr><td>"+esc(v.version)+"</td><td>"+esc(v.status)+"</td><td>"+esc(v.created_by)+"</td><td>"+esc(v.created_at)+"</td><td>"+esc(v.published_at||"—")+"</td></tr>"))));return}if(b.dataset.regPublish){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regPublish)+"/versions/"+encodeURIComponent(b.dataset.version)+"/publish",{method:"POST",body:"{}"});toast("资源版本已发布并设为 active");await renderRegistry();return}if(b.dataset.regDisable){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regDisable)+"/disable",{method:"POST",body:"{}"});toast("资源已停用");await renderRegistry();return}}catch(x){toast(x.message)}});
 
