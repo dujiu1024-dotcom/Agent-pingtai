@@ -63,6 +63,16 @@ class LifecycleAuditTests(unittest.IsolatedAsyncioTestCase):
                 scope={"prompt": "do not store"}, correlation_id=str(uuid4()),
             )
 
+    async def test_rejects_non_uuid_correlation_before_storage(self):
+        writer = MemoryWriter()
+        service = LifecycleAuditService(writer)
+        with self.assertRaisesRegex(ValueError, "UUIDs"):
+            await service.record(
+                tenant_id="tenant-a", actor_id="operator-7", action="migration.batch.apply",
+                outcome="started", scope={"batch_id": "batch-12"}, correlation_id="not-a-uuid",
+            )
+        self.assertEqual(writer.events, [])
+
     async def test_digest_does_not_expose_original_evidence(self):
         secretish = "source-row-with-private-data"
         digest = evidence_digest(secretish)
