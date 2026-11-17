@@ -250,8 +250,31 @@ def create_knowledge_memory_router(
         try:result=await knowledge.ingest(document=document,content=raw)
         except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
         return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"skipped_unchanged":result.skipped_unchanged}
+    @router.get("/knowledge/upload-options")
+    async def knowledge_upload_options(request: Request):
+        await resolve_knowledge_principal(request)
+        parsers = getattr(knowledge.parsers, "parsers", ())
+        media_types = sorted({
+            media_type
+            for parser in parsers
+            for media_type in getattr(parser, "supported_media_types", ())
+        })
+        return {
+            "supported_media_types": media_types,
+            "default_max_chars": 1200,
+            "default_overlap": 160,
+            "min_max_chars": 100,
+            "max_upload_bytes": knowledge.max_upload_bytes,
+            "embedding_model": getattr(knowledge.embedder, "model_id", None),
+            "embedding_configured": knowledge.embedder is not None,
+        }
+
     @router.post("/knowledge/upload")
-    async def upload_document(request: Request,title: str,scope: str="private",project_id: str|None=None,source_uri: str|None=None):
+    async def upload_document(
+        request: Request, title: str, scope: str = "private",
+        project_id: str | None = None, source_uri: str | None = None,
+        collection_id: str | None = None, max_chars: int = 1200, overlap: int = 160,
+    ):
         principal=await resolve_knowledge_principal(request)
         try:document_scope=KnowledgeScope(scope)
         except ValueError as exc:raise HTTPException(400,"invalid document scope") from exc
@@ -259,14 +282,49 @@ def create_knowledge_memory_router(
             raise HTTPException(403,"knowledge.manage role required")
         if document_scope is KnowledgeScope.PROJECT and project_id not in principal.manage_project_ids:
             raise HTTPException(403,"project knowledge.manage permission required")
+        if not isinstance(title, str) or not title.strip() or len(title) > 200:
+            raise HTTPException(400, "title must contain 1-200 characters")
+        if isinstance(max_chars, bool) or not 100 <= max_chars <= 10000:
+            raise HTTPException(400, "max_chars must be between 100 and 10000")
+        if isinstance(overlap, bool) or not 0 <= overlap < max_chars:
+            raise HTTPException(400, "overlap must be non-negative and smaller than max_chars")
+        if collection_id is not None and not collection_id.strip():
+            raise HTTPException(400, "collection_id must be a non-empty string")
         raw=await request.body()
         if not raw:raise HTTPException(400,"uploaded document is empty")
-        media_type=request.headers.get("content-type","application/octet-stream").split(";")[0].strip()
+        media_type=request.headers.get("content-type","application/octet-stream").split(";")[0].strip().lower()
+        supported = {
+            media_type
+            for parser in getattr(knowledge.parsers, "parsers", ())
+            for media_type in getattr(parser, "supported_media_types", ())
+        }
+        if media_type not in supported:
+            raise HTTPException(415, "unsupported document media type")
         document_id=str(uuid4())
-        document=Document(tenant_id=principal.tenant_id,document_id=document_id,title=title,source_uri=source_uri or ("upload://"+document_id),content_hash=hashlib.sha256(raw).hexdigest(),scope=document_scope,project_id=project_id,owner_user_id=principal.user_id if document_scope is KnowledgeScope.PRIVATE else None,media_type=media_type)
-        try:result=await knowledge.ingest(document=document,content=raw)
-        except (ValueError,RuntimeError) as exc:raise HTTPException(400,str(exc)) from exc
-        return {"document_id":result.document.document_id,"version":result.document.version,"chunk_count":len(result.chunks),"media_type":media_type}
+        document=Document(
+            tenant_id=principal.tenant_id, document_id=document_id, title=title.strip(),
+            source_uri=source_uri or ("upload://"+document_id),
+            content_hash=hashlib.sha256(raw).hexdigest(), scope=document_scope,
+            project_id=project_id,
+            owner_user_id=principal.user_id if document_scope is KnowledgeScope.PRIVATE else None,
+            media_type=media_type, collection_id=collection_id,
+        )
+        try:
+            result=await knowledge.ingest(
+                document=document, content=raw, max_chars=max_chars, overlap=overlap,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(400,str(exc)) from exc
+        return {
+            "document_id":result.document.document_id, "version":result.document.version,
+            "chunk_count":len(result.chunks), "media_type":media_type,
+            "collection_id":result.document.collection_id,
+            "chunking":{"max_chars":max_chars,"overlap":overlap},
+            "index_status":"indexed" if knowledge.embedder is not None else "pending_embedding",
+            "embedding_model":getattr(knowledge.embedder,"model_id",None),
+        }
     @router.delete("/knowledge/documents/{document_id}",status_code=204)
     async def delete_document(document_id: str,request: Request):
         principal=await resolve_knowledge_principal(request)
