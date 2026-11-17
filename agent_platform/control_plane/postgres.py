@@ -454,24 +454,34 @@ class PostgresSessionRepository:
         self._check_tenant(asset.tenant_id)
         connection = await self._connection_factory()
         async with connection:
-            await connection.execute(
-                """INSERT INTO platform_file_assets
-                   (tenant_id,asset_id,owner_id,project_id,session_id,object_key,filename,
-                    media_type,size_bytes,sha256,status,created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (self.tenant_id, _uuid(asset.asset_id), asset.owner_id, asset.project_id,
-                 _uuid(asset.session_id) if asset.session_id else None, asset.object_key,
-                 asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
-                 asset.status.value, asset.created_at),
-            )
-            await connection.execute(
-                """INSERT INTO platform_file_asset_versions
-                   (tenant_id,asset_id,version,object_key,filename,media_type,size_bytes,sha256,status,created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (self.tenant_id, _uuid(asset.asset_id), asset.version, asset.object_key,
-                 asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
-                 asset.status.value, asset.created_at),
-            )
+            async with connection.transaction():
+                if asset.session_id is not None:
+                    cursor = await connection.execute(
+                        """SELECT 1 FROM platform_conversation_sessions
+                           WHERE tenant_id=%s AND session_id=%s AND status='active'
+                           FOR UPDATE""",
+                        (self.tenant_id, _uuid(asset.session_id)),
+                    )
+                    if await cursor.fetchone() is None:
+                        raise SessionNotFound("session not found or inactive")
+                await connection.execute(
+                    """INSERT INTO platform_file_assets
+                       (tenant_id,asset_id,owner_id,project_id,session_id,object_key,filename,
+                        media_type,size_bytes,sha256,status,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (self.tenant_id, _uuid(asset.asset_id), asset.owner_id, asset.project_id,
+                     _uuid(asset.session_id) if asset.session_id else None, asset.object_key,
+                     asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
+                     asset.status.value, asset.created_at),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_file_asset_versions
+                       (tenant_id,asset_id,version,object_key,filename,media_type,size_bytes,sha256,status,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (self.tenant_id, _uuid(asset.asset_id), asset.version, asset.object_key,
+                     asset.filename, asset.media_type, asset.size_bytes, asset.sha256,
+                     asset.status.value, asset.created_at),
+                )
 
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None:
         if tenant_id != self.tenant_id:
