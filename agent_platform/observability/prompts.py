@@ -212,6 +212,8 @@ class PromptRegistry:
     ) -> None:
         if not isinstance(updated_by, str) or not updated_by.strip():
             raise ValueError("updated_by is required")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("version must be a positive integer")
         if version not in self._versions.get(prompt_id, {}):
             raise KeyError("prompt version does not exist")
         self._active[prompt_id] = version
