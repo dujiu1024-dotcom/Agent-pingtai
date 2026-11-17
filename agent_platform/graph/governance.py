@@ -6,8 +6,10 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from enum import Enum
+import re
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Protocol
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from agent_platform.graph.schema import GraphSchema
@@ -24,6 +26,37 @@ class GraphEntityStatus(str, Enum):
 
 class GraphGovernanceConflict(RuntimeError):
     """Optimistic version or lifecycle conflict."""
+
+
+_SOURCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+
+
+def _validate_source_reference(value: str, tenant_id: str) -> None:
+    if not isinstance(value, str) or value != value.strip() or not value:
+        raise ValueError("source reference must be a canonical non-empty URI")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"knowledge", "memory", "blackboard"}
+        or parsed.netloc != tenant_id
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path.count("/") != 1
+        or not parsed.path.startswith("/")
+    ):
+        raise ValueError("source reference must be tenant-bound to a canonical graph source")
+    record_version = parsed.path[1:].rsplit("@", 1)
+    if len(record_version) != 2:
+        raise ValueError("source reference must pin an explicit version")
+    record_id, raw_version = record_version
+    if (
+        not _SOURCE_ID.fullmatch(record_id)
+        or not raw_version.isdecimal()
+        or str(int(raw_version)) != raw_version
+        or int(raw_version) < 1
+    ):
+        raise ValueError("source reference record and version must be canonical")
 
 
 @dataclass(frozen=True)
@@ -56,10 +89,10 @@ class GovernedGraphEntity:
             raise ValueError("status must be a GraphEntityStatus")
         if not isinstance(self.attributes, Mapping):
             raise ValueError("attributes must be a mapping")
-        if not isinstance(self.source_refs, tuple) or any(
-            not isinstance(item, str) or not item.strip() for item in self.source_refs
-        ):
-            raise ValueError("source_refs must be a tuple of non-empty references")
+        if not isinstance(self.source_refs, tuple):
+            raise ValueError("source_refs must be a tuple of canonical references")
+        for reference in self.source_refs:
+            _validate_source_reference(reference, self.tenant_id)
         if self.expires_at is not None and (
             not isinstance(self.expires_at, datetime)
             or self.expires_at.tzinfo is None
@@ -84,6 +117,7 @@ class GovernedGraphRelation:
     target_entity_id: str
     project_id: str | None = None
     attributes: Mapping[str, Any] = field(default_factory=dict)
+    source_refs: tuple[str, ...] = ()
     version: int = 1
     status: GraphEntityStatus = GraphEntityStatus.ACTIVE
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -100,6 +134,16 @@ class GovernedGraphRelation:
             raise ValueError("version must be a positive integer")
         if not isinstance(self.status, GraphEntityStatus):
             raise ValueError("status must be a GraphEntityStatus")
+        if self.project_id is not None and (
+            not isinstance(self.project_id, str) or not self.project_id.strip()
+        ):
+            raise ValueError("project_id must be a non-empty string")
+        if not isinstance(self.source_refs, tuple):
+            raise ValueError("source_refs must be a tuple of canonical references")
+        for reference in self.source_refs:
+            _validate_source_reference(reference, self.tenant_id)
+        if not isinstance(self.updated_at, datetime) or self.updated_at.tzinfo is None:
+            raise ValueError("updated_at must be timezone-aware")
         object.__setattr__(self, "attributes", MappingProxyType(deepcopy(dict(self.attributes))))
 
 
@@ -372,6 +416,10 @@ class InMemoryGraphGovernanceRepository:
     async def entity_history(self, tenant_id: str, entity_id: str):
         async with self._lock:
             return tuple(self._entity_history.get((tenant_id, entity_id), ()))
+
+    async def relation_history(self, tenant_id: str, relation_id: str):
+        async with self._lock:
+            return tuple(self._relation_history.get((tenant_id, relation_id), ()))
 
     async def audit_events(self, tenant_id: str, entity_id: str | None = None):
         async with self._lock:
