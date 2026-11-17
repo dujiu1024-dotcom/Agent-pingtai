@@ -107,7 +107,6 @@ class MemoryDistillationAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             decision=MemoryReviewDecision.CONFIRM,
             reviewer_note="Confirmed as a durable preference.",
         )
-        self.assertIsInstance(reviewed, object)
         self.assertIs(reviewed.status, MemoryStatus.ACTIVE)
         recalls = await self.memory.retrieve(principal=self.principal)
         self.assertEqual([item.candidate.content for item in recalls], [distilled_fact])
