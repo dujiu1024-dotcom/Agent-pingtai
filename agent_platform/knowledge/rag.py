@@ -87,6 +87,8 @@ class RAGService:
                         principal=principal, query=query, limit=limit,
                         filters=filters, strategy=strategy,
                     )
+                    if filters is not None:
+                        hits = [hit for hit in hits if filters.matches(hit)]
                     safe_update(retrieve_span, output={"hit_count": len(hits)})
                 safe_metric(
                     self.metrics, "observe", "rag_retrieval_hits",
