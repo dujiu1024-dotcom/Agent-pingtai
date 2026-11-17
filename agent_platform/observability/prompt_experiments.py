@@ -338,3 +338,92 @@ class PromptABTestService:
         )
         await self.repository.save(report)
         return report
+
+
+class PostgresPromptExperimentRepository:
+    """Append-only PostgreSQL storage for tenant-scoped prompt experiment reports."""
+
+    def __init__(self, connection_factory: Any) -> None:
+        self._connect = connection_factory
+
+    async def save(self, report: PromptExperimentReport) -> None:
+        if not isinstance(report, PromptExperimentReport):
+            raise ValueError("report must be a PromptExperimentReport")
+        payload = {
+            "experiment_id": report.experiment_id,
+            "tenant_id": report.tenant_id,
+            "prompt_id": report.prompt_id,
+            "dataset_id": report.dataset_id,
+            "dataset_version": report.dataset_version,
+            "baseline_variant": report.baseline_variant,
+            "matrix": [
+                {
+                    "case_id": row.case_id, "variant": row.variant, "version": row.version,
+                    "passed": row.passed, "rule_score": row.rule_score,
+                    "judge_score": row.judge_score, "final_score": row.final_score,
+                    "latency_ms": row.latency_ms, "cost": row.cost, "error": row.error,
+                }
+                for row in report.matrix
+            ],
+            "metrics": [
+                {
+                    "variant": row.variant, "version": row.version,
+                    "case_count": row.case_count, "pass_rate": row.pass_rate,
+                    "average_score": row.average_score,
+                    "average_latency_ms": row.average_latency_ms, "total_cost": row.total_cost,
+                }
+                for row in report.metrics
+            ],
+            "comparison": report.comparison,
+            "created_at_epoch_ms": report.created_at_epoch_ms,
+        }
+        try:
+            encoded = json.dumps(
+                payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("experiment report must contain finite JSON values") from exc
+        if not report.tenant_id.strip() or not report.experiment_id.strip():
+            raise ValueError("tenant_id and experiment_id are required")
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_prompt_experiment_reports
+                   (tenant_id, experiment_id, prompt_id, dataset_id, dataset_version,
+                    baseline_variant, report)
+                   VALUES (%s, %s::uuid, %s, %s, %s, %s, %s::jsonb)""",
+                (report.tenant_id, report.experiment_id, report.prompt_id, report.dataset_id,
+                 report.dataset_version, report.baseline_variant, encoded),
+            )
+
+    async def get(self, tenant_id: str, experiment_id: str) -> PromptExperimentReport | None:
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not isinstance(experiment_id, str) or not experiment_id.strip():
+            raise ValueError("experiment_id is required")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT report FROM platform_prompt_experiment_reports
+                   WHERE tenant_id=%s AND experiment_id=%s::uuid""",
+                (tenant_id, experiment_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        payload = row["report"] if isinstance(row, Mapping) else row[0]
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if not isinstance(payload, dict):
+            raise ValueError("stored prompt experiment report is invalid")
+        return PromptExperimentReport(
+            experiment_id=payload["experiment_id"], tenant_id=payload["tenant_id"],
+            prompt_id=payload["prompt_id"], dataset_id=payload["dataset_id"],
+            dataset_version=payload["dataset_version"],
+            baseline_variant=payload["baseline_variant"],
+            matrix=tuple(PromptCaseScore(**item) for item in payload["matrix"]),
+            metrics=tuple(PromptVariantMetrics(**item) for item in payload["metrics"]),
+            comparison=payload["comparison"],
+            created_at_epoch_ms=payload["created_at_epoch_ms"],
+        )
