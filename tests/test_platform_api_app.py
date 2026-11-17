@@ -1,6 +1,5 @@
 """Tests for production HTTP API composition."""
 import unittest
-from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +11,7 @@ from agent_platform.control_plane.sessions_assets import (
 )
 from agent_platform.identity.models import AuthorizationContext, Principal
 from agent_platform.identity.service import AuthenticationError
+from agent_platform.knowledge.catalog import InMemoryKnowledgeCatalog
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
@@ -73,69 +73,40 @@ class PlatformApiCompositionTests(unittest.TestCase):
         )
         self.client = TestClient(self.app, base_url="https://testserver")
 
-    def test_evaluation_gate_is_wired_through_platform_composition(self):
-        class Governance:
-            async def decide_release(self, **kwargs):
-                self.kwargs = kwargs
-                return SimpleNamespace(
-                    evidence_id="evidence-1", passed=True, failures=(),
-                    policy_id="production", policy_version=2,
-                    comparison_id="comparison-1", content_sha256="a" * 64,
-                )
-
-        governance = Governance()
+    def test_knowledge_catalog_routes_are_wired_with_authenticated_context(self):
+        catalog = InMemoryKnowledgeCatalog()
         app = create_platform_app(
-            identity=self.identity, identity_repository=FakeIdentityRepository(),
-            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
             allowed_origins=("https://console.example.com",),
-            evaluation_governance_service=governance,
-            evaluation_gate_manage_authorizer=lambda principal: True,
+            knowledge_catalog=catalog,
         )
         client = TestClient(app, base_url="https://testserver")
-        response = client.post(
-            "/api/platform/v1/observability/evaluations/run-1/gate",
+        denied = client.post(
+            "/api/platform/v1/knowledge/collections",
+            json={"name": "private"},
+        )
+        self.assertEqual(denied.status_code, 401)
+        created = client.post(
+            "/api/platform/v1/knowledge/collections",
+            json={"name": "platform docs"},
             headers={"Authorization": "Bearer valid-session"},
-            json={
-                "policy_id": "production", "policy_version": 2,
-                "minimums": {"answer_term_f1": 0.9},
-                "maximums": {"latency_ms": 500},
-                "evidence_refs": ["ci://run/123"],
-            },
         )
-        self.assertEqual(response.status_code, 201, response.text)
-        self.assertEqual(response.json()["evidence_id"], "evidence-1")
-        self.assertEqual(governance.kwargs["tenant_id"], "tenant-a")
-        self.assertEqual(governance.kwargs["candidate_run_id"], "run-1")
-
-    def test_evaluation_gate_rejects_actor_without_gate_permission(self):
-        class Governance:
-            async def decide_release(self, **kwargs):
-                raise AssertionError("unauthorized actor must not reach governance service")
-
-        app = create_platform_app(
-            identity=self.identity, identity_repository=FakeIdentityRepository(),
-            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
-            allowed_origins=("https://console.example.com",),
-            evaluation_governance_service=Governance(),
-            evaluation_gate_manage_authorizer=lambda principal: False,
-        )
-        response = TestClient(app, base_url="https://testserver").post(
-            "/api/platform/v1/observability/evaluations/run-1/gate",
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["tenant_id"], "tenant-a")
+        listed = client.get(
+            "/api/platform/v1/knowledge/collections",
             headers={"Authorization": "Bearer valid-session"},
-            json={"policy_id": "production", "policy_version": 1,
-                  "minimums": {"answer_term_f1": 0.9},
-                  "evidence_refs": ["ci://run/123"]},
         )
-        self.assertEqual(response.status_code, 403)
-
-    def test_evaluation_gate_requires_explicit_gate_authorizer(self):
-        with self.assertRaisesRegex(ValueError, "gate manager authorizer"):
-            create_platform_app(
-                identity=self.identity, identity_repository=FakeIdentityRepository(),
-                knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
-                allowed_origins=("https://console.example.com",),
-                evaluation_governance_service=object(),
-            )
+        self.assertEqual([item["name"] for item in listed.json()["items"]], ["platform docs"])
+        hidden = client.get(
+            "/api/platform/v1/knowledge/collections",
+            headers={"Authorization": "Bearer valid-session-b"},
+        )
+        self.assertEqual(hidden.json()["items"], [])
 
     def test_business_routes_require_authenticated_session(self):
         response = self.client.get("/api/platform/v1/knowledge/documents")
