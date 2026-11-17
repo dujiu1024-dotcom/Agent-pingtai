@@ -4,9 +4,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import re
 from pathlib import PurePosixPath
-from urllib.parse import quote
 from typing import Any, Protocol
+from urllib.parse import quote
 
 
 class S3Client(Protocol):
@@ -95,17 +96,45 @@ class S3ObjectStorage:
         key = self._validate_key(object_key)
         await self.client.delete_object(Bucket=self.bucket, Key=key)
 
-    async def presign_get(self, object_key: str, *, expires_in: int = 300) -> str:
-        """Create a short-lived, read-only URL for one validated object key."""
+    async def presign_get(
+        self, object_key: str, *, expires_in: int = 300,
+        filename: str | None = None, media_type: str | None = None,
+    ) -> str:
+        """Create a short-lived URL with safe browser download metadata."""
         key = self._validate_key(object_key)
-        if not 1 <= expires_in <= 900:
+        if (
+            isinstance(expires_in, bool)
+            or not isinstance(expires_in, int)
+            or not 1 <= expires_in <= 900
+        ):
             raise ValueError("presigned URL TTL must be between 1 and 900 seconds")
+        params: dict[str, Any] = {"Bucket": self.bucket, "Key": key}
+        if filename is not None:
+            if (
+                not isinstance(filename, str) or not filename
+                or len(filename) > 180 or filename != filename.strip()
+                or any(ord(char) < 32 or ord(char) == 127 for char in filename)
+            ):
+                raise ValueError("invalid download filename")
+            # RFC 5987 encoding prevents header syntax injection and handles Unicode.
+            params["ResponseContentDisposition"] = (
+                "attachment; filename*=UTF-8''" + quote(filename, safe="")
+            )
+        if media_type is not None:
+            if (
+                not isinstance(media_type, str) or len(media_type) > 127
+                or not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*",
+                    media_type,
+                )
+            ):
+                raise ValueError("invalid download media type")
+            params["ResponseContentType"] = media_type.lower()
         generator = getattr(self.client, "generate_presigned_url", None)
         if not callable(generator):
             raise ObjectStorageError("S3 client does not support presigned URLs")
         result = generator(
-            "get_object", Params={"Bucket": self.bucket, "Key": key},
-            ExpiresIn=expires_in,
+            "get_object", Params=params, ExpiresIn=expires_in,
         )
         if inspect.isawaitable(result):
             result = await result

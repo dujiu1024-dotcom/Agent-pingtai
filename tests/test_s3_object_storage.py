@@ -76,6 +76,17 @@ class S3ObjectStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(method, "get_object")
         self.assertEqual(expiry, 300)
         self.assertIn("monthly%20report.pdf", params["ResponseContentDisposition"])
+        self.assertEqual(params["ResponseContentType"], "application/pdf")
+        with self.assertRaises(ValueError):
+            await storage.presign_get(
+                "tenant/tenant-a/assets/file-1/hash",
+                filename="report.pdf\r\nX-Injected: yes",
+            )
+        with self.assertRaises(ValueError):
+            await storage.presign_get(
+                "tenant/tenant-a/assets/file-1/hash",
+                media_type="application/pdf\r\nX-Injected: yes",
+            )
         with self.assertRaises(ValueError):
             await storage.presign_get(
                 "tenant/tenant-a/assets/file-1/hash",
