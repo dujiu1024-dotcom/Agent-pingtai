@@ -33,7 +33,7 @@
 
 - 新增列表接口统一采用 `limit` + 不透明 `cursor`；默认 limit=50，最大 200。
 - 建议响应字段为 `items`、`next_cursor`、`has_more`；末页 `next_cursor=null`。
-- cursor 必须绑定租户和查询条件并防篡改；客户端不得解析、修改或构造 cursor。
+- cursor 必须绑定租户和规范化查询条件并防篡改；使用 `encode_secure_cursor` / `decode_secure_cursor` 的 HMAC-SHA256 签名封装，签名密钥至少 32 bytes，默认有效期 1 小时（最长 7 天）。校验时必须同时验证签名、过期时间、tenant 与 query fingerprint；客户端不得解析、修改或构造 cursor。不得把未签名的 Base64 编码当作安全 cursor。
 - 不把 offset/page-number 作为新列表 API 的默认协议。既有路由迁移到该协议时应保持现有客户端兼容，并逐路由补充契约测试。
 
 ## 错误模型
