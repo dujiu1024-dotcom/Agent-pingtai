@@ -37,9 +37,9 @@ class VariantModelOutput:
                 raise ValueError(f"{name} must be a non-negative integer")
         if self.latency_ms is not None and (
             isinstance(self.latency_ms, bool) or not isinstance(self.latency_ms, (int, float))
-            or self.latency_ms < 0
+            or not math.isfinite(self.latency_ms) or self.latency_ms < 0
         ):
-            raise ValueError("latency_ms must be a non-negative number")
+            raise ValueError("latency_ms must be a finite non-negative number")
         if self.cost_usd is not None:
             try:
                 cost = Decimal(str(self.cost_usd))
