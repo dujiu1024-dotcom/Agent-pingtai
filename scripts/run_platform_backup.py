@@ -15,7 +15,12 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from scripts.verify_platform_backups import component_for, verify_artifact
+try:
+    from scripts.verify_platform_backups import component_for, verify_artifact
+except ModuleNotFoundError:
+    # Direct execution puts the scripts directory, rather than the repository
+    # root, on sys.path.
+    from verify_platform_backups import component_for, verify_artifact
 
 ROOT = Path(__file__).resolve().parents[1]
 _COMPONENTS = (
