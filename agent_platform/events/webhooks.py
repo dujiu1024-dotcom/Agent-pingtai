@@ -348,7 +348,9 @@ class PostgresWebhookStore:
                        WHERE s.tenant_id=%s AND s.status='active' AND %s=ANY(s.topics)
                        ON CONFLICT (tenant_id,subscription_id,event_id) DO NOTHING
                        RETURNING delivery_id""",
-                    (UUID(payload.event_id), payload.topic, dict(payload.body),
+                    (UUID(payload.event_id), payload.topic,
+                     json.dumps(dict(payload.body), ensure_ascii=False, sort_keys=True,
+                                separators=(",", ":"), allow_nan=False),
                      payload.tenant_id, payload.topic),
                 )
                 rows = await cursor.fetchall()
