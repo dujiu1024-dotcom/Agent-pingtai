@@ -103,6 +103,8 @@ class MultiVariantEvaluationResult:
 def _score_rule(rubric: Mapping[str, Any], expected: str, actual: str) -> tuple[float, str]:
     """Small deterministic rubric engine; advanced rubrics use the injected judge."""
     kind = rubric.get("type", "exact")
+    if not isinstance(kind, str):
+        raise ValueError("rubric type must be a string")
     if kind == "exact":
         score = 1.0 if actual.strip() == expected.strip() else 0.0
     elif kind == "contains":
@@ -167,13 +169,13 @@ class MultiVariantEvaluationRunService:
         async def run_one(variant: str) -> VariantAggregate:
             async def run_case(case: Any) -> tuple[VariantCaseScore, VariantModelOutput, float]:
                 rendered_prompt = prompt.replace("{{input}}", case.input)
-                started = time.perf_counter()
                 async with semaphore:
+                    started = time.perf_counter()
                     output = await self.executor.run_case(
                         tenant_id=tenant_id, model_variant=variant,
                         prompt=rendered_prompt, input_text=case.input,
                     )
-                elapsed_ms = (time.perf_counter() - started) * 1000
+                    elapsed_ms = (time.perf_counter() - started) * 1000
                 if not isinstance(output, VariantModelOutput):
                     raise TypeError("model executor must return VariantModelOutput")
                 rubric_kind = case.rubric.get("type", "exact")
