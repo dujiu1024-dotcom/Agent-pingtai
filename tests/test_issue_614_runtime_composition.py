@@ -119,5 +119,79 @@ class TrustedBuilderDiscoveryTests(unittest.TestCase):
                 load_trusted_run_execution_builder(required=True)
 
 
+class ProductionEntrypointWiringTests(unittest.TestCase):
+    def test_production_root_installs_builder_runtime_into_api_and_worker_slots(self):
+        import importlib
+        import os
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from agent_platform.production_config import ProductionSettings
+
+        fake_redis = SimpleNamespace(ping=lambda: True)
+        environment = {
+            "AGENT_PLATFORM_DSN": "postgresql://platform@db/platform",
+            "REDIS_URL": "redis://redis:6379/0",
+            "ALLOWED_ORIGINS": "https://platform.example.com",
+            "AGENT_PLATFORM_REQUIRE_RUN_EXECUTION": "false",
+        }
+        from redis.asyncio import Redis
+
+        with patch.dict(os.environ, environment), patch.object(
+            Redis, "from_url", return_value=fake_redis
+        ):
+            production = importlib.import_module("agent_platform.production")
+
+        settings = ProductionSettings(
+            postgres_dsn="postgresql://platform@db/platform",
+            redis_url="redis://redis:6379/0",
+            allowed_origins=("https://platform.example.com",),
+        )
+        builder_inputs = {}
+        runtime_holder = {}
+
+        def trusted_builder(**values):
+            builder_inputs.update(values)
+            runtime = build_production_run_execution(
+                run_store=values["run_store"],
+                lifecycle=values["lifecycle"],
+                registry_resolver=lambda principal: SimpleNamespace(
+                    repository=SimpleNamespace(tenant_id=principal.tenant_id),
+                ),
+                snapshot_resolver=lambda _principal: object(),
+                executor_resolver=lambda _record, _worker_id: None,
+                task_authorizer=lambda _principal, _action, _task_id=None: True,
+                concurrency_limiter=FakeLimiter(),
+                worker_pool_scope_id="production-workers",
+                queue_scope_resolver=lambda _record: "default",
+                worker_id="production-entrypoint-test",
+                poll_interval=0.01,
+            )
+            runtime_holder["runtime"] = runtime
+            return runtime
+
+        with patch.object(
+            production, "create_platform_app", return_value=FastAPI()
+        ) as create_platform_app:
+            app = production.create_production_app(
+                settings=settings,
+                connection_factory=lambda: None,
+                redis_client=fake_redis,
+                run_execution_builder=trusted_builder,
+            )
+
+        runtime = runtime_holder["runtime"]
+        self.assertIs(app.state.run_execution, runtime)
+        self.assertIs(app.state.run_state_store, runtime.run_store)
+        self.assertIs(builder_inputs["run_store"], app.state.run_state_store)
+        self.assertIs(builder_inputs["lifecycle"].store, app.state.run_state_store)
+        installed = create_platform_app.call_args.kwargs
+        self.assertIs(installed["task_worker"], runtime.task_worker)
+        self.assertIs(installed["task_service_resolver"], runtime.task_service_resolver)
+        self.assertIs(installed["task_authorizer"], runtime.task_authorizer)
+        self.assertIs(installed["run_executor_resolver"], runtime.run_executor_resolver)
+
+
+
 if __name__ == "__main__":
     unittest.main()
