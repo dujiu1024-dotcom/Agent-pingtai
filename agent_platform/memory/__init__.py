@@ -6,7 +6,13 @@ from agent_platform.memory.review import (
     MemoryReviewDecision,
     MemoryReviewEvent,
 )
-from agent_platform.memory.retrieval import (\n    MemoryRecallHit,\n    MemoryRecallQuery,\n    MemoryRecallStrategy,\n    MemoryRetrievalService,\n)\nfrom agent_platform.memory.service import (
+from agent_platform.memory.retrieval import (
+    MemoryRecallHit,
+    MemoryRecallQuery,
+    MemoryRecallStrategy,
+    MemoryRetrievalService,
+)
+from agent_platform.memory.service import (
     InMemoryMemoryRepository,
     MemoryCandidate,
     MemoryPrincipal,
@@ -27,5 +33,9 @@ __all__ = [
     "InMemoryMemoryReviewAuditRepository",
     "MemoryCandidateWorkflow",
     "MemoryReviewDecision",
-    "MemoryReviewEvent",\n    "MemoryRecallHit",\n    "MemoryRecallQuery",\n    "MemoryRecallStrategy",\n    "MemoryRetrievalService",
+    "MemoryReviewEvent",
+    "MemoryRecallHit",
+    "MemoryRecallQuery",
+    "MemoryRecallStrategy",
+    "MemoryRetrievalService",
 ]
