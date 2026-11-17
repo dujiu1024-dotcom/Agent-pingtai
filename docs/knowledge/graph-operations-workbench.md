@@ -11,7 +11,7 @@ Issue #517 / C-22-06 adds a graph operations view to the authenticated platform 
 
 ## API wiring
 
-The host may configure `graph_query_service_resolver` and `graph_read_authorizer` in `create_platform_app`. The resolver must return a tenant-bound GraphQueryService; the authorizer returns the project IDs the principal may read. Both are required together. The optional `graph_governance_resolver` enables the annotation endpoint; it must return the tenant's GraphGovernanceService. The host identity repository supplies the KnowledgePrincipal used by graph governance.
+The host may configure `graph_query_service_resolver` and `graph_read_authorizer` in `create_platform_app`. The resolver must return a tenant-bound GraphQueryService; the authorizer returns a GraphAccessScope containing the project IDs the principal may read and an explicit allow_tenant_scope flag for tenant-level entities/relations. Both are required together. A project-only grant must not set allow_tenant_scope. The optional `graph_governance_resolver` enables the annotation endpoint; it must return the tenant's GraphGovernanceService. The host identity repository supplies the KnowledgePrincipal used by graph governance.
 
 Routes:
 
