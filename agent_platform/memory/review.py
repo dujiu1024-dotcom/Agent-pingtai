@@ -107,7 +107,11 @@ class MemoryCandidateWorkflow:
             raise ValueError(
                 "conflict candidates require explicit resolve_conflict selection"
             )
-        if record.status is not MemoryStatus.CANDIDATE:
+        retrying_rejection = (
+            decision is MemoryReviewDecision.REJECT
+            and record.status is MemoryStatus.DELETED
+        )
+        if record.status is not MemoryStatus.CANDIDATE and not retrying_rejection:
             raise ValueError("candidate has already been reviewed")
 
         event = MemoryReviewEvent(
