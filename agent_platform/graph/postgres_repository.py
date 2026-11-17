@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from psycopg.types.json import Jsonb
-
 from agent_platform.graph.schema import GraphEntity, GraphRelation, GraphSchema
 
 ConnectionFactory = Callable[[], Any]
@@ -69,7 +67,6 @@ class PostgresGraphRepository:
         )
 
     def _relation_row(self, row: dict[str, Any]) -> GraphRelation:
-        relation_type = self.schema.relation_type(row["relation_type"])
         return GraphRelation(
             tenant_id=self.tenant_id,
             relation_id=row["relation_id"],
