@@ -35,4 +35,5 @@ jobs:
             tests.test_secret_log_redaction \
             tests.test_approval_workbench_ui \
             tests.test_sandbox_oci \
-            tests.test_runtime_permission_guard -v
+            tests.test_runtime_permission_guard \
+            tests.test_runtime_security_auto_response -v
