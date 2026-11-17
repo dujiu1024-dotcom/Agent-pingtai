@@ -184,3 +184,71 @@ def test_layer_mapping_rejects_untyped_values(layer: object) -> None:
         is_durable_memory_layer(layer)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         durable_scope_value(layer)  # type: ignore[arg-type]
+
+
+class SessionMemoryBoundaryTests:
+    class Extractor:
+        def __init__(self, drafts):
+            self.drafts = drafts
+            self.calls = 0
+
+        async def extract(self, *, turn):
+            self.calls += 1
+            return self.drafts
+
+    @pytest.mark.asyncio
+    async def test_completed_turn_creates_candidate_not_active_memory():
+        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        repository = InMemoryMemoryRepository()
+        extractor = self.Extractor([MemoryDraft(scope=MemoryScope.USER, scope_id="user-a", content="prefers concise technical summaries", confidence=0.91)])
+        service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
+        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+        turn = MemoryTurn(tenant_id="tenant-a", user_id="user-a", source_ref="session://tenant-a/message-assistant-42@1", user_message="Please keep technical summaries concise.", assistant_message="I will keep future technical summaries concise.", completed=True)
+        records = await service.propose_from_turn(principal=principal, turn=turn)
+        assert len(records) == 1
+        assert records[0].status.value == "candidate"
+        assert records[0].candidate.source_ref == turn.source_ref
+        assert records[0].candidate.content != turn.user_message + turn.assistant_message
+        assert extractor.calls == 1
+
+    @pytest.mark.asyncio
+    async def test_incomplete_turn_is_rejected_before_extractor_or_write():
+        from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        repository = InMemoryMemoryRepository()
+        extractor = self.Extractor([])
+        service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
+        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+        turn = MemoryTurn(tenant_id="tenant-a", user_id="user-a", source_ref="session://tenant-a/message-assistant-43@1", user_message="remember this", assistant_message="", completed=False)
+        with pytest.raises(ValueError, match="completed assistant turn"):
+            await service.propose_from_turn(principal=principal, turn=turn)
+        assert extractor.calls == 0
+        assert await repository.list("tenant-a") == []
+
+    @pytest.mark.asyncio
+    async def test_session_source_reference_is_tenant_pinned_and_idempotent():
+        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        repository = InMemoryMemoryRepository()
+        extractor = self.Extractor([MemoryDraft(scope=MemoryScope.USER, scope_id="user-a", content="prefers concise answers", confidence=0.9)])
+        service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
+        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+        turn = MemoryTurn(tenant_id="tenant-a", user_id="user-a", source_ref="session://tenant-a/message-assistant-44@1", user_message="be concise", assistant_message="Understood.", completed=True)
+        first = await service.propose_from_turn(principal=principal, turn=turn)
+        second = await service.propose_from_turn(principal=principal, turn=turn)
+        assert [item.candidate.memory_id for item in first] == [item.candidate.memory_id for item in second]
+        assert extractor.calls == 2
+        assert len(await repository.list("tenant-a")) == 1
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_source_reference_is_rejected_before_extraction():
+        from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
+        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        extractor = self.Extractor([])
+        service = MemoryExtractionService(memory=MemoryService(InMemoryMemoryRepository()), extractor=extractor)
+        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+        turn = MemoryTurn(tenant_id="tenant-a", user_id="user-a", source_ref="session://tenant-b/message-assistant-45@1", user_message="hello", assistant_message="hi", completed=True)
+        with pytest.raises(PermissionError, match="another tenant"):
+            await service.propose_from_turn(principal=principal, turn=turn)
+        assert extractor.calls == 0
