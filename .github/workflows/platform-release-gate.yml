@@ -75,6 +75,7 @@ jobs:
             tests.test_knowledge_memory_api \
             tests.test_memory_boundaries \
             tests.test_graph_query \
+            tests.test_graph_query_api \
             tests.test_memory_extraction_preflight \
             tests.test_multi_expert_workflow_integration \
             tests.test_tool_gateway \
