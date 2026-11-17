@@ -54,6 +54,31 @@ class LegacyInventoryTests(unittest.TestCase):
             self.assertNotIn("do-not-export-this-token", rendered)
             self.assertNotIn("secret-customer-project", rendered)
 
+    def test_sqlite_inventory_reports_index_semantics_without_row_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = root / "legacy.db"
+            with sqlite3.connect(db) as connection:
+                connection.executescript("""
+                    CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT, active INTEGER);
+                    CREATE UNIQUE INDEX idx_users_email ON users(email COLLATE NOCASE);
+                    CREATE INDEX idx_users_active ON users(active DESC) WHERE active = 1;
+                    CREATE INDEX idx_users_email_prefix ON users(substr(email, 1, 3));
+                    INSERT INTO users VALUES(1, 'private@example.test', 1);
+                """)
+            report = build_legacy_inventory(root, db)
+            users = next(item for item in report["database"]["tables"] if item["name"] == "users")
+            indexes = {item["name"]: item for item in users["indexes"]}
+            self.assertEqual(report["database"]["index_count"], 3)
+            self.assertTrue(indexes["idx_users_email"]["unique"])
+            self.assertEqual(indexes["idx_users_email"]["columns"][0]["collation"], "NOCASE")
+            self.assertTrue(indexes["idx_users_active"]["partial"])
+            self.assertTrue(indexes["idx_users_active"]["columns"][0]["descending"])
+            expression = indexes["idx_users_email_prefix"]["columns"][0]
+            self.assertTrue(expression["expression"])
+            self.assertIsNone(expression["name"])
+            self.assertNotIn("private@example.test", json.dumps(report))
+
     def test_missing_database_is_unknown_not_zero_and_file_scan_is_metadata_only(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
