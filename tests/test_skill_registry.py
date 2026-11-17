@@ -113,6 +113,15 @@ class SkillPackageRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.agent_store.get("tenant-a", "agent-1", "report-summarizer"))
         self.assertEqual([event[0] for event in self.runtime.events], ["install", "uninstall"])
 
+    async def test_duplicate_package_version_is_rejected_before_artifact_push(self):
+        await self._published()
+        before = len(self.artifacts.items)
+        with self.assertRaisesRegex(SkillPackageError, "already registered"):
+            await self.service.upload(
+                tenant_id="tenant-a", archive=package(), actor_id="publisher",
+            )
+        self.assertEqual(len(self.artifacts.items), before)
+
     async def test_dependency_rejection_prevents_publication(self):
         bad = package(MANIFEST.replace("safe-parser: ==1.2.3", "unsafe-parser: ==9.9.9"))
         draft = await self.service.upload(tenant_id="tenant-a", archive=bad, actor_id="publisher")
