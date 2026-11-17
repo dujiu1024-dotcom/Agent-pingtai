@@ -36,24 +36,53 @@ load_services() {
 snapshot_env() {
   mkdir -p "$STATE_DIR"; chmod 700 "$STATE_DIR"
   local stamp snapshot
-  stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)-$"
   snapshot="$STATE_DIR/release-env-$stamp"
   cp "$ENV_FILE" "$snapshot"; chmod 600 "$snapshot"
-  printf '%s\n' "$snapshot" > "$STATE_DIR/latest-success"; chmod 600 "$STATE_DIR/latest-success"
+  printf '%s\\n' "$snapshot"
 }
-restore_previous() {
-  [[ -f "$STATE_DIR/latest-success" && ! -L "$STATE_DIR/latest-success" ]] || { echo "no successful release snapshot is available" >&2; return 1; }
-  local snapshot
-  IFS= read -r snapshot < "$STATE_DIR/latest-success"
+read_snapshot() {
+  local pointer="$1" snapshot
+  [[ -f "$pointer" && ! -L "$pointer" ]] || { echo "successful release snapshot pointer is missing or unsafe: $pointer" >&2; return 1; }
+  IFS= read -r snapshot < "$pointer"
   case "$(realpath "$snapshot")" in "$(realpath "$STATE_DIR")"/release-env-*) ;; *) echo "release snapshot points outside state directory" >&2; return 1 ;; esac
   [[ -f "$snapshot" && ! -L "$snapshot" ]] || { echo "release snapshot is missing or unsafe" >&2; return 1; }
+  printf '%s\\n' "$snapshot"
+}
+restore_snapshot() {
+  local snapshot="$1"
   cp "$snapshot" "$ENV_FILE.tmp"; chmod 600 "$ENV_FILE.tmp"; mv "$ENV_FILE.tmp" "$ENV_FILE"
 }
+restore_previous() {
+  local snapshot
+  snapshot="$(read_snapshot "$STATE_DIR/latest-success")" || return 1
+  restore_snapshot "$snapshot"
+}
+publish_success() {
+  local snapshot="$1" previous
+  if [[ -f "$STATE_DIR/latest-success" && ! -L "$STATE_DIR/latest-success" ]]; then
+    previous="$(read_snapshot "$STATE_DIR/latest-success")" || return 1
+    printf '%s\\n' "$previous" > "$STATE_DIR/previous-success.tmp"
+    chmod 600 "$STATE_DIR/previous-success.tmp"
+    mv "$STATE_DIR/previous-success.tmp" "$STATE_DIR/previous-success"
+  fi
+  printf '%s\\n' "$snapshot" > "$STATE_DIR/latest-success.tmp"
+  chmod 600 "$STATE_DIR/latest-success.tmp"
+  mv "$STATE_DIR/latest-success.tmp" "$STATE_DIR/latest-success"
+}
 if [[ "$MODE" == "--rollback" ]]; then
-  restore_previous
+  ROLLBACK_TARGET="$(read_snapshot "$STATE_DIR/previous-success")"
+  CURRENT_SUCCESS="$(read_snapshot "$STATE_DIR/latest-success")"
+  restore_snapshot "$ROLLBACK_TARGET"
   "${COMPOSE[@]}" config --quiet
   load_services
   for service in "${SERVICES[@]}"; do "${COMPOSE[@]}" up -d --no-deps --wait "$service"; done
+  printf '%s\\n' "$CURRENT_SUCCESS" > "$STATE_DIR/previous-success.tmp"
+  chmod 600 "$STATE_DIR/previous-success.tmp"
+  mv "$STATE_DIR/previous-success.tmp" "$STATE_DIR/previous-success"
+  printf '%s\\n' "$ROLLBACK_TARGET" > "$STATE_DIR/latest-success.tmp"
+  chmod 600 "$STATE_DIR/latest-success.tmp"
+  mv "$STATE_DIR/latest-success.tmp" "$STATE_DIR/latest-success"
   echo "Configuration restored and services rolled back; database migrations were not reversed."
   exit 0
 fi
