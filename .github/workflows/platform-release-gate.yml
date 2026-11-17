@@ -88,6 +88,8 @@ jobs:
             tests.test_event_consumer \
             tests.test_session_message_pagination \
             tests.test_issue_21_c_21_03_fault_injection \
+            tests.test_reliability_fault_injection \
+            tests.test_issue_665_a_665_07_fault_degradation \
             tests.test_issue_21_c_21_04_quality_capacity \
             tests.test_agent_rag_evaluation \
             tests.test_knowledge_evaluation_dataset \
