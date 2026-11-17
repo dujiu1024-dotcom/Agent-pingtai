@@ -230,9 +230,6 @@ class PostgresEvaluationRepository:
 
     async def save_gate_evidence(self, evidence) -> None:
         connection = await self._connect()
-        payload = asdict(evidence)
-        payload["failures"] = list(evidence.failures)
-        payload["evidence_refs"] = list(evidence.evidence_refs)
         async with connection:
             cursor = await connection.execute(
                 """INSERT INTO platform_eval_gate_evidence
