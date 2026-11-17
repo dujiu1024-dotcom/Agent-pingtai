@@ -264,15 +264,19 @@ class PostgresEvaluationComparisonRepository:
                 """INSERT INTO platform_eval_variant_reports
                    (report_id,tenant_id,dataset_id,dataset_version,variant_count,
                     recommended_run_id,report,created_by)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s)
+                   SELECT %s,run.tenant_id,run.dataset_id,run.dataset_version,%s,%s,%s::jsonb,%s
+                   FROM platform_eval_runs run
+                   WHERE run.eval_run_id=%s AND run.tenant_id=%s
+                     AND run.dataset_id=%s AND run.dataset_version=%s
                    RETURNING report_id::text AS report_id""",
-                (report["report_id"], tenant_id, report["dataset_id"], report["dataset_version"],
-                 report["variant_count"], report["recommended"]["eval_run_id"],
-                 payload, report["created_by"]),
+                (report["report_id"], report["variant_count"],
+                 report["recommended"]["eval_run_id"], payload, report["created_by"],
+                 report["recommended"]["eval_run_id"], tenant_id,
+                 report["dataset_id"], report["dataset_version"]),
             )
             row = await cursor.fetchone()
         if row is None:
-            raise RuntimeError("evaluation comparison report was not persisted")
+            raise KeyError("recommended evaluation run not found in this tenant and dataset version")
         return str(row["report_id"])
 
     async def load_variant_report(self, *, tenant_id: str, report_id: str) -> dict[str, Any]:
