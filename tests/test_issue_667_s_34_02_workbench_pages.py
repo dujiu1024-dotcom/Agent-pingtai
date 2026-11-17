@@ -35,4 +35,5 @@ def test_observability_page_surfaces_health_metrics_alerts_usage_and_audit():
     assert "data-alert-ack" in script
     assert "data-alert-resolve" in script
     assert "Promise.allSettled" in script
+    assert "await response.text()" in script
     assert "VIEW_CAPABILITIES.observability" in script
