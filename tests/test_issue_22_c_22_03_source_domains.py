@@ -108,7 +108,7 @@ class Issue22C2203SourceDomainTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(graph.entities), 4)
 
-    async def test_file_source_requires_parsed_file_mapping_and_never_accepts_raw_bytes(self):
+    async def test_file_source_requires_parser_normalized_source_type(self):
         schema = default_graph_schema("tenant-a")
         self.assertIn(
             (GraphSourceDomain.FILE, "parsed_file", "document"),
@@ -125,13 +125,13 @@ class Issue22C2203SourceDomainTests(unittest.IsolatedAsyncioTestCase):
             schema=schema, extractor=extractor,
             candidates=InMemoryGraphCandidateRepository(), graph=GraphStore(),
         )
-        raw_bytes_as_text = GraphSourceRecord(
+        unparsed_file_asset = GraphSourceRecord(
             tenant_id="tenant-a", domain=GraphSourceDomain.FILE,
             source_type="file_asset", source_id="file-raw", source_version=1,
             content="binary\\x00payload", project_id="project-a",
         )
         with self.assertRaisesRegex(ValueError, "not mapped"):
-            await pipeline.propose(source=raw_bytes_as_text, principal=principal)
+            await pipeline.propose(source=unparsed_file_asset, principal=principal)
 
 
 if __name__ == "__main__":
