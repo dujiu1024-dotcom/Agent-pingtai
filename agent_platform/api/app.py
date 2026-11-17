@@ -23,6 +23,7 @@ from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
+from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
@@ -280,6 +281,10 @@ def create_platform_app(
         rag=rag,
         memory_extraction=memory_extraction,
         identity_repository=identity_repository,
+    ))
+    app.include_router(create_knowledge_upload_router(
+        knowledge=knowledge,
+        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
     ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
