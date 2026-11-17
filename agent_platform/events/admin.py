@@ -149,7 +149,8 @@ class WebhookSubscriptionService:
                 )
                 return await cursor.fetchone() is not None
 
-    async def retry_pending_secret_revocations(self, *, limit: int = 100,\n                                              raise_on_failure: bool = False) -> dict[str, int]:
+    async def retry_pending_secret_revocations(self, *, limit: int = 100,
+                                              raise_on_failure: bool = False) -> dict[str, int]:
         if isinstance(limit, bool) or not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         pending = await self._claim_pending_secret_revocations(limit=limit)
