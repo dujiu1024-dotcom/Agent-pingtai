@@ -77,6 +77,7 @@ expected = set(request["bundle_paths"])
 root = pathlib.Path("/workspace/skill")
 root.mkdir(parents=True, exist_ok=True)
 seen = set()
+all_seen = set()
 total = 0
 with zipfile.ZipFile(io.BytesIO(archive), "r") as bundle:
     members = bundle.infolist()
@@ -94,10 +95,11 @@ with zipfile.ZipFile(io.BytesIO(archive), "r") as bundle:
             stat.S_ISLNK(mode)):
             raise RuntimeError("unsafe Skill bundle member")
         key = path.as_posix().casefold()
-        if key in seen:
+        if key in all_seen:
             raise RuntimeError("duplicate Skill bundle path")
-        seen.add(key)
+        all_seen.add(key)
         if not info.is_dir():
+            seen.add(key)
             total += info.file_size
             if total > 8 * 1024 * 1024:
                 raise RuntimeError("Skill bundle too large")
