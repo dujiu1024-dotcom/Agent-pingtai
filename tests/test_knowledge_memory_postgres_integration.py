@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -300,3 +301,36 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.knowledge.get_connector_cursor(self.tenant_id+"-other","fixture"))
         await self.knowledge.save_connector_cursor(self.tenant_id,"fixture","cursor-2")
         self.assertEqual(await self.knowledge.get_connector_cursor(self.tenant_id,"fixture"),"cursor-2")
+
+
+    async def test_memory_retrieval_returns_historical_version_with_source_citation(self):
+        from agent_platform.memory.retrieval import (
+            MemoryRetrievalQuery,
+            MemoryRetrievalService,
+        )
+
+        candidate = MemoryCandidate(
+            tenant_id=self.tenant_id, scope=MemoryScope.USER, scope_id="history-user",
+            content="original memory fact", source_ref="conversation:original",
+            confidence=0.8, created_by="extractor",
+        )
+        await self.memory.propose(candidate)
+        principal = MemoryPrincipal(tenant_id=self.tenant_id, user_id="history-user")
+        await self.memory.confirm(
+            tenant_id=self.tenant_id, memory_id=candidate.memory_id,
+            confirmer_id="history-user",
+        )
+        original = await self.memory.repository.get(self.tenant_id, candidate.memory_id)
+        await self.memory.correct(
+            principal=principal, memory_id=candidate.memory_id,
+            content="corrected memory fact", source_ref="manual:correction",
+        )
+        retrieval = MemoryRetrievalService(self.memory)
+        historical = await retrieval.search(
+            principal=principal,
+            query=MemoryRetrievalQuery(as_of=original.updated_at + timedelta(microseconds=1)),
+        )
+        current = await retrieval.search(principal=principal)
+        self.assertEqual(historical[0].citation.source_ref, "conversation:original")
+        self.assertEqual(historical[0].citation.version, original.version)
+        self.assertEqual(current[0].citation.source_ref, "manual:correction")
