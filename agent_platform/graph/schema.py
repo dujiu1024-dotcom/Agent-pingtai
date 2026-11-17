@@ -5,6 +5,7 @@ implement a graph database; persistence and query execution belong to later task
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -56,9 +57,11 @@ class PropertyDefinition:
         for name in ("minimum", "maximum"):
             value = getattr(self, name)
             if value is not None and (
-                isinstance(value, bool) or not isinstance(value, (int, float))
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or (isinstance(value, float) and not math.isfinite(value))
             ):
-                raise ValueError(f"{name} must be numeric")
+                raise ValueError(f"{name} must be a finite number")
         if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
             raise ValueError("minimum must not exceed maximum")
         if self.allowed_values and (
@@ -72,7 +75,9 @@ class PropertyDefinition:
         valid = {
             PropertyKind.STRING: lambda v: isinstance(v, str),
             PropertyKind.INTEGER: lambda v: isinstance(v, int) and not isinstance(v, bool),
-            PropertyKind.NUMBER: lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+            PropertyKind.NUMBER: lambda v: isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and (not isinstance(v, float) or math.isfinite(v)),
             PropertyKind.BOOLEAN: lambda v: isinstance(v, bool),
             PropertyKind.STRING_LIST: lambda v: isinstance(v, (list, tuple))
             and all(isinstance(item, str) for item in v),
