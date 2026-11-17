@@ -515,6 +515,29 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertTrue(worker.stopped)
 
 
+    def test_identity_audit_reader_is_wired_into_production_api(self):
+        class AuditReader:
+            async def list_events(self, **kwargs):
+                return ()
+
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            audit_reader=AuditReader(),
+            identity_audit_reader=AuditReader(),
+            audit_authorizer=lambda principal: True,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.get(
+            "/api/platform/v1/audit/identity-events",
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"tenant_id": "tenant-a", "items": []})
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
+from agent_platform.observability.redaction import redact_payload
 
 
 def create_audit_router(*, reader: Any, authorize_read: Callable[[Principal], Any], identity_reader: Any | None = None) -> APIRouter:
@@ -34,7 +35,7 @@ def create_audit_router(*, reader: Any, authorize_read: Callable[[Principal], An
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"tenant_id": principal.tenant_id, "items": list(items)}
+        return {"tenant_id": principal.tenant_id, "items": [redact_payload(dict(item)) for item in items]}
 
 
     @router.get("/identity-events")
@@ -61,6 +62,6 @@ def create_audit_router(*, reader: Any, authorize_read: Callable[[Principal], An
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"tenant_id": principal.tenant_id, "items": list(items)}
+        return {"tenant_id": principal.tenant_id, "items": [redact_payload(dict(item)) for item in items]}
 
     return router
