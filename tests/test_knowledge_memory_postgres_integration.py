@@ -183,6 +183,17 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(denied, [])
         self.assertEqual(len(permitted), 1)
+        self.assertEqual(
+            await self.knowledge.list_visible_chunks(
+                KnowledgePrincipal(tenant_id=self.tenant_id, user_id="denied"),
+                document.document_id, 1,
+            ), [],
+        )
+        visible_chunks = await self.knowledge.list_visible_chunks(
+            KnowledgePrincipal(tenant_id=self.tenant_id, user_id="permitted"),
+            document.document_id, 1,
+        )
+        self.assertEqual([item.chunk_id for item in visible_chunks], [restricted_chunk.chunk_id])
         citation = permitted[0].retrieval_trace["citation"]
         self.assertEqual(citation["document_id"], document.document_id)
         self.assertEqual(citation["chunk_id"], restricted_chunk.chunk_id)
