@@ -21,3 +21,20 @@ checks with baseline regression checks. Every decision records the policy versio
 run IDs, failure reasons, comparison ID, UTC timestamp, caller-supplied evidence
 references and SHA-256 digest of the canonical decision payload. Evidence refs
 should identify CI artifacts, evaluation reports and human-review records.
+
+## Platform API composition
+
+The release-gate and regression endpoints are exposed only when the platform
+composition root receives both `evaluation_governance_service` and
+`evaluation_gate_manage_authorizer`. The factory rejects a partial configuration
+rather than silently leaving a governance service inaccessible or exposing an
+unprotected gate. The authorization callback is evaluated for each compare/gate
+request; a false result or callback failure must not reach the governance service.
+
+- `POST /api/platform/v1/observability/evaluations/{eval_run_id}/compare`
+- `POST /api/platform/v1/observability/evaluations/{eval_run_id}/gate`
+
+The gate request supplies a versioned policy (minimums/maximums), optional
+baseline run ID, and non-empty evidence references. Tenant identity is taken from
+the authenticated principal, never from request JSON. Keep evidence references
+resolvable to immutable CI/evaluation/review artifacts.
