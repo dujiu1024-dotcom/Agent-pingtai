@@ -89,6 +89,9 @@ def _write_evidence(path: Path, report: dict[str, Any]) -> None:
 
 
 def run_plan(plan: dict[str, Any], evidence_path: Path) -> int:
+    if evidence_path.is_symlink() or evidence_path.exists():
+        raise ValueError("evidence path must be new and must not be a symlink")
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = _utc_now()
     started = time.monotonic()
     deadline = started + plan["max_duration_seconds"]
