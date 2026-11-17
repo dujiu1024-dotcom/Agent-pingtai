@@ -241,11 +241,12 @@ def create_platform_app(
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_dataset_repository, evaluation_run_service, evaluation_manage_authorizer,
     ))
-    if evaluation_configured and any(value is None for value in (
-        evaluation_repository, evaluation_manage_authorizer,
-    )):
+    if evaluation_configured and (
+        (evaluation_repository is None and evaluation_dataset_repository is None)
+        or evaluation_manage_authorizer is None
+    ):
         raise ValueError(
-            "evaluation repository and evaluation manager authorizer must be configured together"
+            "an evaluation repository and evaluation manager authorizer must be configured"
         )
     observability_api_configured = any(value is not None for value in (
         metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
