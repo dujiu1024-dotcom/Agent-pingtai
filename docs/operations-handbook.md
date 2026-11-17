@@ -30,27 +30,27 @@ must check PostgreSQL, Redis and object storage, not only process liveness.
 
 ## 2. Unified operator command
 
-scripts/platform_ops.sh is the supported command entry point. It serializes operations
+bash scripts/platform_ops.sh is the supported command entry point. It serializes operations
 with a host lock and defaults to the production Compose overlay.
 
 Read-only validation:
 
 ```sh
-scripts/platform_ops.sh preflight
-scripts/platform_ops.sh status
-scripts/platform_ops.sh health
-scripts/platform_ops.sh recovery-plan
-scripts/platform_ops.sh verify-backups
-RELEASE_MANIFEST=/secure/releases/release.json scripts/platform_ops.sh upgrade-plan
+bash scripts/platform_ops.sh preflight
+bash scripts/platform_ops.sh status
+bash scripts/platform_ops.sh health
+bash scripts/platform_ops.sh recovery-plan
+bash scripts/platform_ops.sh verify-backups
+RELEASE_MANIFEST=/secure/releases/release.json bash scripts/platform_ops.sh upgrade-plan
 ```
 
 Production-changing commands require explicit second-argument confirmation:
 
 ```sh
-scripts/platform_ops.sh deploy CONFIRM-PRODUCTION-DEPLOY
-AGE_RECIPIENT='age1...' scripts/platform_ops.sh backup CONFIRM-PLATFORM-BACKUP
-scripts/platform_ops.sh restore CONFIRM-PLATFORM-RESTORE
-ROLLBACK_SNAPSHOT=/secure/path/env-YYYYMMDDTHHMMSSZ scripts/platform_ops.sh rollback CONFIRM-PRODUCTION-ROLLBACK
+bash scripts/platform_ops.sh deploy CONFIRM-PRODUCTION-DEPLOY
+AGE_RECIPIENT='age1...' bash scripts/platform_ops.sh backup CONFIRM-PLATFORM-BACKUP
+bash scripts/platform_ops.sh restore CONFIRM-PLATFORM-RESTORE
+ROLLBACK_SNAPSHOT=/secure/path/env-YYYYMMDDTHHMMSSZ bash scripts/platform_ops.sh rollback CONFIRM-PRODUCTION-ROLLBACK
 ```
 
 Review command output and change approval before supplying a confirmation token.
@@ -77,7 +77,7 @@ Prepare a release manifest using the schema and examples in
 docs/deployment/release-upgrade.md. Run:
 
 ```sh
-RELEASE_MANIFEST=/secure/releases/release.json scripts/platform_ops.sh upgrade-plan
+RELEASE_MANIFEST=/secure/releases/release.json bash scripts/platform_ops.sh upgrade-plan
 ```
 
 The planner validates semantic versions, immutable image digests, old/new compatibility,
