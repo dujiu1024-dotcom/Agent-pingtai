@@ -1,5 +1,11 @@
 """Tenant-scoped knowledge graph schema contracts."""
 
+from agent_platform.graph.postgres_repository import (
+    GraphEntityRecord,
+    GraphRelationRecord,
+    GraphSourceReference,
+    PostgresGraphRepository,
+)
 from agent_platform.graph.schema import (
     EntityTypeDefinition,
     GraphEntity,
@@ -15,6 +21,10 @@ from agent_platform.graph.schema import (
 )
 
 __all__ = [
+    "GraphEntityRecord",
+    "GraphRelationRecord",
+    "GraphSourceReference",
+    "PostgresGraphRepository",
     "EntityTypeDefinition",
     "GraphEntity",
     "GraphRelation",
