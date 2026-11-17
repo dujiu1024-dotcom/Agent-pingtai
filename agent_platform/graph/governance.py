@@ -236,8 +236,13 @@ class InMemoryGraphGovernanceRepository:
             if current.status is status:
                 return current
             self._check_current(current, expected_version)
-            if current.status is not GraphEntityStatus.ACTIVE:
-                raise GraphGovernanceConflict("only active graph entities can transition")
+            allowed_from = (
+                {GraphEntityStatus.ACTIVE, GraphEntityStatus.ARCHIVED, GraphEntityStatus.EXPIRED}
+                if status is GraphEntityStatus.DELETED
+                else {GraphEntityStatus.ACTIVE}
+            )
+            if current.status not in allowed_from:
+                raise GraphGovernanceConflict("graph entity cannot make this lifecycle transition")
             updated = replace(
                 current, status=status, version=current.version + 1,
                 updated_at=datetime.now(timezone.utc), updated_by=actor_id,
@@ -248,7 +253,15 @@ class InMemoryGraphGovernanceRepository:
             self._enqueue(tenant_id, "cache", entity_id, "invalidate", updated.version)
             affected_relations: list[str] = []
             if status is GraphEntityStatus.DELETED:
-                for relation_key, relation in tuple(self._relations.items()):
+                ordered_relations = sorted(
+                self._relations.items(),
+                key=lambda item: (
+                    item[1].source_entity_id == source_id
+                    or item[1].target_entity_id == source_id,
+                    item[1].relation_id,
+                ),
+            )
+            for relation_key, relation in ordered_relations:
                     if relation.tenant_id != tenant_id or (
                         relation.source_entity_id != entity_id
                         and relation.target_entity_id != entity_id
@@ -384,8 +397,10 @@ class InMemoryGraphGovernanceRepository:
         if type(lease_seconds) is not int or not 5 <= lease_seconds <= 3600:
             raise ValueError("lease_seconds must be between 5 and 3600")
         instant = now or datetime.now(timezone.utc)
+        if not isinstance(instant, datetime) or instant.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
         async with self._lock:
-            claimed: list[GraphInvalidationJob] = []
+            claimed: list[GraphInvalidationJob] = 
             for key, job in sorted(self._jobs.items(), key=lambda item: item[1].available_at):
                 expired = job.status == "processing" and job.lease_until is not None and job.lease_until <= instant
                 ready = job.status == "pending" and job.available_at <= instant
@@ -421,6 +436,8 @@ class InMemoryGraphGovernanceRepository:
         if type(delay_seconds) is not int or not 1 <= delay_seconds <= 3600:
             raise ValueError("delay_seconds must be between 1 and 3600")
         instant = now or datetime.now(timezone.utc)
+        if not isinstance(instant, datetime) or instant.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
         async with self._lock:
             job = self._jobs.get(job_id)
             if job is None or job.status != "processing" or job.lease_owner != worker_id:
@@ -452,7 +469,7 @@ class InMemoryGraphGovernanceRepository:
         self, tenant_id: str, object_kind: str, object_id: str,
         operation: str, version: int,
     ) -> None:
-        key = f"{tenant_id}:{object_kind}:{object_id}:{operation}"
+        key = f"{tenant_id}:{object_kind}:{object_id}"
         self._jobs[key] = GraphInvalidationJob(
             job_id=key, tenant_id=tenant_id, object_kind=object_kind,
             object_id=object_id, operation=operation,
@@ -512,9 +529,9 @@ class GraphGovernanceService:
         if current is None:
             raise KeyError("graph entity not found")
         actor = self._authorize(principal, current)
-        self._schema_for(current.tenant_id).validate_attributes(
-            self._schema_for(current.tenant_id).entity_type(current.entity_type).properties,
-            attributes,
+        schema = self._schema_for(current.tenant_id)
+        schema.validate_attributes(
+            schema.entity_type(current.entity_type).properties, attributes,
         )
         return await self.repository.correct_entity(
             tenant_id=current.tenant_id, entity_id=entity_id,
