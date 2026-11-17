@@ -1,5 +1,14 @@
 """Tenant-scoped knowledge graph schema contracts."""
 
+from agent_platform.graph.extraction import (
+    GraphEntityDraft,
+    GraphExtractionCandidate,
+    GraphExtractionDraft,
+    GraphExtractionService,
+    GraphRelationDraft,
+    GraphSourceRecord,
+    PostgresGraphCandidateStore,
+)
 from agent_platform.graph.schema import (
     EntityTypeDefinition,
     GraphEntity,
@@ -15,7 +24,19 @@ from agent_platform.graph.schema import (
 )
 
 __all__ = [
-    "EntityTypeDefinition",\n    "GraphEntityDraft",\n    "GraphExtractionCandidate",\n    "GraphExtractionDraft",\n    "GraphExtractionService",\n    "GraphRelationDraft",\n    "GraphSourceRecord",
+    "EntityTypeDefinition",
+    "GraphEntityDraft",
+    "GraphExtractionCandidate",
+    "GraphExtractionDraft",
+    "GraphExtractionService",
+    "GraphRelationDraft",
+    "GraphSourceRecord",
+    "GraphEntityDraft",
+    "GraphExtractionCandidate",
+    "GraphExtractionDraft",
+    "GraphExtractionService",
+    "GraphRelationDraft",
+    "GraphSourceRecord",
     "GraphEntity",
     "GraphRelation",
     "GraphSchema",
