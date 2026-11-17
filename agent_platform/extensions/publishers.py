@@ -6,9 +6,9 @@ from typing import Any, Protocol
 
 from agent_platform.extensions.oci_runtime import TrustedPublisherKey
 
-_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\Z")
-_PUBLISHER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\Z")
-_EXTENSION_ID = re.compile(r"[a-z][a-z0-9-]{1,62}\\Z")
+_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_PUBLISHER_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_EXTENSION_ID = re.compile(r"[a-z][a-z0-9-]{1,62}$")
 
 
 class TrustedPublisherKeyRepository(Protocol):
@@ -83,11 +83,14 @@ class TrustedPublisherKeyRegistry:
 
     async def revoke(self, *, tenant_id: str, extension_id: str, key_id: str,
                      revoked_by: str) -> bool:
-        self._validate(
-            tenant_id=tenant_id, extension_id=extension_id, publisher_id="registry",
-            key_id=key_id, public_key_pem=b"-----BEGIN PUBLIC KEY-----\\nAA==\\n-----END PUBLIC KEY-----",
-            not_before=0, expires_at=None, created_by=revoked_by,
-        )
+        if not isinstance(tenant_id, str) or not tenant_id.strip() or len(tenant_id) > 128:
+            raise ValueError("tenant_id is required")
+        if not isinstance(extension_id, str) or not _EXTENSION_ID.fullmatch(extension_id):
+            raise ValueError("invalid extension_id")
+        if not isinstance(key_id, str) or not _KEY_ID.fullmatch(key_id):
+            raise ValueError("invalid publisher key_id")
+        if not isinstance(revoked_by, str) or not revoked_by.strip() or len(revoked_by) > 128:
+            raise ValueError("revoked_by is required")
         return await self.repository.revoke(
             tenant_id=tenant_id, extension_id=extension_id, key_id=key_id,
             revoked_by=revoked_by,
