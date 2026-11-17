@@ -64,20 +64,43 @@ def validate_record(record: dict[str, Any], policy: dict[str, Any]) -> dict[str,
         raise ValueError(f"unsupported drill scope: {scope}")
 
     checks = record.get("component_checks")
-    required_components = policy["required_components"] if scope == "full_platform" else (
-        record.get("components_in_scope") or []
-    )
-    if not isinstance(checks, dict):
-        checks = {}
     failures: list[str] = []
+    if scope == "full_platform":
+        required_components = policy["required_components"]
+    else:
+        scoped_components = record.get("components_in_scope")
+        if (
+            not isinstance(scoped_components, list)
+            or not scoped_components
+            or any(not isinstance(item, str) or not item.strip() for item in scoped_components)
+            or len(set(scoped_components)) != len(scoped_components)
+        ):
+            failures.append(
+                "components_in_scope must be a non-empty list of unique component names"
+            )
+            required_components = []
+        else:
+            required_components = scoped_components
+
+    if not isinstance(checks, dict):
+        failures.append("component_checks must be an object")
+        checks = {}
     for component in required_components:
         if checks.get(component) is not True:
             failures.append(f"component check missing or failed: {component}")
 
     consistency = record.get("consistency_checks", {})
-    consistency_gates = policy.get("consistency_gates_by_scope", {}).get(
-        scope, policy["consistency_gates"]
-    )
+    if not isinstance(consistency, dict):
+        failures.append("consistency_checks must be an object")
+        consistency = {}
+    scope_gates = policy.get("consistency_gates_by_scope", {})
+    if not isinstance(scope_gates, dict):
+        raise ValueError("consistency_gates_by_scope must be an object")
+    consistency_gates = scope_gates.get(scope, policy["consistency_gates"])
+    if not isinstance(consistency_gates, list) or any(
+        not isinstance(gate, str) or not gate for gate in consistency_gates
+    ):
+        raise ValueError(f"invalid consistency gates for drill scope: {scope}")
     for gate in consistency_gates:
         if consistency.get(gate) is not True:
             failures.append(f"consistency gate missing or failed: {gate}")
