@@ -450,10 +450,12 @@ class LifecycleManagedHarnessAdapter:
                 raise RuntimeError("Harness stream ended without a completion event")
         try:
             if request.timeout_seconds is None:
-                await consume_stream()
+                async for _event in consume_stream():
+                    pass
             else:
                 async with asyncio.timeout(request.timeout_seconds):
-                    await consume_stream()
+                    async for _event in consume_stream():
+                    pass
         except asyncio.CancelledError:
             await self.lifecycle.cancelled(request=request, adapter=self.descriptor)
             raise
