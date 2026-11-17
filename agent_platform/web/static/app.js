@@ -506,7 +506,27 @@ async function renderObservability(){
   "<p class='subtle'>统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。数据源错误会显式显示；所有读取与告警变更均由服务端认证、租户隔离和权限策略控制。</p>";
 }
 const workbenchPagesBaseRender=render;
+function renderLegacyPanels(){
+ const legacy=(panel)=>"/app/?legacy=1&panel="+encodeURIComponent(panel);
+ const cards=[
+  ["任务看板","旧版项目/任务看板；新工作台提供任务中心。","native","tasks"],
+  ["运行执行","旧版手动运行入口；新工作台通过任务中心提交执行。","native","tasks"],
+  ["交付报告","旧版运行报告与产物；新工作台提供产物交付。","native","artifacts"],
+  ["事件流","旧版事件时间线；新工作台提供可观测性与审计视图。","native","observability"],
+  ["经营看板","旧版经营汇总仍保留原始视图，供迁移期间核对。","legacy","ops"],
+  ["系统健康自检","旧版 listener/console/tick 自检面板。","legacy","health"],
+  ["商务 · 客户与款项","客户、报价、合同、发票与回款管理。","legacy","business"],
+  ["内容日历 · B站/抖音","内容计划、发布记录与数据回填。","legacy","content"],
+  ["圆桌会议 · 多角色讨论","多角色讨论、轮次与结论产物。","legacy","roundtable"]
+ ];
+ const native=cards.filter(x=>x[2]==="native").map(x=>panel(x[0],"<p class='subtle'>"+esc(x[1])+"</p>",btn("打开新工作台入口","data-go='"+esc(x[3])+"'")));
+ const legacyCards=cards.filter(x=>x[2]==="legacy").map(x=>panel(x[0],"<p class='subtle'>"+esc(x[1])+"</p>","<a class='button' href='"+esc(legacy(x[3]))+"' target='_blank' rel='noopener'>在旧版兼容面板打开</a>"));
+ $("#view").innerHTML=panel("迁移说明","<p>已迁移能力使用新工作台原生页面；尚未迁移为新 API 的领域面板通过受控 legacy fallback 直达，不伪装成新系统实现。</p>")+
+  "<div class='grid'>"+native.join("")+legacyCards.join("")+"</div>"+
+  panel("迁移边界","<p>商务、内容日历、圆桌会议和旧版系统自检目前仍由 legacy console 提供。对应链接只用于兼容访问；完成后端 API 与权限迁移前，不应关闭这些领域的旧系统入口。</p>");
+}
 render=async function(){
+ if(S.view==="legacy-panels"){renderLegacyPanels();return;}
  if(S.view==="batch"){
   try{await renderBatch()}catch(error){$("#view").innerHTML=panel("批量执行不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-retry='1'"))}
   return;
