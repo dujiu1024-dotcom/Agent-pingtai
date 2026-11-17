@@ -114,6 +114,25 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
         errors = validate_evidence(self.document, now=self.now)
         self.assertIn("environment: must equal production", errors)
 
+    def test_migration_and_rollback_evidence_are_required(self):
+        del self.document["checks"]["migration"]
+        self.document["checks"]["rollback"] = {
+            "status": "pending",
+            "owner": "release-operator",
+            "verified_at_utc": self.now.isoformat().replace("+00:00", "Z"),
+            "evidence_ref": "artifacts/rollback.json",
+        }
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertTrue(any("checks.migration" in error for error in errors))
+        self.assertIn("checks.rollback.status: must be passed", errors)
+
+    def test_migration_and_rollback_require_named_owners_and_evidence(self):
+        self.document["checks"]["migration"]["owner"] = ""
+        self.document["checks"]["rollback"]["evidence_ref"] = ""
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("checks.migration.owner: required non-empty string", errors)
+        self.assertIn("checks.rollback.evidence_ref: required non-empty string", errors)
+
     def test_invalid_document_shape_is_rejected(self):
         self.assertEqual(
             validate_evidence([], now=self.now),
