@@ -448,35 +448,67 @@ class OpenAICompatibleModelRouter:
                     "input_tokens": estimate.input_tokens,
                     "output_tokens": estimate.output_tokens,
                 }
-                estimated_micros = await self.quota_cost_estimator.estimate_micros(
-                    model_id=config.model_id, usage=estimated_usage,
-                )
+                try:
+                    estimated_micros = await self.quota_cost_estimator.estimate_micros(
+                        model_id=config.model_id, usage=estimated_usage,
+                    )
+                except Exception as exc:
+                    await record_preflight_failure(
+                        candidate_id=candidate, reason="quota_cost_estimation_failed",
+                        outcome="failed", error_type=type(exc).__name__,
+                    )
+                    raise
                 if (
                     not isinstance(estimated_micros, int)
                     or isinstance(estimated_micros, bool)
                     or estimated_micros < 0
                 ):
+                    await record_preflight_failure(
+                        candidate_id=candidate, reason="quota_cost_estimate_invalid",
+                        outcome="failed", error_type="ValueError",
+                    )
                     raise ModelUsageRecordingError(
                         "model price card could not estimate a finite reservation cost"
                     )
-                scope_type, scope_id = (
-                    self.quota_scope_resolver(snapshot, config)
-                    if self.quota_scope_resolver is not None
-                    else ("tenant", tenant_id)
-                )
+                try:
+                    scope_type, scope_id = (
+                        self.quota_scope_resolver(snapshot, config)
+                        if self.quota_scope_resolver is not None
+                        else ("tenant", tenant_id)
+                    )
+                except Exception as exc:
+                    await record_preflight_failure(
+                        candidate_id=candidate, reason="quota_scope_resolution_failed",
+                        outcome="failed", error_type=type(exc).__name__,
+                    )
+                    raise
                 if (
                     not isinstance(scope_type, str) or not scope_type
                     or not isinstance(scope_id, str) or not scope_id
                 ):
+                    await record_preflight_failure(
+                        candidate_id=candidate, reason="quota_scope_invalid",
+                        outcome="failed", error_type="ValueError",
+                    )
                     raise ModelRoutingError("model quota scope resolver returned an invalid scope")
-                quota_reservation, _warnings = await self.quota_service.reserve_run(
-                    tenant_id=tenant_id, run_id=run_id,
-                    scope_type=scope_type, scope_id=scope_id,
-                    estimated_tokens=estimate.total_tokens,
-                    estimated_cost_usd=Decimal(estimated_micros) / Decimal(1_000_000),
-                    estimated_input_tokens=estimate.input_tokens,
-                    estimated_output_tokens=estimate.output_tokens,
-                )
+                try:
+                    quota_reservation, _warnings = await self.quota_service.reserve_run(
+                        tenant_id=tenant_id, run_id=run_id,
+                        scope_type=scope_type, scope_id=scope_id,
+                        estimated_tokens=estimate.total_tokens,
+                        estimated_cost_usd=Decimal(estimated_micros) / Decimal(1_000_000),
+                        estimated_input_tokens=estimate.input_tokens,
+                        estimated_output_tokens=estimate.output_tokens,
+                    )
+                except Exception as exc:
+                    denied = type(exc).__name__ == "BudgetExceeded"
+                    await record_preflight_failure(
+                        candidate_id=candidate,
+                        reason="quota_reservation_denied" if denied else "quota_reservation_failed",
+                        outcome="denied" if denied else "failed",
+                        error_type=type(exc).__name__,
+                    )
+                    raise
             try:
                 with trace_span(
                     "model.complete", component="model", tenant_id=tenant_id,
