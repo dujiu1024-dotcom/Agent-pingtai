@@ -1,12 +1,12 @@
 """Tenant-scoped server-enforced quotas and cost accounting."""
 
-from agent_platform.quotas.inheritance import RunBudgetInheritanceService, RunBudgetLineage
 from agent_platform.quotas.groups import (
     QuotaReservationGroup,
     QuotaReservationGroupService,
     QuotaScope,
 )
 from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
+from agent_platform.quotas.inheritance import RunBudgetInheritanceService, RunBudgetLineage
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
     Budget,
