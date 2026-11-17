@@ -75,6 +75,15 @@ class RAGPlaygroundApiTests(unittest.TestCase):
         self.assertIsInstance(call["filters"], RetrievalFilters)
         self.assertEqual(call["filters"].min_score, 0.7)
 
+    def test_score_threshold_filters_hits_before_answer_generation(self):
+        response = self.client.post("/api/platform/v1/rag-playground/query", json={
+            "query": "What is the evidence?", "min_score": 0.95,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["retrieved"], [])
+        self.assertTrue(response.json()["abstained"])
+        self.assertEqual(response.json()["reason"], "no_authorized_evidence")
+
     def test_rejects_unknown_embedding_and_invalid_query_parameters(self):
         unknown = self.client.post("/api/platform/v1/rag-playground/query", json={
             "query": "question", "embedding_model": "unconfigured",
