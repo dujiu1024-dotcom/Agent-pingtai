@@ -43,6 +43,12 @@ class RunReplayApiTests(unittest.TestCase):
         opened=self.client.post("/api/platform/v1/runs/run-api/replay")
         self.assertEqual(opened.status_code,200)
         session_id=opened.json()["session_id"]
+        timeline=self.client.get(
+            f"/api/platform/v1/runs/run-api/replay/{session_id}/events"
+        )
+        self.assertEqual(timeline.status_code,200)
+        self.assertEqual(timeline.json()["total"],1)
+        self.assertEqual(timeline.json()["items"][0]["step_id"],"node-a")
         stepped=self.client.post(f"/api/platform/v1/runs/run-api/replay/{session_id}/step")
         self.assertEqual(stepped.json()["event"]["step_id"],"node-a")
         paused=self.client.post(f"/api/platform/v1/runs/run-api/replay/{session_id}/pause")
