@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
 from agent_platform.knowledge.catalog import InMemoryKnowledgeCatalog
-from agent_platform.knowledge.contracts import Document, KnowledgePrincipal
+from agent_platform.knowledge.contracts import Document, KnowledgePrincipal, KnowledgeScope
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 
@@ -111,6 +111,51 @@ class KnowledgeCatalogApiTests(unittest.TestCase):
         self.assertEqual(good.status_code, 201)
         self.assertEqual(good.json()["status"], "pending")
 
+
+
+    def test_collection_rejects_private_and_cross_project_documents(self):
+        import asyncio
+
+        project_collection = self.client.post(
+            "/api/platform/v1/knowledge/collections",
+            json={"name": "Project A", "project_id": "project-a"},
+            headers={"x-permissions": "knowledge.manage"},
+        ).json()["collection_id"]
+        private_doc = Document(
+            tenant_id="tenant-a", title="Private", source_uri="upload:private",
+            content_hash="sha256:private", scope=KnowledgeScope.PRIVATE,
+            owner_user_id="user-a",
+        )
+        project_b_doc = Document(
+            tenant_id="tenant-a", title="Project B", source_uri="upload:project-b",
+            content_hash="sha256:project-b", scope=KnowledgeScope.PROJECT,
+            project_id="project-b",
+        )
+        asyncio.run(self.documents.save_document(private_doc, []))
+        asyncio.run(self.documents.save_document(project_b_doc, []))
+        url = f"/api/platform/v1/knowledge/collections/{project_collection}/documents"
+        for document in (private_doc, project_b_doc):
+            response = self.client.post(
+                url, json={"document_id": document.document_id},
+                headers={"x-permissions": "knowledge.manage"},
+            )
+            self.assertEqual(response.status_code, 404)
+
+    def test_index_rejects_boolean_dimensions_and_schema_version(self):
+        collection = self.client.post(
+            "/api/platform/v1/knowledge/collections",
+            json={"name": "Typed indexes"},
+            headers={"x-permissions": "knowledge.manage"},
+        ).json()["collection_id"]
+        url = f"/api/platform/v1/knowledge/collections/{collection}/indexes"
+        for payload in (
+            {"index_name": "bad-dim", "embedding_model": "model-v1", "dimensions": True},
+            {"index_name": "bad-schema", "embedding_model": "model-v1", "dimensions": 1536, "schema_version": True},
+        ):
+            response = self.client.post(
+                url, json=payload, headers={"x-permissions": "knowledge.manage"},
+            )
+            self.assertEqual(response.status_code, 400, response.text)
 
 if __name__ == "__main__":
     unittest.main()
