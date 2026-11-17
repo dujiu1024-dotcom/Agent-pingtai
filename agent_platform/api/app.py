@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
+from agent_platform.api.batch import create_batch_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
     API_V1_PREFIX, PublicApiContractASGIMiddleware, error_for_http_status,
@@ -121,6 +122,7 @@ def create_platform_app(
     memory_extraction_event_worker: Any | None = None,
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
+    batch_service_resolver: Any | None = None,
     task_worker: Any | None = None,
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
@@ -371,6 +373,9 @@ def create_platform_app(
         blackboard_repository_resolver, blackboard_authorizer,
     )):
         raise ValueError("Blackboard repository resolver and authorizer must be configured together")
+    batch_api_configured = batch_service_resolver is not None
+    if batch_api_configured and task_authorizer is None:
+        raise ValueError("batch service resolver requires the workbench task authorizer")
     app.include_router(create_workbench_router(
         features={
             "knowledge": True,
@@ -380,6 +385,7 @@ def create_platform_app(
             "registry": registry_configured,
             "agent_management": registry_configured,
             "task_execution": task_center_configured,
+            "batch_execution": batch_api_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
             "blackboard": blackboard_configured,
             "quotas": quota_reporting_store is not None or quota_store is not None,
@@ -390,6 +396,12 @@ def create_platform_app(
         resolve_task_service=task_service_resolver,
         authorize_task=task_authorizer,
     ))
+    if batch_api_configured:
+        app.include_router(create_batch_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=batch_service_resolver,
+            authorize=task_authorizer,
+        ))
     if blackboard_configured:
         app.include_router(create_blackboard_router(
             resolve_principal=_principal_from_request,
