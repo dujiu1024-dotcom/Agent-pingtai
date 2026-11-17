@@ -27,6 +27,8 @@ include = [
   "scripts/run_legacy_migration.py",
   "scripts/migrate_sqlite_to_pg.py",
   "tests/test_issue_666_s_666_02_sqlite_postgres_import.py",
+  "scripts/verify_sqlite_postgres_parity.py",
+  "tests/test_issue_666_s_666_06_migration_parity.py",
   "tests/test_release_gate_evidence.py",
   "tests/test_release_upgrade.py",
   "tests/test_backup_integrity_verification.py",
