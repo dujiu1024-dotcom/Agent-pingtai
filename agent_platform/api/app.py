@@ -11,6 +11,7 @@ from agent_platform.api.audit import create_audit_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.identity import create_identity_router
+from agent_platform.api.health import create_health_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
@@ -109,6 +110,7 @@ def create_platform_app(
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
     blackboard_evidence_verifier: Any | None = None,
+    readiness_checks: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -162,6 +164,7 @@ def create_platform_app(
     )
     app.add_middleware(TraceContextASGIMiddleware)
     app.include_router(create_identity_router(identity=identity))
+    app.include_router(create_health_router(readiness_checks=readiness_checks or {}))
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_run_service, evaluation_manage_authorizer,
     ))
