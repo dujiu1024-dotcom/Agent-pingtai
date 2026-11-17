@@ -6,7 +6,6 @@ This module deliberately does not reuse legacy conversation tables as authority.
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -140,10 +139,6 @@ class ConversationMessage:
             raise ValueError("asset_ids must be a tuple of non-empty strings")
         if not isinstance(self.metadata, Mapping):
             raise ValueError("message metadata must be a mapping")
-        try:
-            json.dumps(dict(self.metadata), allow_nan=False)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("message metadata must contain JSON-compatible values") from exc
         if self.token_usage is not None and not isinstance(self.token_usage, MessageTokenUsage):
             raise ValueError("token_usage must be a MessageTokenUsage")
         if not isinstance(self.created_at, datetime) or self.created_at.tzinfo is None:
@@ -181,10 +176,6 @@ class ContextWindowSnapshot:
             raise ValueError("snapshot token_count exceeds max_tokens")
         if not isinstance(self.snapshot, Mapping):
             raise ValueError("snapshot payload must be a mapping")
-        try:
-            json.dumps(dict(self.snapshot), allow_nan=False)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("snapshot payload must contain JSON-compatible values") from exc
         if self.run_id is not None and (not isinstance(self.run_id, str) or not self.run_id.strip()):
             raise ValueError("run_id must be a non-empty string when provided")
         if self.last_message_id is not None and (
@@ -232,12 +223,39 @@ class SessionRepository(Protocol):
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
     async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None: ...
-    async def get_context_snapshot(
-        self, tenant_id: str, session_id: str, snapshot_id: str,
-    ) -> ContextWindowSnapshot | None: ...
     async def list_context_snapshots(
         self, tenant_id: str, session_id: str, limit: int = 100,
     ) -> tuple[ContextWindowSnapshot, ...]: ...
+    async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None:
+        key = (snapshot.tenant_id, snapshot.session_id)
+        if key not in self.sessions:
+            raise SessionNotFound("session not found")
+        rows = self.context_snapshots.setdefault(key, [])
+        if any(
+            item.snapshot_id == snapshot.snapshot_id
+            for (tenant, _), items in self.context_snapshots.items()
+            if tenant == snapshot.tenant_id for item in items
+        ):
+            raise SessionError("context snapshot already exists")
+        if any(item.version == snapshot.version for item in rows):
+            raise SessionError("context snapshot version already exists")
+        if snapshot.last_message_id is not None and not any(
+            item.message_id == snapshot.last_message_id
+            for item in self.messages.get(key, ())
+        ):
+            raise ValueError("snapshot message cursor does not belong to this session")
+        rows.append(snapshot)
+
+    async def list_context_snapshots(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+    ) -> tuple[ContextWindowSnapshot, ...]:
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        if (tenant_id, session_id) not in self.sessions:
+            raise SessionNotFound("session not found")
+        rows = self.context_snapshots.get((tenant_id, session_id), ())
+        return tuple(sorted(rows, key=lambda item: item.version, reverse=True)[:limit])
+
     async def list_messages(
         self, tenant_id: str, session_id: str, limit: int = 100,
         before_message_id: str | None = None,
@@ -299,54 +317,7 @@ class InMemorySessionRepository:
         key = (message.tenant_id, message.session_id)
         if key not in self.sessions:
             raise SessionNotFound("session not found")
-        if any(
-            existing.message_id == message.message_id
-            for (tenant_id, _), rows in self.messages.items()
-            if tenant_id == message.tenant_id
-            for existing in rows
-        ):
-            raise SessionError("message already exists")
         self.messages.setdefault(key, []).append(message)
-
-    async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None:
-        key = (snapshot.tenant_id, snapshot.session_id)
-        if key not in self.sessions:
-            raise SessionNotFound("session not found")
-        if snapshot.last_message_id is not None and not any(
-            item.message_id == snapshot.last_message_id
-            for item in self.messages.get(key, ())
-        ):
-            raise ValueError("snapshot message cursor does not belong to this session")
-        rows = self.context_snapshots.setdefault(key, [])
-        if any(
-            item.snapshot_id == snapshot.snapshot_id
-            for (tenant_id, _), items in self.context_snapshots.items()
-            if tenant_id == snapshot.tenant_id
-            for item in items
-        ):
-            raise SessionError("context snapshot already exists")
-        if any(item.version == snapshot.version for item in rows):
-            raise SessionError("context snapshot version already exists")
-        rows.append(snapshot)
-
-    async def get_context_snapshot(
-        self, tenant_id: str, session_id: str, snapshot_id: str,
-    ) -> ContextWindowSnapshot | None:
-        return next(
-            (item for item in self.context_snapshots.get((tenant_id, session_id), ())
-             if item.snapshot_id == snapshot_id),
-            None,
-        )
-
-    async def list_context_snapshots(
-        self, tenant_id: str, session_id: str, limit: int = 100,
-    ) -> tuple[ContextWindowSnapshot, ...]:
-        if not 1 <= limit <= 500:
-            raise ValueError("limit must be between 1 and 500")
-        if (tenant_id, session_id) not in self.sessions:
-            raise SessionNotFound("session not found")
-        rows = self.context_snapshots.get((tenant_id, session_id), ())
-        return tuple(sorted(rows, key=lambda item: item.version, reverse=True)[:limit])
 
     async def list_messages(
         self, tenant_id: str, session_id: str, limit: int = 100,
