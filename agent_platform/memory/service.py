@@ -76,7 +76,12 @@ class InMemoryMemoryRepository:
         self.versions.setdefault(key,[]).append(record)
     async def get(self,tenant_id: str,memory_id: str)->MemoryRecord|None:return self.records.get((tenant_id,memory_id))
     async def list_versions(self,tenant_id: str,memory_id: str)->Sequence[MemoryRecord]:
-        return tuple(self.versions.get((tenant_id,memory_id),()))
+        # In-memory history mirrors PostgreSQL's recorded_at semantics: each
+        # immutable snapshot's creation timestamp is its version-recorded time.
+        return tuple(
+            replace(record, created_at=record.updated_at, updated_at=record.updated_at)
+            for record in self.versions.get((tenant_id,memory_id),())
+        )
     async def list(self,tenant_id: str,limit: int=1000)->Sequence[MemoryRecord]:return [r for (t,_),r in self.records.items() if t==tenant_id][:limit]
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:
         key=(tenant_id,memory_id); rec=self.records.get(key)
