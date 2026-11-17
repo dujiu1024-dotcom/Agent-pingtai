@@ -156,7 +156,7 @@ class QuotaReportingApiTests(unittest.TestCase):
         service = QuotaService(InMemoryQuotaStore())
         app = FastAPI()
         app.include_router(create_quota_reporting_router(
-            quota_store=self.store, quota_service=service,
+            quota_store=self.store, quota_service=service, audit_writer=lambda event: None,
             authorize_manage=lambda actor: actor.user_id == "user-a",
         ))
 
@@ -190,7 +190,7 @@ class QuotaReportingApiTests(unittest.TestCase):
         service = QuotaService(InMemoryQuotaStore())
         app = FastAPI()
         app.include_router(create_quota_reporting_router(
-            quota_store=self.store, quota_service=service,
+            quota_store=self.store, quota_service=service, audit_writer=lambda event: None,
             authorize_manage=lambda actor: True,
         ))
 
@@ -220,7 +220,7 @@ class QuotaReportingApiTests(unittest.TestCase):
     def test_budget_configuration_rejects_bool_string_and_infinite_limits(self):
         app = FastAPI()
         app.include_router(create_quota_reporting_router(
-            quota_store=self.store, quota_service=QuotaService(InMemoryQuotaStore()),
+            quota_store=self.store, quota_service=QuotaService(InMemoryQuotaStore()), audit_writer=lambda event: None,
             authorize_manage=lambda actor: True,
         ))
 
@@ -250,7 +250,7 @@ class QuotaReportingApiTests(unittest.TestCase):
         service = QuotaService(InMemoryQuotaStore())
         app = FastAPI()
         app.include_router(create_quota_reporting_router(
-            quota_store=self.store, quota_service=service,
+            quota_store=self.store, quota_service=service, audit_writer=lambda event: None,
             authorize_manage=lambda actor: True,
             authorize_scope=lambda actor, scope_type, scope_id: scope_id in {"priority", "gpu"},
         ))
@@ -288,7 +288,7 @@ class QuotaReportingApiTests(unittest.TestCase):
         service = QuotaService(InMemoryQuotaStore())
         app = FastAPI()
         app.include_router(create_quota_reporting_router(
-            quota_store=self.store, quota_service=service,
+            quota_store=self.store, quota_service=service, audit_writer=lambda event: None,
             authorize_manage=lambda actor: True,
         ))
 
