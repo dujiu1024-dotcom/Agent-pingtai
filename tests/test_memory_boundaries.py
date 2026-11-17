@@ -19,7 +19,7 @@ class MemoryBoundaryTests(unittest.TestCase):
     def test_run_and_session_are_not_long_term_memory_scopes(self):
         for layer in (MemoryLayer.RUN, MemoryLayer.SESSION):
             boundary = memory_boundary(layer)
-            self.assertIn("not durable user memory" if layer is MemoryLayer.RUN else "not the long-term MemoryService", boundary.persistence)
+            self.assertIn("never durable user memory" if layer is MemoryLayer.RUN else "not the long-term MemoryService", boundary.persistence)
             self.assertNotIn("MemoryScope.", boundary.persistence)
 
     def test_durable_layers_map_to_existing_scopes(self):
@@ -30,7 +30,7 @@ class MemoryBoundaryTests(unittest.TestCase):
             MemoryLayer.ORGANIZATION: MemoryScope.TENANT,
         }
         for layer, scope in expected.items():
-            self.assertIn(scope.value, memory_boundary(layer).persistence)
+            self.assertIn(f"MemoryScope.{scope.name}", memory_boundary(layer).persistence)
 
     def test_organization_scope_is_tenant_bounded_not_cross_tenant(self):
         boundary = memory_boundary(MemoryLayer.ORGANIZATION)
