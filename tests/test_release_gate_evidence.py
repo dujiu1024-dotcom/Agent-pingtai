@@ -11,9 +11,11 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
         self.now = datetime(2026, 11, 16, 6, 0, tzinfo=timezone.utc)
         verified = self.now.isoformat().replace("+00:00", "Z")
         self.document = {
-            "schema_version": 1,
+            "schema_version": 2,
             "release_id": "release-2026-11-16.1",
             "environment": "production",
+            "release_owner": "release-manager",
+            "release_decision": "go",
             "commit_sha": "a" * 40,
             "generated_at_utc": verified,
             "checks": {
@@ -33,20 +35,40 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
             [],
         )
 
+    def test_release_owner_and_decision_are_required(self):
+        self.document["release_owner"] = "replace-with-owner"
+        self.document["release_decision"] = "pending"
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("release_owner: must not contain a template placeholder", errors)
+        self.assertIn("release_decision: must be go after all required checks pass", errors)
+
+    def test_deployment_preflight_is_a_required_check(self):
+        del self.document["checks"]["deployment_preflight"]
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertTrue(any("checks.deployment_preflight" in error for error in errors))
+
     def test_template_placeholders_are_rejected(self):
         self.document["release_id"] = "replace-with-release-id"
+        self.document["release_owner"] = "replace-with-release-owner"
         self.document["checks"]["e2e"]["owner"] = "replace-with-owner"
         self.document["checks"]["security"]["evidence_ref"] = (
             "replace-with-security-regression-report"
         )
         errors = validate_evidence(self.document, now=self.now)
         self.assertIn("release_id: must not contain a template placeholder", errors)
-        self.assertIn("checks.e2e.owner: must not contain a template placeholder", errors)
-        self.assertIn("checks.security.evidence_ref: must not contain a template placeholder", errors)
+        self.assertIn("release_owner: must not contain a template placeholder", errors)
+        self.assertIn(
+            "checks.e2e.owner: must not contain a template placeholder", errors
+        )
+        self.assertIn(
+            "checks.security.evidence_ref: must not contain a template placeholder",
+            errors,
+        )
 
     def test_boolean_schema_version_is_rejected(self):
         self.document["schema_version"] = True
-        self.assertIn("schema_version must be the integer 1", validate_evidence(self.document, now=self.now))
+        errors = validate_evidence(self.document, now=self.now)
+        self.assertIn("schema_version must be the integer 2", errors)
 
     def test_missing_check_fails_closed(self):
         del self.document["checks"]["fault_injection"]

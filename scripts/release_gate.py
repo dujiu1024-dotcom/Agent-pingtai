@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_CHECKS = (
+    "deployment_preflight",
     "e2e",
     "fault_injection",
     "performance",
@@ -84,13 +85,17 @@ def validate_evidence(
     errors: list[str] = []
     if not isinstance(document, dict):
         return ["evidence document must be a JSON object"]
-    if type(document.get("schema_version")) is not int or document["schema_version"] != 1:
-        errors.append("schema_version must be the integer 1")
-    for field in ("release_id", "environment"):
+    # bool is a subclass of int in Python; reject JSON true/false explicitly.
+    if type(document.get("schema_version")) is not int or document["schema_version"] != 2:
+        errors.append("schema_version must be the integer 2")
+    for field in ("release_id", "environment", "release_owner"):
         if not isinstance(document.get(field), str) or not document[field].strip():
             errors.append(f"{field}: required non-empty string")
-    if _is_placeholder(document.get("release_id")):
-        errors.append("release_id: must not contain a template placeholder")
+    for field in ("release_id", "release_owner"):
+        if _is_placeholder(document.get(field)):
+            errors.append(f"{field}: must not contain a template placeholder")
+    if document.get("release_decision") != "go":
+        errors.append("release_decision: must be go after all required checks pass")
     if document.get("environment") != "production":
         errors.append("environment: must equal production")
     commit_sha = document.get("commit_sha")
