@@ -100,7 +100,7 @@ class SQLitePostgresImportTests(unittest.TestCase):
             report = migrate(connection, rows, load_mapping(mapping_path, manifest), dry_run=True)
             self.assertEqual(report["status"], "validated")
             self.assertEqual(report["total_rows"], 2)
-            self.assertTrue(connection.commands[0][0].startswith("BEGIN READ ONLY"))
+            self.assertEqual(connection.commands[0][0], "SET TRANSACTION READ ONLY")
             self.assertFalse(any(query.startswith("INSERT") for query, _ in connection.commands))
             self.assertTrue(connection.rolled_back)
             self.assertFalse(connection.committed)
