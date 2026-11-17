@@ -78,6 +78,7 @@ include = [
   "tests/test_run_trace.py",
   "tests/test_run_replay.py",
   "tests/test_run_replay_api.py",
+  "tests/test_run_replay_acceptance.py",
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
