@@ -555,6 +555,10 @@ class OpenAICompatibleModelRouter:
                         "model transport outcome is ambiguous; quota reservation retained for reconciliation"
                     ) from exc
                 last_error = exc
+                safe_metric(
+                    self.metrics, "increment", "model_retries_total",
+                    labels={**labels, "operation": "retry"},
+                )
                 continue
             finally:
                 safe_metric(
@@ -625,6 +629,11 @@ class OpenAICompatibleModelRouter:
                         agent_id=getattr(snapshot, "agent_id", None),
                         price_card_version=price_card_version,
                         source="provider_reported",
+                    )
+                    safe_metric(
+                        self.metrics, "increment", "model_cost_usd_total",
+                        float(Decimal(actual_micros) / Decimal(1_000_000)),
+                        labels=labels,
                     )
                 except Exception as exc:
                     # A successful provider response may be billable; retain reservation if settlement fails.
