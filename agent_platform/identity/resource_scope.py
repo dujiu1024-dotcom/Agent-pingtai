@@ -2,6 +2,7 @@
 All adapters bind authorization to a trusted principal and server-resolved resource.
 """
 from __future__ import annotations
+
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +14,7 @@ from agent_platform.identity.service_accounts import (
     ServiceIdentityService,
     ServicePrincipal,
 )
+
 
 @dataclass(frozen=True)
 class ResourceScope:
