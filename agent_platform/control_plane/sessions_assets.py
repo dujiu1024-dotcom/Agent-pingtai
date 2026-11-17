@@ -404,6 +404,10 @@ class InMemorySessionRepository:
         key = (asset.tenant_id, asset.asset_id)
         if key in self.assets:
             raise SessionError("asset already exists")
+        if asset.session_id is not None:
+            session = self.sessions.get((asset.tenant_id, asset.session_id))
+            if session is None or session.status != "active":
+                raise SessionNotFound("session not found or inactive")
         self.assets[key] = asset
         self.asset_versions[key] = [FileAssetVersion(
             asset.tenant_id, asset.asset_id, asset.version, asset.object_key,
