@@ -135,6 +135,35 @@ class PromptVariantDomainTests(unittest.TestCase):
             registry.create_variant("agent", "Prod", 1, created_by="admin")
 
 
+    def test_active_and_canary_variants_cannot_be_deprecated(self):
+        registry = PromptRegistry()
+        active = registry.register("agent", "Stable {name}")
+        candidate = registry.register("agent", "Candidate {name}")
+        registry.create_variant("agent", "prod", active.version, created_by="admin")
+        registry.create_variant("agent", "candidate", candidate.version, created_by="admin")
+        registry.activate("agent", active.version)
+        registry.set_canary("agent", candidate.version, 10)
+
+        with self.assertRaisesRegex(ValueError, "deployed prompt variant"):
+            registry.deprecate_variant("agent", "prod", updated_by="admin")
+        with self.assertRaisesRegex(ValueError, "deployed prompt variant"):
+            registry.deprecate_variant("agent", "candidate", updated_by="admin")
+
+        self.assertEqual(
+            [variant.status for variant in registry.list_variants("agent")],
+            ["active", "active"],
+        )
+
+    def test_variant_version_must_be_positive_integer(self):
+        registry = PromptRegistry()
+        registry.register("agent", "Hello")
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            registry.create_variant("agent", "prod", True, created_by="admin")
+        registry.create_variant("agent", "prod", 1, created_by="admin")
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            registry.assign_variant("agent", "prod", True, updated_by="admin")
+
+
 class PersistentPromptVariantTests(unittest.IsolatedAsyncioTestCase):
     async def test_persistent_variant_history_and_deprecation(self):
         db = FakePromptVariantDb()
