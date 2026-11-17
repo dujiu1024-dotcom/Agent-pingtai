@@ -130,9 +130,10 @@ class EvaluationRolloutApiTests(unittest.TestCase):
 
         @self.app.middleware("http")
         async def identity(request, call_next):
-            request.state.__setattr__(
-                "identity.principal",
-                Principal("operator", "tenant-a", "session-1", "operator@example.com", "Operator"),
+            request.state.identity = SimpleNamespace(
+                principal=Principal(
+                    "operator", "tenant-a", "session-1", "operator@example.com", "Operator",
+                ),
             )
             return await call_next(request)
 
