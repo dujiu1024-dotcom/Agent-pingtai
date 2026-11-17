@@ -34,17 +34,23 @@ the ordered service list and (when PG_DSN is set) migration filenames and
 checksums against the applied migration ledger. It does not change services or
 database state.
 
-Apply requires a successful backup command. It snapshots the release env,
-runs the optional migration command, then upgrades each listed service
-sequentially with --no-deps --wait. A failed service restores the prior env
-snapshot and rolls the listed services back.
+Apply requires a previously recorded successful release snapshot and a
+successful backup command. It snapshots the target release env without
+replacing the last-successful pointer, runs the optional migration command,
+then upgrades each listed service sequentially with --no-deps --wait. A failed
+migration or service restores the last successful env snapshot and attempts
+to restart the listed services. Only after every service passes its health wait
+is the new snapshot published as latest-success; the former latest-success is
+retained as previous-success for an explicit rollback. If no known-good snapshot
+exists, apply fails closed before migration or service mutation.
 
 ## Rollback and limits
 
     scripts/release_upgrade.sh --rollback
 
-Rollback restores the latest successful configuration snapshot and restarts
-the configured services in order. It does not reverse database migrations.
+Rollback restores the previous successful configuration snapshot and restarts
+the configured services in order; on success the latest/previous pointers are
+swapped so the operation remains auditable. It does not reverse database migrations.
 Only migrations explicitly designed as reversible should be reversed through a
 separately reviewed migration procedure. If a migration is not backward
 compatible, automatic application rollback must not be claimed safe.
