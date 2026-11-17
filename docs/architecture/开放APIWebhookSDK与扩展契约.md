@@ -18,7 +18,10 @@
 - 订阅表只保存 Secret Manager 引用，不保存签名明文。
 - 投递表以 tenant + subscription + event 唯一约束去重。
 - Outbox 事件按租户与 topic fan-out。
-- Worker 使用 PostgreSQL lease + SKIP LOCKED 领取任务。
+- Worker 使用 PostgreSQL lease + SKIP LOCKED 领取任务；每次 claim 返回独立 lease token，成功、重试和死信状态更新必须匹配当前 token，过期 Worker 不得覆盖已重新领取的投递。
+- 失败记录只保存 HTTP 状态码和受控错误类型（不保存异常正文、URL 凭据或签名密钥）；重试采用有界指数退避，超过最大尝试次数进入 dead-letter。
+- 订阅管理 API 从认证 Principal 派生租户/操作者，支持创建、列表、密钥轮换和停用；Secret Manager 只保存引用，变更前写入审计。
+- 死信列表和授权重放均按租户隔离；重放要求管理授权与人工原因，重放请求、拒绝、失败和结果写入审计。
 - 请求头包含 Event ID、Idempotency-Key、时间戳和 HMAC-SHA256 签名。
 - 接收方使用 `timestamp + "." + raw_body` 计算 HMAC 并常量时间比较。
 - 非 2xx/异常采用指数退避，超过最大尝试次数进入 dead-letter。

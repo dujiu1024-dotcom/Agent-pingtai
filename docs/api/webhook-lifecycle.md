@@ -23,3 +23,6 @@ Dead-letter listing and replay are tenant scoped and require webhook-management 
 - Missing audit or replay services fail closed.
 - Production uses durable PostgreSQL delivery/lease state and a shared secret manager.
 - Delivery endpoints must be reachable over public HTTPS; do not allow redirect-based bypass of destination validation.
+- Every claim carries a UUID lease token. Completion, retry, and dead-letter transitions are conditional on the same token and leased status; an expired worker cannot overwrite a row reclaimed by another worker.
+- Retry/dead-letter rows persist only the HTTP response code and a bounded error-type code, never raw exception text or request credentials.
+- Subscription audit details record the destination hostname and topics, not URL paths/query strings or signing-secret material; denied management requests are audited before returning 403.

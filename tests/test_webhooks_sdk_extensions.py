@@ -9,7 +9,7 @@ from urllib.request import Request
 
 from agent_platform.events.webhooks import (
     WebhookAttempt, WebhookDispatcher, WebhookEgressPolicy, WebhookPayload,
-    WebhookSubscription, signature, verify_signature,
+    PostgresWebhookStore, WebhookSubscription, signature, verify_signature,
 )
 from agent_platform.sdk.client import ApiResponse, PlatformApiError, PlatformClient
 from agent_platform.extensions.manifest import ExtensionManifest, validate_platform_compatibility
@@ -30,22 +30,32 @@ class FakeWebhookStore:
         )
         self.attempt = WebhookAttempt(
             "tenant-a", "delivery-1", "event-1", attempt, "leased", None,
+            lease_token="00000000-0000-0000-0000-0000000000aa",
         )
         self.completed = []
         self.retried = []
         self.dead = []
+        self.complete_result = True
+        self.retry_result = True
+        self.dead_result = True
 
     async def claim(self, *, limit):
         return [(self.subscription, self.payload, self.attempt)]
 
-    async def complete(self, tenant_id, delivery_id, *, response_code):
-        self.completed.append((tenant_id, delivery_id, response_code))
+    async def complete(self, tenant_id, delivery_id, *, response_code, lease_token):
+        self.completed.append((tenant_id, delivery_id, response_code, lease_token))
+        return self.complete_result
 
-    async def retry(self, tenant_id, delivery_id, *, next_attempt_at, response_code):
-        self.retried.append((tenant_id, delivery_id, next_attempt_at, response_code))
+    async def retry(self, tenant_id, delivery_id, *, next_attempt_at, response_code,
+                    lease_token, last_error_code):
+        self.retried.append((tenant_id, delivery_id, next_attempt_at, response_code,
+                             lease_token, last_error_code))
+        return self.retry_result
 
-    async def dead_letter(self, tenant_id, delivery_id, *, response_code):
-        self.dead.append((tenant_id, delivery_id, response_code))
+    async def dead_letter(self, tenant_id, delivery_id, *, response_code, lease_token,
+                          last_error_code):
+        self.dead.append((tenant_id, delivery_id, response_code, lease_token, last_error_code))
+        return self.dead_result
 
 
 class FakeAuditSink:
@@ -158,7 +168,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             now=int(headers["X-Platform-Timestamp"]),
         ))
         self.assertEqual(json.loads(body)["id"], "event-1")
-        self.assertEqual(store.completed[0][0], "tenant-a")
+        self.assertEqual(store.completed[0], ("tenant-a", "delivery-1", 204, "00000000-0000-0000-0000-0000000000aa"))
         self.assertEqual([event["action"] for event in audit.events], [
             "webhook.delivery.attempt", "webhook.delivery",
         ])
@@ -224,6 +234,39 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             "webhook.delivery.attempt", "webhook.delivery",
         ])
 
+    async def test_stale_delivery_completion_is_not_reported_as_delivered(self):
+        store = FakeWebhookStore()
+        store.complete_result = False
+        audit = FakeAuditSink()
+        dispatcher = WebhookDispatcher(
+            store=store, transport=FakeWebhookTransport(code=204),
+            resolve_secret=lambda _ref: SECRET,
+            audit_sink=audit,
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+        )
+        result = await dispatcher.dispatch()
+        self.assertEqual(result["delivered"], 0)
+        self.assertEqual(result["lease_lost"], 1)
+        self.assertEqual(audit.events[-1]["action"], "webhook.delivery.lease_lost")
+
+    async def test_dispatch_retry_persists_lease_fence_and_safe_error_code(self):
+        store = FakeWebhookStore(attempt=2)
+        transport = FakeWebhookTransport(code=503)
+        dispatcher = WebhookDispatcher(
+            store=store, transport=transport, resolve_secret=lambda _ref: SECRET,
+            audit_sink=FakeAuditSink(),
+            egress_policy=WebhookEgressPolicy(
+                resolver=lambda _host, _port: ("93.184.216.34",),
+            ),
+            clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
+        )
+        result = await dispatcher.dispatch()
+        self.assertEqual(result["retrying"], 1)
+        self.assertEqual(len(store.retried), 1)
+        self.assertEqual(store.retried[0][3:], (503, "00000000-0000-0000-0000-0000000000aa", "non_success_response"))
+
     async def test_dispatch_retries_then_dead_letters(self):
         store = FakeWebhookStore(attempt=8)
         transport = FakeWebhookTransport(code=503)
@@ -239,8 +282,64 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         result = await dispatcher.dispatch()
         self.assertEqual(result["dead_lettered"], 1)
         self.assertEqual(len(store.dead), 1)
+        self.assertEqual(store.dead[0][3:], ("00000000-0000-0000-0000-0000000000aa", "non_success_response"))
         self.assertEqual(audit.events[-1]["outcome"], "failed")
         self.assertTrue(audit.events[-1]["detail"]["dead_lettered"])
+
+
+class _Transaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class _RecordingConnection:
+    def __init__(self):
+        self.query = None
+        self.params = None
+        self.rowcount = 1
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    def transaction(self):
+        return _Transaction()
+
+    async def execute(self, query, params):
+        self.query = query
+        self.params = params
+        return self
+
+
+class WebhookLeaseFencingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_finalization_updates_require_the_current_lease_token(self):
+        connection = _RecordingConnection()
+        store = PostgresWebhookStore(lambda: _async_value(connection))
+        await store.complete(
+            "tenant-a", "00000000-0000-0000-0000-000000000001",
+            response_code=204, lease_token="00000000-0000-0000-0000-0000000000bb",
+        )
+        self.assertIn("AND lease_token=%s", connection.query)
+        self.assertEqual(str(connection.params[-1]), "00000000-0000-0000-0000-0000000000bb")
+        self.assertIn("last_error_code=%s", connection.query)
+        self.assertIsNone(connection.params[3])
+
+    async def test_finalization_rejects_missing_lease_token(self):
+        store = PostgresWebhookStore(lambda: _async_value(_RecordingConnection()))
+        with self.assertRaisesRegex(ValueError, "lease_token is required"):
+            await store.complete(
+                "tenant-a", "00000000-0000-0000-0000-000000000001",
+                response_code=204, lease_token="",
+            )
+
+
+async def _async_value(value):
+    return value
 
 
 class FakeSdkTransport:

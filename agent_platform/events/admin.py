@@ -41,11 +41,11 @@ class WebhookSubscriptionService:
         secret_ref = await _await(self.secrets.store(tenant_id=tenant_id, secret=signing_secret))
         if not isinstance(secret_ref, str) or not secret_ref:
             raise RuntimeError("secret manager did not return a secret reference")
-        subscription = WebhookSubscription(
-            subscription_id=str(uuid4()), tenant_id=tenant_id, url=url,
-            secret_ref=secret_ref, topics=normalized_topics,
-        )
         try:
+            subscription = WebhookSubscription(
+                subscription_id=str(uuid4()), tenant_id=tenant_id, url=url,
+                secret_ref=secret_ref, topics=normalized_topics,
+            )
             await self.store.create_subscription(subscription, created_by=actor_id)
         except BaseException:
             try:
