@@ -11,7 +11,7 @@ function pre(v){return "<pre class='json'>"+json(v)+"</pre>"}
 function btn(t,attr,cls=""){return "<button class='button "+cls+"' "+attr+">"+t+"</button>"}
 async function list(p){const r=await api(p);return r.items||[]}
 async function refresh(){try{S.me=await api("/auth/me");$("#identity").textContent=S.me.display_name||S.me.email||S.me.user_id;$("#logout").hidden=false;$("#login").hidden=true;$("#content").hidden=false;S.features=(await api(API+"/workbench/capabilities")).features||{};$("#api-state").textContent="API 已连接"}catch(e){S.me=null;$("#identity").textContent="未登录";$("#logout").hidden=true;$("#login").hidden=false;$("#content").hidden=true;$("#api-state").textContent="未认证"}}
-function nav(v){S.view=v;S.session=null;S.task=null;S.approval=null;document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===v));const names={overview:"工作台总览",tasks:"任务中心",sessions:"会话与文件",approvals:"人工审批",artifacts:"产物交付"};$("#title").textContent=names[v]||v;$("#crumb").textContent=v.toUpperCase();render()}
+function nav(v){S.view=v;S.session=null;S.task=null;S.approval=null;document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===v));const names={overview:"工作台总览",tasks:"任务中心",sessions:"会话与文件",approvals:"人工审批",artifacts:"产物交付","rag-test":"RAG Query 测试"};$("#title").textContent=names[v]||v;$("#crumb").textContent=v.toUpperCase();render()}
 async function render(){const root=$("#view");root.innerHTML="<div class='panel'>加载中…</div>";try{
 if(S.view==="overview"){const rs=await Promise.allSettled([list(API+"/workbench/tasks?limit=50"),list(API+"/sessions?limit=50"),list(API+"/files?limit=50"),list(API+"/approvals?limit=50")]);const n=rs.map(x=>x.status==="fulfilled"?x.value.length:"—");root.innerHTML="<div class='grid'>"+[["启用能力",Object.values(S.features).filter(Boolean).length],["任务",n[0]],["会话",n[1]],["文件资产",n[2]]].map(x=>"<div class='stat'><small>"+x[0]+"</small><strong>"+x[1]+"</strong></div>").join("")+"</div>"+panel("平台能力",Object.entries(S.features).map(x=>"<span class='pill'>"+esc(x[0])+": "+(x[1]?"启用":"未启用")+"</span>").join(" "))+(rs[3].status==="fulfilled"?panel("待处理审批","<p>当前审批记录："+n[3]+"</p>",btn("打开审批中心","data-go='approvals'")):"")}
 else if(S.view==="sessions"){if(!S.features.sessions){root.innerHTML=panel("会话服务未配置","<p>后端尚未启用会话能力。</p>");return}const [ss,fs]=await Promise.all([list(API+"/sessions?limit=100"),list(API+"/files?limit=100")]);root.innerHTML=panel("创建会话","<form id='session-form' class='inline-form'><label>会话标题<input name='title' required maxlength='200'></label><label>项目 ID（可选）<input name='project_id'></label><button class='button primary'>创建会话</button></form>")+panel("会话列表",table(["会话","项目","状态","更新时间","操作"],ss.map(x=>"<tr><td>"+esc(x.title||x.session_id)+"<small class='subline'>"+esc(x.session_id)+"</small></td><td>"+esc(x.project_id||"—")+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.updated_at)+"</td><td>"+btn("打开","data-session='"+esc(x.session_id)+"'")+"</td></tr>")))+panel("文件资产",table(["文件","大小","会话","版本","操作"],fs.map(x=>"<tr><td>"+esc(x.filename)+"</td><td>"+esc(x.size_bytes)+" bytes</td><td>"+esc(x.session_id||"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")))}
@@ -105,7 +105,8 @@ const VIEW_CAPABILITIES={
  sessions:["sessions"],tasks:["task_execution"],approvals:["approvals"],
  registry:["registry","resource_registry"],
  governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"],
- "prompt-lab":["prompt_management"]
+ "prompt-lab":["prompt_management"],
+ "rag-test":["rag_query"]
 };
 function viewCapabilityEnabled(view){
  const keys=VIEW_CAPABILITIES[view];if(!keys)return true;
@@ -219,4 +220,43 @@ document.addEventListener("click",async e=>{
    await api(base+"/variants/"+encodeURIComponent(b.dataset.promptDeprecate)+"/deprecate",{method:"POST",body:"{}"});toast("Variant 已废弃");await loadPromptLab();
   }
  }catch(x){toast(x.message)}
+});
+
+// C-24-03: Query Test uses the existing knowledge/RAG pipeline through the
+// tenant-authenticated playground API; it never performs client-side retrieval.
+const ragPlaygroundBaseRender=render;
+async function renderRagPlayground(){
+ const root=$("#view");
+ if(!S.features.rag_query){root.innerHTML=panel("RAG Query 测试未启用","<p>后端尚未配置可切换的 embedding/rerank RAG resolver。</p>");return}
+ let options;
+ try{options=await api(API+"/rag-playground/options")}catch(e){root.innerHTML=panel("RAG Query 测试不可用","<p class='error'>"+esc(e.message)+"</p>");return}
+ const models=options.embedding_models||[];
+ root.innerHTML=panel("检索参数","<form id='rag-query-form'><label>问题<textarea name='query' required maxlength='4096' rows='3' placeholder='输入需要验证的知识库问题'></textarea></label><div class='form-grid'><label>Embedding 模型<select name='embedding_model'>"+models.map(m=>"<option value='"+esc(m)+"' "+(m===options.default_embedding_model?"selected":"")+">"+esc(m)+"</option>").join("")+"</select></label><label>Top-K<input name='top_k' type='number' min='1' max='"+esc(options.max_top_k||20)+"' value='5'></label><label>最低相似度阈值<input name='min_score' type='number' min='0' max='1' step='0.01' value='0'></label><label><span>启用 Rerank</span><input name='rerank' type='checkbox'></label></div><button class='button primary' type='submit'>执行检索与答案生成</button></form>")+"<div id='rag-query-results'></div>";
+}
+const ragPlaygroundRender=render;
+render=async function(){if(S.view==="rag-test"){await renderRagPlayground();return}return ragPlaygroundRender()};
+document.addEventListener("submit",async e=>{
+ const form=e.target;if(form.id!=="rag-query-form")return;e.preventDefault();
+ const d=new FormData(form),query=String(d.get("query")||"").trim(),target=$("#rag-query-results");
+ if(!query){toast("请输入问题");return}
+ const topK=Number(d.get("top_k")),threshold=Number(d.get("min_score"));
+ if(!Number.isInteger(topK)||topK<1||topK>20||!Number.isFinite(threshold)||threshold<0||threshold>1){toast("Top-K 或相似度阈值无效");return}
+ target.innerHTML="<section class='panel'>正在执行检索与答案生成…</section>";
+ try{
+  const result=await api(API+"/rag-playground/query",{method:"POST",body:JSON.stringify({
+   query,top_k:topK,min_score:threshold,embedding_model:String(d.get("embedding_model")||""),
+   rerank:d.get("rerank")==="on"
+  })});
+  const hits=result.retrieved||[];
+  const hitRows=hits.map((hit,index)=>{
+   const score=Number(hit.score),width=Math.max(0,Math.min(100,score*100));
+   const tone=score>=0.8?"#15803d":score>=0.5?"#b45309":"#64748b";
+   const source=hit.source_url?"<a href='"+esc(hit.source_url)+"' target='_blank' rel='noopener noreferrer'>"+esc(hit.title||hit.source_uri)+"</a>":esc(hit.title||hit.source_uri);
+   return "<article class='panel rag-hit'><div class='panel-head'><strong>#"+(index+1)+" · "+source+"</strong><strong style='color:"+tone+"'>"+(Number.isFinite(score)?score.toFixed(4):"—")+"</strong></div><div style='height:7px;background:var(--border,#e5e7eb);border-radius:5px;overflow:hidden'><div style='height:7px;width:"+width+"%;background:"+tone+"'></div></div><p>"+esc(hit.text)+"</p><small class='subline'>Chunk "+esc(hit.chunk_id)+" · 文档 "+esc(hit.document_id)+" · v"+esc(hit.document_version)+(hit.page_number?" · 第 "+esc(hit.page_number)+" 页":"")+" · offset "+esc(hit.start_offset)+"-"+esc(hit.end_offset)+"</small></article>";
+  }).join("");
+  const answer=result.abstained?"<p class='subtle'>未生成答案："+esc(result.reason||"检索结果不足")+"</p>":"<div class='rag-answer'>"+esc(result.answer)+"</div>";
+  const meta="<p class='subtle'>Embedding："+esc(result.embedding_model)+" · Rerank："+(result.rerank?"开启":"关闭")+" · Top-K："+esc(result.top_k)+" · 阈值："+esc(result.min_score)+" · 召回："+hits.length+" 条</p>";
+  const citations=(result.citations||[]).map(x=>"<li>"+esc(x.title||x.source_uri||x.citation_id)+"</li>").join("");
+  target.innerHTML=panel("生成答案",meta+answer+(citations?"<h4>引用来源</h4><ul>"+citations+"</ul>":""))+panel("Top-K 召回 Chunk",hitRows||"<p class='empty'>没有达到阈值的授权检索结果</p>");
+ }catch(x){target.innerHTML=panel("Query 执行失败","<p class='error'>"+esc(x.message)+"</p>")}
 });
