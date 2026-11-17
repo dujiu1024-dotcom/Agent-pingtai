@@ -250,6 +250,7 @@ files = [
   "agent_platform/streaming/client.py",
   "agent_platform/blackboard/replay.py",
   "agent_platform/blackboard/sse.py",
+  "tests/test_issue_667_s_667_08_first_screen_performance.py",
 ]
 ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
