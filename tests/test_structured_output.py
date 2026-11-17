@@ -325,6 +325,27 @@ class StructuredOutputTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "properties must be an object"):
             registry.register("malformed.schema", 1, {"type": "object", "properties": []})
 
+    def test_registry_rejects_unimplemented_or_malformed_keyword_values(self):
+        registry = StructuredOutputSchemaRegistry()
+        invalid_schemas = [
+            {"type": ["string", "null"]},
+            {"type": "object", "additionalProperties": {"type": "string"}},
+            {"type": "object", "required": ["answer", "answer"]},
+            {"type": "number", "minimum": float("inf")},
+        ]
+        for index, schema in enumerate(invalid_schemas):
+            with self.subTest(schema=schema):
+                with self.assertRaises(ValueError):
+                    registry.register(f"invalid.schema.{index}", 1, schema)
+
+    def test_non_standard_json_numeric_constants_are_rejected(self):
+        for raw in ('{"score": NaN}', '{"score": Infinity}', '{"score": -Infinity}'):
+            with self.subTest(raw=raw):
+                value, errors = validate_structured_output(raw, {"type": "object"})
+                self.assertIsNone(value)
+                self.assertTrue(errors)
+                self.assertIn("invalid JSON", errors[0])
+
     async def test_versioned_schema_requires_registry_and_explicit_version(self):
         adapter = FakeAdapter(['{"answer":"ok"}'])
         request = HarnessRequest(
