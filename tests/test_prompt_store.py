@@ -91,12 +91,12 @@ class PersistentPromptRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry = PostgresPromptRegistry(db.connect)
         first = await registry.register("support", "Hello {name}", created_by="admin")
         second = await registry.register("support", "Welcome {name}", created_by="admin")
-        await registry.activate("support", first.version, updated_by="admin")
-        await registry.set_canary("support", second.version, 100, updated_by="admin")
+        await registry.activate("support", first.version, updated_by="admin", evaluation_run_id="eval-1")
+        await registry.set_canary("support", second.version, 100, updated_by="admin", evaluation_run_id="eval-2")
         rendered, selected = await registry.render("support", {"name": "Ada"}, rollout_key="stable")
         self.assertEqual(rendered, "Welcome Ada")
         self.assertEqual(selected.version, second.version)
-        await registry.rollback("support", first.version, updated_by="operator")
+        await registry.rollback("support", first.version, updated_by="operator", evaluation_run_id="eval-3")
         rendered, selected = await registry.render("support", {"name": "Ada"})
         self.assertEqual(rendered, "Hello Ada")
         self.assertEqual(selected.version, first.version)
@@ -108,6 +108,7 @@ class PersistentPromptRegistryTests(unittest.IsolatedAsyncioTestCase):
         history = await registry.list_audit("support", limit=10)
         self.assertEqual(history[0]["action"], "version.rolled_back")
         self.assertEqual(history[0]["actor_id"], "operator")
+        self.assertEqual(history[0]["details"], '{"active_version": 1, "evaluation_run_id": "eval-3"}')
 
     async def test_variable_contract_and_unknown_versions_fail_closed(self):
         db = FakePromptDb()
