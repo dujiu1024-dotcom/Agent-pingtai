@@ -1,0 +1,31 @@
+{
+  "format": "legacy-sqlite-to-postgres-acceptance-v1",
+  "status": "candidate_mapping_requires_target_schema_review",
+  "chains": [
+    {
+      "name": "project_delivery",
+      "tables": [
+        {"source_table":"projects","target_table":"projects","target_file":"projects.jsonl","key":"id","columns":{"id":"id","code":"code","name":"name","status":"status"}},
+        {"source_table":"tasks","target_table":"tasks","target_file":"tasks.jsonl","key":"id","columns":{"id":"id","project_id":"project_id","title":"title","status":"status"}},
+        {"source_table":"events","target_table":"events","target_file":"events.jsonl","key":"id","columns":{"id":"id","type":"type","task_id":"task_id","dedup_key":"dedup_key"}}
+      ]
+    },
+    {
+      "name": "commercial_finance",
+      "tables": [
+        {"source_table":"quotes","target_table":"quotes","target_file":"quotes.jsonl","key":"id","columns":{"id":"id","project_id":"project_id","amount":"amount","status":"status"}},
+        {"source_table":"contracts","target_table":"contracts","target_file":"contracts.jsonl","key":"id","columns":{"id":"id","project_id":"project_id","quote_id":"quote_id","amount":"amount"}},
+        {"source_table":"invoices","target_table":"invoices","target_file":"invoices.jsonl","key":"id","columns":{"id":"id","contract_id":"contract_id","amount":"amount","status":"status"}},
+        {"source_table":"payments","target_table":"payments","target_file":"payments.jsonl","key":"id","columns":{"id":"id","invoice_id":"invoice_id","amount":"amount","method":"method"}}
+      ]
+    },
+    {
+      "name": "knowledge_assets",
+      "tables": [
+        {"source_table":"facts","target_table":"facts","target_file":"facts.jsonl","key":"id","columns":{"id":"id","project_id":"project_id","content_hash":"content_hash","state":"state"}},
+        {"source_table":"docs","target_table":"docs","target_file":"docs.jsonl","key":"id","columns":{"id":"id","content_hash":"content_hash","classification":"classification","state":"state"}},
+        {"source_table":"embeddings","target_table":"embeddings","target_file":"embeddings.jsonl","key":"id","columns":{"id":"id","source_type":"source_type","source_id":"source_id","content_hash":"content_hash","model":"model","dim":"dim"}}
+      ]
+    }
+  ]
+}
