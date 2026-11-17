@@ -133,7 +133,14 @@ def create_authenticated_mcp_asgi_app(
     verifier: Any
     if token_service is not None:
         from agent_platform.control_plane.gateway_auth import PersistentRunTokenVerifier
-        verifier = PersistentRunTokenVerifier(token_service=token_service, resource_server_url=resource_server_url)
+        verifier = PersistentRunTokenVerifier(
+            token_service=token_service,
+            resource_server_url=resource_server_url,
+            expected_tenant_id=bridge.session.tenant_id,
+            expected_run_id=bridge.session.run_id,
+            expected_agent_id=bridge.session.agent_id,
+            expected_actor_id=bridge.session.actor_id,
+        )
     else:
         if bearer_token is None:
             raise ValueError("bearer_token is required when token_service is not provided")

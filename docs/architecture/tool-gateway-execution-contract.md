@@ -21,3 +21,8 @@ Gateway 自身在授权/审批后、执行前写入 write-ahead audit；审计�
 ## 验证边界
 
 单元测试覆盖无效凭据、Run 绑定拒绝、allowlist、超时、Run 取消、调用方取消和 Gateway 委派。真机/真实服务器/外部 Provider 验证按本次调度跳过；这些测试不宣称证明生产身份提供方或外部副作用系统的行为。
+
+
+## 持久化 MCP Token 会话绑定
+
+使用持久化 `RunTokenService` 的 MCP HTTP 宿主必须将 Token 记录中的 tenant、Run、Agent、actor 和 endpoint 与该 MCP bridge 的可信会话上下文逐项比较。任一字段不匹配、scope 为空或 endpoint 不一致时，在创建 MCP AccessToken 前拒绝请求。TokenService 仍负责验证令牌摘要、有效期和撤销状态；会话绑定检查防止一个合法 Token 被复用到另一个 actor 或 Run 的固定 bridge。
