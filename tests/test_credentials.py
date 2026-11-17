@@ -213,6 +213,23 @@ class CredentialServiceTests(unittest.IsolatedAsyncioTestCase):
                 required_scopes=("profile.read",), actor_id="runtime",
             )
 
+    async def test_grant_audit_failure_rolls_back_access(self):
+        record = await self.service.create(
+            tenant_id="tenant-a", name="API key", credential_type="api_key",
+            value="grant-secret", scopes=("repo.read",), created_by="owner",
+        )
+        self.audit.fail = True
+        with self.assertRaisesRegex(RuntimeError, "audit unavailable"):
+            await self.service.grant(
+                tenant_id="tenant-a", credential_id=record.credential_id,
+                consumer_type="agent", consumer_id="agent-failed",
+                scopes=("repo.read",), granted_by="owner",
+            )
+        self.assertIsNone(await self.repository.get_grant(
+            tenant_id="tenant-a", credential_id=record.credential_id,
+            consumer_type="agent", consumer_id="agent-failed",
+        ))
+
     async def test_invalid_credential_types_and_wildcard_scopes_rejected(self):
         with self.assertRaises(ValueError):
             await self.service.create(
