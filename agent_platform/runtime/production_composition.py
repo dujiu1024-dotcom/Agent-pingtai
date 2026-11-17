@@ -96,3 +96,33 @@ def build_production_run_execution(
         run_executor_resolver=executor_resolver,
         task_worker=worker,
     )
+
+
+def load_trusted_run_execution_builder(*, required: bool) -> Callable[..., ProductionRunExecution] | None:
+    """Load the one deployment-installed, reviewed runtime integration entry point.
+
+    The entry-point group is controlled by installed Python distributions; no
+    Agent definition or environment variable can supply an import path.
+    """
+    from importlib.metadata import entry_points
+
+    candidates = tuple(
+        entry for entry in entry_points(group="agent_platform.production_run_execution")
+        if entry.name == "builder"
+    )
+    if len(candidates) > 1:
+        raise RuntimeError(
+            "multiple production Run execution builders are installed; exactly one is allowed"
+        )
+    if not candidates:
+        if required:
+            raise RuntimeError(
+                "production Run execution is required but no trusted "
+                "'builder' entry point is installed in group "
+                "'agent_platform.production_run_execution'"
+            )
+        return None
+    builder = candidates[0].load()
+    if not callable(builder):
+        raise TypeError("trusted production Run execution entry point must load a callable")
+    return builder
