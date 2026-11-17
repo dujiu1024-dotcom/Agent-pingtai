@@ -13,6 +13,7 @@ from agent_platform.identity.models import Principal
 class FakeWebhookAdminStore:
     def __init__(self):
         self.items = {}
+        self.pending_revocations = set()
     async def create_subscription(self, subscription: WebhookSubscription, *, created_by: str):
         self.items[(subscription.tenant_id, subscription.subscription_id)] = {
             "subscription_id": subscription.subscription_id, "url": subscription.url,
@@ -29,6 +30,8 @@ class FakeWebhookAdminStore:
         if item is None or item["status"] != "active":
             return None
         old = item["secret_ref"]
+        if old != secret_ref:
+            self.pending_revocations.add((tenant_id, subscription_id, old))
         item["secret_ref"] = secret_ref
         return old
     async def disable_subscription(self, tenant_id: str, subscription_id: str):
@@ -36,8 +39,19 @@ class FakeWebhookAdminStore:
         if item is None:
             return None
         item["status"] = "disabled"
+        self.pending_revocations.add((tenant_id, subscription_id, item["secret_ref"]))
         return item["secret_ref"]
 
+    async def list_pending_secret_revocations(self, *, limit=100):
+        return [
+            {"tenant_id": tenant, "subscription_id": subscription, "secret_ref": secret_ref}
+            for tenant, subscription, secret_ref in list(self.pending_revocations)[:limit]
+        ]
+    async def complete_secret_revocation(self, tenant_id, subscription_id, *, secret_ref):
+        item = (tenant_id, subscription_id, secret_ref)
+        existed = item in self.pending_revocations
+        self.pending_revocations.discard(item)
+        return existed
 
 class FakeAudit:
     def __init__(self):
@@ -51,6 +65,7 @@ class FakeSecrets:
         self.values = {}
         self.revoked = []
         self.counter = 0
+        self.fail_revoke_once = False
         self.fail_revoke_once = False
     async def store(self, *, tenant_id: str, secret: bytes):
         self.counter += 1
@@ -139,6 +154,30 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
         ))
         self.assertNotIn(secret_ref, secrets.values)
         self.assertEqual(secrets.revoked, [secret_ref])
+
+    async def test_rotation_persists_failed_old_secret_revocation_for_retry(self):
+        store, secrets = FakeWebhookAdminStore(), FakeSecrets()
+        service = WebhookSubscriptionService(store=store, secrets=secrets)
+        subscription_id = await service.create(
+            tenant_id="tenant-a", actor_id="user-a",
+            url="https://hooks.example.test/agent", topics=("run.completed",),
+            signing_secret=b"a" * 32,
+        )
+        secrets.fail_revoke_once = True
+        with self.assertRaisesRegex(RuntimeError, "temporarily unavailable"):
+            await service.rotate(
+                tenant_id="tenant-a", subscription_id=subscription_id,
+                signing_secret=b"b" * 32,
+            )
+        old_ref = "secret://tenant-a/1"
+        self.assertIn(old_ref, secrets.values)
+        self.assertIn(("tenant-a", subscription_id, old_ref), store.pending_revocations)
+        self.assertEqual(store.items[("tenant-a", subscription_id)]["secret_ref"], "secret://tenant-a/2")
+
+        retried = await service.retry_pending_secret_revocations()
+        self.assertEqual(retried, {"claimed": 1, "revoked": 1, "failed": 0})
+        self.assertNotIn(old_ref, secrets.values)
+        self.assertNotIn(("tenant-a", subscription_id, old_ref), store.pending_revocations)
 
     async def test_create_rejects_weak_secret_and_private_destination(self):
         service = WebhookSubscriptionService(store=FakeWebhookAdminStore(), secrets=FakeSecrets())
