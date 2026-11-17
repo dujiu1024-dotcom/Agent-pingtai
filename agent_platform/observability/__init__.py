@@ -18,7 +18,12 @@ from agent_platform.observability.prompt_rollouts import (
     PostgresPromptRolloutRepository,
     PromptRolloutService,
 )
-from agent_platform.observability.prompts import PromptRegistry, PromptVariant
+from agent_platform.observability.prompts import (
+    PromptAuditEvent,
+    PromptRegistry,
+    PromptVariant,
+    PromptVersion,
+)
 from agent_platform.observability.telemetry import PlatformTelemetry, StructuredEventLogger
 
 __all__ = [
@@ -28,8 +33,10 @@ __all__ = [
     "ModelCostEstimator",
     "ModelPricing",
     "ObservedHarnessAdapter",
+    "PromptAuditEvent",
     "PromptRegistry",
     "PromptVariant",
+    "PromptVersion",
     "PromptRolloutService",
     "InMemoryPromptRolloutRepository",
     "PostgresPromptRolloutRepository",

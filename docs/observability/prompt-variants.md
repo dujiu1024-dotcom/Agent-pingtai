@@ -8,7 +8,8 @@ Prompt versions remain immutable records identified by `(prompt_id, version)` an
 - Assign a different existing version to an active variant to advance or roll it back. Every assignment is appended to `platform_prompt_variant_versions`; immutable prompt versions are never rewritten.
 - Deprecate a variant to prevent future assignments. A variant whose current version is the active or canary deployment target cannot be deprecated.
 - Read current variants and their assignment history through the registry adapter.
-- Every create, assignment, and deprecation operation appends a prompt audit event in the same database transaction.
+- The PostgreSQL adapter appends every create, assignment, deprecation, activation and rollback event in the same database transaction. The in-memory registry exposes the same lifecycle evidence through immutable `PromptAuditEvent` records and `list_audit`.
+- `PromptRegistry.rollback` and `PostgresPromptRegistry.rollback` restore a previously registered immutable version and record the actor and selected version. Rollback never rewrites a version.
 
 ## Persistence and isolation
 

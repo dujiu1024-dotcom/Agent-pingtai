@@ -154,6 +154,39 @@ class PromptVariantDomainTests(unittest.TestCase):
             ["active", "active"],
         )
 
+    def test_in_memory_audit_traces_version_variant_deprecation_and_rollback(self):
+        registry = PromptRegistry()
+        first = registry.register("agent", "Stable", created_by="author")
+        second = registry.register("agent", "Candidate", created_by="author")
+        third = registry.register("agent", "Archived", created_by="author")
+        registry.create_variant("agent", "candidate", third.version, created_by="author")
+        registry.activate("agent", first.version, updated_by="release-manager")
+        registry.assign_variant("agent", "candidate", second.version, updated_by="editor")
+        registry.rollback("agent", first.version, updated_by="operator")
+        registry.deprecate_variant("agent", "candidate", updated_by="operator")
+
+        events = registry.list_audit("agent")
+        self.assertEqual(
+            [event.action for event in events],
+            [
+                "version.registered", "version.registered", "version.registered",
+                "variant.created", "version.activated", "variant.version_assigned",
+                "version.rolled_back", "variant.deprecated",
+            ],
+        )
+        self.assertEqual(
+            [event.event_id for event in events],
+            list(range(1, len(events) + 1)),
+        )
+        self.assertEqual(events[0].actor_id, "author")
+        self.assertEqual(events[6].actor_id, "operator")
+        self.assertEqual(dict(events[6].details), {"active_version": 1})
+        self.assertEqual(registry.resolve("agent").version, first.version)
+        self.assertEqual(registry.variant_history("agent", "candidate"), (3, 2))
+        self.assertEqual(registry.list_variants("agent")[0].status, "deprecated")
+        self.assertEqual(len(registry.list_audit("other")), 0)
+        self.assertEqual(len(registry.list_audit("agent", limit=2)), 2)
+
     def test_variant_version_must_be_positive_integer(self):
         registry = PromptRegistry()
         registry.register("agent", "Hello")
