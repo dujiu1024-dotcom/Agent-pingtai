@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Protocol, Sequence
 from uuid import NAMESPACE_URL, uuid5
 
+from agent_platform.memory.boundaries import MemoryBoundaryPolicy, MemorySourceDomain
 from agent_platform.memory.service import (
     MemoryCandidate,
     MemoryPrincipal,
@@ -32,6 +33,8 @@ class MemoryTurn:
     assistant_message: str = ""
     agent_id: str | None = None
     project_id: str | None = None
+    # True only after the final assistant message is durably appended to the session.
+    completed: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,16 +63,35 @@ class MemoryExtractionService:
             raise PermissionError("memory turn does not belong to the authenticated principal")
         if not isinstance(turn.source_ref, str) or not turn.source_ref.strip():
             raise ValueError("source_ref is required for memory provenance")
+        if not isinstance(turn.completed, bool) or not turn.completed:
+            raise ValueError("memory extraction requires a completed assistant turn")
+        reference = MemoryBoundaryPolicy.validate_reference(turn.source_ref)
+        if reference.domain is not MemorySourceDomain.SESSION:
+            raise ValueError("memory extraction source must be a session message")
+        if reference.tenant_id != principal.tenant_id:
+            raise PermissionError("session source reference belongs to another tenant")
         if not isinstance(turn.user_message, str) or not isinstance(turn.assistant_message, str):
             raise ValueError("interaction messages must be strings")
-        if not turn.user_message.strip() and not turn.assistant_message.strip():
-            raise ValueError("memory extraction requires a non-empty interaction turn")
+        if not turn.user_message.strip() or not turn.assistant_message.strip():
+            raise ValueError("memory extraction requires both sides of a completed turn")
         if len(turn.user_message) + len(turn.assistant_message) > MAX_TURN_CHARS:
             raise ValueError("interaction turn exceeds the extraction size limit")
         if turn.agent_id and turn.agent_id not in principal.agent_ids:
             raise PermissionError("agent context is not authorized")
         if turn.project_id and turn.project_id not in principal.project_ids:
             raise PermissionError("project context is not authorized")
+
+        # A completed assistant message is the idempotency key. Return already
+        # proposed candidates before invoking a potentially expensive extractor.
+        existing = await self.memory.repository.list(principal.tenant_id, limit=5000)
+        prior = [
+            record for record in existing
+            if record.candidate.source_ref == turn.source_ref
+            and record.candidate.metadata.get("extraction") == "single_turn"
+            and record.status.value != "deleted"
+        ]
+        if prior:
+            return prior
 
         drafts = await self.extractor.extract(turn=turn)
         if not isinstance(drafts, Sequence):
