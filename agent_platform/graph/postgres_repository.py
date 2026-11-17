@@ -195,6 +195,15 @@ class PostgresGraphRepository:
                 await self._lock_entity_ids(connection, (entity.entity_id,))
                 cursor = await connection.execute(
                     """
+                    SELECT 1 FROM graph_entity_tombstones
+                    WHERE tenant_id=%s AND entity_id=%s
+                    """,
+                    (self.tenant_id, entity.entity_id),
+                )
+                if await cursor.fetchone() is not None:
+                    raise ValueError("graph entity was deleted and cannot be resurrected")
+                cursor = await connection.execute(
+                    """
                     INSERT INTO graph_entities (
                         tenant_id, entity_id, entity_type, entity_name, attributes,
                         project_id, source_domain, source_type, source_id, source_version
@@ -427,6 +436,14 @@ class PostgresGraphRepository:
                 )
                 if await cursor.fetchone() is None:
                     return False
+                await connection.execute(
+                    """
+                    INSERT INTO graph_entity_tombstones (tenant_id, entity_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (tenant_id, entity_id) DO NOTHING
+                    """,
+                    (self.tenant_id, entity_id),
+                )
                 invalidations = [
                     ("entity", entity_id, "delete"),
                     ("cache", entity_id, "invalidate"),
