@@ -571,3 +571,40 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selected.status.value, "active")
         self.assertEqual(calls, [previous.memory_id, previous.memory_id])
 
+    async def test_export_includes_immutable_version_history(self):
+        service = MemoryService(InMemoryMemoryRepository())
+        principal = MemoryPrincipal(tenant_id="t", user_id="owner")
+        candidate = MemoryCandidate(
+            tenant_id="t", scope=MemoryScope.USER, scope_id="owner",
+            content="original preference", source_ref="chat:original",
+            confidence=0.7, created_by="extractor",
+            metadata={"origin": "conversation"},
+        )
+        await service.propose(candidate)
+        await service.confirm(principal=principal, memory_id=candidate.memory_id)
+        await service.correct(
+            principal=principal, memory_id=candidate.memory_id,
+            content="corrected preference", source_ref="chat:correction",
+            confidence=0.95,
+        )
+
+        exported = await service.export(principal=principal)
+        self.assertEqual(len(exported), 1)
+        item = exported[0]
+        self.assertEqual(item["version"], 2)
+        self.assertEqual(item["content"], "corrected preference")
+        self.assertEqual(
+            [entry["version"] for entry in item["history"]], [1, 2],
+        )
+        self.assertEqual(
+            [entry["content"] for entry in item["history"]],
+            ["original preference", "corrected preference"],
+        )
+        self.assertEqual(
+            [entry["source_ref"] for entry in item["history"]],
+            ["chat:original", "chat:correction"],
+        )
+        self.assertEqual(item["history"][0]["status"], "active")
+        self.assertEqual(item["history"][1]["confirmed_by"], "owner")
+        self.assertEqual(item["history"][1]["metadata"], {"origin": "conversation"})
+
