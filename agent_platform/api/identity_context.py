@@ -28,10 +28,10 @@ class IdentityContextResolver:
             permissions = permissions.intersection(authenticated.scopes)
             if not permissions:
                 raise HTTPException(status_code=403, detail="API credential has no matching Knowledge/Memory permissions")
-        return context, permissions
+        return authenticated, context, permissions
 
     async def knowledge(self, request: Request) -> KnowledgePrincipal:
-        context, permissions = await self._context(request)
+        _, context, permissions = await self._context(request)
         return KnowledgePrincipal(
             tenant_id=context.tenant_id, user_id=context.user_id,
             project_ids=context.project_ids, roles=context.effective_role_ids,
@@ -40,14 +40,14 @@ class IdentityContextResolver:
         )
 
     async def memory(self, request: Request) -> MemoryPrincipal:
-        context, permissions = await self._context(request)
+        authenticated, context, permissions = await self._context(request)
         return MemoryPrincipal(
             tenant_id=context.tenant_id, user_id=context.user_id,
             project_ids=context.project_ids, agent_ids=context.agent_ids,
             permissions=permissions,
             manage_project_ids=(
                 context.memory_manage_project_ids
-                if not isinstance(request.state.__dict__.get("identity.principal"), AuthenticatedApiCredential)
+                if not isinstance(authenticated, AuthenticatedApiCredential)
                 or "memory.manage" in permissions else frozenset()
             ),
             manage_agent_ids=(
