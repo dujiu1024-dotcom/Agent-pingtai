@@ -81,6 +81,18 @@ class MemoryExtractionService:
         if turn.project_id and turn.project_id not in principal.project_ids:
             raise PermissionError("project context is not authorized")
 
+        # A completed assistant message is the idempotency key. Return already
+        # proposed candidates before invoking a potentially expensive extractor.
+        existing = await self.memory.repository.list(principal.tenant_id, limit=5000)
+        prior = [
+            record for record in existing
+            if record.candidate.source_ref == turn.source_ref
+            and record.candidate.metadata.get("extraction") == "single_turn"
+            and record.status.value != "deleted"
+        ]
+        if prior:
+            return prior
+
         drafts = await self.extractor.extract(turn=turn)
         if not isinstance(drafts, Sequence):
             raise ValueError("extractor must return a sequence of memory candidates")
