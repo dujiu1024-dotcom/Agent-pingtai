@@ -11,7 +11,7 @@ class SessionManagementApiTests(unittest.TestCase):
             from fastapi.testclient import TestClient
             from agent_platform.api.sessions import create_sessions_router
             from agent_platform.control_plane.sessions_assets import (
-                AssetStatus, FileAsset, InMemoryObjectStorage,
+                AssetStatus, ContextWindowSnapshot, FileAsset, InMemoryObjectStorage,
                 InMemorySessionRepository, MessageRole, SessionAssetService,
             )
         except ImportError:
@@ -39,6 +39,7 @@ class SessionManagementApiTests(unittest.TestCase):
         ))
         self.client = TestClient(app)
         self.MessageRole = MessageRole
+        self.ContextWindowSnapshot = ContextWindowSnapshot
 
     def _create_session(self):
         import asyncio
@@ -123,11 +124,17 @@ class SessionManagementApiTests(unittest.TestCase):
             media_type="text/plain", content=b"private session attachment",
             session_id=session.session_id,
         ))
-        asyncio.run(self.service.append_message(
+        message = asyncio.run(self.service.append_message(
             tenant_id="tenant-a", actor_id="user-a", session_id=session.session_id,
             role=self.MessageRole.USER, content="attached evidence",
             asset_ids=(asset.asset_id,),
         ))
+        asyncio.run(self.repository.create_context_snapshot(self.ContextWindowSnapshot(
+            tenant_id="tenant-a", session_id=session.session_id,
+            snapshot_id="snapshot-delete-propagation", version=1, snapshot={},
+            token_count=0, max_tokens=100, created_by="user-a",
+            last_message_id=message.message_id,
+        )))
 
         deleted = self.client.delete(f"/api/platform/v1/sessions/{session.session_id}")
         self.assertEqual(deleted.status_code, 204)
@@ -148,6 +155,9 @@ class SessionManagementApiTests(unittest.TestCase):
             ).status_code,
             404,
         )
+        key = ("tenant-a", session.session_id)
+        self.assertNotIn(key, self.repository.messages)
+        self.assertNotIn(key, self.repository.context_snapshots)
 
     def test_session_permissions_and_tenant_isolation_fail_closed(self):
         import asyncio
