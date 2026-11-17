@@ -55,7 +55,6 @@ include = [
   "tests/test_legacy_identity_audit.py",
   "tests/test_legacy_identity_revoke.py",
   "tests/test_knowledge_service.py",
-  "tests/test_knowledge_content_pipeline.py",
   "tests/test_knowledge_evaluation_dataset.py",
   "tests/test_knowledge_memory_api.py",
   "tests/test_knowledge_catalog_api.py",
@@ -76,7 +75,6 @@ include = [
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_prompt_variants.py",
-  "tests/test_prompt_rollouts.py",
   "tests/test_prompt_experiments.py",
   "tests/test_prompt_operations.py",
   "tests/test_evaluation_store.py",
@@ -150,8 +148,7 @@ include = [
   "tests/test_graph_schema.py",
   "tests/test_session_data_model.py",
   "tests/test_session_conversation_migration.py",
-  "tests/test_batch_api.py",
-  "tests/test_batch_workbench_ui.py",
+  "tests/test_batch_report.py",
 ]
 
 [tool.ruff.lint]
