@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from bisect import bisect_right
 from uuid import NAMESPACE_URL, uuid5
 
 from agent_platform.knowledge.contracts import Document, DocumentChunk
@@ -48,6 +49,13 @@ def chunk_document(
     if isinstance(overlap, bool) or not isinstance(overlap, int) or overlap < 0 or overlap >= max_chars:
         raise ValueError("overlap must be an integer in [0, max_chars)")
     normalized = clean_document_text(text)
+    # Parse page markers once. The previous per-chunk regex scan made large,
+    # page-rich PDFs pay O(chunks * document_length) just to recover provenance.
+    page_markers = [
+        (match.start(), int(match.group(1)))
+        for match in re.finditer(r"\[page:(\d+)\]", normalized)
+    ]
+    page_offsets = [offset for offset, _ in page_markers]
     chunks: list[DocumentChunk] = []
     start = 0
     while start < len(normalized):
@@ -70,11 +78,8 @@ def chunk_document(
         body = raw.strip()
         if body:
             offset = start + len(raw) - len(raw.lstrip())
-            page_number = None
-            for marker in re.finditer(r"\[page:(\d+)\]", normalized):
-                if marker.start() > offset:
-                    break
-                page_number = int(marker.group(1))
+            marker_index = bisect_right(page_offsets, offset) - 1
+            page_number = page_markers[marker_index][1] if marker_index >= 0 else None
             ordinal = len(chunks)
             digest = sha256_text(body)
             identity = ":".join((
