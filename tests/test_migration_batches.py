@@ -112,7 +112,6 @@ class MigrationBatchTests(unittest.TestCase):
                                 batch_id="batch-7")
         self.assertEqual(self.source.read_bytes(), before)
 
-
     def test_diff_report_detects_extra_target_rows_and_requires_completed_batch(self):
         state = run_migration_batch(self.source, self.target, self.mapping,
                                     batch_id="batch-extra", batch_size=10)
