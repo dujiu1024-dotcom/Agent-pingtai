@@ -89,6 +89,64 @@ class SessionRunPersistence:
                 raise ValueError("Run input conflicts with its persisted session message")
         return tuple(self._message_view(item) for item in rows)
 
+    async def append_progress(
+        self, *, tenant_id: str, session_id: str, run_id: str,
+        actor_id: str, state: Mapping[str, Any],
+    ) -> int:
+        """Append newly emitted LangGraph messages after each persisted graph update."""
+        raw_messages = state.get("messages", ())
+        if not isinstance(raw_messages, (list, tuple)):
+            return 0
+        rows = await self.repository.list_messages(
+            tenant_id, session_id, limit=self.history_limit,
+        )
+        existing_ids = {item.message_id for item in rows}
+        appended = 0
+        for index, item in enumerate(raw_messages):
+            if isinstance(item, Mapping):
+                role_value = item.get("role") or item.get("type")
+                content = item.get("content")
+                source_id = item.get("id")
+                usage_data = item.get("usage_metadata")
+            else:
+                role_value = getattr(item, "type", None) or getattr(item, "role", None)
+                content = getattr(item, "content", None)
+                source_id = getattr(item, "id", None)
+                usage_data = getattr(item, "usage_metadata", None)
+            role_aliases = {
+                "human": MessageRole.USER, "user": MessageRole.USER,
+                "ai": MessageRole.ASSISTANT, "assistant": MessageRole.ASSISTANT,
+                "system": MessageRole.SYSTEM, "tool": MessageRole.TOOL,
+                "function": MessageRole.TOOL, "agent": MessageRole.AGENT,
+            }
+            role = role_aliases.get(str(role_value).lower())
+            if role is None or not isinstance(content, str) or not content.strip():
+                continue
+            identity = str(source_id) if source_id else f"{index}:{role.value}:{content}"
+            message_id = str(uuid5(
+                NAMESPACE_URL, f"session-run:{tenant_id}:{session_id}:{run_id}:stream:{identity}",
+            ))
+            if message_id in existing_ids:
+                continue
+            usage = None
+            if isinstance(usage_data, Mapping):
+                prompt = usage_data.get("input_tokens", usage_data.get("prompt_tokens", 0))
+                completion = usage_data.get("output_tokens", usage_data.get("completion_tokens", 0))
+                total = usage_data.get("total_tokens", prompt + completion if type(prompt) is int and type(completion) is int else -1)
+                if all(type(value) is int and value >= 0 for value in (prompt, completion, total)) and total == prompt + completion:
+                    usage = MessageTokenUsage(
+                        prompt_tokens=prompt, completion_tokens=completion,
+                        total_tokens=total, model=usage_data.get("model"),
+                    )
+            await self.repository.append_message(ConversationMessage(
+                tenant_id=tenant_id, message_id=message_id, session_id=session_id,
+                role=role, content=content, actor_id=actor_id, run_id=run_id,
+                token_usage=usage, metadata={"source": "run_stream", "sequence": index},
+            ))
+            existing_ids.add(message_id)
+            appended += 1
+        return appended
+
     async def append_assistant(
         self, *, tenant_id: str, session_id: str, run_id: str,
         actor_id: str, result: Any,
@@ -102,7 +160,11 @@ class SessionRunPersistence:
         rows = await self.repository.list_messages(
             tenant_id, session_id, limit=self.history_limit,
         )
-        existing = next((item for item in rows if item.message_id == message_id), None)
+        existing = next((
+            item for item in rows
+            if item.run_id == run_id and item.role == MessageRole.ASSISTANT
+            and item.content == content
+        ), None)
         if existing is not None:
             return existing
         usage_data = result.get("usage") if isinstance(result, Mapping) else None
