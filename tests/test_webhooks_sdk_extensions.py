@@ -30,6 +30,7 @@ class FakeWebhookStore:
         )
         self.attempt = WebhookAttempt(
             "tenant-a", "delivery-1", "event-1", attempt, "leased", None,
+            lease_token="lease-1",
         )
         self.completed = []
         self.retried = []
@@ -38,14 +39,17 @@ class FakeWebhookStore:
     async def claim(self, *, limit):
         return [(self.subscription, self.payload, self.attempt)]
 
-    async def complete(self, tenant_id, delivery_id, *, response_code):
-        self.completed.append((tenant_id, delivery_id, response_code))
+    async def complete(self, tenant_id, delivery_id, *, response_code, lease_token):
+        self.completed.append((tenant_id, delivery_id, response_code, lease_token))
 
-    async def retry(self, tenant_id, delivery_id, *, next_attempt_at, response_code):
-        self.retried.append((tenant_id, delivery_id, next_attempt_at, response_code))
+    async def retry(self, tenant_id, delivery_id, *, next_attempt_at, response_code,
+                    lease_token, last_error_code):
+        self.retried.append((tenant_id, delivery_id, next_attempt_at, response_code,
+                             lease_token, last_error_code))
 
-    async def dead_letter(self, tenant_id, delivery_id, *, response_code):
-        self.dead.append((tenant_id, delivery_id, response_code))
+    async def dead_letter(self, tenant_id, delivery_id, *, response_code, lease_token,
+                          last_error_code):
+        self.dead.append((tenant_id, delivery_id, response_code, lease_token, last_error_code))
 
 
 class FakeAuditSink:
@@ -158,7 +162,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             now=int(headers["X-Platform-Timestamp"]),
         ))
         self.assertEqual(json.loads(body)["id"], "event-1")
-        self.assertEqual(store.completed[0][0], "tenant-a")
+        self.assertEqual(store.completed[0], ("tenant-a", "delivery-1", 204, "lease-1"))
         self.assertEqual([event["action"] for event in audit.events], [
             "webhook.delivery.attempt", "webhook.delivery",
         ])
@@ -239,6 +243,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
         result = await dispatcher.dispatch()
         self.assertEqual(result["dead_lettered"], 1)
         self.assertEqual(len(store.dead), 1)
+        self.assertEqual(store.dead[0][3:], ("lease-1", "non_success_response"))
         self.assertEqual(audit.events[-1]["outcome"], "failed")
         self.assertTrue(audit.events[-1]["detail"]["dead_lettered"])
 
