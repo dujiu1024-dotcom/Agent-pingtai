@@ -253,6 +253,17 @@ def create_platform_app(
         app.include_router(create_prompt_registry_router(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
         ))
+    prompt_registry_configured = any(value is not None for value in (
+        prompt_registry, prompt_manage_authorizer,
+    ))
+    if prompt_registry_configured:
+        if prompt_registry is None or prompt_manage_authorizer is None:
+            raise ValueError(
+                "prompt registry and prompt manager authorizer must be configured together"
+            )
+        app.include_router(create_prompt_registry_router(
+            registry=prompt_registry, authorize=prompt_manage_authorizer,
+        ))
     app.include_router(create_knowledge_memory_router(
         knowledge=knowledge,
         memory=memory,
