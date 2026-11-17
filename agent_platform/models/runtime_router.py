@@ -249,11 +249,9 @@ class OpenAICompatibleHTTPTransport:
                             content.append(token)
                             if emit_token is not None:
                                 emit_token(token)
-                if usage is None:
-                    raise ModelTransportError("stream completed without provider usage metadata")
                 return {
                     "choices": [{"message": {"content": "".join(content)}}],
-                    "usage": dict(usage),
+                    "usage": dict(usage or {}),
                 }
         except urllib.error.HTTPError as exc:
             raise ModelTransportError(f"model provider returned HTTP {exc.code}") from None
