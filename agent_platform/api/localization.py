@@ -57,12 +57,15 @@ def create_locale_preferences_router(
                 raise ValueError("language, timezone and region are required strings")
             if audit_writer is None or not callable(getattr(audit_writer, "record", None)):
                 raise HTTPException(503, "locale audit writer is not configured")
-            await audit_writer.record(
-                tenant_id=actor.tenant_id, actor_id=actor.user_id,
-                action="tenant.locale.updated.requested", subject_id=actor.tenant_id,
-                outcome="succeeded",
-                detail={"language": language, "timezone": timezone_name, "region": region},
-            )
+            try:
+                await audit_writer.record(
+                    tenant_id=actor.tenant_id, actor_id=actor.user_id,
+                    action="tenant.locale.updated.requested", subject_id=actor.tenant_id,
+                    outcome="succeeded",
+                    detail={"language": language, "timezone": timezone_name, "region": region},
+                )
+            except Exception as exc:
+                raise HTTPException(503, "locale audit write failed; preference was not changed") from exc
             preference = await service.update(
                 tenant_id=actor.tenant_id, actor_id=actor.user_id,
                 language=language, timezone_name=timezone_name, region=region,
