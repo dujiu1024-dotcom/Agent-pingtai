@@ -68,6 +68,8 @@ class GraphStorageBenchmarkTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["queries"]["entity_prefix_search"]["count"], 5)
         self.assertEqual(result["queries"]["adjacency_lookup"]["count"], 5)
         self.assertGreaterEqual(result["writes"]["entity"]["throughput_per_second"], 0)
+        self.assertGreaterEqual(repository.max_active, 2)
+        self.assertLessEqual(repository.max_active, 3)
 
     async def test_rejects_non_positive_workload(self):
         with self.assertRaisesRegex(ValueError, "must be positive"):
