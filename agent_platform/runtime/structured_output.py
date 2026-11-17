@@ -1,393 +1,108 @@
-"""Bounded structured-output validation and repair at the Harness boundary."""
+"""Versioned JSON structured-output schemas with bounded repair retries."""
 from __future__ import annotations
+import inspect, json, math, re
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Mapping
+from uuid import uuid4
 
-import copy
-import hashlib
-import json
-import math
-from dataclasses import replace
-from typing import Any, Mapping
+SUPPORTED={"$schema","$id","title","description","type","properties","required","additionalProperties","items","enum","const","minimum","maximum","minLength","maxLength","pattern","minItems","maxItems","minProperties","maxProperties"}
 
-from agent_platform.runtime.protocols import (
-    HarnessAdapter,
-    HarnessRequest,
-    HarnessResult,
-)
+class StructuredOutputError(RuntimeError):
+    code="structured_output_error"
+    def __init__(self,message,*,attempts=0,issues=()):
+        super().__init__(message); self.attempts=attempts; self.issues=tuple(issues)
+class SchemaRegistrationError(StructuredOutputError): code="schema_registration_error"
+class SchemaNotFoundError(StructuredOutputError): code="schema_not_found"
+class SchemaVersionConflict(StructuredOutputError): code="schema_version_conflict"
+class OutputParseError(StructuredOutputError): code="output_parse_error"
+class OutputValidationError(StructuredOutputError): code="output_validation_error"
+class OutputRepairExhausted(StructuredOutputError): code="output_repair_exhausted"
 
-_SUPPORTED_SCHEMA_KEYWORDS = frozenset({
-    "type", "enum", "properties", "required", "additionalProperties", "items",
-    "minItems", "maxItems", "minLength", "maxLength", "minimum", "maximum",
-    "title", "description", "$schema",
-})
-_SUPPORTED_SCHEMA_TYPES = frozenset({
-    "object", "array", "string", "number", "integer", "boolean", "null",
-})
+@dataclass(frozen=True)
+class OutputSchema:
+    schema_id:str
+    version:int
+    definition:Mapping[str,Any]
+    schema_ref:str=field(default_factory=lambda:str(uuid4()))
+    def __post_init__(self):
+        if not self.schema_id.strip() or self.version<1: raise ValueError("schema_id and positive version required")
+@dataclass(frozen=True)
+class StructuredOutputResult:
+    value:Any; schema_id:str; schema_version:int; attempts:int; repairs:int; issues_before_repair:tuple[str,...]=()
 
+def _check(s,path="$"):
+    if not isinstance(s,dict): raise SchemaRegistrationError(f"{path} must be an object")
+    unknown=set(s)-SUPPORTED
+    if unknown: raise SchemaRegistrationError(f"unsupported keywords at {path}: {sorted(unknown)}")
+    if s.get("type") not in (None,"object","array","string","number","integer","boolean","null"): raise SchemaRegistrationError(f"unsupported type at {path}")
+    if "properties" in s:
+        if not isinstance(s["properties"],dict): raise SchemaRegistrationError(f"{path}.properties must be object")
+        for k,v in s["properties"].items(): _check(v,f"{path}.properties.{k}")
+    if "items" in s: _check(s["items"],path+".items")
+    if not isinstance(s.get("required",[]),list) or not all(isinstance(x,str) for x in s.get("required",[])): raise SchemaRegistrationError(f"{path}.required must be string array")
+    for k in ("minimum","maximum"):
+        if k in s and (isinstance(s[k],bool) or not isinstance(s[k],(int,float))): raise SchemaRegistrationError(f"{path}.{k} must be numeric")
 
-def _validate_schema_definition(schema: Mapping[str, Any], path: str = "$") -> None:
-    if not isinstance(schema, Mapping):
-        raise ValueError(f"{path}: schema definition must be an object")
-    if any(not isinstance(key, str) for key in schema):
-        raise ValueError(f"{path}: schema keywords must be strings")
-    unknown = set(schema) - _SUPPORTED_SCHEMA_KEYWORDS
-    if unknown:
-        raise ValueError(f"{path}: unsupported schema keywords: {', '.join(sorted(unknown))}")
-    expected = schema.get("type")
-    if expected is not None and (
-        not isinstance(expected, str) or expected not in _SUPPORTED_SCHEMA_TYPES
-    ):
-        raise ValueError(f"{path}: unsupported schema type")
-    if "enum" in schema and (
-        not isinstance(schema["enum"], list) or not schema["enum"]
-    ):
-        raise ValueError(f"{path}.enum must be a non-empty array")
-    if "additionalProperties" in schema and not isinstance(
-        schema["additionalProperties"], bool
-    ):
-        raise ValueError(f"{path}.additionalProperties must be a boolean")
-    for key in ("title", "description", "$schema"):
-        if key in schema and not isinstance(schema[key], str):
-            raise ValueError(f"{path}.{key} must be a string")
-    if "required" in schema and (
-        not isinstance(schema["required"], list)
-        or any(not isinstance(item, str) or not item for item in schema["required"])
-        or len(set(schema["required"])) != len(schema["required"])
-    ):
-        raise ValueError(f"{path}.required must contain unique non-empty strings")
-    if "properties" in schema:
-        properties = schema["properties"]
-        if not isinstance(properties, Mapping):
-            raise ValueError(f"{path}.properties must be an object")
-        for key, child in properties.items():
-            if not isinstance(key, str) or not key:
-                raise ValueError(f"{path}.properties keys must be non-empty strings")
-            _validate_schema_definition(child, f"{path}.properties.{key}")
-    if "items" in schema:
-        _validate_schema_definition(schema["items"], f"{path}.items")
-    for key in ("minItems", "maxItems", "minLength", "maxLength"):
-        if key in schema and (
-            isinstance(schema[key], bool) or not isinstance(schema[key], int) or schema[key] < 0
-        ):
-            raise ValueError(f"{path}.{key} must be a non-negative integer")
-    for key in ("minimum", "maximum"):
-        if key in schema and (
-            isinstance(schema[key], bool)
-            or not isinstance(schema[key], (int, float))
-            or not math.isfinite(schema[key])
-        ):
-            raise ValueError(f"{path}.{key} must be numeric")
-    if "minItems" in schema and "maxItems" in schema and schema["minItems"] > schema["maxItems"]:
-        raise ValueError(f"{path}: minItems exceeds maxItems")
-    if "minLength" in schema and "maxLength" in schema and schema["minLength"] > schema["maxLength"]:
-        raise ValueError(f"{path}: minLength exceeds maxLength")
-    if "minimum" in schema and "maximum" in schema and schema["minimum"] > schema["maximum"]:
-        raise ValueError(f"{path}: minimum exceeds maximum")
+def _validate(v,s,path="$"):
+    out=[]; t=s.get("type")
+    checks={"object":lambda x:isinstance(x,dict),"array":lambda x:isinstance(x,list),"string":lambda x:isinstance(x,str),"number":lambda x:isinstance(x,(int,float)) and not isinstance(x,bool) and math.isfinite(x),"integer":lambda x:isinstance(x,int) and not isinstance(x,bool),"boolean":lambda x:isinstance(x,bool),"null":lambda x:x is None}
+    if t and not checks[t](v): return [f"{path}: expected {t}"]
+    if "enum" in s and v not in s["enum"]: out.append(f"{path}: value not in enum")
+    if "const" in s and v!=s["const"]: out.append(f"{path}: value does not match const")
+    if t=="object":
+        props=s.get("properties",{})
+        for k in s.get("required",[]):
+            if k not in v: out.append(f"{path}.{k}: required property missing")
+        if s.get("additionalProperties") is False:
+            for k in v.keys()-props.keys(): out.append(f"{path}.{k}: additional property forbidden")
+        for k,sub in props.items():
+            if k in v: out.extend(_validate(v[k],sub,f"{path}.{k}"))
+        for key,fn in (("minProperties",lambda n:len(v)<n),("maxProperties",lambda n:len(v)>n)):
+            if key in s and fn(s[key]): out.append(f"{path}: violates {key}")
+    if t=="array":
+        for i,x in enumerate(v): out.extend(_validate(x,s.get("items",{}),f"{path}[{i}]"))
+        for key,fn in (("minItems",lambda n:len(v)<n),("maxItems",lambda n:len(v)>n)):
+            if key in s and fn(s[key]): out.append(f"{path}: violates {key}")
+    if t=="string":
+        if "minLength" in s and len(v)<s["minLength"]: out.append(f"{path}: too short")
+        if "maxLength" in s and len(v)>s["maxLength"]: out.append(f"{path}: too long")
+        if "pattern" in s and re.search(s["pattern"],v) is None: out.append(f"{path}: pattern mismatch")
+    if t in ("number","integer"):
+        if "minimum" in s and v<s["minimum"]: out.append(f"{path}: below minimum")
+        if "maximum" in s and v>s["maximum"]: out.append(f"{path}: above maximum")
+    return out
 
+class OutputSchemaRegistry:
+    def __init__(self): self._schemas={}
+    def register(self,schema_id,version,definition):
+        key=(schema_id,version)
+        if key in self._schemas:
+            if dict(self._schemas[key].definition)!=dict(definition): raise SchemaVersionConflict(f"{schema_id}@{version} immutable")
+            return self._schemas[key]
+        _check(dict(definition)); obj=OutputSchema(schema_id,version,dict(definition)); self._schemas[key]=obj; return obj
+    def get(self,schema_id,version=None):
+        versions=[v for sid,v in self._schemas if sid==schema_id]
+        if not versions: raise SchemaNotFoundError(f"schema not found: {schema_id}")
+        version=max(versions) if version is None else version
+        try: return self._schemas[(schema_id,version)]
+        except KeyError: raise SchemaNotFoundError(f"schema not found: {schema_id}@{version}")
+    def validate(self,schema,value): return tuple(_validate(value,schema.definition))
 
-class StructuredOutputSchemaRegistry:
-    """In-process immutable-by-version schema registry for Harness output contracts."""
-
-    def __init__(self) -> None:
-        self._schemas: dict[tuple[str, int], dict[str, Any]] = {}
-
-    def register(self, schema_id: str, version: int, schema: Mapping[str, Any]) -> None:
-        if not isinstance(schema_id, str) or not schema_id.strip() or len(schema_id) > 128:
-            raise ValueError("schema_id must be a non-empty string of at most 128 characters")
-        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-            raise ValueError("schema version must be a positive integer")
-        if not isinstance(schema, Mapping) or not schema:
-            raise ValueError("structured output schema must be a non-empty object")
-        _validate_schema_definition(schema)
-        key = (schema_id, version)
-        value = copy.deepcopy(dict(schema))
-        existing = self._schemas.get(key)
-        if existing is not None and existing != value:
-            raise ValueError("registered schema versions are immutable")
-        self._schemas[key] = value
-
-    def resolve(self, schema_id: str, version: int) -> dict[str, Any]:
-        if not isinstance(schema_id, str) or not schema_id.strip():
-            raise ValueError("schema_id must be a non-empty string")
-        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-            raise ValueError("schema version must be a positive integer")
-        try:
-            schema = self._schemas[(schema_id, version)]
-        except KeyError as exc:
-            raise KeyError(f"unknown structured output schema {schema_id}@{version}") from exc
-        return copy.deepcopy(schema)
-
-
-class PostgresStructuredOutputSchemaRegistry:
-    """Tenant-scoped, append-only schema versions shared by all runtime workers."""
-
-    def __init__(self, connection_factory: Any) -> None:
-        if not callable(connection_factory):
-            raise TypeError("connection_factory must be callable")
-        self._connection_factory = connection_factory
-
-    @classmethod
-    def from_dsn(cls, dsn: str) -> "PostgresStructuredOutputSchemaRegistry":
-        if not isinstance(dsn, str) or not dsn.strip():
-            raise ValueError("PostgreSQL DSN is required")
-
-        async def connect() -> Any:
-            try:
-                from psycopg import AsyncConnection
-                from psycopg.rows import dict_row
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Install psycopg[binary,pool] for PostgreSQL schema storage"
-                ) from exc
-            return await AsyncConnection.connect(dsn, row_factory=dict_row)
-
-        return cls(connect)
-
-    @staticmethod
-    def _canonical(schema: Mapping[str, Any]) -> tuple[str, str]:
-        _validate_schema_definition(schema)
-        try:
-            payload = json.dumps(
-                dict(schema), ensure_ascii=False, sort_keys=True,
-                separators=(",", ":"), allow_nan=False,
-            )
-        except (TypeError, ValueError) as exc:
-            raise ValueError("schema must contain only finite JSON values") from exc
-        return payload, hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def _validate_scope(tenant_id: str, schema_id: str, version: int) -> None:
-        if not isinstance(tenant_id, str) or not tenant_id.strip():
-            raise ValueError("tenant_id is required")
-        if not isinstance(schema_id, str) or not schema_id.strip() or len(schema_id) > 128:
-            raise ValueError("schema_id must be a non-empty string of at most 128 characters")
-        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
-            raise ValueError("schema version must be a positive integer")
-
-    async def register(
-        self, *, tenant_id: str, schema_id: str, version: int,
-        schema: Mapping[str, Any],
-    ) -> None:
-        """Insert a version once; identical re-registration is idempotent."""
-        self._validate_scope(tenant_id, schema_id, version)
-        if not isinstance(schema, Mapping) or not schema:
-            raise ValueError("structured output schema must be a non-empty object")
-        payload, digest = self._canonical(schema)
-        connection = await self._connection_factory()
-        async with connection:
-            async with connection.transaction():
-                await connection.execute(
-                    """INSERT INTO platform_output_schemas
-                       (tenant_id,schema_id,schema_version,schema_json,schema_digest)
-                       VALUES (%s,%s,%s,%s::jsonb,%s)
-                       ON CONFLICT (tenant_id,schema_id,schema_version) DO NOTHING""",
-                    (tenant_id, schema_id, version, payload, digest),
-                )
-                cursor = await connection.execute(
-                    """SELECT schema_digest FROM platform_output_schemas
-                       WHERE tenant_id=%s AND schema_id=%s AND schema_version=%s""",
-                    (tenant_id, schema_id, version),
-                )
-                row = await cursor.fetchone()
-                if row is None:
-                    raise RuntimeError("registered schema version could not be read back")
-                stored_digest = row["schema_digest"]
-                if stored_digest != digest:
-                    raise ValueError("registered schema versions are immutable")
-
-    async def resolve(
-        self, *, tenant_id: str, schema_id: str, version: int,
-    ) -> dict[str, Any]:
-        """Resolve exactly one tenant-pinned version; never fall back to latest."""
-        self._validate_scope(tenant_id, schema_id, version)
-        connection = await self._connection_factory()
-        async with connection:
-            cursor = await connection.execute(
-                """SELECT schema_json, schema_digest FROM platform_output_schemas
-                   WHERE tenant_id=%s AND schema_id=%s AND schema_version=%s""",
-                (tenant_id, schema_id, version),
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            raise KeyError(
-                f"unknown structured output schema {schema_id}@{version} for tenant"
-            )
-        schema = row["schema_json"]
-        if not isinstance(schema, Mapping):
-            raise RuntimeError("stored structured output schema is not a JSON object")
-        payload, digest = self._canonical(schema)
-        if digest != row["schema_digest"]:
-            raise RuntimeError("stored structured output schema digest mismatch")
-        return copy.deepcopy(dict(schema))
-
-    async def aresolve(
-        self, *, tenant_id: str, schema_id: str, version: int,
-    ) -> dict[str, Any]:
-        """Async alias for adapters that distinguish async registry ports."""
-        return await self.resolve(
-            tenant_id=tenant_id, schema_id=schema_id, version=version,
-        )
-
-
-class StructuredOutputValidationError(ValueError):
-    """Terminal, non-retryable-by-default failure after the configured repair budget."""
-
-    def __init__(
-        self, errors: list[str], *, attempts: int | None = None,
-        schema_id: str | None = None, schema_version: int | None = None,
-    ) -> None:
-        self.errors = tuple(errors)
-        self.attempts = attempts
-        self.schema_id = schema_id
-        self.schema_version = schema_version
-        super().__init__("structured output validation failed: " + "; ".join(errors))
-
-
-def _validate(value: Any, schema: Mapping[str, Any], path: str = "$") -> list[str]:
-    errors: list[str] = []
-    expected = schema.get("type")
-    type_checks = {
-        "object": lambda v: isinstance(v, dict),
-        "array": lambda v: isinstance(v, list),
-        "string": lambda v: isinstance(v, str),
-        "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
-        "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
-        "boolean": lambda v: isinstance(v, bool),
-        "null": lambda v: v is None,
-    }
-    if expected in type_checks and not type_checks[expected](value):
-        return [f"{path}: expected {expected}"]
-    if "enum" in schema and value not in schema["enum"]:
-        errors.append(f"{path}: value is not in enum")
-    if isinstance(value, dict):
-        properties = schema.get("properties", {})
-        required = schema.get("required", [])
-        for key in required:
-            if key not in value:
-                errors.append(f"{path}.{key}: required property is missing")
-        if schema.get("additionalProperties") is False:
-            for key in value.keys() - properties.keys():
-                errors.append(f"{path}.{key}: additional property is not allowed")
-        for key, child in properties.items():
-            if key in value and isinstance(child, Mapping):
-                errors.extend(_validate(value[key], child, f"{path}.{key}"))
-    elif isinstance(value, list):
-        if "minItems" in schema and len(value) < schema["minItems"]:
-            errors.append(f"{path}: fewer than minItems")
-        if "maxItems" in schema and len(value) > schema["maxItems"]:
-            errors.append(f"{path}: more than maxItems")
-        item_schema = schema.get("items")
-        if isinstance(item_schema, Mapping):
-            for index, item in enumerate(value):
-                errors.extend(_validate(item, item_schema, f"{path}[{index}]"))
-    elif isinstance(value, str):
-        if "minLength" in schema and len(value) < schema["minLength"]:
-            errors.append(f"{path}: shorter than minLength")
-        if "maxLength" in schema and len(value) > schema["maxLength"]:
-            errors.append(f"{path}: longer than maxLength")
-    elif isinstance(value, (int, float)) and not isinstance(value, bool):
-        if isinstance(value, float) and not math.isfinite(value):
-            errors.append(f"{path}: number must be finite")
-            return errors
-        if "minimum" in schema and value < schema["minimum"]:
-            errors.append(f"{path}: below minimum")
-        if "maximum" in schema and value > schema["maximum"]:
-            errors.append(f"{path}: above maximum")
-    return errors
-
-
-def _reject_non_json_constant(value: str) -> None:
-    raise ValueError(f"non-standard JSON constant: {value}")
-
-
-def _parse_finite_float(value: str) -> float:
-    parsed = float(value)
-    if not math.isfinite(parsed):
-        raise ValueError("JSON number must be finite")
-    return parsed
-
-
-def validate_structured_output(raw: str, schema: Mapping[str, Any]) -> tuple[Any | None, list[str]]:
-    _validate_schema_definition(schema)
-    try:
-        value = json.loads(
-            raw, parse_constant=_reject_non_json_constant,
-            parse_float=_parse_finite_float,
-        )
-    except (TypeError, ValueError) as exc:
-        return None, [f"$: invalid JSON ({type(exc).__name__})"]
-    return value, _validate(value, schema)
-
-
-class SchemaValidatedHarnessAdapter:
-    """Validate JSON output and perform bounded repair attempts through the same adapter."""
-
-    def __init__(self, adapter: HarnessAdapter, *, max_retries: int = 1, schema_registry: StructuredOutputSchemaRegistry | None = None) -> None:
-        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0 or max_retries > 3:
-            raise ValueError("max_retries must be between 0 and 3")
-        self.adapter = adapter
-        self.max_retries = max_retries
-        self.schema_registry = schema_registry
-
-    async def run(self, request: HarnessRequest) -> HarnessResult:
-        schema = request.output_schema
-        schema_id = request.metadata.get("output_schema_id")
-        schema_version = request.metadata.get("output_schema_version")
-        if (schema_id is None) != (schema_version is None):
-            raise ValueError("output_schema_id and output_schema_version must be provided together")
-        if schema_id is not None:
-            if not isinstance(schema_id, str) or not schema_id.strip():
-                raise ValueError("output_schema_id is required with a versioned schema")
-            if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version < 1:
-                raise ValueError("output_schema_version must be a positive integer")
-            if schema is not None:
-                raise ValueError("inline output_schema cannot be combined with a versioned schema reference")
-            if self.schema_registry is None:
-                raise RuntimeError("versioned output schema requested without a schema registry")
-            resolver = getattr(self.schema_registry, "aresolve", None)
-            if callable(resolver):
-                schema = await resolver(
-                    tenant_id=request.context.tenant_id,
-                    schema_id=schema_id, version=schema_version,
-                )
-            else:
-                resolved = self.schema_registry.resolve(schema_id, schema_version)
-                if hasattr(resolved, "__await__"):
-                    resolved = await resolved
-                schema = resolved
-        if schema is None:
-            return await self.adapter.run(request)
-        _validate_schema_definition(schema)
-        current = replace(request, output_schema=schema)
-        last_errors: list[str] = []
-        for attempt in range(self.max_retries + 1):
-            result = await self.adapter.run(current)
-            value, errors = validate_structured_output(
-                result.output_text, schema,
-            )
-            if not errors:
-                return replace(
-                    result,
-                    metadata={
-                        **result.metadata,
-                        "structured_output_valid": True,
-                        "structured_output_attempts": attempt + 1,
-                        "structured_output": value,
-                        **({"output_schema_id": schema_id, "output_schema_version": schema_version} if schema_id is not None else {}),
-                    },
-                )
-            last_errors = errors
-            if attempt < self.max_retries:
-                current = replace(
-                    current,
-                    instructions=(
-                        request.instructions
-                        + "\n\nReturn only valid JSON matching the required schema. "
-                        + "Correct the previous output; do not add prose. "
-                        + "Validation errors: " + "; ".join(errors)
-                        + "\nPrevious output: " + result.output_text
-                    ),
-                )
-        raise StructuredOutputValidationError(
-            last_errors, attempts=self.max_retries + 1,
-            schema_id=schema_id, schema_version=schema_version,
-        )
+async def validate_structured_output(raw_output,*,registry,schema_id,schema_version=None,max_repairs=1,repairer=None):
+    if isinstance(max_repairs,bool) or not isinstance(max_repairs,int) or not 0<=max_repairs<=5: raise ValueError("max_repairs must be 0..5")
+    schema=registry.get(schema_id,schema_version); current=raw_output; first=()
+    for attempt in range(max_repairs+1):
+        try: value=json.loads(current)
+        except (TypeError,json.JSONDecodeError) as e:
+            issues=(f"$: invalid JSON ({getattr(e,'msg','output must be text')})",)
+            if attempt==0: first=issues
+            if attempt>=max_repairs or repairer is None: raise OutputParseError("invalid JSON output",attempts=attempt+1,issues=issues) from e
+        else:
+            issues=registry.validate(schema,value)
+            if not issues: return StructuredOutputResult(value,schema.schema_id,schema.version,attempt+1,attempt,first)
+            if attempt==0: first=issues
+            if attempt>=max_repairs or repairer is None: raise OutputValidationError("schema validation failed",attempts=attempt+1,issues=issues)
+        fixed=repairer(current,schema,issues,attempt+1)
+        current=await fixed if inspect.isawaitable(fixed) else fixed
+        if not isinstance(current,str): raise OutputRepairExhausted("repairer must return text",attempts=attempt+1,issues=issues)
+    raise OutputRepairExhausted("repair budget exhausted",attempts=max_repairs+1,issues=first)
