@@ -17,6 +17,40 @@ from agent_platform.workflows.expert_registry import ExpertRegistry
 
 
 class MultiExpertCallbacks(Protocol):
+    async def _capture_source_lineage(
+        self, *, scope: Scope, scope_id: str, refs: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        """Pin each conclusion's source to an immutable Blackboard version.
+
+        External evidence identifiers remain explicit opaque references; their
+        owning connector/document service is responsible for resolving a version.
+        """
+        lineage: list[dict[str, Any]] = []
+        for ref in refs:
+            try:
+                normalized_ref = str(UUID(ref))
+            except (ValueError, TypeError, AttributeError):
+                lineage.append({
+                    "reference": str(ref),
+                    "source_type": "external",
+                    "version": None,
+                })
+                continue
+            source = await self.repository.get(normalized_ref)
+            if source is None:
+                raise ValueError("Blackboard provenance reference does not exist")
+            if source.scope is not scope or source.scope_id != scope_id:
+                raise PermissionError("Blackboard provenance crosses the active workflow scope")
+            lineage.append({
+                "reference": str(ref),
+                "source_type": "blackboard",
+                "entry_id": source.entry_id,
+                "version": source.version,
+                "kind": source.kind.value,
+                "author_id": source.author_id,
+            })
+        return lineage
+
     async def plan_experts(self, *, objective: str, run_context: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]: ...
     async def run_expert(self, *, assignment: Mapping[str, Any], objective: str, run_context: Mapping[str, Any]) -> Mapping[str, Any]: ...
     async def synthesize(self, *, objective: str, contributions: Sequence[Mapping[str, Any]], run_context: Mapping[str, Any]) -> Mapping[str, Any]: ...
@@ -249,7 +283,12 @@ class BlackboardMultiExpertServices:
             conflict = dict(raw)
             key = str(conflict.get("id") or conflict.get("conflict_key") or "conflict") + ":" + str(index)
             conflict["conflict_instance_id"] = key
-            refs = self._refs(conflict) or tuple(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id"))
+            # Every adjudicated conflict must retain both expert claims and
+            # the reviewer's cited evidence, independent of callback omissions.
+            refs = tuple(dict.fromkeys((
+                *(str(item["blackboard_entry_id"]) for item in contributions if item.get("blackboard_entry_id")),
+                *self._refs(conflict),
+            )))
             await self._validate_source_refs(scope=scope, scope_id=scope_id, refs=refs)
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "conflict:" + key),
@@ -344,6 +383,9 @@ class BlackboardMultiExpertServices:
                 scope=scope, scope_id=scope_id, refs=decision_refs,
                 require_existing=True,
             )
+            source_lineage = await self._capture_source_lineage(
+                scope=scope, scope_id=scope_id, refs=decision_refs,
+            )
             entry = BlackboardEntry(
                 entry_id=self._entry_id(run_context, "decision:" + str(conflict_entry_id)),
                 scope=scope, scope_id=scope_id, kind=EntryKind.DECISION,
@@ -351,6 +393,7 @@ class BlackboardMultiExpertServices:
                     "conflict_entry_id": conflict_entry_id,
                     "outcome": decision["outcome"].strip(),
                     "rationale": decision["rationale"].strip(),
+                    "source_lineage": source_lineage,
                 },
                 author_id=str(decision.get("decider_id") or "conflict-resolver"),
                 source_refs=decision_refs,
@@ -367,10 +410,17 @@ class BlackboardMultiExpertServices:
         await self._validate_source_refs(
             scope=scope, scope_id=scope_id, refs=resolution_refs,
         )
+        resolution_lineage = await self._capture_source_lineage(
+            scope=scope, scope_id=scope_id, refs=resolution_refs,
+        )
+        resolved_synthesis["source_lineage"] = resolution_lineage
         resolved_entry = BlackboardEntry(
             entry_id=self._entry_id(run_context, "resolved-synthesis"),
             scope=scope, scope_id=scope_id, kind=EntryKind.ARTIFACT,
-            content={"resolved_synthesis": copy.deepcopy(resolved_synthesis)},
+            content={
+                "resolved_synthesis": copy.deepcopy(resolved_synthesis),
+                "source_lineage": resolution_lineage,
+            },
             author_id="conflict-resolver", source_refs=resolution_refs,
         )
         persisted_synthesis = await self._propose_once(resolved_entry)
