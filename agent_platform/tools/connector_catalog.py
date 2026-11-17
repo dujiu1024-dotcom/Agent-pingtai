@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import re
 import inspect
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Mapping, Protocol
