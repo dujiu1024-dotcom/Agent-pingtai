@@ -24,6 +24,7 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
+from agent_platform.api.prompt_operations import create_prompt_operations_router
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.registry import create_registry_router
@@ -95,6 +96,7 @@ def create_platform_app(
     evaluation_review_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
     prompt_manage_authorizer: Any | None = None,
+    prompt_evaluation_gate: Any | None = None,
     alert_dispatch_worker: Any | None = None,
     alert_evaluation_worker: Any | None = None,
     audit_reader: Any | None = None,
@@ -258,6 +260,23 @@ def create_platform_app(
             )
         app.include_router(create_prompt_registry_router(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
+        ))
+    prompt_operations_configured = any(value is not None for value in (
+        prompt_evaluation_gate, resource_audit_writer,
+    ))
+    if prompt_operations_configured:
+        if any(value is None for value in (
+            prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
+            resource_audit_writer,
+        )):
+            raise ValueError(
+                "prompt operations require registry, authorizer, evaluation gate and audit writer"
+            )
+        app.include_router(create_prompt_operations_router(
+            registry=prompt_registry,
+            authorize=prompt_manage_authorizer,
+            evaluate_candidate=prompt_evaluation_gate,
+            audit_writer=resource_audit_writer,
         ))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer,
