@@ -104,7 +104,7 @@ document.addEventListener("submit",async e=>{
 const VIEW_CAPABILITIES={
  sessions:["sessions"],tasks:["task_execution"],approvals:["approvals"],
  registry:["registry","resource_registry"],
- governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"],\n prompt-lab:["prompt_management"]
+ governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"],\n "prompt-lab":["prompt_management"]
 };
 function viewCapabilityEnabled(view){
  const keys=VIEW_CAPABILITIES[view];if(!keys)return true;
