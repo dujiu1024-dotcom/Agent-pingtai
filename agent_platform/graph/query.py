@@ -131,6 +131,8 @@ class GraphQueryService:
         self._positive_int(depth, "depth", 5)
         self._positive_int(limit, "limit", 500)
         scope = self._scope(allowed_project_ids)
+        if isinstance(relation_types, (str, bytes)):
+            raise ValueError("relation_types must be a sequence of relation type names")
         allowed_types = frozenset(relation_types)
         if any(not isinstance(item, str) or not item.strip() for item in allowed_types):
             raise ValueError("relation_types must contain non-empty strings")
@@ -201,7 +203,11 @@ class GraphQueryService:
                 raise ValueError(f"{name} is required")
         self._positive_int(max_depth, "max_depth", 8)
         scope = self._scope(allowed_project_ids)
+        if isinstance(relation_types, (str, bytes)):
+            raise ValueError("relation_types must be a sequence of relation type names")
         allowed_types = frozenset(relation_types)
+        if any(not isinstance(item, str) or not item.strip() for item in allowed_types):
+            raise ValueError("relation_types must contain non-empty strings")
 
         async def run() -> GraphPath | None:
             source = await self.repository.get_entity(source_entity_id, allowed_project_ids=scope)
@@ -244,7 +250,7 @@ class GraphQueryService:
     ) -> tuple[GraphPath, ...]:
         if not isinstance(start_entity_id, str) or not start_entity_id.strip():
             raise ValueError("start_entity_id is required")
-        if not relation_types or len(relation_types) > 8 or any(
+        if isinstance(relation_types, (str, bytes)) or not relation_types or len(relation_types) > 8 or any(
             not isinstance(value, str) or not value.strip() for value in relation_types
         ):
             raise ValueError("relation_types must contain 1-8 relation type names")
