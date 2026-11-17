@@ -66,7 +66,6 @@ class FakeSecrets:
         self.revoked = []
         self.counter = 0
         self.fail_revoke_once = False
-        self.fail_revoke_once = False
     async def store(self, *, tenant_id: str, secret: bytes):
         self.counter += 1
         ref = f"secret://{tenant_id}/{self.counter}"
