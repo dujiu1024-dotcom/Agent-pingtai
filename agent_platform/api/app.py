@@ -15,6 +15,7 @@ from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
@@ -150,6 +151,8 @@ def create_platform_app(
         raise ValueError("audit request sink and actor resolver must be configured together")
 
     app = FastAPI()
+    install_api_error_handlers(app)
+    app.add_middleware(PublicApiContractMiddleware)
     # Independent first-party UI; no dependency on legacy console/gui.
     app.include_router(create_platform_web_router())
     # Add request auditing before Identity middleware so it executes inside the
