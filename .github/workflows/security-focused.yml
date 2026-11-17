@@ -32,4 +32,4 @@ jobs:
             tests.test_secret_manager \
             tests.test_secret_supply_chain \
             tests.test_approval_workbench_ui \
-            tests.test_sandbox_oci -v
+            tests.test_sandbox_oci \\\n            tests.test_runtime_permission_guard -v
