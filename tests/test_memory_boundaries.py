@@ -6,6 +6,9 @@ from agent_platform.memory.boundaries import (
     MemoryBoundaryPolicy,
     MemorySourceDomain,
     MemorySourceReference,
+    MEMORY_BOUNDARIES,
+    MemoryLayer,
+    memory_boundary,
 )
 from agent_platform.memory.service import MemoryCandidate, MemoryScope
 
@@ -114,3 +117,35 @@ def test_memory_candidate_rejects_unapproved_blackboard_reference() -> None:
             created_by="agent-1",
             source_approved=False,
         )
+
+
+def test_six_memory_layers_have_canonical_ownership_boundaries() -> None:
+    assert {item.layer for item in MEMORY_BOUNDARIES} == set(MemoryLayer)
+    assert len(MEMORY_BOUNDARIES) == len(MemoryLayer)
+
+
+def test_run_and_session_are_not_durable_memory_scopes() -> None:
+    for layer in (MemoryLayer.RUN, MemoryLayer.SESSION):
+        assert "MemoryScope." not in memory_boundary(layer).persistence
+
+
+def test_durable_memory_layers_map_to_existing_scopes() -> None:
+    expected = {
+        MemoryLayer.USER: "MemoryScope.USER",
+        MemoryLayer.AGENT: "MemoryScope.AGENT",
+        MemoryLayer.PROJECT: "MemoryScope.PROJECT",
+        MemoryLayer.ORGANIZATION: "MemoryScope.TENANT",
+    }
+    for layer, scope in expected.items():
+        assert scope in memory_boundary(layer).persistence
+
+
+def test_organization_memory_is_tenant_bounded() -> None:
+    boundary = memory_boundary(MemoryLayer.ORGANIZATION)
+    assert "one tenant" in boundary.owner
+    assert "cross-tenant sharing" in boundary.exclusions
+
+
+def test_memory_boundary_rejects_untyped_layer() -> None:
+    with pytest.raises(TypeError):
+        memory_boundary("user")  # type: ignore[arg-type]
