@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from math import ceil
 import json
 import time
 from dataclasses import asdict, dataclass
@@ -58,7 +59,7 @@ def _percentile(samples: list[float], quantile: float) -> float:
         raise ValueError("samples and a quantile between zero and one are required")
     ordered = sorted(samples)
     # Nearest-rank percentile: stable for small CI sample sizes.
-    index = max(0, min(len(ordered) - 1, int((len(ordered) * quantile + 0.999999)) - 1))
+    index = max(0, min(len(ordered) - 1, ceil(len(ordered) * quantile) - 1))
     return ordered[index]
 
 
