@@ -302,8 +302,12 @@ class InMemorySessionRepository:
         ):
             raise ValueError("snapshot message cursor does not belong to this session")
         rows = self.context_snapshots.setdefault(key, [])
-        if any(item.snapshot_id == snapshot.snapshot_id for items in self.context_snapshots.values()
-               for item in items):
+        if any(
+            item.snapshot_id == snapshot.snapshot_id
+            for (tenant_id, _), items in self.context_snapshots.items()
+            if tenant_id == snapshot.tenant_id
+            for item in items
+        ):
             raise SessionError("context snapshot already exists")
         if any(item.version == snapshot.version for item in rows):
             raise SessionError("context snapshot version already exists")
