@@ -426,65 +426,48 @@ document.addEventListener("click",async e=>{
 });
 
 
-// C-24-02: document chunk preview and authorized manual editing.
-async function renderChunkPreview(){
- const root=$("#view");
- root.innerHTML="<div class='panel'>正在读取知识文档…</div>";
- const documents=await list(API+"/knowledge/documents?limit=100");
- if(!documents.length){
-  root.innerHTML=panel("Chunk 预览","<p class='subtle'>当前身份没有可读取的知识文档。上传或接入文档后可在此检查切片与来源定位。</p>");
-  return;
+/* C-24-03: authenticated RAG query playground using the tenant-scoped API. */
+S.ragPlayground={options:null,result:null,error:null};
+async function renderRagPlayground(){
+ const root=$("#view");$("#title").textContent="RAG Query 测试";$("#crumb").textContent="RAG PLAYGROUND";
+ if(!S.ragPlayground.options){
+  root.innerHTML=panel("RAG Query 测试","<p>正在读取当前租户可用的 Embedding 模型…</p>");
+  S.ragPlayground.options=await api(API+"/rag-playground/options");
  }
- const selected=documents.find(d=>d.document_id===S.chunkDocumentId)||documents[0];
- S.chunkDocumentId=selected.document_id;
- const response=await api(API+"/knowledge/documents/"+encodeURIComponent(selected.document_id)+"/chunks");
- const chunks=response.items||[];
- const options=documents.map(d=>"<option value='"+esc(d.document_id)+"' "+(d.document_id===selected.document_id?"selected":"")+">"+esc(d.title||d.document_id)+" · v"+esc(d.version)+"</option>").join("");
- const rows=chunks.map(c=>{
-  const location=(c.page_number?"第 "+c.page_number+" 页 · ":"")+"字符 "+c.start_offset+"–"+c.end_offset;
-  const editing=S.chunkEditId===c.chunk_id;
-  const content=editing
-   ? "<form data-chunk-edit='"+esc(c.chunk_id)+"'><textarea name='text' rows='7' maxlength='20000' required>"+esc(c.text)+"</textarea><div class='actions'><button class='button primary'>保存片段</button><button class='button' type='button' data-chunk-cancel>取消</button></div></form>"
-   : "<pre class='json'>"+esc(c.text)+"</pre>";
-  return "<article class='message'><header><b>Chunk "+esc(c.ordinal+1)+"</b><small>"+esc(c.embedding_status||"indexed")+" · "+esc(c.token_count)+" tokens · "+esc(c.char_count)+" chars</small></header><p class='subtle'>"+esc(location)+" · SHA-256 "+esc(String(c.content_hash||"").slice(0,16))+"</p>"+content+(editing?"":btn("编辑片段","data-chunk-edit-open='"+esc(c.chunk_id)+"'"))+"</article>";
- }).join("");
- root.innerHTML=panel("Chunk 预览","<form id='chunk-document-form' class='inline-form'><label>知识文档<select name='document_id'>"+options+"</select></label><button class='button'>加载文档</button></form><p class='subtle'>文档："+esc(selected.title||selected.document_id)+" · 版本 "+esc(selected.version)+" · "+chunks.length+" 个片段</p>")+
-  panel("切片与来源定位",rows||"<p class='subtle'>当前文档没有可见片段。</p>");
+ const options=S.ragPlayground.options,models=options.embedding_models||[];
+ const selected=S.ragPlayground.result;
+ const modelOptions=models.map(m=>"<option value='"+esc(m)+"'>"+esc(m)+"</option>").join("");
+ const controls="<form id='rag-query-form'><label>问题<textarea name='query' required maxlength='4096' rows='3' placeholder='输入要验证的检索问题'></textarea></label><div class='form-grid'><label>Embedding 模型<select name='embedding_model'>"+modelOptions+"</select></label><label>Top-K<input name='top_k' type='number' min='1' max='"+esc(options.max_top_k||20)+"' value='5' required></label><label>最低相似度<input name='min_score' type='number' min='0' max='1' step='0.01' value='0'></label><label class='inline-form'><span>启用 Rerank</span><input name='rerank' type='checkbox'></label></div><button class='button primary'>执行检索与生成</button></form><p class='subtle'>请求由已认证的服务端 Principal 确定租户身份；模型必须来自服务端启用列表，未授权片段由检索层过滤。</p>";
+ let output="";
+ if(selected){
+  const rows=(selected.retrieved||[]).map((hit,index)=>"<article class='message'><header><b>#"+(index+1)+" · "+esc(hit.title||hit.document_id)+"</b><small>score "+esc(Number(hit.score||0).toFixed(4))+"</small></header><p>"+esc(hit.text)+"</p><small class='subline'>文档 "+esc(hit.document_id)+" · v"+esc(hit.document_version)+" · Chunk "+esc(hit.chunk_id)+" · "+(hit.page_number?"第 "+esc(hit.page_number)+" 页":"offset "+esc(hit.start_offset??"—")+"–"+esc(hit.end_offset??"—"))+"</small>"+(hit.source_url?"<p><a href='"+esc(hit.source_url)+"' target='_blank' rel='noopener noreferrer'>打开来源文档</a></p>":"")+"</article>");
+  output=panel("生成答案", "<p>"+esc(selected.answer||"未生成答案")+"</p><p class='subtle'>"+(selected.abstained?"已拒答："+esc(selected.reason||"无授权证据"):"基于检索结果生成")+"</p>")+
+   panel("Top-K 召回片段",rows.join("")||"<p class='empty'>没有达到阈值的授权片段</p>")+
+   panel("引用与检索配置",pre({citations:selected.citations,query:selected.query,embedding_model:selected.embedding_model,rerank:selected.rerank,top_k:selected.top_k,min_score:selected.min_score}));
+ }
+ root.innerHTML=panel("查询配置",controls)+output;
+ const form=$("#rag-query-form");if(form&&models.length)form.elements.embedding_model.value=models.includes(options.default_embedding_model)?options.default_embedding_model:models[0];
 }
-const chunkBaseRender=render;
+const ragPlaygroundBaseRender=render;
 render=async function(){
- if(S.view==="chunks"){
-  try{await renderChunkPreview()}catch(error){$("#view").innerHTML=panel("Chunk 预览不可用","<p class='error'>"+esc(error.message)+"</p>")}
+ if(S.view==="rag-playground"){
+  try{await renderRagPlayground()}catch(error){$("#view").innerHTML=panel("RAG Query 测试不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-rag-retry='1'"));S.ragPlayground.options=null}
   return;
  }
- return chunkBaseRender();
-};
-const chunkBaseNav=nav;
-nav=function(view){
- if(view==="chunks"){
-  S.view="chunks";S.session=null;S.task=null;S.approval=null;
-  document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
-  $("#title").textContent="Chunk 预览";$("#crumb").textContent="CHUNK PREVIEW";render();return;
- }
- return chunkBaseNav(view);
+ return ragPlaygroundBaseRender();
 };
 document.addEventListener("submit",async event=>{
- const form=event.target;
- if(form.id==="chunk-document-form"){
-  event.preventDefault();S.chunkDocumentId=String(new FormData(form).get("document_id")||"");S.chunkEditId=null;
-  await renderChunkPreview();return;
- }
- if(!form.matches("[data-chunk-edit]"))return;
- event.preventDefault();
- const chunkId=form.getAttribute("data-chunk-edit");
- const text=String(new FormData(form).get("text")||"");
+ const form=event.target;if(form.id!=="rag-query-form")return;
+ event.preventDefault();const data=new FormData(form);
+ const payload={query:String(data.get("query")||"").trim(),embedding_model:String(data.get("embedding_model")||""),top_k:Number(data.get("top_k")),min_score:Number(data.get("min_score")),rerank:data.get("rerank")==="on"};
+ const submit=form.querySelector("button[type='submit'],button:not([type])");if(submit)submit.disabled=true;
  try{
-  await api(API+"/knowledge/documents/"+encodeURIComponent(S.chunkDocumentId)+"/chunks/"+encodeURIComponent(chunkId),{method:"PATCH",body:JSON.stringify({text})});
-  S.chunkEditId=null;toast("片段已保存；向量状态需由后续重嵌入流程更新");await renderChunkPreview();
+  S.ragPlayground.result=await api(API+"/rag-playground/query",{method:"POST",body:JSON.stringify(payload)});
+  toast("RAG 查询完成");await renderRagPlayground();
  }catch(error){toast(error.message)}
+ finally{if(submit)submit.disabled=false}
 });
 document.addEventListener("click",event=>{
  const button=event.target.closest("button");if(!button)return;
- if(button.dataset.chunkEditOpen){S.chunkEditId=button.dataset.chunkEditOpen;renderChunkPreview();return}
- if(button.hasAttribute("data-chunk-cancel")){S.chunkEditId=null;renderChunkPreview()}
+ if(button.dataset.ragRetry){S.ragPlayground.options=null;S.ragPlayground.result=null;nav("rag-playground")}
 });
