@@ -340,6 +340,7 @@ class InMemoryKnowledgeRepository:
         self.document_acl.setdefault((tenant_id, document_id), set()).add(
             (principal_type, principal_id, permission)
         )
+        self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "acl_changed"})
 
     async def revoke_document_access(
         self, tenant_id: str, document_id: str, principal_type: str,
