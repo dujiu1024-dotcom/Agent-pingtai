@@ -92,7 +92,7 @@ class KnowledgeCollectionApiTests(unittest.TestCase):
             json={"title": "mismatch", "scope": "project", "project_id": "project-b",
                   "collection_id": collection["collection_id"], "content": "evidence"},
         )
-        self.assertEqual(wrong_project.status_code, 400)
+        self.assertEqual(wrong_project.status_code, 403)
         accepted = self.client.post(
             "/api/platform/v1/knowledge/documents",
             json={"title": "project source", "scope": "project", "project_id": "project-a",
