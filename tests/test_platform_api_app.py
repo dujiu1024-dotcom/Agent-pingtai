@@ -11,8 +11,8 @@ from agent_platform.control_plane.sessions_assets import (
 )
 from agent_platform.identity.models import AuthorizationContext, Principal
 from agent_platform.identity.service import AuthenticationError
-from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.catalog import InMemoryKnowledgeCatalog
+from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
 
@@ -72,7 +72,6 @@ class PlatformApiCompositionTests(unittest.TestCase):
             allowed_origins=("https://console.example.com",),
         )
         self.client = TestClient(self.app, base_url="https://testserver")
-
 
     def test_knowledge_catalog_routes_are_wired_with_authenticated_context(self):
         catalog = InMemoryKnowledgeCatalog()
