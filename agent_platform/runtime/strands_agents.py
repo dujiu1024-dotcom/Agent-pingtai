@@ -437,6 +437,10 @@ class StrandsAgentsAdapter:
                 ):
                     if not isinstance(event, Mapping):
                         continue
+                    if completed_result is not None:
+                        raise RuntimeError(
+                            "Strands stream emitted an event after provider completion"
+                        )
                     delta = event.get("data")
                     if isinstance(delta, str) and delta:
                         text_parts.append(delta)

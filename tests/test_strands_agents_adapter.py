@@ -368,6 +368,38 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1].result.usage["total_tokens"], 8)
         self.assertTrue(self.agents[0].closed)
 
+    async def test_stream_rejects_events_after_provider_completion(self):
+        class DuplicateCompletionAgent(FakeAgent):
+            async def stream_async(self, prompt, *, idempotency_token):
+                self.prompt = (prompt, idempotency_token)
+                result = SimpleNamespace(
+                    message={"content": [{"text": "complete"}]},
+                    stop_reason="end_turn",
+                    metrics=SimpleNamespace(
+                        accumulated_usage={},
+                        accumulated_metrics={},
+                    ),
+                )
+                yield {"result": result}
+                yield {"result": result}
+
+        def duplicate_factory(**kwargs):
+            agent = DuplicateCompletionAgent(**kwargs)
+            self.agents.append(agent)
+            return agent
+
+        adapter = self.adapter(
+            agent_factory=duplicate_factory,
+            capabilities=HarnessCapabilities(
+                input_modalities=frozenset({"text"}),
+                output_modalities=frozenset({"text", "image"}),
+                streaming=True,
+            ),
+        )
+        with self.assertRaisesRegex(RuntimeError, "after provider completion"):
+            _ = [event async for event in adapter.stream(self.request)]
+        self.assertTrue(self.agents[0].closed)
+
     async def test_stream_without_provider_result_fails_instead_of_synthesizing_completion(self):
         class IncompleteStreamingAgent(FakeAgent):
             async def stream_async(self, prompt, *, idempotency_token):
