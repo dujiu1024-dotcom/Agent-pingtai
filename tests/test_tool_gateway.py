@@ -2,7 +2,18 @@ import unittest
 from contextlib import contextmanager
 
 from agent_platform.approval.policy import RiskLevel
+from agent_platform.contracts import ModelTemplateRef, RunContext
 from agent_platform.observability.metrics import InMemoryMetricsRecorder
+from agent_platform.observability.trace_context import TraceContext, TraceContextScope
+from agent_platform.observability.trace_spans import current_trace_span, trace_span
+from agent_platform.runtime.tool_gateway import (
+    InMemoryToolAuditSink,
+    InMemoryToolRunRegistry,
+    ToolDefinition as RuntimeToolDefinition,
+    ToolGateway as RuntimeToolGateway,
+    ToolPrincipal,
+    ToolRunBinding,
+)
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
     ToolDefinition,
@@ -12,7 +23,6 @@ from agent_platform.tools.idempotency import (
     InMemoryToolEffectStore,
     ToolEffectReconciliationService,
 )
-
 
 class FakeApprovalVerifier:
     def __init__(self, valid=False):
@@ -365,6 +375,143 @@ class ToolGatewayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(confirmed.result, {"receipt": "r-1"})
 
+
+
+class RuntimeToolGatewayTraceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.exported = []
+        self.observed = []
+        self.raise_error = False
+        self.registry = InMemoryToolRunRegistry()
+        self.registry.bind(ToolRunBinding(
+            tenant_id="tenant-16",
+            run_id="run-16",
+            agent_id="agent-16",
+            project_id="project-16",
+            allowed_tools=frozenset({"search"}),
+        ))
+
+        class Authenticator:
+            async def authenticate(_self, credential):
+                if credential != "trusted-token":
+                    return None
+                return ToolPrincipal(
+                    subject_id="actor-16",
+                    tenant_id="tenant-16",
+                    agent_id="agent-16",
+                    scopes=frozenset({"tools.invoke"}),
+                )
+
+        async def handler(_arguments, context):
+            parent = current_trace_span()
+            self.observed.append(parent)
+            if self.raise_error:
+                raise RuntimeError("provider failed")
+            with trace_span(
+                "tool.handler.child",
+                component="custom",
+                tenant_id=context.tenant_id,
+                run_id=context.run_id,
+                agent_id=context.agent_id,
+                correlation_id=context.correlation_id,
+                exporter=self.exported.append,
+            ) as child:
+                self.observed.append(child)
+            return {"ok": True}
+
+        self.gateway = RuntimeToolGateway(
+            authenticator=Authenticator(),
+            run_registry=self.registry,
+            audit_sink=InMemoryToolAuditSink(),
+            trace_exporter=self.exported.append,
+        )
+        self.gateway.register(RuntimeToolDefinition("search", handler))
+
+        self.run_context = RunContext(
+            tenant_id="tenant-16",
+            run_id="run-16",
+            agent_id="agent-16",
+            model_template=ModelTemplateRef("support"),
+            project_id="project-16",
+            correlation_id="corr-16",
+        )
+
+    async def test_invocation_creates_child_span_and_propagates_context_to_handler(self):
+        request = TraceContext(
+            "1234567890abcdef1234567890abcdef",
+            "1234567890abcdef",
+            correlation_id="corr-16",
+        )
+        with TraceContextScope(request):
+            with trace_span(
+                "run.execute",
+                component="run",
+                tenant_id="tenant-16",
+                run_id="run-16",
+                agent_id="agent-16",
+                correlation_id="corr-16",
+            ) as run_span:
+                result = await self.gateway.invoke(
+                    credential="trusted-token",
+                    run_context=self.run_context,
+                    tool_name="search",
+                    arguments={"query": "safe"},
+                    call_id="call-16",
+                )
+
+        self.assertEqual(result, {"ok": True})
+        tool_span, child_span = self.observed
+        self.assertEqual(tool_span.component, "tool")
+        self.assertEqual(tool_span.trace_id, request.trace_id)
+        self.assertEqual(tool_span.parent_span_id, run_span.span_id)
+        self.assertEqual(tool_span.run_id, "run-16")
+        self.assertEqual(tool_span.agent_id, "agent-16")
+        self.assertEqual(tool_span.correlation_id, "corr-16")
+        self.assertEqual(child_span.trace_id, tool_span.trace_id)
+        self.assertEqual(child_span.parent_span_id, tool_span.span_id)
+        self.assertEqual([item["component"] for item in self.exported], ["custom", "tool"])
+        self.assertTrue(all(item["status"] == "ok" for item in self.exported))
+
+    async def test_failed_tool_exports_error_span_without_recording_arguments(self):
+        self.raise_error = True
+        with self.assertRaisesRegex(RuntimeError, "provider failed"):
+            await self.gateway.invoke(
+                credential="trusted-token",
+                run_context=self.run_context,
+                tool_name="search",
+                arguments={"api_key": "never-export-this"},
+                call_id="call-error",
+            )
+
+        tool_span = self.exported[-1]
+        self.assertEqual(tool_span["component"], "tool")
+        self.assertEqual(tool_span["status"], "error")
+        self.assertEqual(tool_span["attributes"]["error_type"], "RuntimeError")
+        self.assertNotIn("never-export-this", str(tool_span))
+        self.assertNotIn("api_key", str(tool_span))
+
+    async def test_trace_exporter_failure_does_not_change_tool_result(self):
+        async def handler(_arguments, _context):
+            return "ok"
+
+        def broken_exporter(_span):
+            raise RuntimeError("telemetry unavailable")
+
+        gateway = RuntimeToolGateway(
+            authenticator=self.gateway.authenticator,
+            run_registry=self.registry,
+            audit_sink=InMemoryToolAuditSink(),
+            trace_exporter=broken_exporter,
+        )
+        gateway.register(RuntimeToolDefinition("search", handler))
+        result = await gateway.invoke(
+            credential="trusted-token",
+            run_context=self.run_context,
+            tool_name="search",
+            arguments={},
+            call_id="call-exporter-failure",
+        )
+        self.assertEqual(result, "ok")
 
 
 if __name__ == "__main__":
