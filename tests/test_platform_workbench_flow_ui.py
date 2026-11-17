@@ -47,3 +47,22 @@ def test_workbench_ui_exposes_knowledge_memory_blackboard_and_operations_views()
         assert label in script
     assert "30*86400000" in script
     assert "Promise.allSettled" in script
+
+
+def test_workbench_ui_has_responsive_mobile_and_desktop_layout_contract():
+    root = Path(__file__).resolve().parents[1] / "agent_platform" / "web" / "static"
+    html = (root / "index.html").read_text()
+    css = (root / "style.css").read_text()
+    script = (root / "app.js").read_text()
+    assert 'name="viewport"' in html
+    assert "@media(max-width:900px)" in css
+    assert "@media(max-width:640px)" in css
+    assert "@media(max-width:380px)" in css
+    assert "env(safe-area-inset-bottom)" in css
+    assert "overflow-x:auto" in css
+    assert "prefers-reduced-motion:reduce" in css
+    assert "applyCapabilityGate" in script
+    assert "VIEW_CAPABILITIES" in script
+    assert "nav=function(view)" in script
+    assert "credentials:\"same-origin\"" in script
+    assert "X-CSRF-Token" in script
