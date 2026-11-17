@@ -233,11 +233,11 @@ class SkillLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(
-            [event[2] for event in self.audit if event[3] == "install"],
+            [event[4] for event in self.audit if event[3] == "install"],
             ["requested", "succeeded"],
         )
         self.assertEqual(
-            [event[2] for event in self.audit if event[3] == "uninstall"],
+            [event[4] for event in self.audit if event[3] == "uninstall"],
             ["requested", "succeeded"],
         )
         self.assertEqual(
