@@ -157,24 +157,25 @@ class TaskCenterChildRunExecutor:
             input=task_input,
             idempotency_key=durable_idempotency_key,
             run_id=request.context.run_id,
+            parent_run_id=parent_context.run_id,
+            budget_lineage_key=delegation_key,
         )
-        lineage_register = getattr(
-            self.task_service.run_store, "register_budget_child_run", None,
-        )
-        if callable(lineage_register):
-            persisted_root = await lineage_register(
-                tenant_id=parent_context.tenant_id,
-                child_run_id=request.context.run_id,
-                parent_run_id=parent_context.run_id,
-                lineage_key=delegation_key,
+        lineage_getter = getattr(self.task_service.run_store, "get_budget_lineage", None)
+        if callable(lineage_getter):
+            persisted_child = await lineage_getter(
+                parent_context.tenant_id, request.context.run_id,
             )
-            if persisted_root != parent_root:
+            if (
+                not isinstance(persisted_child, Mapping)
+                or persisted_child.get("budget_root_run_id") != parent_root
+                or persisted_child.get("parent_run_id") != parent_context.run_id
+            ):
                 await self.task_service.cancel_task(
                     tenant_id=parent_context.tenant_id,
                     task_id=request.context.run_id,
                     actor_id=actor_id,
                 )
-                raise PermissionError("persisted child Run budget root differs from its parent")
+                raise PermissionError("persisted child Run budget lineage differs from its parent")
         if submitted.get("run_id") != request.context.run_id:
             raise RuntimeError("idempotent child submission resolved to a different Run ID")
         if (

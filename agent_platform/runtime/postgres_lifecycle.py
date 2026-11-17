@@ -27,7 +27,8 @@ class PostgresRunStateStore(RunStateStore):
   agent_id:str, agent_version:int, template_id:str, template_version:int, input:Mapping[str,Any],
   preparation_owner:str, registry_snapshot:Sequence[Mapping[str,Any]],
   project_id:str|None=None, session_id:str|None=None, workflow_id:str|None=None,
-  idempotency_key:str|None=None, request_digest:str|None=None)->bool:
+  idempotency_key:str|None=None, request_digest:str|None=None,
+  parent_run_id:str|None=None, budget_lineage_key:str|None=None)->bool:
   if not tenant_id.strip() or not actor_id.strip() or not agent_id.strip() or not template_id.strip():
    raise ValueError("tenant, actor, Agent and model template are required")
   if not preparation_owner.strip():
@@ -35,6 +36,11 @@ class PostgresRunStateStore(RunStateStore):
   if agent_version < 1 or template_version < 1:
    raise ValueError("Agent and model template versions must be positive")
   run_uuid=UUID(run_id)
+  if (parent_run_id is None) != (budget_lineage_key is None):
+   raise ValueError("parent_run_id and budget_lineage_key must be supplied together")
+  parent_uuid=UUID(parent_run_id) if parent_run_id is not None else None
+  if budget_lineage_key is not None and not budget_lineage_key.strip():
+   raise ValueError("budget_lineage_key must be non-empty")
   try:
    from psycopg.types.json import Jsonb
   except ImportError as exc:
@@ -45,14 +51,14 @@ class PostgresRunStateStore(RunStateStore):
     cur=await c.execute("""INSERT INTO platform_runs
      (tenant_id,run_id,project_id,session_id,task_id,agent_id,agent_version,template_id,template_version,
       workflow_id,status,input,created_by,idempotency_key,request_digest,registry_snapshot,dispatch_ready,
-      preparation_owner,preparation_lease_expires_at)
-     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,false,%s,now()+(60 * interval '1 second'))
+      preparation_owner,preparation_lease_expires_at,parent_run_id,budget_lineage_key)
+     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,false,%s,now()+(60 * interval '1 second'),%s,%s)
      ON CONFLICT (tenant_id,created_by,idempotency_key)
        WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING run_id""",
      (tenant_id,run_uuid,project_id,session_id,str(run_uuid),agent_id,agent_version,template_id,
       template_version,workflow_id,Jsonb(dict(input)),actor_id,idempotency_key,request_digest,
-      Jsonb([dict(item) for item in registry_snapshot]),preparation_owner))
+      Jsonb([dict(item) for item in registry_snapshot]),preparation_owner,parent_uuid,budget_lineage_key))
     inserted=await cur.fetchone()
     if inserted is not None:
      return True

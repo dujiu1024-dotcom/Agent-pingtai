@@ -353,19 +353,23 @@ class RegistryBackedTaskCenterService:
         template_version = template.version
         run_id = run_id or str(uuid4())
         preparation_owner = str(uuid4())
-        created = await self.run_store.create_task_run(
-            tenant_id=tenant_id, run_id=run_id, actor_id=actor_id,
-            agent_id=agent_id, agent_version=agent.version,
-            template_id=template_id, template_version=template_version,
-            input=dict(input), preparation_owner=preparation_owner,
-            project_id=project_id, session_id=session_id,
-            workflow_id=workflow.item_id if workflow is not None else None,
-            idempotency_key=idempotency_key, request_digest=digest,
-            registry_snapshot=[
+        create_run_args = {
+            "tenant_id": tenant_id, "run_id": run_id, "actor_id": actor_id,
+            "agent_id": agent_id, "agent_version": agent.version,
+            "template_id": template_id, "template_version": template_version,
+            "input": dict(input), "preparation_owner": preparation_owner,
+            "project_id": project_id, "session_id": session_id,
+            "workflow_id": workflow.item_id if workflow is not None else None,
+            "idempotency_key": idempotency_key, "request_digest": digest,
+            "registry_snapshot": [
                 {"kind": item.kind, "item_id": item.item_id, "version": item.version}
                 for item in [agent, template, provider, *tools, *skills, *([workflow] if workflow is not None else [])]
             ],
-        )
+        }
+        if parent_run_id is not None:
+            create_run_args["parent_run_id"] = parent_run_id
+            create_run_args["budget_lineage_key"] = budget_lineage_key
+        created = await self.run_store.create_task_run(**create_run_args)
         if not created:
             existing = await self.run_store.get_task_by_idempotency(
                 tenant_id, actor_id, idempotency_key,
