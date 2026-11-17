@@ -222,7 +222,10 @@ class SessionRepository(Protocol):
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None: ...
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
-    async def list_messages(self, tenant_id: str, session_id: str, limit: int = 100) -> tuple[ConversationMessage, ...]: ...
+    async def list_messages(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+        before_message_id: str | None = None,
+    ) -> tuple[ConversationMessage, ...]: ...
     async def create_asset(self, asset: FileAsset) -> None: ...
     async def get_asset(self, tenant_id: str, asset_id: str) -> FileAsset | None: ...
     async def list_asset_versions(self, tenant_id: str, asset_id: str) -> tuple[FileAssetVersion, ...]: ...
@@ -281,12 +284,31 @@ class InMemorySessionRepository:
             raise SessionNotFound("session not found")
         self.messages.setdefault(key, []).append(message)
 
-    async def list_messages(self, tenant_id: str, session_id: str, limit: int = 100) -> tuple[ConversationMessage, ...]:
+    async def list_messages(
+        self, tenant_id: str, session_id: str, limit: int = 100,
+        before_message_id: str | None = None,
+    ) -> tuple[ConversationMessage, ...]:
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
         if (tenant_id, session_id) not in self.sessions:
             raise SessionNotFound("session not found")
-        return tuple(self.messages.get((tenant_id, session_id), [])[-limit:])
+        rows = sorted(
+            self.messages.get((tenant_id, session_id), ()),
+            key=lambda message: (message.created_at, message.message_id),
+        )
+        if before_message_id is not None:
+            anchor = next(
+                (message for message in rows if message.message_id == before_message_id),
+                None,
+            )
+            if anchor is None:
+                raise ValueError("message cursor does not belong to this session")
+            anchor_key = (anchor.created_at, anchor.message_id)
+            rows = [
+                message for message in rows
+                if (message.created_at, message.message_id) < anchor_key
+            ]
+        return tuple(rows[-limit:])
 
     async def create_asset(self, asset: FileAsset) -> None:
         key = (asset.tenant_id, asset.asset_id)
