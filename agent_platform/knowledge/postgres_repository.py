@@ -199,6 +199,30 @@ class PostgresKnowledgeRepository:
                         (tenant_id, document_id, kind, identifier, permission, granted_by),
                     )
 
+    async def grant_chunk_access(self, tenant_id: str, document_id: str, chunk_id: str, principal_type: str, principal_id: str, permission: str, granted_by: str) -> None:
+        if principal_type not in {"user", "role", "project"} or permission not in {"read", "manage"}:
+            raise ValueError("invalid chunk ACL")
+        if not principal_id.strip() or not granted_by.strip():
+            raise ValueError("chunk ACL principal and grantor are required")
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute("SELECT 1 FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s AND chunk_id=%s", (tenant_id, document_id, chunk_id))
+                if await cur.fetchone() is None:
+                    raise ValueError("chunk not found")
+                await conn.execute("UPDATE knowledge_chunks SET acl_enforced=true WHERE tenant_id=%s AND chunk_id=%s", (tenant_id, chunk_id))
+                await conn.execute("""INSERT INTO knowledge_chunk_acl (tenant_id,chunk_id,principal_type,principal_id,permission,granted_by) VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(tenant_id,chunk_id,principal_type,principal_id,permission) DO UPDATE SET granted_by=EXCLUDED.granted_by,created_at=now()""", (tenant_id, chunk_id, principal_type, principal_id, permission, granted_by))
+                await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'acl_changed')", (tenant_id, chunk_id))
+
+    async def revoke_chunk_access(self, tenant_id: str, chunk_id: str, principal_type: str, principal_id: str, permission: str) -> bool:
+        conn = await self._connect()
+        async with conn:
+            async with conn.transaction():
+                cur = await conn.execute("DELETE FROM knowledge_chunk_acl WHERE tenant_id=%s AND chunk_id=%s AND principal_type=%s AND principal_id=%s AND permission=%s", (tenant_id, chunk_id, principal_type, principal_id, permission))
+                if cur.rowcount:
+                    await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'acl_changed')", (tenant_id, chunk_id))
+                return cur.rowcount > 0
+
     async def delete_document(self,tenant_id: str,document_id: str)->bool:
         conn=await self._connect()
         async with conn:
