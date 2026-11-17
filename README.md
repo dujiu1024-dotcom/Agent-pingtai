@@ -181,3 +181,8 @@ python3 agency.py init && python3 agency.py doctor
 ## Legacy v1 archive
 
 The original single-file Python implementation is preserved under `legacy/v1-archive/`. The root-level `agency.py`, `console.py` and `listener.py` paths remain compatibility launchers; `console.html` remains at the root for the gateway's explicit legacy UI fallback. See [legacy archive inventory and rollback notes](legacy/v1-archive/README.md).
+
+
+## Legacy v1 archive
+
+The archived pre-platform implementation, compatibility boundaries and rollback procedure are documented in [`legacy/v1-archive/README.md`](legacy/v1-archive/README.md). Use `git log --follow -- legacy/v1-archive/<file>` to trace each moved module's history.
