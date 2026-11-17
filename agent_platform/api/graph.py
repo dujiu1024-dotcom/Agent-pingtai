@@ -119,6 +119,8 @@ def create_graph_router(
             for entity in (getattr(item, "entity", item) for item in result.entities)
             if entity_is_allowed(entity, access, allowed)
         }
+        if entity_id not in visible_entities:
+            visible_entities = {}
         visible_relations = []
         for item in result.relations:
             relation = getattr(item, "relation", item)
