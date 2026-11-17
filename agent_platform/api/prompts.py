@@ -45,8 +45,34 @@ def create_prompt_registry_router(
     *,
     registry: Any,
     authorize: Callable[[Principal, str, str], Any],
+    evaluate_gate: Callable[..., Any] | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/prompts", tags=["prompts"])
+
+    async def require_evaluation_gate(actor: Principal, prompt_id: str, version: int, action: str) -> dict[str, Any]:
+        if evaluate_gate is None:
+            raise HTTPException(503, "prompt evaluation gate is not configured")
+        try:
+            result = evaluate_gate(
+                tenant_id=actor.tenant_id, prompt_id=prompt_id,
+                version=version, action=action,
+            )
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception:
+            raise HTTPException(503, "prompt evaluation gate could not be completed") from None
+        if (
+            not isinstance(result, dict)
+            or result.get("gate_passed") is not True
+            or not isinstance(result.get("eval_run_id"), str)
+            or not result["eval_run_id"].strip()
+        ):
+            failures = result.get("gate_failures", []) if isinstance(result, dict) else []
+            raise HTTPException(409, {
+                "message": "prompt candidate did not pass the evaluation gate",
+                "gate_failures": failures if isinstance(failures, list) else [],
+            })
+        return result
 
     async def context(request: Request, prompt_id: str, action: str) -> tuple[Principal, str]:
         actor = _principal(request)
@@ -81,11 +107,16 @@ def create_prompt_registry_router(
         version = body.get("version") if isinstance(body, dict) else None
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
             raise HTTPException(400, "version must be a positive integer")
+        gate = await require_evaluation_gate(actor, prompt_id, version, "activate")
         try:
-            await registry.activate(storage_key, version, updated_by=actor.user_id)
+            await registry.activate(
+                storage_key, version, updated_by=actor.user_id,
+                evaluation_run_id=gate["eval_run_id"],
+            )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
-        return {"prompt_id": prompt_id, "active_version": version, "updated_by": actor.user_id}
+        return {"prompt_id": prompt_id, "active_version": version, "updated_by": actor.user_id,
+                "eval_run_id": gate["eval_run_id"]}
 
     @router.post("/{prompt_id}/canary")
     async def configure_canary(prompt_id: str, request: Request):
@@ -101,9 +132,11 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         if isinstance(percentage, bool) or not isinstance(percentage, (int, float)) or not math.isfinite(percentage):
             raise HTTPException(400, "percentage must be a finite number")
+        gate = await require_evaluation_gate(actor, prompt_id, version, "canary")
         try:
             await registry.set_canary(
                 storage_key, version, float(percentage), updated_by=actor.user_id,
+                evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
@@ -112,7 +145,40 @@ def create_prompt_registry_router(
         return {
             "prompt_id": prompt_id, "canary_version": version,
             "percentage": float(percentage), "updated_by": actor.user_id,
+            "eval_run_id": gate["eval_run_id"],
         }
+
+    @router.post("/{prompt_id}/rollback")
+    async def rollback_version(prompt_id: str, request: Request):
+        actor, storage_key = await context(request, prompt_id, "publish")
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "JSON object is required") from exc
+        version = body.get("version") if isinstance(body, dict) else None
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise HTTPException(400, "version must be a positive integer")
+        gate = await require_evaluation_gate(actor, prompt_id, version, "rollback")
+        try:
+            await registry.rollback(
+                storage_key, version, updated_by=actor.user_id,
+                evaluation_run_id=gate["eval_run_id"],
+            )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"prompt_id": prompt_id, "active_version": version,
+                "updated_by": actor.user_id, "eval_run_id": gate["eval_run_id"]}
+
+    @router.get("/{prompt_id}/audit")
+    async def prompt_audit(prompt_id: str, request: Request, limit: int = 100):
+        _actor, storage_key = await context(request, prompt_id, "read_audit")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise HTTPException(400, "limit must be between 1 and 200")
+        list_audit = getattr(registry, "list_audit", None)
+        if not callable(list_audit):
+            raise HTTPException(501, "prompt audit history is not supported")
+        rows = await list_audit(storage_key, limit=limit)
+        return {"items": rows, "count": len(rows)}
 
     @router.post("/{prompt_id}/render")
     async def render_prompt(prompt_id: str, request: Request):

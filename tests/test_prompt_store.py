@@ -10,6 +10,8 @@ class FakeCursor:
         self.row = row
     async def fetchone(self):
         return self.row
+    async def fetchall(self):
+        return self.row or []
 
 
 class FakePromptConnection:
@@ -23,6 +25,15 @@ class FakePromptConnection:
         return self
     async def execute(self, query, params=()):
         sql = " ".join(query.split())
+        if sql.startswith("INSERT INTO platform_prompt_audit_events"):
+            prompt_id, action, actor_id, details = params
+            self.db.audit.append({"event_id": len(self.db.audit) + 1,
+                "prompt_id": prompt_id, "action": action, "actor_id": actor_id,
+                "details": details, "created_at": "now"})
+            return FakeCursor()
+        if "FROM platform_prompt_audit_events" in sql:
+            prompt_id, limit = params
+            return FakeCursor(list(reversed([x for x in self.db.audit if x["prompt_id"] == prompt_id]))[:limit])
         if "pg_advisory_xact_lock" in sql:
             return FakeCursor()
         if "COALESCE(MAX(version)" in sql:
@@ -69,6 +80,7 @@ class FakePromptDb:
     def __init__(self):
         self.versions = {}
         self.deployments = {}
+        self.audit = []
     async def connect(self):
         return FakePromptConnection(self)
 
@@ -79,15 +91,24 @@ class PersistentPromptRegistryTests(unittest.IsolatedAsyncioTestCase):
         registry = PostgresPromptRegistry(db.connect)
         first = await registry.register("support", "Hello {name}", created_by="admin")
         second = await registry.register("support", "Welcome {name}", created_by="admin")
-        await registry.activate("support", first.version, updated_by="admin")
-        await registry.set_canary("support", second.version, 100, updated_by="admin")
+        await registry.activate("support", first.version, updated_by="admin", evaluation_run_id="eval-1")
+        await registry.set_canary("support", second.version, 100, updated_by="admin", evaluation_run_id="eval-2")
         rendered, selected = await registry.render("support", {"name": "Ada"}, rollout_key="stable")
         self.assertEqual(rendered, "Welcome Ada")
         self.assertEqual(selected.version, second.version)
-        await registry.activate("support", first.version, updated_by="admin")
+        await registry.rollback("support", first.version, updated_by="operator", evaluation_run_id="eval-3")
         rendered, selected = await registry.render("support", {"name": "Ada"})
         self.assertEqual(rendered, "Hello Ada")
         self.assertEqual(selected.version, first.version)
+        actions = [event["action"] for event in db.audit]
+        self.assertEqual(actions, [
+            "version.registered", "version.registered", "version.activated",
+            "canary.configured", "version.rolled_back",
+        ])
+        history = await registry.list_audit("support", limit=10)
+        self.assertEqual(history[0]["action"], "version.rolled_back")
+        self.assertEqual(history[0]["actor_id"], "operator")
+        self.assertEqual(history[0]["details"], '{"active_version": 1, "evaluation_run_id": "eval-3"}')
 
     async def test_variable_contract_and_unknown_versions_fail_closed(self):
         db = FakePromptDb()
