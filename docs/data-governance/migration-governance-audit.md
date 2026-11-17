@@ -29,6 +29,6 @@ Supported outcomes are `started`, `succeeded`, `failed`, `denied`, and `retry_sc
 
 ## Storage and access
 
-Migration `051_data_lifecycle_audit.sql` creates a tenant-scoped append-only ledger, tenant/time and correlation indexes, and a database trigger rejecting UPDATE/DELETE. `list_events` always filters by tenant and accepts an optional correlation ID; it enforces a bounded result limit. Production deployments must grant the application role INSERT/SELECT only and deny TRUNCATE/DDL; the trigger is defense in depth, not a substitute for least-privilege database roles.
+Migration `071_data_lifecycle_audit.sql` creates a tenant-scoped append-only ledger, tenant/time and correlation indexes, and a database trigger rejecting UPDATE, DELETE, and TRUNCATE. `list_events` always filters by tenant and accepts an optional correlation ID; it enforces a bounded result limit. Production deployments must grant the application role INSERT/SELECT only and deny TRUNCATE/DDL; the trigger is defense in depth, not a substitute for least-privilege database roles.
 
 Evidence is stored as a SHA-256 digest rather than raw content. This proves later byte-level consistency only when the original evidence is independently retained in an approved evidence store. It does not, by itself, establish legal admissibility, trusted timestamping, or production compliance certification.

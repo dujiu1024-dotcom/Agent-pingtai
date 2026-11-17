@@ -56,6 +56,12 @@ class LifecycleAuditEvent:
                             ("correlation_id", self.correlation_id)):
             if not isinstance(value, str) or not value.strip() or len(value) > 256:
                 raise ValueError(f"{name} must be a non-empty string of at most 256 characters")
+        try:
+            UUID(self.correlation_id)
+            if self.event_id:
+                UUID(self.event_id)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ValueError("correlation_id and event_id must be UUIDs") from exc
         if not isinstance(self.action, str) or not _ACTION.fullmatch(self.action):
             raise ValueError("invalid audit action")
         if self.outcome not in _OUTCOMES:
