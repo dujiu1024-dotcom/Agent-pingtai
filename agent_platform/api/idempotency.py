@@ -176,7 +176,7 @@ class PostgresIdempotencyBackend:
                     raise RuntimeError("idempotency claim disappeared inside transaction")
                 if not row["expired"] and row["request_hash"] != request_hash:
                     return IdempotencyClaim("conflict")
-                if row["state"] == "completed":
+                if row["state"] == "completed" and not row["expired"]:
                     if row["response_status"] is None or row["response_body"] is None:
                         raise RuntimeError("completed idempotency row has no response")
                     headers = row["response_headers"] or {}
