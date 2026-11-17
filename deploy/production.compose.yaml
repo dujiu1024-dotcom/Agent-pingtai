@@ -1,0 +1,160 @@
+name: agent-platform-production
+
+services:
+  platform-api:
+    image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - exec uvicorn "$${PLATFORM_ASGI_APP}" --host 0.0.0.0 --port 8080 --workers "$${WEB_CONCURRENCY:-2}"
+    environment:
+      PLATFORM_ASGI_APP: ${PLATFORM_ASGI_APP:?Set deployment composition module}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      PORT: "8080"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY_FILE: /run/secrets/minio_root_password
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:-agent-platform}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set exact HTTPS ALLOWED_ORIGINS}
+    secrets:
+      - postgres_password
+      - redis_password
+      - minio_root_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PLATFORM_API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: ${API_MEMORY_LIMIT:-2g}
+    cpus: ${API_CPU_LIMIT:-2.0}
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-2g}
+          cpus: "${API_CPU_LIMIT:-2.0}"
+    networks: [platform]
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    shm_size: ${POSTGRES_SHM_SIZE:-256m}
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-4g}
+    cpus: ${POSTGRES_CPU_LIMIT:-4.0}
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY_LIMIT:-4g}
+          cpus: "${POSTGRES_CPU_LIMIT:-4.0}"
+    security_opt: ["no-new-privileges:true"]
+    networks: [platform]
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)" --maxmemory ${REDIS_MAX_MEMORY:-512mb} --maxmemory-policy noeviction
+    secrets: [redis_password]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    mem_limit: ${REDIS_MEMORY_LIMIT:-1g}
+    cpus: ${REDIS_CPU_LIMIT:-1.0}
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-1g}
+          cpus: "${REDIS_CPU_LIMIT:-1.0}"
+    security_opt: ["no-new-privileges:true"]
+    networks: [platform]
+
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - export MINIO_ROOT_PASSWORD="$$(cat /run/secrets/minio_root_password)"; exec minio server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER}
+    secrets: [minio_root_password]
+    volumes: [object_data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    mem_limit: ${MINIO_MEMORY_LIMIT:-2g}
+    cpus: ${MINIO_CPU_LIMIT:-2.0}
+    deploy:
+      resources:
+        limits:
+          memory: ${MINIO_MEMORY_LIMIT:-2g}
+          cpus: "${MINIO_CPU_LIMIT:-2.0}"
+    security_opt: ["no-new-privileges:true"]
+    networks: [platform]
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?Set path to managed PostgreSQL secret}
+  redis_password:
+    file: ${REDIS_PASSWORD_FILE:?Set path to managed Redis secret}
+  minio_root_password:
+    file: ${MINIO_ROOT_PASSWORD_FILE:?Set path to managed MinIO secret}
+
+networks:
+  platform:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  object_data:
