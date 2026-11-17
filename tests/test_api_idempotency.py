@@ -21,7 +21,11 @@ class Backend:
         row['response'] = kw['response']; row.pop('owner'); return True
     async def release(self, **kw):
         scope = tuple(kw[k] for k in ('tenant_id','principal_id','method','route','key'))
-        self.rows.pop(scope, None); return True
+        row = self.rows.get(scope)
+        if row is None or row.get('owner') != kw['owner_token']:
+            return False
+        self.rows.pop(scope, None)
+        return True
 
 class ApiIdempotencyServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_replays_response_and_does_not_repeat_side_effect(self):
@@ -34,6 +38,26 @@ class ApiIdempotencyServiceTests(unittest.IsolatedAsyncioTestCase):
         second, replay2 = await service.execute(**args)
         self.assertFalse(replay1); self.assertTrue(replay2)
         self.assertEqual(first, second); self.assertEqual(calls, [1])
+    async def test_uncertain_operation_failure_keeps_claim_until_lease_recovery(self):
+        backend = Backend()
+        service = ApiIdempotencyService(backend)
+        calls = []
+
+        async def operation():
+            calls.append(1)
+            raise RuntimeError("downstream outcome is unknown")
+
+        args = dict(
+            tenant_id="tenant-a", principal_id="user-a", method="POST",
+            route="/runs", key="retry-1", body=b'{"run":1}', operation=operation,
+        )
+        with self.assertRaisesRegex(RuntimeError, "outcome is unknown"):
+            await service.execute(**args)
+        with self.assertRaises(HTTPException) as busy:
+            await service.execute(**args)
+        self.assertEqual(busy.exception.detail["code"], "IDEMPOTENCY_REQUEST_IN_PROGRESS")
+        self.assertEqual(calls, [1])
+
     async def test_conflicting_payload_and_in_progress_request_are_rejected(self):
         backend = Backend(); service = ApiIdempotencyService(backend)
         operation = lambda: IdempotencyResponse(200, {}, b'ok')
