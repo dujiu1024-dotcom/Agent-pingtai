@@ -32,7 +32,8 @@ async def _postgres_connection(dsn: str) -> Any:
 
 async def run_worker() -> None:
     settings = load_production_settings()
-    connection_factory = lambda: _postgres_connection(settings.postgres_dsn)
+    async def connection_factory() -> Any:
+        return await _postgres_connection(settings.postgres_dsn)
     transport = RedisStreamsTransport(settings.redis_url)
     relay = OutboxRelay(
         store=PostgresOutboxStore(connection_factory=connection_factory),
