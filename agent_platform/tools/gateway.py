@@ -25,7 +25,8 @@ class ToolExecutionDenied(PermissionError):
 
 class ApprovalVerifier(Protocol):
     async def consume(
-        self, *, tenant_id: str, approval_id: str, action_digest: str
+        self, *, tenant_id: str, approval_id: str, action_digest: str,
+        policy_version: str = "1",
     ) -> bool:
         """Atomically validate and consume a one-time approval."""
         ...
@@ -84,6 +85,7 @@ class ToolDefinition:
     resource_resolver: ResourceResolver | None = None
     resource_authorizer: ResourceAuthorizer | None = None
     contextual_handler: ContextualToolHandler | None = None
+    policy_version: str = "1"
 
 
 class SupervisedToolGateway:
@@ -310,6 +312,7 @@ class SupervisedToolGateway:
                 tenant_id=tenant_id,
                 approval_id=approval_id,
                 action_digest=request.digest(),
+                policy_version=definition.policy_version,
             )
             if consumed:
                 approved_hash = request.digest()
