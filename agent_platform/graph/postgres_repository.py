@@ -75,6 +75,8 @@ class PostgresGraphRepository:
     ) -> bool:
         schema = self._resolve_schema(entity.tenant_id)
         entity.validate(schema)
+        if not isinstance(source_domain, GraphSourceDomain):
+            raise ValueError("source_domain must be a GraphSourceDomain")
         _source_mapping(schema, source_domain, source_type)
         if not isinstance(source_id, str) or not source_id.strip() or len(source_id) > 200:
             raise ValueError("source_id must contain 1-200 non-whitespace characters")
@@ -134,7 +136,10 @@ class PostgresGraphRepository:
                     ),
                 )
                 endpoints = await cur.fetchall()
-                if len(endpoints) != 2:
+                expected_endpoints = len({
+                    relation.source_entity_id, relation.target_entity_id,
+                })
+                if len(endpoints) != expected_endpoints:
                     raise ValueError("both relation endpoints must exist in the same tenant")
                 allowed_projects = {None, relation.project_id}
                 if any(row["project_id"] not in allowed_projects for row in endpoints):
@@ -244,8 +249,9 @@ class PostgresGraphRepository:
             VALUES(%s,%s,%s,%s,%s,%s::jsonb,'pending')
             ON CONFLICT(tenant_id,job_key) DO UPDATE SET
               operation=EXCLUDED.operation,payload=EXCLUDED.payload,
-              status='pending',available_at=now(),lease_owner=NULL,
-              lease_until=NULL,updated_at=now()""",
+              status='pending',attempts=0,last_error_code=NULL,
+              available_at=now(),lease_owner=NULL,lease_until=NULL,
+              completed_at=NULL,updated_at=now()""",
             (tenant_id, job_key, object_kind, object_id, operation, _json(payload)),
         )
 
@@ -262,10 +268,17 @@ class PostgresGraphRepository:
         async with conn:
             async with conn.transaction():
                 cur = await conn.execute(
-                    """WITH picked AS (
+                    """WITH dead_lettered AS (
+                        UPDATE platform_graph_index_jobs
+                        SET status='dead',lease_owner=NULL,lease_until=NULL,
+                            last_error_code='lease_expired_max_attempts',updated_at=now()
+                        WHERE status='processing' AND lease_until<=now() AND attempts >= 8
+                    ), picked AS (
                         SELECT job_id FROM platform_graph_index_jobs
-                        WHERE (status='pending' AND available_at<=now())
-                           OR (status='processing' AND lease_until<=now())
+                        WHERE attempts < 8 AND (
+                            (status='pending' AND available_at<=now())
+                            OR (status='processing' AND lease_until<=now())
+                        )
                         ORDER BY available_at,job_id
                         FOR UPDATE SKIP LOCKED LIMIT %s
                     )
