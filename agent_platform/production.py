@@ -105,7 +105,8 @@ def create_production_app(
     quota_policy_repository = PostgresQuotaPolicyRepository(connection_factory)
     quota_policy_service = QuotaPolicyService(quota_policy_repository)
     quota_maintenance_worker = QuotaReservationMaintenanceWorker(quota_service)
-    quota_audit_writer = _QuotaAuditAdapter(PostgresAuditWriter(connection_factory))
+    audit_writer = PostgresAuditWriter(connection_factory)
+    quota_audit_writer = _QuotaAuditAdapter(audit_writer)
     run_execution = None
     if run_execution_builder is not None:
         if not callable(run_execution_builder):
@@ -115,6 +116,9 @@ def create_production_app(
             lifecycle=run_lifecycle,
             quota_store=quota_store,
             quota_service=quota_service,
+            identity_service=identity_service,
+            identity_repository=identity_repository,
+            audit_writer=audit_writer,
             connection_factory=connection_factory,
             redis_client=redis_client,
             settings=configured,
