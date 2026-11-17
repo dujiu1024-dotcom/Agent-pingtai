@@ -90,6 +90,9 @@ class QuotaReservationGroupService:
             ):
                 raise BudgetExceeded("separate input and output estimates are required by this budget")
             budgets.append(budget)
+        # Stable scope ordering makes deterministic group IDs replay identically
+        # even if callers supply the scope tuple in a different order.
+        budgets.sort(key=lambda budget: (budget.scope_type, budget.scope_id))
         if idempotency_key is not None and (
             not isinstance(idempotency_key, str) or not idempotency_key.strip()
         ):
