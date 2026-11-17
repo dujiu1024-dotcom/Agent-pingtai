@@ -9,6 +9,8 @@ from math import isfinite
 from typing import Awaitable, Callable, Protocol, Sequence
 from uuid import uuid4
 
+from agent_platform.memory.boundaries import MemoryBoundaryPolicy
+
 
 def utc_now()->datetime:return datetime.now(timezone.utc)
 class MemoryScope(str,Enum): USER="user"; AGENT="agent"; PROJECT="project"; TENANT="tenant"
@@ -25,13 +27,19 @@ class MemoryPrincipal:
 @dataclass(frozen=True)
 class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
-    expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict); conflict_key: str|None=None
+    expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict); conflict_key: str|None=None; source_approved: bool=True
     def __post_init__(self)->None:
         required = (self.tenant_id, self.scope_id, self.content, self.source_ref, self.created_by, self.memory_id)
         if any(not isinstance(value, str) or not value.strip() for value in required):
             raise ValueError("memory identity and content fields must be non-empty strings")
         if not isinstance(self.scope, MemoryScope):
             raise ValueError("scope must be a MemoryScope")
+        if self.source_ref.startswith(("knowledge://", "blackboard://", "session://", "memory://")):
+            reference = MemoryBoundaryPolicy.validate_reference(
+                self.source_ref, approved=self.source_approved,
+            )
+            if reference.tenant_id != self.tenant_id:
+                raise ValueError("source reference tenant must match memory tenant")
         if (
             isinstance(self.confidence, bool)
             or not isinstance(self.confidence, (int, float))
