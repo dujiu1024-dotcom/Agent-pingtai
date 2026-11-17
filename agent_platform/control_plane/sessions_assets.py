@@ -221,6 +221,7 @@ class SessionRepository(Protocol):
     async def create_session(self, session: ConversationSession) -> None: ...
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None: ...
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]: ...
+    async def set_session_status(self, tenant_id: str, session_id: str, status: str) -> ConversationSession: ...
     async def append_message(self, message: ConversationMessage) -> None: ...
     async def create_context_snapshot(self, snapshot: ContextWindowSnapshot) -> None: ...
     async def list_context_snapshots(
@@ -312,6 +313,24 @@ class InMemorySessionRepository:
                 if tenant == tenant_id and row.owner_id == owner_id and row.status != "deleted"
                 and (project_id is None or row.project_id == project_id)]
         return tuple(sorted(rows, key=lambda row: row.updated_at, reverse=True)[:limit])
+
+    async def set_session_status(self, tenant_id: str, session_id: str, status: str) -> ConversationSession:
+        if status not in {"active", "archived", "deleted"}:
+            raise SessionError("invalid session status")
+        key = (tenant_id, session_id)
+        current = self.sessions.get(key)
+        if current is None:
+            raise SessionNotFound("session not found")
+        if current.status == "deleted":
+            raise SessionNotFound("session not found")
+        if status == "archived" and current.status != "active":
+            raise SessionError("only active sessions can be archived")
+        if status == "active" and current.status != "archived":
+            raise SessionError("only archived sessions can be restored")
+        from dataclasses import replace
+        updated = replace(current, status=status, updated_at=datetime.now(timezone.utc))
+        self.sessions[key] = updated
+        return updated
 
     async def append_message(self, message: ConversationMessage) -> None:
         key = (message.tenant_id, message.session_id)
