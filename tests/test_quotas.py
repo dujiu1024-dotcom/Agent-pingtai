@@ -152,6 +152,7 @@ class QuotaServiceTests(unittest.IsolatedAsyncioTestCase):
             Harness(), quota_service=self.service,
             estimate_request=lambda _request: (100, Decimal("0.50")),
             estimate_actual_cost=lambda _request, _result: Decimal("0.25"),
+            on_quota_warning=lambda _event: None,
         )
         result = await adapter.run(request)
         self.assertEqual(result.output_text, "done")
