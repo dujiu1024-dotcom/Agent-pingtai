@@ -40,6 +40,9 @@ def create_observability_router(
     evaluation_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
     authorize_eval_manage: Callable[[Principal], Any] | None = None,
+    authorize_eval_review: Callable[[Principal], Any] | None = None,
+    authorize_eval_gate_manage: Callable[[Principal], Any] | None = None,
+    evaluation_governance_service: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/observability", tags=["observability"])
 
@@ -151,8 +154,8 @@ def create_observability_router(
         actor = _principal(request)
         if evaluation_repository is None:
             raise HTTPException(503, "evaluation repository is not configured")
-        if not await _allowed(authorize_eval_manage, actor):
-            raise HTTPException(403, "evaluation review permission required")
+        if not await _allowed(authorize_eval_review, actor):
+            raise HTTPException(403, "dedicated evaluation reviewer permission required")
         try:
             body = await request.json()
             if not isinstance(body, dict):
@@ -178,11 +181,78 @@ def create_observability_router(
         actor = _principal(request)
         if evaluation_repository is None:
             raise HTTPException(503, "evaluation repository is not configured")
-        if not await _allowed(authorize_eval_manage, actor):
-            raise HTTPException(403, "evaluation review permission required")
+        if not await _allowed(authorize_eval_review, actor):
+            raise HTTPException(403, "dedicated evaluation reviewer permission required")
         rows = await evaluation_repository.list_human_scores(
             tenant_id=actor.tenant_id, eval_run_id=eval_run_id,
         )
-        return {"items": rows, "count": len(rows)}
+        from agent_platform.observability.evaluation_governance import redact_human_score_rows
+        safe_rows = redact_human_score_rows(rows)
+        return {"items": safe_rows, "count": len(safe_rows)}
+
+    @router.post("/evaluations/{eval_run_id}/compare", status_code=201)
+    async def compare_evaluation_runs(eval_run_id: str, request: Request):
+        actor = _principal(request)
+        if evaluation_governance_service is None:
+            raise HTTPException(503, "evaluation governance service is not configured")
+        if not await _allowed(authorize_eval_gate_manage, actor):
+            raise HTTPException(403, "evaluation gate management permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict) or not isinstance(body.get("baseline_run_id"), str):
+                raise ValueError("baseline_run_id is required")
+            result = await evaluation_governance_service.compare(
+                tenant_id=actor.tenant_id, baseline_run_id=body["baseline_run_id"],
+                candidate_run_id=eval_run_id,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation run not found in this tenant") from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"comparison_id": result.comparison_id,
+                "baseline_run_id": result.baseline_run_id,
+                "candidate_run_id": result.candidate_run_id,
+                "regressions": list(result.regressions),
+                "deltas": [item.__dict__ for item in result.deltas]}
+
+    @router.post("/evaluations/{eval_run_id}/gate", status_code=201)
+    async def decide_evaluation_release(eval_run_id: str, request: Request):
+        actor = _principal(request)
+        if evaluation_governance_service is None:
+            raise HTTPException(503, "evaluation governance service is not configured")
+        if not await _allowed(authorize_eval_gate_manage, actor):
+            raise HTTPException(403, "evaluation gate management permission required")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON object required")
+            from agent_platform.observability.evaluation_governance import EvaluationThresholdPolicy
+            minimums, maximums = body.get("minimums", {}), body.get("maximums", {})
+            refs = body.get("evidence_refs")
+            if not isinstance(minimums, dict) or not isinstance(maximums, dict):
+                raise ValueError("minimums and maximums must be objects")
+            if not isinstance(refs, list) or any(not isinstance(item, str) for item in refs):
+                raise ValueError("evidence_refs must be a list of strings")
+            policy = EvaluationThresholdPolicy(
+                policy_id=body.get("policy_id", ""),
+                version=body.get("policy_version", 0),
+                minimums=minimums, maximums=maximums,
+            )
+            evidence = await evaluation_governance_service.decide_release(
+                tenant_id=actor.tenant_id, candidate_run_id=eval_run_id,
+                baseline_run_id=body.get("baseline_run_id"), policy=policy,
+                evidence_refs=tuple(refs),
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "evaluation run not found in this tenant") from exc
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "evidence_id": evidence.evidence_id, "passed": evidence.passed,
+            "failures": list(evidence.failures), "policy_id": evidence.policy_id,
+            "policy_version": evidence.policy_version,
+            "comparison_id": evidence.comparison_id,
+            "content_sha256": evidence.content_sha256,
+        }
 
     return router

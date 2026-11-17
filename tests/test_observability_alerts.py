@@ -160,6 +160,7 @@ class AlertApiTests(unittest.TestCase):
             metrics=InMemoryMetricsRecorder(),
             evaluation_repository=repository,
             authorize_eval_manage=lambda actor: actor.user_id == "operator-1",
+            authorize_eval_review=lambda actor: actor.user_id == "operator-1",
         ))
 
         @app.middleware("http")
