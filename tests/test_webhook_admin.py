@@ -33,7 +33,7 @@ class FakeWebhookAdminStore:
         return old
     async def disable_subscription(self, tenant_id: str, subscription_id: str):
         item = self.items.get((tenant_id, subscription_id))
-        if item is None or item["status"] != "active":
+        if item is None:
             return None
         item["status"] = "disabled"
         return item["secret_ref"]
@@ -51,12 +51,16 @@ class FakeSecrets:
         self.values = {}
         self.revoked = []
         self.counter = 0
+        self.fail_revoke_once = False
     async def store(self, *, tenant_id: str, secret: bytes):
         self.counter += 1
         ref = f"secret://{tenant_id}/{self.counter}"
         self.values[ref] = secret
         return ref
     async def revoke(self, *, secret_ref: str):
+        if self.fail_revoke_once:
+            self.fail_revoke_once = False
+            raise RuntimeError("secret manager temporarily unavailable")
         self.revoked.append(secret_ref)
         self.values.pop(secret_ref, None)
 
@@ -112,6 +116,29 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await service.disable(
             tenant_id="tenant-b", subscription_id=subscription_id,
         ))
+
+    async def test_disable_retries_secret_revocation_after_external_failure(self):
+        store, secrets = FakeWebhookAdminStore(), FakeSecrets()
+        service = WebhookSubscriptionService(store=store, secrets=secrets)
+        subscription_id = await service.create(
+            tenant_id="tenant-a", actor_id="user-a",
+            url="https://hooks.example.test/agent", topics=("run.completed",),
+            signing_secret=b"a" * 32,
+        )
+        secret_ref = "secret://tenant-a/1"
+        secrets.fail_revoke_once = True
+        with self.assertRaisesRegex(RuntimeError, "temporarily unavailable"):
+            await service.disable(tenant_id="tenant-a", subscription_id=subscription_id)
+        self.assertEqual(store.items[("tenant-a", subscription_id)]["status"], "disabled")
+        self.assertIn(secret_ref, secrets.values)
+
+        # Retrying disable must still return the outstanding reference so the
+        # failed external revocation can complete without reactivating delivery.
+        self.assertTrue(await service.disable(
+            tenant_id="tenant-a", subscription_id=subscription_id,
+        ))
+        self.assertNotIn(secret_ref, secrets.values)
+        self.assertEqual(secrets.revoked, [secret_ref])
 
     async def test_create_rejects_weak_secret_and_private_destination(self):
         service = WebhookSubscriptionService(store=FakeWebhookAdminStore(), secrets=FakeSecrets())
