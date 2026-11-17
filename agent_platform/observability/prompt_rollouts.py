@@ -233,6 +233,11 @@ class PromptRolloutService:
             raise ValueError("actor is required")
         if not isinstance(weights, Mapping) or not weights:
             raise ValueError("weights are required")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            for value in weights.values()
+        ):
+            raise ValueError("weights must be numeric percentages, not booleans or strings")
         scoped = tenant_prompt_key(tenant_id, prompt_id)
         variants = self.registry.list_variants(scoped)
         if inspect.isawaitable(variants):
