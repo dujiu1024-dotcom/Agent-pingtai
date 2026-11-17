@@ -29,6 +29,7 @@ class GraphSourceDomain(str, Enum):
     KNOWLEDGE = "knowledge"
     MEMORY = "memory"
     BLACKBOARD = "blackboard"
+    FILE = "file"
 
 
 @dataclass(frozen=True)
@@ -290,6 +291,8 @@ def default_graph_schema(tenant_id: str) -> GraphSchema:
         SourceTypeMapping(GraphSourceDomain.KNOWLEDGE, "document", "document"),
         SourceTypeMapping(GraphSourceDomain.MEMORY, "memory", "memory"),
         SourceTypeMapping(GraphSourceDomain.BLACKBOARD, "entry", "blackboard_entry"),
+        # File bytes are never sent to the extractor; #8's parser supplies versioned text.
+        SourceTypeMapping(GraphSourceDomain.FILE, "parsed_file", "document"),
     )
     return GraphSchema(tenant_id, entities, relations, mappings)
 

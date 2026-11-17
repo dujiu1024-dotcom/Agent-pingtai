@@ -26,6 +26,7 @@ class GraphSchemaTests(unittest.TestCase):
                 (GraphSourceDomain.KNOWLEDGE, "document", "document"),
                 (GraphSourceDomain.MEMORY, "memory", "memory"),
                 (GraphSourceDomain.BLACKBOARD, "entry", "blackboard_entry"),
+                (GraphSourceDomain.FILE, "parsed_file", "document"),
             },
         )
 
