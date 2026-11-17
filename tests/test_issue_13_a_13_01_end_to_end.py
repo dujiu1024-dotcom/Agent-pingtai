@@ -161,10 +161,9 @@ class Issue13A1301EndToEndAcceptance(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(final_entry)
         self.assertEqual(final_entry.kind, EntryKind.ARTIFACT)
         self.assertEqual(final_entry.status, EntryStatus.ACCEPTED)
-        self.assertEqual(len(final_entry.source_refs), 8)
-        self.assertTrue(all(awaitable is not None for awaitable in [
-            await repository.get(ref) for ref in final_entry.source_refs
-        ]))
+        self.assertEqual(len(final_entry.source_refs), 9)
+        linked_entries = [await repository.get(ref) for ref in final_entry.source_refs]
+        self.assertTrue(all(entry is not None for entry in linked_entries))
 
 
 if __name__ == "__main__":
