@@ -935,8 +935,8 @@ def create_sessions_router(
         # Tombstone every file attached to the session and remove its indexed and
         # binary content. The deleted session is hidden before cleanup begins.
         try:
-            linked_assets = await service.repository.list_assets(
-                principal.tenant_id, session.owner_id, session_id, limit=500,
+            linked_assets = await service.repository.list_session_assets_for_deletion(
+                principal.tenant_id, session_id,
             )
             for asset in linked_assets:
                 await service.delete_asset(
