@@ -111,6 +111,9 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         adapter = self.adapter()
         self.assertEqual(adapter.capabilities.input_modalities, frozenset({"text"}))
         self.assertEqual(adapter.capabilities.output_modalities, frozenset({"text"}))
+        self.assertEqual(adapter.descriptor.adapter_id, "strands_agents")
+        self.assertEqual(adapter.descriptor.contract_version, "1.0.0")
+        self.assertFalse(adapter.descriptor.capabilities.cancellation)
         result = await adapter.run(self.request)
         self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(result.finish_reason, "end_turn")
@@ -442,7 +445,9 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
             input_text="Read the approved document.",
             allowed_tools=("read_document",),
         )
-        result = await self.adapter(gateway_tool_provider=provider).run(request)
+        adapter = self.adapter(gateway_tool_provider=provider)
+        self.assertTrue(adapter.descriptor.capabilities.tool_gateway)
+        result = await adapter.run(request)
         self.assertEqual(result.output_text, "Strands response\n ready")
         self.assertEqual(provider.calls, [(self.context, ("read_document",))])
         self.assertEqual(self.agents[0].options["tools"], [provider.session.tool])
@@ -468,6 +473,24 @@ class StrandsAgentsAdapterTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(ValueError, "unsupported keys"):
             await adapter.run(self.request)
+
+    async def test_per_request_timeout_overrides_template_timeout(self):
+        class SlowAgent(FakeAgent):
+            async def invoke_async(self, prompt, *, idempotency_token):
+                await asyncio.sleep(0.05)
+                return await super().invoke_async(prompt, idempotency_token=idempotency_token)
+
+        request = HarnessRequest(
+            context=self.context,
+            instructions="Be precise.",
+            input_text="Analyze this request.",
+            timeout_seconds=0.001,
+        )
+        adapter = self.adapter(
+            agent_factory=lambda **kwargs: SlowAgent(**kwargs),
+        )
+        with self.assertRaises(TimeoutError):
+            await adapter.run(request)
 
     async def test_timeout_is_enforced(self):
         class SlowAgent(FakeAgent):

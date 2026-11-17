@@ -531,5 +531,73 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.calls, [])
 
 
+    async def test_estimator_receives_effective_template_and_call_parameters(self):
+        class RecordingEstimator:
+            def __init__(self):
+                self.arguments = None
+
+            def estimate(self, **kwargs):
+                self.arguments = kwargs
+                return SimpleNamespace(input_tokens=4, output_tokens=10, total_tokens=14)
+
+        class SuccessTransport:
+            def __init__(self):
+                self.calls = []
+
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+                self.calls.append((config.model_id, dict(config.parameters), dict(request_parameters)))
+                return {
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {"prompt_tokens": 4, "completion_tokens": 2},
+                }
+
+        snapshot = self.snapshot()
+        snapshot.entries[0]["definition"]["parameters"] = {"max_tokens": 10}
+        estimator = RecordingEstimator()
+        transport = SuccessTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=AuditRecorder(),
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport,
+            token_estimator=estimator,
+        )
+        await router.complete(
+            snapshot=snapshot, tenant_id="tenant-a", run_id="run-effective-params",
+            template_id="primary",
+            messages=({"role": "user", "content": "hello"},),
+            request_id="request-effective-params",
+        )
+        self.assertEqual(estimator.arguments["request_parameters"], {"max_tokens": 10})
+        self.assertEqual(estimator.arguments["context_window_tokens"], 8192)
+        self.assertEqual(transport.calls[0][1], {"max_tokens": 10})
+        self.assertEqual(transport.calls[0][2], {})
+
+    async def test_invalid_estimate_exceeding_context_window_blocks_provider(self):
+        class OversizedEstimator:
+            def estimate(self, **kwargs):
+                return SimpleNamespace(input_tokens=10, output_tokens=10, total_tokens=20)
+
+        snapshot = self.snapshot()
+        snapshot.entries[0]["definition"]["context_window_tokens"] = 16
+        audit = AuditRecorder()
+        transport = FallbackTransport()
+        router = OpenAICompatibleModelRouter(
+            audit_sink=audit,
+            resolver=RegistryModelResolver(Secrets()),
+            transport=transport,
+            token_estimator=OversizedEstimator(),
+        )
+        with self.assertRaisesRegex(ModelRoutingError, "exceeds the pinned context window"):
+            await router.complete(
+                snapshot=snapshot, tenant_id="tenant-a", run_id="run-window-limit",
+                template_id="primary", fallback_template_ids=("fallback",),
+                messages=({"role": "user", "content": "hello"},),
+                request_id="request-window-limit",
+            )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(audit.events[-1]["detail"]["reason"],
+                         "token_estimate_invalid_or_context_window_exceeded")
+
+
 if __name__ == "__main__":
     unittest.main()

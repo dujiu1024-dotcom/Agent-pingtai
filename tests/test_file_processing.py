@@ -20,6 +20,9 @@ class Queue:
         self.jobs = []
         self.completed = []
         self.failures = []
+        self.results = []
+    async def record_result(self, job, *, result, parser_name=None):
+        self.results.append((job.asset_id, result, parser_name))
     async def enqueue(self, *, tenant_id, asset_id):
         self.jobs.append((tenant_id, asset_id))
     async def claim(self, *, worker_id, lease_seconds=120):
@@ -83,6 +86,10 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         hits = await self.knowledge.retrieve(principal=principal, query="searchable")
         self.assertEqual(hits[0].document_id, asset.asset_id)
         self.assertEqual(self.queue.completed, [asset.asset_id])
+        self.assertEqual(self.queue.results[0][0], asset.asset_id)
+        self.assertEqual(self.queue.results[0][1]["document_id"], asset.asset_id)
+        self.assertEqual(self.queue.results[0][1]["chunk_count"], 1)
+        self.assertEqual(self.queue.results[0][2], "PlainTextParser")
 
     async def test_rejected_file_is_deleted_and_never_indexed(self):
         asset = await self.service.upload_asset(

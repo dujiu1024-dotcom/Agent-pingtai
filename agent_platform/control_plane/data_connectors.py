@@ -21,6 +21,7 @@ class DataConnection:
     tenant_id: str
     connection_id: str
     provider: str
+    # OAuth access/refresh material stays in the secret manager; this is only its opaque reference.
     secret_ref: str
     scopes: tuple[str, ...]
     display_name: str = ""
@@ -30,6 +31,7 @@ class DataConnection:
     last_synced_at: datetime | None = None
     revoked_at: datetime | None = None
     last_error: str | None = None
+    project_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,8 @@ class ConnectorSink(Protocol):
 
 
 class SecretResolver(Protocol):
+    """Resolve an opaque secret:// reference just in time; never persist the returned token."""
+
     async def resolve(self, secret_ref: str) -> str: ...
 
 
@@ -153,16 +157,27 @@ class DataConnectorService:
         self, *, repository: ConnectorRepository,
         providers: Mapping[str, ConnectorProvider], secrets: SecretResolver,
         sink: ConnectorSink, cleanup_queue: ConnectorCleanupQueue | None = None,
+        sync_queue: Any | None = None,
     ) -> None:
         self.repository = repository
         self.providers = dict(providers)
         self.secrets = secrets
         self.sink = sink
         self.cleanup_queue = cleanup_queue
+        self.sync_queue = sync_queue
+
+    async def request_sync(self, *, tenant_id: str, connection_id: str) -> None:
+        connection = await self.repository.get(tenant_id, connection_id)
+        if connection is None or connection.status != "active":
+            raise ConnectorError("connection is not active")
+        if self.sync_queue is None:
+            raise ConnectorError("durable connector sync queue is not configured")
+        await self.sync_queue.enqueue(tenant_id=tenant_id, connection_id=connection_id)
 
     async def create_connection(
         self, *, tenant_id: str, connection_id: str, provider: str,
         display_name: str, secret_ref: str, scopes: tuple[str, ...], actor_id: str,
+        project_id: str | None = None,
     ) -> DataConnection:
         if (
             not tenant_id.strip() or not actor_id.strip()
@@ -174,16 +189,19 @@ class DataConnectorService:
         if not display_name.strip() or len(display_name) > 120:
             raise ConnectorError("display name must contain 1 to 120 characters")
         if (
-            not secret_ref.startswith("secret://") or len(secret_ref) > 512
+            not secret_ref.startswith(f"secret://{tenant_id}/")
+            or len(secret_ref) > 512
             or any(character.isspace() for character in secret_ref)
+            or any(part in {".", ".."} for part in secret_ref.split("/")[3:])
         ):
-            raise ConnectorError("credentials must be stored as a valid secret:// reference")
+            raise ConnectorError("credentials must use a tenant-scoped secret:// reference")
         normalized_scopes = tuple(sorted(set(scope.strip() for scope in scopes if scope.strip())))
         if not normalized_scopes or any(len(scope) > 128 for scope in normalized_scopes):
             raise ConnectorError("one or more valid connector scopes are required")
         connection = DataConnection(
             tenant_id=tenant_id, connection_id=connection_id, provider=provider,
             secret_ref=secret_ref, scopes=normalized_scopes, display_name=display_name.strip(),
+            project_id=project_id,
         )
         await self.repository.create(connection, created_by=actor_id)
         return connection
@@ -198,18 +216,22 @@ class DataConnectorService:
         provider = self.providers.get(connection.provider)
         if provider is None:
             raise ConnectorError("connector provider is not registered")
-        credential = await self.secrets.resolve(connection.secret_ref)
         try:
+            credential = await self.secrets.resolve(connection.secret_ref)
             page = await provider.fetch_page(
                 credential=credential, scopes=connection.scopes, cursor=connection.cursor,
             )
             latest = await self.repository.get(tenant_id, connection_id)
-            if latest is None or latest.status != "active" or latest.version != connection.version:
+            if latest is None or latest.status != "active":
                 await self.sink.revoke_connection(
                     tenant_id=tenant_id, connection_id=connection_id,
                     disposition=revocation_disposition,
                 )
-                raise ConnectorError("connection changed during synchronization")
+                raise ConnectorError("connection was revoked during synchronization")
+            if latest.version != connection.version:
+                # Another active sync won the cursor CAS; replay is safe because
+                # downstream writes are required to be idempotent.
+                raise ConnectorError("connection cursor changed during synchronization")
             await self.sink.upsert_page(
                 tenant_id=tenant_id, connection_id=connection_id, items=page.items,
             )
@@ -231,7 +253,7 @@ class DataConnectorService:
         except Exception as exc:
             await self.repository.mark_error(
                 tenant_id=tenant_id, connection_id=connection_id,
-                error=f"{type(exc).__name__}: {exc}",
+                error=type(exc).__name__,
             )
             raise ConnectorError("connector synchronization failed") from exc
 

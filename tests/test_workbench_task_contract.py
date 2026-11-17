@@ -56,6 +56,10 @@ class WorkbenchTaskContractTests(unittest.TestCase):
             async def cancel_task(self, **kwargs):
                 return {"task_id": kwargs["task_id"], "status": "cancelled"}
 
+            async def retry_task(self, **kwargs):
+                return {"task_id": "task-retry", "status": "queued",
+                        "retry_of_run_id": kwargs["task_id"]}
+
         return Service(tenant_id)
 
     def test_list_tasks_enforces_limit_and_tenant_scoping(self):
@@ -85,7 +89,7 @@ class WorkbenchTaskContractTests(unittest.TestCase):
             "tenant_id": "tenant-a", "actor_id": "user-a",
             "agent_id": "agent-1", "project_id": "project-1",
             "session_id": "session-1", "input": {"prompt": "summarize"},
-            "idempotency_key": "submit-req-1",
+            "idempotency_key": "submit-req-1", "priority": 100,
         }])
         self.assertIn(("tenant-a", "agent-1", "execute"), self.authorizer_calls)
         self.assertIn(("tenant-a", "project-1", "use_project"), self.authorizer_calls)
@@ -104,14 +108,28 @@ class WorkbenchTaskContractTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
         self.assertEqual(self.service.submissions, [])
 
-    def test_custom_priority_is_rejected_without_submitting(self):
+    def test_custom_priority_is_forwarded_to_task_service(self):
         self.service = self._service()
         response = self.client.post(
             "/api/platform/v1/workbench/tasks",
             json={"agent_id": "agent-1", "input": {"prompt": "x"}, "priority": 10},
         )
-        self.assertEqual(response.status_code, 422)
-        self.assertEqual(self.service.submissions, [])
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(self.service.submissions[0]["priority"], 10)
+
+    def test_retry_task_requires_idempotency_key_and_forwards_request(self):
+        self.service = self._service()
+        response = self.client.post(
+            "/api/platform/v1/workbench/tasks/task-1/retry",
+            json={"idempotency_key": "retry-1"},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["retry_of_run_id"], "task-1")
+
+        invalid = self.client.post(
+            "/api/platform/v1/workbench/tasks/task-1/retry", json={},
+        )
+        self.assertEqual(invalid.status_code, 422)
 
     def test_task_service_tenant_mismatch_is_denied(self):
         self.service = self._service(tenant_id="tenant-b")
