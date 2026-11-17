@@ -424,3 +424,67 @@ document.addEventListener("click",async e=>{
   if(b.dataset.replayReopen){await openReplay(S.replay.runId)}
  }catch(x){toast(x.message)}
 });
+
+
+// C-24-02: document chunk preview and authorized manual editing.
+async function renderChunkPreview(){
+ const root=$("#view");
+ root.innerHTML="<div class='panel'>正在读取知识文档…</div>";
+ const documents=await list(API+"/knowledge/documents?limit=100");
+ if(!documents.length){
+  root.innerHTML=panel("Chunk 预览","<p class='subtle'>当前身份没有可读取的知识文档。上传或接入文档后可在此检查切片与来源定位。</p>");
+  return;
+ }
+ const selected=documents.find(d=>d.document_id===S.chunkDocumentId)||documents[0];
+ S.chunkDocumentId=selected.document_id;
+ const response=await api(API+"/knowledge/documents/"+encodeURIComponent(selected.document_id)+"/chunks");
+ const chunks=response.items||[];
+ const options=documents.map(d=>"<option value='"+esc(d.document_id)+"' "+(d.document_id===selected.document_id?"selected":"")+">"+esc(d.title||d.document_id)+" · v"+esc(d.version)+"</option>").join("");
+ const rows=chunks.map(c=>{
+  const location=(c.page_number?"第 "+c.page_number+" 页 · ":"")+"字符 "+c.start_offset+"–"+c.end_offset;
+  const editing=S.chunkEditId===c.chunk_id;
+  const content=editing
+   ? "<form data-chunk-edit='"+esc(c.chunk_id)+"'><textarea name='text' rows='7' maxlength='20000' required>"+esc(c.text)+"</textarea><div class='actions'><button class='button primary'>保存片段</button><button class='button' type='button' data-chunk-cancel>取消</button></div></form>"
+   : "<pre class='json'>"+esc(c.text)+"</pre>";
+  return "<article class='message'><header><b>Chunk "+esc(c.ordinal+1)+"</b><small>"+esc(c.embedding_status||"indexed")+" · "+esc(c.token_count)+" tokens · "+esc(c.char_count)+" chars</small></header><p class='subtle'>"+esc(location)+" · SHA-256 "+esc(String(c.content_hash||"").slice(0,16))+"</p>"+content+(editing?"":btn("编辑片段","data-chunk-edit-open='"+esc(c.chunk_id)+"'"))+"</article>";
+ }).join("");
+ root.innerHTML=panel("Chunk 预览","<form id='chunk-document-form' class='inline-form'><label>知识文档<select name='document_id'>"+options+"</select></label><button class='button'>加载文档</button></form><p class='subtle'>文档："+esc(selected.title||selected.document_id)+" · 版本 "+esc(selected.version)+" · "+chunks.length+" 个片段</p>")+
+  panel("切片与来源定位",rows||"<p class='subtle'>当前文档没有可见片段。</p>");
+}
+const chunkBaseRender=render;
+render=async function(){
+ if(S.view==="chunks"){
+  try{await renderChunkPreview()}catch(error){$("#view").innerHTML=panel("Chunk 预览不可用","<p class='error'>"+esc(error.message)+"</p>")}
+  return;
+ }
+ return chunkBaseRender();
+};
+const chunkBaseNav=nav;
+nav=function(view){
+ if(view==="chunks"){
+  S.view="chunks";S.session=null;S.task=null;S.approval=null;
+  document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===view));
+  $("#title").textContent="Chunk 预览";$("#crumb").textContent="CHUNK PREVIEW";render();return;
+ }
+ return chunkBaseNav(view);
+};
+document.addEventListener("submit",async event=>{
+ const form=event.target;
+ if(form.id==="chunk-document-form"){
+  event.preventDefault();S.chunkDocumentId=String(new FormData(form).get("document_id")||"");S.chunkEditId=null;
+  await renderChunkPreview();return;
+ }
+ if(!form.matches("[data-chunk-edit]"))return;
+ event.preventDefault();
+ const chunkId=form.getAttribute("data-chunk-edit");
+ const text=String(new FormData(form).get("text")||"");
+ try{
+  await api(API+"/knowledge/documents/"+encodeURIComponent(S.chunkDocumentId)+"/chunks/"+encodeURIComponent(chunkId),{method:"PATCH",body:JSON.stringify({text})});
+  S.chunkEditId=null;toast("片段已保存；向量状态需由后续重嵌入流程更新");await renderChunkPreview();
+ }catch(error){toast(error.message)}
+});
+document.addEventListener("click",event=>{
+ const button=event.target.closest("button");if(!button)return;
+ if(button.dataset.chunkEditOpen){S.chunkEditId=button.dataset.chunkEditOpen;renderChunkPreview();return}
+ if(button.hasAttribute("data-chunk-cancel")){S.chunkEditId=null;renderChunkPreview()}
+});

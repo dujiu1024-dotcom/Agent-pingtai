@@ -64,6 +64,7 @@ include = [
   "tests/test_knowledge_evaluation_dataset.py",
   "tests/test_rag_metrics.py",
   "tests/test_rag_metrics_api.py",
+  "tests/test_issue_521_c_24_02_chunk_preview.py",
   "tests/test_knowledge_memory_api.py",
   "tests/test_rag_dataset_upload_api.py",
   "tests/test_knowledge_catalog_api.py",
