@@ -71,7 +71,7 @@ class PostgresKnowledgeRepository:
         return [Document(tenant_id=row["tenant_id"],document_id=str(row["document_id"]),version=row["version"],title=row["title"],source_uri=row["source_uri"],content_hash=row["content_hash"],scope=KnowledgeScope(row["scope"]),project_id=row["project_id"],owner_user_id=row["owner_user_id"],media_type=row["media_type"],metadata=dict(row["metadata"] or {}),created_at=row["created_at"],deleted_at=row["deleted_at"]) for row in rows]
     @staticmethod
     def _hit(row: dict[str,Any],strategy: str)->RetrievalHit:
-        return RetrievalHit(document_id=str(row["document_id"]),document_version=row["version"],chunk_id=str(row["chunk_id"]),text=row["body"],source_uri=row["source_uri"],title=row["title"],score=float(row["score"] or 0),page_number=row["page_number"],start_offset=row["start_offset"],end_offset=row["end_offset"],retrieval_trace={"strategy":strategy,"tenant_scoped":True,"acl_filtered_in_sql":True})
+        return RetrievalHit(document_id=str(row["document_id"]),document_version=row["version"],chunk_id=str(row["chunk_id"]),text=row["body"],source_uri=row["source_uri"],title=row["title"],score=float(row["score"] or 0),page_number=row["page_number"],start_offset=row["start_offset"],end_offset=row["end_offset"],retrieval_trace={"strategy":strategy,"tenant_scoped":True,"acl_filtered_in_sql":True,"citation":{"document_id":str(row["document_id"]),"document_version":row["version"],"chunk_id":str(row["chunk_id"]),"source_uri":row["source_uri"],"title":row["title"],"page_number":row["page_number"],"start_offset":row["start_offset"],"end_offset":row["end_offset"]}})
     async def search(self,*,principal: KnowledgePrincipal,query: str,query_vector: Sequence[float]|None,limit: int)->list[RetrievalHit]:
         conn=await self._connect();roles=list(principal.roles);projects=list(principal.project_ids);candidate_limit=max(limit*4,20)
         acl="""((NOT d.acl_enforced AND NOT EXISTS(SELECT 1 FROM knowledge_document_acl ax WHERE ax.tenant_id=d.tenant_id AND ax.document_id=d.document_id)) OR (d.scope='private' AND d.owner_user_id=%s) OR EXISTS(SELECT 1 FROM knowledge_document_acl a WHERE a.tenant_id=d.tenant_id AND a.document_id=d.document_id AND a.permission IN ('read','manage') AND ((a.principal_type='user' AND a.principal_id=%s) OR (a.principal_type='role' AND a.principal_id=ANY(%s)) OR (a.principal_type='project' AND a.principal_id=ANY(%s)))))"""
@@ -135,6 +135,10 @@ class PostgresKnowledgeRepository:
                     (tenant_id, document_id),
                 )
                 await conn.execute(
+                    "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
+                    (tenant_id, document_id),
+                )
+                await conn.execute(
                     """INSERT INTO knowledge_document_acl
                     (tenant_id,document_id,principal_type,principal_id,permission,granted_by)
                     VALUES(%s,%s,%s,%s,%s,%s)
@@ -156,6 +160,11 @@ class PostgresKnowledgeRepository:
                     AND principal_id=%s AND permission=%s""",
                     (tenant_id, document_id, principal_type, principal_id, permission),
                 )
+                if cur.rowcount:
+                    await conn.execute(
+                        "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
+                        (tenant_id, document_id),
+                    )
                 return cur.rowcount > 0
 
     async def replace_document_access(
@@ -189,6 +198,10 @@ class PostgresKnowledgeRepository:
                 )
                 await conn.execute(
                     "DELETE FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",
+                    (tenant_id, document_id),
+                )
+                await conn.execute(
+                    "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'acl_changed')",
                     (tenant_id, document_id),
                 )
                 for kind, identifier, permission in sorted(normalized):
@@ -229,6 +242,10 @@ class PostgresKnowledgeRepository:
             async with conn.transaction():
                 cur=await conn.execute("UPDATE knowledge_documents SET deleted_at=now() WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",(tenant_id,document_id))
                 if cur.rowcount<1:return False
+                await conn.execute(
+                    "INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'document',%s,'deleted')",
+                    (tenant_id, document_id),
+                )
                 # Remove derived vectors in the same transaction as source chunks.
                 await conn.execute("DELETE FROM knowledge_embeddings WHERE tenant_id=%s AND chunk_id IN (SELECT chunk_id FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s)",(tenant_id,tenant_id,document_id))
                 await conn.execute("DELETE FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s",(tenant_id,document_id))
