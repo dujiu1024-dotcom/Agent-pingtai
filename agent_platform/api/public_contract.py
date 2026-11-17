@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import time
@@ -118,7 +119,7 @@ def decode_cursor(cursor: str | None) -> dict[str, Any] | None:
     try:
         raw = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4))
         value = json.loads(raw)
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError, binascii.Error) as exc:
         raise ValueError("invalid pagination cursor") from exc
     if not isinstance(value, dict) or not value:
         raise ValueError("pagination cursor must encode a non-empty object")
