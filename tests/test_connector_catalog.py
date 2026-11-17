@@ -172,6 +172,19 @@ class ConnectorCatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(imported[0].connector_id, "mcp-docs")
         self.assertEqual(imported[0].source, "mcp-registry")
 
+    async def test_semver_is_validated_and_unknown_fields_are_rejected(self):
+        self.assertEqual(ConnectorManifest.from_mapping(manifest()).version, "1.2.0")
+        for version in ("v1.2.0", "1.2", "1\\\\.2\\\\.0", "1.2.0.0"):
+            with self.subTest(version=version):
+                with self.assertRaises(ConnectorManifestError):
+                    ConnectorManifest.from_mapping({**manifest(), "version": version})
+        with self.assertRaises(ConnectorManifestError):
+            ConnectorManifest.from_mapping({**manifest(), "credential": "must-not-be-stored"})
+        unsafe = manifest()
+        unsafe["operations"][0]["credential"] = "secret"
+        with self.assertRaises(ConnectorManifestError):
+            ConnectorManifest.from_mapping(unsafe)
+
     async def test_manifest_rejects_executable_operation_fields(self):
         unsafe = manifest()
         unsafe["operations"][0]["url"] = "https://untrusted.invalid"
