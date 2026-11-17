@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 from urllib.parse import urlsplit
 
+from agent_platform.connectors.base import BaseConnector, ConnectorAuthenticator
 from agent_platform.control_plane.data_connectors import ConnectorError, ConnectorPage
 
 
@@ -93,7 +94,7 @@ class StdlibConnectorHTTPClient:
         return JSONHTTPResponse(status, raw)
 
 
-class HTTPJSONConnectorProvider:
+class HTTPJSONConnectorProvider(BaseConnector):
     """Provider adapter for host-configured bearer-authenticated JSON APIs.
 
     Endpoints and allowed hosts are deployment configuration, never user input.
@@ -104,6 +105,9 @@ class HTTPJSONConnectorProvider:
         allowed_hosts: frozenset[str], client: ConnectorHTTPClient | None = None,
         items_field: str = "items", next_cursor_field: str = "next_cursor",
         has_more_field: str = "has_more", timeout_seconds: float = 20,
+        connector_id: str = "http-json", credential_ref: str | None = None,
+        authenticator: ConnectorAuthenticator | None = None,
+        auth_scopes: tuple[str, ...] = ("files.read",),
     ) -> None:
         hosts = {host.casefold() for host in allowed_hosts}
         for endpoint in (list_endpoint, revoke_endpoint):
@@ -117,6 +121,10 @@ class HTTPJSONConnectorProvider:
                 raise ValueError("connector endpoints must be HTTPS on an allowlisted host")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        super().__init__(
+            connector_id=connector_id, credential_ref=credential_ref,
+            authenticator=authenticator, auth_scopes=auth_scopes,
+        )
         self.list_endpoint = list_endpoint
         self.revoke_endpoint = revoke_endpoint
         self.client = client or StdlibConnectorHTTPClient()
@@ -126,9 +134,11 @@ class HTTPJSONConnectorProvider:
         self.timeout_seconds = timeout_seconds
 
     async def fetch_page(
-        self, *, credential: str, scopes: tuple[str, ...],
-        cursor: Mapping[str, Any] | None,
+        self, *, credential: str | None = None, scopes: tuple[str, ...],
+        cursor: Mapping[str, Any] | None, tenant_id: str | None = None,
     ) -> ConnectorPage:
+        if credential is None and tenant_id is not None:
+            credential = await self.authenticate(tenant_id=tenant_id)
         if not credential:
             raise ConnectorError("connector credential is empty")
         params = {"scopes": " ".join(scopes)}
@@ -160,7 +170,9 @@ class HTTPJSONConnectorProvider:
             has_more=has_more,
         )
 
-    async def revoke(self, *, credential: str) -> None:
+    async def revoke(self, *, credential: str | None = None, tenant_id: str | None = None) -> None:
+        if credential is None and tenant_id is not None:
+            credential = await self.authenticate(tenant_id=tenant_id)
         if not credential:
             raise ConnectorError("connector credential is empty")
         response = await self.client.request(
