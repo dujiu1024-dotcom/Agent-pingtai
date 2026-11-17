@@ -131,6 +131,7 @@ def create_platform_app(
     graph_query_service_resolver: Any | None = None,
     graph_read_authorizer: Any | None = None,
     graph_governance_resolver: Any | None = None,
+    graph_visualization_url: str | None = None,
     readiness_checks: Any | None = None,
     locale_preference_service: Any | None = None,
     locale_manage_authorizer: Any | None = None,
@@ -387,6 +388,14 @@ def create_platform_app(
         graph_query_service_resolver is None or graph_read_authorizer is None
     ):
         raise ValueError("graph query service resolver and graph read authorizer must be configured together")
+    if graph_visualization_url is not None:
+        parsed_graph_url = urlsplit(graph_visualization_url)
+        if (
+            not graph_configured or parsed_graph_url.scheme != "https"
+            or not parsed_graph_url.hostname or parsed_graph_url.username is not None
+            or parsed_graph_url.password is not None or parsed_graph_url.fragment
+        ):
+            raise ValueError("graph_visualization_url requires graph API configuration and an HTTPS URL without credentials or fragment")
     app.include_router(create_workbench_router(
         features={
             "knowledge": True,
@@ -398,6 +407,7 @@ def create_platform_app(
             "task_execution": task_center_configured,
             "graph": graph_configured,
             "graph_annotation": graph_governance_resolver is not None,
+            "graph_visualization": graph_visualization_url is not None,
             "batch_execution": batch_api_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
             "blackboard": blackboard_configured,
@@ -431,6 +441,7 @@ def create_platform_app(
             authorize_read=graph_read_authorizer,
             resolve_governance=graph_governance_resolver,
             resolve_knowledge_principal=graph_identity_context.knowledge,
+            visualization_url=graph_visualization_url,
         ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
     if approvals_configured:
