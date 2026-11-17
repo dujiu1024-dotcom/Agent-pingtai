@@ -718,6 +718,7 @@ def create_sessions_router(
                 "status": session.status, "created_at": session.created_at.isoformat(),
                 "updated_at": session.updated_at.isoformat(),
             },
+            "assets": exported_assets,
             "messages": [{
                 "message_id": m.message_id, "role": m.role.value, "content": m.content,
                 "actor_id": m.actor_id, "task_id": m.task_id, "run_id": m.run_id,
@@ -764,6 +765,40 @@ def create_sessions_router(
             if len(page) < 500:
                 break
             cursor = page[0].message_id
+        asset_ids = sorted({
+            asset_id for message in messages for asset_id in message.asset_ids
+        })
+        exported_assets = []
+        for asset_id in asset_ids:
+            if not await authorize(principal, "file", asset_id, "read"):
+                raise HTTPException(403, "referenced file access denied during export")
+            asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+            if asset is None or asset.status.value == "deleted":
+                exported_assets.append({"asset_id": asset_id, "status": "unavailable"})
+                continue
+            if asset.session_id and not await authorize(
+                principal, "session", asset.session_id, "read",
+            ):
+                raise HTTPException(403, "linked session file access denied during export")
+            if asset.project_id and not await authorize(
+                principal, "project", asset.project_id, "read",
+            ):
+                raise HTTPException(403, "linked project file access denied during export")
+            versions = await service.repository.list_asset_versions(
+                principal.tenant_id, asset_id,
+            )
+            exported_assets.append({
+                "asset_id": asset.asset_id, "filename": asset.filename,
+                "media_type": asset.media_type, "size_bytes": asset.size_bytes,
+                "sha256": asset.sha256, "current_version": asset.version,
+                "status": asset.status.value,
+                "versions": [{
+                    "version": version.version, "filename": version.filename,
+                    "media_type": version.media_type, "size_bytes": version.size_bytes,
+                    "sha256": version.sha256, "status": version.status.value,
+                    "created_at": version.created_at.isoformat(),
+                } for version in versions],
+            })
         payload = {
             "session": {
                 "session_id": session.session_id, "title": session.title,
@@ -801,6 +836,23 @@ def create_sessions_router(
                     f"## {message.role.value} · {message.created_at.isoformat()}",
                     "", message.content, "",
                 ])
+            if exported_assets:
+                lines.extend(["## Attachments", ""])
+                for asset in exported_assets:
+                    if asset.get("status") == "unavailable":
+                        lines.append(f"- {asset['asset_id']}: unavailable")
+                    else:
+                        lines.append(
+                            f"- {asset['filename']} ({asset['asset_id']}), "
+                            f"current version {asset['current_version']}, "
+                            f"SHA-256 {asset['sha256']}"
+                        )
+                        for version in asset["versions"]:
+                            lines.append(
+                                f"  - v{version['version']}: {version['filename']} "
+                                f"({version['size_bytes']} bytes, {version['sha256']})"
+                            )
+                lines.append("")
             content = "\n".join(lines)
             media_type = "text/markdown; charset=utf-8"
             filename = f"session-{safe_id}.md"
