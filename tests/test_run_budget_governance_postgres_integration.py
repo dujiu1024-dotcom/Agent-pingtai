@@ -14,6 +14,7 @@ if DSN:
     from psycopg.rows import dict_row
     from agent_platform.quotas import Budget, BudgetExceeded, PostgresQuotaStore, QuotaReservationGroupService, QuotaScope, RunBudgetInheritanceService
     from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+    from agent_platform.quotas.run_ledger import PostgresRunBudgetLedger
 
 
 @unittest.skipUnless(DSN, "AGENT_PLATFORM_TEST_DSN is not configured")
@@ -43,6 +44,7 @@ class RunBudgetGovernancePostgresIntegrationTests(unittest.IsolatedAsyncioTestCa
         self.inheritance = RunBudgetInheritanceService(
             lineage_store=self.run_store, reservation_groups=self.groups,
         )
+        self.run_budget_ledger = PostgresRunBudgetLedger(connect)
 
     async def _create_run(self, run_id, *, parent_run_id=None, lineage_key=None):
         await self.run_store.create_task_run(
@@ -78,6 +80,35 @@ class RunBudgetGovernancePostgresIntegrationTests(unittest.IsolatedAsyncioTestCa
             estimated_tokens=tokens, estimated_cost_usd=Decimal("0.10"),
             estimated_input_tokens=tokens, estimated_output_tokens=0,
         )
+
+    async def test_model_call_budget_estimate_actual_and_variance_are_queryable(self):
+        await self.run_budget_ledger.configure(
+            tenant_id=self.tenant_id, run_id=self.root_id,
+            max_tokens=100, max_cost_usd=Decimal("1.00"),
+        )
+        call_id = str(uuid4())
+        await self.run_budget_ledger.reserve(
+            call_id=call_id, tenant_id=self.tenant_id, run_id=self.root_id,
+            model_key="integration-model", estimated_input_tokens=40,
+            estimated_output_tokens=20, estimated_cost_usd=Decimal("0.60"),
+        )
+        await self.run_budget_ledger.settle(
+            call_id=call_id, actual_input_tokens=30,
+            actual_output_tokens=15, actual_cost_usd=Decimal("0.45"),
+        )
+        snapshot = await self.run_budget_ledger.snapshot(self.tenant_id, self.root_id)
+        self.assertEqual(snapshot.actual_tokens, 45)
+        self.assertEqual(snapshot.remaining_tokens, 55)
+        items = await self.run_budget_ledger.list_model_calls(
+            tenant_id=self.tenant_id, run_id=self.root_id,
+        )
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["estimated_total_tokens"], 60)
+        self.assertEqual(items[0]["actual_total_tokens"], 45)
+        self.assertEqual(items[0]["token_delta"], -15)
+        self.assertEqual(items[0]["estimated_cost_usd"], "0.60000000")
+        self.assertEqual(items[0]["actual_cost_usd"], "0.45000000")
+        self.assertEqual(items[0]["cost_delta_usd"], "-0.15000000")
 
     async def test_persisted_child_lineage_and_transaction_rollback(self):
         child = await self._child("delegation:rollback")
