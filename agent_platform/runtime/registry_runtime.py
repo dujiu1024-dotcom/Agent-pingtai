@@ -97,13 +97,17 @@ class RegistryRuntimeAssembler:
         skill_reviewer: SkillDependencyReviewer,
         trusted_tool_handlers: Mapping[str, ToolDefinition],
     ) -> None:
-        required_budget_components = ("token_estimator", "quota_service", "quota_cost_estimator", "audit_sink")
+        required_budget_components = {
+            "token_estimator": "estimate",
+            "quota_service": "reserve_run",
+            "quota_cost_estimator": "estimate_micros",
+            "audit_sink": "record",
+        }
         missing_budget_components = [
-            name for name in required_budget_components
-            if getattr(model_router, name, None) is None
+            f"{name}.{method}"
+            for name, method in required_budget_components.items()
+            if not callable(getattr(getattr(model_router, name, None), method, None))
         ]
-        if not callable(getattr(getattr(model_router, "token_estimator", None), "estimate", None)):
-            missing_budget_components.append("callable_token_estimator")
         if missing_budget_components:
             raise RegistryRuntimeError(
                 "production Run model router must configure budget enforcement and model audit: "
