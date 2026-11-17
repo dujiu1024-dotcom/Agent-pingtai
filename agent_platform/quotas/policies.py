@@ -112,8 +112,40 @@ class InMemoryQuotaPolicyRepository:
             if item.scope_type == "default" or item.tenant_id == tenant_id
         ]
 
+
+    async def put_policy_and_audit(self, policy: QuotaPolicy, event: QuotaPolicyAudit) -> None:
+        import json
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_quota_policies
+                       (policy_id,tenant_id,scope_type,scope_id,limits,priority,enabled,version,created_by)
+                       VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)
+                       ON CONFLICT (scope_type,tenant_id,scope_id,policy_id) DO UPDATE SET
+                         limits=EXCLUDED.limits,priority=EXCLUDED.priority,enabled=EXCLUDED.enabled,
+                         version=EXCLUDED.version,created_by=EXCLUDED.created_by,updated_at=now()
+                       WHERE EXCLUDED.version > platform_quota_policies.version""",
+                    (policy.policy_id,policy.tenant_id or "",policy.scope_type,policy.scope_id,
+                     json.dumps(dict(policy.limits),allow_nan=False),policy.priority,
+                     policy.enabled,policy.version,policy.created_by),
+                )
+                await connection.execute(
+                    """INSERT INTO platform_quota_policy_audit
+                       (audit_id,tenant_id,actor_id,action,policy_id,policy_version,
+                        before_state,after_state,occurred_at,payload_sha256)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s)""",
+                    (event.audit_id,event.tenant_id,event.actor_id,event.action,event.policy_id,
+                     event.policy_version,json.dumps(event.before) if event.before is not None else None,
+                     json.dumps(event.after),event.occurred_at,event.payload_sha256),
+                )
+
     async def append_audit(self, event: QuotaPolicyAudit) -> None:
         self.audit_events.append(event)
+
+    async def put_policy_and_audit(self, policy: QuotaPolicy, event: QuotaPolicyAudit) -> None:
+        await self.put_policy(policy)
+        await self.append_audit(event)
 
 
 class QuotaPolicyService:
@@ -139,7 +171,6 @@ class QuotaPolicyService:
             and item.scope_id == policy.scope_id
         )), None)
         before = self._policy_payload(previous) if previous else None
-        await self.repository.put_policy(policy)
         after = self._policy_payload(policy)
         audit_id = str(uuid4())
         payload = {
@@ -157,7 +188,12 @@ class QuotaPolicyService:
             policy_version=policy.version, before=before, after=after,
             occurred_at=datetime.now(timezone.utc), payload_sha256=digest,
         )
-        await self.repository.append_audit(event)
+        atomic_writer = getattr(self.repository, "put_policy_and_audit", None)
+        if callable(atomic_writer):
+            await atomic_writer(policy, event)
+        else:
+            await self.repository.put_policy(policy)
+            await self.repository.append_audit(event)
         return event
 
     async def resolve(self, context: QuotaPolicyContext) -> ResolvedQuotaPolicy:
