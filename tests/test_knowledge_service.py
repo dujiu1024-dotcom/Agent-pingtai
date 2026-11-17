@@ -138,6 +138,64 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(citation["document_version"],1)
         self.assertEqual(citation["source_uri"],"file://source.md")
 
+    async def test_query_rewriter_output_is_type_and_size_bounded_fail_closed(self):
+        class TrackingRepository(InMemoryKnowledgeRepository):
+            def __init__(self):
+                super().__init__()
+                self.search_calls = 0
+
+            async def search(self, **kwargs):
+                self.search_calls += 1
+                return await super().search(**kwargs)
+
+        class Rewriter:
+            def __init__(self, result):
+                self.result = result
+
+            async def rewrite(self, query):
+                return self.result
+
+        repository = TrackingRepository()
+        principal = KnowledgePrincipal(tenant_id="tenant", user_id="user")
+        for result, error in (
+            ("", ValueError),
+            ("x" * 21, ValueError),
+            (None, TypeError),
+            (42, TypeError),
+        ):
+            service = KnowledgeService(
+                repository, query_rewriter=Rewriter(result), max_query_chars=20,
+            )
+            with self.subTest(result_type=type(result).__name__, result_length=len(result) if isinstance(result, str) else None):
+                with self.assertRaises(error):
+                    await service.retrieve(principal=principal, query="valid query")
+        self.assertEqual(repository.search_calls, 0)
+
+    async def test_retrieval_rejects_invalid_or_oversized_query_before_rewrite(self):
+        class Rewriter:
+            def __init__(self):
+                self.calls = 0
+
+            async def rewrite(self, query):
+                self.calls += 1
+                return query
+
+        rewriter = Rewriter()
+        service = KnowledgeService(
+            InMemoryKnowledgeRepository(), query_rewriter=rewriter,
+            max_query_chars=20,
+        )
+        principal = KnowledgePrincipal(tenant_id="tenant", user_id="user")
+        with self.assertRaises(TypeError):
+            await service.retrieve(principal=principal, query=None)
+        with self.assertRaises(ValueError):
+            await service.retrieve(principal=principal, query="x" * 21)
+        with self.assertRaises(ValueError):
+            KnowledgeService(InMemoryKnowledgeRepository(), max_query_chars=True)
+        with self.assertRaises(ValueError):
+            KnowledgeService(InMemoryKnowledgeRepository(), max_query_chars=0)
+        self.assertEqual(rewriter.calls, 0)
+
     async def test_connector_ingestion_and_rag_evaluation(self):
         from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
         from agent_platform.knowledge.evaluation import RAGEvalCase, evaluate_retrieval
