@@ -83,7 +83,16 @@ class StrandsGatewayMCPHttpIntegrationTests(unittest.IsolatedAsyncioTestCase):
             allowed_tool_names=("read_document",),
             approval_ids={},
         )
-        bridge = GatewayMCPBridge(gateway=gateway, session=session)
+        async def authorize_live_run(current):
+            return (
+                current.tenant_id == "tenant-a"
+                and current.run_id == "run-001"
+                and current.agent_id == "researcher"
+            )
+
+        bridge = GatewayMCPBridge(
+            gateway=gateway, session=session, authorize_run=authorize_live_run
+        )
         token = "ephemeral-run-token-for-integration-test"
 
         with socket.socket() as listener:
