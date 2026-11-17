@@ -300,6 +300,10 @@ class RuntimeSecurityAutoResponder:
                 "no_action", event.event_id, policy_version=decision.policy_version,
             )
 
+        # ResponseDecision validates this invariant at construction; assert it here
+        # so static type checkers also know an approved action is non-null.
+        assert decision.action is not None
+
         # Write-ahead audit is mandatory before an isolation/interrupt/revoke side effect.
         try:
             await self._audit(event, "security.response.action", "started", decision_detail)
