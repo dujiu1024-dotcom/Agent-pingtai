@@ -23,7 +23,12 @@ class ConnectorManifestError(ConnectorCatalogError, ValueError):
 
 
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
-_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$")
+_VERSION = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
 _AUTH_TYPES = frozenset({"none", "oauth", "api_key", "service_account"})
 
 
@@ -113,7 +118,7 @@ class ConnectorManifest:
         return {
             "connector_id": self.connector_id, "name": self.name,
             "version": self.version, "description": self.description,
-            "auth_type": self.auth_type, "source": self.source,
+            "auth_type": self.auth_type,
             "operations": [
                 {"name": item.name, "description": item.description,
                  "input_schema": copy.deepcopy(dict(item.input_schema))}
@@ -179,12 +184,12 @@ class PostgresConnectorManifestRegistry:
         connection = await self._connect()
         async with connection:
             cursor = await connection.execute(
-                """SELECT manifest FROM platform_connector_manifests
+                """SELECT manifest,source FROM platform_connector_manifests
                    WHERE tenant_id=%s AND connector_id=%s""",
                 (tenant_id, connector_id),
             )
             row = await cursor.fetchone()
-        return ConnectorManifest.from_mapping(row["manifest"], source=row["manifest"].get("source", "registry")) if row else None
+        return ConnectorManifest.from_mapping(row["manifest"], source=row["source"]) if row else None
 
     async def list(self, tenant_id: str) -> tuple[ConnectorManifest, ...]:
         connection = await self._connect()
@@ -196,7 +201,7 @@ class PostgresConnectorManifestRegistry:
             )
             rows = await cursor.fetchall()
         return tuple(
-            ConnectorManifest.from_mapping(row["manifest"], source=row["manifest"].get("source", "registry"))
+            ConnectorManifest.from_mapping(row["manifest"], source=row["source"])
             for row in rows
         )
 
