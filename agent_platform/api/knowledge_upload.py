@@ -84,6 +84,21 @@ def create_knowledge_upload_router(
         collection_id = query.get("collection_id")
         if scope is KnowledgeScope.PRIVATE and not principal.user_id:
             raise HTTPException(401, "authenticated user required")
+        if collection_id is not None:
+            collection = await knowledge.repository.get_collection(
+                principal.tenant_id, collection_id,
+            )
+            if collection is None:
+                raise HTTPException(404, "collection not found")
+            if collection.project_id is not None:
+                if collection.project_id not in principal.project_ids:
+                    raise HTTPException(404, "collection not found")
+                if scope is not KnowledgeScope.PROJECT or project_id != collection.project_id:
+                    raise HTTPException(400, "project collection requires a document in the same project")
+                if "knowledge.manage" not in principal.permissions and collection.project_id not in principal.manage_project_ids:
+                    raise HTTPException(403, "project collection management permission required")
+            elif scope is not KnowledgeScope.TENANT:
+                raise HTTPException(400, "tenant collection only accepts tenant-scoped documents")
 
         content = bytearray()
         async for part in request.stream():
