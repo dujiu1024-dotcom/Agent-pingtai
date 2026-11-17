@@ -1,22 +1,25 @@
-# Versioned memory retrieval
+# 记忆版本与检索契约（C-11-03）
 
-MemoryRetrievalService provides deterministic retrieval over immutable memory versions. It is separate from candidate extraction/review and does not auto-confirm candidates.
+## 数据与溯源
 
-## Request contract
+- 每条记忆使用稳定的 `memory_id`；每次状态或内容变更递增 `version`。
+- 候选保留 `source_ref`、`confidence`、`created_at`、`updated_at`、`expires_at` 和 scope。
+- 检索结果必须附带 `MemoryCitation`，精确引用 memory_id、版本、来源、scope、scope_id、置信度和时间戳；不得只返回无法追溯的文本。
+- 内容纠正产生新版本并更新来源引用；历史版本只通过经过 scope 管理授权的版本历史接口访问。
 
-- MemoryRetrievalQuery supports an as_of timestamp, created_after/created_before bounds, scope filters, source-reference filters, minimum confidence, text matching, a recall strategy, and a bounded result limit.
-- All timestamps must be timezone-aware. Historical retrieval selects the newest version recorded at or before as_of; it does not substitute the current version.
-- Only ACTIVE versions valid at the requested time are eligible. Expired, archived, superseded, deleted, and unreviewed candidate records are excluded.
-- Tenant, user, project, and Agent visibility is evaluated before results are returned. Project/Agent membership grants read visibility; management grants do not widen visibility beyond the authenticated tenant. Tenant-shared memory requires memory.manage.
-- Repositories must implement list_versions. Unsupported adapters fail closed rather than silently returning only the current version.
+## 适用范围与权限
 
-## Recall and citations
+- 检索首先按可信 principal 的 tenant/user/project/agent 身份过滤，再检查 ACTIVE 状态、删除标记和时间有效性，最后执行查询匹配与排序。
+- USER 记忆仅对本人可见；PROJECT / AGENT 记忆仅对 principal 已加入的项目/Agent 可见；TENANT 记忆仅在同一 tenant 内可见。
+- 版本历史使用管理权限检查，不因“能读取当前记忆”而自动开放历史审计内容。
+- 不允许客户端传入 tenant_id 替代认证 principal；本服务仅接受 `MemoryPrincipal`。
 
-- RECENCY: newest recorded versions first.
-- CONFIDENCE: highest confidence first; confidence is ranking metadata, never an authorization substitute.
-- RELEVANCE: deterministic lexical term overlap weighted with confidence and recency. This is a baseline strategy; vector/semantic recall can be added behind the same contract.
-- Every hit carries a citation containing memory ID, exact version, source reference, scope/scope ID, and recording timestamp.
+## 时间与召回策略
 
-## Validation
+`MemoryRecallPolicy` 提供 scope 白名单、最低置信度、结果数量上限、最大更新时间窗口、as-of 时间及来源前缀过滤。候选还可在 metadata 中携带 ISO-8601 `valid_from` / `valid_until`，并与 expires_at 一起参与时间判断。
 
-Unit tests cover historical correction lookup, source/version citations, scope and tenant isolation, expiry at a requested time, filters, ranking, and invalid time bounds. PostgreSQL version history is persisted by PostgresMemoryRepository and platform_memory_versions (migration 009_memory_versions.sql).
+检索采用确定性词项重叠、置信度先验和时间衰减排序。该策略是可测试的基线召回器，不声称提供语义向量检索；未来 Embedding / Rerank 可替换排序实现，但不得改变授权前置过滤与引用契约。
+
+## 验证范围
+
+`tests/test_memory_retrieval.py` 覆盖租户与 scope 隔离、时间窗口/有效期、来源和置信度过滤、查询召回、版本历史及未授权访问拒绝。生产持久化版本仓库、真实向量召回与真实部署配置属于后续集成/现场验收，不由本项的内存适配器测试代替。
