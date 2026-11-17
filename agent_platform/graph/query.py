@@ -150,44 +150,42 @@ class GraphQueryService:
             for _ in range(depth):
                 next_frontier: list[str] = []
                 for current in frontier:
-                    remaining = limit - len(relations)
-                    if remaining <= 0:
-                        truncated = True
-                        break
                     edges = await self.repository.list_relations(
                         current, direction=direction, allowed_project_ids=scope,
-                        limit=min(500, remaining + 1),
+                        limit=500,
                     )
-                    if len(edges) > remaining:
-                        truncated = True
-                        edges = edges[:remaining]
                     for edge_record in edges:
                         edge = self._relation(edge_record)
                         source, target, relation_id = self._relation_endpoints(edge)
                         if allowed_types and edge.relation_type not in allowed_types:
                             continue
-                        relations.setdefault(relation_id, edge_record)
+                        if relation_id in relations:
+                            continue
                         adjacent = target if direction == "out" or (
                             direction == "both" and source == current
                         ) else source
                         if adjacent not in entities:
-                            if len(entities) >= limit + 1:
+                            if len(entities) >= limit:
                                 truncated = True
                                 continue
                             node = await self.repository.get_entity(
                                 adjacent, allowed_project_ids=scope
                             )
-                            if node is not None:
-                                entities[adjacent] = node
-                                next_frontier.append(adjacent)
-                if truncated and len(relations) >= limit:
+                            if node is None:
+                                continue
+                            entities[adjacent] = node
+                            next_frontier.append(adjacent)
+                        if len(relations) >= limit:
+                            truncated = True
+                            break
+                        relations[relation_id] = edge_record
+                if truncated and (
+                    len(relations) >= limit or len(entities) >= limit
+                ):
                     break
                 frontier = list(dict.fromkeys(next_frontier))
                 if not frontier:
                     break
-            if len(entities) > limit:
-                truncated = True
-                entities = dict(list(entities.items())[:limit])
             return GraphQueryResult(
                 tuple(entities.values()), tuple(relations.values()), truncated,
                 len(entities),
