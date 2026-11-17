@@ -11,6 +11,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BackupRecoveryScriptTests(unittest.TestCase):
+    def test_platform_config_backup_encrypts_secrets_and_records_recovery_inputs(self):
+        script = (ROOT / "scripts" / "backup_platform_config.sh").read_text()
+        self.assertIn('[[ -f "$ENV_FILE" && ! -L "$ENV_FILE" ]]', script)
+        self.assertIn('chmod 600 "$ENV_FILE"', script)
+        self.assertIn('chmod 700 "$BACKUP_DIR"', script)
+        self.assertIn('age --encrypt --recipient "$AGE_RECIPIENT"', script)
+        self.assertIn('"deploy/.env"', script)
+        self.assertIn('"deploy/compose.yaml"', script)
+        self.assertIn('"scripts/migrate_postgres.sh"', script)
+        self.assertIn('"agent_platform/storage/postgres/"', script)
+        self.assertIn('"secrets_included": True', script)
+        self.assertIn('"sha256": digest.hexdigest()', script)
+        self.assertNotIn('tar -C "$ROOT" -czf "$BASE', script)
+        self.assertIn('rm -rf "$WORK_DIR"', script)
+
+    def test_platform_config_backup_shell_syntax(self):
+        result = subprocess.run(
+            ["bash", "-n", str(ROOT / "scripts" / "backup_platform_config.sh")],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_backup_requires_encryption_and_checksum(self):
         script = (ROOT / "scripts" / "backup_postgres.sh").read_text()
         self.assertIn("PG_DSN", script)
