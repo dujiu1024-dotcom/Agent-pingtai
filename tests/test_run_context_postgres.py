@@ -78,7 +78,9 @@ class PostgresRunContextSnapshotStoreTests(unittest.IsolatedAsyncioTestCase):
             return _FakeConnection(self.database)
         self.store = PostgresRunContextSnapshotStore(connection_factory=connect)
         psycopg = types.ModuleType("psycopg")
+        psycopg.__path__ = []
         psycopg_types = types.ModuleType("psycopg.types")
+        psycopg_types.__path__ = []
         psycopg_json = types.ModuleType("psycopg.types.json")
         psycopg_json.Jsonb = _Jsonb
         self.modules = patch.dict(sys.modules, {
