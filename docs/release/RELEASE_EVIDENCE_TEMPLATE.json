@@ -1,64 +1,22 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "release_id": "replace-with-release-id",
   "environment": "production",
   "commit_sha": "0000000000000000000000000000000000000000",
   "generated_at_utc": "2026-11-16T00:00:00Z",
-  "checks": {
-    "e2e": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-ci-run-or-report-url"
-    },
-    "fault_injection": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-fault-drill-report"
-    },
-    "performance": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-performance-report"
-    },
-    "security": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-security-regression-report"
-    },
-    "backup_restore": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-backup-restore-report"
-    },
-    "production_smoke": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-production-smoke-report"
-    },
-    "migration": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-migration-preflight-and-compatibility-report"
-    },
-    "rollback": {
-      "status": "pending",
-      "owner": "replace-with-owner",
-      "verified_at_utc": "2026-11-16T00:00:00Z",
-      "evidence_ref": "replace-with-rollback-plan-and-restore-drill-report"
-    }
-  },
-  "release_decision": "pending",
   "release_owner": "replace-with-release-owner",
-  "evidence_archive_ref": "replace-with-durable-evidence-archive-reference",
-  "decision_reason": "replace-with-release-decision-rationale",
-  "blocking_conditions": [
-    "replace-with-open-blocker-or-empty-list"
-  ]
+  "release_approver": "replace-with-independent-approver",
+  "evidence_archive_ref": "replace-with-immutable-evidence-archive-uri",
+  "release_decision": "no_go",
+  "blockers": ["replace-with-open-blocker-or-use-empty-array-after-resolution"],
+  "checks": {
+    "e2e": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-e2e-report"},
+    "fault_injection": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-fault-drill-report"},
+    "performance": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-performance-report"},
+    "security": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-security-report"},
+    "backup_restore": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-backup-restore-report"},
+    "production_smoke": {"status": "pending", "owner": "replace-with-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-production-smoke-report"},
+    "migration": {"status": "pending", "owner": "replace-with-migration-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-migration-preflight-report", "preflight_passed": false, "compatibility_window_confirmed": false, "strategy": "expand_contract"},
+    "rollback": {"status": "pending", "owner": "replace-with-rollback-owner", "verified_at_utc": "2026-11-16T00:00:00Z", "evidence_ref": "replace-with-rollback-drill-report", "drill_passed": false, "strategy": "backup_restore"}
+  }
 }
