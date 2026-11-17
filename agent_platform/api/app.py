@@ -133,6 +133,7 @@ def create_platform_app(
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
     blackboard_evidence_verifier: Any | None = None,
+    blackboard_event_replay_resolver: Any | None = None,
     graph_query_service_resolver: Any | None = None,
     graph_read_authorizer: Any | None = None,
     graph_governance_resolver: Any | None = None,
@@ -392,7 +393,7 @@ def create_platform_app(
         app.router.on_shutdown.append(alert_evaluation_worker.stop)
     blackboard_configured = any(value is not None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
-        blackboard_evidence_verifier,
+        blackboard_evidence_verifier, blackboard_event_replay_resolver,
     ))
     if blackboard_configured and any(value is None for value in (
         blackboard_repository_resolver, blackboard_authorizer,
@@ -453,6 +454,7 @@ def create_platform_app(
             resolve_repository=blackboard_repository_resolver,
             authorize_scope=blackboard_authorizer,
             verify_evidence_refs=blackboard_evidence_verifier,
+            resolve_event_replay=blackboard_event_replay_resolver,
         ))
     if graph_configured:
         graph_identity_context = IdentityContextResolver(identity_repository)
