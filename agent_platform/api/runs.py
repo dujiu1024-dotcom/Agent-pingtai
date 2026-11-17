@@ -7,14 +7,14 @@ from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
 from agent_platform.runtime.lifecycle import RunLifecycleManager
-from agent_platform.tools.idempotency import EffectConflict
+from agent_platform.tools.idempotency import EffectConflict\nfrom agent_platform.streaming.sse import sse_response
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
 InterventionResolver = Callable[[Principal], Awaitable[Any]]
 DetailResolver = Callable[[Principal], Awaitable[Any]]
 ExecutorResolver = Callable[[Principal], Awaitable[Any]]
-ToolEffectResolver = Callable[[Principal], Awaitable[Any]]
+ToolEffectResolver = Callable[[Principal], Awaitable[Any]]\nEventBrokerResolver = Callable[[Principal], Awaitable[Any]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
 
@@ -223,6 +223,23 @@ def create_runs_router(
                 raise HTTPException(400, str(exc)) from exc
             return {"items": items}
 
+
+
+    if resolve_event_broker is not None:
+        @router.get("/{run_id}/stream")
+        async def stream_run_events(run_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "read")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            broker = await resolve_event_broker(principal)
+            try:
+                events = broker.subscribe(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    last_event_id=request.headers.get("last-event-id"),
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            return sse_response(events)
 
     if resolve_tool_effects is not None:
         def serialize_effect(effect: Any) -> dict[str, Any]:
