@@ -77,6 +77,16 @@ class SessionFileDownloadAuthorizationTests(unittest.TestCase):
         self.assertEqual(downloaded.content, b"%PDF-test")
         self.assertIn("attachment;", downloaded.headers["content-disposition"])
 
+        # File ACL is checked independently of linked session/project grants.
+        self.denied.add(("file", self.asset.asset_id, "read"))
+        denied_url = self.client.get(url_path)
+        denied_download = self.client.get(download_path)
+        self.assertEqual(denied_url.status_code, 403)
+        self.assertEqual(denied_download.status_code, 403)
+        self.assertNotIn("url", denied_url.json())
+        self.assertNotEqual(denied_download.content, b"%PDF-test")
+        self.denied.clear()
+
         self.denied.add(("session", self.session.session_id, "read"))
         self.assertEqual(self.client.get(url_path).status_code, 403)
         self.assertEqual(self.client.get(download_path).status_code, 403)

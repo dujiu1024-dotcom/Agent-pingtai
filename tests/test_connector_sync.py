@@ -133,6 +133,42 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(event.tenant_id == "tenant-a" for event in audit.events))
         self.assertNotIn("short-lived-token", repr(audit.events))
 
+    async def test_revoked_connection_skips_queued_sync_without_provider_or_retry(self):
+        repo = InMemoryConnectorRepository()
+        await repo.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-revoked", provider="drive",
+            secret_ref="secret://tenant-a/drive-revoked", scopes=("files.read",),
+            status="revoked",
+        ))
+        provider = Provider()
+        sink = Sink()
+        queue = Queue()
+        await queue.enqueue(tenant_id="tenant-a", connection_id="drive-revoked")
+        service = DataConnectorService(
+            repository=repo, providers={"drive": provider}, secrets=Secrets(),
+            sink=sink, sync_queue=queue,
+        )
+
+        async def resolve_service(tenant_id):
+            self.assertEqual(tenant_id, "tenant-a")
+            return service
+
+        audit = AuditSink()
+        worker = ConnectorSyncWorker(
+            queue=queue, resolve_service=resolve_service,
+            worker_id="sync-worker", audit_sink=audit, lease_seconds=5,
+        )
+
+        self.assertTrue(await worker.run_once())
+        self.assertIsNone(queue.job)
+        self.assertFalse(queue.dead)
+        self.assertEqual(provider.calls, 0)
+        self.assertEqual(sink.items, [])
+        self.assertEqual(
+            [(event.outcome, event.error_type) for event in audit.events],
+            [("skipped", "connection_inactive")],
+        )
+
     async def test_request_sync_rejects_revoked_connections(self):
         repo = InMemoryConnectorRepository()
         await repo.add(DataConnection(
