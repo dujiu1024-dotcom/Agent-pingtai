@@ -8,8 +8,6 @@ import { ROLE_META, PROFILE, COMMON_SPEECH, pickSpeech, ROLE_ORDER, OWNER_LABEL 
   const MONO = '"SF Mono",Menlo,monospace';
   const C = { ink:'#EEF2F8', dim:'#9AA6B8', muted:'#6E7A8C', ac:'#7CC6FF', red:'#FF6B7F', yl:'#FFC247', gn:'#4ADE9B' };
 
-  const { ROLE_META, PROFILE, COMMON_SPEECH, pickSpeech, ROLE_ORDER, OWNER_LABEL } = await import('./console-config.js');
-
   let S = null;
   let currentRoom = 'o', boardView = 'st', boardFilter = 'all', boardQuery = '', closedAll = false;
   let runBusy = false, currentRole = null, lastSyncOut = '';
