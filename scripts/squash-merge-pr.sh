@@ -71,9 +71,14 @@ for n in "${rebase_needed[@]}"; do
   echo "━━━ Rebase PR #$n ━━━"
   branch=$(gh pr view "$n" --repo "$repo" --json headRefName -q '.headRefName')
 
-  git fetch "https://github.com/$repo" "$branch:$branch" 2>/dev/null || continue
+  git fetch "github" main 2>/dev/null || git fetch "origin" main 2>/dev/null || continue
+  git fetch "github" "$branch:$branch" 2>/dev/null || git fetch "origin" "$branch:$branch" 2>/dev/null || continue
   git checkout "$branch" 2>/dev/null || continue
 
+  # 启动 rebase
+  git rebase github/main 2>/dev/null || git rebase origin/main 2>/dev/null || true
+
+  # 循环解决所有冲突
   while true; do
     conflicts=$(git diff --name-only --diff-filter=U 2>/dev/null)
     if [ -n "$conflicts" ]; then
@@ -82,15 +87,15 @@ for n in "${rebase_needed[@]}"; do
         git checkout --ours "$f" 2>/dev/null && git add "$f" 2>/dev/null || true
       done
     fi
-    result=$(git rebase "origin/main" 2>&1) || result=$(git rebase "github/main" 2>&1) || true
-    if ! echo "$result" | grep -q "Could not apply\|CONFLICT"; then
+    result=$(git rebase --continue 2>&1) || true
+    if ! echo "$result" | grep -q "Could not apply\|CONFLICT\|rebase in progress"; then
+      echo "  rebase done"
       break
     fi
   done
 
-  remote=$(git remote | grep -E "git(hub)?$" | head -1 || echo "origin")
-  git push --force-with-lease "$remote" "$branch" 2>/dev/null || \
-  git push --force-with-lease "github" "$branch" 2>/dev/null || continue
+  git push --force-with-lease "github" "$branch" 2>/dev/null || \
+  git push --force-with-lease "origin" "$branch" 2>/dev/null || continue
 
   # Cancel runs again after rebase
   run_ids=$(gh run list --repo "$repo" --branch "$branch" \
