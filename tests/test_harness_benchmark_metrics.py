@@ -12,6 +12,7 @@ from agent_platform.runtime.protocols import (
     HarnessCapabilities,
     HarnessRequest,
     HarnessResult,
+    ToolCall,
     HarnessStreamEvent,
 )
 
@@ -178,6 +179,34 @@ class HarnessBenchmarkMetricsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report.observations[0].quality_score, 0.5)
         with self.assertRaisesRegex(ValueError, "finite and non-negative"):
             HarnessTokenPricing(input_usd_per_million=-1, output_usd_per_million=0)
+
+    async def test_reports_actual_gateway_tool_calls(self):
+        class ToolAdapter(BenchmarkAdapter):
+            async def run(self, request):
+                return HarnessResult(
+                    output_text="benchmark-tool-result",
+                    tool_calls=(ToolCall("knowledge.search", {"query": "benchmark-probe"}, "call-1"),),
+                )
+
+        def tool_request_factory(runtime, case):
+            base = self.request_factory(runtime, case)
+            return HarnessRequest(
+                context=base.context, instructions=base.instructions,
+                input_text=base.input_text, allowed_tools=("knowledge.search",),
+            )
+
+        report = await HarnessBenchmarkRunner(
+            adapters={"gateway": ToolAdapter()},
+            request_factory=tool_request_factory,
+            gateway_tool_verifier=lambda runtime, request: request.allowed_tools == ("knowledge.search",),
+        ).run([HarnessBenchmarkCase(
+            "gateway-tool", "call tool", "input", ("benchmark-tool-result",),
+            required_tools=("knowledge.search",),
+        )])
+        row = report.observations[0]
+        self.assertTrue(row.passed)
+        self.assertEqual(row.tool_calls_count, 1)
+        self.assertEqual(report.summary()["gateway"]["tool_calls"], 1)
 
 
 if __name__ == "__main__":
