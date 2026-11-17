@@ -6,11 +6,16 @@ from agent_platform.quotas.groups import (
     QuotaScope,
 )
 from agent_platform.quotas.harness import QuotaEnforcedHarnessAdapter
-from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.policies import (
-    InMemoryQuotaPolicyRepository, PostgresQuotaPolicyRepository, QuotaPolicy,
-    QuotaPolicyAudit, QuotaPolicyContext, QuotaPolicyService, ResolvedQuotaPolicy,
+    InMemoryQuotaPolicyRepository,
+    PostgresQuotaPolicyRepository,
+    QuotaPolicy,
+    QuotaPolicyAudit,
+    QuotaPolicyContext,
+    QuotaPolicyService,
+    ResolvedQuotaPolicy,
 )
+from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import (
     Budget,
     BudgetExceeded,
