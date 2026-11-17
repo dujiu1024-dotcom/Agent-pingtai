@@ -147,9 +147,10 @@ class LangGraphRunExecutor:
       required_tools=self.required_tools,
      )
      runtime_prepared=True
-    result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
-     timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
-     already_claimed=acquired)
+    with trace_span("run.execute", component="run", tenant_id=tenant_id, run_id=run_id):
+     result=await self._run_leased(tenant_id,run_id,self.graph.ainvoke(input,config=config),
+      timeout=timeout_seconds if timeout_seconds is not None else self.timeout_seconds,
+      already_claimed=acquired)
    except asyncio.TimeoutError:raise
    except WorkerLeaseLost:
     current=await self.lifecycle.store.get(tenant_id,run_id)
