@@ -113,7 +113,15 @@ jobs:
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_platform_perf_smoke -v
-      - name: Upload isolated backup/restore drill evidence\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: issue-18-a-18-02-backup-restore-drill\n          path: artifacts/backup-restore-drill/\n          if-no-files-found: warn\n          retention-days: 30\n      - name: Static checks
+      - name: Upload isolated backup/restore drill evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-18-a-18-02-backup-restore-drill
+          path: artifacts/backup-restore-drill/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Static checks
         run: |
           ruff check .
           mypy
