@@ -49,6 +49,30 @@ class PublicApiContractTests(unittest.TestCase):
         self.assertEqual(ApiError("NOT_FOUND", "missing", 404).to_dict(),
                          {"error": {"code": "NOT_FOUND", "message": "missing"}})
 
+    def test_common_http_failures_have_distinct_stable_codes(self):
+        expected = {
+            405: "METHOD_NOT_ALLOWED",
+            408: "REQUEST_TIMEOUT",
+            413: "PAYLOAD_TOO_LARGE",
+            415: "UNSUPPORTED_MEDIA_TYPE",
+            416: "RANGE_NOT_SATISFIABLE",
+            423: "RESOURCE_LOCKED",
+            424: "FAILED_DEPENDENCY",
+            428: "PRECONDITION_REQUIRED",
+            431: "REQUEST_HEADER_FIELDS_TOO_LARGE",
+        }
+        for status, code in expected.items():
+            with self.subTest(status=status):
+                self.assertEqual(
+                    error_for_http_status(status, "safe client message").code, code,
+                )
+
+    def test_unknown_client_status_is_generic_and_server_message_is_redacted(self):
+        self.assertEqual(error_for_http_status(418, "teapot").code, "REQUEST_REJECTED")
+        error = error_for_http_status(507, "internal storage path /srv/private")
+        self.assertEqual(error.code, "INTERNAL_ERROR")
+        self.assertEqual(error.message, "The request could not be completed")
+
     def test_rate_limit_headers_are_standardized(self):
         self.assertEqual(rate_limit_headers(limit=100, remaining=0, reset_epoch=123, retry_after=30),
                          {"RateLimit-Limit": "100", "RateLimit-Remaining": "0",
