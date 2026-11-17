@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import unittest
+
 import pytest
 
 from agent_platform.memory.boundaries import (
@@ -186,7 +188,7 @@ def test_layer_mapping_rejects_untyped_values(layer: object) -> None:
         durable_scope_value(layer)  # type: ignore[arg-type]
 
 
-class SessionMemoryBoundaryTests:
+class SessionMemoryBoundaryTests(unittest.IsolatedAsyncioTestCase):
     class Extractor:
         def __init__(self, drafts):
             self.drafts = drafts
@@ -196,8 +198,7 @@ class SessionMemoryBoundaryTests:
             self.calls += 1
             return self.drafts
 
-    @pytest.mark.asyncio
-    async def test_completed_turn_creates_candidate_not_active_memory(self):
+        async def test_completed_turn_creates_candidate_not_active_memory(self):
         from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
         from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
         repository = InMemoryMemoryRepository()
