@@ -111,6 +111,8 @@ jobs:
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_platform_perf_smoke -v
+      - name: Switch core journey and abnormal-log acceptance
+        run: python scripts/switch_core_acceptance.py
       - name: Static checks
         run: |
           ruff check .
