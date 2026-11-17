@@ -12,7 +12,7 @@
 python scripts/release_gate.py --evidence path/to/release-evidence.json --commit-sha "$(git rev-parse HEAD)"
 ```
 
-必须同时提供：release_id、production 环境、候选 commit SHA、UTC 生成时间、独立的 release_owner/release_approver、不可变 evidence_archive_ref、九类检查及责任人/UTC 时间/证据引用、空 blockers 和 release_decision=go。证据默认 7 天有效；未来时间、过期、占位值、缺项、失败或 SHA 不匹配均阻断。
+必须同时提供：release_id、production 环境、候选 commit SHA、UTC 生成时间、独立的 release_owner/release_approver、不可变 evidence_archive_ref 及其 `evidence_archive_sha256`（`sha256:` + 64 位小写十六进制）、九类检查及责任人/UTC 时间/证据引用、空 blockers 和 release_decision=go。证据默认 7 天有效；未来时间、过期、占位值、缺项、失败或 SHA 不匹配均阻断。
 
 ### 九类必需检查
 
@@ -26,7 +26,7 @@ python scripts/release_gate.py --evidence path/to/release-evidence.json --commit
 - `migration`：必须附迁移预检证据，`preflight_passed=true`、`compatibility_window_confirmed=true`，并明确 expand/contract 或 forward-fix 策略。
 - `rollback`：必须附回滚演练证据，`drill_passed=true`，策略限于补偿迁移、备份恢复或 forward-fix；禁止把未经验证的 destructive down migration 作为回退。
 
-每项 owner 是执行责任人；release_owner 对发布协调负责；release_approver 必须独立于 release_owner。每项证据及最终 JSON 应写入不可变归档，归档引用写入 `evidence_archive_ref`。
+每项 owner 是执行责任人；release_owner 对发布协调负责；release_approver 必须独立于 release_owner。每项证据及最终 JSON 应写入不可变归档；同时计算归档内容 SHA-256，分别填写 `evidence_archive_ref` 和 `evidence_archive_sha256`。验证器校验摘要格式并将其作为归档完整性核对值；实际下载归档并重算摘要仍由归档审计流程执行。
 
 ## 阻断条件与发布结论
 

@@ -19,6 +19,7 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
             "release_owner": "release-operator",
             "release_approver": "independent-approver",
             "evidence_archive_ref": "s3://release-evidence/release-2026-11-16.1/",
+            "evidence_archive_sha256": "sha256:" + "c" * 64,
             "release_decision": "go",
             "blockers": [],
             "checks": {
@@ -51,6 +52,14 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
         self.assertIn("release_owner: must not contain a template placeholder", errors)
         self.assertIn("release_approver: required non-empty string", errors)
         self.assertIn("evidence_archive_ref: must not contain a template placeholder", errors)
+
+    def test_evidence_archive_requires_sha256_digest(self):
+        for value in ("", "pending", "sha256:invalid", "sha256:" + "A" * 64):
+            self.document["evidence_archive_sha256"] = value
+            errors = validate_evidence(self.document, now=self.now)
+            self.assertTrue(any("evidence_archive_sha256:" in error for error in errors))
+        self.document["evidence_archive_sha256"] = "sha256:" + "c" * 64
+        self.assertEqual(validate_evidence(self.document, now=self.now), [])
 
     def test_boolean_schema_version_is_rejected(self):
         self.document["schema_version"] = True
