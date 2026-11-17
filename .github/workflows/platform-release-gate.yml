@@ -98,6 +98,8 @@ jobs:
             tests.test_redis_streams_integration \
             tests.test_quota_policies \
             tests.test_quota_postgres_integration \
+            tests.test_session_data_model \
+            tests.test_session_assets \
             tests.test_platform_perf_smoke -v
       - name: Static checks
         run: |

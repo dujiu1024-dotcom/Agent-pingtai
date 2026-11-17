@@ -16,6 +16,8 @@ from agent_platform.control_plane.sessions_assets import (
     FileAsset,
     FileAssetVersion,
     MessageRole,
+    MessageTokenUsage,
+    SessionIsolationScope,
     SessionError,
     SessionNotFound,
 )
@@ -190,11 +192,11 @@ class PostgresSessionRepository:
         async with connection:
             await connection.execute(
                 """INSERT INTO platform_conversation_sessions
-                   (tenant_id,session_id,owner_id,project_id,title,status,created_at,updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   (tenant_id,session_id,owner_id,project_id,agent_id,isolation_scope,title,status,created_at,updated_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (self.tenant_id, _uuid(session.session_id), session.owner_id,
-                 session.project_id, session.title, session.status,
-                 session.created_at, session.updated_at),
+                 session.project_id, session.agent_id, session.isolation_scope.value,
+                 session.title, session.status, session.created_at, session.updated_at),
             )
 
     async def get_session(self, tenant_id: str, session_id: str) -> ConversationSession | None:
@@ -213,6 +215,9 @@ class PostgresSessionRepository:
             tenant_id=row["tenant_id"], session_id=str(row["session_id"]),
             owner_id=row["owner_id"], title=row["title"], project_id=row["project_id"],
             status=row["status"], created_at=row["created_at"], updated_at=row["updated_at"],
+            agent_id=row.get("agent_id"), isolation_scope=SessionIsolationScope(
+                row.get("isolation_scope") or "user",
+            ),
         )
 
     async def append_message(self, message: ConversationMessage) -> None:
@@ -230,12 +235,19 @@ class PostgresSessionRepository:
                 await connection.execute(
                     """INSERT INTO platform_messages
                        (tenant_id,message_id,session_id,role,content,actor_id,task_id,run_id,
-                        asset_ids,metadata,created_at)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        asset_ids,metadata,token_usage,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (self.tenant_id, _uuid(message.message_id), _uuid(message.session_id),
                      message.role.value, message.content, message.actor_id, message.task_id,
                      message.run_id, _jsonb(list(message.asset_ids)),
-                     _jsonb(dict(message.metadata)), message.created_at),
+                     _jsonb(dict(message.metadata)),
+                     _jsonb({
+                         "prompt_tokens": message.token_usage.prompt_tokens,
+                         "completion_tokens": message.token_usage.completion_tokens,
+                         "total_tokens": message.token_usage.total_tokens,
+                         "model": message.token_usage.model,
+                     }) if message.token_usage is not None else None,
+                     message.created_at),
                 )
                 await connection.execute(
                     "UPDATE platform_conversation_sessions SET updated_at=now() WHERE tenant_id=%s AND session_id=%s",
@@ -264,6 +276,8 @@ class PostgresSessionRepository:
             content=row["content"], actor_id=row["actor_id"], run_id=row["run_id"],
             task_id=row["task_id"], asset_ids=tuple(row["asset_ids"] or ()),
             metadata=dict(row["metadata"] or {}), created_at=row["created_at"],
+            token_usage=MessageTokenUsage(**dict(row["token_usage"]))
+            if row.get("token_usage") else None,
         ) for row in rows)
 
     async def list_sessions(self, tenant_id: str, owner_id: str, limit: int = 100, project_id: str | None = None) -> tuple[ConversationSession, ...]:
@@ -287,6 +301,9 @@ class PostgresSessionRepository:
             tenant_id=row["tenant_id"], session_id=str(row["session_id"]),
             owner_id=row["owner_id"], title=row["title"], project_id=row["project_id"],
             status=row["status"], created_at=row["created_at"], updated_at=row["updated_at"],
+            agent_id=row.get("agent_id"), isolation_scope=SessionIsolationScope(
+                row.get("isolation_scope") or "user",
+            ),
         ) for row in rows)
 
     async def create_asset(self, asset: FileAsset) -> None:

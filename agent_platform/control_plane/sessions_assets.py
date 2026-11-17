@@ -38,6 +38,36 @@ class AssetStatus(str, Enum):
     DELETED = "deleted"
 
 
+class SessionIsolationScope(str, Enum):
+    """Logical visibility boundary; tenant isolation is always mandatory."""
+
+    USER = "user"
+    AGENT = "agent"
+    PROJECT = "project"
+    TENANT = "tenant"
+
+
+@dataclass(frozen=True)
+class MessageTokenUsage:
+    """Provider-reported token accounting attached to one canonical message."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    model: str | None = None
+
+    def __post_init__(self) -> None:
+        values = (self.prompt_tokens, self.completion_tokens, self.total_tokens)
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+            raise ValueError("token usage values must be non-negative integers")
+        if self.total_tokens != self.prompt_tokens + self.completion_tokens:
+            raise ValueError("total_tokens must equal prompt_tokens + completion_tokens")
+        if self.model is not None and (
+            not isinstance(self.model, str) or not self.model.strip() or len(self.model) > 200
+        ):
+            raise ValueError("model must be a non-empty string of at most 200 characters")
+
+
 @dataclass(frozen=True)
 class ConversationSession:
     tenant_id: str
@@ -48,6 +78,35 @@ class ConversationSession:
     status: str = "active"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    agent_id: str | None = None
+    isolation_scope: SessionIsolationScope = SessionIsolationScope.USER
+
+    def __post_init__(self) -> None:
+        for name in ("tenant_id", "session_id", "owner_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if not isinstance(self.isolation_scope, SessionIsolationScope):
+            raise ValueError("isolation_scope must be a SessionIsolationScope")
+        if self.project_id is not None and (
+            not isinstance(self.project_id, str) or not self.project_id.strip()
+        ):
+            raise ValueError("project_id must be a non-empty string when provided")
+        if self.agent_id is not None and (
+            not isinstance(self.agent_id, str) or not self.agent_id.strip()
+        ):
+            raise ValueError("agent_id must be a non-empty string when provided")
+        if self.isolation_scope is SessionIsolationScope.AGENT and self.agent_id is None:
+            raise ValueError("agent isolation requires agent_id")
+        if self.isolation_scope is SessionIsolationScope.PROJECT and self.project_id is None:
+            raise ValueError("project isolation requires project_id")
+        if self.status not in {"active", "archived", "deleted"}:
+            raise ValueError("session status is invalid")
+        if not isinstance(self.title, str) or len(self.title) > 200:
+            raise ValueError("session title must be a string of at most 200 characters")
+        for value in (self.created_at, self.updated_at):
+            if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError("session timestamps must be timezone-aware")
 
 
 @dataclass(frozen=True)
@@ -63,6 +122,68 @@ class ConversationMessage:
     asset_ids: tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    token_usage: MessageTokenUsage | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("tenant_id", "message_id", "session_id", "actor_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if not isinstance(self.role, MessageRole):
+            raise ValueError("role must be a MessageRole")
+        if not isinstance(self.content, str):
+            raise ValueError("message content must be a string")
+        if not isinstance(self.asset_ids, tuple) or any(
+            not isinstance(value, str) or not value.strip() for value in self.asset_ids
+        ):
+            raise ValueError("asset_ids must be a tuple of non-empty strings")
+        if not isinstance(self.metadata, Mapping):
+            raise ValueError("message metadata must be a mapping")
+        if self.token_usage is not None and not isinstance(self.token_usage, MessageTokenUsage):
+            raise ValueError("token_usage must be a MessageTokenUsage")
+        if not isinstance(self.created_at, datetime) or self.created_at.tzinfo is None:
+            raise ValueError("message timestamp must be timezone-aware")
+
+
+@dataclass(frozen=True)
+class ContextWindowSnapshot:
+    """Immutable, tenant/session-scoped context-window checkpoint value."""
+
+    tenant_id: str
+    session_id: str
+    snapshot_id: str
+    version: int
+    snapshot: Mapping[str, Any]
+    token_count: int
+    max_tokens: int
+    created_by: str
+    run_id: str | None = None
+    last_message_id: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self) -> None:
+        for name in ("tenant_id", "session_id", "snapshot_id", "created_by"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty string")
+        if isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("snapshot version must be a positive integer")
+        if isinstance(self.token_count, bool) or not isinstance(self.token_count, int) or self.token_count < 0:
+            raise ValueError("token_count must be a non-negative integer")
+        if isinstance(self.max_tokens, bool) or not isinstance(self.max_tokens, int) or self.max_tokens < 1:
+            raise ValueError("max_tokens must be a positive integer")
+        if self.token_count > self.max_tokens:
+            raise ValueError("snapshot token_count exceeds max_tokens")
+        if not isinstance(self.snapshot, Mapping):
+            raise ValueError("snapshot payload must be a mapping")
+        if self.run_id is not None and (not isinstance(self.run_id, str) or not self.run_id.strip()):
+            raise ValueError("run_id must be a non-empty string when provided")
+        if self.last_message_id is not None and (
+            not isinstance(self.last_message_id, str) or not self.last_message_id.strip()
+        ):
+            raise ValueError("last_message_id must be a non-empty string when provided")
+        if not isinstance(self.created_at, datetime) or self.created_at.tzinfo is None:
+            raise ValueError("snapshot timestamp must be timezone-aware")
 
 
 @dataclass(frozen=True)
