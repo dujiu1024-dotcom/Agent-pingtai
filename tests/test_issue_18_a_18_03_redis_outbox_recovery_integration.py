@@ -22,7 +22,9 @@ if DSN and REDIS_URL:
     from psycopg.rows import dict_row
     from psycopg.types.json import Jsonb
 
+    from agent_platform.events.consumer import RedisStreamsConsumer
     from agent_platform.events.outbox import OutboxRelay, PostgresOutboxStore
+    from agent_platform.events.receipts import PostgresEventReceiptStore
     from agent_platform.events.redis_streams import RedisStreamsTransport
 
 
@@ -60,6 +62,7 @@ class RedisOutboxLossRecoveryTests(unittest.IsolatedAsyncioTestCase):
         )
         await self.transport.connect()
         self.store = PostgresOutboxStore(connection_factory=self.connect)
+        self.receipts = PostgresEventReceiptStore(self.connect, lease_seconds=5)
 
     async def asyncTearDown(self):
         await self.transport.close()
@@ -147,6 +150,39 @@ class RedisOutboxLossRecoveryTests(unittest.IsolatedAsyncioTestCase):
         stream_key = self.transport._stream(self.tenant_id, self.topic)
         self.assertEqual(await self.transport._client.xlen(stream_key), 1)
 
+        # The first consumer completes the event and stores its receipt in
+        # PostgreSQL. That receipt must survive the later Redis stream loss.
+        await self.transport.ensure_group(
+            tenant_id=self.tenant_id,
+            topic=self.topic,
+            group="business-effects",
+            start_id="0",
+        )
+        handled_event_ids = []
+
+        async def apply_business_effect(event):
+            handled_event_ids.append(event.event_id)
+
+        consumer = RedisStreamsConsumer(
+            transport=self.transport,
+            receipts=self.receipts,
+            tenant_id=self.tenant_id,
+            topic=self.topic,
+            group="business-effects",
+            consumer_name="business-effect-worker",
+            handler=apply_business_effect,
+        )
+        first_consume = await consumer.consume_batch(
+            count=10, block_ms=100, pending_idle_ms=0
+        )
+        self.assertEqual(first_consume["processed"], 1)
+        self.assertEqual(handled_event_ids, [self.event_id])
+        self.assertTrue(await self.receipts.is_completed(
+            tenant_id=self.tenant_id,
+            consumer_name="business-effect-worker",
+            event_id=self.event_id,
+        ))
+
         # Simulate total loss of this tenant/topic stream. The isolated key is
         # removed; no shared Redis database or other tenant stream is touched.
         self.assertEqual(await self.transport._client.delete(stream_key), 1)
@@ -211,6 +247,22 @@ class RedisOutboxLossRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(recovered_fields["event_id"], self.event_id)
         recovered_payload = json.loads(recovered_fields["payload"])
         self.assertEqual(recovered_payload, payload)
+
+        # Redis also lost its consumer-group metadata. Recreate it and replay
+        # the same event: the durable PostgreSQL receipt suppresses the effect.
+        await self.transport.ensure_group(
+            tenant_id=self.tenant_id,
+            topic=self.topic,
+            group="business-effects",
+            start_id="0",
+        )
+        replay_consume = await consumer.consume_batch(
+            count=10, block_ms=100, pending_idle_ms=0
+        )
+        self.assertEqual(replay_consume["duplicates"], 1)
+        self.assertEqual(replay_consume["processed"], 0)
+        self.assertEqual(handled_event_ids, [self.event_id])
+
         self.assertEqual(
             [event["action"] for event in published],
             [
