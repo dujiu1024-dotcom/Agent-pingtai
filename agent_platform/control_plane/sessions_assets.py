@@ -313,6 +313,8 @@ class InMemorySessionRepository:
     ) -> bool:
         if status not in {"active", "archived", "deleted"}:
             raise SessionError("session status is invalid")
+        if expected_status not in {"active", "archived"}:
+            raise SessionError("expected session status is invalid")
         key = (tenant_id, session_id)
         current = self.sessions.get(key)
         if current is None or current.status != expected_status:
