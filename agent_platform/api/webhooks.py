@@ -11,7 +11,8 @@ from agent_platform.identity.models import Principal
 
 
 def create_webhook_admin_router(*, service: WebhookSubscriptionService,
-                                authorize_manage: Callable[[Principal], Any]) -> APIRouter:
+                                authorize_manage: Callable[[Principal], Any],
+                                audit_writer: Any | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/webhooks", tags=["webhooks"])
 
     def principal(request: Request) -> Principal:
@@ -19,6 +20,15 @@ def create_webhook_admin_router(*, service: WebhookSubscriptionService,
         if not isinstance(actor, Principal):
             raise HTTPException(401, "authenticated user required")
         return actor
+
+    async def audit(actor: Principal, action: str, detail: dict[str, Any]) -> None:
+        if audit_writer is None or not callable(getattr(audit_writer, "record", None)):
+            raise HTTPException(503, "webhook audit writer is not configured")
+        await audit_writer.record(
+            tenant_id=actor.tenant_id, actor_id=actor.user_id,
+            action=action, subject_id="webhook-subscription",
+            outcome="succeeded", detail=detail,
+        )
 
     async def can_manage(actor: Principal) -> bool:
         allowed = authorize_manage(actor)
@@ -39,6 +49,8 @@ def create_webhook_admin_router(*, service: WebhookSubscriptionService,
             topics = body.get("topics")
             if not isinstance(secret, str) or not isinstance(topics, list) or not all(isinstance(x, str) for x in topics):
                 raise ValueError("signing_secret and topics are required")
+            await audit(actor, "webhook.subscription.create.requested",
+                        {"url": str(body.get("url") or ""), "topics": topics})
             subscription_id = await service.create(
                 tenant_id=actor.tenant_id, actor_id=actor.user_id,
                 url=str(body.get("url") or ""), topics=tuple(topics),
@@ -66,6 +78,8 @@ def create_webhook_admin_router(*, service: WebhookSubscriptionService,
             secret = body.get("signing_secret") if isinstance(body, dict) else None
             if not isinstance(secret, str):
                 raise ValueError("signing_secret is required")
+            await audit(actor, "webhook.subscription.secret_rotate.requested",
+                        {"subscription_id": subscription_id})
             changed = await service.rotate(
                 tenant_id=actor.tenant_id, subscription_id=subscription_id,
                 signing_secret=secret.encode("utf-8"),
@@ -81,6 +95,8 @@ def create_webhook_admin_router(*, service: WebhookSubscriptionService,
         actor = principal(request)
         if not await can_manage(actor):
             raise HTTPException(403, "webhook management permission required")
+        await audit(actor, "webhook.subscription.disable.requested",
+                    {"subscription_id": subscription_id})
         changed = await service.disable(
             tenant_id=actor.tenant_id, subscription_id=subscription_id,
         )
