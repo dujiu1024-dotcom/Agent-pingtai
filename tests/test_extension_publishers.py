@@ -7,6 +7,12 @@ from fastapi.testclient import TestClient
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.extensions.oci_runtime import TrustedPublisherKey
 from agent_platform.extensions.publishers import TrustedPublisherKeyRegistry
+from agent_platform.extensions.postgres import (
+    PostgresExtensionStateStore, PostgresTrustedPublisherKeyRepository,
+    _manifest_dict, _manifest_from,
+)
+from agent_platform.extensions.manifest import ExtensionManifest
+from datetime import datetime, timezone
 from agent_platform.identity.models import Principal
 
 
@@ -209,6 +215,48 @@ class ExtensionPublisherApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.repository.items[("tenant-a", "sample-extension", "key-1")].revoked)
+
+
+
+class ExtensionPostgresMappingTests(unittest.TestCase):
+    def test_persisted_manifest_round_trips_dependency_pins_and_permissions(self):
+        manifest = ExtensionManifest(
+            extension_id="sample-extension", version="1.2.3", platform_api="1.0.0",
+            permissions=("knowledge.read",), dependencies=("base-extension",),
+            entrypoint="plugin.py", dependency_versions={"base-extension": "2.0.0"},
+        )
+        restored = _manifest_from(_manifest_dict(manifest))
+        self.assertEqual(restored, manifest)
+
+    def test_production_state_store_rejects_non_reference_artifacts(self):
+        store = PostgresExtensionStateStore(
+            connection_factory=lambda: None, tenant_id="tenant-a",
+        )
+        item = type("Item", (), {
+            "manifest": ExtensionManifest(
+                extension_id="sample-extension", version="1.0.0",
+                platform_api="1.0.0", permissions=(), entrypoint="plugin.py",
+            ),
+            "status": "disabled", "artifact": object(),
+        })()
+        with self.assertRaisesRegex(ValueError, "immutable artifact reference"):
+            import asyncio
+            asyncio.run(store.put(item))
+
+    def test_postgres_key_row_maps_tenant_and_extension_binding(self):
+        row = {
+            "tenant_id": "tenant-a", "extension_id": "sample-extension",
+            "publisher_id": "publisher-a", "key_id": "key-1",
+            "public_key_pem": _PEM,
+            "not_before": datetime.fromtimestamp(100, timezone.utc),
+            "expires_at": datetime.fromtimestamp(500, timezone.utc),
+            "revoked_at": None,
+        }
+        key = PostgresTrustedPublisherKeyRepository._to_key(row)
+        self.assertEqual(key.tenant_ids, frozenset({"tenant-a"}))
+        self.assertEqual(key.extension_ids, frozenset({"sample-extension"}))
+        self.assertFalse(key.revoked)
+        self.assertEqual(key.expires_at, 500.0)
 
 
 if __name__ == "__main__":
