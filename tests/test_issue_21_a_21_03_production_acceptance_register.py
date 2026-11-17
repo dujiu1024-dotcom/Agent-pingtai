@@ -13,21 +13,36 @@ CHECK_LABELS = (
     "Performance and capacity", "Security", "Backup and restore",
     "Production smoke", "Migration", "Rollback",
 )
+ALLOWED_CONCLUSIONS = ("**BLOCKED**", "**AUTOMATION EVIDENCE ONLY**")
+
+
+def _acceptance_rows(content: str) -> dict[str, list[str]]:
+    rows: dict[str, list[str]] = {}
+    for line in content.splitlines():
+        if not line.startswith("|") or line.startswith("|---"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells and cells[0] in CHECK_LABELS:
+            rows[cells[0]] = cells
+    return rows
 
 
 class Issue21A2103ProductionAcceptanceRegisterTests(unittest.TestCase):
-    def test_every_release_gate_check_has_evidence_owner_and_conclusion(self):
+    def test_all_nine_items_have_owner_evidence_conclusion_and_exit_condition(self):
         content = REGISTER.read_text(encoding="utf-8")
+        rows = _acceptance_rows(content)
         self.assertEqual(len(REQUIRED_CHECKS), len(CHECK_LABELS))
-        for label in CHECK_LABELS:
-            self.assertIn(f"| {label.lower()} |", content.lower())
-        self.assertIn("Current evidence reference", content)
-        self.assertIn("Accountable role", content)
-        self.assertIn("Current conclusion", content)
-        self.assertEqual(
-            content.count("| **BLOCKED**") + content.count("| **AUTOMATION EVIDENCE ONLY**"),
-            len(REQUIRED_CHECKS),
-        )
+        self.assertEqual(set(rows), set(CHECK_LABELS))
+        for label, cells in rows.items():
+            with self.subTest(item=label):
+                self.assertEqual(len(cells), 5)
+                self.assertTrue(cells[1], "accountable role must be recorded")
+                self.assertTrue(cells[2], "current evidence reference must be recorded")
+                self.assertTrue(
+                    any(conclusion in cells[3] for conclusion in ALLOWED_CONCLUSIONS),
+                    "current conclusion must be explicit and fail closed",
+                )
+                self.assertTrue(cells[4], "production evidence exit condition must be recorded")
 
     def test_production_gaps_are_fail_closed_and_not_misrepresented_as_passed(self):
         content = REGISTER.read_text(encoding="utf-8")
