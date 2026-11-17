@@ -21,6 +21,10 @@ def create_prompt_operations_router(
     """Expose audited prompt operations; release is fail-closed on evaluation/audit."""
     router = APIRouter(prefix="/api/platform/v1/prompts", tags=["prompts"])
 
+    async def invoke(method: Any, *args: Any, **kwargs: Any) -> Any:
+        result = method(*args, **kwargs)
+        return await result if inspect.isawaitable(result) else result
+
     async def context(request: Request, prompt_id: str, action: str) -> tuple[Principal, str]:
         actor = getattr(request.state, "identity.principal", None)
         if not isinstance(actor, Principal):
@@ -78,7 +82,7 @@ def create_prompt_operations_router(
                 not isinstance(k, str) or not isinstance(v, str) for k, v in variables.items()
             ):
                 raise ValueError("variables must be a string-to-string object")
-            rendered, selected = await registry.render(key, variables, version=version)
+            rendered, selected = await invoke(registry.render, key, variables, version=version)
         except HTTPException:
             raise
         except KeyError as exc:
@@ -107,7 +111,7 @@ def create_prompt_operations_router(
             if not 0 <= percentage <= 100:
                 raise ValueError("canary_percentage must be between 0 and 100")
             # Resolve first so a missing candidate cannot produce an audit or rollout mutation.
-            candidate = await registry.resolve(key, version=version)
+            candidate = await invoke(registry.resolve, key, version=version)
         except HTTPException:
             raise
         except KeyError as exc:
@@ -122,9 +126,9 @@ def create_prompt_operations_router(
         })
         try:
             if percentage == 0:
-                await registry.activate(key, version, updated_by=actor.user_id)
+                await invoke(registry.activate, key, version, updated_by=actor.user_id)
             else:
-                await registry.set_canary(key, version, float(percentage), updated_by=actor.user_id)
+                await invoke(registry.set_canary, key, version, float(percentage), updated_by=actor.user_id)
         except (KeyError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"prompt_id": prompt_id, "version": version,
