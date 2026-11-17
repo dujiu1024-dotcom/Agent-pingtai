@@ -172,6 +172,15 @@ independent reviewer sign-off; and evidence references. Exit status is 0 for
 a passing record, 1 for evidence/objective failures, and 2 for malformed input
 or policy errors. Component-only scopes can declare their in-scope components.
 
+The release-gate suite also runs an isolated PostgreSQL component drill
+(`tests.test_issue_18_a_18_02_backup_restore_drill`). It creates temporary source
+and target databases, generates an ephemeral AGE identity, runs the repository
+encrypted backup and restore scripts, verifies a committed marker after restore,
+and records timestamp-derived RPO/RTO with millisecond precision as a CI artifact.
+The automated record leaves independent reviewer sign-off pending. This drill
+does not exercise Redis, MinIO, configuration recovery, full-platform consistency,
+replica promotion or DNS failover; it is not a full-platform or production drill.
+
 A passing result evaluates the submitted record; it is not a live probe and
 does not prove that a production restore, replica promotion or DNS failover
 actually occurred. Keep raw logs, manifests and screenshots in the restricted
