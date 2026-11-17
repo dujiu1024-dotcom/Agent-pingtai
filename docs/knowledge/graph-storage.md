@@ -25,10 +25,12 @@ type, normalized title, and the complete source reference tuple. Relations have
 outgoing, incoming and project/type indexes. Index-job claim and expired-lease
 indexes are partial indexes over pending and processing work respectively.
 
-All entity/relation reads require a tenant predicate. Optional project filtering
-keeps tenant-shared records visible while limiting project-scoped records to the
-caller-provided authorized project set. The caller must derive that set from the
-authenticated principal; this repository does not make authorization decisions.
+All entity reads require a tenant predicate. When no project set is supplied,
+only tenant-shared rows are visible; when a project set is supplied, tenant-shared
+rows plus rows in that authorized set are visible. The caller must derive that set
+from the authenticated principal; this repository does not make authorization
+decisions. Relations also verify that both persisted endpoints exist, match the
+declared endpoint types, and do not bridge project boundaries.
 
 ## Incremental writes and async indexing
 
