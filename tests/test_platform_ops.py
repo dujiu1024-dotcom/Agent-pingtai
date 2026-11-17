@@ -27,3 +27,12 @@ def test_platform_ops_unknown_command_is_rejected() -> None:
         ["bash", str(SCRIPT), "drop-database"], capture_output=True, text=True, check=False
     )
     assert result.returncode == 2
+
+
+def test_backup_command_uses_verified_component_runner() -> None:
+    content = SCRIPT.read_text(encoding="utf-8")
+    backup_block = content.split("  backup)", 1)[1].split("  restore)", 1)[0]
+    assert "run_platform_backup.py" in backup_block
+    assert "backup_postgres.sh" not in backup_block
+    assert "backup_redis.sh" not in backup_block
+    assert "backup_object_storage.sh" not in backup_block
