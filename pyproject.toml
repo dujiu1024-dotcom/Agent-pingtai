@@ -84,7 +84,6 @@ include = [
   "tests/test_tool_gateway.py",
   "tests/test_observability.py",
   "tests/test_issue_16_a_16_01_contract_matrix.py",
-  "tests/test_issue_16_a_16_03_delivery_readiness.py",
   "tests/test_run_trace.py",
   "tests/test_run_replay.py",
   "tests/test_run_replay_api.py",
@@ -141,6 +140,8 @@ include = [
   "tests/test_quota_token_estimator.py",
   "tests/test_quotas.py",
   "tests/test_quota_reporting_api.py",
+  "tests/test_issue_17_a_17_03_delivery_readiness.py",
+  "tests/test_issue_17_a_17_03_production_quota_wiring.py",
   "tests/test_quota_harness_enforcement.py",
   "tests/test_quota_postgres_integration.py",
   "tests/test_file_download_api.py",
@@ -189,12 +190,10 @@ include = [
   "tests/test_connector_framework.py",
   "tests/test_issue_10_a_10_04_legacy_vectors_strategy.py",
   "tests/test_issue_26_a_26_02_metric_accuracy.py",
-  "tests/test_issue_18_a_18_01_deployment_acceptance.py",
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
-  "scripts/benchmark_graph_storage.py",
-  "tests/test_issue_22_a_22_05_graph_storage_benchmark.py",
-  "tests/test_issue_18_a_18_02_backup_restore_drill.py",
+  "tests/test_issue_665_s_665_01_e2e.py",
+  "tests/test_api_v1_compatibility_middleware.py",
 ]
 
 [tool.ruff.lint]
