@@ -18,6 +18,9 @@ class FakeCursor:
     async def fetchall(self):
         return self.rows
 
+    async def fetchone(self):
+        return self.rows[0] if self.rows else None
+
 
 class FakeConnection:
     def __init__(self, rows):
@@ -72,6 +75,16 @@ class BlackboardEventReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ORDER BY occurred_at ASC, event_id ASC", self.connection.query)
         self.assertEqual(self.connection.params[0], "tenant-a")
         self.assertEqual(self.connection.params[-3:], ("task", "task-1", 25))
+
+    async def test_latest_cursor_is_scoped_to_tenant_and_resource(self):
+        replay = PostgresBlackboardEventReplay(
+            tenant_id="tenant-a", connection_factory=lambda: self.connection
+        )
+        cursor = await replay.latest_cursor(scope=Scope.TASK, scope_id="task-1")
+        self.assertEqual(cursor.event_id, self.event_id)
+        self.assertIn("tenant_id = %s AND scope = %s AND scope_id = %s", self.connection.query)
+        self.assertIn("ORDER BY occurred_at DESC, event_id DESC", self.connection.query)
+        self.assertEqual(self.connection.params, ("tenant-a", "task", "task-1"))
 
     async def test_cursor_for_event_round_trips(self):
         replay = PostgresBlackboardEventReplay(
