@@ -1,7 +1,7 @@
 """Authenticated session/message/file API backed by SessionAssetService."""
 from __future__ import annotations
 
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -29,6 +29,7 @@ def create_sessions_router(
     authorize: Authorizer,
     memory_extraction: MemoryExtractionService | None = None,
     resolve_memory_principal: MemoryPrincipalResolver | None = None,
+    audit_writer: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1", tags=["sessions"])
 
@@ -52,18 +53,29 @@ def create_sessions_router(
                 principal, "project", session.project_id, action,
             ):
                 raise HTTPException(403, "linked project session access denied")
+        if audit_writer is not None:
+            trace = getattr(request.state, "trace_context", None)
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="resource.access_granted", subject_id=resource_id,
+                detail={"resource_type": resource_type, "requested_action": action,
+                        "trace_id": getattr(trace, "trace_id", None),
+                        "correlation_id": getattr(trace, "correlation_id", None)},
+            )
         return principal, service
 
     @router.get("/sessions")
-    async def list_sessions(request: Request, limit: int = 100):
+    async def list_sessions(request: Request, limit: int = 100, project_id: str | None = None):
         principal = await resolve_principal(request)
         service = await resolve_service(principal)
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "session repository tenant mismatch")
+        if project_id and not await authorize(principal, "project", project_id, "read"):
+            raise HTTPException(403, "project session access denied")
         try:
             items = await service.repository.list_sessions(
-                principal.tenant_id, principal.user_id, limit,
+                principal.tenant_id, principal.user_id, limit, project_id,
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -81,10 +93,16 @@ def create_sessions_router(
                 "created_at": session.created_at.isoformat(),
                 "updated_at": session.updated_at.isoformat(),
             })
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.list", subject_id=principal.user_id,
+                detail={"project_id": project_id, "returned": len(visible)},
+            )
         return {"items": visible}
 
     @router.get("/files")
-    async def list_files(request: Request, session_id: str | None = None, limit: int = 100):
+    async def list_files(request: Request, session_id: str | None = None, limit: int = 100, project_id: str | None = None):
         principal = await resolve_principal(request)
         service = await resolve_service(principal)
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
@@ -92,9 +110,11 @@ def create_sessions_router(
             raise HTTPException(403, "session repository tenant mismatch")
         if session_id and not await authorize(principal, "session", session_id, "read"):
             raise HTTPException(403, "session file access denied")
+        if project_id and not await authorize(principal, "project", project_id, "read"):
+            raise HTTPException(403, "project file access denied")
         try:
             items = await service.repository.list_assets(
-                principal.tenant_id, principal.user_id, session_id, limit,
+                principal.tenant_id, principal.user_id, session_id, limit, project_id,
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -114,8 +134,16 @@ def create_sessions_router(
                     "asset_id": asset.asset_id, "filename": asset.filename,
                     "media_type": asset.media_type, "size_bytes": asset.size_bytes,
                     "status": asset.status.value, "session_id": asset.session_id,
-                    "project_id": asset.project_id, "created_at": asset.created_at.isoformat(),
+                    "project_id": asset.project_id, "version": asset.version,
+                    "created_at": asset.created_at.isoformat(),
                 })
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.list", subject_id=principal.user_id,
+                detail={"project_id": project_id, "session_id": session_id,
+                        "returned": len(visible)},
+            )
         return {"items": visible}
 
     @router.post("/sessions", status_code=201)
@@ -145,6 +173,12 @@ def create_sessions_router(
             )
         except SessionError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="session.created", subject_id=session.session_id,
+                detail={"project_id": session.project_id},
+            )
         return {
             "session_id": session.session_id, "title": session.title,
             "project_id": session.project_id, "status": session.status,
@@ -191,6 +225,12 @@ def create_sessions_router(
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(404 if isinstance(exc, SessionNotFound) else 422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="message.appended", subject_id=message.message_id,
+                detail={"session_id": session_id, "role": message.role.value},
+            )
         return {"message_id": message.message_id, "session_id": message.session_id}
 
     if memory_extraction is not None and resolve_memory_principal is not None:
@@ -329,11 +369,150 @@ def create_sessions_router(
             )
         except (SessionError, SessionNotFound) as exc:
             raise HTTPException(422, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.uploaded", subject_id=asset.asset_id,
+                detail={"project_id": asset.project_id, "session_id": asset.session_id,
+                        "size_bytes": asset.size_bytes, "sha256": asset.sha256},
+            )
         return {
             "asset_id": asset.asset_id, "filename": asset.filename,
             "media_type": asset.media_type, "size_bytes": asset.size_bytes,
             "sha256": asset.sha256, "status": asset.status.value,
-            "session_id": asset.session_id,
+            "session_id": asset.session_id, "version": asset.version,
+        }
+
+    @router.post("/files/{asset_id}/versions", status_code=201)
+    async def create_file_version(asset_id: str, request: Request, expected_version: int | None = None):
+        principal, service = await context(request, "file", asset_id, "write")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "write",
+        ):
+            raise HTTPException(403, "linked session modification denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "file.update",
+        ):
+            raise HTTPException(403, "linked project file update denied")
+        max_bytes = int(getattr(service, "max_upload_bytes", 25 * 1024 * 1024))
+        declared_length = request.headers.get("content-length")
+        if declared_length:
+            if not declared_length.isdigit():
+                raise HTTPException(400, "invalid content-length")
+            if int(declared_length) > max_bytes:
+                raise HTTPException(413, "file exceeds upload size limit")
+        chunks = bytearray()
+        async for chunk in request.stream():
+            chunks.extend(chunk)
+            if len(chunks) > max_bytes:
+                raise HTTPException(413, "file exceeds upload size limit")
+        try:
+            version = await service.create_asset_version(
+                tenant_id=principal.tenant_id, asset_id=asset_id,
+                content=bytes(chunks), filename=request.headers.get("x-filename"),
+                media_type=request.headers.get("content-type", asset.media_type).split(";", 1)[0],
+                expected_version=expected_version,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "asset_id": version.asset_id, "version": version.version,
+            "filename": version.filename, "media_type": version.media_type,
+            "size_bytes": version.size_bytes, "sha256": version.sha256,
+            "status": version.status.value, "created_at": version.created_at.isoformat(),
+        }
+
+    @router.get("/files/{asset_id}/versions")
+    async def list_file_versions(asset_id: str, request: Request):
+        principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
+        versions = await service.list_asset_versions(
+            tenant_id=principal.tenant_id, asset_id=asset_id,
+        )
+        return {"asset_id": asset_id, "current_version": asset.version, "items": [{
+            "version": item.version, "filename": item.filename,
+            "media_type": item.media_type, "size_bytes": item.size_bytes,
+            "sha256": item.sha256, "status": item.status.value,
+            "created_at": item.created_at.isoformat(),
+        } for item in versions]}
+
+    @router.get("/files/{asset_id}/versions/{version}")
+    async def download_file_version(asset_id: str, version: int, request: Request):
+        principal, service = await context(request, "file", asset_id, "read")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "read",
+        ):
+            raise HTTPException(403, "linked session access denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "read",
+        ):
+            raise HTTPException(403, "linked project access denied")
+        try:
+            record, content = await service.download_asset_version(
+                tenant_id=principal.tenant_id, asset_id=asset_id, version=version,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return Response(
+            content, media_type=record.media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{quote(record.filename)}"',
+                "X-File-Asset-Version": str(record.version),
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @router.post("/files/{asset_id}/versions/{version}/restore", status_code=201)
+    async def restore_file_version(
+        asset_id: str, version: int, request: Request, expected_version: int | None = None,
+    ):
+        principal, service = await context(request, "file", asset_id, "write")
+        asset = await service.repository.get_asset(principal.tenant_id, asset_id)
+        if asset is None:
+            raise HTTPException(404, "file not found")
+        if asset.session_id and not await authorize(
+            principal, "session", asset.session_id, "write",
+        ):
+            raise HTTPException(403, "linked session modification denied")
+        if asset.project_id and not await authorize(
+            principal, "project", asset.project_id, "file.update",
+        ):
+            raise HTTPException(403, "linked project file update denied")
+        try:
+            restored = await service.restore_asset_version(
+                tenant_id=principal.tenant_id, asset_id=asset_id,
+                version=version, expected_version=expected_version,
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except SessionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "asset_id": restored.asset_id, "version": restored.version,
+            "restored_from_version": version, "filename": restored.filename,
+            "media_type": restored.media_type, "size_bytes": restored.size_bytes,
+            "sha256": restored.sha256, "status": restored.status.value,
+            "created_at": restored.created_at.isoformat(),
         }
 
     @router.delete("/files/{asset_id}", status_code=204)
@@ -358,6 +537,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(503, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.deleted", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "session_id": asset.session_id},
+            )
         return Response(status_code=204)
 
     @router.get("/files/{asset_id}/metadata")
@@ -383,6 +568,7 @@ def create_sessions_router(
             "status": asset.status.value,
             "session_id": asset.session_id,
             "project_id": asset.project_id,
+            "version": asset.version,
             "created_at": asset.created_at.isoformat(),
         }
 
@@ -408,6 +594,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.download_url_issued", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "expires_in": expires_in},
+            )
         return JSONResponse(
             {"asset_id": asset.asset_id, "url": url, "expires_in": expires_in},
             headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
@@ -435,6 +627,12 @@ def create_sessions_router(
             raise HTTPException(404, "file not found") from exc
         except SessionError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if audit_writer is not None:
+            await audit_writer.record(
+                tenant_id=principal.tenant_id, actor_id=principal.user_id,
+                action="file.downloaded", subject_id=asset_id,
+                detail={"project_id": asset.project_id, "size_bytes": len(content)},
+            )
         headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(asset.filename)}"}
         return Response(content=content, media_type=asset.media_type, headers=headers)
 

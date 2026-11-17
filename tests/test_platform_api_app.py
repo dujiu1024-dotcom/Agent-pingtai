@@ -415,5 +415,107 @@ class PlatformApiCompositionTests(unittest.TestCase):
             )
 
 
+    def test_prompt_registry_router_is_wired_with_explicit_authorizer(self):
+        from agent_platform.observability.prompts import PromptRegistry
+
+        class AsyncRegistry:
+            def __init__(self):
+                self.inner = PromptRegistry()
+
+            async def register(self, prompt_id, template, *, created_by):
+                return self.inner.register(prompt_id, template)
+
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            prompt_registry=AsyncRegistry(),
+            prompt_manage_authorizer=lambda principal, prompt_id, action: True,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.post(
+            "/api/platform/v1/prompts/support/versions",
+            json={"template": "Answer {question}"},
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["prompt_id"], "support")
+
+
+    def test_evaluation_run_service_is_wired_with_tenant_authorization(self):
+        from types import SimpleNamespace
+
+        class EvaluationService:
+            async def run(self, **kwargs):
+                self.kwargs = kwargs
+                report = SimpleNamespace(
+                    dataset_id=kwargs["dataset_id"], dataset_version=kwargs["dataset_version"],
+                    pass_rate=1.0, average_score=1.0, average_recall_at_k=None,
+                )
+                return SimpleNamespace(
+                    eval_run_id="eval-run-1", report=report,
+                    gate_passed=True, gate_failures=(),
+                )
+
+        service = EvaluationService()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            evaluation_repository=object(),
+            evaluation_run_service=service,
+            evaluation_manage_authorizer=lambda principal: True,
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.post(
+            "/api/platform/v1/observability/evaluations/run",
+            json={
+                "dataset_id": "release-smoke",
+                "dataset_version": 3,
+                "model_key": "provider/model@1",
+            },
+            headers={"Authorization": "Bearer valid-session"},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()["gate_passed"])
+        self.assertEqual(service.kwargs["tenant_id"], "tenant-a")
+
+
+
+    def test_quota_reservation_worker_is_started_and_stopped(self):
+        class Worker:
+            def __init__(self):
+                self.started = False
+                self.stopped = False
+
+            async def start(self):
+                self.started = True
+
+            async def stop(self):
+                self.stopped = True
+
+        worker = Worker()
+        app = create_platform_app(
+            identity=self.identity,
+            identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            quota_reservation_worker=worker,
+        )
+        with TestClient(app, base_url="https://testserver"):
+            self.assertTrue(worker.started)
+        self.assertTrue(worker.stopped)
+
+
+
+
 if __name__ == "__main__":
     unittest.main()

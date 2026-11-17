@@ -163,9 +163,13 @@ class SupervisedDelegationService:
 
         identity = f"{parent.tenant_id}:{parent.run_id}:{spec.delegation_key}"
         child_run_id = str(uuid5(NAMESPACE_URL, identity))
+        root_run_id = metadata.get("root_run_id", parent.run_id)
+        if not isinstance(root_run_id, str) or not root_run_id.strip():
+            raise ValueError("root_run_id must be a non-empty string")
         child_metadata = {
             **metadata,
             "parent_run_id": parent.run_id,
+            "root_run_id": root_run_id,
             "delegation_key": spec.delegation_key,
             "delegation_depth": depth + 1,
             "ancestor_agent_ids": list(chain),

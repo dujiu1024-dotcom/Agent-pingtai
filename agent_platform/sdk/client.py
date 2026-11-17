@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any, Callable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -67,6 +70,9 @@ class PlatformClient:
         token: str,
         transport: Transport | None = None,
         timeout: float = 15.0,
+        retry_attempts: int = 2,
+        retry_backoff_seconds: float = 0.25,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         parsed = urlsplit(base_url)
         if (
@@ -86,8 +92,15 @@ class PlatformClient:
             or not isinstance(timeout, (int, float))
             or timeout <= 0
             or timeout > 120
+            or isinstance(retry_attempts, bool)
+            or not isinstance(retry_attempts, int)
+            or not 0 <= retry_attempts <= 5
+            or isinstance(retry_backoff_seconds, bool)
+            or not isinstance(retry_backoff_seconds, (int, float))
+            or not 0 <= retry_backoff_seconds <= 5
+            or not callable(sleep)
         ):
-            raise ValueError("token and a timeout in (0, 120] are required")
+            raise ValueError("token, timeout, and bounded retry settings are required")
         # Accessing .port validates malformed/out-of-range port values.
         port = parsed.port
         authority = parsed.hostname if port is None else f"{parsed.hostname}:{port}"
@@ -97,6 +110,9 @@ class PlatformClient:
         self.token = token
         self.transport = transport or UrllibTransport()
         self.timeout = float(timeout)
+        self.retry_attempts = retry_attempts
+        self.retry_backoff_seconds = float(retry_backoff_seconds)
+        self._sleep = sleep
 
     def request(
         self,
@@ -140,17 +156,53 @@ class PlatformClient:
             headers["Content-Type"] = "application/json"
         if idempotency_key is not None:
             headers["Idempotency-Key"] = idempotency_key
-        request = Request(url, data=data, headers=headers, method=normalized_method)
-        response = self.transport.send(request, timeout=self.timeout)
-        if (
-            isinstance(response.status_code, bool)
-            or not isinstance(response.status_code, int)
-            or not 100 <= response.status_code <= 599
-        ):
-            raise RuntimeError("platform transport returned an invalid HTTP status")
-        if not 200 <= response.status_code < 300:
-            raise PlatformApiError(response.status_code, response.body, response.headers)
-        return response.body
+        # Retrying a write is safe only when the caller supplied an idempotency
+        # key. GET/PUT/DELETE are treated as idempotent by the SDK contract.
+        retry_safe = normalized_method in {"GET", "PUT", "DELETE"} or idempotency_key is not None
+        attempts = self.retry_attempts if retry_safe else 0
+        retryable_statuses = {429, 500, 502, 503, 504}
+        for attempt in range(attempts + 1):
+            request = Request(url, data=data, headers=headers, method=normalized_method)
+            try:
+                response = self.transport.send(request, timeout=self.timeout)
+            except (ConnectionError, TimeoutError):
+                if attempt >= attempts:
+                    raise
+                delay = min(self.retry_backoff_seconds * (2 ** attempt), 30.0)
+                self._sleep(delay)
+                continue
+            if (
+                isinstance(response.status_code, bool)
+                or not isinstance(response.status_code, int)
+                or not 100 <= response.status_code <= 599
+            ):
+                raise RuntimeError("platform transport returned an invalid HTTP status")
+            if 200 <= response.status_code < 300:
+                return response.body
+            error = PlatformApiError(response.status_code, response.body, response.headers)
+            if response.status_code not in retryable_statuses or attempt >= attempts:
+                raise error
+            retry_after = next(
+                (value for key, value in response.headers.items() if key.lower() == "retry-after"),
+                None,
+            )
+            server_delay = None
+            if retry_after is not None:
+                try:
+                    server_delay = float(retry_after)
+                except (TypeError, ValueError):
+                    try:
+                        retry_at = parsedate_to_datetime(retry_after)
+                        if retry_at.tzinfo is None:
+                            retry_at = retry_at.replace(tzinfo=timezone.utc)
+                        server_delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+                    except (TypeError, ValueError, OverflowError):
+                        server_delay = None
+            delay = server_delay if server_delay is not None and server_delay >= 0 else (
+                self.retry_backoff_seconds * (2 ** attempt)
+            )
+            self._sleep(min(delay, 30.0))
+        raise RuntimeError("platform SDK retry loop exhausted")
 
     def get(self, path: str) -> Any:
         return self.request("GET", path)

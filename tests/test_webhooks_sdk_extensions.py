@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime as format_http_date
 from urllib.request import Request
 
 from agent_platform.events.webhooks import (
@@ -300,6 +301,143 @@ class SdkAndExtensionTests(unittest.TestCase):
             ExtensionManifest(
                 "bad-extension", "1.0", "1.0.0", ("*",), entrypoint="../escape.py",
             )
+
+
+class RetrySequenceTransport:
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.requests = []
+
+    def send(self, request: Request, *, timeout: float):
+        self.requests.append((request, timeout))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
+class SdkRetryContractTests(unittest.TestCase):
+    def _client(self, transport, sleeps):
+        return PlatformClient(
+            base_url="https://platform.example.test",
+            token="token",
+            transport=transport,
+            retry_attempts=2,
+            retry_backoff_seconds=0.5,
+            sleep=sleeps.append,
+        )
+
+    def test_get_retries_transient_server_failure_with_bounded_backoff(self):
+        transport = RetrySequenceTransport([
+            ApiResponse(503, {}, {"error": "busy"}),
+            ApiResponse(200, {}, {"ok": True}),
+        ])
+        sleeps = []
+        result = self._client(transport, sleeps).get("/health")
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(len(transport.requests), 2)
+        self.assertEqual(sleeps, [0.5])
+
+    def test_post_retries_only_with_idempotency_key(self):
+        response = ApiResponse(503, {}, {"error": "busy"})
+        unsafe_transport = RetrySequenceTransport([response, ApiResponse(200, {}, {})])
+        sleeps = []
+        with self.assertRaises(PlatformApiError):
+            self._client(unsafe_transport, sleeps).post("/runs", {"task": "x"})
+        self.assertEqual(len(unsafe_transport.requests), 1)
+        self.assertEqual(sleeps, [])
+
+        safe_transport = RetrySequenceTransport([
+            ApiResponse(503, {}, {"error": "busy"}),
+            ApiResponse(200, {}, {"run_id": "r1"}),
+        ])
+        self.assertEqual(
+            self._client(safe_transport, sleeps).post(
+                "/runs", {"task": "x"}, idempotency_key="req-1",
+            ),
+            {"run_id": "r1"},
+        )
+        self.assertEqual(len(safe_transport.requests), 2)
+        self.assertEqual(
+            safe_transport.requests[0][0].get_header("Idempotency-key"),
+            "req-1",
+        )
+
+    def test_retry_after_header_is_honored_and_capped(self):
+        transport = RetrySequenceTransport([
+            ApiResponse(429, {"Retry-After": "2"}, {"error": "rate_limited"}),
+            ApiResponse(200, {}, {"ok": True}),
+        ])
+        sleeps = []
+        self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
+        self.assertEqual(sleeps, [2.0])
+
+        capped = RetrySequenceTransport([
+            ApiResponse(503, {"Retry-After": "999"}, {}),
+            ApiResponse(200, {}, {}),
+        ])
+        sleeps = []
+        self.assertEqual(self._client(capped, sleeps).get("/health"), {})
+        self.assertEqual(sleeps, [30.0])
+
+    def test_retry_after_http_date_is_honored_and_invalid_or_past_dates_fall_back(self):
+        future = format_http_date(
+            datetime.now(timezone.utc) + timedelta(seconds=20),
+            usegmt=True,
+        )
+        transport = RetrySequenceTransport([
+            ApiResponse(503, {"Retry-After": future}, {}),
+            ApiResponse(200, {}, {"ok": True}),
+        ])
+        sleeps = []
+        self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreaterEqual(sleeps[0], 18.0)
+        self.assertLessEqual(sleeps[0], 22.0)
+
+        for header in ("not-a-date", format_http_date(
+            datetime.now(timezone.utc) - timedelta(seconds=30),
+            usegmt=True,
+        )):
+            with self.subTest(retry_after=header):
+                fallback = RetrySequenceTransport([
+                    ApiResponse(503, {"Retry-After": header}, {}),
+                    ApiResponse(200, {}, {}),
+                ])
+                delays = []
+                self.assertEqual(self._client(fallback, delays).get("/health"), {})
+                self.assertEqual(delays, [0.5])
+
+    def test_connection_errors_retry_but_client_errors_do_not(self):
+        for network_error in (ConnectionError("temporary"), TimeoutError("temporary timeout")):
+            with self.subTest(network_error=type(network_error).__name__):
+                transport = RetrySequenceTransport([
+                    network_error,
+                    ApiResponse(200, {}, {"ok": True}),
+                ])
+                sleeps = []
+                self.assertEqual(self._client(transport, sleeps).get("/health"), {"ok": True})
+                self.assertEqual(len(transport.requests), 2)
+                self.assertEqual(sleeps, [0.5])
+
+        bad_request = RetrySequenceTransport([ApiResponse(400, {}, {"error": "bad"})])
+        with self.assertRaises(PlatformApiError):
+            self._client(bad_request, []).get("/health")
+        self.assertEqual(len(bad_request.requests), 1)
+
+    def test_retry_configuration_is_bounded(self):
+        for kwargs in (
+            {"retry_attempts": -1},
+            {"retry_attempts": 6},
+            {"retry_backoff_seconds": -0.1},
+            {"retry_backoff_seconds": 5.1},
+        ):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                PlatformClient(
+                    base_url="https://platform.example.test",
+                    token="token",
+                    **kwargs,
+                )
 
 
 if __name__ == "__main__":

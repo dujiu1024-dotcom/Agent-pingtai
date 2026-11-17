@@ -23,9 +23,14 @@ class SnapshotService:
 
 
 class ModelRouter:
-    token_estimator = object()
+    class Estimator:
+        def estimate(self, **kwargs):
+            return SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2)
+
+    token_estimator = Estimator()
     quota_service = object()
     quota_cost_estimator = object()
+    audit_sink = object()
 
     async def complete(self, **kwargs):
         return kwargs
@@ -99,6 +104,20 @@ class RegistryRuntimeAssemblyTests(unittest.IsolatedAsyncioTestCase):
             RegistryRuntimeAssembler(
                 snapshots=SnapshotService(SimpleNamespace()),
                 model_router=UnbudgetedModelRouter(),
+                skill_reviewer=SkillDependencyReviewer(
+                    store=InMemorySkillDependencyReviewStore(), approved_pins={},
+                ),
+                trusted_tool_handlers={},
+            )
+
+    def test_runtime_assembly_rejects_non_callable_token_estimator(self):
+        class BrokenEstimatorRouter(ModelRouter):
+            token_estimator = object()
+
+        with self.assertRaisesRegex(RegistryRuntimeError, "callable_token_estimator"):
+            RegistryRuntimeAssembler(
+                snapshots=SnapshotService(SimpleNamespace()),
+                model_router=BrokenEstimatorRouter(),
                 skill_reviewer=SkillDependencyReviewer(
                     store=InMemorySkillDependencyReviewStore(), approved_pins={},
                 ),

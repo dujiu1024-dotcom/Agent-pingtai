@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import unittest
 from types import SimpleNamespace
 
@@ -90,6 +91,30 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         service=KnowledgeService(InMemoryKnowledgeRepository())
         await service.ingest(document=Document(tenant_id="t2",title="secret",source_uri="x",content_hash="x"),content=b"confidential")
         self.assertEqual(await service.retrieve(principal=KnowledgePrincipal(tenant_id="t1",user_id="u1"),query="confidential"),[])
+    async def test_sync_document_parser_runs_off_the_event_loop_thread(self):
+        event_loop_thread = threading.get_ident()
+
+        class ThreadCheckingParser:
+            supported_media_types = ("application/x-thread-test",)
+
+            def parse(self, content, media_type):
+                self.parser_thread = threading.get_ident()
+                return content.decode("utf-8")
+
+        from agent_platform.knowledge.ingestion import ParserRegistry
+
+        parser = ThreadCheckingParser()
+        registry = ParserRegistry(parsers=(parser,))
+        service = KnowledgeService(InMemoryKnowledgeRepository(), parsers=registry)
+        document = Document(
+            tenant_id="tenant-thread", title="threaded parse",
+            source_uri="file://threaded", content_hash="pending",
+            media_type="application/x-thread-test",
+        )
+        result = await service.ingest(document=document, content=b"threaded parser result")
+        self.assertEqual(result.chunks[0].text, "threaded parser result")
+        self.assertNotEqual(parser.parser_thread, event_loop_thread)
+
     async def test_parser_rejects_unknown_binary_type(self):
         service=KnowledgeService(InMemoryKnowledgeRepository()); doc=Document(tenant_id="t",title="pdf",source_uri="x",content_hash="x",media_type="image/png")
         with self.assertRaises(ValueError): await service.ingest(document=doc,content=b"\\x89PNG")
@@ -118,7 +143,7 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         class Connector:
             connector_id="fixture"
             async def list_changed(self,*,tenant_id,cursor,changed_since=None,limit=100):
-                doc=Document(tenant_id=tenant_id,title="connector source",source_uri="connector://item/1",content_hash="x")
+                doc=Document(tenant_id=tenant_id,title="connector source",source_uri="connector://item/1",content_hash="x",scope=KnowledgeScope.PRIVATE,owner_user_id="u",metadata={"_knowledge_acl":[]})
                 return ConnectorPage(items=(ConnectorDocument(document=doc,content=b"evidence for retrieval",cursor="next"),),next_cursor="next",has_more=False)
             async def revoke(self,*,tenant_id,credential_ref):
                 return None
@@ -132,6 +157,86 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
         report=await evaluate_retrieval(service,[case],k=3)
         self.assertEqual(report[0].recall_at_k,1.0)
         self.assertEqual(report[0].citation_coverage,1.0)
+
+    async def test_connector_sync_replaces_source_acl_and_enforces_empty_acl(self):
+        from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
+
+        class Connector:
+            connector_id = "drive"
+            async def list_changed(self, *, tenant_id, cursor, changed_since=None, limit=100):
+                doc = Document(
+                    tenant_id=tenant_id, title="restricted source",
+                    source_uri="drive://item/1", content_hash="pending",
+                    scope=KnowledgeScope.PRIVATE, owner_user_id="owner",
+                    document_id="drive:item-1",
+                    metadata={"_knowledge_acl": [
+                        {"principal_type": "user", "principal_id": "reader-a", "permission": "read"},
+                    ]},
+                )
+                return ConnectorPage(
+                    items=(ConnectorDocument(document=doc, content=b"connector evidence"),),
+                    next_cursor="cursor-1", has_more=False,
+                )
+            async def revoke(self, *, tenant_id, credential_ref):
+                return None
+
+        repository = InMemoryKnowledgeRepository()
+        service = KnowledgeService(repository)
+        await service.sync_connector(connector=Connector(), tenant_id="tenant-a")
+        self.assertIn(("user", "reader-a", "read"), repository.document_acl[("tenant-a", "drive:item-1")])
+        self.assertIn(("tenant-a", "drive:item-1"), repository.document_acl_enforced)
+
+        # A subsequent source permission removal replaces, rather than appends to,
+        # grants. An empty source ACL leaves the document owner-only.
+        class RevokedConnector(Connector):
+            async def list_changed(self, *, tenant_id, cursor, changed_since=None, limit=100):
+                doc = Document(
+                    tenant_id=tenant_id, title="restricted source",
+                    source_uri="drive://item/1", content_hash="pending",
+                    scope=KnowledgeScope.PRIVATE, owner_user_id="owner",
+                    document_id="drive:item-1", metadata={"_knowledge_acl": []},
+                )
+                return ConnectorPage(
+                    items=(ConnectorDocument(document=doc, content=b"connector evidence"),),
+                    next_cursor="cursor-2", has_more=False,
+                )
+
+        await service.sync_connector(connector=RevokedConnector(), tenant_id="tenant-a")
+        self.assertEqual(repository.document_acl[("tenant-a", "drive:item-1")], set())
+        self.assertEqual(
+            await service.retrieve(
+                principal=KnowledgePrincipal(tenant_id="tenant-a", user_id="reader-a"),
+                query="connector evidence",
+            ),
+            [],
+        )
+
+    async def test_connector_sync_rejects_unmapped_acl_instead_of_widening_access(self):
+        from agent_platform.knowledge.connectors import ConnectorDocument, ConnectorPage
+
+        class Connector:
+            connector_id = "drive"
+            async def list_changed(self, *, tenant_id, cursor, changed_since=None, limit=100):
+                doc = Document(
+                    tenant_id=tenant_id, title="unmapped", source_uri="drive://item/2",
+                    content_hash="pending", scope=KnowledgeScope.PRIVATE,
+                    owner_user_id="owner", document_id="drive:item-2",
+                    metadata={"_knowledge_acl": [
+                        {"principal_type": "external", "principal_id": "unknown", "permission": "read"},
+                    ]},
+                )
+                return ConnectorPage(
+                    items=(ConnectorDocument(document=doc, content=b"private evidence"),),
+                    next_cursor="cursor-1", has_more=False,
+                )
+            async def revoke(self, *, tenant_id, credential_ref):
+                return None
+
+        service = KnowledgeService(InMemoryKnowledgeRepository())
+        with self.assertRaises(ValueError):
+            await service.sync_connector(connector=Connector(), tenant_id="tenant-a")
+        self.assertIsNone(await service.repository.get_document("tenant-a", "drive:item-2"))
+        self.assertIsNone(await service.repository.get_connector_cursor("tenant-a", "drive"))
 
     async def test_list_documents_respects_scope_and_latest_version(self):
         from dataclasses import replace
