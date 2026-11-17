@@ -122,6 +122,7 @@ async function renderGovernance(){
  const window=isoWindow(),q="start="+encodeURIComponent(window.start)+"&end="+encodeURIComponent(window.end);
  const jobs=[
   ["knowledge",()=>governanceLoad("/knowledge/documents?limit=100")],
+  ["collections",()=>governanceLoad("/knowledge/collections?limit=100")],
   ["memory",()=>governanceLoad("/memories?limit=100")],
   ["candidates",()=>governanceLoad("/memories/candidates")],
   ["evaluations",()=>governanceLoad("/observability/evaluations?limit=50")],
@@ -141,7 +142,11 @@ async function renderGovernance(){
  root.innerHTML=
   "<div class='grid'><div class='stat'><small>知识库文档</small><strong>"+knowledge.length+"</strong></div><div class='stat'><small>有效记忆</small><strong>"+memories.length+"</strong></div><div class='stat'><small>待审核记忆</small><strong>"+candidates.length+"</strong></div><div class='stat'><small>近 30 天成本 USD</small><strong>"+totalCost.toFixed(4)+"</strong></div><div class='stat'><small>近 30 天 Token</small><strong>"+totalTokens+"</strong></div><div class='stat'><small>待处理告警</small><strong>"+alerts.filter(x=>!['resolved','closed'].includes(String(x.status).toLowerCase())).length+"</strong></div></div>"+
   (errors?panel("部分数据源不可用","<ul class='error'>"+errors+"</ul>"):"")+
-  panel("知识库管理",rowsPanel("文档目录",knowledge,["document_id","title","version","scope","project_id","media_type"]))+
+  panel("知识库管理",
+"<form id='knowledge-collection-create' class='inline-form'><label>新建知识库集合<input name='name' required maxlength='200' placeholder='集合名称'></label><label>项目 ID（可选）<input name='project_id' placeholder='project-a'></label><button class='button primary'>创建集合</button></form>"+
+rowsPanel("集合目录",data.collections?.items||[],["collection_id","name","project_id","created_at"])+
+"<form id='knowledge-index-create' class='inline-form'><label>集合 ID<input name='collection_id' required></label><label>索引名称<input name='index_name' required></label><label>Embedding 模型<input name='embedding_model' required></label><label>向量维度<input name='dimensions' type='number' min='1' max='65536' value='1536' required></label><label>Schema 版本<input name='schema_version' type='number' min='1' value='1' required></label><button class='button'>创建索引版本</button></form>"+
+rowsPanel("文档目录",knowledge,["document_id","title","version","scope","project_id","media_type"]))+
   panel("记忆管理",rowsPanel("记忆记录",memories,["memory_id","scope","scope_id","content","confidence","version","status","expires_at"])+rowsPanel("待审核候选与冲突",candidates,["memory_id","scope","scope_id","content","confidence","status","version"]))+
   panel("Blackboard 协作视图","<form id='blackboard-query' class='inline-form'><label>范围<select name='scope'><option value='tenant'>Tenant</option><option value='project'>Project</option><option value='run'>Run</option><option value='task'>Task</option></select></label><label>范围 ID<input name='scope_id' required value='"+scopeId+"' placeholder='Tenant / Project / Run / Task ID'></label><button class='button primary'>查询条目</button></form><div id='blackboard-results'></div>")+
   panel("评测报告",rowsPanel("评测运行",evals,["eval_run_id","suite_id","status","created_at","completed_at"]))+
@@ -152,6 +157,20 @@ async function renderGovernance(){
   "<p class='subtle'>成本统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。所有数据通过当前会话身份访问；接口返回 403/404/503 时保留为数据源不可用，不绕过后端权限。</p>";
 }
 render=async function(){if(S.view==="governance"){try{await renderGovernance()}catch(e){$("#view").innerHTML=panel("运营视图加载失败","<p class='error'>"+esc(e.message)+"</p>"+btn("重试","data-retry='1'"))}return}return governanceBaseRender()};
+document.addEventListener("submit",async e=>{
+ const f=e.target;
+ if(f.id==="knowledge-collection-create"){
+  e.preventDefault();const d=new FormData(f),payload={name:String(d.get("name")||"").trim()};
+  const project=String(d.get("project_id")||"").trim();if(project)payload.project_id=project;
+  try{await api(API+"/knowledge/collections",{method:"POST",body:JSON.stringify(payload)});toast("知识库集合已创建");await renderGovernance()}catch(x){toast(x.message)}
+ }
+ if(f.id==="knowledge-index-create"){
+  e.preventDefault();const d=new FormData(f),collection=String(d.get("collection_id")||"").trim();
+  const dimensions=Number(d.get("dimensions")),schemaVersion=Number(d.get("schema_version"));
+  if(!Number.isInteger(dimensions)||dimensions<1||!Number.isInteger(schemaVersion)||schemaVersion<1){toast("向量维度和 Schema 版本必须为正整数");return}
+  try{const result=await api(API+"/knowledge/collections/"+encodeURIComponent(collection)+"/indexes",{method:"POST",body:JSON.stringify({index_name:d.get("index_name"),embedding_model:d.get("embedding_model"),dimensions,schema_version:schemaVersion})});toast("知识库索引版本已创建："+result.index_id);await renderGovernance()}catch(x){toast(x.message)}
+ }
+});
 document.addEventListener("submit",async e=>{
  const f=e.target;if(f.id!=="blackboard-query")return;e.preventDefault();
  const d=new FormData(f),scope=String(d.get("scope")),scopeId=String(d.get("scope_id")||"").trim();
