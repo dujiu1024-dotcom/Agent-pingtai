@@ -6,7 +6,7 @@ idempotency key; this adapter provides ownership fencing and durable retries.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
@@ -112,7 +112,7 @@ class BlackboardEventDeliveryStore:
     async def complete(self, *, event_id: str, lease_token: str) -> None:
         await self._finish(
             event_id=event_id, lease_token=lease_token, status="completed",
-            error=None, next_attempt=None,
+            error=None,
         )
 
     async def fail(
@@ -160,7 +160,7 @@ class BlackboardEventDeliveryStore:
 
     async def _finish(
         self, *, event_id: str, lease_token: str, status: str,
-        error: str | None, next_attempt: datetime | None,
+        error: str | None,
     ) -> None:
         connection = await self._connection_factory()
         async with connection:
