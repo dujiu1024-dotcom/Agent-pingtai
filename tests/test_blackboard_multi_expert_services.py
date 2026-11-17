@@ -690,5 +690,35 @@ class BlackboardMultiExpertServicesTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(repository.entries), 1)
 
 
+    async def test_planner_rejects_duplicate_experts_and_fanout_overflow(self):
+        class DuplicateCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": "researcher"}, {"expert_id": "researcher"}]
+
+        duplicate_services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=DuplicateCallbacks(),
+        )
+        context = {"tenant_id": "tenant-a", "run_id": "dispatch-duplicate"}
+        with self.assertRaisesRegex(ValueError, "duplicate expert assignment"):
+            await duplicate_services.plan_experts(
+                objective="analyze", run_context=context,
+            )
+
+        class FanoutCallbacks(WorkflowCallbacks):
+            async def plan_experts(self, *, objective, run_context):
+                return [{"expert_id": f"expert-{index}"} for index in range(3)]
+
+        bounded_services = BlackboardMultiExpertServices(
+            tenant_id="tenant-a", repository=InMemoryBlackboard(),
+            callbacks=FanoutCallbacks(), max_experts=2,
+        )
+        with self.assertRaisesRegex(ValueError, "fan-out exceeds"):
+            await bounded_services.plan_experts(
+                objective="analyze",
+                run_context={**context, "run_id": "dispatch-overflow"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
