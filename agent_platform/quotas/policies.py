@@ -93,6 +93,9 @@ class QuotaPolicyRepository(Protocol):
     async def put_policy(self, policy: QuotaPolicy) -> None: ...
     async def list_policies(self, *, tenant_id: str) -> list[QuotaPolicy]: ...
     async def append_audit(self, event: QuotaPolicyAudit) -> None: ...
+    async def put_policy_and_audit(
+        self, policy: QuotaPolicy, event: QuotaPolicyAudit,
+    ) -> None: ...
 
 
 class InMemoryQuotaPolicyRepository:
@@ -164,11 +167,9 @@ class QuotaPolicyService:
             occurred_at=datetime.now(timezone.utc), payload_sha256=digest,
         )
         atomic_writer = getattr(self.repository, "put_policy_and_audit", None)
-        if callable(atomic_writer):
-            await atomic_writer(policy, event)
-        else:
-            await self.repository.put_policy(policy)
-            await self.repository.append_audit(event)
+        if not callable(atomic_writer):
+            raise RuntimeError("quota policy repository must support atomic policy+audit writes")
+        await atomic_writer(policy, event)
         return event
 
     async def resolve(self, context: QuotaPolicyContext) -> ResolvedQuotaPolicy:
@@ -279,3 +280,41 @@ class PostgresQuotaPolicyRepository:
                  event.policy_version,json.dumps(event.before) if event.before is not None else None,
                  json.dumps(event.after),event.occurred_at,event.payload_sha256),
             )
+
+    async def put_policy_and_audit(
+        self, policy: QuotaPolicy, event: QuotaPolicyAudit,
+    ) -> None:
+        """Persist a policy revision and its audit event in one transaction.
+
+        The conditional upsert is the concurrency gate: if another writer has
+        already stored this or a newer version, rowcount is zero and the audit
+        insert is not attempted. An audit failure rolls back the policy change.
+        """
+        import json
+
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """INSERT INTO platform_quota_policies
+                       (policy_id,tenant_id,scope_type,scope_id,limits,priority,enabled,version,created_by)
+                       VALUES (%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s)
+                       ON CONFLICT (scope_type,tenant_id,scope_id,policy_id) DO UPDATE SET
+                         limits=EXCLUDED.limits,priority=EXCLUDED.priority,enabled=EXCLUDED.enabled,
+                         version=EXCLUDED.version,created_by=EXCLUDED.created_by,updated_at=now()
+                       WHERE EXCLUDED.version > platform_quota_policies.version""",
+                    (policy.policy_id,policy.tenant_id or "",policy.scope_type,policy.scope_id,
+                     json.dumps(dict(policy.limits),allow_nan=False),policy.priority,
+                     policy.enabled,policy.version,policy.created_by),
+                )
+                if getattr(cursor, "rowcount", 1) != 1:
+                    raise ValueError("policy version is stale or already exists")
+                await connection.execute(
+                    """INSERT INTO platform_quota_policy_audit
+                       (audit_id,tenant_id,actor_id,action,policy_id,policy_version,
+                        before_state,after_state,occurred_at,payload_sha256)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s)""",
+                    (event.audit_id,event.tenant_id,event.actor_id,event.action,event.policy_id,
+                     event.policy_version,json.dumps(event.before) if event.before is not None else None,
+                     json.dumps(event.after),event.occurred_at,event.payload_sha256),
+                )
