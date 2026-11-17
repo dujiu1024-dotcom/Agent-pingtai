@@ -60,7 +60,11 @@ def create_knowledge_upload_router(
         if suffix and suffix not in _EXTENSION_MEDIA_TYPES:
             raise HTTPException(415, "filename extension is not supported")
         expected = _EXTENSION_MEDIA_TYPES.get(suffix)
-        if expected is not None and media_type != expected:
+        aliases = {
+            "text/markdown": {"text/markdown", "text/x-markdown"},
+            "text/html": {"text/html", "application/xhtml+xml"},
+        }
+        if expected is not None and media_type not in aliases.get(expected, {expected}):
             raise HTTPException(415, "filename extension and content type do not match")
 
         title = query.get("title") or filename.rsplit(".", 1)[0]
