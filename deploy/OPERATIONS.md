@@ -31,9 +31,11 @@ records to the append-only PostgreSQL audit ledger. SIGTERM/SIGINT triggers
 graceful worker shutdown.
 
 This is the initial repository-owned production composition slice, not a
-claim that every optional API subsystem is wired. Run, replay, connector,
-evaluation, quota administration and other routers remain conditional on
-their explicit service/authorizer dependencies in `create_platform_app()`.
+claim that every optional API subsystem is wired. Run status/cancellation
+routes are connected to the PostgreSQL Run state store and agent-scoped
+authorization. Run submission/preparation, LangGraph/Harness execution,
+pause/intervention, replay, connector, evaluation and quota-administration
+services still require their explicit dependencies in `create_platform_app()`.
 The worker currently runs the Outbox relay; it is not a general-purpose
 consumer for every event topic or a LangGraph Run executor. Those integrations
 must be enabled and separately acceptance-tested before claiming the complete
