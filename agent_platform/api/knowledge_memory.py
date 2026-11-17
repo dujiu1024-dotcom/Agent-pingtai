@@ -361,7 +361,8 @@ def create_knowledge_memory_router(
         principal=await resolve_memory_principal(request);record=await memory.repository.get(principal.tenant_id,memory_id)
         if record is None:raise HTTPException(404,"memory candidate not found")
         if not _memory_visible_for_review(record,principal):raise HTTPException(403,"memory confirmation is not authorized")
-        try:updated=await memory.confirm(tenant_id=principal.tenant_id,memory_id=memory_id,confirmer_id=principal.user_id)
+        try:updated=await memory.confirm(principal=principal,memory_id=memory_id)
+        except PermissionError as exc:raise HTTPException(403,str(exc)) from exc
         except ValueError as exc:raise HTTPException(409,str(exc)) from exc
         return {"memory_id":updated.candidate.memory_id,"status":updated.status.value,"version":updated.version}
     @router.patch("/memories/{memory_id}")
