@@ -129,8 +129,8 @@ class InMemoryKnowledgeCatalog:
     async def list_collections(
         self, tenant_id: str, project_ids: frozenset[str], limit: int = 100,
     ) -> list[KnowledgeCollection]:
-        if not 1 <= limit <= 500:
-            raise ValueError("limit must be between 1 and 500")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise ValueError("limit must be an integer between 1 and 500")
         items = [
             item for (tenant, _), item in self.collections.items()
             if tenant == tenant_id and item.deleted_at is None
