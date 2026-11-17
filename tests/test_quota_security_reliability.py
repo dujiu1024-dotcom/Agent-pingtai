@@ -109,7 +109,6 @@ class QuotaSecurityReliabilityApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
         now = datetime(2026, 11, 18, tzinfo=timezone.utc)
-        self.assertIsNone(awaitable_result_placeholder) if False else None
         self.assertIsNone(
             _run(service.store.get_budget("tenant-a", "tenant", "tenant-a", now))
         )
