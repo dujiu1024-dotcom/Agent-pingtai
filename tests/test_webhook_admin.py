@@ -39,6 +39,13 @@ class FakeWebhookAdminStore:
         return item["secret_ref"]
 
 
+class FakeAudit:
+    def __init__(self):
+        self.events = []
+    async def record(self, **event):
+        self.events.append(event)
+
+
 class FakeSecrets:
     def __init__(self):
         self.values = {}
@@ -96,14 +103,38 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
             )
 
 
+    async def test_mutations_fail_closed_without_audit_writer(self):
+        app = FastAPI()
+        store, secrets = FakeWebhookAdminStore(), FakeSecrets()
+        service = WebhookSubscriptionService(store=store, secrets=secrets)
+        app.include_router(create_webhook_admin_router(
+            service=service, authorize_manage=lambda actor: True,
+        ))
+        @app.middleware("http")
+        async def attach_principal(request, call_next):
+            setattr(request.state, "identity.principal", Principal(
+                user_id="user-a", tenant_id="tenant-a", session_id="s",
+                email="a@example.test", display_name="A",
+            ))
+            return await call_next(request)
+        response = TestClient(app).post("/api/platform/v1/webhooks", json={
+            "url": "https://hooks.example.test/agent",
+            "topics": ["run.completed"], "signing_secret": "s" * 32,
+        })
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(store.items, {})
+        self.assertEqual(secrets.values, {})
+
     async def test_http_api_derives_tenant_and_actor_from_authenticated_principal(self):
         store, secrets = FakeWebhookAdminStore(), FakeSecrets()
         service = WebhookSubscriptionService(store=store, secrets=secrets)
+        audit = FakeAudit()
 
         def client_for(user_id):
             app = FastAPI()
             app.include_router(create_webhook_admin_router(
                 service=service, authorize_manage=lambda actor: actor.user_id == "user-a",
+                audit_writer=audit,
             ))
 
             @app.middleware("http")
@@ -135,6 +166,10 @@ class WebhookAdminTests(unittest.IsolatedAsyncioTestCase):
                 json={"signing_secret": "r" * 32},
             )
             self.assertEqual(rotated.status_code, 200)
+            self.assertEqual(
+                [event["action"] for event in audit.events],
+                ["webhook.subscription.create.requested", "webhook.subscription.secret_rotate.requested"],
+            )
 
         with client_for("user-b") as denied:
             self.assertEqual(
