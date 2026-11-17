@@ -32,8 +32,8 @@ class SecretRedactor:
             self.register(value)
 
     def register(self, value: str) -> None:
-        if not isinstance(value, str) or len(value) < 4:
-            raise ValueError("registered secrets must be strings of at least 4 characters")
+        if not isinstance(value, str) or len(value) < 1:
+            raise ValueError("registered secrets must be strings of non-empty strings")
         with self._lock:
             self._values.add(value)
 
