@@ -14,11 +14,11 @@ from typing import Any
 
 _REDACTED = "[REDACTED]"
 _PATTERNS = (
-    re.compile(r"(?i)(\b(?:password|passwd|client_secret|secret_id|api[_-]?key|access[_-]?token|refresh[_-]?token|vault[_-]?token)\b\s*[:=]\s*)([^\s,;]+)"),
-    re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+"),
-    re.compile(r"\b(?:hvs|s)\.[A-Za-z0-9_-]{12,}\b"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"(?i)(://[^:/\s]+:)[^@/\s]+(@)"),
+    (re.compile(r"(?i)(\\b(?:password|passwd|client_secret|secret_id|api[_-]?key|access[_-]?token|refresh[_-]?token|vault[_-]?token)\\b\\s*[:=]\\s*)([^\\s,;]+)"), r"\\1[REDACTED]"),
+    (re.compile(r"(?i)(\\bBearer\\s+)[A-Za-z0-9._~+/=-]+"), r"\\1[REDACTED]"),
+    (re.compile(r"\\b(?:hvs|s)\\.[A-Za-z0-9_-]{12,}\\b"), "[REDACTED]"),
+    (re.compile(r"\\bAKIA[0-9A-Z]{16}\\b"), "[REDACTED]"),
+    (re.compile(r"(?i)(://[^:/\\s]+:)[^@/\\s]+(@)"), r"\\1[REDACTED]\\2"),
 )
 
 
@@ -46,13 +46,8 @@ class SecretRedactor:
             secrets = sorted(self._values, key=len, reverse=True)
         for secret in secrets:
             value = value.replace(secret, _REDACTED)
-        for pattern in _PATTERNS:
-            if pattern.groups:
-                value = pattern.sub(lambda match: (match.group(1) or "") + _REDACTED +
-                                    (match.group(2) or "") if pattern.groups > 1
-                                    else match.group(1) + _REDACTED, value)
-            else:
-                value = pattern.sub(_REDACTED, value)
+        for pattern, replacement in _PATTERNS:
+            value = pattern.sub(replacement, value)
         return value
 
     def redact(self, value: Any) -> Any:
