@@ -112,6 +112,7 @@ jobs:
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_issue_22_a_22_05_graph_storage_benchmark \\
+            tests.test_issue_665_a_665_06_performance_parity \\
             tests.test_platform_perf_smoke -v
       - name: Static checks
         run: |
