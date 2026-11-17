@@ -148,3 +148,62 @@ class PostgresRedisWorkerRecoveryTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    async def test_handler_failure_is_retryable_and_event_is_not_lost(self):
+        event_id = str(uuid4())
+        await self.transport.publish(
+            tenant_id=self.tenant_id,
+            topic=self.topic,
+            event_id=event_id,
+            payload={"operation": "recover-after-transient-provider-timeout"},
+        )
+        attempts = 0
+        effects = []
+
+        async def flaky_handler(event):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise TimeoutError("simulated model timeout")
+            effects.append(event.payload["operation"])
+
+        worker = RedisStreamsConsumer(
+            transport=self.transport,
+            receipts=self.receipts,
+            tenant_id=self.tenant_id,
+            topic=self.topic,
+            group=self.group,
+            consumer_name=self.consumer_name,
+            handler=flaky_handler,
+            max_attempts=3,
+        )
+        first = await worker.consume_batch(count=1, block_ms=100, pending_idle_ms=0)
+        self.assertEqual(first["failed"], 1)
+        self.assertFalse(await self.receipts.is_completed(
+            tenant_id=self.tenant_id,
+            consumer_name=self.consumer_name,
+            event_id=event_id,
+        ))
+
+        # Force the retry lease to expire so this test is deterministic and fast.
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_event_receipts
+                   SET lease_until = now() - interval '1 second'
+                   WHERE tenant_id=%s AND consumer_name=%s AND event_id=%s""",
+                (self.tenant_id, self.consumer_name, event_id),
+            )
+            await conn.commit()
+        second = await worker.consume_batch(count=1, block_ms=0, pending_idle_ms=0)
+        self.assertEqual(second["processed"], 1)
+        self.assertEqual(attempts, 2)
+        self.assertEqual(
+            effects,
+            ["recover-after-transient-provider-timeout"],
+        )
+        self.assertTrue(await self.receipts.is_completed(
+            tenant_id=self.tenant_id,
+            consumer_name=self.consumer_name,
+            event_id=event_id,
+        ))
