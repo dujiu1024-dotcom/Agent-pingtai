@@ -13,6 +13,7 @@ class SessionManagementApiTests(unittest.TestCase):
             from agent_platform.control_plane.sessions_assets import (
                 AssetStatus, ContextWindowSnapshot, FileAsset, InMemoryObjectStorage,
                 InMemorySessionRepository, MessageRole, SessionAssetService,
+                SessionNotFound,
             )
         except ImportError:
             self.skipTest("FastAPI is installed in the platform API test environment")
@@ -163,6 +164,12 @@ class SessionManagementApiTests(unittest.TestCase):
             self.client.delete(f"/api/platform/v1/sessions/{session.session_id}").status_code,
             204,
         )
+        with self.assertRaises(SessionNotFound):
+            asyncio.run(self.service.upload_asset(
+                tenant_id="tenant-a", owner_id="user-a", filename="late.txt",
+                media_type="text/plain", content=b"must not attach",
+                session_id=session.session_id,
+            ))
 
     def test_session_permissions_and_tenant_isolation_fail_closed(self):
         import asyncio
