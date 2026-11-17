@@ -71,6 +71,7 @@ include = [
   "tests/test_observability_alerts.py",
   "tests/test_prompt_store.py",
   "tests/test_evaluation_store.py",
+  "tests/test_agent_rag_evaluation.py",
   "tests/test_sandbox_oci.py",
   "tests/test_issue_21_c_21_02_security_negative.py",
   "tests/test_sandbox_lifecycle.py",
