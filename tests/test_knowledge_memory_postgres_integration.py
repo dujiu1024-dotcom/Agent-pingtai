@@ -303,8 +303,10 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_memory_retrieval_returns_historical_version_with_source_citation(self):
-        from datetime import timedelta
-        from agent_platform.memory.retrieval import MemoryRetrievalQuery, MemoryRetrievalService
+        from agent_platform.memory.retrieval import (
+            MemoryRetrievalQuery,
+            MemoryRetrievalService,
+        )
 
         candidate = MemoryCandidate(
             tenant_id=self.tenant_id, scope=MemoryScope.USER, scope_id="history-user",
