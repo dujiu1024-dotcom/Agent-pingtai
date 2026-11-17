@@ -85,6 +85,16 @@ class BatchReportTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "cost"):
             build_batch_report(result)
+        invalid_score = (BatchTaskResult(
+            "batch:0", 0, "succeeded", {"score": 1.1}, None, None,
+            self.now, self.now, 1,
+        ),)
+        bad_score_result = BatchExecutionResult(
+            "batch", "tenant-a", "template", 1, 1, 0,
+            self.now, self.now, 1, invalid_score,
+        )
+        with self.assertRaisesRegex(ValueError, "score"):
+            build_batch_report(bad_score_result)
         inconsistent = BatchExecutionResult(
             "batch", "tenant-a", "template", 2, 1, 0,
             self.now, self.now, 1, invalid,
