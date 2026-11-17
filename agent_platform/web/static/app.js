@@ -102,9 +102,9 @@ document.addEventListener("submit",async e=>{
 
 // Capability visibility is presentation-only; every API still enforces authorization.
 const VIEW_CAPABILITIES={
- sessions:["sessions"],tasks:["task_execution","batch_execution"],approvals:["approvals"],
+ sessions:["sessions"],tasks:["task_execution"],approvals:["approvals"],
  registry:["registry","resource_registry"],
- governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"]
+ governance:["knowledge","knowledge_base","memory","blackboard","evaluations","evaluation","quotas","cost","audit","observability"],\n prompt-lab:["prompt_management"]
 };
 function viewCapabilityEnabled(view){
  const keys=VIEW_CAPABILITIES[view];if(!keys)return true;
@@ -129,38 +129,46 @@ nav=function(view){if(!viewCapabilityEnabled(view)){toast("该工作台能力当
 
 refresh().then(()=>{if(S.me){applyCapabilityGate();if(!viewCapabilityEnabled(S.view))nav("overview")}});
 
-
-// C-31-03: Batch Execution is exposed inside the existing #14 task-center workbench.
-const taskBatchBaseRender=render;
-async function renderBatchWorkbench(){
- const root=$("#view");
- if(!S.features.batch_execution)return;
- let items=[];
- try{items=await list(API+"/workbench/batches?limit=100")}catch(e){
-  root.insertAdjacentHTML("beforeend",panel("批量执行","<p class='error'>批量 API 不可用："+esc(e.message)+"</p>"));return;
- }
- const rows=items.map(x=>"<tr><td>"+esc(x.batch_id)+"</td><td>"+esc(x.template_id)+"</td><td>"+esc(x.status)+"</td><td>"+esc(x.total??"—")+"</td><td>"+esc(x.succeeded??"—")+"</td><td>"+esc(x.failed??"—")+"</td><td>"+btn("详情","data-batch='"+esc(x.batch_id)+"'")+" "+btn("取消","data-batch-cancel='"+esc(x.batch_id)+"'")+" "+btn("重试失败项","data-batch-retry='"+esc(x.batch_id)+"'")+"</td></tr>").join("");
- root.insertAdjacentHTML("beforeend",
-  panel("批量 Agent 执行",
-   "<form id='batch-submit-form'><div class='form-grid'><label>模板 ID<input name='template_id' required></label><label>最大并发<input name='max_concurrency' type='number' min='1' max='1000' value='8'></label></div><label>输入数据集（JSON 数组，每项为对象）<textarea name='dataset' required>[{\"prompt\":\"任务一\"},{\"prompt\":\"任务二\"}]</textarea></label><label>幂等键（可选）<input name='idempotency_key' maxlength='200'></label><button class='button primary'>提交批量任务</button></form>")+
-  panel("批量任务队列",table(["Batch","模板","状态","总数","成功","失败","操作"],items.map(x=>"<tr><td>"+esc(x.batch_id)+"</td><td>"+esc(x.template_id)+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.total??"—")+"</td><td>"+esc(x.succeeded??"—")+"</td><td>"+esc(x.failed??"—")+"</td><td>"+btn("详情","data-batch='"+esc(x.batch_id)+"'")+" "+btn("取消","data-batch-cancel='"+esc(x.batch_id)+"'")+" "+btn("重试失败项","data-batch-retry='"+esc(x.batch_id)+"'")+"</td></tr>"))+
-  "<div id='batch-detail'></div>"
- );
+\n// C-23-04: Prompt Lab is embedded in the existing authenticated Workbench shell.
+async function renderPromptLab(){
+ const root=$("#view");$("#title").textContent="Prompt Lab · 版本管理";$("#crumb").textContent="PROMPT LAB";
+ const id=S.promptId||"";
+ root.innerHTML=panel("Prompt 标识与新版本","<form id='prompt-load-form' class='inline-form'><label>Prompt ID<input name='prompt_id' required maxlength='128' value='"+esc(id)+"' placeholder='例如：support-assistant'></label><button class='button'>加载版本</button></form><form id='prompt-version-form'><label>新版本模板<textarea name='template' required placeholder='使用 {variable} 定义模板变量'></textarea></label><button class='button primary'>创建不可变版本</button></form><p class='subtle'>版本内容不可原位修改或删除；编辑通过创建新版本完成。发布与回滚受服务端评测门禁和权限控制。</p>")+
+ (id?panel("版本历史","<div id='prompt-versions'>加载中…</div>"):panel("开始使用","<p>输入 Prompt ID 后加载版本；首次创建模板会建立该 Prompt 的第一个版本。</p>"));
+ if(!id)return;
+ await loadPromptLab();
 }
-render=async function(){await taskBatchBaseRender();if(S.view==="tasks")await renderBatchWorkbench()};
+async function loadPromptLab(){
+ const id=S.promptId;if(!id)return;
+ const [versions,variants,audit]=await Promise.all([
+  api(API+"/prompts/"+encodeURIComponent(id)+"/versions"),
+  api(API+"/prompts/"+encodeURIComponent(id)+"/variants"),
+  api(API+"/prompts/"+encodeURIComponent(id)+"/audit?limit=50").catch(()=>({items:[]}))
+ ]);
+ const versionRows=(versions.items||[]).map(v=>"<tr><td>v"+esc(v.version)+"</td><td><code>"+esc(v.content_hash.slice(0,12))+"</code></td><td>"+esc((v.variables||[]).join(", ")||"—")+"</td><td>"+btn("查看","data-prompt-version='"+esc(v.version)+"'")+btn("Diff","data-prompt-diff='"+esc(v.version)+"'") +btn("发布","data-prompt-activate='"+esc(v.version)+"'")+btn("回滚","data-prompt-rollback='"+esc(v.version)+"'")+"</td></tr>");
+ const variantRows=(variants.items||[]).map(v=>"<tr><td>"+esc(v.name)+"</td><td>v"+esc(v.current_version)+"</td><td>"+esc(v.status)+"</td><td>"+btn("历史","data-prompt-history='"+esc(v.name)+"'")+btn("设版本","data-prompt-assign='"+esc(v.name)+"'")+ (v.status==="active"?btn("废弃","data-prompt-deprecate='"+esc(v.name)+"'"):"")+"</td></tr>");
+ $("#prompt-versions").innerHTML=panel("不可变版本",table(["版本","内容哈希","变量","操作"],versionRows))+
+ panel("创建 Variant","<form id='prompt-variant-form' class='inline-form'><label>Variant 名称<input name='name' required pattern='[a-z][a-z0-9_-]{0,63}' placeholder='candidate'></label><label>初始版本<input name='version' required type='number' min='1' value='"+esc((versions.items||[]).at(-1)?.version||1)+"'></label><button class='button primary'>创建 Variant</button></form>")+
+ panel("Variants",table(["名称","当前版本","状态","操作"],variantRows))+
+ panel("变更审计",table(["时间","动作","操作者","详情"],(audit.items||[]).map(x=>"<tr><td>"+esc(x.created_at||"—")+"</td><td>"+esc(x.action)+"</td><td>"+esc(x.actor_id)+"</td><td>"+esc(JSON.stringify(x.details||{}))+"</td></tr>")));
+}
+const promptLabBaseRender=render;
+render=async function(){if(S.view==="prompt-lab"){try{await renderPromptLab()}catch(e){$("#view").innerHTML=panel("Prompt Lab 加载失败","<p class='error'>"+esc(e.message)+"</p>")}return}return promptLabBaseRender()};
 document.addEventListener("submit",async e=>{
- const f=e.target;if(f.id!=="batch-submit-form")return;e.preventDefault();
- const d=new FormData(f);let dataset;
- try{dataset=JSON.parse(String(d.get("dataset")||""))}catch(_){toast("数据集 JSON 格式无效");return}
- const body={template_id:String(d.get("template_id")||"").trim(),dataset,max_concurrency:Number(d.get("max_concurrency")||8)};
- const key=String(d.get("idempotency_key")||"").trim();if(key)body.idempotency_key=key;
- try{const result=await api(API+"/workbench/batches",{method:"POST",body:JSON.stringify(body)});toast("批量任务已提交："+result.batch_id);await renderBatchWorkbench()}catch(x){toast(x.message)}
+ const f=e.target;
+ if(f.id==="prompt-load-form"){e.preventDefault();S.promptId=String(new FormData(f).get("prompt_id")||"").trim();await renderPromptLab();return}
+ if(f.id==="prompt-version-form"){e.preventDefault();if(!S.promptId){toast("请先加载 Prompt ID");return}const d=new FormData(f);try{const r=await api(API+"/prompts/"+encodeURIComponent(S.promptId)+"/versions",{method:"POST",body:JSON.stringify({template:d.get("template")})});toast("已创建 v"+r.version);await loadPromptLab()}catch(x){toast(x.message)}return}
+ if(f.id==="prompt-variant-form"){e.preventDefault();const d=new FormData(f);try{await api(API+"/prompts/"+encodeURIComponent(S.promptId)+"/variants",{method:"POST",body:JSON.stringify({name:d.get("name"),version:Number(d.get("version"))})});toast("Variant 已创建");await loadPromptLab()}catch(x){toast(x.message)}}
 });
 document.addEventListener("click",async e=>{
- const b=e.target.closest("[data-batch],[data-batch-cancel],[data-batch-retry]");if(!b)return;
+ const b=e.target.closest("button");if(!b||!S.promptId)return;
+ const base=API+"/prompts/"+encodeURIComponent(S.promptId);
  try{
-  if(b.dataset.batch){const detail=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batch));$("#batch-detail").innerHTML=panel("批量任务详情",pre(detail));return}
-  if(b.dataset.batchCancel){const result=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batchCancel)+"/cancel",{method:"POST",body:"{}"});toast("批量任务已取消");await renderBatchWorkbench();return}
-  if(b.dataset.batchRetry){const result=await api(API+"/workbench/batches/"+encodeURIComponent(b.dataset.batchRetry)+"/retry",{method:"POST",body:JSON.stringify({idempotency_key:"workbench-retry-"+Date.now()})});toast("失败任务已重新提交："+(result.batch_id||""));await renderBatchWorkbench()}
+  if(b.dataset.promptVersion){const v=await api(base+"/versions/"+b.dataset.promptVersion);$("#view").insertAdjacentHTML("beforeend",panel("Prompt v"+esc(v.version)+" · "+esc(v.content_hash),"<pre class='json'>"+esc(v.template)+"</pre>"));return}
+  if(b.dataset.promptDiff){const v=Number(b.dataset.promptDiff),baseVersion=Math.max(1,v-1);const d=await api(base+"/versions/"+v+"/diff?base_version="+baseVersion);$("#view").insertAdjacentHTML("beforeend",panel("Diff v"+v+" vs v"+baseVersion,"<pre class='json'>"+esc(d.diff||"无差异")+"</pre>"));return}
+  if(b.dataset.promptActivate||b.dataset.promptRollback){const version=Number(b.dataset.promptActivate||b.dataset.promptRollback),action=b.dataset.promptActivate?"activate":"rollback";await api(base+"/"+action,{method:"POST",body:JSON.stringify({version})});toast("版本操作已完成");await loadPromptLab();return}
+  if(b.dataset.promptHistory){const h=await api(base+"/variants/"+encodeURIComponent(b.dataset.promptHistory)+"/history");$("#view").insertAdjacentHTML("beforeend",panel("Variant 历史 · "+esc(b.dataset.promptHistory),pre(h.items)));return}
+  if(b.dataset.promptAssign){const name=b.dataset.promptAssign,version=Number(prompt("请输入要分配的版本号","1"));if(!Number.isInteger(version)||version<1)return;await api(base+"/variants/"+encodeURIComponent(name)+"/versions",{method:"POST",body:JSON.stringify({version})});toast("Variant 已更新");await loadPromptLab();return}
+  if(b.dataset.promptDeprecate){await api(base+"/variants/"+encodeURIComponent(b.dataset.promptDeprecate)+"/deprecate",{method:"POST",body:"{}"});toast("Variant 已废弃");await loadPromptLab()}
  }catch(x){toast(x.message)}
 });
