@@ -83,7 +83,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.source = MemorySource()
         self.service = DataLifecycleService(
             self.repo, self.source,
-            authorize=lambda tenant, actor, permission: permission != "data.delete" or actor == "admin",
+            authorize=lambda tenant, actor, permission: permission not in {"data.delete", "data.export"} or actor == "admin",
         )
 
     async def test_retention_policy_validation(self):

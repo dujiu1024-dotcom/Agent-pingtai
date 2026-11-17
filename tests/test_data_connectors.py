@@ -117,12 +117,34 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(connection.display_name, "Shared Drive")
         self.assertEqual(connection.scopes, ("files.read",))
+        with self.assertRaisesRegex(ConnectorError, "tenant-scoped"):
+            await self.service.create_connection(
+                tenant_id="tenant-a", connection_id="drive-cross-tenant",
+                provider="drive", display_name="Unsafe reference",
+                secret_ref="secret://tenant-b/drive", scopes=("files.read",),
+                actor_id="user-a",
+            )
         with self.assertRaises(ConnectorError):
             await self.service.create_connection(
                 tenant_id="tenant-a", connection_id="drive-3", provider="drive",
                 display_name="Unsafe", secret_ref="plaintext-token",
                 scopes=("files.read",), actor_id="user-a",
             )
+
+    async def test_credential_resolution_failure_is_recorded_without_leaking_secret(self):
+        class BrokenSecrets:
+            async def resolve(self, secret_ref):
+                raise RuntimeError("sensitive token material")
+
+        service = DataConnectorService(
+            repository=self.repo, providers={"drive": self.provider},
+            secrets=BrokenSecrets(), sink=self.sink,
+        )
+        with self.assertRaises(ConnectorError):
+            await service.sync_once(tenant_id="tenant-a", connection_id="drive-1")
+        saved = await self.repo.get("tenant-a", "drive-1")
+        self.assertEqual(saved.last_error, "RuntimeError")
+        self.assertNotIn("sensitive", saved.last_error)
 
     async def test_incremental_sync_advances_cursor_and_is_idempotent(self):
         self.assertEqual(await self.service.sync_once(
@@ -135,6 +157,38 @@ class DataConnectorTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-a", connection_id="drive-1",
         ), 1)
         self.assertEqual(len(self.sink.items), 2)
+
+    async def test_active_cursor_race_does_not_trigger_revocation_cleanup(self):
+        from dataclasses import replace
+
+        class ConcurrentRepository(InMemoryConnectorRepository):
+            def __init__(self):
+                super().__init__()
+                self.reads = 0
+
+            async def get(self, tenant_id, connection_id):
+                self.reads += 1
+                item = await super().get(tenant_id, connection_id)
+                if self.reads == 2 and item is not None:
+                    item = replace(item, version=item.version + 1)
+                    self.records[(tenant_id, connection_id)] = item
+                return item
+
+        repository = ConcurrentRepository()
+        await repository.add(DataConnection(
+            tenant_id="tenant-a", connection_id="drive-race", provider="drive",
+            secret_ref="secret://tenant-a/source", scopes=("files.read",),
+        ))
+        service = DataConnectorService(
+            repository=repository, providers={"drive": self.provider},
+            secrets=FakeSecrets(), sink=self.sink,
+        )
+        with self.assertRaisesRegex(ConnectorError, "cursor changed"):
+            await service.sync_once(
+                tenant_id="tenant-a", connection_id="drive-race",
+                revocation_disposition="delete",
+            )
+        self.assertEqual(self.sink.revocations, [])
 
     async def test_revocation_stops_future_sync_and_applies_delete_policy(self):
         await self.service.sync_once(tenant_id="tenant-a", connection_id="drive-1")

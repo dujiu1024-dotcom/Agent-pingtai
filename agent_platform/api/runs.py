@@ -90,12 +90,26 @@ def create_runs_router(
     @router.post("/{run_id}/resume")
     async def resume_run(run_id: str, request: Request):
         principal, lifecycle = await context(request, run_id, "resume")
+        service = await resolve_interventions(principal) if resolve_interventions is not None else None
         try:
+            ensure_resolved = getattr(service, "ensure_decisions_resolved", None)
+            if callable(ensure_resolved):
+                await ensure_resolved(tenant_id=principal.tenant_id, run_id=run_id)
             run = await lifecycle.request_resume(principal.tenant_id, run_id)
         except KeyError as exc:
             raise HTTPException(404, "Run not found") from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
+        if service is not None:
+            record_action = getattr(service, "record_action", None)
+            if callable(record_action):
+                await record_action(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    actor_id=principal.user_id, event_type="human.run_resumed",
+                    payload={"status": run.status.value},
+                )
         return serialize(run)
 
     if resolve_interventions is not None:
@@ -116,6 +130,66 @@ def create_runs_router(
                     tenant_id=principal.tenant_id, run_id=run_id,
                     actor_id=principal.user_id, kind=str(body.get("kind") or ""),
                     payload=body["payload"],
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "Run not found") from exc
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return dict(result)
+
+        @router.post("/{run_id}/interventions/{intervention_id}/decision")
+        async def decide_intervention(run_id: str, intervention_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "intervene")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "JSON object is required") from exc
+            if (
+                not isinstance(body, dict)
+                or not isinstance(body.get("decision"), str)
+                or not isinstance(body.get("rationale", ""), str)
+            ):
+                raise HTTPException(400, "decision and optional rationale are required")
+            service = await resolve_interventions(principal)
+            try:
+                result = await service.decide(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    intervention_id=intervention_id, actor_id=principal.user_id,
+                    decision=body["decision"], rationale=body.get("rationale", ""),
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "intervention not found") from exc
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            return dict(result)
+
+        @router.post("/{run_id}/result/revisions")
+        async def revise_run_result(run_id: str, request: Request):
+            principal, lifecycle = await context(request, run_id, "intervene")
+            if await lifecycle.store.get(principal.tenant_id, run_id) is None:
+                raise HTTPException(404, "Run not found")
+            try:
+                body = await request.json()
+            except Exception as exc:
+                raise HTTPException(400, "JSON object is required") from exc
+            if (
+                not isinstance(body, dict)
+                or not isinstance(body.get("output"), dict)
+                or not isinstance(body.get("reason"), str)
+            ):
+                raise HTTPException(400, "output object and revision reason are required")
+            service = await resolve_interventions(principal)
+            try:
+                result = await service.revise_result(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    actor_id=principal.user_id, output=body["output"],
+                    reason=body["reason"],
                 )
             except KeyError as exc:
                 raise HTTPException(404, "Run not found") from exc

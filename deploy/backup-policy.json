@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "timezone": "UTC",
+  "encryption": {
+    "format": "age",
+    "recipient_env": "AGE_RECIPIENT",
+    "identity_storage": "offline_secrets_manager_or_hardware_protected_store",
+    "rule": "Never store the age identity beside backup artifacts; rotate recipients by retaining old identities until all corresponding backups expire."
+  },
+  "integrity": {
+    "algorithm": "SHA-256",
+    "artifacts": ["encrypted_payload", "sidecar_checksum", "JSON_manifest"],
+    "publish_order": ["encrypted_payload", "checksum", "manifest_last"],
+    "rule": "A backup without all three artifacts or with any digest mismatch is invalid."
+  },
+  "components": {
+    "postgres": {
+      "frequency": "hourly",
+      "retention_days": 35,
+      "artifact_prefix": "platform-20",
+      "backup": "pg_dump custom format, age encrypted"
+    },
+    "redis": {
+      "frequency": "every 6 hours",
+      "retention_days": 14,
+      "artifact_prefix": "redis-",
+      "backup": "RDB point-in-time snapshot, age encrypted; PostgreSQL remains authoritative for durable business state"
+    },
+    "objects": {
+      "frequency": "daily",
+      "retention_days": 90,
+      "artifact_prefix": "object-storage-",
+      "backup": "MinIO bucket mirror, age encrypted; enable bucket versioning/replication separately where historical versions are required"
+    },
+    "config": {
+      "frequency": "daily",
+      "retention_days": 90,
+      "artifact_prefix": "platform-config-",
+      "backup": "deployment env, Compose topology, migration runner and PostgreSQL migration definitions, age encrypted"
+    }
+  },
+  "consistency": {
+    "postgres": "pg_dump transaction-consistent database snapshot",
+    "redis": "Redis RDB snapshot; not transactionally coordinated with PostgreSQL",
+    "objects": "MinIO mirror is a point-in-time traversal, not a version-preserving atomic snapshot",
+    "configuration": "Captured at backup invocation; secrets encrypted and excluded from repository history",
+    "cross_component": "No cross-component atomic checkpoint is claimed; record run timestamps and reconcile references before production cutover."
+  }
+}

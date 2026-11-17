@@ -1658,6 +1658,97 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_workbench_worker_lease_takeover_retry_and_dead_letter(self):
+        store = PostgresRunStateStore(self.connect)
+        run_id = str(uuid4())
+        await store.create_task_run(
+            tenant_id=self.tenant_id, run_id=run_id, actor_id="worker-owner",
+            agent_id="agent-a", agent_version=1, template_id="template-a",
+            template_version=1, input={"prompt": "recover me"},
+            preparation_owner="prep-worker", registry_snapshot=[],
+            project_id=None, session_id=None,
+            idempotency_key="worker-reliability-" + run_id,
+            request_digest="e" * 64,
+        )
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs SET registry_snapshot_digest=%s
+                   WHERE tenant_id=%s AND run_id=%s""",
+                ("f" * 64, self.tenant_id, run_id),
+            )
+            await conn.commit()
+        self.assertTrue(await store.mark_task_ready(
+            self.tenant_id, run_id, "f" * 64, "prep-worker",
+        ))
+
+        first_claim = await store.claim_workbench_tasks(
+            "worker-a", limit=1, lease_seconds=30,
+        )
+        self.assertEqual([row.run_id for row in first_claim], [run_id])
+        self.assertEqual(await store.claim_workbench_tasks(
+            "worker-b", limit=1, lease_seconds=30,
+        ), [])
+        lifecycle = RunLifecycleManager(store)
+        await lifecycle.start(self.tenant_id, run_id)
+        self.assertTrue(await store.heartbeat(
+            self.tenant_id, run_id, "worker-a", lease_seconds=30,
+        ))
+
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs SET lease_expires_at=now()-interval '1 second',
+                   max_worker_attempts=3 WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, run_id),
+            )
+            await conn.commit()
+
+        replacement_claim = await store.claim_workbench_tasks(
+            "worker-b", limit=1, lease_seconds=30,
+        )
+        self.assertEqual([row.run_id for row in replacement_claim], [run_id])
+        self.assertEqual(replacement_claim[0].status, RunStatus.RUNNING)
+        self.assertFalse(await store.heartbeat(
+            self.tenant_id, run_id, "worker-a", lease_seconds=30,
+        ))
+        self.assertTrue(await store.heartbeat(
+            self.tenant_id, run_id, "worker-b", lease_seconds=30,
+        ))
+
+        self.assertEqual(await store.record_workbench_failure(
+            self.tenant_id, run_id, "worker-b", error="transient worker failure",
+        ), "interrupted")
+        retry_claim = await store.claim_workbench_tasks(
+            "worker-c", limit=1, lease_seconds=30,
+        )
+        self.assertEqual([row.run_id for row in retry_claim], [run_id])
+        self.assertEqual(retry_claim[0].status, RunStatus.INTERRUPTED)
+        self.assertEqual(await store.record_workbench_failure(
+            self.tenant_id, run_id, "worker-c", error="retry budget exhausted",
+        ), "failed")
+
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                """SELECT status,worker_attempts,max_worker_attempts,dead_lettered_at
+                   FROM platform_runs WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, run_id),
+            )
+            run = await cur.fetchone()
+            cur = await conn.execute(
+                """SELECT attempt_count,max_attempts,reason
+                   FROM platform_run_dead_letters WHERE tenant_id=%s AND run_id=%s""",
+                (self.tenant_id, run_id),
+            )
+            dead_letter = await cur.fetchone()
+        self.assertEqual(run["status"], "failed")
+        self.assertEqual(run["worker_attempts"], 3)
+        self.assertIsNotNone(run["dead_lettered_at"])
+        self.assertEqual(dead_letter["attempt_count"], 3)
+        self.assertEqual(dead_letter["max_attempts"], 3)
+        self.assertEqual(dead_letter["reason"], "retry budget exhausted")
+        self.assertEqual(await store.claim_workbench_tasks(
+            "worker-d", limit=1, lease_seconds=30,
+        ), [])
+
     async def test_failed_and_non_session_runs_do_not_queue_memory_events(self):
         store = PostgresRunStateStore(self.connect)
         lifecycle = RunLifecycleManager(store)
