@@ -1,5 +1,6 @@
 """Trusted publisher registry and management API regression tests."""
 import unittest
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,7 +13,6 @@ from agent_platform.extensions.postgres import (
     _manifest_dict, _manifest_from,
 )
 from agent_platform.extensions.manifest import ExtensionManifest
-from datetime import datetime, timezone
 from agent_platform.identity.models import Principal
 
 
