@@ -21,15 +21,15 @@ class RunEventBrokerTests(unittest.IsolatedAsyncioTestCase):
     async def test_rejects_cross_run_cursor_and_expired_cursor(self):
         broker = RunEventBroker(history_limit=2)
         with self.assertRaises(ValueError):
-            await anext(broker.subscribe(
+            await broker.subscribe(
                 tenant_id="t", run_id="r", last_event_id="other:1",
-            ))
+            )
         for name in ("RUN_START", "STEP_START", "STEP_FINISH"):
             await broker.publish(tenant_id="t", run_id="r", event_type=name)
         with self.assertRaises(ValueError):
-            await anext(broker.subscribe(
+            await broker.subscribe(
                 tenant_id="t", run_id="r", last_event_id="r:1",
-            ))
+            )
 
     async def test_slow_subscriber_is_detached_without_blocking_publish(self):
         broker = RunEventBroker(history_limit=10, subscriber_limit=1)
