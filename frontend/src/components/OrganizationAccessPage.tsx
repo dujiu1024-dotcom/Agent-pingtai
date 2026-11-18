@@ -26,21 +26,23 @@ const accessAreas = [
   {
     title: '角色权限矩阵',
     description: '角色与权限集合的绑定、预览和差异比较',
-    contract: '角色 / 权限 schema、权限目录与授权 API 未核实',
+    contract: '权限目录 schema、权限键与服务端 authorizer 未核实',
   },
   {
     title: '资源与操作授权',
     description: '菜单、页面、操作和 API 的服务端授权规则',
-    contract: 'resource/action 权限键及服务端 authorizer 未核实',
+    contract: 'resource/action 权限键空间和服务端 authorizer 未核实',
   },
   {
     title: '数据范围策略',
     description: '实例、组织、部门、项目和个人范围的策略配置',
-    contract: 'data_scope 枚举、策略继承和过滤语义未核实',
+    contract: 'data_scope 枚举、策略继承和过滤语义未定义',
   },
 ]
 
-export function OrganizationAccessPage({ page }: OrganizationAccessPageProps) {
+export function OrganizationAccessPage({
+  page,
+}: OrganizationAccessPageProps) {
   const organization = page === 'organization'
   const areas = organization ? organizationAreas : accessAreas
 
@@ -79,11 +81,21 @@ export function OrganizationAccessPage({ page }: OrganizationAccessPageProps) {
       <section className="access-admin-audit">
         <h2>接入前置条件</h2>
         <ul>
-          <li>由服务端 bootstrap 明确返回 auth.enabled 与组织 / RBAC capability。</li>
-          <li>auth.enabled=false 时隐藏组织、成员和 RBAC 入口，不创建默认组织、用户或角色。</li>
-          <li>auth.enabled=true 时使用服务端真实 schema、分页 cursor、状态机和错误码。</li>
-          <li>邀请、停用、角色变更和数据范围变更必须由服务端授权并写入 append-only 审计。</li>
-          <li>角色变更、成员停用和策略更新必须支持并发冲突检测，不能由前端隐藏按钮代替安全控制。</li>
+          <li>
+            由服务端 bootstrap 明确返回 auth.enabled 与组织 / RBAC capability。
+          </li>
+          <li>
+            auth.enabled=false 时隐藏组织、成员和 RBAC 入口，不创建默认组织、用户或角色。
+          </li>
+          <li>
+            auth.enabled=true 时使用服务端真实 schema、分页 cursor、状态机和错误码。
+          </li>
+          <li>
+            邀请、停用、角色变更和数据范围变更必须由服务端授权并写入 append-only 审计。
+          </li>
+          <li>
+            角色变更、成员停用和策略更新必须支持并发冲突检测，不能由前端隐藏按钮代替安全控制。
+          </li>
         </ul>
       </section>
     </section>
