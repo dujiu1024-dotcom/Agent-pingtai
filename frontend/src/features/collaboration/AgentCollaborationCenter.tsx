@@ -34,20 +34,20 @@ export function AgentCollaborationCenter() {
   const [kind, setKind] = useState('')
   const agentsQuery = useQuery({
     queryKey: ['collaboration', 'agents'],
-    queryFn: () => apiClient.get<unknown>('/api/platform/v1/registry/agent'),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/registry/agent'),
     refetchInterval: 30000,
   })
   const agents = useMemo(() => unwrap<RecordValue>(agentsQuery.data), [agentsQuery.data])
   const runQuery = useQuery({
     queryKey: ['collaboration', 'run', runId],
     enabled: Boolean(runId.trim()),
-    queryFn: () => apiClient.get<RecordValue>(`/api/platform/v1/runs/${encodeURIComponent(runId.trim())}`),
+    queryFn: () => apiClient.get<RecordValue>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}`),
     refetchInterval: 10000,
   })
   const eventsQuery = useQuery({
     queryKey: ['collaboration', 'run-events', runId],
     enabled: Boolean(runId.trim()) && runQuery.isSuccess,
-    queryFn: () => apiClient.get<unknown>(`/api/platform/v1/runs/${encodeURIComponent(runId.trim())}/events?limit=200`),
+    queryFn: () => apiClient.get<unknown>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}/events?limit=200`),
     refetchInterval: 10000,
   })
   const entriesQuery = useQuery({
@@ -56,7 +56,7 @@ export function AgentCollaborationCenter() {
     queryFn: () => {
       const params = new URLSearchParams({ scope, scope_id: scopeId.trim(), limit: '100' })
       if (kind) params.set('kinds', kind)
-      return apiClient.get<unknown>(`/api/platform/v1/blackboard/entries?${params}`)
+      return apiClient.get<unknown>(`/platform/v1/blackboard/entries?${params}`)
     },
     refetchInterval: 20000,
   })
@@ -64,7 +64,7 @@ export function AgentCollaborationCenter() {
   const historyQuery = useQuery({
     queryKey: ['collaboration', 'blackboard-history', selectedEntry],
     enabled: Boolean(selectedEntry),
-    queryFn: () => apiClient.get<unknown>(`/api/platform/v1/blackboard/entries/${encodeURIComponent(selectedEntry)}/history`),
+    queryFn: () => apiClient.get<unknown>(`/platform/v1/blackboard/entries/${encodeURIComponent(selectedEntry)}/history`),
   })
   const history = unwrap<RecordValue>(historyQuery.data)
   const events = useMemo(() => {
