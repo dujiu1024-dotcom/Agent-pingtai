@@ -42,10 +42,6 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Unit tests
         run: pnpm test
-      - name: Temporary Prettier formatting preview
-        run: |
-          pnpm exec prettier --write src/lib/api/api-client.ts src/lib/api/api-client.test.ts src/lib/events/event-bus.ts src/lib/events/event-bus.test.ts src/lib/events/query-event-bridge.ts src/lib/events/query-event-bridge.test.ts src/providers/AppProviders.tsx
-          git diff -- src/lib/api/api-client.ts src/lib/api/api-client.test.ts src/lib/events/event-bus.ts src/lib/events/event-bus.test.ts src/lib/events/query-event-bridge.ts src/lib/events/query-event-bridge.test.ts src/providers/AppProviders.tsx
       - name: Lint and format
         run: pnpm lint
       - name: Typecheck
