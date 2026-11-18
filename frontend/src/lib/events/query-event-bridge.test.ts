@@ -91,4 +91,35 @@ describe('connectQueryEvents', () => {
     expect(invalidate).not.toHaveBeenCalled()
     client.clear()
   })
+
+  it('does not let an older entity version overwrite newer query data', () => {
+    const client = new QueryClient()
+    client.setQueryData(['tasks', 'task-1'], {
+      id: 'task-1',
+      status: 'completed',
+      version: 3,
+    })
+    const testBus = createTestBus()
+    const disconnect = connectQueryEvents(testBus.bus, client, {
+      'task.updated': {
+        queryKey: (item) => ['tasks', item.entity_id],
+        update: (current, item) => ({
+          ...(current as object),
+          ...(item.payload as object),
+          version: item.version,
+        }),
+      },
+    })
+
+    testBus.emit(event)
+
+    expect(client.getQueryData(['tasks', 'task-1'])).toEqual({
+      id: 'task-1',
+      status: 'completed',
+      version: 3,
+    })
+    disconnect()
+    client.clear()
+  })
+
 })
