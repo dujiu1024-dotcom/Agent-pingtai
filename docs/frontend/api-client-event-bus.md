@@ -66,7 +66,7 @@ interface PlatformEvent {
 - 断开/stop 会取消当前 fetch/reader 和等待中的重连 timer；订阅返回 unsubscribe。
 - Event Bus 只解码、校验、去重、分发，不保存业务实体状态。
 
-Query Cache 校准：`connectQueryEvents(bus, queryClient, routes)` 将事件类型映射到 Query Key 并触发精准 invalidateQueries。业务若需局部 setQueryData，可在订阅回调中基于 entity/version 实施；不要把实体复制到 Zustand。
+Query Cache 校准：`connectQueryEvents(bus, queryClient, routes)` 将事件类型映射到 Query Key。默认触发精准 invalidateQueries；只有事件 payload 足以安全更新当前查询表示时，才注册 `update` 并通过 setQueryData 局部更新。不要把实体复制到 Zustand。
 
 ## 自测与边界
 
