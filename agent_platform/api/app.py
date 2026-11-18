@@ -1,7 +1,8 @@
 """Production composition factory for the platform HTTP API."""
 from __future__ import annotations
 
-from typing import Any, Sequence
+import os
+from typing import Any, Protocol, Sequence
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
@@ -65,14 +66,71 @@ async def _principal_from_request(request: Any) -> Any:
     return principal
 
 
+class AuthorizationContextStrategy(Protocol):
+    """Pluggable request identity policy selected once during app startup."""
+
+    async def resolve_principal(self, request: Any) -> Any | None: ...
+
+    async def resolve_authorization_context(self, request: Any) -> Any | None: ...
+
+
+class AuthenticatedAuthorizationContextStrategy:
+    """Resolve real principals and persisted RBAC context in auth-enabled mode."""
+
+    def __init__(self, identity_repository: Any) -> None:
+        self.identity_repository = identity_repository
+
+    async def resolve_principal(self, request: Any) -> Any:
+        return await _principal_from_request(request)
+
+    async def resolve_authorization_context(self, request: Any) -> Any:
+        principal = await self.resolve_principal(request)
+        context = await self.identity_repository.get_authorization_context(
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+        )
+        if context is None:
+            from fastapi import HTTPException
+            raise HTTPException(403, "active tenant membership required")
+        return context
+
+
+class InstanceAuthorizationContextStrategy:
+    """No-auth policy: no Principal, user, role, or synthetic AuthorizationContext."""
+
+    async def resolve_principal(self, request: Any) -> None:
+        return None
+
+    async def resolve_authorization_context(self, request: Any) -> None:
+        return None
+
+
+def _resolve_auth_enabled(value: bool | None) -> bool:
+    """Resolve the immutable startup mode from argument or AUTH_ENABLED env."""
+    if value is not None:
+        if not isinstance(value, bool):
+            raise ValueError("auth_enabled must be a boolean")
+        return value
+    raw = os.getenv("AUTH_ENABLED")
+    if raw is None or not raw.strip():
+        return False
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("AUTH_ENABLED must be one of true/false, 1/0, yes/no, or on/off")
+
+
 def create_platform_app(
     *,
-    identity: IdentityService,
-    identity_repository: Any,
+    identity: IdentityService | None = None,
+    identity_repository: Any | None = None,
     knowledge: KnowledgeService,
     memory: MemoryService,
     redis: Any,
     allowed_origins: Sequence[str],
+    auth_enabled: bool | None = None,
     service_identity: Any | None = None,
     rag: RAGService | None = None,
     rag_playground_resolver: Any | None = None,
@@ -163,6 +221,15 @@ def create_platform_app(
     so multi-instance deployments do not silently fall back to process-local
     security controls.
     """
+    auth_enabled = _resolve_auth_enabled(auth_enabled)
+    if auth_enabled and identity is None:
+        raise ValueError("auth.enabled=true requires an identity service")
+    if auth_enabled and identity_repository is None:
+        raise ValueError("auth.enabled=true requires an identity repository")
+    authorization_strategy: AuthorizationContextStrategy = (
+        AuthenticatedAuthorizationContextStrategy(identity_repository)
+        if auth_enabled else InstanceAuthorizationContextStrategy()
+    )
     if isinstance(allowed_origins, str):
         raise ValueError("allowed_origins must be a sequence of exact origins")
     origins = tuple(origin.strip() for origin in allowed_origins if origin.strip())
@@ -195,6 +262,8 @@ def create_platform_app(
         version="1.0.0",
         description="Versioned tenant-scoped API. See docs/api-contract.md for the public contract.",
     )
+    app.state.auth_enabled = auth_enabled
+    app.state.authorization_context_strategy = authorization_strategy
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -233,8 +302,9 @@ def create_platform_app(
         service_identity=service_identity,
         allowed_origins=origins,
         protected_paths=("/api", "/auth"),
-        login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
-        local_principal=local_principal_resolver,
+        login_rate_limiter=RedisSlidingWindowRateLimiter(redis) if auth_enabled else None,
+        local_principal=local_principal_resolver if auth_enabled else None,
+        auth_enabled=auth_enabled,
     )
     app.add_middleware(TraceContextASGIMiddleware)
     # Outer middleware also covers authentication failures returned before routing.
@@ -244,7 +314,8 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    app.include_router(create_identity_router(identity=identity))
+    if auth_enabled:
+        app.include_router(create_identity_router(identity=identity))
     app.include_router(
         create_health_router(
             readiness_checks=(
