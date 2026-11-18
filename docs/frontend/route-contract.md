@@ -68,3 +68,87 @@
 - 回滚路径。
 
 特殊注意：`/app?legacy=true` 的旧版回退跳转到 `/office`，不能将其误当作新 3D 办公室路由；`agent_platform/api/office.py` 的 state 路由目前未在 `create_platform_app` 中注册，且 handler 仍要求认证 Principal。
+
+
+## 9. 路由状态与唯一性约定
+
+路由状态必须使用以下枚举，页面地图中的目标态路由不能直接视为服务已注册：
+
+| 状态 | 定义 | 验收证据 |
+|---|---|---|
+| `verified` | 当前组合入口/路由源码明确注册，且存在可定位 handler | 注册文件、include_router/route 声明 |
+| `conditional` | 源码存在注册逻辑，但需 service/resolver/authorizer/capability 条件满足 | 组合参数与条件分支 |
+| `module-only-unregistered` | router/handler 模块存在，但当前 app composition 未注册 | 模块文件 + 组合入口缺失 |
+| `missing` | 已检查组合入口和模块，没有可证实的 API/路由 | 搜索范围与责任 Issue |
+| `proposed` | 目标页面/路由契约，当前尚未实现 | page-map page_id 与主责 Issue |
+
+页面 UI 路由与 API endpoint 状态分开记录。静态 HTML 返回入口（如 `/app`）不等于内部 `data-view` 已有独立 URL；一个 router include 也不等于其中每个可选 endpoint 在当前实例都已挂载。
+
+## 10. 页面身份与参数注册表
+
+- `page_id` 是页面永久标识，不随中文标题、导航分组、组件布局变化；删除后不得复用。
+- 一个 page_id 对应一个规范 path。别名/旧入口通过迁移表指向该 page_id，不建立重复详情页。
+- 同一主实体的详情必须由一个 page_id/path 唯一负责；跨模块卡片只链接到该详情，不复制 CRUD。
+- path 主键使用后端稳定 ID：Task `taskId`、Run `runId`、Agent `agentId`、Workflow Definition `workflowId`、Provider `providerId`、Template `templateId`、Routing Policy `policyId`、Tool/MCP `toolId`、Skill `skillId`、Knowledge Base `knowledgeBaseId`、Document `documentId`、Chunk `chunkId`、Memory `memoryId`、Conversation `conversationId`、File/Artifact `fileId`、Approval `approvalId`、Dataset `datasetId`、Evaluation Run `evaluationRunId`、Audit Event `eventId`。
+- path 参数只放资源定位 ID；版本号如需定位不可变定义版本，使用 `version` query 或版本子路由，且在所属模块字段/API 契约中确认。
+
+## 11. Query 参数规范
+
+| 参数 | 类型 / 语义 | 适用范围 | 规则 |
+|---|---|---|---|
+| `q` | string，搜索词 | 列表/全局搜索 | trim；不得承载密钥或隐私字段 |
+| `status` | string 或重复值 | Task/Run/Agent/Approval 等列表 | 枚举以 API schema 为准；不认识的值保留为 unknown，不映射成功 |
+| `projectId`、`agentId`、`modelTemplateId` | string，过滤主键 | 任务/运行/成本列表 | 使用稳定 ID，不使用展示名称 |
+| `from`、`to` | ISO-8601 datetime | 时间列表/趋势下钻 | 必须带 Z 或 offset；内部统一转 UTC，展示使用本地时区 |
+| `sort` | string | 列表 | 使用 schema 允许字段；方向约定为 `field:asc` / `field:desc` |
+| `page` | positive integer | 分页列表 | 从 1 开始；非法值回退 1 |
+| `pageSize` | positive integer | 分页列表 | 正数且不超过服务端上限；超限按服务端响应处理 |
+| `tab` | string | 详情/复合页面 | 只接受页面登记的 tab key；未知值回退默认 tab |
+| `nodeId` | string | Run/Workflow 图 | 必须属于当前 run/workflow；无效时不阻断详情 |
+| `fromPage` | page_id | 穿透来源 | 只接受已登记 page_id |
+| `returnTo` | same-origin relative path | 返回列表 | 必须拒绝 scheme、authority、双斜杠、反斜杠、CRLF 和多次编码绕过 |
+| `version` | string/integer | 版本化定义详情 | 必须由 API contract 定义版本语义，不允许前端自行推断 |
+
+多值筛选应使用重复 query key（例如 `status=queued&status=running`），禁止同一字段混用逗号分隔和重复 key。未知 query key 不得改变资源定位或授权结果；可忽略并记录诊断。筛选条件不得包含凭据、访问令牌、Prompt 正文或其他秘密。
+
+## 12. 深链、返回状态与导航
+
+1. 所有目标态详情 path 支持直接打开、刷新、复制和新标签页访问；服务端静态托管必须为已登记 SPA path 提供应用 fallback，但 API path/未知资源不能被 fallback 吞掉。
+2. 从列表进入详情时，优先将筛选、排序、分页、时间范围编码为可分享 query；滚动位置可由客户端历史状态保存，不写入业务 API 参数。
+3. `returnTo` 优先采用同源相对路径；缺失/非法时回退到实体默认列表，不能依赖浏览器 history.back()。
+4. Task → Run：使用 Task 的稳定 `taskId` 与 Run 的稳定 `runId`；Run 详情可带 `fromPage`、`returnTo`，不得把 taskId 填入 runId。
+5. Agent → Model：Agent Definition 页面引用 `modelTemplateId` 并跳转模板详情；Provider/Template/Routing Policy 是三个独立详情归属。
+6. Workflow：定义编辑 path 属 #749；运行态 path 属 #746；二者不可共用 `:id` 造成主责混淆，运行详情用 runId，定义详情用 workflowId。
+7. Evaluation：指标聚合页面跳转到 #750 的 Dataset/Evaluation Run/Case 事实详情；#747 不持有样本详情。
+8. 3D Office：Agent/Task/Run 点击事件只导航到其唯一详情页；`/app?legacy=true → /office` 是旧回退，不得重写为新办公室路由。
+9. 面包屑由 page_id 的路由元数据构造；详情标题加载失败时显示资源类型与稳定 ID，不阻断返回导航。
+
+## 13. 双权限模式路由可见性与直达行为
+
+| 路由类别 | auth.enabled=false | auth.enabled=true |
+|---|---|---|
+| 工作空间/运营业务页 | 直接进入；不要求 session/token/Principal | 先完成登录，再由服务端 RBAC 决定 |
+| 平台资源定义（Agent/Workflow/Model/Tool/Skill） | 可见；不执行用户/角色/数据范围过滤 | 按服务端资源/操作权限控制 |
+| 组织/成员/角色/RBAC 管理 | 导航隐藏，直达返回“不适用/不可用”页面，不得要求初始化身份 | 仅授权管理员/角色可见和操作 |
+| 登录/退出/会话/首个管理员初始化 | 不显示、不调用、不重定向；初始化不适用 | 登录可用；初始化仅 auth=true 且未初始化时开放；不提供公开注册 |
+| 全局搜索/通知/审计/运维 | 业务可见性依能力与 API；不要求身份门槛 | 菜单和数据由 RBAC 决定 |
+| 无权限页面 | 不得制造身份授权门槛；服务端业务错误仍按真实语义展示 | 标准 403，不得把 401/403 混为登录成功 |
+| REST/SSE/WebSocket/文件 | 必须与 no-auth API policy 一致；不得由 UI 单独绕过 | 服务端认证、资源授权、审计 |
+
+模式只由服务端启动配置确定；前端 bootstrap 只读消费。配置变更需重启，不提供前端热切换开关。当前主干仍强制 Identity middleware 的事实记录在 page-map CODE-AUTH-001；在 #755 交付前，不得宣称 auth=false 已可运行。
+
+## 14. 维护、链接检查与路由约定自检
+
+每次路由相关 PR 至少执行并记录以下自动化检查（可由脚本或测试实现，Gate 0 文档先定义契约）：
+
+- Markdown 本地链接：相对路径目标存在；仓库内图片引用目标存在；外部链接格式合法。
+- Mermaid：代码围栏成对，节点引用有效；不允许将 Mermaid 作为唯一事实源，配套表格必须存在。
+- page_id：非空、全局唯一；旧 view key/alias 不得重复注册 page_id。
+- canonical path：非空、目标路由无冲突；path 参数名稳定；重复实体详情归属失败。
+- ownership：每个页面恰有一个主责 Issue；共享入口必须拆分到明确的 page_id，不得双主责。
+- API mapping：每页至少引用一个 API contract ID，或明确标记 `not-applicable` / `missing`；不得把 module-only-unregistered/conditional 误判为 source-registered。
+- mode matrix：每页明确 auth=false 与 auth=true 可见性/直达行为；登录、组织和 RBAC 页 auth=false 不可见。
+- legacy crosswalk：所有 /app data-view key 与 platform-ui 页面均可映射到唯一 page_id 或明确的复合入口拆分规则。
+- 视觉引用：WS-OVERVIEW 只引用首页基准图；WS-OFFICE 只引用 3D 办公室基准图；资源缺失应报错或登记缺口，不允许静默换图。
+
+路由约定自检失败时，PR 不得宣称 Gate 0 冻结。文档修改只改变结构契约，不会自动注册任何页面或 API。
