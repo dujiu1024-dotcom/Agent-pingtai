@@ -64,7 +64,9 @@ function makeIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
   }
-  return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+  const timestamp = Date.now().toString(36)
+  const random = Math.random().toString(36).slice(2)
+  return `idem-${timestamp}-${random}`
 }
 
 function appendQuery(url: URL, params: Record<string, unknown>): void {
@@ -139,7 +141,10 @@ export class ApiClient {
     if (callerSignal?.aborted) onCallerAbort()
     else callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
     const timeout = setTimeout(
-      () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+      () =>
+        controller.abort(
+          new DOMException('Request timed out', 'TimeoutError'),
+        ),
       timeoutMs,
     )
 
@@ -174,7 +179,10 @@ export class ApiClient {
       if (method === 'GET' && etag) {
         const responseEtag = response.headers.get('etag')
         if (responseEtag) {
-          this.etagCache.set(cacheKey, { etag: responseEtag, body: responseBody })
+          this.etagCache.set(cacheKey, {
+            etag: responseEtag,
+            body: responseBody,
+          })
         }
       }
       return responseBody as T
@@ -199,7 +207,10 @@ export class ApiClient {
     }
   }
 
-  get<T>(path: string, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}) {
+  get<T>(
+    path: string,
+    options: Omit<ApiRequestOptions, 'method' | 'body'> = {},
+  ) {
     return this.request<T>(path, { ...options, method: 'GET' })
   }
 
@@ -274,7 +285,11 @@ export class ApiClient {
     }
   }
 
-  private toError(status: number, payload: unknown, requestId?: string): ApiError {
+  private toError(
+    status: number,
+    payload: unknown,
+    requestId?: string,
+  ): ApiError {
     const envelope = payload as Partial<ApiErrorEnvelope> | null
     return new ApiError(
       envelope?.message ?? `Request failed with status ${status}`,
