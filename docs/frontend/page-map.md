@@ -185,7 +185,7 @@ Workflow：`/admin/workflows` → 草稿编辑 → 节点/边 Schema 校验 → 
 | API-NOTIFICATION | 通知列表/已读/投递状态 API | 待核实 | #751 |
 | API-OFFICE-LAYOUT | 办公室空间布局读写/版本 API | 待核实 | #748 |
 | API-BOOTSTRAP | 服务端 auth.enabled bootstrap 元信息 | 待核实 | #743 |
-| ROUTE-LEGACY | 当前仓库现有 UI 入口/路由清单 | 尚未完成代码盘点 | #743/#753 |
+| ROUTE-LEGACY | 当前仓库 UI 入口/路由逐页映射 | 已完成关键入口初审；全量旧视图映射待完成 | #743/#753 |
 | API-ENTITY-MAP | 各实体详情 API 与 schema 对照 | 尚未完成 | 各页面主责 Issue |
 
 ## 9. 冻结前检查清单
