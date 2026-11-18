@@ -59,14 +59,10 @@ describe('ApiClient', () => {
     await expect(client.get('/settings')).resolves.toEqual({ data: 'fresh' })
     expect(
       new Headers(fetcher.mock.calls[1][1]?.headers).get('If-None-Match'),
-    ).toBe(
-      '"rev-1"',
-    )
+    ).toBe('"rev-1"')
   })
 
-  it(
-    'adds an idempotency key to mutations and exposes revision conflicts',
-    async () => {
+  it('adds an idempotency key and exposes revision conflicts', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -76,7 +72,10 @@ describe('ApiClient', () => {
         { status: 412, headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const client = new ApiClient({ baseUrl: 'https://example.test/api', fetcher })
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
 
     await expect(
       client.post('/tasks', { name: 'new' }, { ifMatch: '"rev-1"' }),
@@ -108,7 +107,7 @@ describe('ApiClient', () => {
     await expect(request).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('uses the supplied idempotency key and surfaces request ids', async () => {
+  it('uses a caller-provided idempotency key and surfaces request ids', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -136,5 +135,4 @@ describe('ApiClient', () => {
       new Headers(fetcher.mock.calls[0][1]?.headers).get('Idempotency-Key'),
     ).toBe('logical-op-1')
   })
-
 })
