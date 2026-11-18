@@ -65,9 +65,11 @@ describe('ApiClient', () => {
     )
     const client = new ApiClient({ baseUrl: 'https://example.test/api', fetcher })
 
-    await expect(client.post('/tasks', { name: 'new' })).rejects.toBeInstanceOf(
-      ApiConflictError,
-    )
-    expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('Idempotency-Key')).toBeTruthy()
+    await expect(
+      client.post('/tasks', { name: 'new' }, { ifMatch: '"rev-1"' }),
+    ).rejects.toBeInstanceOf(ApiConflictError)
+    const headers = new Headers(fetcher.mock.calls[0][1]?.headers)
+    expect(headers.get('Idempotency-Key')).toBeTruthy()
+    expect(headers.get('If-Match')).toBe('"rev-1"')
   })
 })
