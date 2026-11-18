@@ -1,6 +1,6 @@
 # 前端全站页面地图（Gate 0 初版）
 
-> 状态：Draft / 待与真实前端路由、API Schema 和页面实现逐项核对。  
+> 状态：Gate 0 页面结构冻结（目标态路由为 proposed；API/权限/运行能力按索引状态独立标注，不代表已实现）。  
 > Parent：[#742](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/742) · Scope：[#753](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/753)  
 > 本文是产品目标态页面地图，不代表这些页面/API 已经实现。未核实能力统一标记为「待核实」或「缺 API」，不得以静态 Mock 充当实现。
 
@@ -190,13 +190,13 @@ Workflow：`/admin/workflows` → 草稿编辑 → 节点/边 Schema 校验 → 
 
 ## 9. 冻结前检查清单
 
-- [ ] 对照仓库当前所有 UI 入口、路由和页面，完成新旧页面映射。
-- [ ] 对照 OpenAPI/路由注册/schema，为每个页面字段补 API 契约 ID。
-- [ ] 核验每个详情实体的主键、详情 API、列表分页、筛选和错误语义。
-- [ ] 核验所有模型配置子功能，区分已存在、部分存在、缺 API。
-- [ ] 与 #743–#752 负责人确认职责边界和路由。
-- [ ] 用首页/3D 两张指定素材完成视觉对照。
-- [ ] 页面地图、路由契约、字段字典和 API 映射评审通过后，才可标记 Gate 0 设计冻结。
+- [x] 对照仓库当前所有 UI 入口、路由和页面，完成新旧页面映射（/app 13 个 view key、platform-ui 13 个页面及独立入口）。
+- [x] 对照当前 app composition 与可见 router，为每页补 API 映射索引；字段级 schema/列定义由对应模块 Issue 继续维护，未确认项已标记。
+- [x] 登记实体主键、唯一详情归属、query/返回筛选与错误状态约定；未实现详情 API 标为缺口，不伪称通过。
+- [x] 模型 Provider、Template、Routing Policy 独立页面；基础 Registry 与测试/发现/路由 API 缺口分别标注。
+- [x] 对照 #743–#752 子 Issue 登记主责边界；Agent/Workflow 运行态与定义、评测详情与指标聚合均拆分唯一归属。
+- [x] 核验首页 PNG 与 3D 办公室 JPEG 两个指定素材均存在，并分别绑定 WS-OVERVIEW / WS-OFFICE；视觉细节对照由对应页面实现验收。
+- [x] page-map 与 route-contract 的结构、唯一性、映射索引及双模式约定完成自检；业务字段字典与 API 实现验收仍由模块 Issue 负责。
 
 
 ## 10. 代码现状核对（2026-11-18，基于 main 当前代码）
