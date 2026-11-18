@@ -96,6 +96,7 @@ export class ApiClient {
       body,
       timeoutMs = this.timeoutMs,
       idempotencyKey,
+      ifMatch,
       etag = true,
       headers: requestHeaders,
       signal: callerSignal,
@@ -121,7 +122,9 @@ export class ApiClient {
       requestBody = JSON.stringify(body)
     }
 
-    if (['POST', 'PATCH'].includes(method)) {
+    if (ifMatch) headers.set('If-Match', ifMatch)
+
+    if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
       headers.set('Idempotency-Key', idempotencyKey ?? makeIdempotencyKey())
     } else if (idempotencyKey) {
       headers.set('Idempotency-Key', idempotencyKey)
