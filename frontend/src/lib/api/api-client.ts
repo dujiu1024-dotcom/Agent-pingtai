@@ -230,7 +230,7 @@ export class ApiClient {
     params: PaginationParams = {},
     options: Omit<ApiRequestOptions, 'method' | 'body'> = {},
   ): Promise<PageEnvelope<T>> {
-    const url = new URL(path.replace(/^\\//, ''), this.resolveBaseUrl())
+    const url = new URL(path.replace(/^\//, ''), this.resolveBaseUrl())
     appendQuery(url, {
       page: params.page,
       page_size: params.page_size,
