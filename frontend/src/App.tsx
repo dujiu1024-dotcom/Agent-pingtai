@@ -1,67 +1,252 @@
-import DesignSystemShowcase from '@/components/DesignSystemShowcase'
+import { useEffect, useState } from 'react'
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+} from 'react-router-dom'
+
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { GlobalSearch } from '@/components/GlobalSearch'
+import { EmptyState, ErrorState, LoadingState, ModeRestrictedState, NotFoundState } from '@/components/States'
+import { NotificationsPage } from '@/components/NotificationsPage'
+import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
+import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
+import { authRoutes, findPageRoute, getVisibleNavigation, pageRoutes } from '@/routes/route-config'
+import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 
-const navigation = [
-  { label: '工作台', active: true },
-  { label: '智能体', active: false },
-  { label: '工作流', active: false },
-  { label: '任务中心', active: false },
-  { label: '模型配置', active: false },
-  { label: '知识库', active: false },
-  { label: '系统设置', active: false },
-]
+function BootstrapGate() {
+  const [config, setConfig] = useState<BootstrapConfig | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
-export default function App() {
-  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
+  useEffect(() => {
+    let active = true
+    setError(null)
+    void loadBootstrapConfig().then(
+      (result) => {
+        if (active) setConfig(result)
+      },
+      (reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : '启动配置读取失败')
+      },
+    )
+    return () => { active = false }
+  }, [attempt])
+
+  if (error) {
+    return (
+      <div className="bootstrap-screen">
+        <ErrorState
+          title="无法读取服务端启动配置"
+          description={`${error}。为避免猜测 auth.enabled，前端不会自行选择权限模式。`}
+          onRetry={() => setAttempt((value) => value + 1)}
+        />
+      </div>
+    )
+  }
+  if (!config) {
+    return <div className="bootstrap-screen"><LoadingState label="正在读取服务端启动配置" /></div>
+  }
+
+  return <PlatformRouter config={config} />
+}
+
+function PlatformRouter({ config }: { config: BootstrapConfig }) {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
+  return (
+    <BrowserRouter basename={basename}>
+      <ErrorBoundary>
+        <Routes>
+          <Route element={<AppShell config={config} />}>
+            <Route path="/" element={<Navigate to="/workspace/overview" replace />} />
+            <Route path="/app" element={<Navigate to="/workspace/overview" replace />} />
+            {pageRoutes.map((route) => (
+              <Route
+                key={route.pageId}
+                path={route.path}
+                element={<PageView route={route} authEnabled={config.auth.enabled} />}
+              />
+            ))}
+            {authRoutes.map((route) => (
+              <Route
+                key={route.pageId}
+                path={route.path}
+                element={
+                  config.auth.enabled
+                    ? <AuthEntryPage route={route} />
+                    : <ModeRestrictedState title="当前模式不提供身份入口" description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。" />
+                }
+              />
+            ))}
+            <Route path="/search" element={<GlobalSearch />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="*" element={<NotFoundState />} />
+          </Route>
+        </Routes>
+      </ErrorBoundary>
+    </BrowserRouter>
+  )
+}
+
+function AppShell({ config }: { config: BootstrapConfig }) {
+  const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
+  const location = useLocation()
+  const current = [...pageRoutes, ...authRoutes].find((route) => {
+    if (route.path === location.pathname) return true
+    const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
+    return pattern.test(location.pathname)
+  })
+  const breadcrumbs = current
+    ? [
+        ...(current.parentPath ? [findPageRoute(current.parentPath)].filter((item): item is PageRoute => Boolean(item)) : []),
+        current,
+      ]
+    : []
 
   return (
-    <div
-      className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}
-    >
+    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
-        <a className="brand" href="/" aria-label="Agent Platform 首页">
+        <Link className="brand" to="/workspace/overview" aria-label="Agent Platform 运营驾驶舱">
           <span className="brand-mark">A</span>
-          <span>Agent Platform</span>
-        </a>
-        <div className="nav-caption">平台</div>
-        <nav>
-          {navigation.map((item) => (
-            <a
-              className={item.active ? 'nav-item active' : 'nav-item'}
-              href="#"
-              aria-current={item.active ? 'page' : undefined}
-              key={item.label}
-            >
-              {item.label}
-            </a>
+          {!collapsed && <span>Agent Platform</span>}
+        </Link>
+        <button
+          className="collapse-button"
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? '展开导航' : '折叠导航'}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? '›' : '‹'}
+        </button>
+        <nav className="primary-navigation">
+          {getVisibleNavigation(config.auth.enabled).map((group) => (
+            <section className="nav-group" key={group.id} aria-label={group.title}>
+              <div className="nav-group-title">{!collapsed && group.title}</div>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.pageId}
+                  to={item.path}
+                  title={collapsed ? item.title : undefined}
+                  className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}
+                  end
+                >
+                  <span className="nav-dot" aria-hidden="true" />
+                  {!collapsed && <span>{item.title}</span>}
+                </NavLink>
+              ))}
+            </section>
           ))}
         </nav>
-        <div className="sidebar-footer">前端工程基座 · 设计系统样例</div>
+        {!collapsed && (
+          <div className="sidebar-footer">
+            <span>模式由服务端启动配置决定</span>
+            <strong>{config.auth.enabled ? '权限模式' : '免登录模式'}</strong>
+            <small>版本 {config.version}</small>
+          </div>
+        )}
       </aside>
+
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-start">
-            <button
-              className="sidebar-toggle"
-              type="button"
-              onClick={toggleSidebar}
-              aria-label={sidebarCollapsed ? '展开导航' : '收起导航'}
-              aria-expanded={!sidebarCollapsed}
-            >
-              {sidebarCollapsed ? '展开导航' : '收起导航'}
-            </button>
-            <span className="breadcrumb">平台 / 工作台</span>
+            <div className="breadcrumbs" aria-label="面包屑导航">
+              <Link to="/workspace/overview">工作空间</Link>
+              {breadcrumbs.map((item) => (
+                <span key={item.pageId}><i aria-hidden="true">/</i>{item.title}</span>
+              ))}
+            </div>
           </div>
-          <span className="environment">新前端工程</span>
+          <div className="top-actions">
+            <Link className="top-action" to="/search" aria-label="打开全局搜索">全局搜索 <kbd>⌘ K</kbd></Link>
+            <Link className="top-action" to="/notifications" aria-label="打开通知中心">通知</Link>
+            {config.auth.enabled && <Link className="top-action auth-entry" to="/auth/login">登录</Link>}
+            <span className="mode-indicator">{config.auth.enabled ? '权限已启用' : '免登录'}</span>
+          </div>
         </header>
-        <section className="welcome">
-          <p className="eyebrow">AGENT PLATFORM</p>
-          <h1>智能体工作台</h1>
-          <p>企业级智能体平台 · 统一设计语言</p>
-        </section>
-        <DesignSystemShowcase />
+        <Outlet />
       </main>
     </div>
   )
+}
+
+function PageView({ route, authEnabled }: { route: PageRoute; authEnabled: boolean }) {
+  if (route.authOnly && !authEnabled) {
+    return <ModeRestrictedState title="此页面仅在权限模式开放" description="当前服务端 auth.enabled=false，组织、成员与 RBAC 管理不适用。" />
+  }
+  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/search') return <GlobalSearch />
+  if (route.path === '/notifications') return <NotificationsPage />
+  return (
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">{route.pageId} · {route.owner}</p>
+        <h1>{route.title}</h1>
+        <p>{route.description}</p>
+      </div>
+      <EmptyState
+        title="业务页面待模块接入"
+        description={`路由与深链已注册。此页面由 ${route.owner} 负责业务实现；本任务不伪造尚未确认的 API、实体数据或操作。`}
+      />
+    </section>
+  )
+}
+
+function Dashboard() {
+  const shortcuts = [
+    { title: '任务指挥中心', description: '任务队列与执行状态', to: '/workspace/tasks' },
+    { title: 'Agent 协作中心', description: 'Agent 与 Workflow 运行态', to: '/workspace/collaboration' },
+    { title: '成本与质量', description: '用量、质量与评测聚合', to: '/workspace/quality-cost' },
+    { title: '3D 数字办公室', description: '沉浸式办公室入口', to: '/workspace/office' },
+  ]
+  return (
+    <section className="page-content dashboard-page">
+      <div className="dashboard-hero">
+        <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
+        <h1>运营驾驶舱</h1>
+        <p>统一进入工作空间、智能体运营与平台管理。业务指标将在对应模块 API 接入后展示。</p>
+      </div>
+      <div className="shortcut-grid">
+        {shortcuts.map((item) => (
+          <Link className="shortcut-card" to={item.to} key={item.to}>
+            <strong>{item.title}</strong>
+            <span>{item.description}</span>
+            <span className="shortcut-arrow" aria-hidden="true">→</span>
+          </Link>
+        ))}
+      </div>
+      <EmptyState
+        title="驾驶舱数据尚未接入"
+        description="当前只提供稳定导航和页面框架，不使用静态假指标替代服务端数据。"
+      />
+    </section>
+  )
+}
+
+function AuthEntryPage({ route }: { route: PageRoute }) {
+  return (
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">{route.pageId}</p>
+        <h1>{route.title}</h1>
+        <p>{route.description}</p>
+      </div>
+      <EmptyState
+        title="身份流程由认证模块提供"
+        description="本任务仅接入服务端权限模式与条件路由，不模拟登录、创建账号或管理员身份。"
+        action={<Link className="text-link" to="/workspace/overview">返回工作空间</Link>}
+      />
+    </section>
+  )
+}
+
+export default function App() {
+  return <BootstrapGate />
 }
