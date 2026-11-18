@@ -6,6 +6,7 @@ export interface PageRoute {
   description: string
   parentPath?: string
   authOnly?: boolean
+  capability?: string
   entityIdParam?: string
   owner: string
 }
@@ -44,6 +45,24 @@ export const pageRoutes: PageRoute[] = [
   { path: '/admin/organization', pageId: 'ADM-ORG', title: '组织与成员', section: '平台管理', description: '组织、部门、项目与成员管理；仅权限模式可用。', owner: '#749', authOnly: true },
   { path: '/admin/access-control', pageId: 'ADM-RBAC', title: '角色与权限', section: '平台管理', description: '角色与权限管理；仅权限模式可用。', owner: '#749', authOnly: true },
   { path: '/admin/settings', pageId: 'SYS-SETTINGS', title: '系统设置', section: '平台管理', description: '实例级系统配置入口。', owner: '#751' },
+
+  { path: '/operations/blackboard/:entryId', pageId: 'WS-BLACKBOARD', title: 'Blackboard 条目详情', section: '智能体运营', description: 'Blackboard 条目唯一详情路由。', parentPath: '/workspace/collaboration', entityIdParam: 'entryId', owner: '#746' },
+  { path: '/admin/agents/:agentId', pageId: 'ADM-AGENT-DETAIL', title: 'Agent 定义详情', section: '平台管理', description: 'Agent 定义唯一详情路由。', parentPath: '/admin/agents', entityIdParam: 'agentId', owner: '#749' },
+  { path: '/admin/workflows/:workflowId/edit', pageId: 'ADM-WORKFLOW-EDITOR', title: 'Workflow 设计器', section: '平台管理', description: 'Workflow Definition 编辑路由。', parentPath: '/admin/workflows', entityIdParam: 'workflowId', owner: '#749' },
+  { path: '/admin/models/providers/:providerId', pageId: 'ADM-MODEL-PROVIDER-DETAIL', title: '模型供应商详情', section: '平台管理', description: 'Model Provider 唯一详情路由。', parentPath: '/admin/models/providers', entityIdParam: 'providerId', owner: '#749' },
+  { path: '/admin/models/templates/:templateId', pageId: 'ADM-MODEL-TEMPLATE-DETAIL', title: '模型模板详情', section: '平台管理', description: 'Model Template 唯一详情路由。', parentPath: '/admin/models/templates', entityIdParam: 'templateId', owner: '#749' },
+  { path: '/admin/models/routing/:policyId', pageId: 'ADM-MODEL-ROUTING-DETAIL', title: '模型路由策略详情', section: '平台管理', description: 'Routing Policy 唯一详情路由。', parentPath: '/admin/models/routing', entityIdParam: 'policyId', owner: '#749' },
+  { path: '/admin/tools/:toolId', pageId: 'ADM-TOOL-DETAIL', title: '工具详情', section: '平台管理', description: 'Tool/MCP Server 唯一详情路由。', parentPath: '/admin/tools', entityIdParam: 'toolId', owner: '#749' },
+  { path: '/admin/skills/:skillId', pageId: 'ADM-SKILL-DETAIL', title: 'Skill 详情', section: '平台管理', description: 'Skill 唯一详情路由。', parentPath: '/admin/skills', entityIdParam: 'skillId', owner: '#749' },
+  { path: '/admin/prompts', pageId: 'ADM-PROMPTS', title: 'Prompt 与模板管理', section: '平台管理', description: 'Prompt Registry 条件能力入口。', owner: '#749', capability: 'prompt_management' },
+  { path: '/operations/memories/:memoryId', pageId: 'OPS-MEMORY-DETAIL', title: '记忆详情', section: '智能体运营', description: 'Memory 唯一详情路由。', parentPath: '/operations/memories', entityIdParam: 'memoryId', owner: '#750' },
+  { path: '/operations/conversations/:conversationId', pageId: 'OPS-CONVERSATION-DETAIL', title: '会话详情', section: '智能体运营', description: 'Conversation 唯一详情路由。', parentPath: '/operations/conversations', entityIdParam: 'conversationId', owner: '#750' },
+  { path: '/operations/files/:fileId', pageId: 'OPS-FILE-DETAIL', title: '文件与产物详情', section: '智能体运营', description: 'File/Artifact 唯一详情路由。', parentPath: '/operations/files', entityIdParam: 'fileId', owner: '#750' },
+  { path: '/operations/evaluation/datasets', pageId: 'OPS-EVAL-DATASETS', title: '评测数据集', section: '智能体运营', description: 'Evaluation Dataset 列表入口。', owner: '#750' },
+  { path: '/operations/evaluation/datasets/:datasetId', pageId: 'OPS-EVAL-DATASET-DETAIL', title: '评测数据集详情', section: '智能体运营', description: 'Dataset 唯一详情路由。', parentPath: '/operations/evaluation/datasets', entityIdParam: 'datasetId', owner: '#750' },
+  { path: '/operations/evaluation/runs', pageId: 'OPS-EVAL-RUNS', title: '评测运行与样本', section: '智能体运营', description: 'Evaluation Run 列表入口。', owner: '#750' },
+  { path: '/operations/evaluation/runs/:evaluationRunId', pageId: 'OPS-EVAL-RUN-DETAIL', title: '评测运行详情', section: '智能体运营', description: 'Evaluation Run 唯一详情路由。', parentPath: '/operations/evaluation/runs', entityIdParam: 'evaluationRunId', owner: '#750' },
+  { path: '/admin/audit/:eventId', pageId: 'GLOBAL-AUDIT-DETAIL', title: '审计事件详情', section: '全局能力', description: 'Audit Event 唯一详情路由。', parentPath: '/admin/audit', entityIdParam: 'eventId', owner: '#751' },
 ]
 
 export const globalRoutes: PageRoute[] = [
@@ -58,11 +77,11 @@ export const authRoutes: PageRoute[] = [
   { path: '/auth/initialize', pageId: 'AUTH-INITIALIZE', title: '管理员初始化', section: '身份', description: '仅权限模式且服务端报告需要初始化时启用。', owner: '#743', authOnly: true },
 ]
 
-export function getVisibleNavigation(authEnabled: boolean): NavigationGroup[] {
+export function getVisibleNavigation(authEnabled: boolean, capabilities: string[] = []): NavigationGroup[] {
   const groups: NavigationGroup[] = [
     { id: 'workspace', title: '工作空间', items: pageRoutes.filter((item) => item.section === '工作空间') },
     { id: 'operations', title: '智能体运营', items: pageRoutes.filter((item) => item.section === '智能体运营' && !item.path.includes('/:')) },
-    { id: 'administration', title: '平台管理', items: pageRoutes.filter((item) => item.section === '平台管理' && (!item.authOnly || authEnabled)) },
+    { id: 'administration', title: '平台管理', items: pageRoutes.filter((item) => item.section === '平台管理' && (!item.authOnly || authEnabled) && (!item.capability || capabilities.includes(item.capability))) },
   ]
   return groups
 }
