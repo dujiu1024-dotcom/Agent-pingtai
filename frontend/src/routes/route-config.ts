@@ -50,12 +50,12 @@ export const pageRoutes: PageRoute[] = [
   { path: '/admin/workflows/:workflowId/edit', pageId: 'ADM-WORKFLOW-EDITOR', title: 'Workflow 设计器', section: '平台管理', description: 'Workflow Definition 编辑路由。', parentPath: '/admin/workflows', entityIdParam: 'workflowId', owner: '#749' },
   { path: '/admin/prompts', pageId: 'ADM-PROMPTS', title: 'Prompt 与模板管理', section: '平台管理', description: 'Prompt Registry 条件能力入口。', owner: '#749', capability: 'prompt_management' },
   { path: '/operations/evaluation/datasets', pageId: 'OPS-EVAL-DATASETS', title: '评测数据集', section: '智能体运营', description: 'Evaluation Dataset 列表入口。', owner: '#750' },
-  { path: '/operations/evaluation/datasets/:datasetId', pageId: 'OPS-EVAL-DATASET-DETAIL', title: '评测数据集详情', section: '智能体运营', description: 'Dataset 唯一详情路由。', parentPath: '/operations/evaluation/datasets', entityIdParam: 'datasetId', owner: '#750' },
   { path: '/operations/evaluation/runs', pageId: 'OPS-EVAL-RUNS', title: '评测运行与样本', section: '智能体运营', description: 'Evaluation Run 列表入口。', owner: '#750' },
-  { path: '/operations/evaluation/runs/:evaluationRunId', pageId: 'OPS-EVAL-RUN-DETAIL', title: '评测运行详情', section: '智能体运营', description: 'Evaluation Run 唯一详情路由。', parentPath: '/operations/evaluation/runs', entityIdParam: 'evaluationRunId', owner: '#750' },
 ]
 
 export const detailRoutes: PageRoute[] = [
+  { path: '/operations/evaluation/datasets/:datasetId', pageId: 'OPS-EVAL-DATASETS', title: '评测数据集详情', section: '智能体运营', description: 'Dataset 唯一详情路由。', parentPath: '/operations/evaluation/datasets', entityIdParam: 'datasetId', owner: '#750' },
+  { path: '/operations/evaluation/runs/:evaluationRunId', pageId: 'OPS-EVAL-RUNS', title: '评测运行详情', section: '智能体运营', description: 'Evaluation Run 唯一详情路由。', parentPath: '/operations/evaluation/runs', entityIdParam: 'evaluationRunId', owner: '#750' },
   { path: '/admin/models/providers/:providerId', pageId: 'ADM-MODEL-PROVIDERS', title: '模型供应商详情', section: '平台管理', description: 'Model Provider 唯一详情路由。', parentPath: '/admin/models/providers', entityIdParam: 'providerId', owner: '#749' },
   { path: '/admin/models/templates/:templateId', pageId: 'ADM-MODEL-TEMPLATES', title: '模型模板详情', section: '平台管理', description: 'Model Template 唯一详情路由。', parentPath: '/admin/models/templates', entityIdParam: 'templateId', owner: '#749' },
   { path: '/admin/models/routing/:policyId', pageId: 'ADM-MODEL-ROUTING', title: '模型路由策略详情', section: '平台管理', description: 'Routing Policy 唯一详情路由。', parentPath: '/admin/models/routing', entityIdParam: 'policyId', owner: '#749' },
