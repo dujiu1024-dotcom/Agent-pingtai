@@ -146,7 +146,8 @@ export class ApiClient {
     if (callerSignal?.aborted) onCallerAbort()
     else callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
     const timeout = setTimeout(
-      () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+      () =>
+        controller.abort(new DOMException('Request timed out', 'TimeoutError')),
       timeoutMs,
     )
 
