@@ -104,6 +104,49 @@ def create_registry_router(
         except (RegistryError, RegistryConflict) as exc:
             raise HTTPException(409, str(exc)) from exc
 
+    @router.get("/{kind}/{item_id}/diff/{from_version}/{to_version}")
+    async def diff_versions(kind: str, item_id: str, from_version: int, to_version: int, request: Request):
+        principal, service = await context(request, kind, item_id, "read")
+        if from_version < 1 or to_version < 1 or from_version == to_version:
+            raise HTTPException(400, "two distinct positive versions are required")
+        left = await service.repository.get(principal.tenant_id, kind, item_id, from_version)
+        right = await service.repository.get(principal.tenant_id, kind, item_id, to_version)
+        if left is None or right is None:
+            raise HTTPException(404, "registry version not found")
+
+        changes = []
+        def walk(before, after, path="$"):
+            if isinstance(before, dict) and isinstance(after, dict):
+                for key in sorted(set(before) | set(after)):
+                    child = f"{path}.{key}"
+                    if key not in before:
+                        changes.append({"path": child, "operation": "add", "after": after[key]})
+                    elif key not in after:
+                        changes.append({"path": child, "operation": "remove", "before": before[key]})
+                    else:
+                        walk(before[key], after[key], child)
+            elif isinstance(before, list) and isinstance(after, list):
+                if before != after:
+                    changes.append({"path": path, "operation": "replace", "before": before, "after": after})
+            elif before != after:
+                changes.append({"path": path, "operation": "replace", "before": before, "after": after})
+
+        walk(dict(left.definition), dict(right.definition))
+        return {
+            "kind": kind, "item_id": item_id,
+            "from_version": from_version, "to_version": to_version,
+            "from_status": left.status, "to_status": right.status,
+            "changes": changes,
+        }
+
+    @router.get("/{kind}/{item_id}/versions/{version}")
+    async def get_version(kind: str, item_id: str, version: int, request: Request):
+        principal, service = await context(request, kind, item_id, "read")
+        item = await service.repository.get(principal.tenant_id, kind, item_id, version)
+        if item is None:
+            raise HTTPException(404, "registry version not found")
+        return serialize(item)
+
     @router.get("/{kind}/{item_id}/versions")
     async def list_versions(kind: str, item_id: str, request: Request):
         principal, service = await context(request, kind, item_id, "read")
