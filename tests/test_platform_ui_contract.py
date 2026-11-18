@@ -50,7 +50,7 @@ class PlatformWorkbenchUiContractTests(unittest.TestCase):
         self.assertIn('x.version', source)
         self.assertIn('服务端返回未知状态', source)
         self.assertIn('最近版本内容差异', source)
-        self.assertIn('api("/memories/"+id)', source)
+        self.assertIn('api("/memories")', source)
         self.assertIn('api("/memories/"+id+"/history")', source)
         self.assertIn('data-memory-action=\'confirm\'', source)
 
