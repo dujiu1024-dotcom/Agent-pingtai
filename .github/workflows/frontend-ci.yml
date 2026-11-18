@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
@@ -31,8 +31,6 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.9
@@ -42,20 +40,6 @@ jobs:
           node-version-file: .nvmrc
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-      - name: Apply baseline Prettier formatting
-        if: github.event_name == 'pull_request' && github.actor != 'github-actions[bot]'
-        working-directory: ..
-        env:
-          GITHUB_HEAD_REF: ${{ github.head_ref }}
-        run: |
-          pnpm --dir frontend exec prettier --write .
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add frontend
-          if ! git diff --cached --quiet; then
-            git commit -m 'style(frontend): apply Prettier formatting'
-            git push origin "HEAD:${GITHUB_HEAD_REF}"
-          fi
       - name: Lint and format
         run: pnpm lint
       - name: Typecheck
