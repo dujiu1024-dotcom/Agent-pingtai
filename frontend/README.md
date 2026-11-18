@@ -1,23 +1,12 @@
-# Frontend workspace
+# Frontend navigation shell (UI-G1-743-e)
 
-独立的 React 18 + TypeScript + Vite 应用。此目录不覆盖或复用旧版 `platform-ui/`，旧入口保持原样。
+This package is an isolated SPA. The router uses the browser History API and the host must serve \`index.html\` for application paths (for example \`/app\`, \`/agents/:id\`, and \`/settings/models\`) to support direct refreshes and deep links.
 
-## Toolchain
+## Optional service adapters
 
-- Node.js: `20.19.0` baseline（`.nvmrc`）；package engines 要求 Node.js 20.19+
-- pnpm: `9.15.9`（`packageManager` 与 CI action 锁定）
-- React / React DOM: `18.3.1`
-- TypeScript: strict mode；`@/*` 指向 `src/*`
+- \`VITE_GLOBAL_SEARCH_URL\`: same-origin search endpoint. The client sends \`q\` and optional \`entity_type\` query parameters and accepts an \`items\` or \`results\` array of \`{ id, entity_type, title, snippet, url }\`. No endpoint is assumed when unset.
+- \`VITE_NOTIFICATION_SSE_URL\`: same-origin Server-Sent Events endpoint. The client consumes JSON messages with \`notification_id\`, \`title\`, optional \`body\` and \`action_url\`. The browser EventSource handles reconnects; action links are restricted to same-origin paths.
 
-## Commands
+These adapters deliberately remain disabled until the backend API/event contracts are configured. No sample business data or synthetic notifications are generated.
 
-```sh
-corepack enable
-pnpm install
-pnpm dev
-pnpm lint
-pnpm typecheck
-pnpm build
-```
-
-CI workflow `.github/workflows/frontend-ci.yml` 对本目录变更执行 install、lint/format、typecheck 和 production build。
+The shell includes route metadata, grouped/collapsible navigation, breadcrumb generation, browser-local recent routes, entity-type search filtering, SSE notification presentation, error boundaries, and 403/404/empty/loading states.
