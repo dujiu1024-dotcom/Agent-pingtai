@@ -15,7 +15,10 @@ export class SseEventBus {
   private readonly options: Required<
     Pick<
       EventBusOptions,
-      'heartbeatTimeoutMs' | 'reconnectBaseMs' | 'reconnectMaxMs' | 'maxRememberedEvents'
+      | 'heartbeatTimeoutMs'
+      | 'reconnectBaseMs'
+      | 'reconnectMaxMs'
+      | 'maxRememberedEvents'
     >
   > &
     EventBusOptions
@@ -149,7 +152,8 @@ export class SseEventBus {
     }
     const separator = line.indexOf(':')
     const field = separator < 0 ? line : line.slice(0, separator)
-    const value = separator < 0 ? '' : line.slice(separator + 1).replace(/^ /, '')
+    const value =
+      separator < 0 ? '' : line.slice(separator + 1).replace(/^ /, '')
     if (field === 'data') this.frame.data.push(value)
     else if (field === 'id' && !value.includes('\0')) this.frame.id = value
     else if (field === 'event') this.frame.event = value
@@ -183,7 +187,12 @@ export class SseEventBus {
     ) return
     if (this.seenEventIds.has(eventId)) return
     const previousSequence = this.latestSequence.get(event.entity_id)
-    if (previousSequence !== undefined && event.sequence <= previousSequence) return
+    if (
+      previousSequence !== undefined &&
+      event.sequence <= previousSequence
+    ) {
+      return
+    }
 
     this.rememberEvent(eventId)
     this.lastEventId = eventId
