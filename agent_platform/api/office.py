@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+import inspect
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -285,14 +286,22 @@ class OfficeStateService:
         return items[:20]
 
 
-def create_office_router(*, service: OfficeStateService) -> APIRouter:
+def create_office_router(*, service: OfficeStateService, resolve_tenant: Callable[[Request], Any] | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/office", tags=["office"])
 
     @router.get("/state")
     async def state(request: Request):
         principal = getattr(request.state, "identity.principal", None)
-        if not isinstance(principal, Principal):
-            raise HTTPException(401, "authenticated user required")
-        return {"ok": True, "data": await service.build(principal.tenant_id)}
+        if isinstance(principal, Principal):
+            tenant_id = principal.tenant_id
+        elif resolve_tenant is not None:
+            tenant_id = resolve_tenant(request)
+            if inspect.isawaitable(tenant_id):
+                tenant_id = await tenant_id
+        else:
+            raise HTTPException(401, "authenticated user or instance tenant context required")
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise HTTPException(503, "office instance tenant context is unavailable")
+        return {"ok": True, "data": await service.build(tenant_id)}
 
     return router
