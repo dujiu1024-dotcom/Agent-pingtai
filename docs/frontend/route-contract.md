@@ -1,6 +1,6 @@
-# 前端路由契约（Draft）
+# 前端路由契约（Gate 0 冻结）
 
-> Parent #742 · Page map #753。该文件定义目标态约定；在当前前端入口和路由代码盘点完成前，不代表已上线路由。
+> Parent #742 · Page map #753。该文件冻结目标态路由语义；当前代码状态仍以 page-map.md 的 verified / conditional / module-only-unregistered / missing / proposed 标记为准。
 
 ## 1. 命名
 - 路由统一小写 kebab-case，资源使用复数集合名，详情使用稳定主键：`/operations/tasks/:taskId`。
