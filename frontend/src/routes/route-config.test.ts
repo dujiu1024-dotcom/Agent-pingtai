@@ -23,6 +23,13 @@ describe('route configuration', () => {
     expect(getAllRoutes(false)).not.toEqual(expect.arrayContaining(authRoutes))
   })
 
+  it('shows capability-gated navigation only when bootstrap advertises it', () => {
+    const withoutCapability = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
+    const withCapability = getVisibleNavigation(true, ['prompt_management']).flatMap((group) => group.items.map((item) => item.path))
+    expect(withoutCapability).not.toContain('/admin/prompts')
+    expect(withCapability).toContain('/admin/prompts')
+  })
+
   it('exposes identity and RBAC routes only when server mode enables auth', () => {
     expect(getAllRoutes(true)).toEqual(expect.arrayContaining(authRoutes))
     expect(getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))).toContain('/admin/access-control')
