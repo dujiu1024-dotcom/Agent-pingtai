@@ -96,7 +96,7 @@ export class ApiClient {
     this.credentials = options.credentials ?? 'same-origin'
   }
 
-  /** Clear transport validators and their 304 fallback representations (e.g. on session change). */
+  /** Clear transport validators and their 304 fallback representations. */
   clearEtagCache(): void {
     this.etagCache.clear()
   }
@@ -116,7 +116,9 @@ export class ApiClient {
     const method = inputMethod.toUpperCase()
     const url = new URL(path.replace(/^\//, ''), this.resolveBaseUrl())
     const headers = new Headers(this.defaultHeaders)
-    new Headers(requestHeaders).forEach((value, key) => headers.set(key, value))
+    new Headers(requestHeaders).forEach((value, key) =>
+      headers.set(key, value),
+    )
     headers.set('Accept', 'application/json')
     const cacheKey = `${method}:${url.toString()}`
     const cached =
@@ -136,7 +138,10 @@ export class ApiClient {
     if (ifMatch) headers.set('If-Match', ifMatch)
 
     if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
-      headers.set('Idempotency-Key', idempotencyKey ?? makeIdempotencyKey())
+      headers.set(
+        'Idempotency-Key',
+        idempotencyKey ?? makeIdempotencyKey(),
+      )
     } else if (idempotencyKey) {
       headers.set('Idempotency-Key', idempotencyKey)
     }
