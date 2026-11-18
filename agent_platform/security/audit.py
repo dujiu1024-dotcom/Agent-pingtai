@@ -11,7 +11,7 @@ from agent_platform.observability.redaction import redact_payload
 
 class AuditWriter(Protocol):
     async def record(
-        self, *, tenant_id: str, actor_id: str, action: str,
+        self, *, tenant_id: str, actor_id: str | None, action: str,
         subject_id: str, outcome: str = "succeeded",
         detail: Mapping[str, Any] | None = None,
     ) -> None: ...
@@ -27,15 +27,19 @@ class PostgresAuditWriter:
         self._connect = connection_factory
 
     async def record(
-        self, *, tenant_id: str, actor_id: str, action: str,
+        self, *, tenant_id: str, actor_id: str | None, action: str,
         subject_id: str, outcome: str = "succeeded",
         detail: Mapping[str, Any] | None = None,
     ) -> None:
-        if any(
-            not isinstance(value, str) or not value.strip()
-            for value in (tenant_id, actor_id, subject_id)
+        if (
+            not isinstance(tenant_id, str) or not tenant_id.strip()
+            or not isinstance(subject_id, str) or not subject_id.strip()
         ):
-            raise ValueError("tenant_id, actor_id and subject_id are required strings")
+            raise ValueError("tenant_id and subject_id are required strings")
+        if actor_id is not None and (
+            not isinstance(actor_id, str) or not actor_id.strip()
+        ):
+            raise ValueError("actor_id must be a non-empty string when supplied")
         if not isinstance(action, str) or not self._ACTION.fullmatch(action):
             raise ValueError("invalid audit action")
         if not isinstance(outcome, str) or outcome not in self._OUTCOMES:

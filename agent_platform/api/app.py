@@ -30,6 +30,7 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.office import OfficeStateService, create_office_router
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
@@ -47,12 +48,14 @@ from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
 )
+from agent_platform.identity.models import Principal
 from agent_platform.identity.service import IdentityService
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
+from agent_platform.security.audit_context import AuditActor
 from agent_platform.security.audit_http import AuditRequestASGIMiddleware
 from agent_platform.web.app import create_platform_web_router
 
@@ -232,6 +235,8 @@ def create_platform_app(
     locale_manage_authorizer: Any | None = None,
     publisher_key_registry: Any | None = None,
     publisher_key_authorizer: Any | None = None,
+    office_state_service: OfficeStateService | None = None,
+    instance_tenant_id: str | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -267,13 +272,11 @@ def create_platform_app(
         ):
             raise ValueError("allowed_origins must contain exact HTTPS origins only")
 
-    audit_request_configured = any(value is not None for value in (
-        audit_request_sink, audit_actor_resolver,
-    ))
-    if audit_request_configured and any(value is None for value in (
-        audit_request_sink, audit_actor_resolver,
-    )):
-        raise ValueError("audit request sink and actor resolver must be configured together")
+    audit_request_configured = audit_request_sink is not None or audit_actor_resolver is not None
+    if audit_request_configured and audit_request_sink is None:
+        raise ValueError("audit request sink is required when request auditing is configured")
+    if audit_request_configured and auth_enabled and audit_actor_resolver is None:
+        raise ValueError("authenticated request auditing requires an actor resolver")
 
     app = FastAPI(
         title="Agent Platform API",
@@ -282,6 +285,7 @@ def create_platform_app(
     )
     app.state.auth_enabled = auth_enabled
     app.state.authorization_context_strategy = authorization_strategy
+    app.state.audit_actor_policy = "principal-or-null; no anonymous user is synthesized"
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -309,10 +313,19 @@ def create_platform_app(
     # Add request auditing before Identity middleware so it executes inside the
     # authenticated identity boundary and sees the verified principal.
     if audit_request_configured:
+        if not auth_enabled and (
+            not isinstance(instance_tenant_id, str) or not instance_tenant_id.strip()
+        ):
+            raise ValueError("no-auth request auditing requires explicit instance_tenant_id")
+
+        def resolve_instance_audit_actor(_scope: dict[str, Any]) -> AuditActor:
+            return AuditActor(tenant_id=instance_tenant_id, actor_id=None)
+
         app.add_middleware(
             AuditRequestASGIMiddleware,
             sink=audit_request_sink,
             resolve_actor=audit_actor_resolver,
+            resolve_instance_actor=resolve_instance_audit_actor if not auth_enabled else None,
         )
     app.add_middleware(
         IdentityASGIMiddleware,
@@ -344,6 +357,51 @@ def create_platform_app(
             )
         )
     )
+
+    # Public bootstrap metadata is intentionally limited to non-secret deployment facts.
+    app.state.capabilities = {
+        "office": office_state_service is not None,
+        "knowledge": True,
+        "memory": True,
+        "registry": registry_service_resolver is not None,
+        "sessions": session_service_resolver is not None,
+        "observability": any(value is not None for value in (
+            metrics_exporter, operational_health_monitor, alert_store,
+            evaluation_repository, evaluation_run_service, evaluation_comparison_service,
+        )),
+        "audit": audit_reader is not None and audit_authorizer is not None,
+        "connectors": connector_service_resolver is not None and connector_authorizer is not None,
+    }
+
+    @app.get("/api/platform/v1/bootstrap", tags=["bootstrap"])
+    async def platform_bootstrap():
+        return {
+            "auth": {"enabled": auth_enabled},
+            "version": app.version,
+            "capabilities": dict(app.state.capabilities),
+        }
+
+    if office_state_service is not None:
+        if not auth_enabled and (
+            not isinstance(instance_tenant_id, str) or not instance_tenant_id.strip()
+        ):
+            raise ValueError(
+                "office_state_service in auth-disabled mode requires explicit instance_tenant_id"
+            )
+
+        async def resolve_office_tenant(request: Request) -> str:
+            if not auth_enabled:
+                # Explicit deployment namespace; never fabricate a Principal/user.
+                return instance_tenant_id
+            principal = await authorization_strategy.resolve_principal(request)
+            if not isinstance(principal, Principal):
+                raise HTTPException(401, "authentication required")
+            return principal.tenant_id
+
+        app.include_router(create_office_router(
+            service=office_state_service,
+            resolve_tenant_id=resolve_office_tenant,
+        ))
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_run_service,
     ))

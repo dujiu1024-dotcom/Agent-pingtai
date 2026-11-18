@@ -9,14 +9,16 @@ from typing import Any, Mapping, Protocol
 @dataclass(frozen=True)
 class AuditActor:
     tenant_id: str
-    actor_id: str
+    actor_id: str | None
     request_id: str | None = None
 
     def __post_init__(self) -> None:
-        for name in ("tenant_id", "actor_id"):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{name} is required")
+        if not isinstance(self.tenant_id, str) or not self.tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if self.actor_id is not None and (
+            not isinstance(self.actor_id, str) or not self.actor_id.strip()
+        ):
+            raise ValueError("actor_id must be a non-empty string when supplied")
         if self.request_id is not None and (
             not isinstance(self.request_id, str) or not self.request_id.strip()
         ):
@@ -33,7 +35,7 @@ def current_audit_actor() -> AuditActor | None:
 
 class AuditSink(Protocol):
     async def record(
-        self, *, tenant_id: str, actor_id: str, action: str, subject_id: str,
+        self, *, tenant_id: str, actor_id: str | None, action: str, subject_id: str,
         outcome: str = "succeeded", detail: Mapping[str, Any] | None = None,
     ) -> None: ...
 
