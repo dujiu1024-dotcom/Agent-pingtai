@@ -34,7 +34,10 @@ export class ApiError extends Error {
 }
 
 export class ApiConflictError extends ApiError {
-  constructor(message: string, options: ConstructorParameters<typeof ApiError>[1]) {
+  constructor(
+    message: string,
+    options: ConstructorParameters<typeof ApiError>[1],
+  ) {
     super(message, options)
     this.name = 'ApiConflictError'
   }
@@ -109,7 +112,8 @@ export class ApiClient {
     new Headers(requestHeaders).forEach((value, key) => headers.set(key, value))
     headers.set('Accept', 'application/json')
     const cacheKey = `${method}:${url.toString()}`
-    const cached = method === 'GET' && etag ? this.etagCache.get(cacheKey) : undefined
+    const cached =
+      method === 'GET' && etag ? this.etagCache.get(cacheKey) : undefined
     if (cached) headers.set('If-None-Match', cached.etag)
 
     let requestBody: BodyInit | null | undefined
@@ -176,8 +180,10 @@ export class ApiClient {
       return responseBody as T
     } catch (error) {
       if (controller.signal.aborted) {
-        if (controller.signal.reason instanceof DOMException &&
-            controller.signal.reason.name === 'TimeoutError') {
+        if (
+          controller.signal.reason instanceof DOMException &&
+          controller.signal.reason.name === 'TimeoutError'
+        ) {
           throw new ApiError('Request timed out', {
             status: 408,
             code: 'REQUEST_TIMEOUT',
@@ -245,7 +251,9 @@ export class ApiClient {
   }
 
   private resolveBaseUrl(): string {
-    const normalized = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`
+    const normalized = this.baseUrl.endsWith('/')
+      ? this.baseUrl
+      : `${this.baseUrl}/`
     if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
       return new URL(normalized).toString()
     }
@@ -268,13 +276,16 @@ export class ApiClient {
 
   private toError(status: number, payload: unknown, requestId?: string): ApiError {
     const envelope = payload as Partial<ApiErrorEnvelope> | null
-    return new ApiError(envelope?.message ?? `Request failed with status ${status}`, {
+    return new ApiError(
+      envelope?.message ?? `Request failed with status ${status}`,
+      {
       status,
       code: envelope?.code ?? 'HTTP_ERROR',
       requestId: envelope?.request_id ?? requestId,
       details: envelope?.details,
-      retryable: envelope?.retryable ?? status >= 500,
-    })
+        retryable: envelope?.retryable ?? status >= 500,
+      },
+    )
   }
 }
 
