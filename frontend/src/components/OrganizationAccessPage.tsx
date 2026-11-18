@@ -1,3 +1,5 @@
+import './OrganizationAccessPage.css'
+
 type OrganizationAccessPageProps = {
   page: 'organization' | 'rbac'
 }
