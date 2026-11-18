@@ -40,7 +40,13 @@ export default function App() {
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-start">
-            <button className="sidebar-toggle" type="button" onClick={toggleSidebar} aria-label={sidebarCollapsed ? '展开导航' : '收起导航'} aria-expanded={!sidebarCollapsed}>
+            <button
+              className="sidebar-toggle"
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarCollapsed ? '展开导航' : '收起导航'}
+              aria-expanded={!sidebarCollapsed}
+            >
               {sidebarCollapsed ? '展开导航' : '收起导航'}
             </button>
             <span className="breadcrumb">平台 / 工作台</span>
