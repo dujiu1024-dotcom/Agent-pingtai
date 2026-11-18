@@ -14,8 +14,9 @@
 - `auth.enabled=false` 时业务请求不要求 Principal；实例级只读 Office 状态通过部署显式配置的 `instance_tenant_id` 选择数据命名空间，不创建匿名用户或伪造 actor。
 - 无身份请求的审计主体语义为 `actor=null`：不得将请求映射为默认用户；当前用户身份审计中间件跳过该类请求。若需持久化实例级审计事件，必须使用支持 nullable actor 的独立 system/instance audit sink。
 
-- `/api/platform/v1/**` 受身份中间件保护，使用平台已配置的 Bearer/API credential 或安全会话认证方式。
-- 认证失败为 401 `UNAUTHENTICATED`；身份有效但无资源/操作权限为 403 `FORBIDDEN`。
+- `auth.enabled=true` 时，`/api/platform/v1/**`（bootstrap 元信息接口除外）受身份中间件保护，使用平台已配置的 Bearer/API credential 或安全会话认证方式。
+- `auth.enabled=false` 时不要求用户身份；需要 tenant-scoped 存储的路由必须使用显式 instance/workspace context，不得伪造 Principal。
+- `auth.enabled=true` 下认证失败为 401 `UNAUTHENTICATED`；身份有效但无资源/操作权限为 403 `FORBIDDEN`。`auth.enabled=false` 不以身份缺失返回 401/403，但业务不变量、配置缺失和资源不存在仍按各端点契约返回错误。
 - 授权由具体业务路由按 tenant、principal、resource 和 action 执行。不得仅凭请求体或 URL 中的 tenant/resource 标识授权。
 - 提供租户 ID、资源 ID 或幂等键均不能代替认证授权。
 

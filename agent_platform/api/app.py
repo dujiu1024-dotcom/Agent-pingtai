@@ -48,6 +48,7 @@ from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
 )
+from agent_platform.identity.models import Principal
 from agent_platform.identity.service import IdentityService
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
@@ -385,9 +386,7 @@ def create_platform_app(
                 # Explicit deployment namespace; never fabricate a Principal/user.
                 return instance_tenant_id
             principal = await authorization_strategy.resolve_principal(request)
-            if principal is None or not isinstance(principal, __import__(
-                "agent_platform.identity.models", fromlist=["Principal"]
-            ).Principal):
+            if not isinstance(principal, Principal):
                 raise HTTPException(401, "authentication required")
             return principal.tenant_id
 
