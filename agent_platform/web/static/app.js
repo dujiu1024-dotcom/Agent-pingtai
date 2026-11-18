@@ -823,3 +823,19 @@ document.addEventListener("submit",event=>{
   toast("已添加本地策略草稿，尚未保存到服务端");renderOrgRbac();
  }
 });
+
+/* UI-G2-756: auth=false entry is driven only by trusted public bootstrap metadata. */
+const orgRbacRefreshBase=refresh;
+refresh=async function(){
+ const bootstrap=window.PLATFORM_BOOTSTRAP;
+ if(bootstrap?.auth?.enabled===false){
+  S.me=null;S.authMode="disabled";S.features=bootstrap.features||{};
+  $("#identity").textContent="实例模式（无登录）";
+  $("#logout").hidden=true;$("#login").hidden=true;$("#content").hidden=false;
+  $("#api-state").textContent="实例模式 · 无身份认证";
+  applyCapabilityGate();
+  return;
+ }
+ return orgRbacRefreshBase();
+};
+refresh().then(()=>{if(S.authMode==="disabled"){applyCapabilityGate();nav("overview")}});
