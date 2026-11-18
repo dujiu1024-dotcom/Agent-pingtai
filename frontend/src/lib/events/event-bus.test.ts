@@ -55,6 +55,7 @@ describe('SseEventBus', () => {
       payload: {},
     }
     let callCount = 0
+    let bus: SseEventBus
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
       callCount += 1
       if (callCount === 1) {
@@ -76,7 +77,7 @@ describe('SseEventBus', () => {
       bus.stop()
       return new Response(null, { status: 204 })
     })
-    const bus = new SseEventBus({
+    bus = new SseEventBus({
       url: 'https://example.test/events',
       fetcher,
       reconnectBaseMs: 1,
