@@ -227,14 +227,18 @@ export class ApiClient {
     params: PaginationParams = {},
     options: Omit<ApiRequestOptions, 'method' | 'body'> = {},
   ): Promise<PageEnvelope<T>> {
-    const filters = params.filters ? JSON.stringify(params.filters) : undefined
-    return this.get<PageEnvelope<T>>(path, {
+    const url = new URL(path.replace(/^\\//, ''), this.resolveBaseUrl())
+    appendQuery(url, {
+      page: params.page,
+      page_size: params.page_size,
+      cursor: params.cursor,
+      sort: params.sort,
+      filters: params.filters,
+    })
+    return this.get<PageEnvelope<T>>(url.toString(), {
       ...options,
       etag: options.etag ?? true,
-      headers: options.headers,
-      // Keep the pagination and filter syntax stable across all list endpoints.
-      query: undefined,
-    } as ApiRequestOptions & { query?: undefined }).then((page) => page)
+    })
   }
 
   private resolveBaseUrl(): string {
