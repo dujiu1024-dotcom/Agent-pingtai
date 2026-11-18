@@ -190,12 +190,16 @@ def create_platform_app(
             raise ValueError("allowed_origins must contain exact HTTPS origins only")
 
     audit_request_configured = any(value is not None for value in (
-        audit_request_sink, audit_actor_resolver,
+        audit_request_sink, audit_actor_resolver, audit_null_actor_tenant_resolver,
     ))
-    if audit_request_configured and any(value is None for value in (
-        audit_request_sink, audit_actor_resolver,
-    )):
-        raise ValueError("audit request sink and actor resolver must be configured together")
+    if audit_request_configured and (
+        audit_request_sink is None
+        or (audit_actor_resolver is None and audit_null_actor_tenant_resolver is None)
+        or (auth_enabled and audit_actor_resolver is None)
+    ):
+        raise ValueError(
+            "audit sink and a mode-appropriate actor/instance resolver must be configured"
+        )
 
     app = FastAPI(
         title="Agent Platform API",
@@ -232,7 +236,7 @@ def create_platform_app(
         app.add_middleware(
             AuditRequestASGIMiddleware,
             sink=audit_request_sink,
-            resolve_actor=audit_actor_resolver,
+            resolve_actor=audit_actor_resolver or (lambda principal: None),
             resolve_null_actor_tenant=audit_null_actor_tenant_resolver,
         )
     app.add_middleware(
