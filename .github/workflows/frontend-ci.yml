@@ -23,9 +23,9 @@ concurrency:
 
 jobs:
   frontend:
-    name: Frontend install, lint, typecheck, build
+    name: Frontend install, lint, typecheck, build, E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: frontend
@@ -46,3 +46,14 @@ jobs:
         run: pnpm typecheck
       - name: Production build
         run: pnpm build
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Core UI E2E (desktop and tablet)
+        run: pnpm test:e2e
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
