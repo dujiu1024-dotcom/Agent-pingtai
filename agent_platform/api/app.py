@@ -98,6 +98,8 @@ def create_platform_app(
     tool_effect_reconciliation_resolver: Any | None = None,
     approval_service: Any | None = None,
     approval_authorizer: Any | None = None,
+    approval_risk_resolver: Any | None = None,
+    local_principal_resolver: Any | None = None,
     metrics_exporter: Any | None = None,
     operational_health_monitor: Any | None = None,
     alert_store: Any | None = None,
@@ -139,6 +141,7 @@ def create_platform_app(
     task_service_resolver: Any | None = None,
     task_authorizer: Any | None = None,
     batch_service_resolver: Any | None = None,
+    batch_authorizer: Any | None = None,
     task_worker: Any | None = None,
     blackboard_repository_resolver: Any | None = None,
     blackboard_authorizer: Any | None = None,
@@ -231,6 +234,7 @@ def create_platform_app(
         allowed_origins=origins,
         protected_paths=("/api", "/auth"),
         login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
+        local_principal=local_principal_resolver,
     )
     app.add_middleware(TraceContextASGIMiddleware)
     # Outer middleware also covers authentication failures returned before routing.
@@ -432,8 +436,8 @@ def create_platform_app(
     )):
         raise ValueError("Blackboard repository resolver and authorizer must be configured together")
     batch_api_configured = batch_service_resolver is not None
-    if batch_api_configured and task_authorizer is None:
-        raise ValueError("batch service resolver requires the workbench task authorizer")
+    if batch_api_configured and task_authorizer is None and batch_authorizer is None:
+        raise ValueError("batch service resolver requires a batch or workbench task authorizer")
     graph_configured = any(value is not None for value in (
         graph_query_service_resolver, graph_read_authorizer,
     ))
@@ -478,7 +482,7 @@ def create_platform_app(
         app.include_router(create_batch_router(
             resolve_principal=_principal_from_request,
             resolve_service=batch_service_resolver,
-            authorize=task_authorizer,
+            authorize=batch_authorizer or task_authorizer,
         ))
     if blackboard_configured:
         app.include_router(create_blackboard_router(
@@ -502,8 +506,11 @@ def create_platform_app(
     if approvals_configured:
         if approval_service is None or approval_authorizer is None:
             raise ValueError("approval service and approver authorizer must be configured together")
+        if approval_risk_resolver is None:
+            raise ValueError("approval risk resolver must be configured with the approval service")
         app.include_router(create_approval_router(
             service=approval_service, authorize_approver=approval_authorizer,
+            resolve_risk_level=approval_risk_resolver,
         ))
     audit_configured = any(value is not None for value in (audit_reader, audit_authorizer, run_budget_audit_reader))
     if audit_configured:

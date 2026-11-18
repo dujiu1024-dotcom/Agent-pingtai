@@ -6,6 +6,7 @@ this module does not create a second agent runtime or bypass Run/Gateway policy.
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -36,6 +37,22 @@ class TaskCenterService(Protocol):
     async def retry_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
         idempotency_key: str,
+    ) -> Mapping[str, Any] | None: ...
+
+    async def list_dead_letters(
+        self, *, tenant_id: str, limit: int = 50, include_resolved: bool = False,
+    ) -> Sequence[Mapping[str, Any]]: ...
+
+    async def get_dead_letter(
+        self, *, tenant_id: str, run_id: str,
+    ) -> Mapping[str, Any] | None: ...
+
+    async def retry_dead_letter(
+        self, *, tenant_id: str, run_id: str, actor_id: str, idempotency_key: str,
+    ) -> Mapping[str, Any] | None: ...
+
+    async def resolve_dead_letter(
+        self, *, tenant_id: str, run_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None: ...
 
 
@@ -172,6 +189,84 @@ def create_workbench_router(
             if result is None:
                 raise HTTPException(404, "task not found")
             return JSONResponse(dict(result), status_code=202)
+
+        @router.get("/dead-letters")
+        async def list_dead_letters(
+            request: Request, limit: int = 50, include_resolved: bool = False,
+        ):
+            if not 1 <= limit <= 200:
+                raise HTTPException(400, "limit must be between 1 and 200")
+            principal, service = await task_context(request, "*", "read")
+            if not hasattr(service, "list_dead_letters"):
+                raise HTTPException(503, "dead letter management is not configured")
+            try:
+                items = await service.list_dead_letters(
+                    tenant_id=principal.tenant_id, limit=limit,
+                    include_resolved=include_resolved,
+                )
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            return {"items": [dict(item) for item in items]}
+
+        @router.post("/dead-letters/{run_id}/retry")
+        async def retry_dead_letter(run_id: str, request: Request):
+            principal = await resolve_principal(request)
+            service = await resolve_task_service(principal)
+            if not hasattr(service, "get_dead_letter"):
+                raise HTTPException(503, "dead letter management is not configured")
+            row = await service.get_dead_letter(
+                tenant_id=principal.tenant_id, run_id=run_id,
+            )
+            if row is None:
+                raise HTTPException(404, "dead letter not found")
+            if row.get("resolved_at"):
+                raise HTTPException(409, "dead letter already resolved")
+            task_id = row.get("task_id")
+            if not task_id:
+                raise HTTPException(409, "dead letter is not linked to a task")
+            if not await authorize_task(principal, str(task_id), "retry"):
+                raise HTTPException(403, "task retry denied")
+            try:
+                body = await request.json()
+            except Exception:
+                body = {}
+            key = body.get("idempotency_key") if isinstance(body, Mapping) else None
+            if not isinstance(key, str) or not key.strip():
+                key = f"dlq-retry:{run_id}:{uuid4().hex}"
+            try:
+                result = await service.retry_dead_letter(
+                    tenant_id=principal.tenant_id, run_id=run_id,
+                    actor_id=principal.user_id, idempotency_key=key,
+                )
+            except PermissionError as exc:
+                raise HTTPException(403, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            if result is None:
+                raise HTTPException(404, "dead letter not found")
+            return JSONResponse(dict(result), status_code=202)
+
+        @router.post("/dead-letters/{run_id}/resolve")
+        async def resolve_dead_letter(run_id: str, request: Request):
+            principal = await resolve_principal(request)
+            service = await resolve_task_service(principal)
+            if not hasattr(service, "resolve_dead_letter"):
+                raise HTTPException(503, "dead letter management is not configured")
+            row = await service.get_dead_letter(
+                tenant_id=principal.tenant_id, run_id=run_id,
+            )
+            if row is None:
+                raise HTTPException(404, "dead letter not found")
+            target = str(row.get("task_id") or "*")
+            if not await authorize_task(principal, target, "retry"):
+                raise HTTPException(403, "task retry denied")
+            result = await service.resolve_dead_letter(
+                tenant_id=principal.tenant_id, run_id=run_id,
+                actor_id=principal.user_id,
+            )
+            if result is None:
+                raise HTTPException(404, "dead letter not found")
+            return result
 
         @router.post("/tasks/{task_id}/cancel")
         async def cancel_task(task_id: str, request: Request):

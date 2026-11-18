@@ -78,7 +78,7 @@ class RunScopedModelClient:
         return result
 
 
-@dataclass/(frozen=True)
+@dataclass(frozen=True)
 class RunRegistryRuntime:
     tenant_id: str
     run_id: str

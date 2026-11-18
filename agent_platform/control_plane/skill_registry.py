@@ -107,7 +107,8 @@ def parse_skill_package_manifest(content: str, *, available_tools: set[str]) -> 
     dependencies: dict[str, str] = {}
     for package, pin in raw_dependencies.items():
         if (not isinstance(package, str) or not _ID.fullmatch(package)
-                or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", package)\n                or package in {".", ".."} or not isinstance(pin, str) or not _DEP_PIN.fullmatch(pin)):
+                or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", package)
+                or package in {".", ".."} or not isinstance(pin, str) or not _DEP_PIN.fullmatch(pin)):
             raise SkillPackageError("dependencies must use exact == versions or @sha256 pins")
         dependencies[package] = pin
     raw_tools = data["allowed-tools"]

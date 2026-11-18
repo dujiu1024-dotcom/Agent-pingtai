@@ -1,6 +1,8 @@
 """PostgreSQL Run state store with optimistic transitions and worker leases."""
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
@@ -99,6 +101,18 @@ class PostgresRunStateStore(RunStateStore):
      raise ValueError("only failed or timed_out tasks can be retried")
     if source["registry_snapshot"] is None or not source["registry_snapshot_digest"]:
      raise ValueError("task has no immutable registry snapshot and cannot be retried")
+    # 快照摘要的规范化内容包含 run_id，重试必须按新运行重算，否则校验必然失败。
+    entries=source["registry_snapshot"]
+    digest=source["registry_snapshot_digest"]
+    if isinstance(entries,list) and entries and all(
+      isinstance(entry,dict) and "definition" in entry for entry in entries
+    ):
+     canonical=json.dumps(
+      {"tenant_id":tenant_id,"run_id":str(run_uuid),
+       "entries":[dict(entry) for entry in entries]},
+      ensure_ascii=False,sort_keys=True,separators=(",",":"),
+     )
+     digest=hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     cur=await c.execute(
      """INSERT INTO platform_runs
         (tenant_id,run_id,project_id,session_id,task_id,agent_id,agent_version,
@@ -107,13 +121,13 @@ class PostgresRunStateStore(RunStateStore):
          dispatch_ready,retry_of_run_id)
         SELECT tenant_id,%s,project_id,session_id,%s,agent_id,agent_version,
          template_id,template_version,workflow_id,'queued',priority,input,created_by,
-         %s,%s,registry_snapshot,registry_snapshot_digest,true,%s
+         %s,%s,registry_snapshot,%s,true,%s
         FROM platform_runs
         WHERE tenant_id=%s AND run_id=%s AND created_by=%s
         ON CONFLICT (tenant_id,created_by,idempotency_key)
           WHERE idempotency_key IS NOT NULL DO NOTHING
         RETURNING run_id""",
-     (run_uuid,str(run_uuid),idempotency_key,request_digest,source["run_id"],
+     (run_uuid,str(run_uuid),idempotency_key,request_digest,digest,source["run_id"],
       tenant_id,source["run_id"],actor_id),
     )
     inserted=await cur.fetchone()
@@ -387,6 +401,27 @@ class PostgresRunStateStore(RunStateStore):
    row=await cur.fetchone()
    return row["status"] if row is not None else None
 
+ async def ensure_dead_letter(self,tenant_id:str,run_id:str,*,reason:str|None=None)->bool:
+  """把终态失败的运行补登记到死信队列（幂等）。
+
+  执行器直接判定失败时不会经过 worker 的重试计数分支，因此需要单独补登记，
+  否则死信队列永远为空、人工重放无从触发。
+  """
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""INSERT INTO platform_run_dead_letters
+     (tenant_id,run_id,attempt_count,max_attempts,reason,payload)
+    SELECT tenant_id,run_id,COALESCE(worker_attempts,1),COALESCE(max_worker_attempts,1),
+      COALESCE(%s,last_error,'未记录失败原因'),
+      jsonb_build_object('source','workbench_executor','run_id',run_id)
+    FROM platform_runs WHERE tenant_id=%s AND run_id=%s AND status IN ('failed','timed_out')
+    ON CONFLICT (tenant_id,run_id) DO UPDATE SET
+      attempt_count=EXCLUDED.attempt_count,max_attempts=EXCLUDED.max_attempts,
+      reason=EXCLUDED.reason,payload=EXCLUDED.payload,resolved_at=NULL,resolved_by=NULL,
+      updated_at=now()
+    RETURNING run_id""",(reason,tenant_id,UUID(run_id)))
+   return await cur.fetchone() is not None
+
  async def release_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
   c=await self._connect()
   async with c:
@@ -403,3 +438,36 @@ class PostgresRunStateStore(RunStateStore):
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
     ORDER BY created_at LIMIT %s""",(limit,))
    return [self._snapshot(row) for row in await cur.fetchall()]
+
+ async def list_dead_letters(self,tenant_id:str,*,limit:int=50,include_resolved:bool=False)->list[dict[str,Any]]:
+  limit=max(1,min(int(limit),200))
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT d.run_id,d.attempt_count,d.max_attempts,d.reason,d.payload,
+     d.created_at,d.resolved_at,d.resolved_by,r.task_id,r.agent_id,r.created_by
+    FROM platform_run_dead_letters d
+    LEFT JOIN platform_runs r ON r.tenant_id=d.tenant_id AND r.run_id=d.run_id
+    WHERE d.tenant_id=%s AND (%s OR d.resolved_at IS NULL)
+    ORDER BY d.created_at DESC LIMIT %s""",(tenant_id,include_resolved,limit))
+   return [dict(row) for row in await cur.fetchall()]
+
+ async def dead_letter(self,tenant_id:str,run_id:str)->dict[str,Any]|None:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT d.run_id,d.attempt_count,d.max_attempts,d.reason,d.payload,
+     d.created_at,d.resolved_at,d.resolved_by,r.task_id,r.agent_id,r.created_by
+    FROM platform_run_dead_letters d
+    LEFT JOIN platform_runs r ON r.tenant_id=d.tenant_id AND r.run_id=d.run_id
+    WHERE d.tenant_id=%s AND d.run_id=%s""",(tenant_id,UUID(run_id)))
+   row=await cur.fetchone()
+   return dict(row) if row is not None else None
+
+ async def resolve_dead_letter(self,tenant_id:str,run_id:str,resolved_by:str)->dict[str,Any]|None:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""UPDATE platform_run_dead_letters
+    SET resolved_at=COALESCE(resolved_at,now()),resolved_by=COALESCE(resolved_by,%s),updated_at=now()
+    WHERE tenant_id=%s AND run_id=%s
+    RETURNING run_id,resolved_at,resolved_by""",(resolved_by,tenant_id,UUID(run_id)))
+   row=await cur.fetchone()
+   return dict(row) if row is not None else None

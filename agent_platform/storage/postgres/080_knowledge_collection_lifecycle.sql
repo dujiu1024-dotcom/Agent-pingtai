@@ -13,7 +13,7 @@ ALTER TABLE knowledge_indexes
 ALTER TABLE knowledge_indexes
     ADD COLUMN IF NOT EXISTS index_type text NOT NULL DEFAULT 'hybrid';
 
-DO $
+DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
@@ -23,8 +23,7 @@ BEGIN
         EXECUTE 'UPDATE knowledge_indexes SET name=index_name WHERE name IS NULL';
         EXECUTE 'ALTER TABLE knowledge_indexes ALTER COLUMN index_name DROP NOT NULL';
     END IF;
-END $;
-
+END $$;
 UPDATE knowledge_indexes SET name='default' WHERE name IS NULL;
 ALTER TABLE knowledge_indexes ALTER COLUMN name SET NOT NULL;
 ALTER TABLE knowledge_indexes ALTER COLUMN embedding_model DROP NOT NULL;

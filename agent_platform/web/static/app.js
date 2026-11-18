@@ -7,27 +7,154 @@ const API="/api/platform/v1",$=s=>document.querySelector(s),S={features:{},view:
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const json=v=>esc(JSON.stringify(v??{},null,2));
 function csrf(){const c=document.cookie.split("; ").find(x=>x.startsWith("__Host-platform_csrf="));return c?decodeURIComponent(c.split("=").slice(1).join("=")):"";}
-async function api(path,opt={}){const h={Accept:"application/json",...(opt.headers||{})};if(opt.body&&typeof opt.body==="string")h["Content-Type"]="application/json";if(["POST","PUT","PATCH","DELETE"].includes((opt.method||"GET").toUpperCase()))h["X-CSRF-Token"]=csrf();const r=await fetch(path,{...opt,headers:h,credentials:"same-origin"});if(!r.ok){let m=r.status+" "+r.statusText;try{m=(await r.json()).detail||m}catch{}throw Error(m)}if(r.status===204)return null;const t=r.headers.get("content-type")||"";return t.includes("application/json")?r.json():r;}
-async function upload(path,file){const r=await fetch(path,{method:"POST",body:file,headers:{"Content-Type":file.type||"application/octet-stream","X-Filename":encodeURIComponent(file.name),"X-CSRF-Token":csrf()},credentials:"same-origin"});if(!r.ok){let m=r.statusText;try{m=(await r.json()).detail||m}catch{}throw Error(m)}return r.json();}
+// 后端错误详情统一转成可读中文；未命中词典时保留原文，方便排查。
+const ERROR_TEXT={"RAG provider is unavailable":"本地模型服务不可用，请确认 Ollama 已安装 qwen3 与 bge-m3","RAG evaluation provider is unavailable":"RAG 评测所需的本地模型服务不可用","JSON object required":"请求体必须是 JSON 对象","authenticated knowledge principal required":"请先登录后再使用知识库","RAG query is not authorized":"当前身份无权执行 RAG 检索","RAG evaluation is not authorized":"当前身份无权执行 RAG 评测","embedding_model is not an enabled model":"所选向量模型未启用","collection not found":"知识库集合不存在","document contains no text after cleaning":"文档解析后没有可用文本","document exceeds configured upload size limit":"文档超过上传大小限制"};
+function localizeError(message){const text=String(message??"").trim();for(const key of Object.keys(ERROR_TEXT)){if(text.includes(key))return ERROR_TEXT[key]}return text||"请求失败"}
+async function api(path,opt={}){const h={Accept:"application/json",...(opt.headers||{})};if(opt.body&&typeof opt.body==="string")h["Content-Type"]="application/json";if(["POST","PUT","PATCH","DELETE"].includes((opt.method||"GET").toUpperCase()))h["X-CSRF-Token"]=csrf();const r=await fetch(path,{...opt,headers:h,credentials:"same-origin"});if(!r.ok){let m=r.status+" "+r.statusText;try{m=(await r.json()).detail||m}catch{}throw Error(localizeError(m))}if(r.status===204)return null;const t=r.headers.get("content-type")||"";return t.includes("application/json")?r.json():r;}
+async function upload(path,file){const r=await fetch(path,{method:"POST",body:file,headers:{"Content-Type":file.type||"application/octet-stream","X-Filename":encodeURIComponent(file.name),"X-CSRF-Token":csrf()},credentials:"same-origin"});if(!r.ok){let m=r.statusText;try{m=(await r.json()).detail||m}catch{}throw Error(localizeError(m))}return r.json();}
 function toast(t){const e=$("#toast");e.textContent=t;e.classList.add("show");setTimeout(()=>e.classList.remove("show"),2600)}
 function table(cols,rows){return "<div class='table-scroll'><table><thead><tr>"+cols.map(x=>"<th>"+x+"</th>").join("")+"</tr></thead><tbody>"+(rows.length?rows.join(""):"<tr><td colspan='"+cols.length+"' class='empty'>暂无记录</td></tr>")+"</tbody></table></div>"}
 function panel(t,b,a=""){return "<section class='panel'><div class='panel-head'><h3>"+t+"</h3>"+a+"</div>"+b+"</section>"}
 function pre(v){return "<pre class='json'>"+json(v)+"</pre>"}
 function btn(t,attr,cls=""){return "<button class='button "+cls+"' "+attr+">"+t+"</button>"}
+const shortId=id=>id?String(id).slice(0,8):"—";
+// 统一的中文状态字典：后端仍返回英文枚举，界面只做展示层翻译。
+const STATUS_LABELS={queued:"排队中",pending:"待处理",waiting:"等待中",running:"运行中",active:"运行中",succeeded:"已完成",success:"已完成",completed:"已完成",complete:"已完成",failed:"失败",failure:"失败",error:"失败",cancelled:"已取消",canceled:"已取消",partial_failure:"部分失败",paused:"已暂停",draft:"草稿",published:"已发布",disabled:"已停用",deprecated:"已废弃",retired:"已退役",open:"待处理",acknowledged:"已确认",resolved:"已解决",closed:"已关闭",expired:"已过期",abstained:"无依据",approved:"已批准",rejected:"已拒绝",created:"已创建",unknown:"未知"};
+const STATUS_TONES={running:"ok",active:"ok",succeeded:"ok",success:"ok",completed:"ok",complete:"ok",approved:"ok",published:"ok",resolved:"ok",queued:"warn",pending:"warn",waiting:"warn",paused:"warn",open:"warn",acknowledged:"warn",partial_failure:"bad",failed:"bad",failure:"bad",error:"bad",cancelled:"bad",canceled:"bad",rejected:"bad",draft:"muted",disabled:"muted",deprecated:"muted",retired:"muted",closed:"muted",expired:"muted"};
+function statusKey(value){return String(value??"").trim().toLowerCase()}
+function statusLabel(value){const key=statusKey(value);return STATUS_LABELS[key]||(key?String(value):"—")}
+function statusPill(value){const tone=STATUS_TONES[statusKey(value)];return"<span class='pill"+(tone?" tone-"+tone:"")+"'>"+esc(statusLabel(value))+"</span>"}
+const SEVERITY_LABELS={debug:"调试",info:"提示",notice:"通知",warning:"警告",warn:"警告",error:"错误",critical:"严重",fatal:"致命"};
+function severityLabel(value){const key=statusKey(value);return SEVERITY_LABELS[key]||(key?String(value):"—")}
+const RISK_LABELS={low:"低",medium:"中",high:"高",critical:"极高"};
+function riskLabel(value){const key=statusKey(value);return RISK_LABELS[key]||(key?String(value):"—")}
+const OUTCOME_LABELS={success:"成功",succeeded:"成功",failure:"失败",failed:"失败",error:"错误",denied:"已拒绝",allowed:"已允许",cancelled:"已取消"};
+function outcomeLabel(value){const key=statusKey(value);return OUTCOME_LABELS[key]||(key?String(value):"—")}
+const SCOPE_LABELS={tenant:"租户",project:"项目",private:"私有",run:"运行",task:"任务",user:"用户",session:"会话"};
+function scopeLabel(value){const key=statusKey(value);return SCOPE_LABELS[key]||(key?String(value):"—")}
+// Agent 展示名优先取注册表定义中的中文名称，缺失时回退到稳定的 Agent ID。
+function agentName(id){if(!id)return"—";const labels=S.agentLabels||{};return labels[id]||String(id)}
+function timeLabel(iso){if(!iso)return"—";try{const d=new Date(iso);const now=new Date();const diffMs=now-d;const diffMin=Math.round(diffMs/60000);const sameDay=d.toDateString()===now.toDateString();if(sameDay&&diffMin>=0)return diffMin<1?"刚刚":diffMin<60?diffMin+" 分钟前":"今天 "+d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");const diffDay=Math.round(diffMin/1440);if(diffDay>-7&&diffDay<=0)return diffDay===0?"今天":diffDay===-1?"昨天":Math.abs(diffDay)+" 天前";return (d.getMonth()+1)+"-"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}catch{return String(iso).slice(0,16)}}
 async function list(p){const r=await api(p);return r.items||[]}
-async function refresh(){try{S.me=await api("/auth/me");$("#identity").textContent=S.me.display_name||S.me.email||S.me.user_id;$("#logout").hidden=false;$("#login").hidden=true;$("#content").hidden=false;S.features=(await api(API+"/workbench/capabilities")).features||{};$("#api-state").textContent="API 已连接"}catch(e){S.me=null;$("#identity").textContent="未登录";$("#logout").hidden=true;$("#login").hidden=false;$("#content").hidden=true;$("#api-state").textContent="未认证"}}
-function nav(v){if(v!=="task-detail"&&S.runStream){S.runStream.close();S.runStream=null}S.view=v;S.session=null;S.task=null;S.approval=null;document.querySelectorAll("[data-view]").forEach(b=>b.classList.toggle("active",b.dataset.view===v));const names={overview:"工作台总览",tasks:"任务中心",sessions:"会话与文件",approvals:"人工审批",artifacts:"产物交付"};$("#title").textContent=names[v]||v;$("#crumb").textContent=v.toUpperCase();render()}
+async function refresh(){try{S.me=await api("/auth/me");$("#identity").textContent=S.me.display_name||S.me.email||S.me.user_id;$("#logout").hidden=false;$("#login").hidden=true;$("#content").hidden=false;S.features=(await api(API+"/workbench/capabilities")).features||{};try{const agents=await list(API+"/registry/agent?limit=200");S.agentLabels=Object.fromEntries(agents.map(x=>[x.item_id,(x.definition&&x.definition.name)||x.item_id]))}catch{S.agentLabels={}}$("#api-state").textContent="API 已连接"}catch(e){S.me=null;$("#identity").textContent="未登录";$("#logout").hidden=true;$("#login").hidden=false;$("#content").hidden=true;$("#api-state").textContent="未认证"}}
+function nav(v){
+  if(v!=="task-detail"&&S.runStream){S.runStream.close();S.runStream=null}S.view=v;S.session=null;S.task=null;S.approval=null;document.querySelectorAll("[data-view]").forEach(b=>{b.classList.toggle("active",b.dataset.view===v);if(b.tagName==="BUTTON"){b.classList.toggle("active",b.dataset.view===v);b.setAttribute("aria-current",b.dataset.view===v?"page":"false")}});const names={overview:"驾驶舱",board:"运营看板",tasks:"在办任务",sessions:"会话中心",batch:"批量执行",replay:"Run 回放",approvals:"待我拍板",artifacts:"产物交付",registry:"Agent 与资源管理","knowledge-graph":"知识图谱",governance:"知识与运营管理",observability:"可观测性","prompt-lab":"Prompt 版本管理"};$("#title").textContent=names[v]||v;$("#crumb").textContent=names[v]||v;$("#hero-slot").innerHTML="";render()}
 async function render(){const root=$("#view");root.innerHTML="<div class='panel'>加载中…</div>";try{
-if(S.view==="overview"){const rs=await Promise.allSettled([list(API+"/workbench/tasks?limit=50"),list(API+"/sessions?limit=50"),list(API+"/files?limit=50"),list(API+"/approvals?limit=50")]);const n=rs.map(x=>x.status==="fulfilled"?x.value.length:"—");root.innerHTML="<div class='grid'>"+[["启用能力",Object.values(S.features).filter(Boolean).length],["任务",n[0]],["会话",n[1]],["文件资产",n[2]]].map(x=>"<div class='stat'><small>"+x[0]+"</small><strong>"+x[1]+"</strong></div>").join("")+"</div>"+panel("平台能力",Object.entries(S.features).map(x=>"<span class='pill'>"+esc(x[0])+": "+(x[1]?"启用":"未启用")+"</span>").join(" "))+(rs[3].status==="fulfilled"?panel("待处理审批","<p>当前审批记录："+n[3]+"</p>",btn("打开审批中心","data-go='approvals'")):"")}
-else if(S.view==="sessions"){if(!S.features.sessions){root.innerHTML=panel("会话服务未配置","<p>后端尚未启用会话能力。</p>");return}const [ss,fs]=await Promise.all([list(API+"/sessions?limit=100"),list(API+"/files?limit=100")]);root.innerHTML=panel("创建会话","<form id='session-form' class='inline-form'><label>会话标题<input name='title' required maxlength='200'></label><label>项目 ID（可选）<input name='project_id'></label><button class='button primary'>创建会话</button></form>")+panel("会话列表",table(["会话","项目","状态","更新时间","操作"],ss.map(x=>"<tr><td>"+esc(x.title||x.session_id)+"<small class='subline'>"+esc(x.session_id)+"</small></td><td>"+esc(x.project_id||"—")+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.updated_at)+"</td><td>"+btn("打开","data-session='"+esc(x.session_id)+"'")+"</td></tr>")))+panel("文件资产",table(["文件","大小","会话","版本","操作"],fs.map(x=>"<tr><td>"+esc(x.filename)+"</td><td>"+esc(x.size_bytes)+" bytes</td><td>"+esc(x.session_id||"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")))}
+if(S.view==="overview"){
+  $("#hero-slot").innerHTML="<div class='hero'><h2>龍奕 FDE 工作室 · 驾驶舱</h2><p>从会话输入到任务派发、Run 监控、人工审批与产物交付的工作台。这里是你每天打开的第一屏。</p></div>";
+  const rs=await Promise.allSettled([
+    list(API+"/approvals?limit=50"),
+    list(API+"/workbench/tasks?limit=50"),
+    list(API+"/sessions?limit=50")
+  ]);
+  const approvals=rs[0].status==="fulfilled"?rs[0].value:[];
+  const tasks=rs[1].status==="fulfilled"?rs[1].value:[];
+  const sessions=rs[2].status==="fulfilled"?rs[2].value:[];
+  const pendingApprovals=approvals.filter(a=>String(a.status).toLowerCase()==="pending");
+  const activeTasks=tasks.filter(t=>{const s=String(t.status).toLowerCase();return s==="running"||s==="pending"||s==="queued"});
+  const failedTasks=tasks.filter(t=>{const s=String(t.status).toLowerCase();return s==="failed"||s==="cancelled"});
+  const enabledFeatures=Object.values(S.features).filter(Boolean).length;
+  const statusBadge=v=>statusPill(v);
+  let approvalCard="";
+  if(pendingApprovals.length){
+    approvalCard=panel("🔴 待我拍板 · "+pendingApprovals.length+" 项",
+      pendingApprovals.slice(0,5).map(a=>{
+        const id=esc(shortId(a.approval_id));
+        return "<div style='padding:10px 0;border-top:1px solid #29344b;display:flex;align-items:center;gap:10px'>"+
+          "<div style='flex:1;min-width:0'>"+
+          "<b>审批 #"+id+"</b> · "+esc(a.action||"—")+" · "+esc(a.resource||"—")+
+          "<br><span class='subtle'>申请人："+esc(a.requested_by||"—")+" · 风险："+esc(a.risk_level?riskLabel(a.risk_level):"—")+"</span>"+
+          "</div>"+
+          btn("批准","data-go='approvals'","primary")+
+          btn("拒绝","data-go='approvals'")+
+          "</div>";
+      }).join("")+(pendingApprovals.length>5?"<p class='subtle' style='margin-top:8px'>还有 "+(pendingApprovals.length-5)+" 项待处理</p>":""),
+      btn("全部审批 →","data-go='approvals'"));
+  }else{
+    approvalCard=panel("🟢 没有待拍板审批","<p class='subtle'>所有审批已处理完毕。</p>",btn("审批中心 →","data-go='approvals'"));
+  }
+  let failedCard="";
+  if(failedTasks.length){
+    failedCard=panel("🟠 近期失败 · "+failedTasks.length+" 项",
+      failedTasks.slice(0,5).map(t=>{
+        return "<div style='padding:10px 0;border-top:1px solid #29344b;display:flex;align-items:center;gap:10px'>"+
+          "<div style='flex:1;min-width:0'>"+
+          "<b>任务 #"+esc(shortId(t.task_id))+"</b> · Agent "+esc(agentName(t.agent_id))+
+          "<br><span class='subtle'>"+esc(timeLabel(t.updated_at||t.created_at))+"</span>"+
+          "</div>"+
+          btn("查看详情","data-task='"+esc(t.task_id)+"'")+
+          "</div>";
+      }).join("")+(failedTasks.length>5?"<p class='subtle' style='margin-top:8px'>还有 "+(failedTasks.length-5)+" 项失败</p>":""),
+      btn("全部任务 →","data-go='tasks'"));
+  }else{
+    failedCard=panel("🟢 没有失败任务","<p class='subtle'>全部任务运行正常。</p>");
+  }
+  let tasksCard="";
+  if(activeTasks.length){
+    tasksCard=panel("🟡 在办任务 · "+activeTasks.length+" 项",
+      activeTasks.slice(0,5).map(t=>{
+        return "<div style='padding:10px 0;border-top:1px solid #29344b;display:flex;align-items:center;gap:10px'>"+
+          "<div style='flex:1;min-width:0'>"+
+          "<b>任务 #"+esc(shortId(t.task_id))+"</b> · Agent "+esc(agentName(t.agent_id))+" · "+statusBadge(t.status)+
+          "<br><span class='subtle'>"+esc(timeLabel(t.updated_at||t.created_at))+"</span>"+
+          "</div>"+
+          btn("查看详情","data-task='"+esc(t.task_id)+"'")+
+          "</div>";
+      }).join("")+(activeTasks.length>5?"<p class='subtle' style='margin-top:8px'>还有 "+(activeTasks.length-5)+" 项在办</p>":""),
+      btn("全部任务 →","data-go='tasks'"));
+  }else{
+    tasksCard=panel("⚪ 当前没有在办任务","<p class='subtle'>可以从「在办任务」页面提交新任务。</p>",btn("提交任务 →","data-go='tasks'"));
+  }
+const featureLabels={knowledge:"知识入库",rag:"RAG 检索引擎",rag_query:"RAG 查询端点",memory:"对话记忆持久化",sessions:"会话服务",registry:"资源与模板注册",agent_management:"Agent 管理",task_execution:"任务执行中心",graph:"知识图谱",graph_annotation:"图谱标注",graph_visualization:"图谱可视化",batch_execution:"批量执行",approvals:"人工审批",blackboard:"黑板协作",quotas:"配额管理",metrics:"指标采集",audit:"审计追踪",prompt_management:"Prompt 管理"};
+const featureEntries=Object.entries(S.features||{}).map(([k,v])=>({key:k,label:featureLabels[k]||k,enabled:Boolean(v)}));
+const featEnabledCount=featureEntries.filter(f=>f.enabled).length;
+const featurePills=featureEntries.map(f=>"<span class='pill' style='background:"+(f.enabled?"rgba(74,222,155,.18);color:#4ADE9B":"rgba(255,107,127,.15);color:#b4bfe8")+"'>"+esc(f.label)+" "+(f.enabled?"✓":"✗")+"</span>").join(" ");
+const featuresPanel=panel("平台能力开关 · "+featEnabledCount+"/"+featureEntries.length+" 启用",
+  "<p class='subtle'>服务端在租户入口统一校验能力边界；工作台不会绕过后端权限。</p>"+
+  "<div style='display:flex;flex-wrap:wrap;gap:6px;margin-top:8px'>"+featurePills+"</div>");
+  root.innerHTML=
+    "<div class='grid'>"+
+    "<div class='stat'><small>在办任务</small><strong>"+activeTasks.length+"</strong></div>"+
+    "<div class='stat'><small>失败任务</small><strong style='color:#ff909b'>"+failedTasks.length+"</strong></div>"+
+    "<div class='stat'><small>待我拍板</small><strong style='color:#ffc247'>"+pendingApprovals.length+"</strong></div>"+
+    "<div class='stat'><small>启用能力</small><strong>"+featEnabledCount+"/"+featureEntries.length+"</strong></div>"+
+    "</div>"+
+    approvalCard+
+    tasksCard+
+    failedCard+
+    featuresPanel;
+}
+else if(S.view==="sessions"){if(!S.features.sessions){root.innerHTML=panel("会话服务未配置","<p>后端尚未启用会话能力。</p>");return}const [ss,fs]=await Promise.all([list(API+"/sessions?limit=100"),list(API+"/files?limit=100")]);root.innerHTML=panel("创建会话","<form id='session-form' class='inline-form'><label>会话标题<input name='title' required maxlength='200'></label><label>项目<input name='project_id' placeholder='OPC-002' value='OPC-002'></label><button class='button primary'>创建会话</button></form>")+panel("会话列表",table(["会话","项目","状态","更新时间","操作"],ss.map(x=>"<tr><td><b>"+esc(x.title||"会话 #"+shortId(x.session_id))+"</b><small class='subline'>"+esc(shortId(x.session_id))+"</small></td><td>"+esc(x.project_id||"OPC-002")+"</td><td>"+statusPill(x.status)+"</td><td>"+esc(timeLabel(x.updated_at))+"</td><td>"+btn("打开","data-session='"+esc(x.session_id)+"'")+"</td></tr>")))+panel("文件资产",fs.length?table(["文件","大小","关联会话","版本","操作"],fs.map(x=>"<tr><td>"+esc(x.filename)+"</td><td>"+esc((x.size_bytes/1024).toFixed(1))+" KB</td><td>"+esc(x.session_id?shortId(x.session_id):"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")):"<p class='empty'>暂无文件。可以在会话详情页上传，或关联到任务产出。</p>")}
 else if(S.view==="session-detail"){await renderSession(S.session);return}
-else if(S.view==="tasks"){if(!S.features.task_execution){root.innerHTML=panel("任务执行未配置","<p>服务端未启用 Task Center；工作台不会绕过 Runtime 启动 Agent。</p>");return}const [ts,ss]=await Promise.all([list(API+"/workbench/tasks?limit=100"),list(API+"/sessions?limit=100")]);root.innerHTML=panel("提交任务","<form id='task-form'><div class='form-grid'><label>Agent ID<input name='agent_id' required></label><label>关联会话<select name='session_id'><option value=''>不关联</option>"+ss.map(x=>"<option value='"+esc(x.session_id)+"'>"+esc(x.title||x.session_id)+"</option>").join("")+"</select></label><label>Project ID<input name='project_id'></label><label>优先级<input name='priority' type='number' min='0' max='1000' value='100'></label></div><label>任务输入（JSON 对象）<textarea name='input' required>{\"prompt\":\"请处理任务\"}</textarea></label><button class='button primary'>提交任务</button></form>")+panel("任务队列",table(["任务","Agent","状态","Run","更新时间","操作"],ts.map(x=>"<tr><td>"+esc(x.task_id)+"</td><td>"+esc(x.agent_id)+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.run_id||"—")+"</td><td>"+esc(x.updated_at||x.created_at||"—")+"</td><td>"+btn("详情","data-task='"+esc(x.task_id)+"'")+"</td></tr>")))}
+else if(S.view==="tasks"){if(!S.features.task_execution){root.innerHTML=panel("任务执行未配置","<p>服务端未启用 Task Center；工作台不会绕过 Runtime 启动 Agent。</p>");return}const [ts,ss]=await Promise.all([list(API+"/workbench/tasks?limit=100"),list(API+"/sessions?limit=100")]);const agentOptions=Object.entries(S.agentLabels||{}).map(([id,name])=>"<option value='"+esc(id)+"'>"+esc(name)+"（"+esc(id)+"）</option>").join("")||"<option value='local-assistant'>本地助手（local-assistant）</option>";root.innerHTML=panel("提交任务","<form id='task-form'><div class='form-grid'><label>Agent<select name='agent_id' required>"+agentOptions+"</select></label><label>关联会话<select name='session_id'><option value=''>不关联</option>"+ss.map(x=>"<option value='"+esc(x.session_id)+"'>"+esc(x.title||shortId(x.session_id))+"</option>").join("")+"</select></label><label>项目 Project ID<input name='project_id' value='OPC-002' placeholder='OPC-002'></label><label>优先级<input name='priority' type='number' min='0' max='1000' value='100'></label></div><label class='full'>任务指令（JSON 对象）<textarea name='input' required rows='5' placeholder='{\n  \"prompt\": \"请处理任务\"\n}'></textarea></label><p class='subtle'>说明：input 必须是合法 JSON 对象。可只传 prompt 字段，也可传入上下文、约束等结构化参数。</p><button class='button primary'>提交任务</button></form>")+panel("任务队列",table(["任务","Agent","状态","Run","更新时间","操作"],ts.map(x=>"<tr><td><b>#"+esc(shortId(x.task_id))+"</b></td><td>"+esc(agentName(x.agent_id))+"</td><td>"+statusPill(x.status)+"</td><td>"+esc(x.run_id?"#"+shortId(x.run_id):"—")+"</td><td>"+esc(timeLabel(x.updated_at||x.created_at))+"</td><td>"+btn("详情","data-task='"+esc(x.task_id)+"'")+"</td></tr>")))}
 else if(S.view==="task-detail"){await renderTask(S.task);return}
-else if(S.view==="approvals"){if(!S.features.approvals){root.innerHTML=panel("审批服务未配置","<p>后端未启用人工审批服务。</p>");return}const as=await list(API+"/approvals?limit=100");root.innerHTML=panel("人工审批队列","<p class='subtle'>决定由服务端执行权限校验、过期检查与状态转换。</p>"+table(["审批","Run","动作","资源","风险","申请人","状态","操作"],as.map(x=>"<tr><td>"+esc(x.approval_id)+"</td><td>"+esc(x.run_id||"—")+"</td><td>"+esc(x.action)+"</td><td>"+esc(x.resource)+"</td><td>"+esc(x.risk_level)+"</td><td>"+esc(x.requested_by)+"</td><td>"+esc(x.status)+"</td><td>"+btn("查看","data-approval='"+esc(x.approval_id)+"'")+"</td></tr>")))}
+else if(S.view==="approvals"){if(!S.features.approvals){root.innerHTML=panel("审批服务未配置","<p>后端未启用人工审批服务。</p>");return}const as=await list(API+"/approvals?limit=100");root.innerHTML=panel("人工审批队列",table(["审批","Run","动作","资源","风险","申请人","状态","创建时间","操作"],as.map(x=>"<tr><td><b>#"+esc(shortId(x.approval_id))+"</b></td><td>"+esc(x.run_id?shortId(x.run_id):"—")+"</td><td>"+esc(x.action)+"</td><td>"+esc(x.resource)+"</td><td>"+esc(riskLabel(x.risk_level))+"</td><td>"+esc(x.requested_by)+"</td><td>"+statusPill(x.status)+"</td><td>"+esc(timeLabel(x.created_at))+"</td><td>"+btn("查看","data-approval='"+esc(x.approval_id)+"'")+"</td></tr>")))}
 else if(S.view==="approval-detail"){await renderApproval(S.approval);return}
-else if(S.view==="artifacts"){const fs=await list(API+"/files?limit=200");root.innerHTML=panel("交付产物","<p class='subtle'>文件资产经平台权限校验下载；可关联会话和任务。</p>"+table(["文件","媒体类型","大小","会话","版本","操作"],fs.map(x=>"<tr><td>"+esc(x.filename)+"<small class='subline'>"+esc(x.asset_id)+"</small></td><td>"+esc(x.media_type)+"</td><td>"+esc(x.size_bytes)+" bytes</td><td>"+esc(x.session_id||"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")))}
+else if(S.view==="artifacts"){const fs=await list(API+"/files?limit=200");root.innerHTML=panel("交付产物",fs.length?table(["文件","媒体类型","大小","关联会话","版本","操作"],fs.map(x=>"<tr><td><b>"+esc(x.filename)+"</b><small class='subline'>资产 #"+esc(shortId(x.asset_id))+"</small></td><td>"+esc(x.media_type)+"</td><td>"+esc((x.size_bytes/1024).toFixed(1))+" KB</td><td>"+esc(x.session_id?shortId(x.session_id):"—")+"</td><td>"+esc(x.version)+"</td><td>"+btn("下载","data-download='"+esc(x.asset_id)+"'")+"</td></tr>")):"<p class='empty'>暂无交付产物。</p>")}
+else if(S.view==="knowledge-graph"){
+  const rs=await Promise.allSettled([
+    list(API+"/knowledge/documents?limit=200"),
+    list(API+"/knowledge/collections?limit=100"),
+  ]);
+  const docs=rs[0].status==="fulfilled"?rs[0].value:[];
+  const cols=rs[1].status==="fulfilled"?rs[1].value:[];
+  const totalChunks=docs.reduce((s,d)=>s+Number(d.chunk_count||0),0);
+  const root2=root;
+  let docsHtml=docs.length?table(["文档","集合","块数","大小","创建时间"],docs.slice(0,20).map(d=>"<tr><td><b>"+esc(d.title||shortId(d.document_id))+"</b><small class='subline'>"+esc(shortId(d.document_id))+"</small></td><td>"+esc(d.collection_id?shortId(d.collection_id):"—")+"</td><td>"+esc(d.chunk_count||"—")+"</td><td>"+esc(d.size_bytes?Math.round(d.size_bytes/1024)+" KB":"—")+"</td><td>"+esc(timeLabel(d.created_at))+"</td></tr>")):"<p class='empty'>暂无知识文档。</p>";
+  let colsHtml=cols.length?table(["集合","文档数","描述","创建时间"],cols.map(c=>"<tr><td><b>"+esc(c.name)+"</b><small class='subline'>"+esc(shortId(c.collection_id))+"</small></td><td>"+esc(c.document_count||"—")+"</td><td>"+esc(c.description||"—")+"</td><td>"+esc(timeLabel(c.created_at))+"</td></tr>")):"<p class='empty'>暂无知识集合。</p>";
+  root2.innerHTML=
+    "<div class='grid'>"+
+    "<div class='stat'><small>知识文档</small><strong>"+docs.length+"</strong></div>"+
+    "<div class='stat'><small>总块数</small><strong>"+totalChunks+"</strong></div>"+
+    "<div class='stat'><small>知识集合</small><strong>"+cols.length+"</strong></div>"+
+    "<div class='stat'><small>数据来源</small><strong>知识文档 + 知识集合</strong></div>"+
+    "</div>"+
+    panel("知识文档（最近 20）",docsHtml)+
+    panel("知识集合",colsHtml)+
+    panel("说明","<p class='subtle'>知识图谱视图聚合知识文档与知识集合两个后端接口的数据，展示知识入库状态和组织结构。完整的知识运营（上传、分块、评估、RAG 检索）请使用「知识与运营管理」页面。</p>",btn("知识运营 →","data-go='governance'"));
+}
 }catch(e){root.innerHTML=panel("数据加载失败","<p class='error'>"+esc(e.message)+"</p>"+btn("重试","data-retry='1'"))}}
-async function renderSession(id){if(!id){nav("sessions");return}const [ss,ms,fs]=await Promise.all([list(API+"/sessions?limit=200"),list(API+"/sessions/"+encodeURIComponent(id)+"/messages?limit=200"),list(API+"/files?session_id="+encodeURIComponent(id)+"&limit=100")]);const s=ss.find(x=>x.session_id===id)||{session_id:id};$("#title").textContent=s.title||"会话详情";$("#crumb").textContent="SESSION DETAIL";$("#view").innerHTML=panel("会话信息","<p>会话 ID："+esc(id)+"</p><p>项目："+esc(s.project_id||"—")+" · 状态："+esc(s.status||"—")+"</p>",btn("返回会话列表","data-go='sessions'"))+panel("消息记录",ms.map(m=>"<article class='message'><header><b>"+esc(m.role)+"</b><small>"+esc(m.created_at)+"</small></header><p>"+esc(m.content)+"</p></article>").join("")||"<p class='empty'>暂无消息</p>")+panel("发送消息","<form id='message-form'><label>消息内容<textarea name='content' required></textarea></label><button class='button primary'>发送</button></form>")+panel("上传附件","<form id='upload-form'><input type='file' name='file' required><button class='button'>上传到此会话</button></form>")+panel("会话文件",table(["文件","大小","版本","操作"],fs.map(f=>"<tr><td>"+esc(f.filename)+"</td><td>"+esc(f.size_bytes)+" bytes</td><td>"+esc(f.version)+"</td><td>"+btn("下载","data-download='"+esc(f.asset_id)+"'")+"</td></tr>")))}
+async function renderSession(id){if(!id){nav("sessions");return}const [ss,ms,fs]=await Promise.all([list(API+"/sessions?limit=200"),list(API+"/sessions/"+encodeURIComponent(id)+"/messages?limit=200"),list(API+"/files?session_id="+encodeURIComponent(id)+"&limit=100")]);const s=ss.find(x=>x.session_id===id)||{session_id:id};$("#title").textContent=s.title||"会话详情";$("#crumb").textContent="会话详情";$("#view").innerHTML=panel("会话信息","<p>会话 ID：<code>"+esc(shortId(id))+"</code>（完整："+esc(id)+"）</p><p>项目："+esc(s.project_id||"—")+" · 状态："+esc(statusLabel(s.status||"—"))+"</p>",btn("返回会话列表","data-go='sessions'"))+panel("消息记录",ms.map(m=>"<article class='message'><header><b>"+esc(m.role==="user"?"用户":m.role==="assistant"?"助手":m.role)+"</b><small>"+esc(timeLabel(m.created_at))+"</small></header><p>"+esc(m.content)+"</p></article>").join("")||"<p class='empty'>暂无消息</p>")+panel("发送消息","<form id='message-form'><label>消息内容<textarea name='content' required></textarea></label><button class='button primary'>发送</button></form>")+panel("上传附件","<form id='upload-form'><input type='file' name='file' required><button class='button'>上传到此会话</button></form>")+panel("会话文件",table(["文件","大小","版本","操作"],fs.map(f=>"<tr><td>"+esc(f.filename)+"</td><td>"+esc((f.size_bytes/1024).toFixed(1))+" KB</td><td>"+esc(f.version)+"</td><td>"+btn("下载","data-download='"+esc(f.asset_id)+"'")+"</td></tr>")))}
 function connectRunStream(runId){
  if(S.runStream){S.runStream.close();S.runStream=null}
  const output=$("#run-stream-output"),status=$("#run-stream-status"),events=$("#run-stream-events");
@@ -76,7 +203,7 @@ async function renderTask(id){
  if(runId){
   try{
    const r=await api(API+"/runs/"+encodeURIComponent(runId));
-   run="<p>Run："+esc(runId)+" · 状态："+esc(r.status)+" · 版本："+esc(r.version)+"</p>"+
+   run="<p>Run：#"+esc(shortId(runId))+" · 状态："+esc(statusLabel(r.status))+" · 版本："+esc(r.version)+"</p>"+
     pre(r)+btn("查看 Run 事件","data-run-events='"+esc(runId)+"'")+
     "<p id='run-stream-status' class='subtle'>准备连接实时事件…</p>"+
     "<pre id='run-stream-output' class='json' aria-live='polite'></pre>"+
@@ -84,15 +211,17 @@ async function renderTask(id){
   }catch(e){run="<p class='error'>Run 详情不可用："+esc(e.message)+"</p>"}
  }
  const arts=t.artifacts||t.result?.artifacts||t.output?.artifacts||[];
- $("#title").textContent="任务详情";$("#crumb").textContent="TASK DETAIL";
- $("#view").innerHTML=panel("执行状态","<p>任务："+esc(id)+"</p><p>Agent："+esc(t.agent_id)+" · 状态："+esc(t.status)+"</p>"+pre(t),btn("返回任务列表","data-go='tasks'"))+
+ $("#title").textContent="任务详情";$("#crumb").textContent="任务详情";
+ $("#view").innerHTML=panel("执行状态","<p>任务：#"+esc(shortId(id))+"</p><p>Agent："+esc(agentName(t.agent_id))+" · 状态："+esc(statusLabel(t.status))+"</p>"+pre(t),btn("返回任务列表","data-go='tasks'"))+
   panel("运行详情",run)+
-  panel("执行产物",arts.length?arts.map(a=>"<p>"+esc(a.filename||a.name||a.asset_id||a.uri)+"</p>").join(""):"<p class='subtle'>任务未直接声明产物；请在产物交付页查看已上传文件。</p>")+
+  panel("执行产物",arts.length?arts.map(a=>"<p>"+esc(a.filename||a.name||shortId(a.asset_id)||a.uri)+"</p>").join(""):"<p class='subtle'>任务未直接声明产物；请在产物交付页查看已上传文件。</p>")+
   panel("任务操作",btn("取消任务","data-task-cancel='"+esc(id)+"'")+btn("重试任务","data-task-retry='"+esc(id)+"'"));
  if(runId)connectRunStream(runId);
 }
-async function renderApproval(id){if(!id){nav("approvals");return}const a=await api(API+"/approvals/"+encodeURIComponent(id));S.currentApproval=a;$("#title").textContent="审批详情";$("#crumb").textContent="APPROVAL DETAIL";$("#view").innerHTML=panel("审批请求",pre(a),btn("返回审批队列","data-go='approvals'"))+(a.status==="pending"?panel("人工决策","<p>核对动作、资源和请求信息后作出决定。决策由服务端验证权限和状态。</p>"+btn("批准","data-decision='true'","primary")+btn("拒绝","data-decision='false'")):"")}
-document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.view){nav(b.dataset.view);return}if(b.dataset.go){nav(b.dataset.go);return}if(b.dataset.session){S.view="session-detail";S.session=b.dataset.session;await renderSession(S.session);return}if(b.dataset.task){S.view="task-detail";S.task=b.dataset.task;await renderTask(S.task);return}if(b.dataset.approval){S.view="approval-detail";S.approval=b.dataset.approval;await renderApproval(S.approval);return}if(b.dataset.download){const r=await fetch(API+"/files/"+encodeURIComponent(b.dataset.download),{credentials:"same-origin"});if(!r.ok)throw Error("文件下载失败："+r.status);const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="artifact";a.click();URL.revokeObjectURL(url);return}if(b.dataset.decision!==undefined){const yes=b.dataset.decision==="true";await api(API+"/approvals/"+encodeURIComponent(S.approval)+"/decision",{method:"POST",body:JSON.stringify({approved:yes})});toast(yes?"审批已批准":"审批已拒绝");nav("approvals");return}if(b.dataset.taskCancel){await api(API+"/workbench/tasks/"+encodeURIComponent(b.dataset.taskCancel)+"/cancel",{method:"POST",body:"{}"});toast("取消请求已提交");await renderTask(b.dataset.taskCancel);return}if(b.dataset.taskRetry){await api(API+"/workbench/tasks/"+encodeURIComponent(b.dataset.taskRetry)+"/retry",{method:"POST",body:JSON.stringify({idempotency_key:crypto.randomUUID()})});toast("重试请求已提交");await renderTask(b.dataset.taskRetry);return}if(b.dataset.runEvents){const ev=await list(API+"/runs/"+encodeURIComponent(b.dataset.runEvents)+"/events");$("#view").insertAdjacentHTML("beforeend",panel("Run 事件",pre(ev)));return}if(b.dataset.retry){render();return}}catch(x){toast(x.message)}});
+async function renderApproval(id){if(!id){nav("approvals");return}const a=await api(API+"/approvals/"+encodeURIComponent(id));S.currentApproval=a;$("#title").textContent="审批详情";$("#crumb").textContent="审批详情";$("#view").innerHTML=panel("审批请求",pre(a),btn("返回审批队列","data-go='approvals'"))+(a.status==="pending"?panel("人工决策","<p>核对动作、资源和请求信息后作出决定。决策由服务端验证权限和状态。</p>"+btn("批准","data-decision='true'","primary")+btn("拒绝","data-decision='false'")):"")}
+document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.view){nav(b.dataset.view);return}if(b.dataset.go){nav(b.dataset.go);return}if(b.dataset.session){S.view="session-detail";S.session=b.dataset.session;await renderSession(S.session);return}if(b.dataset.task){S.view="task-detail";S.task=b.dataset.task;await renderTask(S.task);return}if(b.dataset.approval){S.view="approval-detail";S.approval=b.dataset.approval;await renderApproval(S.approval);return}if(b.dataset.download){const r=await fetch(API+"/files/"+encodeURIComponent(b.dataset.download),{credentials:"same-origin"});if(!r.ok)throw Error("文件下载失败："+r.status);const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="artifact";a.click();URL.revokeObjectURL(url);return}if(b.dataset.decision!==undefined){const yes=b.dataset.decision==="true";await api(API+"/approvals/"+encodeURIComponent(S.approval)+"/decision",{method:"POST",body:JSON.stringify({approved:yes})});toast(yes?"审批已批准":"审批已拒绝");nav("approvals");return}if(b.dataset.taskCancel){await api(API+"/workbench/tasks/"+encodeURIComponent(b.dataset.taskCancel)+"/cancel",{method:"POST",body:"{}"});toast("取消请求已提交");await renderTask(b.dataset.taskCancel);return}if(b.dataset.taskRetry){await api(API+"/workbench/tasks/"+encodeURIComponent(b.dataset.taskRetry)+"/retry",{method:"POST",body:JSON.stringify({idempotency_key:crypto.randomUUID()})});toast("重试请求已提交");await renderTask(b.dataset.taskRetry);return}if(b.dataset.runEvents){const ev=await list(API+"/runs/"+encodeURIComponent(b.dataset.runEvents)+"/events");$("#view").insertAdjacentHTML("beforeend",panel("Run 事件",pre(ev)));return}
+if(b.dataset.replayOpen){S.view="replay";await openReplay(b.dataset.replayOpen);return}
+if(b.dataset.retry){render();return}}catch(x){toast(x.message)}});
 document.addEventListener("submit",async e=>{const f=e.target;if(f.id==="login-form"){e.preventDefault();const d=new FormData(f);try{await api("/auth/login",{method:"POST",body:JSON.stringify({tenant_id:d.get("tenant_id"),email:d.get("email"),password:d.get("password")})});await refresh();if(S.me)nav("overview")}catch(x){$("#login-error").textContent=x.message}return}if(f.id==="session-form"){e.preventDefault();const d=new FormData(f);try{const r=await api(API+"/sessions",{method:"POST",body:JSON.stringify({title:d.get("title"),project_id:d.get("project_id")||null})});toast("会话已创建");S.session=r.session_id;S.view="session-detail";await renderSession(S.session)}catch(x){toast(x.message)}return}if(f.id==="message-form"){e.preventDefault();const d=new FormData(f);try{await api(API+"/sessions/"+encodeURIComponent(S.session)+"/messages",{method:"POST",body:JSON.stringify({role:"user",content:d.get("content")})});toast("消息已发送");await renderSession(S.session)}catch(x){toast(x.message)}return}if(f.id==="upload-form"){e.preventDefault();const file=f.elements.file.files[0];if(!file)return;try{await upload(API+"/files?session_id="+encodeURIComponent(S.session),file);toast("文件已上传");await renderSession(S.session)}catch(x){toast(x.message)}return}if(f.id==="task-form"){e.preventDefault();const d=new FormData(f);let input;try{input=JSON.parse(d.get("input"))}catch{toast("任务输入必须是合法 JSON");return}if(!input||Array.isArray(input)||typeof input!=="object"||!Object.keys(input).length){toast("任务输入必须是非空 JSON 对象");return}try{const r=await api(API+"/workbench/tasks",{method:"POST",body:JSON.stringify({agent_id:d.get("agent_id"),project_id:d.get("project_id")||null,session_id:d.get("session_id")||null,priority:Number(d.get("priority")||100),input})});toast("任务已提交");if(r.task_id){S.task=r.task_id;S.view="task-detail";await renderTask(r.task_id)}else nav("tasks")}catch(x){toast(x.message)}}});
 $("#logout").addEventListener("click",async()=>{try{await api("/auth/logout",{method:"POST",body:"{}"})}catch{}await refresh()});refresh().then(()=>{if(S.me)nav("overview")});
 
@@ -102,28 +231,28 @@ const registryPath=kind=>API+"/registry/"+encodeURIComponent(kind);
 async function renderRegistry(){
  const kind=S.registryKind||"agent";
  $("#title").textContent="Agent / 工作流 / 模型 / 工具 / Skills";
- $("#crumb").textContent="RESOURCE REGISTRY";
+ $("#crumb").textContent="资源注册表";
  const items=await list(registryPath(kind));
  const selector="<label>资源类型<select id='registry-kind'>"+REGISTRY_KINDS.map(k=>"<option value='"+k+"' "+(k===kind?"selected":"")+">"+REGISTRY_LABELS[k]+"</option>").join("")+"</select></label>";
- const form="<form id='registry-create' class='registry-form'><div class='form-grid'><label>资源 ID<input name='item_id' required maxlength='128' pattern='[A-Za-z0-9][A-Za-z0-9._:-]{0,127}' placeholder='例如：support-agent'></label><label>资源定义（JSON）<textarea name='definition' required>{\n  \"name\": \"New resource\",\n  \"description\": \"Describe its purpose\"\n}</textarea></label></div><button class='button primary'>创建草稿版本</button></form>";
- const rows=items.map(x=>"<tr><td><b>"+esc(x.item_id)+"</b></td><td>"+esc(x.version)+"</td><td><span class='pill'>"+esc(x.status)+"</span></td><td>"+esc(x.created_by)+"</td><td>"+esc(x.created_at)+"</td><td>"+btn("版本历史","data-reg-versions='"+esc(x.item_id)+"'")+((x.status==="draft")?btn("发布","data-reg-publish='"+esc(x.item_id)+"' data-version='"+esc(x.version)+"'","primary"):"")+((x.status==="published")?btn("停用","data-reg-disable='"+esc(x.item_id)+"'"):"")+"</td></tr>");
- $("#view").innerHTML=panel("资源类型",selector)+panel("新建资源草稿",form)+panel("资源目录",table(["资源 ID","最新版本","状态","创建人","创建时间","管理"],rows))+
+ const form="<form id='registry-create' class='registry-form'><div class='form-grid'><label>资源 ID<input name='item_id' required maxlength='128' pattern='[A-Za-z0-9][A-Za-z0-9._:-]{0,127}' placeholder='例如：support-agent'></label><label>资源定义（JSON）<textarea name='definition' required>{\n  \"name\": \"新资源\",\n  \"description\": \"描述该资源的用途\"\n}</textarea></label></div><button class='button primary'>创建草稿版本</button></form>";
+ const rows=items.map(x=>"<tr><td><b>"+esc((x.definition&&x.definition.name)||x.item_id)+"</b><small class='subline'>"+esc(x.item_id)+"</small></td><td>"+esc(x.version)+"</td><td>"+statusPill(x.status)+"</td><td>"+esc(x.created_by)+"</td><td>"+esc(x.created_at)+"</td><td>"+btn("版本历史","data-reg-versions='"+esc(x.item_id)+"'")+((x.status==="draft")?btn("发布","data-reg-publish='"+esc(x.item_id)+"' data-version='"+esc(x.version)+"'","primary"):"")+((x.status==="published")?btn("停用","data-reg-disable='"+esc(x.item_id)+"'"):"")+"</td></tr>");
+ $("#view").innerHTML=panel("资源类型",selector)+panel("新建资源草稿",form)+panel("资源目录",table(["资源（名称 / ID）","最新版本","状态","创建人","创建时间","管理"],rows))+
  panel("权限与安全边界","<p>资源目录、草稿写入、发布和停用分别由后端 Registry Authorizer 校验。所有资源按当前登录租户隔离；无权限时服务端返回 403。定义仅保存声明式元数据，密钥必须使用 Secret Reference，工具执行代码不从定义中加载。</p>");
 }
 const registryBaseRender=render;
 render=async function(){if(S.view==="registry"){try{await renderRegistry()}catch(e){$("#view").innerHTML=panel("资源管理不可用","<p class='error'>"+esc(e.message)+"</p>")}return}return registryBaseRender()};
 document.addEventListener("change",e=>{if(e.target.id==="registry-kind"){S.registryKind=e.target.value;renderRegistry().catch(x=>toast(x.message))}});
 document.addEventListener("submit",async e=>{const f=e.target;if(f.id!=="registry-create")return;e.preventDefault();const d=new FormData(f);let definition;try{definition=JSON.parse(d.get("definition"))}catch{toast("资源定义必须是合法 JSON");return}if(!definition||Array.isArray(definition)||typeof definition!=="object"){toast("资源定义必须是 JSON 对象");return}try{const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(d.get("item_id"))+"/versions",{method:"POST",body:JSON.stringify({definition})});toast("草稿已创建");await renderRegistry()}catch(x){toast(x.message)}});
-document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.regVersions){const kind=S.registryKind||"agent",id=b.dataset.regVersions,versions=await list(registryPath(kind)+"/"+encodeURIComponent(id)+"/versions");$("#view").insertAdjacentHTML("beforeend",panel("版本历史 · "+esc(id),table(["版本","状态","创建人","创建时间","发布时间"],versions.map(v=>"<tr><td>"+esc(v.version)+"</td><td>"+esc(v.status)+"</td><td>"+esc(v.created_by)+"</td><td>"+esc(v.created_at)+"</td><td>"+esc(v.published_at||"—")+"</td></tr>"))));return}if(b.dataset.regPublish){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regPublish)+"/versions/"+encodeURIComponent(b.dataset.version)+"/publish",{method:"POST",body:"{}"});toast("资源版本已发布并设为 active");await renderRegistry();return}if(b.dataset.regDisable){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regDisable)+"/disable",{method:"POST",body:"{}"});toast("资源已停用");await renderRegistry();return}}catch(x){toast(x.message)}});
+document.addEventListener("click",async e=>{const b=e.target.closest("button");if(!b)return;try{if(b.dataset.regVersions){const kind=S.registryKind||"agent",id=b.dataset.regVersions,versions=await list(registryPath(kind)+"/"+encodeURIComponent(id)+"/versions");$("#view").insertAdjacentHTML("beforeend",panel("版本历史 · "+esc(id),table(["版本","状态","创建人","创建时间","发布时间"],versions.map(v=>"<tr><td>"+esc(v.version)+"</td><td>"+esc(statusLabel(v.status))+"</td><td>"+esc(v.created_by)+"</td><td>"+esc(v.created_at)+"</td><td>"+esc(v.published_at||"—")+"</td></tr>"))));return}if(b.dataset.regPublish){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regPublish)+"/versions/"+encodeURIComponent(b.dataset.version)+"/publish",{method:"POST",body:"{}"});toast("资源版本已发布并设为 active");await renderRegistry();return}if(b.dataset.regDisable){const kind=S.registryKind||"agent";await api(registryPath(kind)+"/"+encodeURIComponent(b.dataset.regDisable)+"/disable",{method:"POST",body:"{}"});toast("资源已停用");await renderRegistry();return}}catch(x){toast(x.message)}});
 
 
 // C-14-04: tenant-scoped knowledge, memory, collaboration and operations views.
 const governanceBaseRender=render;
 const isoWindow=()=>{const end=new Date(),start=new Date(end.getTime()-30*86400000);return {start:start.toISOString(),end:end.toISOString()}};
-const rowsPanel=(title,items,fields)=>panel(title,table(fields,items.map(item=>"<tr>"+fields.map(k=>"<td>"+esc(item[k]??"—")+"</td>").join("")+"</tr>")));
+const rowsPanel=(title,items,fields)=>panel(title,table(fields,items.map(item=>"<tr>"+fields.map(k=>"<td>"+(k==="status"?statusPill(item[k]):k==="severity"?esc(severityLabel(item[k])):k==="risk_level"?esc(riskLabel(item[k])):k==="outcome"?esc(outcomeLabel(item[k])):k==="scope"?esc(scopeLabel(item[k])):esc(item[k]??"—"))+"</td>").join("")+"</tr>")));
 async function governanceLoad(path){return list(API+path)}
 async function renderGovernance(){
- const root=$("#view");$("#title").textContent="知识、记忆与平台运营";$("#crumb").textContent="GOVERNANCE & OPERATIONS";
+ const root=$("#view");$("#title").textContent="知识、记忆与平台运营";$("#crumb").textContent="知识与运营管理";
  const window=isoWindow(),q="start="+encodeURIComponent(window.start)+"&end="+encodeURIComponent(window.end);
  const jobs=[
   ["knowledge",()=>governanceLoad("/knowledge/documents?limit=100")],
@@ -148,12 +277,15 @@ async function renderGovernance(){
   "<div class='grid'><div class='stat'><small>知识库文档</small><strong>"+knowledge.length+"</strong></div><div class='stat'><small>有效记忆</small><strong>"+memories.length+"</strong></div><div class='stat'><small>待审核记忆</small><strong>"+candidates.length+"</strong></div><div class='stat'><small>近 30 天成本 USD</small><strong>"+totalCost.toFixed(4)+"</strong></div><div class='stat'><small>近 30 天 Token</small><strong>"+totalTokens+"</strong></div><div class='stat'><small>待处理告警</small><strong>"+alerts.filter(x=>!['resolved','closed'].includes(String(x.status).toLowerCase())).length+"</strong></div></div>"+
   (errors?panel("部分数据源不可用","<ul class='error'>"+errors+"</ul>"):"")+
   panel("知识库管理",
+"<form id='knowledge-doc-upload' class='inline-form'><label>上传知识文档<input type='file' name='file' accept='.md,.markdown,.pdf,.html' required></label><button class='button primary'>上传并入库</button></form><p class='subtle'>支持 Markdown、PDF、HTML；上传后按租户范围入库，并使用本地 bge-m3 生成向量。</p>"+
 "<form id='knowledge-collection-create' class='inline-form'><label>新建知识库集合<input name='name' required maxlength='200' placeholder='集合名称'></label><label>项目 ID（可选）<input name='project_id' placeholder='project-a'></label><button class='button primary'>创建集合</button></form>"+
 rowsPanel("集合目录",data.collections?.items||[],["collection_id","name","project_id","created_at"])+
-"<form id='knowledge-index-create' class='inline-form'><label>集合 ID<input name='collection_id' required></label><label>索引名称<input name='index_name' required></label><label>Embedding 模型<input name='embedding_model' required></label><label>向量维度<input name='dimensions' type='number' min='1' max='65536' value='1536' required></label><label>Schema 版本<input name='schema_version' type='number' min='1' value='1' required></label><button class='button'>创建索引版本</button></form>"+
+"<form id='knowledge-index-create' class='inline-form'><label>集合 ID<input name='collection_id' required></label><label>索引名称<input name='index_name' required></label><label>Embedding 模型<input name='embedding_model' required value='bge-m3' placeholder='bge-m3'></label><label>向量维度<input name='dimensions' type='number' min='1' max='65536' value='1024' required></label><label>Schema 版本<input name='schema_version' type='number' min='1' value='1' required></label><button class='button'>创建索引版本</button></form>"+
 rowsPanel("文档目录",knowledge,["document_id","title","version","scope","project_id","media_type"]))+
+  panel("RAG 问答（本地模型）",
+"<form id='rag-query' class='inline-form'><label>问题<input name='query' required maxlength='4096' placeholder='例如：平台的向量检索使用什么模型？'></label><label>召回条数<input name='top_k' type='number' min='1' max='20' value='5'></label><label>最低相似度<input name='min_score' type='number' min='0' max='1' step='0.01' value='0'></label><button class='button primary'>提问</button></form><div id='rag-results'><p class='subtle'>检索向量由本地 bge-m3 计算，回答由本地 Ollama 生成，不调用外部模型。</p></div>")+
   panel("记忆管理",rowsPanel("记忆记录",memories,["memory_id","scope","scope_id","content","confidence","version","status","expires_at"])+rowsPanel("待审核候选与冲突",candidates,["memory_id","scope","scope_id","content","confidence","status","version"]))+
-  panel("Blackboard 协作视图","<form id='blackboard-query' class='inline-form'><label>范围<select name='scope'><option value='tenant'>Tenant</option><option value='project'>Project</option><option value='run'>Run</option><option value='task'>Task</option></select></label><label>范围 ID<input name='scope_id' required value='"+scopeId+"' placeholder='Tenant / Project / Run / Task ID'></label><button class='button primary'>查询条目</button></form><div id='blackboard-results'></div>")+
+  panel("Blackboard 协作视图","<form id='blackboard-query' class='inline-form'><label>范围<select name='scope'><option value='tenant'>租户</option><option value='project'>项目</option><option value='run'>Run</option><option value='task'>任务</option></select></label><label>范围 ID<input name='scope_id' required value='"+scopeId+"' placeholder='租户 / 项目 / Run / 任务 ID'></label><button class='button primary'>查询条目</button></form><div id='blackboard-results'></div>")+
   panel("评测报告",rowsPanel("评测运行",evals,["eval_run_id","suite_id","status","created_at","completed_at"]))+
   panel("成本与配额",rowsPanel("用量明细（近 30 天）",costs,["occurred_at","run_id","model_key","input_tokens","output_tokens","total_tokens","cost_usd","project_id","agent_id"]))+
   panel("运营告警",rowsPanel("告警列表",alerts,["event_id","severity","status","title","created_at","resolved_at"]))+
@@ -164,6 +296,11 @@ rowsPanel("文档目录",knowledge,["document_id","title","version","scope","pro
 render=async function(){if(S.view==="governance"){try{await renderGovernance()}catch(e){$("#view").innerHTML=panel("运营视图加载失败","<p class='error'>"+esc(e.message)+"</p>"+btn("重试","data-retry='1'"))}return}return governanceBaseRender()};
 document.addEventListener("submit",async e=>{
  const f=e.target;
+ if(f.id==="knowledge-doc-upload"){
+  e.preventDefault();const file=f.elements.file.files[0];
+  if(!file){toast("请选择要上传的文档");return}
+  try{const result=await upload(API+"/knowledge/documents/upload?filename="+encodeURIComponent(file.name),file);toast("已入库并生成向量："+result.chunk_count+" 个分块");await renderGovernance()}catch(x){toast(x.message)}
+ }
  if(f.id==="knowledge-collection-create"){
   e.preventDefault();const d=new FormData(f),payload={name:String(d.get("name")||"").trim()};
   const project=String(d.get("project_id")||"").trim();if(project)payload.project_id=project;
@@ -181,8 +318,23 @@ document.addEventListener("submit",async e=>{
  const d=new FormData(f),scope=String(d.get("scope")),scopeId=String(d.get("scope_id")||"").trim();
  if(!scopeId){toast("请输入 Blackboard 范围 ID");return}
  try{const result=await api(API+"/blackboard/entries?scope="+encodeURIComponent(scope)+"&scope_id="+encodeURIComponent(scopeId)+"&limit=100");
- $("#blackboard-results").innerHTML=rowsPanel("Blackboard 条目",result.items||[],["entry_id","kind","status","version","author_id","created_at","content"]);
+ $("#blackboard-results").innerHTML=rowsPanel("黑板条目",result.items||[],["entry_id","kind","status","version","author_id","created_at","content"]);
  }catch(x){$("#blackboard-results").innerHTML="<p class='error'>"+esc(x.message)+"</p>"}
+});
+document.addEventListener("submit",async e=>{
+ const f=e.target;if(f.id!=="rag-query")return;e.preventDefault();
+ const d=new FormData(f),box=$("#rag-results");
+ const query=String(d.get("query")||"").trim(),topK=Number(d.get("top_k")||5),minScore=Number(d.get("min_score")||0);
+ if(!query){toast("请输入问题");return}
+ box.innerHTML="<p class='subtle'>正在检索知识库并生成回答…</p>";
+ try{
+  const r=await api(API+"/rag-playground/query",{method:"POST",body:JSON.stringify({query,top_k:topK,min_score:minScore,embedding_model:"bge-m3",rerank:false})});
+  const hits=r.retrieved||[];
+  const rows=hits.map(h=>"<tr><td>"+esc(h.title||"文档 #"+shortId(h.document_id))+"</td><td>"+esc(Number(h.score||0).toFixed(3))+"</td><td>"+esc(String(h.text||"").slice(0,180))+"</td></tr>");
+  box.innerHTML="<p><b>回答：</b>"+esc(r.answer||(r.abstained?"未找到足够依据，已拒绝作答。":"—"))+"</p>"+
+   (r.abstained?"<p class='subtle'>拒答原因："+esc(r.reason||"证据不足")+"</p>":"<p class='subtle'>引用编号："+esc((r.citations||[]).join("、")||"无")+" · 向量模型："+esc(r.embedding_model||"bge-m3")+"</p>")+
+   (rows.length?table(["来源","相似度","片段"],rows):"<p class='empty'>未检索到相关片段，请确认知识库已入库文档。</p>");
+ }catch(x){box.innerHTML="<p class='error'>"+esc(x.message)+"</p>"}
 });
 
 
@@ -218,7 +370,7 @@ refresh().then(()=>{if(S.me){applyCapabilityGate();if(!viewCapabilityEnabled(S.v
 
 /* C-23-04: Prompt Lab embedded in the authenticated Workbench shell. */
 async function renderPromptLab(){
- const root=$("#view");$("#title").textContent="Prompt Lab · 版本管理";$("#crumb").textContent="PROMPT LAB";
+ const root=$("#view");$("#title").textContent="Prompt 版本管理";$("#crumb").textContent="Prompt 版本管理";
  const id=S.promptId||"";
  root.innerHTML=panel("Prompt 标识与新版本","<form id='prompt-load-form' class='inline-form'><label>Prompt ID<input name='prompt_id' required maxlength='128' value='"+esc(id)+"' placeholder='例如：support-assistant'></label><button class='button'>加载版本</button></form><form id='prompt-version-form'><label>新版本模板<textarea name='template' required placeholder='使用 {variable} 定义模板变量'></textarea></label><button class='button primary'>创建不可变版本</button></form><p class='subtle'>版本内容不可原位修改或删除；编辑通过创建新版本完成。发布与回滚受服务端评测门禁和权限控制。</p>")+
  (id?panel("版本历史","<div id='prompt-versions'>加载中…</div>"):panel("开始使用","<p>输入 Prompt ID 后加载版本；首次创建模板会建立该 Prompt 的第一个版本。</p>"));
@@ -233,7 +385,7 @@ async function loadPromptLab(){
  ]);
  const versionRows=(versions.items||[]).map(v=>{
   const actions=btn("查看","data-prompt-version='"+esc(v.version)+"'")+
-   (Number(v.version)>1?btn("Diff","data-prompt-diff='"+esc(v.version)+"'"):"")+
+   (Number(v.version)>1?btn("对比","data-prompt-diff='"+esc(v.version)+"'"):"")+
    btn("发布","data-prompt-activate='"+esc(v.version)+"'")+
    btn("回滚","data-prompt-rollback='"+esc(v.version)+"'");
   return "<tr><td>v"+esc(v.version)+"</td><td><code>"+esc(v.content_hash.slice(0,12))+"</code></td><td>"+esc((v.variables||[]).join(", ")||"—")+"</td><td>"+actions+"</td></tr>";
@@ -242,17 +394,17 @@ async function loadPromptLab(){
   const actions=btn("历史","data-prompt-history='"+esc(v.name)+"'")+
    btn("设版本","data-prompt-assign='"+esc(v.name)+"'")+
    (v.status==="active"?btn("废弃","data-prompt-deprecate='"+esc(v.name)+"'"):"");
-  return "<tr><td>"+esc(v.name)+"</td><td>v"+esc(v.current_version)+"</td><td>"+esc(v.status)+"</td><td>"+actions+"</td></tr>";
+  return "<tr><td>"+esc(v.name)+"</td><td>v"+esc(v.current_version)+"</td><td>"+esc(statusLabel(v.status))+"</td><td>"+actions+"</td></tr>";
  });
  $("#prompt-versions").innerHTML=panel("不可变版本",table(["版本","内容哈希","变量","操作"],versionRows))+
-  panel("创建 Variant","<form id='prompt-variant-form' class='inline-form'><label>Variant 名称<input name='name' required pattern='[a-z][a-z0-9_-]{0,63}' placeholder='candidate'></label><label>初始版本<input name='version' required type='number' min='1' value='"+esc((versions.items||[]).at(-1)?.version||1)+"'></label><button class='button primary'>创建 Variant</button></form>")+
-  panel("Variants",table(["名称","当前版本","状态","操作"],variantRows))+
+  panel("创建变体","<form id='prompt-variant-form' class='inline-form'><label>变体名称<input name='name' required pattern='[a-z][a-z0-9_-]{0,63}' placeholder='candidate'></label><label>初始版本<input name='version' required type='number' min='1' value='"+esc((versions.items||[]).at(-1)?.version||1)+"'></label><button class='button primary'>创建变体</button></form>")+
+  panel("变体列表",table(["名称","当前版本","状态","操作"],variantRows))+
   panel("变更审计",table(["时间","动作","操作者","详情"],(audit.items||[]).map(x=>"<tr><td>"+esc(x.created_at||"—")+"</td><td>"+esc(x.action)+"</td><td>"+esc(x.actor_id)+"</td><td>"+esc(JSON.stringify(x.details||{}))+"</td></tr>")));
 }
 const promptLabBaseRender=render;
 render=async function(){
  if(S.view==="prompt-lab"){
-  try{await renderPromptLab()}catch(e){$("#view").innerHTML=panel("Prompt Lab 加载失败","<p class='error'>"+esc(e.message)+"</p>")}
+  try{await renderPromptLab()}catch(e){$("#view").innerHTML=panel("Prompt 版本管理加载失败","<p class='error'>"+esc(e.message)+"</p>")}
   return;
  }
  return promptLabBaseRender();
@@ -354,9 +506,18 @@ async function replayAction(action,body={}){
 }
 async function renderReplay(){
  const r=S.replay,root=$("#view");
- $("#title").textContent="Run 时间线与回放";$("#crumb").textContent="WORKFLOW REPLAY";
+ $("#title").textContent="Run 时间线与回放";$("#crumb").textContent="Run 回放";
  if(!r){
-  root.innerHTML=panel("打开 Run 回放","<form id='replay-open-form' class='inline-form'><label>Run ID<input name='run_id' required placeholder='输入已有 Run ID'></label><button class='button primary'>加载时间线</button></form><p class='subtle'>从持久化 Run 事件、上下文快照和 Blackboard 数据重建视图；所有读取与回放操作继续由服务端租户权限校验。</p>");
+  let recentRunsHtml="";
+  try{
+   const tr=await list(API+"/workbench/tasks?limit=20");
+   const withRun=tr.filter(t=>t.run_id).slice(0,15);
+   if(withRun.length){
+    recentRunsHtml=panel("最近 20 条 Run（点击进入回放）",
+      table(["任务","Agent","状态","Run","更新时间","操作"],withRun.map(t=>"<tr><td><b>#"+esc(shortId(t.task_id))+"</b></td><td>"+esc(agentName(t.agent_id))+"</td><td>"+statusPill(t.status)+"</td><td>"+esc(shortId(t.run_id))+"</td><td>"+esc(timeLabel(t.updated_at||t.created_at))+"</td><td>"+btn("回放","data-replay-open='"+esc(t.run_id)+"'")+"</td></tr>")));
+   }
+  }catch{}
+  root.innerHTML=panel("打开 Run 回放","<form id='replay-open-form' class='inline-form'><label>Run ID<input name='run_id' required placeholder='输入已有 Run ID'></label><button class='button primary'>加载时间线</button></form><p class='subtle'>从持久化 Run 事件、上下文快照和 Blackboard 数据重建视图；所有读取与回放操作继续由服务端租户权限校验。</p>")+recentRunsHtml;
   return;
  }
  const events=r.events||[],cursor=Number(r.cursor||0),current=r.currentEvent||null;
@@ -430,7 +591,7 @@ document.addEventListener("click",async e=>{
 async function renderBatch(){
  const root=$("#view");
  $("#title").textContent="批量执行";
- $("#crumb").textContent="BATCH EXECUTION";
+ $("#crumb").textContent="批量执行";
  if(S.features.batch_execution===false){
   root.innerHTML=panel("批量执行未启用","<p class='subtle'>当前租户未启用 Batch Execution 能力；页面不会绕过服务端 capability 或授权检查。</p>");
   return;
@@ -441,7 +602,7 @@ async function renderBatch(){
   const actions=btn("详情","data-batch='"+esc(id)+"'")+
    (["queued","running","pending"].includes(String(x.status).toLowerCase())?btn("取消","data-batch-cancel='"+esc(id)+"'"):"")+
    (["failed","cancelled","partial_failure"].includes(String(x.status).toLowerCase())?btn("重试","data-batch-retry='"+esc(id)+"'"):"");
-  return "<tr><td><code>"+esc(id)+"</code></td><td>"+esc(x.template_id||"—")+"</td><td><span class='pill'>"+esc(x.status||"unknown")+"</span></td><td>"+esc(x.total_tasks??x.total??"—")+"</td><td>"+esc(x.succeeded??x.success_count??"—")+"</td><td>"+esc(x.failed??x.failure_count??"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
+  return "<tr><td><code>"+esc(id)+"</code></td><td>"+esc(x.template_id||"—")+"</td><td>"+statusPill(x.status||"unknown")+"</td><td>"+esc(x.total_tasks??x.total??"—")+"</td><td>"+esc(x.succeeded??x.success_count??"—")+"</td><td>"+esc(x.failed??x.failure_count??"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
  });
  let detail="";
  if(S.batchId){
@@ -453,19 +614,19 @@ async function renderBatch(){
  root.innerHTML=
   panel("提交批处理",
    "<form id='batch-submit-form' class='registry-form'>"+
-   "<div class='form-grid'><label>模板 ID<input name='template_id' required maxlength='128' placeholder='已授权的 Agent / Workflow 模板'></label>"+
+   "<div class='form-grid'><label>模板 ID<input name='template_id' required maxlength='128' value='agent-task' placeholder='agent-task'></label>"+
    "<label>最大并发<input name='max_concurrency' type='number' min='1' max='1000' value='8' required></label></div>"+
-   "<label>数据集（JSON 数组；每项为输入对象）<textarea name='dataset' rows='8' required>[{\"prompt\":\"第一项任务\"},{\"prompt\":\"第二项任务\"}]</textarea></label>"+
-   "<p class='subtle'>提交使用服务端 BatchTaskService，tenant/actor 从认证 Principal 派生；请求附带幂等键。数据集上限由 API 执行。</p>"+
+   "<label>数据集（JSON 数组；每项为输入对象）<textarea name='dataset' rows='8' required>[{\"agent_id\":\"local-assistant\",\"prompt\":\"第一项任务\"},{\"agent_id\":\"local-assistant\",\"prompt\":\"第二项任务\"}]</textarea></label>"+
+   "<p class='subtle'>模板 agent-task 会为每一行启动一个工作台 Agent 任务，因此每项需包含 agent_id 与 prompt。提交使用服务端 BatchTaskService，tenant/actor 从认证 Principal 派生；请求附带幂等键。</p>"+
    "<button class='button primary'>提交批次</button></form>")+
   detail+
-  panel("批次队列",table(["Batch ID","模板","状态","任务数","成功","失败","创建时间","操作"],rows))+
+  panel("批次队列",table(["批次 ID","模板","状态","任务数","成功","失败","创建时间","操作"],rows))+
   "<p class='subtle'>批次列表、详情、取消和重试均通过同源认证 API；重试生成新的幂等键，权限由服务端再次验证。</p>";
 }
 async function renderObservability(){
  const root=$("#view");
  $("#title").textContent="运行可观测性";
- $("#crumb").textContent="OBSERVABILITY";
+ $("#crumb").textContent="运行可观测性";
  const window=isoWindow(),q="start="+encodeURIComponent(window.start)+"&end="+encodeURIComponent(window.end);
  const jobs=[
   ["capacity",()=>api(API+"/observability/health/capacity")],
@@ -488,7 +649,7 @@ async function renderObservability(){
   const status=String(x.status||"").toLowerCase();
   const actions=(status==="open"?btn("确认","data-alert-ack='"+esc(id)+"'"):"")+
    (["open","acknowledged"].includes(status)?btn("解决","data-alert-resolve='"+esc(id)+"'"):"");
-  return "<tr><td>"+esc(id)+"</td><td>"+esc(x.severity||"—")+"</td><td>"+esc(x.status||"—")+"</td><td>"+esc(x.title||"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
+  return "<tr><td>"+esc(id)+"</td><td>"+esc(severityLabel(x.severity))+"</td><td>"+statusPill(x.status)+"</td><td>"+esc(x.title||"—")+"</td><td>"+esc(x.created_at||"—")+"</td><td>"+actions+"</td></tr>";
  });
  root.innerHTML=
   "<div class='grid'>"+
@@ -506,27 +667,7 @@ async function renderObservability(){
   "<p class='subtle'>统计窗口："+esc(window.start)+" 至 "+esc(window.end)+"。数据源错误会显式显示；所有读取与告警变更均由服务端认证、租户隔离和权限策略控制。</p>";
 }
 const workbenchPagesBaseRender=render;
-function renderLegacyPanels(){
- const legacy=(panel)=>"/app/?legacy=1&panel="+encodeURIComponent(panel);
- const cards=[
-  ["任务看板","旧版项目/任务看板；新工作台提供任务中心。","native","tasks"],
-  ["运行执行","旧版手动运行入口；新工作台通过任务中心提交执行。","native","tasks"],
-  ["交付报告","旧版运行报告与产物；新工作台提供产物交付。","native","artifacts"],
-  ["事件流","旧版事件时间线；新工作台提供可观测性与审计视图。","native","observability"],
-  ["经营看板","旧版经营汇总仍保留原始视图，供迁移期间核对。","legacy","ops"],
-  ["系统健康自检","旧版 listener/console/tick 自检面板。","legacy","health"],
-  ["商务 · 客户与款项","客户、报价、合同、发票与回款管理。","legacy","business"],
-  ["内容日历 · B站/抖音","内容计划、发布记录与数据回填。","legacy","content"],
-  ["圆桌会议 · 多角色讨论","多角色讨论、轮次与结论产物。","legacy","roundtable"]
- ];
- const native=cards.filter(x=>x[2]==="native").map(x=>panel(x[0],"<p class='subtle'>"+esc(x[1])+"</p>",btn("打开新工作台入口","data-go='"+esc(x[3])+"'")));
- const legacyCards=cards.filter(x=>x[2]==="legacy").map(x=>panel(x[0],"<p class='subtle'>"+esc(x[1])+"</p>","<a class='button' href='"+esc(legacy(x[3]))+"' target='_blank' rel='noopener'>在旧版兼容面板打开</a>"));
- $("#view").innerHTML=panel("迁移说明","<p>已迁移能力使用新工作台原生页面；尚未迁移为新 API 的领域面板通过受控 legacy fallback 直达，不伪装成新系统实现。</p>")+
-  "<div class='grid'>"+native.join("")+legacyCards.join("")+"</div>"+
-  panel("迁移边界","<p>商务、内容日历、圆桌会议和旧版系统自检目前仍由 legacy console 提供。对应链接只用于兼容访问；完成后端 API 与权限迁移前，不应关闭这些领域的旧系统入口。</p>");
-}
 render=async function(){
- if(S.view==="legacy-panels"){renderLegacyPanels();return;}
  if(S.view==="batch"){
   try{await renderBatch()}catch(error){$("#view").innerHTML=panel("批量执行不可用","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-retry='1'"))}
   return;

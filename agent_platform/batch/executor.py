@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import MappingProxyType
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from agent_platform.quotas.concurrency import QuotaConcurrencyLimiter
 
@@ -152,13 +152,16 @@ class BatchExecutor:
 
         async def execute_one(index: int, row: Mapping[str, Any]) -> BatchTaskResult:
             task_id = f"{resolved_batch_id}:{index}"
+            # 配额预留表的 run_id 是 uuid 列；批次行任务使用确定性 UUID 映射，
+            # 既避免非 UUID 的 task_id 触发类型错误，也让重试复用同一预留标识。
+            quota_run_id = str(uuid5(NAMESPACE_URL, f"batch:{resolved_batch_id}:{index}"))
             started_at = datetime.now(timezone.utc)
             started_clock = time.monotonic()
             try:
                 async with semaphore:
                     async with self.concurrency_limiter.slot(
                         tenant_id=tenant_id,
-                        run_id=task_id,
+                        run_id=quota_run_id,
                         scope_type=self.quota_scope_type,
                         scope_id=self.quota_scope_id,
                     ):

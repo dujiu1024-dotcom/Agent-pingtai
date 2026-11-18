@@ -15,12 +15,12 @@ CREATE TABLE IF NOT EXISTS platform_eval_variant_reports (
 );
 
 CREATE OR REPLACE FUNCTION platform_reject_eval_variant_report_mutation()
-RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN
     RAISE EXCEPTION 'evaluation variant reports are immutable'
       USING ERRCODE = '55000';
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS trg_eval_variant_reports_immutable ON platform_eval_variant_reports;
 CREATE TRIGGER trg_eval_variant_reports_immutable

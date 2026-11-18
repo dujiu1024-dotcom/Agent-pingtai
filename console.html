@@ -668,13 +668,50 @@ summary:hover{color:var(--ac)}
     deliver: ['搞定','给你','看板更新']
   };
   function pickSpeech(role, slot) {
-    const pool = (PROFILE[role] && PROFILE[role].speeches && PROFILE[role].speeches[slot]) || COMMON_SPEECH[slot];
+    // 已绑定真实 Agent 的工位不再沿用旧角色的台词，避免“本地助手”说审计的话。
+    const bound = typeof agentOfRole === 'function' ? agentOfRole(role) : null;
+    const profile = bound ? null : PROFILE[role];
+    const pool = (profile && profile.speeches && profile.speeches[slot]) || COMMON_SPEECH[slot];
     if (!pool || !pool.length) return '';
     return pool[Math.floor(Math.random() * pool.length)];
   }
   const ROLE_ORDER = Object.keys(ROLE_META);
   const OWNER_LABEL = { longyi:'龍奕', ceo:'CEO' };
   ROLE_ORDER.forEach(k => { OWNER_LABEL[k] = ROLE_META[k].name; });
+
+  // ===== 真实 Agent 绑定 =====
+  // 工位仍沿用旧场景的座位坐标，但人物只代表平台里真实存在的 Agent：
+  // 有 Agent 的工位显示人物，没有的隐藏，避免“假角色”冒充 Agent。
+  const SLOT_AGENT = {};   // 工位 role → Agent 数据
+  const AGENT_ROLE = {};   // Agent 名称 → 工位 role
+  let ACTIVE_ROLES = [];   // 当前在岗工位
+  const agentOfRole = (role) => SLOT_AGENT[role] || null;
+  function bindAgents() {
+    Object.keys(SLOT_AGENT).forEach(k => delete SLOT_AGENT[k]);
+    Object.keys(AGENT_ROLE).forEach(k => delete AGENT_ROLE[k]);
+    ACTIVE_ROLES = [];
+    const agents = (S && S.agents) || [];
+    agents.forEach((a, i) => {
+      const role = ROLE_ORDER[i];
+      if (!role) return;
+      SLOT_AGENT[role] = a;
+      AGENT_ROLE[a.name] = role;
+      ACTIVE_ROLES.push(role);
+      OWNER_LABEL[a.name] = a.title || a.name;
+    });
+    ROLE_ORDER.forEach(role => {
+      const p = P[role]; if (!p) return;
+      const bound = SLOT_AGENT[role];
+      p.g.visible = !!bound;
+      p.label.name = bound ? (bound.title || bound.name) : '';
+      if (!bound) {
+        p.label.el.style.display = 'none';
+        p.busy = false; p.autoBusy = false; p.speech = '';
+      }
+    });
+    // CEO 是旧版调度层展示位，不是平台 Agent，一并隐藏。
+    if (P.ceo) P.ceo.g.visible = false;
+  }
 
   let S = null;
   let currentRoom = 'o', boardView = 'st', boardFilter = 'all', boardQuery = '', closedAll = false;
@@ -774,7 +811,7 @@ summary:hover{color:var(--ac)}
         { 'Content-Type': 'application/json' },
         CONSOLE_TOKEN ? { 'X-Console-Token': CONSOLE_TOKEN } : {});
       if (stateEtag) headers['If-None-Match'] = stateEtag;
-      const res = await fetch('/api/v1/legacy/state', { headers });
+      const res = await fetch('/api/platform/v1/office/state', { headers });
       if (res.status === 304) return;           // 状态没变，跳过整包传输与重绘
       stateEtag = res.headers.get('ETag') || '';
       const body = await res.json();
@@ -785,7 +822,7 @@ summary:hover{color:var(--ac)}
       $('#livePill').textContent = '在线';
       renderAll();
     } catch (err) {
-      $('#banner').textContent = '连不上本地服务：' + err.message + '　请确认 python3 console.py 正在运行';
+      $('#banner').textContent = '连不上平台服务：' + err.message + '　请确认 com.fde.platform 正在运行';
       $('#banner').classList.add('on');
       $('#livePill').className = 'pill off';
       $('#livePill').textContent = '离线';
@@ -795,6 +832,7 @@ summary:hover{color:var(--ac)}
   }
 
   function renderAll() {
+    bindAgents();
     renderTop();
     renderAct();
     drawBoard();
@@ -1426,7 +1464,7 @@ summary:hover{color:var(--ac)}
   // ===== 状态机辅助 =====
   function pickAgentSpot(role) {
     const s = SEATS[role];
-    const others = ROLE_ORDER.filter(r => r !== role && SEATS[r] && Math.abs(SEATS[r].x - s.x) < 3.5);
+    const others = ACTIVE_ROLES.filter(r => r !== role && SEATS[r] && Math.abs(SEATS[r].x - s.x) < 3.5);
     const pick = others[Math.floor(Math.random() * others.length)];
     if (pick) { const t = SEATS[pick]; return [t.x, t.z - 0.6]; }
     return boardSpot(role);
@@ -1457,7 +1495,7 @@ summary:hover{color:var(--ac)}
   async function tryChat(role) {
     const p = P[role]; if (!p) return;
     const prof = PROFILE[role];
-    const others = ROLE_ORDER.filter(r => r !== role && P[r] && !P[r].busy && !P[r].state.startsWith('deliver'));
+    const others = ACTIVE_ROLES.filter(r => r !== role && P[r] && !P[r].busy && !P[r].state.startsWith('deliver'));
     if (!others.length) return;
     const target = others[Math.floor(Math.random() * others.length)];
     const tp = P[target];
@@ -1483,11 +1521,17 @@ summary:hover{color:var(--ac)}
       tag = '给老板汇报';
     } else {
       // random：随机挑一个非自己的 agent 工位前（同事交接）
-      const others = ROLE_ORDER.filter(r => r !== role);
-      const k = others[Math.floor(Math.random() * others.length)];
-      const t = SEATS[k];
-      target = [t.x, t.z - 0.7];
-      tag = '交接给' + ROLE_META[k].name;
+      const others = ACTIVE_ROLES.filter(r => r !== role);
+      if (!others.length) {
+        target = boardSpot(role);
+        tag = '去看板交付';
+      } else {
+        const k = others[Math.floor(Math.random() * others.length)];
+        const t = SEATS[k];
+        target = [t.x, t.z - 0.7];
+        const mate = agentOfRole(k);
+        tag = '交接给' + ((mate && (mate.title || mate.name)) || ROLE_META[k].name);
+      }
     }
     const rush = Math.random() < (prof.rushChance || 0.25);
     setState(p, 'delivering', { ms: 99999, rushing: rush, destination: target });
@@ -1757,7 +1801,11 @@ summary:hover{color:var(--ac)}
   let _prevRunning = new Set();
   function syncRunning() {
     if (!S || !THREE_OK || !P) return;
-    const running = new Set((S.llm && S.llm.running) || []);
+    const running = new Set(
+      ((S.llm && S.llm.running) || [])
+        .map(name => AGENT_ROLE[name] || name)
+        .filter(role => P[role])
+    );
     // 新启动：进入 working 状态，走到看板前
     running.forEach(role => {
       const p = P[role];
@@ -1772,10 +1820,11 @@ summary:hover{color:var(--ac)}
       const p = P[role]; if (!p) return;
       if (p.autoBusy) {
         p.autoBusy = false;
-        // 任务信息 —— 从 jobs 里找该角色最近的完成任务
-        const j = (P._lastJobByRole || {})[role];
-        const task = j && j.task ? j.task : '';
-        const ok = !(j && j.ok === false);
+        // 任务信息 —— 取该 Agent 最近一次真实运行
+        const agent = agentOfRole(role);
+        const latest = agent ? (S.runs || []).find(r => r.role === agent.name) : null;
+        const task = latest ? (latest.task_id || '') : '';
+        const ok = latest ? latest.ok : true;
         // 回座位，然后触发交付
         deliverBehavior(role, task, ok);
       }
@@ -2385,20 +2434,22 @@ summary:hover{color:var(--ac)}
       $('#agOps').addEventListener('click', () => { closeDrawer(); openOps(); });
       return;
     }
-    const meta = ROLE_META[role] || { name: role, color: 0x666666 };
-    const info = S.agents.find(a => a.name === role) || {};
-    const tasks = S.tasks.filter(t => t.owner === role);
+    const bound = agentOfRole(role);
+    const agentName = bound ? bound.name : role;
+    const meta = bound ? { name: bound.title || bound.name } : (ROLE_META[role] || { name: role });
+    const info = bound || S.agents.find(a => a.name === agentName) || {};
+    const tasks = S.tasks.filter(t => t.owner === agentName);
     const open = sortTasks(tasks.filter(t => !isClosed(t)));
-    const runs = (S.runs || []).filter(r => r.role === role).slice(0, 3);
-    openDrawerShell('AGENT / ' + role.toUpperCase());
+    const runs = (S.runs || []).filter(r => r.role === agentName).slice(0, 3);
+    openDrawerShell('AGENT / ' + agentName.toUpperCase());
     $('#drBody').innerHTML =
-      '<h2>' + esc(meta.name) + ' <small style="font-family:var(--mono);font-size:10px;color:var(--muted)">' + esc(role) + '</small></h2>' +
+      '<h2>' + esc(meta.name) + ' <small style="font-family:var(--mono);font-size:10px;color:var(--muted)">' + esc(agentName) + '</small></h2>' +
       '<p>' + esc(info.desc || info.title || '') + '</p>' +
       '<div class="meta">' +
         '<div><dt>未关闭</dt><dd>' + open.length + '</dd></div>' +
         '<div><dt>已关闭</dt><dd>' + (tasks.length - open.length) + '</dd></div>' +
         '<div><dt>今日 token</dt><dd>' + Number((S.llm && S.llm.tokens_today) || 0).toLocaleString() + '</dd></div>' +
-        '<div><dt>状态</dt><dd>' + ((S.llm.running || []).includes(role) ? '执行中' : '待命') + '</dd></div>' +
+        '<div><dt>状态</dt><dd>' + ((S.llm.running || []).includes(agentName) ? '执行中' : '待命') + '</dd></div>' +
       '</div>' +
       '<div class="blk tkList"><h3>当前任务</h3>' +
         (open.length ? open.map(t => '<button class="tk" data-id="' + esc(t.id) + '"><b>' + esc(t.title) + '</b><small>' + t.id + '</small><span class="state">' + esc(t.state) + '</span></button>').join('')
@@ -2406,13 +2457,9 @@ summary:hover{color:var(--ac)}
       '</div>' +
       (runs.length ? '<div class="blk"><h3>最近产出</h3>' + runs.map(r => '<p><b>' + esc(String(r.created_at || '').slice(5, 16)) + '</b> · ' +
         (r.ok ? '成功' : '失败') + ' · ' + (Number(r.tokens_in || 0) + Number(r.tokens_out || 0)) + ' token<br><small>' + (r.ok ? outLink(r.output_path, (r.output_path || '').split('/').pop()) : esc(r.error || '')) + '</small></p>').join('') + '</div>' : '') +
-      '<div class="blk"><button class="primary" id="agRun">派活</button> <button id="agCopy">复制命令</button></div>';
+      '<div class="blk"><button class="primary" id="agGoApp">去新工作台派活</button></div>';
     $$('#drBody .tk').forEach(b => b.addEventListener('click', () => openTask(b.dataset.id)));
-    $('#agRun').addEventListener('click', () => { closeDrawer(); openRun(role); });
-    $('#agCopy').addEventListener('click', async () => {
-      const cmd = 'python3 agency.py run ' + role;
-      try { await navigator.clipboard.writeText(cmd); toast('已复制：' + cmd); } catch { toast(cmd); }
-    });
+    $('#agGoApp').addEventListener('click', () => { location.href = '/app'; });
   }
 
   function openArchive(tab = 'tasks') {
@@ -2650,29 +2697,9 @@ summary:hover{color:var(--ac)}
   }
 
   async function pollJobs() {
-    let list;
-    try { list = (await api('/api/v1/legacy/jobs')).data || []; } catch { return; }
-    if (!P._lastJobByRole) P._lastJobByRole = {};
-    let fresh = 0, changed = 0;
-    list.forEach(j => {
-      if (j.state === 'running' || j.state === 'retrying') {
-        P._lastJobByRole[j.role] = j;
-        const i = jobCards.findIndex(x => x.id === j.id);
-        if (i >= 0) { jobCards[i] = j; changed++; }
-        else if (j.state === 'retrying') { jobCards.unshift(j); changed++; }
-        return;
-      }
-      if (jobSeen.has(j.id)) return;
-      jobSeen.add(j.id); saveJobSeen();
-      jobCards.unshift(j); fresh++;
-      // 记住：给 syncRunning 结束时的 deliverBehavior 用
-      P._lastJobByRole[j.role] = j;
-    });
-    if (!fresh && changed) { renderReports(); return; }
-    if (!fresh) return;
-    renderReports();
-    toast(fresh === 1 ? '有 1 个后台任务跑完了' : '有 ' + fresh + ' 个后台任务跑完了');
-    load();
+    // 旧版后台作业轮询已停用：执行状态统一由 /api/platform/v1/office/state 的
+    // llm.running 与 runs 驱动，避免再读取归档库的旧 jobs。
+    return;
   }
 
   // 产出文件 → 可直接在页面打开的链接（服务端只放行 agency/outputs 内文件）
@@ -2930,9 +2957,6 @@ summary:hover{color:var(--ac)}
     setInterval(() => {
       if (document.visibilityState === 'visible' && !runBusy) load();
     }, 60000);
-    setInterval(() => {
-      if (document.visibilityState === 'visible') pollJobs();
-    }, 5000);
     pollJobs();
   }
 

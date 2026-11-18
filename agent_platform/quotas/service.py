@@ -109,26 +109,6 @@ class QuotaReservation:
         ):
             raise ValueError("reservation timestamps must be ordered and timezone-aware")
 
-    def __post_init__(self) -> None:
-        if not self.reservation_id or not self.tenant_id or not self.run_id:
-            raise ValueError("reservation, tenant and run ids are required")
-        if self.scope_type not in {"tenant", "project", "agent", "model"} or not self.scope_id:
-            raise ValueError("invalid reservation quota scope")
-        counters = (
-            self.reserved_tokens, self.reserved_input_tokens, self.reserved_output_tokens,
-        )
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counters):
-            raise ValueError("reserved token counters must be non-negative integers")
-        if self.reserved_input_tokens + self.reserved_output_tokens != self.reserved_tokens:
-            raise ValueError("total reserved tokens must equal input plus output tokens")
-        if not isinstance(self.reserved_cost_usd, Decimal) or not self.reserved_cost_usd.is_finite() or self.reserved_cost_usd < 0:
-            raise ValueError("reserved cost must be a finite non-negative Decimal")
-        if (
-            self.created_at.tzinfo is None or self.period_start.tzinfo is None
-            or self.period_end.tzinfo is None or self.period_end <= self.period_start
-        ):
-            raise ValueError("reservation timestamps must be ordered and timezone-aware")
-
 
 @dataclass(frozen=True)
 class UsageEvent:
@@ -576,11 +556,20 @@ class QuotaService:
                 ):
                     raise RuntimeError("quota reservation lease could not be renewed")
 
-        async with asyncio.TaskGroup() as group:
-            heartbeat = group.create_task(
-                renew(), name=f"quota-reservation-heartbeat-{reservation.reservation_id}",
-            )
-            try:
-                yield reservation
-            finally:
-                heartbeat.cancel()
+        heartbeat = asyncio.create_task(
+            renew(), name=f"quota-reservation-heartbeat-{reservation.reservation_id}",
+        )
+        try:
+            yield reservation
+        except BaseException:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
+            raise
+        else:
+            heartbeat.cancel()
+            result = await asyncio.gather(heartbeat, return_exceptions=True)
+            error = result[0] if result else None
+            if isinstance(error, BaseException) and not isinstance(
+                error, asyncio.CancelledError,
+            ):
+                raise error

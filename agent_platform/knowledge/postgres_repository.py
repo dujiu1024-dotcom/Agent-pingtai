@@ -22,8 +22,8 @@ class PostgresKnowledgeRepository:
     def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=1536)->None:
         if not embedding_model.strip() or not embedding_model_version.strip():
             raise ValueError("embedding model and version are required")
-        if embedding_dimensions != 1536:
-            raise ValueError("PostgreSQL knowledge_embeddings currently requires 1536 dimensions")
+        if isinstance(embedding_dimensions, bool) or not isinstance(embedding_dimensions, int) or embedding_dimensions < 1:
+            raise ValueError("embedding_dimensions must be a positive integer")
         self._connect=connection_factory
         self.embedding_model=embedding_model
         self.embedding_model_version=embedding_model_version
@@ -231,23 +231,22 @@ class PostgresKnowledgeRepository:
         lexical_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,ts_rank_cd(c.search_vector,plainto_tsquery('simple',%s)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version WHERE """+common+" AND "+chunk_acl+" AND c.search_vector @@ plainto_tsquery('simple',%s) ORDER BY score DESC LIMIT %s"
         lexical_params=(query,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,query,candidate_limit)
         async with conn:
-            lexical=[]
-            if strategy in {"hybrid","lexical"}:
-                cur=await conn.execute(lexical_sql,lexical_params);lexical=await cur.fetchall()
+            # search() 只负责候选召回；词法/语义的选择由上层 retrieval 策略决定。
+            cur=await conn.execute(lexical_sql,lexical_params);lexical=await cur.fetchall()
             semantic=[]
-            if query_vector and strategy in {"hybrid","semantic"}:
+            if query_vector:
                 literal="["+",".join(str(float(x)) for x in query_vector)+"]"
                 semantic_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,(1-(e.embedding <=> %s::vector)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version JOIN knowledge_embeddings e ON e.tenant_id=c.tenant_id AND e.chunk_id=c.chunk_id AND e.embedding_model=%s WHERE """+common+" AND "+chunk_acl+" ORDER BY e.embedding <=> %s::vector LIMIT %s"
                 semantic_params=(literal,self.embedding_model,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,literal,candidate_limit)
                 cur=await conn.execute(semantic_sql,semantic_params);semantic=await cur.fetchall()
         # Reciprocal-rank fusion combines independent lexical and semantic candidate lists.
         fused:dict[str,tuple[float,dict[str,Any],set[str]]]={}
-        for strategy,rows in (("postgres-fts",lexical),("pgvector",semantic)):
+        for kind,rows in (("postgres-fts",lexical),("pgvector",semantic)):
             for rank,row in enumerate(rows,1):
                 key=str(row["chunk_id"]);score=1.0/(60+rank)
-                if key not in fused:fused[key]=(score,row,{strategy})
+                if key not in fused:fused[key]=(score,row,{kind})
                 else:
-                    prior,prior_row,kinds=fused[key];kinds.add(strategy);fused[key]=(prior+score,prior_row,kinds)
+                    prior,prior_row,kinds=fused[key];kinds.add(kind);fused[key]=(prior+score,prior_row,kinds)
         ordered=sorted(fused.values(),key=lambda x:x[0],reverse=True)[:limit]
         hits=[]
         for score,row,kinds in ordered:

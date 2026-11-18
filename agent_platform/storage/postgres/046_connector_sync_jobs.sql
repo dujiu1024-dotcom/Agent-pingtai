@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS platform_connector_sync_jobs (
         REFERENCES platform_data_connections(tenant_id,connection_id) ON DELETE CASCADE
 );
 
+ALTER TABLE platform_connector_sync_jobs
+    ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz,
+    ADD COLUMN IF NOT EXISTS last_error_code text;
+
 CREATE INDEX IF NOT EXISTS idx_platform_connector_sync_claim
     ON platform_connector_sync_jobs (status,available_at,lease_expires_at,created_at);
 

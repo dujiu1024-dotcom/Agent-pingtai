@@ -66,6 +66,21 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dead_letter_view(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": str(row["run_id"]),
+        "task_id": str(row["task_id"]) if row.get("task_id") else None,
+        "agent_id": row.get("agent_id"),
+        "attempt_count": int(row.get("attempt_count") or 0),
+        "max_attempts": int(row.get("max_attempts") or 0),
+        "reason": row.get("reason"),
+        "payload": _json_value(row.get("payload") or {}),
+        "created_at": _json_value(row.get("created_at")),
+        "resolved_at": _json_value(row.get("resolved_at")),
+        "resolved_by": row.get("resolved_by"),
+    }
+
+
 class RegistryBackedTaskCenterService:
     """Concrete TaskCenterService using registry versions and durable Run storage."""
 
@@ -472,6 +487,58 @@ class RegistryBackedTaskCenterService:
         )
         return _task_view(retried) if retried is not None else None
 
+    async def list_dead_letters(
+        self, *, tenant_id: str, limit: int = 50, include_resolved: bool = False,
+    ) -> list[dict[str, Any]]:
+        self._check_tenant(tenant_id)
+        rows = await self.run_store.list_dead_letters(
+            tenant_id, limit=limit, include_resolved=include_resolved,
+        )
+        return [_dead_letter_view(row) for row in rows]
+
+    async def get_dead_letter(
+        self, *, tenant_id: str, run_id: str,
+    ) -> dict[str, Any] | None:
+        self._check_tenant(tenant_id)
+        row = await self.run_store.dead_letter(tenant_id, run_id)
+        return _dead_letter_view(row) if row is not None else None
+
+    async def retry_dead_letter(
+        self, *, tenant_id: str, run_id: str, actor_id: str, idempotency_key: str,
+    ) -> dict[str, Any] | None:
+        self._check_tenant(tenant_id)
+        row = await self.run_store.dead_letter(tenant_id, run_id)
+        if row is None:
+            return None
+        if row.get("resolved_at") is not None:
+            raise WorkbenchTaskError("dead letter already resolved")
+        task_id = row.get("task_id")
+        if not task_id:
+            raise WorkbenchTaskError("dead letter is not linked to a task and cannot be retried")
+        retried = await self.retry_task(
+            tenant_id=tenant_id, task_id=str(task_id),
+            actor_id=actor_id, idempotency_key=idempotency_key,
+        )
+        if retried is None:
+            return None
+        await self.run_store.resolve_dead_letter(
+            tenant_id, run_id, f"retry:{actor_id}",
+        )
+        return {"run_id": run_id, "resolved": True, "task": dict(retried)}
+
+    async def resolve_dead_letter(
+        self, *, tenant_id: str, run_id: str, actor_id: str,
+    ) -> dict[str, Any] | None:
+        self._check_tenant(tenant_id)
+        row = await self.run_store.resolve_dead_letter(tenant_id, run_id, actor_id)
+        if row is None:
+            return None
+        return {
+            "run_id": str(row["run_id"]),
+            "resolved_at": row["resolved_at"].isoformat() if row.get("resolved_at") else None,
+            "resolved_by": row.get("resolved_by"),
+        }
+
     async def cancel_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None:
@@ -748,6 +815,10 @@ class RunExecutionWorker:
         if current and current.status == RunStatus.CANCELLED:
             return "cancelled"
         if current and current.status in {RunStatus.FAILED, RunStatus.TIMED_OUT}:
+            # 执行器直接判定失败时不经过 worker 的重试分支，这里补登记死信。
+            ensure_dead_letter = getattr(self.run_store, "ensure_dead_letter", None)
+            if callable(ensure_dead_letter):
+                await ensure_dead_letter(tenant_id, run_id)
             return "failed"
         return "skipped"
 

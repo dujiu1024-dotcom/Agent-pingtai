@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>龍奕FDE工作室 · 项目全景图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    background: #fafaf8;
+    color: #1a1a1a;
+    line-height: 1.7;
+  }
+  h1 { font-size: 28px; border-bottom: 3px solid #2d5a3d; padding-bottom: 12px; }
+  h2 { font-size: 20px; color: #2d5a3d; margin-top: 48px; }
+  .desc {
+    background: #fff;
+    border-left: 4px solid #2d5a3d;
+    padding: 16px 20px;
+    margin: 16px 0 24px;
+    border-radius: 0 8px 8px 0;
+    font-size: 15px;
+  }
+  .mermaid {
+    background: #fff;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 16px 0 32px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    overflow-x: auto;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+  .legend span {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 4px;
+  }
+  .tag-person  { background: #e8f0e8; color: #2d5a3d; }
+  .tag-agent   { background: #fff3e0; color: #e65100; }
+  .tag-data    { background: #e3f2fd; color: #1565c0; }
+  .tag-api     { background: #fce4ec; color: #c2185b; }
+  .tag-tool    { background: #f3e5f5; color: #6a1b9a; }
+</style>
+</head>
+<body>
+
+<h1>龍奕FDE工作室 · 项目全景图</h1>
+<p style="color:#666;margin-bottom:40px;">
+  一份用大白话讲明白的项目全貌。五张图分别回答五个问题：
+  <b>业务流程图</b>讲"事情怎么一步步做"，
+  <b>业务架构图</b>讲"谁干什么、谁管谁"，
+  <b>技术架构图</b>讲"用了什么技术、模块怎么拼"，
+  <b>技术流程图</b>讲"一条命令进去、内部怎么跑一圈出来"，
+  <b>数据流程图</b>讲"数据从哪来、存哪、给谁用"。
+</p>
+
+<!-- ================= 图1：业务流程图 ================= -->
+<h2>图 1 · 业务流程图（事情怎么一步步做）</h2>
+<div class="desc">
+  <b>一句话总结</b>：客户找上门 → PM 聊清楚需求写方案 → 客户点头 → Planner 拆任务排期 → 
+  秘书盯进度到点催 → 各个 Agent 按分工干活 → Auditor 查质量 → 交付 → Finance 要钱。
+  下面这条线就是从"客户来咨询"到"钱进账"的完整旅程，每个节点是谁的事、卡在哪一关不能往下走，一目了然。
+</div>
+<div class="mermaid">
+flowchart TD
+    subgraph 客户侧
+        A[客户找上门<br/>咨询/签合同]
+    end
+
+    subgraph PM产品经理
+        B[访谈 + 看现场<br/>把模糊需求变清晰]
+        C[写方案 + 画原型<br/>跟客户对齐范围]
+        D{客户点头确认?}
+    end
+
+    subgraph Planner规划师
+        E[拆任务 WBS<br/>每件不超过3天]
+        F[排期 + 找依赖<br/>关键路径标红]
+    end
+
+    subgraph Secretary秘书
+        G[全部录入台账<br/>到点自动提醒]
+    end
+
+    subgraph Agent分工干活
+        H1[Content 内容生产]
+        H2[Scout 情报收集]
+        H3[Producer 执行制作]
+        H4[Coach 教练验收]
+    end
+
+    subgraph Auditor审计
+        I[查质量 + 查合规<br/>不合格退回改]
+    end
+
+    subgraph Finance财务
+        J[交付客户 + 开发票]
+        K[跟进回款 + 到账确认]
+    end
+
+    subgraph ChiefOfStaff参谋长
+        L[全程总协调<br/>跨角色冲突拍板]
+    end
+
+    A --> B
+    B --> C
+    C --> D
+    D -- "是" --> E
+    D -- "改改改" --> C
+    E --> F
+    F --> G
+    G --> H1
+    G --> H2
+    G --> H3
+    G --> H4
+    H1 --> I
+    H2 --> I
+    H3 --> I
+    H4 --> I
+    I -- "合格" --> J
+    I -- "不合格" --> H1
+    J --> K
+    L -.-> B
+    L -.-> C
+    L -.-> E
+    L -.-> H1
+    L -.-> H2
+    L -.-> H3
+    L -.-> H4
+    L -.-> I
+    L -.-> J
+
+    style A fill:#e8f0e8
+    style B fill:#fff3e0
+    style C fill:#fff3e0
+    style D fill:#fff3e0
+    style E fill:#fff3e0
+    style F fill:#fff3e0
+    style G fill:#fff3e0
+    style H1 fill:#fce4ec
+    style H2 fill:#fce4ec
+    style H3 fill:#fce4ec
+    style H4 fill:#fce4ec
+    style I fill:#fce4ec
+    style J fill:#e3f2fd
+    style K fill:#e3f2fd
+    style L fill:#f3e5f5
+</div>
+
+<!-- ================= 图2：业务架构图 ================= -->
+<h2>图 2 · 业务架构图（谁干什么、谁管谁）</h2>
+<div class="desc">
+  <b>一句话总结</b>：整个工作室就是 11 个 AI Agent，每个角色只干自己那份活、有明确的上下游和输入输出。
+  分三层看——<b>顶层</b>是两个总管（参谋长拍板、审计查账），<b>中层</b>是产品线的主角（PM→Planner→Secretary 这一条铁三角），
+  <b>底层</b>是执行层（content、scout、producer 等干具体活的），<b>侧边</b>是支撑角色（HR 管 Agent 人事、Finance 管钱）。
+  箭头指向 = 谁给谁派活 / 谁给谁产物。
+</div>
+<div class="mermaid">
+flowchart TB
+
+    subgraph 顶层总管
+        COS["参谋长<br/>chief-of-staff"]
+        AUD["审计<br/>auditor"]
+    end
+
+    subgraph 产品线铁三角
+        PM["产品经理<br/>pm"]
+        PL["规划师<br/>planner"]
+        SEC["秘书<br/>secretary"]
+    end
+
+    subgraph 执行层
+        SCT["情报员<br/>scout"]
+        CON["内容师<br/>content"]
+        PRD["制作人<br/>producer"]
+        COA["教练<br/>coach"]
+    end
+
+    subgraph 支撑层
+        HR["人事<br/>hr"]
+        FIN["财务<br/>finance"]
+    end
+
+    COS --> PM
+    COS --> PL
+    COS --> SEC
+    COS --> SCT
+    COS --> CON
+    COS --> PRD
+    COS --> COA
+    COS --> HR
+    COS --> FIN
+    COS --> AUD
+    PM -- "方案确认单" --> PL
+    PL -- "WBS排期" --> SEC
+    SEC --> SCT
+    SEC --> CON
+    SEC --> PRD
+    SEC --> COA
+    SCT --> COA
+    CON --> COA
+    PRD --> COA
+    COA -- "验收结论" --> SEC
+    AUD --> COS
+    AUD --> PM
+    AUD --> PL
+    AUD --> SEC
+    AUD --> SCT
+    AUD --> CON
+    AUD --> PRD
+    AUD --> COA
+    AUD --> FIN
+    FIN -.-> COS
+    HR -.-> COS
+
+    style COS fill:#f3e5f5
+    style AUD fill:#f3e5f5
+    style PM fill:#fff3e0
+    style PL fill:#fff3e0
+    style SEC fill:#fff3e0
+    style SCT fill:#e3f2fd
+    style CON fill:#e3f2fd
+    style PRD fill:#e3f2fd
+    style COA fill:#e3f2fd
+    style HR fill:#e8f0e8
+    style FIN fill:#e8f0e8
+</div>
+
+<!-- ================= 图3：技术架构图 ================= -->
+<h2>图 3 · 技术架构图（用了什么技术、模块怎么拼）</h2>
+<div class="desc">
+  <b>一句话总结</b>：当前是 <b>"两条线并行"</b>——老线（单文件 CLI + SQLite）稳定跑着，新线（agent_platform/）在并行建设，
+  未来逐步替换。新架构从上到下五层，但<b>编排层有两个兄弟组件</b>不是一个：
+  <b>入口层</b>（CLI/控制台/API）→ <b>控制面</b>（身份、配额、审计）→ 
+  <b>编排层</b>（LangGraph 管"步骤顺序" + Hybrid Blackboard 管"跨 Agent 共享认知"，分工不同、并行协作）→ 
+  <b>运行时</b>（Agent 执行引擎 + 工具网关）→ <b>存储层</b>（PostgreSQL 是唯一事实源、Redis Streams 只做事件唤醒、pgvector 做语义检索）。
+  所有外部调用必须经过工具网关，Agent 不能直接碰任何外部东西。
+</div>
+<div class="mermaid">
+flowchart TB
+    subgraph 入口层
+        CLI["CLI · agency.py"]
+        CON["本地控制台 · console.py"]
+        API["REST API · Webhook"]
+    end
+
+    subgraph 控制面
+        ID["身份认证 / 租户隔离"]
+        QQ["配额 / 并发控制"]
+        AU["审计日志"]
+        TT["模型模板注册"]
+    end
+
+    subgraph 编排层
+        direction LR
+        subgraph LG_LG ["LangGraph · 流程编排"]
+            LG1["有状态工作流<br/>步骤顺序/分支/暂停恢复"]
+            LG2["多专家并行<br/>串行推进/冲突裁决"]
+        end
+        subgraph HB_HB ["Hybrid Blackboard · 共享认知"]
+            HB1["公共笔记本<br/>事实/观点/证据/裁决"]
+            HB2["事件驱动唤醒<br/>条目变更通知Agent"]
+        end
+    end
+
+    subgraph 运行时
+        QH["QuotaEnforcedHarnessAdapter<br/>令牌/并发/存储预算强制"]
+        direction LR
+        HA_DS["DeepSeek Harness<br/>官方SDK适配器(PoC)"]
+        HA_STR["Strands Agents<br/>框架适配器(PoC)"]
+        HA_LG["LangGraph Adapter<br/>工作流桥接"]
+        GW["工具网关 / MCP<br/>所有外部调用必经此"]
+    end
+
+    subgraph 存储层
+        PG[("PostgreSQL<br/>唯一事实源<br/>含黑板条目+版本")]
+        RV[("Redis Streams<br/>事件总线<br/>只唤醒不当事实源")]
+        PV[("pgvector<br/>语义向量检索")]
+    end
+
+    subgraph 外部能力
+        direction LR
+        FEISHU["飞书IM"]
+        BROW["浏览器"]
+        FS["文件系统"]
+        DB_OLD[("SQLite<br/>老系统事实源")]
+        LLM["LLM模型服务<br/>DeepSeek等"]
+    end
+
+    CLI --> ID
+    CLI --> QQ
+    CLI --> AU
+    CLI --> TT
+    CON --> ID
+    CON --> QQ
+    CON --> AU
+    CON --> TT
+    API --> ID
+    API --> QQ
+    API --> AU
+    API --> TT
+
+    ID --> LG1
+    ID --> HB1
+    QQ --> LG1
+    QQ --> HB1
+    AU --> LG1
+    AU --> HB1
+    TT --> LG1
+    TT --> HB1
+
+    LG1 --> QH
+    HB1 --> QH
+    LG2 --> QH
+    HB2 --> QH
+    QH --> HA_DS
+    QH --> HA_STR
+    QH --> HA_LG
+    HA_DS --> LLM
+    HA_STR --> LLM
+    HA_LG --> LLM
+    HA_DS --> GW
+    HA_STR --> GW
+    HA_LG --> GW
+    GW --> FEISHU
+    GW --> BROW
+    GW --> FS
+
+    LG1 --> PG
+    HB1 --> PG
+    HB2 --> PG
+    HB2 --> RV
+    RV --> LG1
+    RV --> LG2
+    PG --> PV
+    DB_OLD -- "数据迁移/影子读/切流" --> PG
+
+    style CLI fill:#e8f0e8
+    style CON fill:#e8f0e8
+    style API fill:#e8f0e8
+    style ID fill:#fff3e0
+    style QQ fill:#fff3e0
+    style AU fill:#fff3e0
+    style TT fill:#fff3e0
+    style LG1 fill:#fce4ec
+    style LG2 fill:#fce4ec
+    style HB1 fill:#fce4ec
+    style HB2 fill:#fce4ec
+    style QH fill:#f3e5f5
+    style HA_DS fill:#f3e5f5
+    style HA_STR fill:#f3e5f5
+    style HA_LG fill:#f3e5f5
+    style GW fill:#f3e5f5
+    style PG fill:#e3f2fd
+    style RV fill:#e3f2fd
+    style PV fill:#e3f2fd
+    style FEISHU fill:#eeeeee
+    style BROW fill:#eeeeee
+    style FS fill:#eeeeee
+    style DB_OLD fill:#eeeeee
+    style LLM fill:#eeeeee
+</div>
+
+<!-- ================= 图4：技术流程图 ================= -->
+<h2>图 4 · 技术流程图（一条命令进去，内部怎么跑一圈出来）</h2>
+<div class="desc">
+  <b>一句话总结</b>：以"PM 写方案 → Planner 拆任务"为例。老架构就是一条直线：
+  命令解析 → 读数据库 → 跑业务逻辑 → 写事件 → 飞书推送。
+  新架构的区别在于<b>编排层两个兄弟并行工作</b>：
+  LangGraph 管流程推进（PM写完 → 触发 Planner 节点），
+  Blackboard 管跨 Agent 共享（PM 写入方案 → Blackboard 变了 → Redis Streams 唤醒 Planner Agent → Planner 从黑板读方案、写入任务清单提案），
+  然后一起经过运行时和存储层。事件先写 Outbox 再异步投递，每步留审计痕迹、有幂等保护。
+</div>
+<div class="mermaid">
+flowchart TD
+    subgraph 触发
+        A["触发<br/>CLI/API/Webhook"]
+        E2["身份校验/配额/审计"]
+    end
+
+    subgraph 老架构直线链
+        D1["agency.py主入口<br/>argparse→cmd_xxx"]
+        D2["查SQLite<br/>业务逻辑直接跑"]
+        D3["出结果到stdout"]
+        D4["写events表<br/>同步飞书监听进程"]
+    end
+
+    subgraph 新架构LangGraph主线
+        LG_S["启动Workflow<br/>State初始化"]
+        LG_PM["PM Agent节点<br/>写方案草稿"]
+        LG_REVIEW{"客户确认?"}
+        LG_PL["Planner Agent节点<br/>拆WBS排期"]
+        LG_END["流程结束<br/>产出可交付物"]
+    end
+
+    subgraph Blackboard并行协作
+        HB_READ["Agent读黑板<br/>拿上下游上下文"]
+        HB_WRITE["Agent写提案<br/>方案/任务清单/决策"]
+        HB_VER["版本冲突检测<br/>乐观并发控制"]
+        HB_WAKE["Redis Streams事件<br/>唤醒下一个Agent"]
+    end
+
+    subgraph 运行时存储
+        HA["Harness适配层<br/>DeepSeek/Strands/LangGraph"]
+        GW["工具网关/MCP<br/>外部调用拦截"]
+        PG2[("PostgreSQL<br/>黑板条目+Outbox事件")]
+        RV2[("Redis Streams<br/>异步唤醒队列")]
+    end
+
+    subgraph 输出
+        F["结果<br/>方案稿/WBS/飞书通知"]
+    end
+
+    %% 老架构路径
+    A --> D1
+    D1 --> D2
+    D2 --> D3
+    D2 --> D4
+    D3 --> F
+
+    %% 新架构路径
+    A --> E2
+    E2 --> LG_S
+    LG_S --> HB_READ
+    HB_READ --> LG_PM
+    LG_PM --> HA
+    HA --> LG_PM
+    LG_PM --> HB_WRITE
+    HB_WRITE --> HB_VER
+    HB_VER --> PG2
+    HB_WRITE --> HB_WAKE
+    HB_WAKE --> RV2
+    RV2 --> LG_PL
+    LG_PL --> HA
+    HA --> LG_PL
+    LG_PL --> HB_WRITE
+    LG_PL --> LG_END
+    LG_END --> F
+    LG_REVIEW --> LG_PL
+    LG_REVIEW --> LG_PM
+
+    GW --> HB_WAKE
+
+    style A fill:#e8f0e8
+    style E2 fill:#fff3e0
+    style D1 fill:#e3f2fd
+    style D2 fill:#e3f2fd
+    style D3 fill:#e3f2fd
+    style D4 fill:#e3f2fd
+    style LG_S fill:#fce4ec
+    style LG_PM fill:#fce4ec
+    style LG_REVIEW fill:#fce4ec
+    style LG_PL fill:#fce4ec
+    style LG_END fill:#fce4ec
+    style HB_READ fill:#f3e5f5
+    style HB_WRITE fill:#f3e5f5
+    style HB_VER fill:#f3e5f5
+    style HB_WAKE fill:#f3e5f5
+    style HA fill:#e3f2fd
+    style GW fill:#e3f2fd
+    style F fill:#e8f0e8
+</div>
+
+<!-- ================= 图4.5：新老系统关系图 ================= -->
+<h2>图 4.5 · 新老系统关系图（不是重复建设，是渐进替换）</h2>
+<div class="desc">
+  <b>一句话总结</b>：两套系统<b>同时在跑但互不干扰</b>——老系统（单文件 CLI + SQLite）继续承载已验证的稳定业务，
+  新系统（agent_platform/）负责所有新功能。<b>禁止双主写</b>：任何一类数据任一时刻只有一个权威写入方。
+  最终目标是新系统完全接管、旧系统归档下线。下面这个时间线就是怎么一步步替过去的，不搞一次性推倒重写。
+</div>
+<div class="mermaid">
+flowchart TB
+
+    subgraph 现状
+        OLD["老系统 FDE工作台<br/>agency.py + SQLite<br/>继续稳定跑"]
+        DB_O[("agency.db<br/>SQLite")]
+        OLD --> DB_O
+
+        NEW["新系统 agent_platform<br/>PostgreSQL+LangGraph+Blackboard<br/>只接新功能"]
+        DB_N[("PostgreSQL<br/>pgvector+Redis")]
+        NEW --> DB_N
+    end
+
+    subgraph 原则
+        P1["禁止双主写<br/>每类数据一个权威写入方"]
+        P2["影子读校验<br/>先只读不切流"]
+        P3["可回滚<br/>切失败退回去"]
+        P4["新功能只写新平台<br/>老模块逐步适配"]
+    end
+
+    subgraph 切流步骤
+        S1["① 冻结快照<br/>盘点表结构"]
+        S2["② 建字段映射<br/>分类去重"]
+        S3["③ 全量导入PG<br/>批次+哈希"]
+        S4["④ 双读校验<br/>只比对不写入"]
+        S5["⑤ 小范围新读<br/>观察错误"]
+        S6["⑥ 暂停旧写入<br/>增量尾批"]
+        S7["⑦ 新平台接管<br/>保留回滚"]
+        S8["⑧ 验收归档<br/>旧数据下线"]
+    end
+
+    DB_O --> S1
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
+    NEW -- "新功能" --> DB_N
+    P1 -.-> S7
+    P2 -.-> S4
+    P3 -.-> S7
+    P4 -.-> NEW
+
+    style OLD fill:#e8f0e8
+    style DB_O fill:#e8f0e8
+    style NEW fill:#e3f2fd
+    style DB_N fill:#e3f2fd
+    style P1 fill:#fff3e0
+    style P2 fill:#fff3e0
+    style P3 fill:#fff3e0
+    style P4 fill:#fff3e0
+    style S1 fill:#f3e5f5
+    style S2 fill:#f3e5f5
+    style S3 fill:#f3e5f5
+    style S4 fill:#f3e5f5
+    style S5 fill:#f3e5f5
+    style S6 fill:#f3e5f5
+    style S7 fill:#f3e5f5
+    style S8 fill:#f3e5f5
+</div>
+
+
+<!-- ================= 图5：数据流程图 ================= -->
+<h2>图 5 · 数据流程图（数据从哪来、存哪、给谁用）</h2>
+<div class="desc">
+  <b>一句话总结</b>：<b>唯一事实源</b>是 PostgreSQL（老系统是 SQLite），所有东西都从它读写。
+  但数据也分"冷热"——任务/项目/审批这些<b>结构化数据</b>放主库，
+  Agent 的思考过程、证据链、多专家辩论记录（Blackboard）是<b>半结构化数据</b>也在主库但加了版本管理，
+  语义检索走 pgvector 向量索引，
+  事件通知走 Redis Streams（只做唤醒、不当事实源）。
+  飞书、浏览器这些外部系统的东西，进来前先过工具网关校验权限、出去前过审计。
+</div>
+<div class="mermaid">
+flowchart TB
+
+    subgraph 数据源
+        DS1["飞书消息<br/>客户反馈/内部沟通"]
+        DS2["CLI控制台<br/>人手录入"]
+        DS3["Agent执行产出<br/>报告/方案/分析"]
+        DS4["外部文件<br/>Word/PDF/网页"]
+    end
+
+    subgraph 数据入口
+        LST["listener.py<br/>飞书监听进程"]
+        INP["agency.py/console.py"]
+        RT["Agent Runtime"]
+    end
+
+    subgraph 数据存储层
+        DB_MAIN[("PostgreSQL主库<br/>唯一事实源")]
+        DB_TABLES[("projects/tasks/events<br/>approvals/bills")]
+        DB_BB[("Blackboard<br/>黑板条目Claim/Decision")]
+        DB_VEC[("pgvector<br/>语义向量索引")]
+        CACHE[("Redis Streams<br/>事件总线")]
+    end
+
+    subgraph 数据消费方
+        CON["控制台API<br/>人看"]
+        AG["Agent Runtime<br/>读上下文"]
+        FEI["飞书推送<br/>消息通知"]
+        OBS["Langfuse<br/>可观测追踪"]
+    end
+
+    DS1 --> LST
+    DS2 --> INP
+    DS3 --> RT
+    DS4 --> RT
+
+    LST --> DB_MAIN
+    INP --> DB_MAIN
+    RT --> DB_MAIN
+    DB_MAIN --> DB_TABLES
+    DB_MAIN --> DB_BB
+    DB_BB --> DB_VEC
+    DB_TABLES --> CACHE
+
+    DB_TABLES --> CON
+    DB_BB --> AG
+    CACHE --> FEI
+    RT --> OBS
+
+    style DS1 fill:#eeeeee
+    style DS2 fill:#eeeeee
+    style DS3 fill:#eeeeee
+    style DS4 fill:#eeeeee
+    style DB_MAIN fill:#2d5a3d
+    style DB_TABLES fill:#2d5a3d
+    style DB_BB fill:#2d5a3d
+    style DB_VEC fill:#2d5a3d
+    style CACHE fill:#fff3e0
+    style CON fill:#e3f2fd
+    style AG fill:#e3f2fd
+    style FEI fill:#e3f2fd
+    style OBS fill:#e3f2fd
+</div>
+
+<!-- 图例说明 -->
+<h2>图例说明（五张图通用）</h2>
+<div class="legend">
+  <span class="tag-person">人类/客户侧</span>
+  <span class="tag-agent">AI Agent 角色</span>
+  <span class="tag-data">数据存储</span>
+  <span class="tag-api">入口/接口层</span>
+  <span class="tag-tool">工具/基础设施</span>
+</div>
+
+<p style="margin-top:60px;color:#999;font-size:13px;">
+  生成日期：2026-11-17 · 基于项目根目录 README.md、agency.py、db.py、docs/architecture/智能体平台改造总设计.md 绘制
+</p>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    primaryColor: '#e8f0e8',
+    primaryTextColor: '#1a1a1a',
+    primaryBorderColor: '#2d5a3d',
+    lineColor: '#555',
+    fontFamily: '-apple-system, PingFang SC, Microsoft YaHei, sans-serif',
+    fontSize: '14px'
+  },
+  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+});
+</script>
+
+</body>
+</html>

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 STATIC = Path(__file__).with_name("static")
 LEGACY_CONSOLE = Path(__file__).resolve().parents[2] / "console.html"
@@ -31,10 +31,24 @@ def create_platform_web_router() -> APIRouter:
     async def index(legacy: bool = False):
         # Explicit opt-in keeps the legacy UI available during an incomplete
         # deployment. Missing new UI files also fail over without a dead link.
-        if legacy or not (STATIC / "index.html").is_file():
+        if legacy:
+            # 3D 办公室现在由 legacy bridge 在新平台同源提供（含所需 CSP）。
+            return RedirectResponse(url="/office", status_code=307)
+        if not (STATIC / "index.html").is_file():
             return _legacy_console_response()
         return FileResponse(
             STATIC / "index.html",
+            media_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @router.get("/graph-view", include_in_schema=False)
+    async def graph_view():
+        # 平台内置只读图谱页；未登录时页面仍可打开，API 会返回 401。
+        if not (STATIC / "graph.html").is_file():
+            raise HTTPException(404, "graph view is not installed")
+        return FileResponse(
+            STATIC / "graph.html",
             media_type="text/html; charset=utf-8",
             headers={"Cache-Control": "no-store"},
         )

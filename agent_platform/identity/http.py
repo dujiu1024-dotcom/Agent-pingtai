@@ -6,6 +6,7 @@ must configure protected_paths and exact CORS origins at composition time.
 from __future__ import annotations
 
 import hmac
+import inspect
 import time
 from collections import defaultdict, deque
 from secrets import token_urlsafe
@@ -136,6 +137,8 @@ class IdentityASGIMiddleware:
         login_limit: int = 10,
         login_window_seconds: int = 300,
         trust_forwarded_headers: bool = False,
+        local_principal: Any | None = None,
+        local_client_hosts: tuple[str, ...] = ("127.0.0.1", "::1"),
     ) -> None:
         if not session_cookie.startswith("__Host-"):
             raise ValueError("session cookie must use __Host- prefix")
@@ -157,6 +160,8 @@ class IdentityASGIMiddleware:
         self.login_limit = login_limit
         self.login_window_seconds = login_window_seconds
         self.trust_forwarded_headers = trust_forwarded_headers
+        self.local_principal = local_principal
+        self.local_client_hosts = frozenset(local_client_hosts)
 
     @staticmethod
     def _normalize_origin(value: str) -> str:
@@ -286,6 +291,13 @@ class IdentityASGIMiddleware:
                             principal = None
                     else:
                         principal = None
+
+        if principal is None and self.local_principal is not None:
+            client = scope.get("client") or ()
+            if client and str(client[0]) in self.local_client_hosts:
+                principal = self.local_principal()
+                if inspect.isawaitable(principal):
+                    principal = await principal
 
         if cookie_token and method not in self.SAFE_METHODS:
             csrf_cookie = cookies.get(self.csrf_cookie, "")

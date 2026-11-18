@@ -84,8 +84,8 @@ class PostgresIdentityAuditReader:
                           outcome,detail,created_at
                    FROM platform_identity_audit
                    WHERE tenant_id=%s
-                     AND (%s IS NULL OR actor_id=%s)
-                     AND (%s IS NULL OR action=%s)
+                     AND (%s::text IS NULL OR actor_id=%s)
+                     AND (%s::text IS NULL OR action=%s)
                    ORDER BY created_at DESC,audit_id DESC
                    LIMIT %s""",
                 (tenant_id, actor_id, actor_id, action, action, limit),

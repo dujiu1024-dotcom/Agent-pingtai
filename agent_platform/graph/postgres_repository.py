@@ -279,7 +279,7 @@ class PostgresGraphRepository:
                 WHERE tenant_id=%s
                   AND (project_id IS NULL OR project_id=ANY(%s))
                   AND lower(entity_name) LIKE lower(%s) || '%%'
-                  AND (%s IS NULL OR entity_type=%s)
+                  AND (%s::text IS NULL OR entity_type=%s)
                 ORDER BY lower(entity_name), entity_id
                 LIMIT %s
                 """,

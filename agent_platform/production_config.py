@@ -38,6 +38,8 @@ class ProductionSettings:
     postgres_dsn: str
     redis_url: str
     allowed_origins: tuple[str, ...]
+    # 旧版 3D 办公室 / 运营看板兼容桥；默认关闭，仅本地迁移期部署开启。
+    legacy_office_enabled: bool = False
 
 
 def load_production_settings(
@@ -113,8 +115,12 @@ def load_production_settings(
             raise ProductionConfigurationError(
                 "ALLOWED_ORIGINS must contain exact HTTPS origins"
             )
+    legacy_value = env.get("LEGACY_OFFICE_ENABLED", "false").strip().lower()
+    if legacy_value not in {"true", "false", "1", "0", "yes", "no"}:
+        raise ProductionConfigurationError("LEGACY_OFFICE_ENABLED must be a boolean")
     return ProductionSettings(
         postgres_dsn=postgres_dsn,
         redis_url=redis_url,
         allowed_origins=origins,
+        legacy_office_enabled=legacy_value in {"true", "1", "yes"},
     )

@@ -35,12 +35,12 @@ CREATE INDEX IF NOT EXISTS idx_prompt_variant_versions_history
     ON platform_prompt_variant_versions (prompt_id, variant_name, created_at, event_id);
 
 CREATE OR REPLACE FUNCTION platform_reject_prompt_variant_history_mutation()
-RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN
     RAISE EXCEPTION 'prompt variant history is append-only'
       USING ERRCODE = '55000';
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS trg_prompt_variant_versions_immutable
     ON platform_prompt_variant_versions;

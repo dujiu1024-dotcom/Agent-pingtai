@@ -468,7 +468,7 @@ class PostgresGraphGovernanceRepository:
         async with connection:
             cursor = await connection.execute(
                 """SELECT * FROM platform_graph_governance_audit
-                   WHERE tenant_id=%s AND (%s IS NULL OR entity_id=%s)
+                   WHERE tenant_id=%s AND (%s::text IS NULL OR entity_id=%s)
                    ORDER BY occurred_at,event_id LIMIT %s""",
                 (self.tenant_id, entity_id, entity_id, limit),
             )

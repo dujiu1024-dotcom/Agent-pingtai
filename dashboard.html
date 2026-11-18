@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FDE 工作室 · 创始人管理看板</title>
+<title>FDE 智能体平台 · 运营管理看板</title>
 <style>
 :root{
   --bg:#f4f6f8;--card:#fff;--line:#e2e6ea;--t:#171c22;--t2:#5a6572;--muted:#8b959f;
@@ -17,492 +17,599 @@ body{background:var(--bg);color:var(--t);
   -webkit-font-smoothing:antialiased}
 .wrap{max-width:1440px;margin:0 auto;padding:16px 20px 28px}
 /* 顶栏 */
-.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px}
-.top h1{font-size:19px;margin:0;font-weight:650;letter-spacing:.2px}
-.badge{font-size:12px;padding:2px 9px;border-radius:3px;font-weight:600;letter-spacing:.3px}
-.badge.prod{background:var(--bl-bg);color:var(--bl)}
-.badge.dev{background:var(--yl-bg);color:var(--yl)}
-.meta{color:var(--t2);font-size:12px;margin-left:auto;display:flex;gap:14px;align-items:center}
-.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.top{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.top h1{font-size:20px;margin:0;font-weight:650;letter-spacing:.2px}
+.sub{color:var(--t2);font-size:12px;margin-top:3px}
+.links{display:flex;gap:6px;margin-top:3px}
+.links a{font-size:12px;color:var(--bl);text-decoration:none;border:1px solid #cfe0f0;background:var(--bl-bg);
+  padding:4px 10px;border-radius:4px}
+.links a:hover{background:#dcebfa}
+.meta{margin-left:auto;color:var(--t2);font-size:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px;background:var(--muted)}
 .dot.ok{background:var(--gn)}.dot.bad{background:var(--rd)}
+button{font:inherit;font-size:12px;padding:4px 11px;border:1px solid var(--line);background:#fff;
+  border-radius:4px;color:var(--t2);cursor:pointer}
+button:hover{background:var(--gy-bg);color:var(--t)}
+.banner{background:var(--rd-bg);color:var(--rd);border:1px solid #f0cfcb;border-radius:6px;
+  padding:9px 12px;font-size:13px;margin-bottom:12px}
+.hide{display:none!important}
 /* KPI */
-.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
-.kpi .l{font-size:11.5px;color:var(--t2)}
-.kpi .v{font-size:27px;font-weight:680;line-height:1.15;margin-top:2px;font-variant-numeric:tabular-nums}
-.kpi .s{font-size:11px;color:var(--muted);margin-top:1px}
-.kpi.warn .v{color:var(--yl)}.kpi.bad .v{color:var(--rd)}.kpi.good .v{color:var(--gn)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:11px 13px}
+.kpi .l{color:var(--t2);font-size:12px}
+.kpi .v{font-size:23px;font-weight:680;line-height:1.25;margin:2px 0 1px;font-variant-numeric:tabular-nums}
+.kpi .s{color:var(--muted);font-size:11px}
+.kpi.good .v{color:var(--gn)}.kpi.warn .v{color:var(--yl)}.kpi.bad .v{color:var(--rd)}
 /* 卡片 */
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:0;overflow:hidden}
-.card > h2{font-size:12.5px;font-weight:650;margin:0;padding:8px 12px;border-bottom:1px solid var(--line);
-  display:flex;align-items:center;gap:8px;color:var(--t)}
-.card > h2 .n{color:var(--muted);font-weight:500;font-size:11.5px}
-.card .body{padding:8px 12px 10px}
-.span2{grid-column:1 / -1}
-/* 表格 */
-table{width:100%;border-collapse:collapse;font-size:12px}
-th{ text-align:left;font-weight:600;color:var(--t2);padding:4px 7px;border-bottom:1px solid var(--line);
-  font-size:11px;white-space:nowrap;background:#fbfcfd}
-td{padding:5px 7px;border-bottom:1px solid #f0f2f4;vertical-align:top;line-height:1.35}
-tr:last-child td{border-bottom:0}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-.role{font-weight:600;white-space:nowrap}
-.sub{color:var(--muted);font-size:11.5px}
-.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:3px;white-space:nowrap;font-weight:600}
-.tag.run{background:var(--bl-bg);color:var(--bl)}
-.tag.on{background:var(--gn-bg);color:var(--gn)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.grid .card{margin-bottom:0}
+.card h2{font-size:14px;font-weight:640;margin:0;padding:11px 14px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px}
+.card h2 .n{color:var(--muted);font-weight:500;font-size:12px}
+.card .body{padding:12px 14px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{color:var(--muted);font-weight:600;text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);
+  white-space:nowrap;background:#fafbfc}
+td{padding:7px 8px;border-bottom:1px solid #eef1f4;vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#f8fafc}
+.table-wrap{padding:0}
+.empty{color:var(--muted);font-size:12.5px;padding:16px 4px;text-align:center}
+.tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:3px;background:var(--gy-bg);
+  color:var(--t2);white-space:nowrap}
+.tag.ok{background:var(--gn-bg);color:var(--gn)}
+.tag.warn{background:var(--yl-bg);color:var(--yl)}
 .tag.bad{background:var(--rd-bg);color:var(--rd)}
-.tag.idle{background:var(--gy-bg);color:var(--t2)}
-.tag.pin{background:var(--yl-bg);color:var(--yl)}
-.tag.blk{background:var(--rd-bg);color:var(--rd)}
-/* 健康列表 */
-.hl{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
-.hrow{display:flex;align-items:center;gap:7px;padding:5px 7px;border:1px solid var(--line);border-radius:5px}
-.hrow .name{font-size:12.5px;font-weight:600}
-.hrow .desc{font-size:11px;color:var(--muted);margin-left:auto;text-align:right}
-.hdot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
-.hdot.ok{background:var(--gn)}.hdot.bad{background:var(--rd)}.hdot.warn{background:var(--yl)}
-/* 配置 */
-.cfg{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12.5px;margin-top:10px}
-.cfg dt{color:var(--t2)}
-.cfg dd{margin:0;font-variant-numeric:tabular-nums;word-break:break-all}
-/* 列表 */
-.list{margin:0;padding:0;list-style:none}
-.list li{padding:4px 0;border-bottom:1px solid #f1f3f5;font-size:12px}
-.list li:last-child{border-bottom:0}
-.list li.one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#errTable{table-layout:fixed;width:100%}
-#jobTable{table-layout:fixed;width:100%}
-td.clip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.list .k{color:var(--muted);font-size:11.5px;margin-right:6px}
-.empty{color:var(--muted);font-size:12.5px;padding:8px 0}
-.alert{background:var(--rd-bg);border:1px solid #f3c9c4;color:#8f2c20;border-radius:6px;
-  padding:9px 12px;margin-bottom:12px;font-size:13px}
-.hide{display:none}
-footer{color:var(--muted);font-size:11.5px;margin-top:14px;line-height:1.6}
-@media (max-width:1100px){
-  .kpis{grid-template-columns:repeat(3,1fr)}
-  .grid{grid-template-columns:1fr}
-  .hl{grid-template-columns:1fr}
-}
+.tag.info{background:var(--bl-bg);color:var(--bl)}
+/* 分布条 */
+.dist{margin:0;padding:0;list-style:none}
+.dist li{display:grid;grid-template-columns:76px 1fr 42px;align-items:center;gap:9px;margin-bottom:9px}
+.dist li:last-child{margin-bottom:0}
+.dist .lbl{font-size:12px;color:var(--t2)}
+.dist .bar{height:7px;background:#eef1f4;border-radius:4px;overflow:hidden}
+.dist .bar i{display:block;height:100%;background:#7c9cc0;border-radius:4px}
+.dist .num{text-align:right;font-variant-numeric:tabular-nums;color:var(--t2);font-size:12px}
+/* 健康 */
+.health-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;
+  border-bottom:1px dashed #edf0f3;font-size:12.5px}
+.health-row:last-child{border-bottom:none}
+.health-row b{font-weight:600}
+/* 能力 */
+.chips{display:flex;flex-wrap:nowrap;gap:1px;white-space:nowrap}
+.chip{font-size:9.5px;padding:0 3px;border-radius:3px;background:var(--gn-bg);color:var(--gn);
+  border:1px solid #d5ecdf;white-space:nowrap;flex-shrink:0}
+.chip.off{background:var(--gy-bg);color:var(--muted);border-color:var(--line)}
+footer{color:var(--muted);font-size:11.5px;line-height:1.7;padding:4px 2px}
+footer a{color:var(--muted)}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+@media(max-width:560px){.kpis{grid-template-columns:1fr}.wrap{padding:12px}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="top">
-    <h1>创始人管理看板</h1>
-    <span id="envBadge" class="badge dev">—</span>
-    <div class="meta">
-      <span><span id="liveDot" class="dot bad"></span><span id="liveText">连接中</span></span>
-      <span id="genAt">—</span>
+  <header class="top">
+    <div>
+      <h1>运营管理看板</h1>
+      <div class="sub">FDE 智能体平台 · 本地生产环境</div>
     </div>
-  </div>
+    <nav class="links">
+      <a href="/app">进入工作台</a>
+      <a href="/graph-view">图谱可视化</a>
+    </nav>
+    <div class="meta">
+      <span id="identity">—</span>
+      <span><span class="dot" id="liveDot"></span><span id="liveText">加载中</span></span>
+      <span>更新于 <span id="updatedAt">—</span></span>
+      <button id="refreshBtn" type="button">刷新</button>
+    </div>
+  </header>
 
-  <div id="banner" class="alert hide"></div>
-
-  <div class="kpis" id="kpis"></div>
+  <div id="banner" class="banner hide"></div>
+  <div id="kpis" class="kpis"></div>
 
   <div class="grid">
-    <!-- Agent 状态 -->
     <section class="card">
-      <h2>Agent 状态 <span class="n" id="agentCount"></span></h2>
-      <div class="body" style="overflow-x:auto">
-        <table id="agentTable">
-          <thead><tr>
-            <th style="width:150px">角色</th><th style="width:80px">状态</th>
-            <th>手上在干什么</th><th style="width:130px">最近一次运行</th>
-          </tr></thead>
-          <tbody></tbody>
+      <h2>任务状态分布 <span class="n" id="taskSum"></span></h2>
+      <div class="body"><ul class="dist" id="taskDist"></ul><div id="taskDistEmpty" class="empty hide">暂无任务</div></div>
+    </section>
+    <section class="card">
+      <h2>批次状态分布 <span class="n" id="batchSum"></span></h2>
+      <div class="body"><ul class="dist" id="batchDist"></ul><div id="batchDistEmpty" class="empty hide">暂无批次</div></div>
+    </section>
+    <section class="card">
+      <h2>平台健康</h2>
+      <div class="body" id="healthBody"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>最近任务 <span class="n" id="taskCount"></span></h2>
+    <div class="body table-wrap">
+      <table>
+        <thead><tr><th style="width:88px">任务</th><th style="width:150px">Agent</th>
+          <th style="width:100px">状态</th><th style="width:100px">Run</th>
+          <th>更新时间</th><th style="width:66px">操作</th></tr></thead>
+        <tbody id="taskRows"></tbody>
+      </table>
+      <div id="taskEmpty" class="empty hide">暂无任务。清理历史数据后，新任务会实时出现在这里。</div>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>最近会话 <span class="n" id="sessionCount"></span></h2>
+      <div class="body table-wrap">
+        <table>
+          <thead><tr><th>标题</th><th style="width:74px">状态</th><th style="width:110px">更新时间</th></tr></thead>
+          <tbody id="sessionRows"></tbody>
         </table>
+        <div id="sessionEmpty" class="empty hide">暂无会话</div>
       </div>
     </section>
-
-    <!-- 健康与配置 -->
     <section class="card">
-      <h2>健康与自检 <span class="n" id="healthSum"></span></h2>
-      <div class="body">
-        <div class="hl" id="healthList"></div>
-        <div class="cfg" id="cfgList"></div>
-      </div>
-    </section>
-
-    <!-- 定时任务 -->
-    <section class="card span2">
-      <h2>定时任务 <span class="n" id="jobSum"></span></h2>
-      <div class="body" style="overflow-x:auto">
-        <table id="jobTable">
-          <thead><tr>
-            <th style="width:122px">任务</th><th>干什么</th>
-            <th style="width:104px">周期</th><th style="width:96px">上次运行</th>
-            <th style="width:230px">上次结果</th>
-            <th style="width:96px">下次预计</th><th style="width:66px">状态</th>
-          </tr></thead>
-          <tbody></tbody>
+      <h2>最近批次 <span class="n" id="batchCount"></span></h2>
+      <div class="body table-wrap">
+        <table>
+          <thead><tr><th style="width:82px">批次</th><th>模板</th><th style="width:78px">状态</th><th style="width:78px">进度</th></tr></thead>
+          <tbody id="batchRows"></tbody>
         </table>
-        <div id="jobEmpty" class="empty hide">暂无定时任务记录</div>
+        <div id="batchEmpty" class="empty hide">暂无批次作业</div>
       </div>
     </section>
-
-    <!-- 任务盘子 -->
     <section class="card">
-      <h2>未关闭任务 <span class="n" id="openCount"></span></h2>
-      <div class="body">
-        <table id="taskTable">
-          <thead><tr><th style="width:66px">编号</th><th>事项</th><th style="width:88px">负责人</th>
-            <th style="width:76px">截止</th><th style="width:74px">状态</th></tr></thead>
-          <tbody></tbody>
+      <h2>知识库 <span class="n" id="kbCount"></span></h2>
+      <div class="body table-wrap">
+        <table>
+          <thead><tr><th>标题</th><th style="width:74px">范围</th><th style="width:60px">版本</th><th style="width:110px">入库时间</th></tr></thead>
+          <tbody id="docRows"></tbody>
         </table>
-        <div id="taskEmpty" class="empty hide">没有未关闭任务</div>
-      </div>
-    </section>
-
-    <!-- 需要拍板 -->
-    <section class="card">
-      <h2>需要你拍板 <span class="n" id="decideCount"></span></h2>
-      <div class="body">
-        <ul class="list" id="decideList"></ul>
-        <div id="decideEmpty" class="empty hide">暂无需要拍板的事项</div>
-      </div>
-    </section>
-
-    <!-- 今日进展 -->
-    <section class="card">
-      <h2>今天的实际进展 <span class="n" id="todayCount"></span></h2>
-      <div class="body">
-        <ul class="list" id="todayList"></ul>
-        <div id="todayEmpty" class="empty hide">今天还没有记录到进展</div>
-      </div>
-    </section>
-
-    <!-- 最近异常 -->
-    <section class="card">
-      <h2>最近的异常 <span class="n" id="errCount"></span></h2>
-      <div class="body">
-        <table id="errTable">
-          <thead><tr><th style="width:74px">时间</th><th style="width:110px">来源</th><th>内容</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <div id="errEmpty" class="empty hide">最近没有异常</div>
+        <div id="docEmpty" class="empty hide">暂无知识文档</div>
       </div>
     </section>
   </div>
 
+  <section class="card">
+    <h2>定时任务 <span class="n" id="schedCount"></span><span style="margin-left:auto;font-weight:400" id="feishuState"></span></h2>
+    <div class="body table-wrap">
+      <table>
+        <thead><tr><th style="width:130px">作业</th><th>说明</th><th style="width:82px">周期</th>
+          <th style="width:74px">状态</th><th style="width:112px">上次执行</th>
+          <th>上次结果</th><th style="width:112px">下次执行</th><th style="width:126px">操作</th></tr></thead>
+        <tbody id="schedRows"></tbody>
+      </table>
+      <div id="schedEmpty" class="empty hide">定时任务接口不可用</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>失败处理 <span class="n" id="dlCount"></span><span style="margin-left:auto;font-weight:400" id="subState"></span></h2>
+    <div class="body table-wrap">
+      <table>
+        <thead><tr><th style="width:96px">运行</th><th style="width:120px">Agent</th><th>失败原因</th>
+          <th style="width:70px">尝试</th><th style="width:112px">入队时间</th><th style="width:150px">操作</th></tr></thead>
+        <tbody id="dlRows"></tbody>
+      </table>
+      <div id="dlEmpty" class="empty hide">暂无未处理死信</div>
+    </div>
+    <div class="body table-wrap" style="border-top:1px solid var(--line)">
+      <table>
+        <thead><tr><th style="width:120px">订阅事件</th><th>收件人</th>
+          <th style="width:70px">状态</th><th style="width:120px">操作</th></tr></thead>
+        <tbody id="subRows"></tbody>
+      </table>
+      <div id="subEmpty" class="empty hide">暂无事件订阅</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>能力开关 <span class="n" id="capCount"></span></h2>
+    <div class="body chips" id="caps"></div>
+  </section>
+
   <footer>
-    数据全部来自本地台账 agency/state/agency.db，页面只读，不写入任何内容。看板服务只监听 127.0.0.1，局域网和外网都访问不到。每 30 秒自动刷新一次。
+    数据来源：平台 API（PostgreSQL / Redis）；看板只读展示，定时任务支持手动执行与启停；每 30 秒自动刷新。
+    工作台入口 <a href="/app">/app</a>，图谱入口 <a href="/graph-view">/graph-view</a>。
   </footer>
 </div>
 
 <script>
 (function () {
-  const TOKEN = new URLSearchParams(location.search).get('token') || '';
-  const $ = s => document.querySelector(s);
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
-    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  "use strict";
+  var API = "/api/platform/v1";
+  var STATUS = {queued:"排队中",pending:"待处理",waiting:"等待中",running:"运行中",active:"运行中",
+    succeeded:"已完成",success:"已完成",completed:"已完成",failed:"失败",failure:"失败",error:"失败",
+    cancelled:"已取消",canceled:"已取消",partial_failure:"部分失败",paused:"已暂停",draft:"草稿",
+    published:"已发布",disabled:"已停用",open:"待处理",acknowledged:"已确认",resolved:"已解决",
+    closed:"已关闭",expired:"已过期",approved:"已批准",rejected:"已拒绝",created:"已创建",unknown:"未知"};
+  var TONE = {running:"ok",active:"ok",succeeded:"ok",success:"ok",completed:"ok",approved:"ok",
+    published:"ok",resolved:"ok",queued:"warn",pending:"warn",waiting:"warn",paused:"warn",
+    open:"warn",acknowledged:"warn",partial_failure:"bad",failed:"bad",failure:"bad",error:"bad",
+    cancelled:"bad",canceled:"bad",rejected:"bad"};
+  var SCOPE = {tenant:"租户",project:"项目",private:"私有",user:"用户",run:"运行",task:"任务"};
+  var CHECK_LABELS = {postgres:"数据库",redis:"缓存",queue:"队列",storage:"存储"};
+  var FEATURES = {knowledge:"知识库",rag:"检索增强生成",rag_query:"RAG 问答",memory:"长期记忆",
+    sessions:"会话",registry:"资源注册表",agent_management:"Agent 管理",task_execution:"任务执行",
+    graph:"知识图谱",graph_annotation:"图谱标注",graph_visualization:"图谱可视化",
+    batch_execution:"批量执行",approvals:"审批",blackboard:"黑板协作",quotas:"配额",
+    metrics:"指标",audit:"审计",prompt_management:"Prompt 管理"};
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (v) { return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];
+  }); };
+  var key = function (v) { return String(v == null ? "" : v).trim().toLowerCase(); };
+  var label = function (v) { var k = key(v); return STATUS[k] || (k ? String(v) : "—"); };
+  var tone = function (v) { return TONE[key(v)] || ""; };
+  var scopeLabel = function (v) { var k = key(v); return SCOPE[k] || (k ? String(v) : "—"); };
+  var chip = function (v) {
+    var t = tone(v);
+    return '<span class="tag ' + t + '">' + esc(label(v)) + '</span>';
+  };
+  var tag = function (text, t) { return '<span class="tag ' + (t || "") + '">' + esc(text) + '</span>'; };
+  var checkLabel = function (k) { return CHECK_LABELS[key(k)] || k; };
+  var shortId = function (id) { return id ? String(id).slice(0, 8) : "—"; };
+  var fmtTime = function (iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    var p = function (n) { return String(n).padStart(2, "0"); };
+    return (d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  };
+  function get(path) {
+    return fetch(path, { credentials: "same-origin", headers: { Accept: "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json(); });
+  }
+  function safe(path) { return get(path).catch(function () { return null; }); }
+  function items(payload) { return payload && Array.isArray(payload.items) ? payload.items : []; }
 
-  let D = null;
-
-  function fail(msg) {
-    const b = $('#banner');
-    b.textContent = msg;
-    b.classList.remove('hide');
-    $('#liveDot').className = 'dot bad';
-    $('#liveText').textContent = '连接失败';
+  function setBanner(msg) {
+    var b = $("banner");
+    if (!msg) { b.classList.add("hide"); return; }
+    b.textContent = msg; b.classList.remove("hide");
   }
 
-  function ok() {
-    $('#banner').classList.add('hide');
-    $('#liveDot').className = 'dot ok';
-    $('#liveText').textContent = '数据在线';
-  }
-
-  function fmtTime(iso) {
-    if (!iso) return '—';
-    // 支持 UTC ISO 与本地 "YYYY-MM-DD HH:mm:ss" 两种格式
-    if (/^\d{4}-\d{2}-\d{2} \d/.test(iso)) iso = iso.replace(' ', 'T');
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    const p = n => String(n).padStart(2, '0');
-    return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
-  }
-
-  function fmtDay(s) { return s ? s.slice(5) : '—'; }
-
-  function tag(text, cls) { return '<span class="tag ' + cls + '">' + esc(text) + '</span>'; }
-
-  // ===== KPI =====
-  function renderKpis(s, b) {
-    const m = s.metrics || {};
-    const tk = (b.health || {}).tokens || {};
-    const used = tk.used != null ? tk.used : (s.llm || {}).tokens_today;
-    const limit = tk.budget || (s.llm || {}).token_limit || 0;
-    const pct = limit ? Math.round(used / limit * 100) : 0;
-    const items = [
-      { l: '任务总数', v: m.total || 0, s: (m.hours_total || 0) + ' h 计划', cls: '' },
-      { l: '已完成', v: m.done || 0, s: (m.hours_done || 0) + ' h 已投入', cls: 'good' },
-      { l: '未关闭', v: m.open || 0, s: '作废 ' + (m.canceled || 0), cls: m.open ? 'warn' : 'good' },
-      { l: '逾期', v: m.overdue || 0, s: '今日到期 ' + (m.due_today || 0), cls: m.overdue ? 'bad' : '' },
-      { l: '在岗 Agent', v: m.agents || 0, s: ((s.llm || {}).running || []).length + ' 个在跑', cls: '' },
-      { l: '今日 tokens', v: (used || 0).toLocaleString(),
-        s: '预算 ' + (limit || 0).toLocaleString() + ' · ' + pct + '%',
-        cls: pct >= 80 ? 'bad' : '' }
+  function renderKpis(d) {
+    var caps = d.caps && d.caps.features ? d.caps.features : {};
+    var capOn = Object.keys(caps).filter(function (k) { return caps[k]; }).length;
+    var capTotal = Object.keys(caps).length;
+    var tasks = d.tasks, sessions = d.sessions, agents = d.agents;
+    var openTasks = tasks.filter(function (t) { return ["queued", "pending", "waiting", "running", "active"].indexOf(key(t.status)) >= 0; }).length;
+    var pending = d.approvals.filter(function (a) { return ["open", "pending", "waiting"].indexOf(key(a.status)) >= 0; }).length;
+    var runningBatches = d.batches.filter(function (b) { return ["running", "active", "queued", "pending"].indexOf(key(b.status)) >= 0; }).length;
+    var ready = d.ready && d.ready.status === "ready";
+    var checks = d.ready && d.ready.checks ? d.ready.checks : {};
+    var checkText = Object.keys(checks).length
+      ? Object.keys(checks).map(function (k) { return checkLabel(k) + " " + (checks[k] === "ok" ? "正常" : checks[k]); }).join(" · ")
+      : "健康检查不可用";
+    var cards = [
+      { l: "平台状态", v: ready ? "就绪" : "异常", s: checkText, cls: ready ? "good" : "bad" },
+      { l: "已启用能力", v: capOn + " / " + capTotal, s: "能力开关", cls: "" },
+      { l: "注册 Agent", v: agents.length, s: "资源注册表", cls: "" },
+      { l: "会话", v: sessions.length, s: "活跃 " + sessions.filter(function (s) { return key(s.status) === "active"; }).length, cls: "" },
+      { l: "任务", v: tasks.length, s: "进行中 " + openTasks, cls: openTasks ? "warn" : "good" },
+      { l: "待审批", v: pending, s: "审批队列", cls: pending ? "warn" : "good" },
+      { l: "知识文档", v: d.docs.length, s: "集合 " + d.collections.length, cls: "" },
+      { l: "批次作业", v: d.batches.length, s: "进行中 " + runningBatches, cls: runningBatches ? "warn" : "" }
     ];
-    $('#kpis').innerHTML = items.map(i =>
-      '<div class="kpi ' + i.cls + '"><div class="l">' + esc(i.l) + '</div>' +
-      '<div class="v">' + esc(i.v) + '</div><div class="s">' + esc(i.s) + '</div></div>').join('');
+    $("kpis").innerHTML = cards.map(function (c) {
+      return '<div class="kpi ' + c.cls + '"><div class="l">' + esc(c.l) + '</div>' +
+        '<div class="v">' + esc(c.v) + '</div><div class="s">' + esc(c.s) + '</div></div>';
+    }).join("");
   }
 
-  // ===== Agent =====
-  function renderAgents(b) {
-    const s = b.state;
-    const running = new Set((s.llm || {}).running || []);
-    const lastByRole = b.last_runs || {};
-    const tasks = (s.tasks || []).filter(t => t.status !== 'closed' && t.db_status !== 'done' && t.db_status !== 'canceled');
-    const rows = (s.agents || []).map(a => {
-      const mine = tasks.filter(t => t.owner === a.name);
-      const last = lastByRole[a.name];
-      let st, cls;
-      if (running.has(a.name)) { st = '运行中'; cls = 'run'; }
-      else if (last && last.ok === 0) { st = '异常'; cls = 'bad'; }
-      else if (mine.length) { st = '在岗'; cls = 'on'; }
-      else { st = '待命'; cls = 'idle'; }
-      let doing;
-      if (mine.length) {
-        doing = mine.map(t => esc(t.title) + ' <span class="sub">(' + esc(t.id) + ' · 截止 ' + esc(fmtDay(t.due)) + ')</span>').join('<br>');
-      } else if (last && last.task_id) {
-        doing = '<span class="sub">已完成 ' + esc(last.task_id) + '，暂无新任务</span>';
-      } else {
-        doing = '<span class="sub">暂无在办任务</span>';
-      }
-      const lastText = last
-        ? '<span class="sub">' + esc(fmtTime(last.created_at)) + (last.ok ? '' : ' · 失败') + '</span>'
-        : '<span class="sub">无记录</span>';
-      return '<tr><td><span class="role">' + esc(a.name) + '</span></td>' +
-        '<td>' + tag(st, cls) + '</td><td>' + doing + '</td><td>' + lastText + '</td></tr>';
-    });
-    $('#agentTable tbody').innerHTML = rows.join('');
-    $('#agentCount').textContent = (s.agents || []).length + ' 个角色 · ' + running.size + ' 个运行中';
+  function counts(list) {
+    var out = {};
+    list.forEach(function (x) { var k = key(x.status) || "unknown"; out[k] = (out[k] || 0) + 1; });
+    return out;
   }
 
-  // ===== 定时任务 =====
-  function renderJobs(b) {
-    const jobs = ((b.jobs || {}).jobs) || [];
-    const rows = jobs.map(x => {
-      let st, cls;
-      if (x.running) { st = '运行中'; cls = 'run'; }
-      else if (x.ok === true) { st = '正常'; cls = 'on'; }
-      else if (x.ok === false) { st = '异常'; cls = 'bad'; }
-      else { st = '无记录'; cls = 'idle'; }
-      const detail = x.last_detail || '—';
-      const note = x.note
-        ? ' <span class="tag ' + (x.ok === false ? 'bad' : 'pin') + '">' + esc(x.note) + '</span>'
-        : '';
-      const label = x.name + ' · ' + x.what;
-      return '<tr><td class="clip" title="' + esc(label) + '">' +
-        '<span class="role">' + esc(x.name) + '</span></td>' +
-        '<td class="clip" title="' + esc(x.kind + ' · ' + x.what) + '">' +
-        esc(x.what) + ' <span class="sub">' + esc(x.kind) + '</span></td>' +
-        '<td>' + esc(x.schedule) + '</td>' +
-        '<td class="sub">' + esc(x.last_at ? fmtTime(x.last_at) : '—') + '</td>' +
-        '<td class="clip" title="' + esc(detail) + '">' + esc(detail) + note + '</td>' +
-        '<td class="sub">' + esc(x.next_at ? fmtTime(x.next_at) : '—') + '</td>' +
-        '<td>' + tag(st, cls) + '</td></tr>';
-    });
-    $('#jobTable tbody').innerHTML = rows.join('');
-    $('#jobEmpty').classList.toggle('hide', rows.length > 0);
-    $('#jobTable').classList.toggle('hide', rows.length === 0);
-    const bad = jobs.filter(x => x.ok === false).length;
-    const none = jobs.filter(x => x.ok === null).length;
-    $('#jobSum').textContent = jobs.length + ' 项 · ' +
-      (bad ? bad + ' 项异常' : '全部正常') + (none ? ' · ' + none + ' 项无记录' : '');
-  }
-
-  // ===== 任务 =====
-  function renderTasks(b) {
-    const s = b.state;
-    const open = (s.tasks || []).filter(t =>
-      t.status !== 'closed' && t.db_status !== 'done' && t.db_status !== 'canceled');
-    const pendingDepTasks = new Set();
-    (b.deps || []).forEach(d => {
-      (String(d.impact || '').match(/T-\d{4}/g) || []).forEach(x => pendingDepTasks.add(x));
-    });
-    const rows = open.map(t => {
-      const blocked = t.db_status === 'blocked' || !!t.blocked_reason || (t.overdue_days || 0) > 0;
-      const needsYou = !!t.blocked_reason || pendingDepTasks.has(t.id);
-      const st = needsYou ? tag('等你定', 'pin') : (blocked ? tag('卡住', 'blk') : tag('进行中', 'run'));
-      let sub = '';
-      if (t.blocked_reason) sub = '<div class="sub">卡点：' + esc(t.blocked_reason) + '</div>';
-      return '<tr><td class="sub">' + esc(t.id) + '</td><td>' + esc(t.title) + sub + '</td>' +
-        '<td>' + esc(t.owner) + '</td><td>' + esc(fmtDay(t.due)) +
-        ((t.overdue_days || 0) > 0 ? ' <span class="sub">逾期' + t.overdue_days + '天</span>' : '') +
-        '</td><td>' + st + '</td></tr>';
-    });
-    $('#taskTable tbody').innerHTML = rows.join('');
-    $('#taskEmpty').classList.toggle('hide', rows.length > 0);
-    $('#taskTable').classList.toggle('hide', rows.length === 0);
-    $('#openCount').textContent = open.length + ' 条 · 共 ' + (s.metrics || {}).total + ' 条';
-  }
-
-  // ===== 健康 =====
-  function renderHealth(b) {
-    const h = b.health || {};
-    const svc = h.services || {};
-    const v = b.version || {};
-    const items = [];
-    const label = { listener: '监听器', console: '看板服务', tick: '定时器', selfcheck: '自检任务' };
-    Object.keys(label).forEach(k => {
-      const s = svc[k] || {};
-      const alive = k === 'console' ? s.ok : s.ok;
-      let desc = '';
-      if (k === 'console') desc = s.running ? ('pid ' + s.pid + ' · :' + (s.port || '')) : '未运行';
-      else if (k === 'tick') desc = s.loaded ? ('最近 ' + (s.last_run_min == null ? '—' : s.last_run_min + ' 分钟前')) : '未加载';
-      else desc = s.running ? ('pid ' + s.pid) : (s.loaded ? '已加载' : '未加载');
-      if (!alive && s.reason) desc = s.reason;
-      items.push({ n: label[k], ok: !!alive, d: desc });
-    });
-    const cred = h.credential || {};
-    items.push({ n: '飞书凭据', ok: !!cred.ok, d: cred.message || '' });
-    items.push({ n: '死信', ok: !(h.dead_letters > 0), d: (h.dead_letters || 0) + ' 条未处理' });
-    items.push({ n: '24h 失败运行', ok: !(h.failed_runs_24h > 0), d: (h.failed_runs_24h || 0) + ' 次' });
-    items.push({ n: '待确认依赖', ok: true,
-      warn: (h.pending_dependencies || 0) > 0, d: (h.pending_dependencies || 0) + ' 项' });
-
-    $('#healthList').innerHTML = items.map(i =>
-      '<div class="hrow"><span class="hdot ' + (i.ok ? (i.warn ? 'warn' : 'ok') : 'bad') + '"></span>' +
-      '<span class="name">' + esc(i.n) + '</span><span class="desc">' + esc(i.d) + '</span></div>').join('');
-    const bad = items.filter(i => !i.ok).length;
-    const warn = items.filter(i => i.ok && i.warn).length;
-    $('#healthSum').textContent = bad ? (bad + ' 项异常')
-      : (warn ? (warn + ' 项待确认，其余正常') : '全部正常');
-
-    const t = h.tokens || {};
-    $('#cfgList').innerHTML = [
-      ['环境', (v.env || '—').toUpperCase()],
-      ['数据库', v.db || '—'],
-      ['控制台端口', v.port || '—'],
-      ['看板端口', (v.board_port || '—') + '（仅 127.0.0.1）'],
-      ['模型', (b.state.llm || {}).model || '—'],
-      ['商务闸门', v.gate_mode || '—'],
-      ['日 token 预算', (t.budget || 0).toLocaleString()],
-      ['圆桌 token 预算', (v.roundtable_tokens || 0).toLocaleString()]
-    ].map(r => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('');
-  }
-
-  // ===== 需要拍板 =====
-  function renderDecide(b) {
-    const deps = b.deps || [];
-    const blocked = (b.state.tasks || []).filter(t =>
-      t.status !== 'closed' && t.blocked_reason);
-    const items = [];
-    deps.forEach(d => {
-      items.push('<li class="one" title="' + esc(d.need + '｜' + (d.impact || d.note || '')) + '">' +
-        '<span class="k">待确认</span>' + esc(d.need) +
-        '<span class="sub"> · ' + esc(d.assignee || '') + ' · 截止 ' + esc(d.due_at) + '</span></li>');
-    });
-    blocked.forEach(t => {
-      items.push('<li class="one" title="' + esc(t.blocked_reason) + '">' +
-        '<span class="k">卡住</span>' + esc(t.id) + ' ' + esc(t.title) +
-        '<span class="sub"> · ' + esc(t.owner) + ' · ' + esc(t.blocked_reason) + '</span></li>');
-    });
-    $('#decideList').innerHTML = items.join('');
-    $('#decideEmpty').classList.toggle('hide', items.length > 0);
-    $('#decideList').classList.toggle('hide', items.length === 0);
-    $('#decideCount').textContent = items.length ? items.length + ' 件' : '';
-  }
-
-  // ===== 今日进展 =====
-  function renderToday(b) {
-    const today = b.state.today;
-    const closed = b.closed_today || [];
-    const runs = b.runs_today || [];
-    const evs = ((b.state.events || {}).list || []).filter(e => String(e.at || '').slice(0, 10) === today);
-    const items = [];
-    closed.forEach(t => items.push({ at: t.closed_at, html:
-      '<span class="k">' + esc(fmtTime(t.closed_at)) + '</span>关闭任务 ' +
-      esc(t.id) + ' ' + esc(t.title) + ' <span class="sub">· ' + esc(t.owner) + '</span>' }));
-    runs.forEach(r => items.push({ at: r.created_at, html:
-      '<span class="k">' + esc(fmtTime(r.created_at)) + '</span>' + esc(r.role) +
-      (r.task_id ? ' 处理 ' + esc(r.task_id) : ' 运行') +
-      ' <span class="sub">· ' + (r.ok ? '成功' : '失败') + ' · ' +
-      ((r.tokens_in || 0) + (r.tokens_out || 0)).toLocaleString() + ' tokens</span>' }));
-    evs.forEach(e => items.push({ at: e.at, html:
-      '<span class="k">' + esc(fmtTime(e.at)) + '</span>事件 ' + esc(e.type) + '：' + esc(e.text) }));
-    items.sort((a, c) => String(c.at).localeCompare(String(a.at)));
-    const shown = items.slice(0, 4);
-    $('#todayList').innerHTML = shown.map(i => '<li class="one">' + i.html + '</li>').join('') +
-      (items.length > shown.length
-        ? '<li class="sub">另有 ' + (items.length - shown.length) + ' 条（共 关闭 ' +
-          closed.length + ' · 运行 ' + runs.length + ' · 事件 ' + evs.length + '）</li>'
-        : '');
-    $('#todayEmpty').classList.toggle('hide', items.length > 0);
-    $('#todayList').classList.toggle('hide', items.length === 0);
-    $('#todayCount').textContent = '关闭 ' + closed.length + ' · 运行 ' + runs.length + ' · 事件 ' + evs.length;
-  }
-
-  // ===== 异常 =====
-  function renderErrors(b) {
-    const rows = [];
-    (b.failed_runs || []).forEach(r => {
-      rows.push({ at: r.created_at, src: r.role + ' 运行', text: (r.error || '未记录原因') + (r.task_id ? '（' + r.task_id + '）' : '') });
-    });
-    (b.dead_letters || []).forEach(d => {
-      rows.push({ at: d.created_at, src: '死信 ' + (d.role || ''), text: d.error + '（尝试 ' + d.attempts + ' 次）' });
-    });
-    (b.failed_events || []).forEach(e => {
-      rows.push({ at: e.at, src: '事件 ' + e.type, text: e.text });
-    });
-    rows.sort((a, c) => String(c.at).localeCompare(String(a.at)));
-    const shown = rows.slice(0, 4);
-    $('#errTable tbody').innerHTML = shown.map(r =>
-      '<tr><td class="sub">' + esc(fmtTime(r.at)) + '</td><td>' + esc(r.src) + '</td>' +
-      '<td class="clip" title="' + esc(r.text) + '">' + esc(r.text) + '</td></tr>').join('') +
-      (rows.length > shown.length
-        ? '<tr><td colspan="3" class="sub">另有 ' + (rows.length - shown.length) +
-          ' 条，完整清单见 agency.py alerts</td></tr>' : '');
-    $('#errEmpty').classList.toggle('hide', rows.length > 0);
-    $('#errTable').classList.toggle('hide', rows.length === 0);
-    $('#errCount').textContent = rows.length ? rows.length + ' 条' : '无';
-  }
-
-  function render() {
-    const b = D;
-    if (!b) return;
-    const env = ((b.version || {}).env || '').toLowerCase();
-    const badge = $('#envBadge');
-    badge.textContent = env === 'prod' ? '正式环境 PROD' : '开发环境 DEV';
-    badge.className = 'badge ' + (env === 'prod' ? 'prod' : 'dev');
-    $('#genAt').textContent = '数据时间 ' + fmtTime((b.state || {}).generated_at);
-    renderKpis(b.state || {}, b);
-    renderAgents(b);
-    renderJobs(b);
-    renderTasks(b);
-    renderHealth(b);
-    renderDecide(b);
-    renderToday(b);
-    renderErrors(b);
-  }
-
-  async function load() {
-    try {
-      const res = await fetch('/api/board', {
-        headers: TOKEN ? { 'X-Console-Token': TOKEN } : {}
-      });
-      const body = await res.json();
-      if (!res.ok || body.ok === false) throw new Error(body.error || ('请求失败 ' + res.status));
-      D = body.data;
-      ok();
-      render();
-    } catch (e) {
-      fail('连不上看板服务或没有权限：' + e.message);
+  function renderDist(kind, list) {
+    var el = $(kind + "Dist"), empty = $(kind + "DistEmpty"), sum = $(kind + "Sum");
+    var c = counts(list);
+    var keys = Object.keys(c).sort(function (a, b) { return c[b] - c[a]; });
+    if (!keys.length) {
+      el.innerHTML = ""; empty.classList.remove("hide");
+      sum.textContent = "0 项"; return;
     }
+    empty.classList.add("hide");
+    var max = Math.max.apply(null, keys.map(function (k) { return c[k]; }));
+    el.innerHTML = keys.map(function (k) {
+      var pct = Math.max(4, Math.round(c[k] / max * 100));
+      var color = tone(k) === "bad" ? "#cf8b83" : tone(k) === "ok" ? "#7dbb98" : tone(k) === "warn" ? "#d8b06a" : "#7c9cc0";
+      return '<li><span class="lbl">' + esc(label(k)) + '</span>' +
+        '<span class="bar"><i style="width:' + pct + '%;background:' + color + '"></i></span>' +
+        '<span class="num">' + c[k] + '</span></li>';
+    }).join("");
+    sum.textContent = list.length + " 项";
   }
 
-  if (!TOKEN) {
-    fail('地址缺少访问令牌，请使用带 ?token=… 的完整地址打开本页。');
-  } else {
-    load();
-    setInterval(load, 30000);
+  function renderHealth(d) {
+    var body = $("healthBody");
+    var rows = [];
+    var ready = d.ready;
+    if (ready && ready.checks) {
+      Object.keys(ready.checks).forEach(function (k) {
+        var v = ready.checks[k];
+        rows.push('<div class="health-row"><b>' + esc(checkLabel(k)) + '</b>' +
+          (v === "ok" ? tag("正常", "ok") : tag(String(v), "bad")) + '</div>');
+      });
+    }
+    rows.push('<div class="health-row"><b>平台 API</b>' + (d.caps ? tag("正常", "ok") : tag("异常", "bad")) + '</div>');
+    rows.push('<div class="health-row"><b>知识库接口</b>' + (d.docsOk ? tag("正常", "ok") : tag("异常", "bad")) + '</div>');
+    rows.push('<div class="health-row"><b>批次接口</b>' + (d.batchesOk ? tag("正常", "ok") : tag("异常", "bad")) + '</div>');
+    body.innerHTML = rows.join("");
   }
+
+  function renderTasks(d) {
+    var rows = d.tasks.slice(0, 12);
+    $("taskCount").textContent = d.tasks.length + " 条";
+    $("taskEmpty").classList.toggle("hide", rows.length > 0);
+    $("taskRows").innerHTML = rows.map(function (t) {
+      return "<tr><td><b>#" + esc(shortId(t.task_id)) + "</b></td><td>" + esc(d.agentNames[t.agent_id] || t.agent_id || "—") +
+        "</td><td>" + chip(t.status) + "</td><td>" + esc(t.run_id ? "#" + shortId(t.run_id) : "—") +
+        "</td><td>" + esc(fmtTime(t.updated_at || t.created_at)) + "</td>" +
+        '<td><a href="/app" style="color:#1463a8;text-decoration:none">查看</a></td></tr>';
+    }).join("");
+  }
+
+  function renderSessions(d) {
+    var rows = d.sessions.slice(0, 8);
+    $("sessionCount").textContent = d.sessions.length + " 条";
+    $("sessionEmpty").classList.toggle("hide", rows.length > 0);
+    $("sessionRows").innerHTML = rows.map(function (s) {
+      return "<tr><td>" + esc(s.title || "未命名会话") + "</td><td>" + chip(s.status) +
+        "</td><td>" + esc(fmtTime(s.updated_at || s.created_at)) + "</td></tr>";
+    }).join("");
+  }
+
+  function renderBatches(d) {
+    var rows = d.batches.slice(0, 8);
+    $("batchCount").textContent = d.batches.length + " 个";
+    $("batchEmpty").classList.toggle("hide", rows.length > 0);
+    $("batchRows").innerHTML = rows.map(function (b) {
+      var done = (b.succeeded || 0) + (b.failed || 0);
+      var total = b.total || b.task_count || (b.row_count || 0);
+      return "<tr><td><b>" + esc(shortId(b.batch_id)) + "</b></td><td>" + esc(b.template_id || "—") +
+        "</td><td>" + chip(b.status) + "</td><td>" + esc(done + " / " + (total || "—")) + "</td></tr>";
+    }).join("");
+  }
+
+  function renderDocs(d) {
+    var rows = d.docs.slice(0, 8);
+    $("kbCount").textContent = d.docs.length + " 篇 · " + d.collections.length + " 个集合";
+    $("docEmpty").classList.toggle("hide", rows.length > 0);
+    $("docRows").innerHTML = rows.map(function (x) {
+      return "<tr><td>" + esc(x.title || shortId(x.document_id)) + "</td><td>" + esc(scopeLabel(x.scope)) +
+        "</td><td>v" + esc(x.version || 1) + "</td><td>" + esc(fmtTime(x.created_at)) + "</td></tr>";
+    }).join("");
+  }
+
+  // ---------- 定时任务 / 飞书通知 ----------
+  var RESULT = {succeeded:{t:"成功",c:"ok"}, failed:{t:"失败",c:"bad"}, skipped:{t:"已跳过",c:"warn"}};
+  var fmtInterval = function (seconds) {
+    var s = Number(seconds) || 0;
+    if (s >= 86400) { var d = s / 86400; return (d % 1 ? d.toFixed(1) : d) + " 天"; }
+    if (s >= 3600) { var h = s / 3600; return (h % 1 ? h.toFixed(1) : h) + " 小时"; }
+    return Math.max(1, Math.round(s / 60)) + " 分钟";
+  };
+  var csrf = function () {
+    var c = document.cookie.split("; ").filter(function (x) { return x.indexOf("__Host-platform_csrf=") === 0; })[0];
+    return c ? decodeURIComponent(c.split("=").slice(1).join("=")) : "";
+  };
+  function mutate(method, path, body) {
+    var headers = {Accept:"application/json", "Content-Type":"application/json"};
+    var token = csrf();
+    if (token) headers["X-CSRF-Token"] = token;
+    var options = {method:method, credentials:"same-origin", headers:headers};
+    if (body) options.body = JSON.stringify(body);
+    return fetch(path, options).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (payload) {
+        if (!r.ok) throw new Error(payload.detail || (r.status + " " + r.statusText));
+        return payload;
+      });
+    });
+  }
+
+  function renderScheduler(data) {
+    var list = items(data);
+    var feishu = data && data.feishu;
+    var enabled = list.filter(function (j) { return j.enabled; }).length;
+    $("schedCount").textContent = list.length ? enabled + " / " + list.length + " 已启用" : "";
+    $("feishuState").innerHTML = feishu && feishu.configured
+      ? tag("飞书通知已配置", "ok") + ' <span style="color:var(--muted);font-size:11.5px">' +
+        esc(feishu.receiver_masked || "") + "</span>"
+      : tag("飞书通知未配置", "warn");
+    $("schedEmpty").classList.toggle("hide", list.length > 0);
+    $("schedRows").innerHTML = list.map(function (j) {
+      var result = RESULT[key(j.last_result)];
+      var resultHtml = j.last_result
+        ? tag(result ? result.t : j.last_result, result ? result.c : "")
+        : '<span style="color:var(--muted)">—</span>';
+      if (j.last_message) {
+        resultHtml += ' <span style="color:var(--muted);font-size:11.5px">' + esc(j.last_message) + "</span>";
+      }
+      var stateTag = j.status === "running" ? tag("执行中", "info")
+        : j.enabled ? tag("已启用", "ok") : tag("已停用", "");
+      var job = esc(j.job_id);
+      return "<tr><td><b>" + esc(j.name) + '</b><div style="color:var(--muted);font-size:11px">' +
+        esc(j.job_id) + "</div></td><td>" + esc(j.description) + "</td><td>" +
+        esc(fmtInterval(j.interval_seconds)) + "</td><td>" + stateTag + "</td><td>" +
+        esc(fmtTime(j.last_run_at)) + "</td><td>" + resultHtml + "</td><td>" +
+        esc(fmtTime(j.next_run_at)) + '</td><td><button type="button" data-action="run" data-job="' +
+        job + '">立即执行</button> <button type="button" data-action="toggle" data-job="' + job +
+        '" data-enabled="' + (j.enabled ? "0" : "1") + '">' + (j.enabled ? "停用" : "启用") +
+        "</button></td></tr>";
+    }).join("");
+  }
+
+  function bindSchedulerActions() {
+    $("schedRows").addEventListener("click", function (event) {
+      var button = event.target.closest("button[data-action]");
+      if (!button || button.disabled) return;
+      var job = button.getAttribute("data-job");
+      var path = API + "/scheduler/jobs/" + encodeURIComponent(job);
+      var pending = button.getAttribute("data-action") === "run"
+        ? mutate("POST", path + "/run")
+        : mutate("PATCH", path, {enabled: button.getAttribute("data-enabled") === "1"});
+      button.disabled = true;
+      pending.then(function () { load(); }).catch(function (error) {
+        setBanner("定时任务操作失败：" + error.message);
+        button.disabled = false;
+      });
+    });
+  }
+
+  var EVENT_LABELS = {
+    "task.failed":"任务失败", "run.failed":"运行失败",
+    "approval.pending":"待审批", "daily":"每日简报"
+  };
+
+  function renderDeadLetters(data) {
+    var list = items(data);
+    $("dlCount").textContent = list.length ? list.length + " 条待处理" : "";
+    $("dlEmpty").classList.toggle("hide", list.length > 0);
+    $("dlRows").innerHTML = list.map(function (d) {
+      var reason = d.reason || "—";
+      var shown = reason.length > 80 ? reason.slice(0, 80) + "…" : reason;
+      var run = esc(d.run_id);
+      return "<tr><td title=\"" + esc(d.run_id) + "\">" + esc(shortId(d.run_id)) + "</td><td>" +
+        esc(d.agent_id || "—") + '</td><td title="' + esc(reason) + '">' + esc(shown) +
+        "</td><td>" + esc((d.attempt_count || 0) + "/" + (d.max_attempts || 0)) + "</td><td>" +
+        esc(fmtTime(d.created_at)) + '</td><td><button type="button" data-action="dlq-retry" data-run="' +
+        run + '">重放</button> <button type="button" data-action="dlq-resolve" data-run="' + run +
+        '">标记解决</button></td></tr>';
+    }).join("");
+  }
+
+  function renderSubscriptions(data) {
+    var list = items(data);
+    var enabled = list.filter(function (s) { return s.enabled; }).length;
+    $("subState").innerHTML = tag(enabled + " / " + list.length + " 订阅启用", list.length ? "ok" : "warn");
+    $("subEmpty").classList.toggle("hide", list.length > 0);
+    $("subRows").innerHTML = list.map(function (s) {
+      var id = esc(s.subscription_id);
+      return "<tr><td>" + esc(EVENT_LABELS[s.event_type] || s.event_type) + "</td><td>" +
+        esc(s.target || "—") + "</td><td>" +
+        (s.enabled ? tag("已启用", "ok") : tag("已停用", "")) +
+        '</td><td><button type="button" data-action="sub-toggle" data-sub="' + id +
+        '" data-enabled="' + (s.enabled ? "0" : "1") + '">' + (s.enabled ? "停用" : "启用") +
+        '</button> <button type="button" data-action="sub-delete" data-sub="' + id +
+        '">删除</button></td></tr>';
+    }).join("");
+  }
+
+  function bindFailureActions() {
+    $("dlRows").addEventListener("click", function (event) {
+      var button = event.target.closest("button[data-action]");
+      if (!button || button.disabled) return;
+      var runId = button.getAttribute("data-run");
+      var retry = button.getAttribute("data-action") === "dlq-retry";
+      var path = API + "/workbench/dead-letters/" + encodeURIComponent(runId) +
+        (retry ? "/retry" : "/resolve");
+      var body = retry ? {idempotency_key: "ui-dlq-" + runId + "-" + Date.now()} : {
+        idempotency_key: "ui-resolve-" + runId + "-" + Date.now()
+      };
+      button.disabled = true;
+      mutate("POST", path, body).then(function () { load(); }).catch(function (error) {
+        setBanner("死信操作失败：" + error.message);
+        button.disabled = false;
+      });
+    });
+    $("subRows").addEventListener("click", function (event) {
+      var button = event.target.closest("button[data-action]");
+      if (!button || button.disabled) return;
+      var id = button.getAttribute("data-sub");
+      var request = button.getAttribute("data-action") === "sub-delete"
+        ? mutate("DELETE", API + "/scheduler/subscriptions/" + encodeURIComponent(id))
+        : mutate("PATCH", API + "/scheduler/subscriptions/" + encodeURIComponent(id),
+            {enabled: button.getAttribute("data-enabled") === "1"});
+      button.disabled = true;
+      request.then(function () { load(); }).catch(function (error) {
+        setBanner("订阅操作失败：" + error.message);
+        button.disabled = false;
+      });
+    });
+  }
+
+  function renderCaps(d) {
+    var caps = d.caps && d.caps.features ? d.caps.features : {};
+    var keys = Object.keys(caps);
+    var on = keys.filter(function (k) { return caps[k]; }).length;
+    $("capCount").textContent = on + " / " + keys.length + " 已启用";
+    $("caps").innerHTML = keys.length
+      ? keys.map(function (k) {
+          return '<span class="chip' + (caps[k] ? "" : " off") + '">' + esc(FEATURES[k] || k) + (caps[k] ? "" : " · 未启用") + "</span>";
+        }).join("")
+      : '<span class="empty">能力开关不可用</span>';
+  }
+
+  function renderIdentity(me) {
+    if (!me) { $("identity").textContent = "未登录"; return; }
+    $("identity").textContent = me.display_name || me.email || me.user_id || "已登录";
+  }
+
+  function load() {
+    var agentNames = {};
+    Promise.all([
+      safe("/health/ready"),
+      safe(API + "/workbench/capabilities"),
+      safe(API + "/registry/agent?limit=200"),
+      safe(API + "/sessions?limit=200"),
+      safe(API + "/workbench/tasks?limit=200"),
+      safe(API + "/workbench/batches?limit=200"),
+      safe(API + "/approvals"),
+      safe(API + "/knowledge/documents?limit=200"),
+      safe(API + "/knowledge/collections?limit=200"),
+      safe("/auth/me"),
+      safe(API + "/scheduler/jobs"),
+      safe(API + "/workbench/dead-letters?limit=50"),
+      safe(API + "/scheduler/subscriptions")
+    ]).then(function (res) {
+      var d = {
+        ready: res[0], caps: res[1], agents: items(res[2]), sessions: items(res[3]),
+        tasks: items(res[4]), batches: items(res[5]), approvals: items(res[6]),
+        docs: items(res[7]), collections: items(res[8]), agentNames: agentNames,
+        docsOk: res[7] !== null, batchesOk: res[5] !== null
+      };
+      d.agents.forEach(function (a) {
+        agentNames[a.item_id] = (a.definition && a.definition.name) || a.item_id;
+      });
+      renderIdentity(res[9]);
+      var coreUp = !!(res[1] || res[3] || res[4]);
+      if (!coreUp) {
+        setBanner("无法连接平台 API，请确认 com.fde.platform 服务已启动。");
+        $("liveDot").className = "dot bad";
+        $("liveText").textContent = "连接失败";
+      } else {
+        setBanner("");
+        $("liveDot").className = "dot ok";
+        $("liveText").textContent = "数据在线";
+      }
+      renderKpis(d);
+      renderDist("task", d.tasks);
+      renderDist("batch", d.batches);
+      renderHealth(d);
+      renderTasks(d);
+      renderSessions(d);
+      renderBatches(d);
+      renderDocs(d);
+      renderScheduler(res[10]);
+      renderDeadLetters(res[11]);
+      renderSubscriptions(res[12]);
+      renderCaps(d);
+      $("updatedAt").textContent = fmtTime(new Date().toISOString());
+    }).catch(function (e) {
+      setBanner("看板加载失败：" + e.message);
+      $("liveDot").className = "dot bad";
+      $("liveText").textContent = "连接失败";
+    });
+  }
+
+  $("refreshBtn").addEventListener("click", load);
+  bindSchedulerActions();
+  bindFailureActions();
+  load();
+  setInterval(load, 30000);
 })();
 </script>
 </body>
