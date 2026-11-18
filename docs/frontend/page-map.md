@@ -191,3 +191,59 @@ Workflow：`/admin/workflows` → 草稿编辑 → 节点/边 Schema 校验 → 
 - [ ] 与 #743–#752 负责人确认职责边界和路由。
 - [ ] 用首页/3D 两张指定素材完成视觉对照。
 - [ ] 页面地图、路由契约、字段字典和 API 映射评审通过后，才可标记 Gate 0 设计冻结。
+
+
+## 10. 代码现状核对（2026-11-18，基于 main 当前代码）
+
+> 本节是已检查代码的事实基线。它优先于上文拟定的目标态路由；目标态路由不得被误读为当前已实现。
+
+### 10.1 当前前端入口
+
+| 类型 | 真实入口/文件 | 当前状态 |
+|---|---|---|
+| 新平台静态工作台 | `/app`、`/app/` → `agent_platform/web/static/index.html` + `app.js` + `style.css` | 当前主 UI；原生 HTML/CSS/JavaScript 单页视图，不是 React/TypeScript/Vite 工程 |
+| 旧版平台 UI | `platform-ui/index.html` | 独立旧页面，仍保留 Agent、Task、审批、知识、记忆、Blackboard、模型模板、工具/Skill、会话、文件、运营和评测等入口 |
+| 图谱可视化 | `/graph-view` | 独立只读页面（是否可用取决于静态资产） |
+| 静态资源 | `/app/assets/{name}` | 由后端白名单提供 app.js/style.css 等 |
+| 旧控制台回退 | `/app?legacy=true` → `/office` | 旧版回退入口；不等于已建成新的 3D Office SPA |
+| 目标态页面路由 | 本文第 2 节 `/workspace/*`、`/operations/*`、`/admin/*` | 全部是拟定路由，当前代码未见 React Router/路由注册实现 |
+
+当前 `/app` 的视图由 `data-view` 和 JavaScript 状态切换，主要视图为 overview、board、tasks、sessions、replay、batch、artifacts、approvals、registry、prompt-lab、knowledge-graph、governance、observability。Task/Session/Approval 详情主要由内存状态渲染，尚不是可复制、刷新恢复的独立 URL 深链。
+
+仓库根目录及 `frontend/`、`web/`、`agent_platform/web/` 未发现 `package.json`；已检查的 CI workflow 没有前端 npm install/build/typecheck/E2E 步骤。因此 #743 所列 React+TS+Vite 是待建设的独立新前端，不是当前已有工程栈。
+
+### 10.2 当前 API 组合事实
+
+`agent_platform/api/app.py` 通过 `create_platform_app` 组合 API；多项路由按 service/authorizer 是否注入而条件挂载。当前可见/已核对的业务路由包括：
+- `/auth/login`、`/auth/logout`、`/auth/me`
+- `/api/platform/v1/workbench/capabilities`、`/workbench/tasks`、批量任务
+- `/api/platform/v1/registry/{kind}` 与版本、发布、回滚、停用、active
+- `/api/platform/v1/approvals`
+- `/api/platform/v1/runs/{run_id}`、事件、stream、cancel/pause/resume/interventions（依配置）
+- `/api/platform/v1/blackboard`
+- `/api/platform/v1/knowledge/*`、`/memories/*`
+- `/api/platform/v1/sessions/*`、`/files/*`
+- `/api/platform/v1/observability/*`、`/quotas/*`、`/audit/*`（依配置）
+
+这些是后端现有端点家族，不代表每个部署都已挂载；前端应以 capabilities/bootstrap 和 OpenAPI 实际返回为准。
+
+### 10.3 已发现的关键缺口/冲突
+
+| ID | 代码事实 | 对页面地图/Issue 的影响 | 严重度 |
+|---|---|---|---|
+| CODE-AUTH-001 | `create_platform_app` 要求 identity、identity_repository；始终挂载 IdentityASGIMiddleware，保护 `/api`、`/auth`。未认证访问受保护路径返回 401。local_principal 仅对配置的本地客户端地址回退，不是实例级 no-auth。 | #742/#743/#752 要求的 auth.enabled=false 零账号/零认证/零隔离模式尚未在当前组合层实现；需后端先补可插拔 auth 策略及 REST/SSE/文件一致测试。 | P0 |
+| CODE-API-001 | `docs/api-contract.md` 将平台 API 定义为身份中间件保护；当前测试明确断言匿名知识 API 返回 401。 | API 总契约与 #742 第 14 节新决策冲突，必须修订文档和测试矩阵；不能只在 UI 侧绕过。 | P0 |
+| CODE-OFFICE-001 | `agent_platform/api/office.py` 有 `/api/platform/v1/office/state`，但当前 `agent_platform/api/app.py` 未导入/注册 `create_office_router`；该 handler 本身也要求 Principal。 | #748 不能把该模块视为当前已接通的 Office API；新页面地图的 `/workspace/office` 是新前端页面路由，不是该 API。 | P1 |
+| CODE-MODEL-001 | Registry 的 kind 包含 `model_provider`、`model_template`；通用版本 API 支持列表/草稿/发布/回滚/停用。Resolver 当前只支持 `openai-compatible`。 | 模型供应商/模板的基础注册能力存在；专用连通性测试、模型发现、独立路由策略 API/UI 未在当前检查的路由组合中找到，仍属缺口/待核实。 | P1 |
+| CODE-GLOBAL-001 | 当前 app composition 的已检查路由清单未见全局搜索、通知中心专用 API；现有 UI 导航也未见相应入口。 | #751 是新增建设范围，不应按现有能力接线；需明确搜索索引/通知持久化与事件投递后端依赖。 | P1 |
+| CODE-ORG-001 | 当前新平台静态 UI 及已检查的 app route composition 未见组织/部门/项目成员和 RBAC 管理 UI/API 完整入口；identity API 目前看到 login/logout/me。 | #749 的组织/RBAC 管理是需补齐/核验的产品功能，不能由登录 API 或 identity service 的存在推定完成。 | P1 |
+| CODE-ROUTE-001 | 当前工作台以 `/app` + 内部 view 状态导航；详情通过 JS 状态渲染。 | 本文 `/workspace/*`、`/operations/*`、`/admin/*` 均为目标态路由，需要新增路由器、深链、刷新和兼容重定向；不能宣称已存在。 | P1 |
+| CODE-FE-001 | 当前主 UI 是静态 HTML/CSS/JS，旧 UI 为 `platform-ui/index.html`；未发现前端 package.json 或前端 CI build。 | #743 必须包含独立工程创建、依赖锁定、构建/类型检查/组件测试/浏览器 E2E 与部署，而非只改造现有静态 UI。 | P1 |
+
+### 10.4 页面地图实施规则
+
+- 先保留“当前代码入口/API”与“目标态页面路由”两套列，不得把拟定路径混成已实现路由。
+- 新前端首期路由可采用本页目标态命名，但必须提供从 `/app` 的明确入口策略和旧入口回退/重定向矩阵。
+- /office 的旧控制台回退与未来 /workspace/office 3D 场景必须区分；先确认旧 /office 的实际路由/静态资源，再接入新场景。
+- API 端点必须按“源码已注册、配置条件挂载、模块存在但未注册、完全缺失”四态记录。
+- 组织/RBAC、搜索、通知、模型测试/发现/路由策略、Office 布局 CRUD/状态 API 都必须有独立 API 缺口条目和责任 Issue。
