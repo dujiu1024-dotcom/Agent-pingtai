@@ -21,6 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { Dashboard } from '@/components/OperationsDashboard'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -318,58 +319,6 @@ function PageView({
       <EmptyState
         title="业务页面待模块接入"
         description={`路由与深链已注册。此页面由 ${route.owner} 负责业务实现；本任务不伪造尚未确认的 API、实体数据或操作。`}
-      />
-    </section>
-  )
-}
-
-function Dashboard() {
-  const shortcuts = [
-    {
-      title: '任务指挥中心',
-      description: '任务队列与执行状态',
-      to: '/workspace/tasks',
-    },
-    {
-      title: 'Agent 协作中心',
-      description: 'Agent 与 Workflow 运行态',
-      to: '/workspace/collaboration',
-    },
-    {
-      title: '成本与质量',
-      description: '用量、质量与评测聚合',
-      to: '/workspace/quality-cost',
-    },
-    {
-      title: '3D 数字办公室',
-      description: '沉浸式办公室入口',
-      to: '/workspace/office',
-    },
-  ]
-  return (
-    <section className="page-content dashboard-page">
-      <div className="dashboard-hero">
-        <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
-        <h1>运营驾驶舱</h1>
-        <p>
-          统一进入工作空间、智能体运营与平台管理。业务指标将在对应模块 API
-          接入后展示。
-        </p>
-      </div>
-      <div className="shortcut-grid">
-        {shortcuts.map((item) => (
-          <Link className="shortcut-card" to={item.to} key={item.to}>
-            <strong>{item.title}</strong>
-            <span>{item.description}</span>
-            <span className="shortcut-arrow" aria-hidden="true">
-              →
-            </span>
-          </Link>
-        ))}
-      </div>
-      <EmptyState
-        title="驾驶舱数据尚未接入"
-        description="当前只提供稳定导航和页面框架，不使用静态假指标替代服务端数据。"
       />
     </section>
   )
