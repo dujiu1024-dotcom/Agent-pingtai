@@ -96,6 +96,11 @@ export class ApiClient {
     this.credentials = options.credentials ?? 'same-origin'
   }
 
+  /** Clear transport validators and their 304 fallback representations (e.g. on session change). */
+  clearEtagCache(): void {
+    this.etagCache.clear()
+  }
+
   async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
     const {
       body,
@@ -176,13 +181,22 @@ export class ApiClient {
         throw error
       }
 
+      if (method !== 'GET') this.clearEtagCache()
+
       if (method === 'GET' && etag) {
         const responseEtag = response.headers.get('etag')
         if (responseEtag) {
+          this.etagCache.delete(cacheKey)
           this.etagCache.set(cacheKey, {
             etag: responseEtag,
             body: responseBody,
           })
+          if (this.etagCache.size > 256) {
+            const oldestKey = this.etagCache.keys().next().value as
+              | string
+              | undefined
+            if (oldestKey) this.etagCache.delete(oldestKey)
+          }
         }
       }
       return responseBody as T
