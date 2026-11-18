@@ -53,6 +53,46 @@
   --motion-fast: 120ms;
   --motion-normal: 180ms;
   --motion-slow: 240ms;
+  --color-success-bg: #eaf7f0;
+  --color-success-border: #b9e5ce;
+  --color-warning-bg: #fff5e5;
+  --color-warning-border: #f2d49f;
+  --color-danger-bg: #fff0f1;
+  --color-danger-border: #f2c1c6;
+  --color-info-bg: #edf4ff;
+  --color-info-border: #c5d9ff;
+  --color-neutral-bg: #f1f3f7;
+  --color-neutral-border: #dde2ea;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 30px;
+  --text-display: 36px;
+  --border-default: 1px solid var(--color-neutral-200);
+  --border-strong: 1px solid var(--color-neutral-300);
+  --shadow-lg: 0 16px 40px rgb(24 35 56 / 14%);
+  --content-max: 1440px;
+  --bp-xs: 479px;
+  --bp-sm: 767px;
+  --bp-md: 1023px;
+  --bp-lg: 1279px;
+  --bp-xl: 1535px;
+  --table-row-comfortable: 52px;
+  --table-row-standard: 44px;
+  --table-row-compact: 36px;
+  --chart-series-1: #4778f5;
+  --chart-series-2: #1c9a91;
+  --chart-series-3: #8666d5;
+  --chart-series-4: #d9942b;
+  --chart-series-5: #d96878;
+  --chart-series-6: #4b9a68;
+  --chart-series-7: #399ac4;
+  --chart-series-8: #77849a;
+  --focus-ring: 0 0 0 2px var(--color-brand-600);
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
 .ds-showcase {
