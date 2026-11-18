@@ -191,5 +191,4 @@ describe('ApiClient', () => {
     await assertion
     vi.useRealTimers()
   })
-
 })
