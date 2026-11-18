@@ -183,11 +183,12 @@ describe('ApiClient', () => {
     })
 
     const request = client.get('/slow')
-    await vi.advanceTimersByTimeAsync(25)
-    await expect(request).rejects.toMatchObject({
+    const assertion = expect(request).rejects.toMatchObject({
       code: 'REQUEST_TIMEOUT',
       retryable: true,
     })
+    await vi.advanceTimersByTimeAsync(25)
+    await assertion
     vi.useRealTimers()
   })
 
