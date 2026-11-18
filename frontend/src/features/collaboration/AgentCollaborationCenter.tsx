@@ -32,12 +32,16 @@ export function AgentCollaborationCenter() {
   const [runId, setRunId] = useState('')
   const [selectedEntry, setSelectedEntry] = useState('')
   const [kind, setKind] = useState('')
+  // TODO(#746): Replace this read adapter with the finalized Agent Registry contract
+  // when backend pagination and live-health fields are available.
   const agentsQuery = useQuery({
     queryKey: ['collaboration', 'agents'],
     queryFn: () => apiClient.get<unknown>('/platform/v1/registry/agent'),
     refetchInterval: 30000,
   })
   const agents = useMemo(() => unwrap<RecordValue>(agentsQuery.data), [agentsQuery.data])
+  // TODO(#746): Bind the runtime canvas to LangGraph node/edge telemetry once
+  // the backend publishes its versioned graph snapshot and event schema.
   const runQuery = useQuery({
     queryKey: ['collaboration', 'run', runId],
     enabled: Boolean(runId.trim()),
@@ -50,6 +54,8 @@ export function AgentCollaborationCenter() {
     queryFn: () => apiClient.get<unknown>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}/events?limit=200`),
     refetchInterval: 10000,
   })
+  // TODO(#746): Extend this adapter with authorized evidence/source locators
+  // after the Blackboard locator contract is finalized.
   const entriesQuery = useQuery({
     queryKey: ['collaboration', 'blackboard', scope, scopeId, kind],
     enabled: Boolean(scopeId.trim()),
