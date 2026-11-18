@@ -37,6 +37,7 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: BodyInit | Record<string, unknown> | unknown[] | null
   timeoutMs?: number
   idempotencyKey?: string
+  ifMatch?: string
   etag?: boolean
 }
 
