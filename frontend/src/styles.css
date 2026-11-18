@@ -224,3 +224,70 @@ h1 {
     padding-top: 34px;
   }
 }
+
+.topbar-start {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sidebar-toggle {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: #526078;
+  cursor: pointer;
+  font: inherit;
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.sidebar-collapsed .sidebar {
+  width: 72px;
+  padding-right: 10px;
+  padding-left: 10px;
+}
+
+.sidebar-collapsed .brand > span:last-child,
+.sidebar-collapsed .nav-caption,
+.sidebar-collapsed .nav-item,
+.sidebar-collapsed .sidebar-footer {
+  display: none;
+}
+
+.sidebar-collapsed .brand {
+  justify-content: center;
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.sidebar-collapsed .main-content {
+  margin-left: 72px;
+}
+
+@media (max-width: 620px) {
+  .sidebar-collapsed .sidebar {
+    width: auto;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .sidebar-collapsed .brand > span:last-child,
+  .sidebar-collapsed nav,
+  .sidebar-collapsed .sidebar-footer {
+    display: initial;
+  }
+
+  .sidebar-collapsed .brand {
+    justify-content: flex-start;
+  }
+
+  .sidebar-collapsed .main-content {
+    margin-left: 0;
+  }
+}
