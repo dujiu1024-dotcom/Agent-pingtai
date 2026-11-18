@@ -196,13 +196,11 @@ export class SseEventBus {
       !Number.isFinite(event.version) ||
       !Number.isFinite(event.sequence) ||
       typeof event.occurred_at !== 'string'
-    ) return
+    )
+      return
     if (this.seenEventIds.has(eventId)) return
     const previousSequence = this.latestSequence.get(event.entity_id)
-    if (
-      previousSequence !== undefined &&
-      event.sequence <= previousSequence
-    ) {
+    if (previousSequence !== undefined && event.sequence <= previousSequence) {
       return
     }
 
@@ -229,8 +227,9 @@ export class SseEventBus {
   private rememberEvent(eventId: string): void {
     this.seenEventIds.add(eventId)
     if (this.seenEventIds.size > this.options.maxRememberedEvents) {
-      const oldest = this.seenEventIds.values().next()
-        .value as string | undefined
+      const oldest = this.seenEventIds.values().next().value as
+        | string
+        | undefined
       if (oldest) this.seenEventIds.delete(oldest)
     }
   }
@@ -254,7 +253,7 @@ export class SseEventBus {
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       this.finishDelay = resolve
       this.delayTimer = setTimeout(resolve, ms)
     }).finally(() => {
