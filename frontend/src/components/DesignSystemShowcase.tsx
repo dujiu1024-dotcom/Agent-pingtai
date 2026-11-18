@@ -36,9 +36,9 @@ const sampleRows = [
 ]
 
 export default function DesignSystemShowcase() {
-  const [density, setDensity] = useState<'comfortable' | 'standard' | 'compact'>(
-    'standard',
-  )
+  const [density, setDensity] = useState<
+    'comfortable' | 'standard' | 'compact'
+  >('standard')
 
   return (
     <section className="ds-showcase" aria-labelledby="design-system-title">
