@@ -40,10 +40,6 @@ jobs:
           node-version-file: .nvmrc
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-      - name: Temporary formatter inspection
-        run: |
-          pnpm exec prettier --write src/components/OrganizationAccessPage.tsx
-          git diff -- src/components/OrganizationAccessPage.tsx
       - name: Lint and format
         run: pnpm lint
       - name: Typecheck
