@@ -99,7 +99,6 @@ describe('SseEventBus', () => {
     await vi.waitFor(() => expect(callCount).toBeGreaterThan(1))
     expect(bus.getStatus()).toBe('closed')
   })
-})
 
   it('dispatches the final frame when the stream ends without a blank line', async () => {
     const payload = {
@@ -136,3 +135,5 @@ describe('SseEventBus', () => {
     await vi.waitFor(() => expect(received).toEqual(['evt-final']))
     bus.stop()
   })
+
+})
