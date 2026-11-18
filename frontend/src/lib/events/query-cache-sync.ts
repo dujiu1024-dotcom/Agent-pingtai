@@ -1,6 +1,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 
 import type { EventListener, PlatformEvent } from './types'
+import type { SseEventBus } from './event-bus'
 
 export interface EventCacheBinding {
   queryKey: (event: PlatformEvent) => QueryKey
@@ -33,4 +34,13 @@ export function createQueryCacheEventHandler(
 
     void client.invalidateQueries({ queryKey })
   }
+}
+
+/** Subscribe a bus to the query cache and return the matching unsubscribe. */
+export function connectQueryEvents(
+  bus: Pick<SseEventBus, 'subscribe'>,
+  client: QueryClient,
+  bindings: Record<string, EventCacheBinding>,
+): () => void {
+  return bus.subscribe(createQueryCacheEventHandler(client, bindings))
 }
