@@ -53,10 +53,9 @@ export function connectQueryEvents(
 
     const targets = typeof route === 'function' ? route(event) : route
     if (!targets) return
-    const queryKeys =
-      Array.isArray(targets[0])
-        ? (targets as QueryKey[])
-        : [targets as QueryKey]
+    const queryKeys = Array.isArray(targets[0])
+      ? (targets as QueryKey[])
+      : [targets as QueryKey]
     for (const queryKey of queryKeys) {
       void queryClient.invalidateQueries({ queryKey })
     }
