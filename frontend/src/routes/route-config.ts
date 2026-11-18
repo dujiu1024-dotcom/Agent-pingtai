@@ -81,9 +81,9 @@ export const authRoutes: PageRoute[] = [
 
 export function getVisibleNavigation(authEnabled: boolean, capabilities: string[] = []): NavigationGroup[] {
   const groups: NavigationGroup[] = [
-    { id: 'workspace', title: '工作空间', items: pageRoutes.filter((item) => item.section === '工作空间') },
+    { id: 'workspace', title: '工作空间', items: pageRoutes.filter((item) => item.section === '工作空间' && !item.path.includes('/:')) },
     { id: 'operations', title: '智能体运营', items: pageRoutes.filter((item) => item.section === '智能体运营' && !item.path.includes('/:')) },
-    { id: 'administration', title: '平台管理', items: pageRoutes.filter((item) => item.section === '平台管理' && (!item.authOnly || authEnabled) && (!item.capability || capabilities.includes(item.capability))) },
+    { id: 'administration', title: '平台管理', items: pageRoutes.filter((item) => item.section === '平台管理' && !item.path.includes('/:') && (!item.authOnly || authEnabled) && (!item.capability || capabilities.includes(item.capability))) },
   ]
   return groups
 }
