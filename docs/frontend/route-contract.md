@@ -52,3 +52,19 @@
 - PR 描述列出受影响 page_id、实体主责和兼容重定向。
 - 测试覆盖路由唯一性、详情主责唯一、深链刷新、返回筛选恢复、两种权限模式。
 - 未经评审不得将旧路径直接复用为语义不同的新实体路由。
+
+
+## 8. 当前代码路由事实与目标路由迁移
+
+当前生产工作台入口为 `/app`（`agent_platform/web/app.py`），内部页面使用 `data-view` 状态切换，不是 URL 路由。当前主导航视图包括 overview、board、tasks、sessions、replay、batch、artifacts、approvals、registry、prompt-lab、knowledge-graph、governance、observability。详情视图目前主要由 JS 内存状态控制，刷新/分享深链能力不应视为已有。
+
+`platform-ui/index.html` 是另一个旧版单文件工作台。新 React 工程尚未在已检查的根目录、frontend/、web/、agent_platform/web/ 中发现 package.json；新工程与目标路由均属于待实施。
+
+后续路由迁移必须在 page-map.md 中为每个旧视图登记：
+- 旧入口：`/app` + view key 或旧 `platform-ui` 对应页面；
+- 新 page_id 与目标 path；
+- 是否提供兼容跳转、是否需要保留旧入口；
+- 深链/详情 ID/query 参数迁移规则；
+- 回滚路径。
+
+特殊注意：`/app?legacy=true` 的旧版回退跳转到 `/office`，不能将其误当作新 3D 办公室路由；`agent_platform/api/office.py` 的 state 路由目前未在 `create_platform_app` 中注册，且 handler 仍要求认证 Principal。
