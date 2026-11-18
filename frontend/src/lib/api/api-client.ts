@@ -116,9 +116,7 @@ export class ApiClient {
     const method = inputMethod.toUpperCase()
     const url = new URL(path.replace(/^\//, ''), this.resolveBaseUrl())
     const headers = new Headers(this.defaultHeaders)
-    new Headers(requestHeaders).forEach((value, key) =>
-      headers.set(key, value),
-    )
+    new Headers(requestHeaders).forEach((value, key) => headers.set(key, value))
     headers.set('Accept', 'application/json')
     const cacheKey = `${method}:${url.toString()}`
     const cached =
@@ -138,10 +136,7 @@ export class ApiClient {
     if (ifMatch) headers.set('If-Match', ifMatch)
 
     if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
-      headers.set(
-        'Idempotency-Key',
-        idempotencyKey ?? makeIdempotencyKey(),
-      )
+      headers.set('Idempotency-Key', idempotencyKey ?? makeIdempotencyKey())
     } else if (idempotencyKey) {
       headers.set('Idempotency-Key', idempotencyKey)
     }
@@ -151,10 +146,7 @@ export class ApiClient {
     if (callerSignal?.aborted) onCallerAbort()
     else callerSignal?.addEventListener('abort', onCallerAbort, { once: true })
     const timeout = setTimeout(
-      () =>
-        controller.abort(
-          new DOMException('Request timed out', 'TimeoutError'),
-        ),
+      () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
       timeoutMs,
     )
 
