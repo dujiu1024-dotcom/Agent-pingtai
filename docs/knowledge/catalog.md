@@ -26,3 +26,23 @@ clients cannot supply tenant or user identity in request bodies.
 `PostgresKnowledgeCatalog` exposes collection creation, lookup, listing,
 document membership, index creation and index listing. Document versions,
 chunks, embeddings and ACL records remain owned by `PostgresKnowledgeRepository`.
+
+
+## Retrieval test and citation drill-through contract (UI-G2-760)
+
+`GET /api/platform/v1/knowledge/search?q=...` returns the backward-compatible
+`items` array plus query context: `query`, normalized filters, `strategy`,
+`top_k`, `elapsed_ms` and `result_count`. Each item includes a 1-based
+`rank`, immutable source locator (document/version/chunk/page/offset), score,
+retrieval trace, and a `citation_path` suitable for navigation to the source
+document's chunk preview. The citation path is a UI route, not an authorization
+token; the destination must fetch through the normal tenant/ACL-protected API.
+Search filters are applied by the knowledge service after the repository's
+tenant/resource ACL-scoped candidate query. Query text is returned only in the
+interactive search response and must not be copied into telemetry or audit logs.
+
+The current ingestion APIs execute parsing/chunking/embedding synchronously and
+return a completed result. They do not expose a durable asynchronous ingest-job
+resource, progress stream, retry endpoint, or failed-job state machine. UI must
+show the synchronous request lifecycle and errors rather than fabricate
+progress states. Durable queued ingest/retry remains a backend capability gap.

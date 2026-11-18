@@ -440,15 +440,50 @@ def create_knowledge_memory_router(
         title_contains: str | None = None, min_score: float | None = None,
     ):
         from agent_platform.knowledge.retrieval import RetrievalFilters
+        from time import monotonic
         principal=await resolve_knowledge_principal(request)
         try:
             filters=RetrievalFilters(
                 document_ids=frozenset(item.strip() for item in (document_ids or "").split(",") if item.strip()),
                 source_uri_prefix=source_uri_prefix, title_contains=title_contains, min_score=min_score,
             )
+            started=monotonic()
             hits=await knowledge.retrieve(principal=principal,query=q,limit=limit,filters=filters,strategy=strategy)
+            elapsed_ms=round((monotonic()-started)*1000, 3)
         except ValueError as exc:raise HTTPException(400,str(exc)) from exc
-        return {"items":[{"citation_id":h.citation_id,"document_id":h.document_id,"document_version":h.document_version,"chunk_id":h.chunk_id,"title":h.title,"source_uri":h.source_uri,"source_locator":{"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset},"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset,"text":h.text,"score":h.score,"retrieval_trace":h.retrieval_trace} for h in hits]}
+        items=[]
+        for rank,h in enumerate(hits,start=1):
+            items.append({
+                "rank":rank,
+                "citation_id":h.citation_id,
+                "document_id":h.document_id,
+                "document_version":h.document_version,
+                "chunk_id":h.chunk_id,
+                "title":h.title,
+                "source_uri":h.source_uri,
+                "source_locator":{"page_number":h.page_number,"start_offset":h.start_offset,"end_offset":h.end_offset},
+                "page_number":h.page_number,
+                "start_offset":h.start_offset,
+                "end_offset":h.end_offset,
+                "text":h.text,
+                "score":h.score,
+                "retrieval_trace":h.retrieval_trace,
+                "citation_path":f"/knowledge/documents/{h.document_id}/chunks?version={h.document_version}#chunk-{h.chunk_id}",
+            })
+        return {
+            "query":q,
+            "filters":{
+                "document_ids":sorted(filters.document_ids),
+                "source_uri_prefix":source_uri_prefix,
+                "title_contains":title_contains,
+                "min_score":min_score,
+            },
+            "strategy":strategy,
+            "top_k":limit,
+            "elapsed_ms":elapsed_ms,
+            "result_count":len(items),
+            "items":items,
+        }
     @router.post("/knowledge/evaluate")
     async def evaluate_knowledge(request: Request):
         principal = await resolve_knowledge_principal(request)
