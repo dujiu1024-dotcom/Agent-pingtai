@@ -21,6 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { TaskCommandCenter, TaskDetailPage, RunTracePage } from '@/features/tasks/TaskCommandCenter'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -306,6 +307,9 @@ function PageView({
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
+  if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
+  if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
     <section className="page-content">
       <div className="page-heading">
