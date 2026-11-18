@@ -84,7 +84,9 @@ describe('SseEventBus', () => {
             { headers: { 'Content-Type': 'text/event-stream' } },
           )
         }
-        expect(new Headers(init?.headers).get('Last-Event-ID')).toBe('evt-10')
+        expect(
+          new Headers(init?.headers).get('Last-Event-ID'),
+        ).toBe('evt-10')
         busRef.current?.stop()
         return new Response(null, { status: 204 })
       })
@@ -100,7 +102,9 @@ describe('SseEventBus', () => {
     expect(bus.getStatus()).toBe('closed')
   })
 
-  it('dispatches the final frame when the stream ends without a blank line', async () => {
+  it(
+    'dispatches the final frame when the stream ends without a blank line',
+    async () => {
     const payload = {
       event_id: 'evt-final',
       type: 'run.completed',
@@ -133,6 +137,7 @@ describe('SseEventBus', () => {
 
     bus.start()
     await vi.waitFor(() => expect(received).toEqual(['evt-final']))
-    bus.stop()
-  })
+      bus.stop()
+    },
+  )
 })
