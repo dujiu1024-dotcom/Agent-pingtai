@@ -20,6 +20,7 @@ describe('route configuration', () => {
     const paths = getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))
     expect(paths).not.toContain('/admin/organization')
     expect(paths).not.toContain('/admin/access-control')
+    expect(paths.every((path) => !path.includes('/:'))).toBe(true)
     expect(getAllRoutes(false)).not.toEqual(expect.arrayContaining(authRoutes))
   })
 
