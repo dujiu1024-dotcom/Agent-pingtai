@@ -28,7 +28,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
         <main className="fatal-error" role="alert">
           <strong>页面发生异常</strong>
           <p>页面未能正常显示。可以重试当前页面。</p>
-          <button className="button-primary" type="button" onClick={() => this.setState({ error: null })}>
+          <button
+            className="button-primary"
+            type="button"
+            onClick={() => this.setState({ error: null })}
+          >
             重试
           </button>
         </main>
