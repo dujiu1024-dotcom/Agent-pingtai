@@ -133,7 +133,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
           {collapsed ? '›' : '‹'}
         </button>
         <nav className="primary-navigation">
-          {getVisibleNavigation(config.auth.enabled).map((group) => (
+          {getVisibleNavigation(config.auth.enabled, config.capabilities).map((group) => (
             <section className="nav-group" key={group.id} aria-label={group.title}>
               <div className="nav-group-title">{!collapsed && group.title}</div>
               {group.items.map((item) => (
@@ -191,7 +191,7 @@ function PageView({ route, authEnabled, capabilities }: { route: PageRoute; auth
   }
   if (route.capability && !capabilities.includes(route.capability)) return <ModeRestrictedState title='此功能未启用' description='服务端 bootstrap 未声明此 capability；前端不自行开启功能。' />
   if (route.path === '/workspace/overview') return <Dashboard />
-  if (route.path === '/search') return <GlobalSearch />
+  if (route.path === '/search') return <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
   if (route.path === '/notifications') return <NotificationsPage />
   return (
     <section className="page-content">
