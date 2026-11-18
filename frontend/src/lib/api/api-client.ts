@@ -246,7 +246,9 @@ export class ApiClient {
 
   private resolveBaseUrl(): string {
     const normalized = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`
-    if (/^https?:\\/\\//i.test(normalized)) return new URL(normalized).toString()
+    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+      return new URL(normalized).toString()
+    }
     if (typeof window === 'undefined') {
       return new URL(normalized, 'http://localhost').toString()
     }
