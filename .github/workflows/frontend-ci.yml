@@ -2,7 +2,7 @@ name: frontend-ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/ui-g1-743-d-router-navigation]
     paths:
       - "frontend/**"
       - ".nvmrc"
@@ -42,6 +42,10 @@ jobs:
         run: pnpm install --no-frozen-lockfile
       - name: Unit tests
         run: pnpm test
+      - name: Temporary formatter preview
+        run: |
+          pnpm exec prettier --write src/App.tsx src/components/GlobalSearch.tsx src/components/NotificationsPage.tsx src/components/States.tsx src/components/ErrorBoundary.tsx src/lib/bootstrap/bootstrap.ts src/lib/bootstrap/bootstrap.test.ts src/routes/route-config.ts src/routes/route-config.test.ts src/styles.css README.md package.json
+          git diff -- src/App.tsx src/components/GlobalSearch.tsx src/components/NotificationsPage.tsx src/components/States.tsx src/components/ErrorBoundary.tsx src/lib/bootstrap/bootstrap.ts src/lib/bootstrap/bootstrap.test.ts src/routes/route-config.ts src/routes/route-config.test.ts src/styles.css README.md package.json
       - name: Lint and format
         run: pnpm lint
       - name: Typecheck
