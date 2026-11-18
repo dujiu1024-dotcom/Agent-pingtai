@@ -17,7 +17,7 @@ import { EmptyState, ErrorState, LoadingState, ModeRestrictedState, NotFoundStat
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
-import { authRoutes, findPageRoute, getVisibleNavigation, globalRoutes, pageRoutes } from '@/routes/route-config'
+import { authRoutes, detailRoutes, findPageRoute, getVisibleNavigation, globalRoutes, pageRoutes } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -66,7 +66,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
           <Route element={<AppShell config={config} />}>
             <Route path="/" element={<Navigate to="/workspace/overview" replace />} />
             <Route path="/app" element={<Navigate to="/workspace/overview" replace />} />
-            {[...pageRoutes, ...globalRoutes].map((route) => (
+            {[...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
               <Route
                 key={route.pageId}
                 path={route.path}
@@ -107,7 +107,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [navigate])
-  const current = [...pageRoutes, ...globalRoutes, ...authRoutes].find((route) => {
+  const current = [...pageRoutes, ...detailRoutes, ...globalRoutes, ...authRoutes].find((route) => {
     if (route.path === location.pathname) return true
     const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
     return pattern.test(location.pathname)
