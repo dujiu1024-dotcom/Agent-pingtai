@@ -1,4 +1,5 @@
 import DesignSystemShowcase from '@/components/DesignSystemShowcase'
+import { useUiStore } from '@/stores/ui-store'
 
 const navigation = [
   { label: '工作台', active: true },
@@ -11,8 +12,11 @@ const navigation = [
 ]
 
 export default function App() {
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
+  const toggleSidebar = useUiStore((state) => state.toggleSidebar)
+
   return (
-    <div className="app-shell">
+    <div className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
         <a className="brand" href="/" aria-label="Agent Platform 首页">
           <span className="brand-mark">A</span>
@@ -35,7 +39,12 @@ export default function App() {
       </aside>
       <main className="main-content">
         <header className="topbar">
-          <span className="breadcrumb">平台 / 工作台</span>
+          <div className="topbar-start">
+            <button className="sidebar-toggle" type="button" onClick={toggleSidebar} aria-label={sidebarCollapsed ? '展开导航' : '收起导航'} aria-expanded={!sidebarCollapsed}>
+              {sidebarCollapsed ? '展开导航' : '收起导航'}
+            </button>
+            <span className="breadcrumb">平台 / 工作台</span>
+          </div>
           <span className="environment">新前端工程</span>
         </header>
         <section className="welcome">
