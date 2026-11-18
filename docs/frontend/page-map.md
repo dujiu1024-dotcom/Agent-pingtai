@@ -63,7 +63,7 @@ flowchart TD
 | WS-BLACKBOARD | Blackboard 条目详情 | /operations/blackboard/:entryId | Detail / Entry | #746 | 可见 | RBAC |
 | WS-COST | 成本与质量中心 | /workspace/quality-cost | Dashboard / Usage+Evaluation metrics | #747 | 可见 | RBAC |
 | WS-OFFICE | 3D 数字办公室 | /workspace/office | 3D Scene / Office layout+Agent status | #748 | 可见 | RBAC |
-| OPS-AGENTS | Agent 与团队 | /operations/agents | List / Agent | #749（定义） | 可见 | RBAC |
+| OPS-AGENTS | Agent 运行态列表 | /operations/agents | List / Agent Runtime | #746 | 可见 | RBAC |\n| OPS-AGENT-DETAIL | Agent 运行详情 | /operations/agents/:agentId | Runtime Detail / Agent Runtime | #746 | 可见 | RBAC |
 | ADM-AGENTS | Agent 定义管理 | /admin/agents | List / Agent Registry | #749 | 可见 | RBAC |
 | ADM-AGENT-DETAIL | Agent 定义详情 | /admin/agents/:agentId | Detail/Edit / Agent Registry | #749 | 可见 | RBAC |
 | ADM-WORKFLOWS | Workflow 管理 | /admin/workflows | List / Workflow Definition | #749 | 可见 | RBAC |
