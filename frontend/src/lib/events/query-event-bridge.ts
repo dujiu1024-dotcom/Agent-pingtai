@@ -6,6 +6,7 @@ import type { PlatformEvent } from './types'
 export interface EventQueryBinding {
   queryKey: QueryKey | ((event: PlatformEvent) => QueryKey)
   update?: (current: unknown, event: PlatformEvent) => unknown
+  shouldApply?: (current: unknown, event: PlatformEvent) => boolean
 }
 
 export type EventQueryRoute =
@@ -29,9 +30,21 @@ export function connectQueryEvents(
           ? binding.queryKey(event)
           : binding.queryKey
       if (binding.update) {
-        queryClient.setQueryData(queryKey, (current) =>
-          binding.update?.(current, event),
-        )
+        queryClient.setQueryData(queryKey, (current) => {
+          if (binding.shouldApply && !binding.shouldApply(current, event)) {
+            return current
+          }
+          if (
+            current &&
+            typeof current === 'object' &&
+            'version' in current &&
+            typeof current.version === 'number' &&
+            current.version > event.version
+          ) {
+            return current
+          }
+          return binding.update?.(current, event)
+        })
       } else {
         void queryClient.invalidateQueries({ queryKey })
       }
@@ -41,7 +54,7 @@ export function connectQueryEvents(
     const targets = typeof route === 'function' ? route(event) : route
     if (!targets) return
     const queryKeys =
-      Array.isArray(targets[0]) && Array.isArray(targets[0][0])
+      Array.isArray(targets[0])
         ? (targets as QueryKey[])
         : [targets as QueryKey]
     for (const queryKey of queryKeys) {
