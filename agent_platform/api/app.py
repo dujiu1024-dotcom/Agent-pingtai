@@ -29,6 +29,8 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.bootstrap import create_bootstrap_router
+from agent_platform.api.office import OfficeStateService, create_office_router
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
@@ -156,6 +158,10 @@ def create_platform_app(
     locale_manage_authorizer: Any | None = None,
     publisher_key_registry: Any | None = None,
     publisher_key_authorizer: Any | None = None,
+    auth_enabled: bool = True,
+    office_state_service: OfficeStateService | None = None,
+    office_tenant_resolver: Any | None = None,
+    bootstrap_capabilities: Sequence[str] = (),
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -245,6 +251,13 @@ def create_platform_app(
         window_seconds=60,
     )
     app.include_router(create_identity_router(identity=identity))
+    app.include_router(create_bootstrap_router(
+        auth_enabled=auth_enabled, capabilities=bootstrap_capabilities,
+    ))
+    if office_state_service is not None:
+        app.include_router(create_office_router(
+            service=office_state_service, resolve_tenant=office_tenant_resolver,
+        ))
     app.include_router(
         create_health_router(
             readiness_checks=(
