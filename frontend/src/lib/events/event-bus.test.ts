@@ -116,7 +116,7 @@ describe('SseEventBus', () => {
           start(controller) {
             controller.enqueue(
               new TextEncoder().encode(
-                `id: evt-final\\ndata: ${JSON.stringify(payload)}`,
+                `id: evt-final\ndata: ${JSON.stringify(payload)}`,
               ),
             )
             controller.close()
