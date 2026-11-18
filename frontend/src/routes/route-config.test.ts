@@ -42,6 +42,27 @@ describe('route configuration', () => {
     expect(getAllRoutes(false)).not.toEqual(expect.arrayContaining(authRoutes))
   })
 
+  it('keeps Workflow designer routes directly navigable in no-auth mode', () => {
+    const paths = getVisibleNavigation(false).flatMap((group) =>
+      group.items.map((item) => item.path),
+    )
+    expect(paths).toContain('/admin/workflows')
+    const routes = getAllRoutes(false)
+    expect(routes.find((route) => route.pageId === 'ADM-WORKFLOWS')?.owner).toBe('#758')
+    expect(
+      matchRoutes(
+        routes.map((route) => ({ path: route.path })),
+        '/admin/workflows/research-flow/edit',
+      )?.[0].params.workflowId,
+    ).toBe('research-flow')
+    expect(
+      matchRoutes(
+        routes.map((route) => ({ path: route.path })),
+        '/admin/workflows/research-flow',
+      )?.[0].params.workflowId,
+    ).toBe('research-flow')
+  })
+
   it('shows capability-gated navigation only when bootstrap advertises it', () => {
     const withoutCapability = getVisibleNavigation(true).flatMap((group) =>
       group.items.map((item) => item.path),
