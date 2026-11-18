@@ -22,6 +22,7 @@ class AuditRequestASGIMiddleware:
         *,
         sink: AuditSink,
         resolve_actor: Callable[[Any], Any],
+        resolve_null_actor_tenant: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         if not callable(getattr(sink, "record", None)):
             raise TypeError("audit sink must expose record()")
@@ -30,6 +31,7 @@ class AuditRequestASGIMiddleware:
         self.app = app
         self.sink = sink
         self.resolve_actor = resolve_actor
+        self.resolve_null_actor_tenant = resolve_null_actor_tenant
 
     async def _actor(self, principal: Any) -> AuditActor | None:
         result = self.resolve_actor(principal)
@@ -51,9 +53,17 @@ class AuditRequestASGIMiddleware:
         state = scope.get("state") or {}
         principal = state.get("identity.principal")
         if principal is None:
-            await self.app(scope, receive, send)
-            return
-        actor = await self._actor(principal)
+            if self.resolve_null_actor_tenant is None:
+                await self.app(scope, receive, send)
+                return
+            tenant_id = self.resolve_null_actor_tenant(scope)
+            if inspect.isawaitable(tenant_id):
+                tenant_id = await tenant_id
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                raise RuntimeError("no-auth audit requires an explicit instance tenant")
+            actor = AuditActor(tenant_id=tenant_id, actor_id=None)
+        else:
+            actor = await self._actor(principal)
         if actor is None:
             await self.app(scope, receive, send)
             return
