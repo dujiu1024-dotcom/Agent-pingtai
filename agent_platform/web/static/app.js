@@ -729,3 +729,48 @@ document.addEventListener("click",async event=>{
   }
  }catch(error){toast(error.message)}
 });
+
+
+// UI-G2-759: dedicated Provider/Template lifecycle surface.
+// Connection probing and independent routing APIs are intentionally not simulated;
+// the server-side contracts are not present in the current API composition.
+const modelRegistryPath=kind=>API+"/registry/"+kind;
+async function renderModelResources(){
+ $("#title").textContent="模型 Provider / Template 管理";
+ $("#crumb").textContent="模型资源";
+ let providers=[],templates=[];
+ const settled=await Promise.allSettled([
+  list(modelRegistryPath("model_provider")+"?limit=200"),
+  list(modelRegistryPath("model_template")+"?limit=200")
+ ]);
+ if(settled[0].status==="fulfilled")providers=settled[0].value;
+ if(settled[1].status==="fulfilled")templates=settled[1].value;
+ const providerRows=providers.map(x=>"<tr><td><b>"+esc(x.definition.name||x.item_id)+"</b><small class='subline'>"+esc(x.item_id)+"</small></td><td>"+esc(x.definition.type||"—")+"</td><td>"+esc(x.definition.base_url||"—")+"</td><td>"+esc(x.definition.secret_ref||"未配置")+"</td><td>"+statusPill(x.status)+"</td><td>"+btn("版本","data-model-versions='provider' data-id='"+esc(x.item_id)+"'")+(x.status==="draft"?btn("发布","data-model-publish='provider' data-id='"+esc(x.item_id)+"' data-version='"+esc(x.version)+"'","primary"):"")+"</td></tr>");
+ const templateRows=templates.map(x=>"<tr><td><b>"+esc(x.definition.name||x.item_id)+"</b><small class='subline'>"+esc(x.item_id)+"</small></td><td>"+esc(x.definition.provider_id||"—")+"</td><td>"+esc(x.definition.model_id||"—")+"</td><td>"+esc(x.definition.context_window||"—")+"</td><td>"+statusPill(x.status)+"</td><td>"+btn("版本","data-model-versions='template' data-id='"+esc(x.item_id)+"'")+(x.status==="draft"?btn("发布","data-model-publish='template' data-id='"+esc(x.item_id)+"' data-version='"+esc(x.version)+"'","primary"):"")+"</td></tr>");
+ const providerForm="<form id='model-provider-form' class='registry-form'><div class='form-grid'><label>Provider ID<input name='item_id' required pattern='[A-Za-z0-9][A-Za-z0-9._:-]{0,127}'></label><label>显示名称<input name='name' required></label><label>类型<select name='type'><option value='openai-compatible'>OpenAI Compatible</option></select></label><label>Base URL<input name='base_url' type='url' required placeholder='https://api.example.com/v1'></label><label>Secret Reference<input name='secret_ref' required placeholder='secret://tenant/provider/key'></label><label>启用<select name='enabled'><option value='true'>启用</option><option value='false'>停用</option></select></label></div><p class='subtle'>仅保存 secret_ref，不接受或回显密钥明文。密钥创建、轮换、撤销由 Secret Manager 管理。</p><button class='button primary'>创建 Provider 草稿</button></form>";
+ const templateForm="<form id='model-template-form' class='registry-form'><div class='form-grid'><label>Template ID<input name='item_id' required pattern='[A-Za-z0-9][A-Za-z0-9._:-]{0,127}'></label><label>显示名称<input name='name' required></label><label>Provider ID<input name='provider_id' required></label><label>模型 ID<input name='model_id' required></label><label>上下文窗口<input name='context_window' type='number' min='1' required></label><label>能力（逗号分隔）<input name='capabilities' placeholder='chat,tools,vision'></label><label>允许数据等级<input name='allowed_data_levels' placeholder='public,internal'></label><label>Fallback Template IDs<input name='fallback' placeholder='template-b,template-c'></label></div><button class='button primary'>创建 Template 草稿</button></form>";
+ $("#view").innerHTML=panel("Provider 生命周期",providerForm)+panel("Provider 目录",table(["Provider","类型","Base URL","Secret Ref","状态","操作"],providerRows))+
+ panel("Model Template 生命周期",templateForm)+panel("Template 目录",table(["Template","Provider","模型","上下文窗口","状态","操作"],templateRows))+
+ panel("连接测试与路由策略 API 状态","<p class='error'>当前 main 的 API composition 未提供 Provider 连接测试、模型发现或独立路由策略读写端点。本页面不伪造测试结果，也不会向真实 Provider 发起网络请求。</p><p>路由策略需由后端实现候选约束、fallback 条件、超时/重试/熔断和解释结果；Run 继续使用 immutable provider/template version snapshot。相关 API 缺口需后端补齐后再启用交互。</p>")+
+ (settled.some(x=>x.status==="rejected")?panel("数据源告警","<p class='error'>部分 Registry 数据不可读取，请检查 Registry API 权限与服务配置。</p>"):"");
+}
+const modelResourcesBaseRender=render;
+render=async function(){if(S.view==="model-resources"){try{await renderModelResources()}catch(e){$("#view").innerHTML=panel("模型资源管理不可用","<p class='error'>"+esc(e.message)+"</p>")}return}return modelResourcesBaseRender()};
+const modelFormsSubmit=document.addEventListener;
+document.addEventListener("submit",async e=>{
+ const f=e.target;if(!["model-provider-form","model-template-form"].includes(f.id))return;
+ e.preventDefault();const d=new FormData(f),isProvider=f.id==="model-provider-form";
+ const id=String(d.get("item_id")||"").trim(),name=String(d.get("name")||"").trim();
+ let definition;
+ if(isProvider)definition={name,type:d.get("type"),base_url:d.get("base_url"),secret_ref:d.get("secret_ref"),enabled:d.get("enabled")==="true"};
+ else definition={name,provider_id:d.get("provider_id"),model_id:d.get("model_id"),context_window:Number(d.get("context_window")),capabilities:String(d.get("capabilities")||"").split(",").map(x=>x.trim()).filter(Boolean),allowed_data_levels:String(d.get("allowed_data_levels")||"").split(",").map(x=>x.trim()).filter(Boolean),fallback:String(d.get("fallback")||"").split(",").map(x=>x.trim()).filter(Boolean)};
+ if(!id||!name||Object.values(definition).some(v=>v===undefined||v===null||v==="")){toast("请完整填写必填字段");return}
+ try{await api(modelRegistryPath(isProvider?"model_provider":"model_template")+"/"+encodeURIComponent(id)+"/versions",{method:"POST",body:JSON.stringify({definition})});toast("草稿版本已创建");await renderModelResources()}catch(err){toast(err.message)}
+});
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("button");if(!b)return;
+ try{
+  if(b.dataset.modelVersions){const kind=b.dataset.modelVersions==="provider"?"model_provider":"model_template",id=b.dataset.id,versions=await list(modelRegistryPath(kind)+"/"+encodeURIComponent(id)+"/versions");$("#view").insertAdjacentHTML("beforeend",panel("版本历史 · "+esc(id),table(["版本","状态","创建人","创建时间","发布时间"],versions.map(v=>"<tr><td>"+esc(v.version)+"</td><td>"+statusPill(v.status)+"</td><td>"+esc(v.created_by)+"</td><td>"+esc(v.created_at)+"</td><td>"+esc(v.published_at||"—")+"</td></tr>"))));return}
+  if(b.dataset.modelPublish){const kind=b.dataset.modelPublish==="provider"?"model_provider":"model_template";await api(modelRegistryPath(kind)+"/"+encodeURIComponent(b.dataset.id)+"/versions/"+encodeURIComponent(b.dataset.version)+"/publish",{method:"POST",body:"{}"});toast("版本已发布");await renderModelResources();return}
+ }catch(err){toast(err.message)}
+});
