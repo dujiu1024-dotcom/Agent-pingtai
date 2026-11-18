@@ -173,7 +173,14 @@ export class SseEventBus {
       return
     }
     const eventId = frame.id ?? event.event_id
-    if (!eventId || !event.type || !event.entity_id) return
+    if (
+      !eventId ||
+      typeof event.type !== 'string' ||
+      typeof event.entity_id !== 'string' ||
+      !Number.isFinite(event.version) ||
+      !Number.isFinite(event.sequence) ||
+      typeof event.occurred_at !== 'string'
+    ) return
     if (this.seenEventIds.has(eventId)) return
     const previousSequence = this.latestSequence.get(event.entity_id)
     if (previousSequence !== undefined && event.sequence <= previousSequence) return
