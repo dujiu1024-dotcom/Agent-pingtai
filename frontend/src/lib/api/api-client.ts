@@ -294,10 +294,10 @@ export class ApiClient {
     return new ApiError(
       envelope?.message ?? `Request failed with status ${status}`,
       {
-      status,
-      code: envelope?.code ?? 'HTTP_ERROR',
-      requestId: envelope?.request_id ?? requestId,
-      details: envelope?.details,
+        status,
+        code: envelope?.code ?? 'HTTP_ERROR',
+        requestId: envelope?.request_id ?? requestId,
+        details: envelope?.details,
         retryable: envelope?.retryable ?? status >= 500,
       },
     )
