@@ -127,7 +127,10 @@ export class SseEventBus {
         if (done) {
           this.buffer += decoder.decode()
           if (this.buffer) {
-            this.consumeLine(this.buffer.replace(/\r$/, ''), signal)
+            const finalLines = this.buffer.split(/\r?\n/)
+            for (const line of finalLines) {
+              this.consumeLine(line, signal)
+            }
             this.buffer = ''
           }
           this.dispatchFrame()
