@@ -228,6 +228,21 @@ export function AgentDefinitionPage() {
     beginEdit(selected)
   }
 
+  const removeLocalDraft = () => {
+    if (!selected) return
+    setDefinitions((current) =>
+      current.filter((item) => item.agent_id !== selected.agent_id),
+    )
+    setVersions((current) => {
+      const next = { ...current }
+      delete next[selected.agent_id]
+      return next
+    })
+    setSelectedId('')
+    setShowEditor(false)
+    setActiveTab('definition')
+  }
+
   const canUseDetail = !routeAgentId || Boolean(selected)
 
   return (
@@ -461,6 +476,14 @@ export function AgentDefinitionPage() {
                     title="等待 Registry 回滚 API"
                   >
                     回滚（待 API）
+                  </button>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={removeLocalDraft}
+                    title="仅移除当前页面内存中的本地草稿，不会删除服务端资源"
+                  >
+                    移除本地草稿
                   </button>
                 </div>
                 <div className="agent-detail-meta">
