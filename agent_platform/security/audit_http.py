@@ -51,6 +51,10 @@ class AuditRequestASGIMiddleware:
         state = scope.get("state") or {}
         principal = state.get("identity.principal")
         if principal is None:
+            # Explicit actor=null policy: anonymous/instance requests are not
+            # attributed to a user and are not written to the user-actor ledger.
+            # Instance-level operational events must use a separate system audit
+            # sink with a nullable actor column; never synthesize a user ID.
             await self.app(scope, receive, send)
             return
         actor = await self._actor(principal)

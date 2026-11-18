@@ -8,12 +8,10 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Request
-
-from agent_platform.identity.models import Principal
 
 _OPEN_STATUSES = {"queued", "running", "interrupted"}
 # 平台运行状态 → 旧页面使用的 db_status 与中文状态。
@@ -285,14 +283,18 @@ class OfficeStateService:
         return items[:20]
 
 
-def create_office_router(*, service: OfficeStateService) -> APIRouter:
+def create_office_router(
+    *,
+    service: OfficeStateService,
+    resolve_tenant_id: Callable[[Request], Awaitable[str]],
+) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/office", tags=["office"])
 
     @router.get("/state")
     async def state(request: Request):
-        principal = getattr(request.state, "identity.principal", None)
-        if not isinstance(principal, Principal):
-            raise HTTPException(401, "authenticated user required")
-        return {"ok": True, "data": await service.build(principal.tenant_id)}
+        tenant_id = await resolve_tenant_id(request)
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise HTTPException(503, "office instance context is unavailable")
+        return {"ok": True, "data": await service.build(tenant_id)}
 
     return router

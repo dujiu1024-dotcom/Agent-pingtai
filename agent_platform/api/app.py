@@ -30,6 +30,7 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.office import OfficeStateService, create_office_router
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
@@ -232,6 +233,8 @@ def create_platform_app(
     locale_manage_authorizer: Any | None = None,
     publisher_key_registry: Any | None = None,
     publisher_key_authorizer: Any | None = None,
+    office_state_service: OfficeStateService | None = None,
+    instance_tenant_id: str | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -282,6 +285,7 @@ def create_platform_app(
     )
     app.state.auth_enabled = auth_enabled
     app.state.authorization_context_strategy = authorization_strategy
+    app.state.audit_actor_policy = "principal-or-null; no anonymous user is synthesized"
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -344,6 +348,53 @@ def create_platform_app(
             )
         )
     )
+
+    # Public bootstrap metadata is intentionally limited to non-secret deployment facts.
+    app.state.capabilities = {
+        "office": office_state_service is not None,
+        "knowledge": True,
+        "memory": True,
+        "registry": registry_service_resolver is not None,
+        "sessions": session_service_resolver is not None,
+        "observability": any(value is not None for value in (
+            metrics_exporter, operational_health_monitor, alert_store,
+            evaluation_repository, evaluation_run_service, evaluation_comparison_service,
+        )),
+        "audit": audit_reader is not None and audit_authorizer is not None,
+        "connectors": connector_service_resolver is not None and connector_authorizer is not None,
+    }
+
+    @app.get("/api/platform/v1/bootstrap", tags=["bootstrap"])
+    async def platform_bootstrap():
+        return {
+            "auth": {"enabled": auth_enabled},
+            "version": app.version,
+            "capabilities": dict(app.state.capabilities),
+        }
+
+    if office_state_service is not None:
+        if not auth_enabled and (
+            not isinstance(instance_tenant_id, str) or not instance_tenant_id.strip()
+        ):
+            raise ValueError(
+                "office_state_service in auth-disabled mode requires explicit instance_tenant_id"
+            )
+
+        async def resolve_office_tenant(request: Request) -> str:
+            if not auth_enabled:
+                # Explicit deployment namespace; never fabricate a Principal/user.
+                return instance_tenant_id
+            principal = await authorization_strategy.resolve_principal(request)
+            if principal is None or not isinstance(principal, __import__(
+                "agent_platform.identity.models", fromlist=["Principal"]
+            ).Principal):
+                raise HTTPException(401, "authentication required")
+            return principal.tenant_id
+
+        app.include_router(create_office_router(
+            service=office_state_service,
+            resolve_tenant_id=resolve_office_tenant,
+        ))
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_run_service,
     ))

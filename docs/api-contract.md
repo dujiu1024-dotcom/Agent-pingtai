@@ -10,6 +10,10 @@
 
 ## 认证与授权
 
+- `GET /api/platform/v1/bootstrap` 为公开启动元信息接口，仅返回 `auth.enabled`、应用版本和非敏感 capability 布尔值；不得返回密钥、凭据或租户配置。
+- `auth.enabled=false` 时业务请求不要求 Principal；实例级只读 Office 状态通过部署显式配置的 `instance_tenant_id` 选择数据命名空间，不创建匿名用户或伪造 actor。
+- 无身份请求的审计主体语义为 `actor=null`：不得将请求映射为默认用户；当前用户身份审计中间件跳过该类请求。若需持久化实例级审计事件，必须使用支持 nullable actor 的独立 system/instance audit sink。
+
 - `/api/platform/v1/**` 受身份中间件保护，使用平台已配置的 Bearer/API credential 或安全会话认证方式。
 - 认证失败为 401 `UNAUTHENTICATED`；身份有效但无资源/操作权限为 403 `FORBIDDEN`。
 - 授权由具体业务路由按 tenant、principal、resource 和 action 执行。不得仅凭请求体或 URL 中的 tenant/resource 标识授权。

@@ -738,5 +738,55 @@ class PlatformApiCompositionTests(unittest.TestCase):
         rejected = self.client.get("/app/assets/../../console.html")
         self.assertEqual(rejected.status_code, 404)
 
+    def test_bootstrap_and_office_state_use_instance_context_without_principal(self):
+        class OfficeService:
+            def __init__(self):
+                self.tenants = []
+
+            async def build(self, tenant_id):
+                self.tenants.append(tenant_id)
+                return {"tenant_id": tenant_id, "tasks": []}
+
+        office = OfficeService()
+        app = create_platform_app(
+            identity=None,
+            identity_repository=None,
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            auth_enabled=False,
+            office_state_service=office,
+            instance_tenant_id="instance-workspace",
+        )
+        client = TestClient(app, base_url="https://testserver")
+        bootstrap = client.get("/api/platform/v1/bootstrap")
+        self.assertEqual(bootstrap.status_code, 200)
+        self.assertEqual(bootstrap.json()["auth"], {"enabled": False})
+        self.assertEqual(bootstrap.json()["version"], app.version)
+        self.assertTrue(bootstrap.json()["capabilities"]["office"])
+        state = client.get("/api/platform/v1/office/state")
+        self.assertEqual(state.status_code, 200, state.text)
+        self.assertEqual(state.json()["data"]["tenant_id"], "instance-workspace")
+        self.assertEqual(office.tenants, ["instance-workspace"])
+        self.assertFalse(hasattr(app.state, "anonymous_principal"))
+        self.assertEqual(
+            app.state.audit_actor_policy,
+            "principal-or-null; no anonymous user is synthesized",
+        )
+
+    def test_office_no_auth_requires_explicit_instance_tenant(self):
+        with self.assertRaisesRegex(ValueError, "instance_tenant_id"):
+            create_platform_app(
+                identity=None,
+                identity_repository=None,
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                auth_enabled=False,
+                office_state_service=object(),
+            )
+
 if __name__ == "__main__":
     unittest.main()
