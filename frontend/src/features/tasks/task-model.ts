@@ -1,0 +1,82 @@
+export type TaskRecord = {
+  task_id: string
+  title: string
+  description?: string
+  status: string
+  priority?: string
+  project_id?: string
+  project_name?: string
+  assigned_agent_id?: string
+  owner?: string
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+  due_at?: string
+  progress?: number
+  blocked_reason?: string
+  tags?: string[]
+  latest_run_id?: string
+  run_count?: number
+  participant_agent_ids?: string[]
+  input?: unknown
+  output?: unknown
+  artifacts?: Array<{ id?: string; name?: string; url?: string }>
+  [key: string]: unknown
+}
+export type RunRecord = {
+  run_id: string
+  task_id: string
+  agent_id?: string
+  status: string
+  started_at?: string
+  finished_at?: string
+  duration_ms?: number
+  error_code?: string
+  trace_id?: string
+  [key: string]: unknown
+}
+export type RunEvent = {
+  event_id: string
+  type: string
+  occurred_at?: string
+  actor?: string
+  source?: string
+  request_id?: string
+  trace_id?: string
+  sequence?: number
+  summary?: string
+  payload?: unknown
+}
+export function unwrapList<T>(v: unknown): T[] {
+  if (Array.isArray(v)) return v as T[]
+  if (v && typeof v === 'object') {
+    const r = v as Record<string, unknown>
+    if (Array.isArray(r.data)) return r.data as T[]
+    if (Array.isArray(r.items)) return r.items as T[]
+    if (
+      r.data &&
+      typeof r.data === 'object' &&
+      Array.isArray((r.data as Record<string, unknown>).items)
+    )
+      return (r.data as { items: T[] }).items
+  }
+  return []
+}
+export function unwrapRecord<T>(v: unknown): T {
+  if (v && typeof v === 'object' && 'data' in v) return (v as { data: T }).data
+  return v as T
+}
+export function sortEvents(events: RunEvent[]): RunEvent[] {
+  return [...events].sort((a, b) =>
+    a.sequence != null && b.sequence != null && a.sequence !== b.sequence
+      ? a.sequence - b.sequence
+      : (Date.parse(a.occurred_at ?? '') || 0) -
+          (Date.parse(b.occurred_at ?? '') || 0) ||
+        a.event_id.localeCompare(b.event_id),
+  )
+}
+export function formatDuration(ms?: number): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '—'
+  const s = Math.floor(ms / 1000)
+  return s < 60 ? `${Math.round(ms)} ms` : `${Math.floor(s / 60)}m ${s % 60}s`
+}
