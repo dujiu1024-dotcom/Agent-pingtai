@@ -100,3 +100,39 @@ describe('SseEventBus', () => {
     expect(bus.getStatus()).toBe('closed')
   })
 })
+
+  it('dispatches the final frame when the stream ends without a blank line', async () => {
+    const payload = {
+      event_id: 'evt-final',
+      type: 'run.completed',
+      entity_id: 'run-9',
+      version: 4,
+      occurred_at: '2026-11-19T00:00:00Z',
+      sequence: 4,
+      payload: { status: 'completed' },
+    }
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                `id: evt-final\\ndata: ${JSON.stringify(payload)}`,
+              ),
+            )
+            controller.close()
+          },
+        }),
+      ),
+    )
+    const bus = new SseEventBus({
+      url: 'https://example.test/events',
+      fetcher,
+    })
+    const received: string[] = []
+    bus.subscribe((item) => received.push(item.event_id))
+
+    bus.start()
+    await vi.waitFor(() => expect(received).toEqual(['evt-final']))
+    bus.stop()
+  })
