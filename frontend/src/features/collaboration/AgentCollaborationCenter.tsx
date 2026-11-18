@@ -141,7 +141,7 @@ export function AgentCollaborationCenter() {
         <div className="collab-controls collab-blackboard-controls">
           <label>范围类型<select value={scope} onChange={event => { setScope(event.target.value); setSelectedEntry('') }}><option value="project">Project</option><option value="task">Task</option><option value="run">Run</option><option value="tenant">Tenant</option></select></label>
           <label>范围 ID<input value={scopeId} onChange={event => { setScopeId(event.target.value); setSelectedEntry('') }} placeholder="输入有权访问的 scope_id" /></label>
-          <label>Entry 类型<select value={kind} onChange={event => setKind(event.target.value)}><option value="">全部类型</option>{['evidence','claim','challenge','conflict','decision','fact','plan'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label>Entry 类型<select value={kind} onChange={event => setKind(event.target.value)}><option value="">全部类型</option>{['fact','claim','evidence','challenge','conflict','decision','artifact','note'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         </div>
         {!scopeId.trim() ? <EmptyState title="选择 Blackboard 范围" description="输入 Project、Task、Run 或 Tenant 的范围 ID。实际可见数据由服务端授权决定。" /> :
           entriesQuery.isPending ? <LoadingState label="正在读取 Blackboard Entries" /> :
