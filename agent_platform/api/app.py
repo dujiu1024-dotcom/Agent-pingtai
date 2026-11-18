@@ -124,6 +124,7 @@ def create_platform_app(
     audit_authorizer: Any | None = None,
     audit_request_sink: Any | None = None,
     audit_actor_resolver: Any | None = None,
+    audit_null_actor_tenant_resolver: Any | None = None,
     resource_audit_writer: Any | None = None,
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
@@ -232,6 +233,7 @@ def create_platform_app(
             AuditRequestASGIMiddleware,
             sink=audit_request_sink,
             resolve_actor=audit_actor_resolver,
+            resolve_null_actor_tenant=audit_null_actor_tenant_resolver,
         )
     app.add_middleware(
         IdentityASGIMiddleware,
