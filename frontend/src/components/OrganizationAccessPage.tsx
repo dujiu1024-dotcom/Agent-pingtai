@@ -7,7 +7,7 @@ type OrganizationAccessPageProps = {
 const organizationAreas = [
   {
     title: '组织与部门树',
-    description: '组织、部门层级、父子关系与启停生命周期',
+    description: '组织、部门层级、父子关系和启停生命周期',
     contract: '组织 / 部门 schema 与树查询 API 未核实',
   },
   {
@@ -40,6 +40,17 @@ const accessAreas = [
   },
 ]
 
+const prerequisites = [
+  '由服务端 bootstrap 明确返回 auth.enabled 与组织 / RBAC capability。',
+  'auth.enabled=false 时隐藏组织、成员和 RBAC 入口，不创建默认组织、用户或角色。',
+  'auth.enabled=true 时使用服务端真实 schema、分页 cursor、状态机和错误码。',
+  '邀请、停用、角色变更和数据范围变更必须由服务端授权并写入 append-only 审计。',
+  '角色变更、成员停用和策略更新必须支持并发冲突检测，不能由前端隐藏按钮代替安全控制。',
+]
+
+const notice =
+  '当前仓库尚无可证实的组织 / RBAC API 注册与响应 schema。为避免前端猜测字段、授权语义或写入路径，管理操作保持禁用，待后端契约确认后接通。'
+
 export function OrganizationAccessPage({
   page,
 }: OrganizationAccessPageProps) {
@@ -52,13 +63,9 @@ export function OrganizationAccessPage({
         <span className="access-admin-status">后端契约待接入</span>
         <div>
           <strong>此页面不会展示模拟组织、成员或权限数据</strong>
-          <p>
-            当前仓库尚无可证实的组织 / RBAC API 注册与响应 schema。为避免前端猜测字段、
-            授权语义或写入路径，管理操作保持禁用，待后端契约确认后接通。
-          </p>
+          <p>{notice}</p>
         </div>
       </div>
-
       <div className="access-admin-grid">
         {areas.map((area) => (
           <article className="access-admin-card" key={area.title}>
@@ -77,25 +84,12 @@ export function OrganizationAccessPage({
           </article>
         ))}
       </div>
-
       <section className="access-admin-audit">
         <h2>接入前置条件</h2>
         <ul>
-          <li>
-            由服务端 bootstrap 明确返回 auth.enabled 与组织 / RBAC capability。
-          </li>
-          <li>
-            auth.enabled=false 时隐藏组织、成员和 RBAC 入口，不创建默认组织、用户或角色。
-          </li>
-          <li>
-            auth.enabled=true 时使用服务端真实 schema、分页 cursor、状态机和错误码。
-          </li>
-          <li>
-            邀请、停用、角色变更和数据范围变更必须由服务端授权并写入 append-only 审计。
-          </li>
-          <li>
-            角色变更、成员停用和策略更新必须支持并发冲突检测，不能由前端隐藏按钮代替安全控制。
-          </li>
+          {prerequisites.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
         </ul>
       </section>
     </section>
