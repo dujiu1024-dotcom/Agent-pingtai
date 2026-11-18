@@ -92,9 +92,7 @@ describe('connectQueryEvents', () => {
     client.clear()
   })
 
-  it(
-    'does not let an older entity version overwrite newer query data',
-    () => {
+  it('does not let an older entity version overwrite newer query data', () => {
     const client = new QueryClient()
     client.setQueryData(['tasks', 'task-1'], {
       id: 'task-1',
@@ -121,7 +119,6 @@ describe('connectQueryEvents', () => {
       version: 3,
     })
     disconnect()
-      client.clear()
-    },
-  )
+    client.clear()
+  })
 })
