@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { SseEventBus } from './event-bus'
 
 describe('SseEventBus', () => {
-  it('decodes events and drops duplicate event ids and stale entity sequences', async () => {
+  it(
+    'decodes events and drops duplicate event ids and stale entity sequences',
+    async () => {
     const payload = {
       event_id: 'evt-2',
       type: 'task.updated',
@@ -16,7 +18,11 @@ describe('SseEventBus', () => {
     const frame = [
       `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
       `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
-      `id: evt-1\ndata: ${JSON.stringify({ ...payload, event_id: 'evt-1', sequence: 1 })}\n\n`,
+      `id: evt-1\ndata: ${JSON.stringify({
+        ...payload,
+        event_id: 'evt-1',
+        sequence: 1,
+      })}\n\n`,
     ].join('')
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -35,7 +41,9 @@ describe('SseEventBus', () => {
       reconnectBaseMs: 10,
     })
     const received: string[] = []
-    const unsubscribe = bus.subscribe((event) => received.push(event.event_id))
+    const unsubscribe = bus.subscribe((event) =>
+      received.push(event.event_id),
+    )
 
     bus.start()
     await vi.waitFor(() => expect(received).toEqual(['evt-2']))
@@ -56,7 +64,9 @@ describe('SseEventBus', () => {
     }
     let callCount = 0
     const busRef: { current?: SseEventBus } = {}
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (_input, init) => {
       callCount += 1
       if (callCount === 1) {
         return new Response(
@@ -75,8 +85,8 @@ describe('SseEventBus', () => {
       }
       expect(new Headers(init?.headers).get('Last-Event-ID')).toBe('evt-10')
       busRef.current?.stop()
-      return new Response(null, { status: 204 })
-    })
+        return new Response(null, { status: 204 })
+      })
     const bus = new SseEventBus({
       url: 'https://example.test/events',
       fetcher,
