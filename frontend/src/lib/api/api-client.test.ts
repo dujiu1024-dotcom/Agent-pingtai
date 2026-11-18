@@ -86,3 +86,54 @@ describe('ApiClient', () => {
     expect(headers.get('If-Match')).toBe('"rev-1"')
   })
 })
+
+  it('preserves caller cancellation instead of reporting a timeout', async () => {
+    const fetcher = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(init.signal?.reason),
+            { once: true },
+          )
+        }),
+    )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+    const controller = new AbortController()
+    const request = client.get('/tasks', { signal: controller.signal })
+    controller.abort(new DOMException('Cancelled by caller', 'AbortError'))
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('uses the supplied idempotency key and surfaces request ids', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 'RATE_LIMITED',
+          message: 'Try again later',
+          request_id: 'req-123',
+          retryable: true,
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+
+    await expect(
+      client.post('/tasks', {}, { idempotencyKey: 'logical-op-1' }),
+    ).rejects.toMatchObject({
+      code: 'RATE_LIMITED',
+      requestId: 'req-123',
+      retryable: true,
+    })
+    expect(
+      new Headers(fetcher.mock.calls[0][1]?.headers).get('Idempotency-Key'),
+    ).toBe('logical-op-1')
+  })
