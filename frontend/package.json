@@ -12,7 +12,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint . && prettier --check .",
-    "typecheck": "tsc -b --pretty"
+    "typecheck": "tsc -b --pretty",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "react": "18.3.1",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.28.0",
+    "@playwright/test": "1.56.1",
     "@types/react": "18.3.23",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",
