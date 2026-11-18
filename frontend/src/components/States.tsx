@@ -12,7 +12,9 @@ export function EmptyState({
 }) {
   return (
     <section className="state-panel" role="status">
-      <span className="state-symbol" aria-hidden="true">◇</span>
+      <span className="state-symbol" aria-hidden="true">
+        ◇
+      </span>
       <h2>{title}</h2>
       <p>{description}</p>
       {action}
@@ -43,7 +45,11 @@ export function ErrorState({
       <strong className="state-code">!</strong>
       <h2>{title}</h2>
       <p>{description}</p>
-      {onRetry && <button className="button-primary" type="button" onClick={onRetry}>重试</button>}
+      {onRetry && (
+        <button className="button-primary" type="button" onClick={onRetry}>
+          重试
+        </button>
+      )}
     </section>
   )
 }
@@ -54,18 +60,28 @@ export function NotFoundState() {
       <strong className="state-code">404</strong>
       <h2>页面不存在</h2>
       <p>地址可能已变更，或页面尚未开放。</p>
-      <Link className="text-link" to="/workspace/overview">返回运营驾驶舱</Link>
+      <Link className="text-link" to="/workspace/overview">
+        返回运营驾驶舱
+      </Link>
     </section>
   )
 }
 
-export function ModeRestrictedState({ title, description }: { title: string; description: string }) {
+export function ModeRestrictedState({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
   return (
     <section className="state-panel">
       <strong className="state-code">—</strong>
       <h2>{title}</h2>
       <p>{description}</p>
-      <Link className="text-link" to="/workspace/overview">返回运营驾驶舱</Link>
+      <Link className="text-link" to="/workspace/overview">
+        返回运营驾驶舱
+      </Link>
     </section>
   )
 }
