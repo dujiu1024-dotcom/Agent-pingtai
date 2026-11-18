@@ -70,7 +70,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
               <Route
                 key={route.pageId}
                 path={route.path}
-                element={<PageView route={route} authEnabled={config.auth.enabled} />}
+                element={<PageView route={route} authEnabled={config.auth.enabled} capabilities={config.capabilities} />}
               />
             ))}
             {authRoutes.map((route) => (
@@ -185,10 +185,11 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   )
 }
 
-function PageView({ route, authEnabled }: { route: PageRoute; authEnabled: boolean }) {
+function PageView({ route, authEnabled, capabilities }: { route: PageRoute; authEnabled: boolean; capabilities: string[] }) {
   if (route.authOnly && !authEnabled) {
     return <ModeRestrictedState title="此页面仅在权限模式开放" description="当前服务端 auth.enabled=false，组织、成员与 RBAC 管理不适用。" />
   }
+  if (route.capability && !capabilities.includes(route.capability)) return <ModeRestrictedState title='此功能未启用' description='服务端 bootstrap 未声明此 capability；前端不自行开启功能。' />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/search') return <GlobalSearch />
   if (route.path === '/notifications') return <NotificationsPage />
