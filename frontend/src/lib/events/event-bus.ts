@@ -80,7 +80,9 @@ export class SseEventBus {
   private async run(): Promise<void> {
     while (this.running) {
       this.controller = new AbortController()
-      this.setStatus(this.reconnectAttempt === 0 ? 'connecting' : 'reconnecting')
+      this.setStatus(
+        this.reconnectAttempt === 0 ? 'connecting' : 'reconnecting',
+      )
       try {
         await this.connect(this.controller.signal)
         if (this.running) throw new Error('SSE stream ended')
@@ -197,13 +199,16 @@ export class SseEventBus {
     this.rememberEvent(eventId)
     this.lastEventId = eventId
     this.latestSequence.set(event.entity_id, event.sequence)
-    for (const listener of this.listeners) listener({ ...event, event_id: eventId })
+    for (const listener of this.listeners) {
+      listener({ ...event, event_id: eventId })
+    }
   }
 
   private rememberEvent(eventId: string): void {
     this.seenEventIds.add(eventId)
     if (this.seenEventIds.size > this.options.maxRememberedEvents) {
-      const oldest = this.seenEventIds.values().next().value as string | undefined
+      const oldest = this.seenEventIds.values().next()
+        .value as string | undefined
       if (oldest) this.seenEventIds.delete(oldest)
     }
   }
@@ -211,7 +216,9 @@ export class SseEventBus {
   private armHeartbeat(signal?: AbortSignal): void {
     this.clearHeartbeat()
     this.heartbeatTimer = setTimeout(() => {
-      if (!signal?.aborted) this.controller?.abort(new Error('SSE heartbeat timeout'))
+      if (!signal?.aborted) {
+        this.controller?.abort(new Error('SSE heartbeat timeout'))
+      }
     }, this.options.heartbeatTimeoutMs)
   }
 
