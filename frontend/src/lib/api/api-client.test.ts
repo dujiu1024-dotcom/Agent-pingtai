@@ -50,19 +50,29 @@ describe('ApiClient', () => {
         }),
       )
       .mockResolvedValueOnce(new Response(null, { status: 304 }))
-    const client = new ApiClient({ baseUrl: 'https://example.test/api', fetcher })
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
 
     await expect(client.get('/settings')).resolves.toEqual({ data: 'fresh' })
     await expect(client.get('/settings')).resolves.toEqual({ data: 'fresh' })
-    expect(new Headers(fetcher.mock.calls[1][1]?.headers).get('If-None-Match')).toBe(
+    expect(
+      new Headers(fetcher.mock.calls[1][1]?.headers).get('If-None-Match'),
+    ).toBe(
       '"rev-1"',
     )
   })
 
-  it('adds an idempotency key to mutations and exposes revision conflicts', async () => {
+  it(
+    'adds an idempotency key to mutations and exposes revision conflicts',
+    async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
-        JSON.stringify({ code: 'REVISION_CONFLICT', message: 'Revision changed' }),
+        JSON.stringify({
+          code: 'REVISION_CONFLICT',
+          message: 'Revision changed',
+        }),
         { status: 412, headers: { 'Content-Type': 'application/json' } },
       ),
     )
