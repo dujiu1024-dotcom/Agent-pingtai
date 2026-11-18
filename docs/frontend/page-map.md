@@ -129,7 +129,7 @@ flowchart TD
 
 - 列表筛选：`status`、`projectId`、`agentId`、`modelTemplateId`、`from`、`to`、`q`、`sort`、`page`、`pageSize`。
 - 时间范围统一 ISO-8601；URL 使用 UTC 时间戳/带 offset 的 ISO 字符串，界面按用户本地时区显示。
-- 跨页穿透保留来源上下文：`from`（来源 page_id）、`returnTo`（受控的站内相对路径）、筛选条件和分页；禁止接受任意外部 redirect URL。
+- 跨页穿透保留来源上下文：`fromPage`（来源 page_id）、`returnTo`（受控的站内相对路径）、筛选条件和分页；`from` 只用于时间范围起点，与 route-contract 的时间参数语义一致。禁止接受任意外部 redirect URL。
 - 详情内 tab 使用 `tab`；定位 Run 节点使用 `nodeId`；搜索结果可带 `entityType`。
 - query 参数必须可序列化、可分享；敏感信息、密钥、Prompt 私密内容不得写入 URL。
 - 无效/未知 query 参数忽略并记录诊断，不使页面崩溃；无效主键显示标准 Not Found。
@@ -381,3 +381,59 @@ Workflow：`/admin/workflows` → 草稿编辑 → 节点/边 Schema 校验 → 
 - 每个新路由 PR 必须列出受影响 page_id、旧入口兼容行为、路由冲突检查和 API 映射索引。
 - 当前代码状态与目标态状态必须分栏表达；不得把 proposed 路由、条件 API、未注册模块写成已实现。
 - 本文件完成 Gate 0 页面结构冻结；不代表 #755 no-auth 后端能力已完成，也不代表 #743–#752 页面实现或 #752 系统 E2E 已通过。
+
+
+### 11.7 page_id 逐页元数据索引（主键、面包屑、入口/出口、API）
+
+以下表为每个 page_id 的结构索引。入口/出口列描述站内导航关系；字段细节仍由对应模块字段字典维护。目标态页面均为 proposed，不能据此宣称页面已注册。
+
+| page_id | 主实体 / 主键 | 面包屑 | 主要入口 → 出口 | API 映射索引 |
+|---|---|---|---|---|
+| WS-OVERVIEW | 聚合视图 / 无单一主键 | 工作空间 / 驾驶舱 | 登录后默认入口或 no-auth 根入口 → Task、Run、Agent、Cost、Office | API-CAPABILITY、API-TASK、API-RUN、API-QUOTA、API-OBSERVABILITY |
+| WS-TASKS | Task / task_id | 工作空间 / 任务指挥中心 | 驾驶舱、全局搜索 → WS-TASK-DETAIL、WS-RUN-DETAIL | API-TASK、API-CAPABILITY |
+| WS-TASK-DETAIL | Task / task_id | 智能体运营 / 任务与运行 / 任务详情 | WS-TASKS、搜索、通知 → WS-RUN-DETAIL、OPS-APPROVAL-DETAIL、OPS-FILES | API-TASK、API-RUN、API-APPROVAL、API-SESSION-FILE |
+| WS-RUN-DETAIL | Run / run_id | 智能体运营 / 任务与运行 / Run Trace | Task、驾驶舱、Agent → OPS-APPROVAL-DETAIL、OPS-FILES、GLOBAL-AUDIT | API-RUN、API-TASK、API-APPROVAL、API-SESSION-FILE、API-AUDIT |
+| WS-COLLAB | Agent/Workflow Run/Blackboard 聚合 / 无单一主键 | 工作空间 / Agent 协作 | 驾驶舱、Agent、Workflow → OPS-AGENT-DETAIL、WS-WORKFLOW-RUN、WS-BLACKBOARD | API-REGISTRY、API-RUN、API-BLACKBOARD |
+| WS-WORKFLOW-RUN | Workflow Run / run_id | 智能体运营 / 工作流运行 / 运行详情 | WS-COLLAB、Task → WS-RUN-DETAIL、ADM-WORKFLOW-EDITOR（只读定义链接） | API-RUN |
+| WS-BLACKBOARD | Entry / entry_id | 智能体运营 / Blackboard / 条目详情 | WS-COLLAB、Run → WS-RUN-DETAIL、WS-TASK-DETAIL | API-BLACKBOARD |
+| WS-COST | Usage/Evaluation 聚合 / 无单一主键 | 工作空间 / 成本与质量 | 驾驶舱、全局导航 → OPS-EVAL-RUNS、WS-RUN-DETAIL、ADM-MODEL-TEMPLATES | API-QUOTA、API-OBSERVABILITY、API-EVALUATION、API-RUN |
+| WS-OFFICE | Office Layout / layout_id（API 待补） | 工作空间 / 3D 数字办公室 | 驾驶舱 → OPS-AGENT-DETAIL、WS-TASK-DETAIL、WS-RUN-DETAIL | API-OFFICE、API-RUN、API-CAPABILITY |
+| OPS-AGENTS | Agent Runtime / agent_id | 智能体运营 / Agent 与团队 | WS-COLLAB、WS-OFFICE → OPS-AGENT-DETAIL、ADM-AGENT-DETAIL | API-REGISTRY、API-RUN |
+| OPS-AGENT-DETAIL | Agent Runtime / agent_id | 智能体运营 / Agent 与团队 / 运行详情 | OPS-AGENTS、WS-OFFICE → WS-RUN-DETAIL、WS-TASK-DETAIL、ADM-AGENT-DETAIL | API-REGISTRY、API-RUN、API-TASK |
+| ADM-AGENTS | Agent Definition / item_id | 平台管理 / Agent 定义 | WS-COLLAB（只读链接）、平台管理导航 → ADM-AGENT-DETAIL | API-REGISTRY |
+| ADM-AGENT-DETAIL | Agent Definition / item_id + version | 平台管理 / Agent 定义 / 详情 | ADM-AGENTS、OPS-AGENT-DETAIL（只读运行链接）→ ADM-MODEL-TEMPLATES、ADM-TOOLS、ADM-SKILLS、ADM-WORKFLOWS | API-REGISTRY |
+| ADM-WORKFLOWS | Workflow Definition / workflow_id | 平台管理 / Workflow | 平台管理导航、Agent 配置 → ADM-WORKFLOW-EDITOR | API-REGISTRY |
+| ADM-WORKFLOW-EDITOR | Workflow Definition / workflow_id + version | 平台管理 / Workflow / 设计器 | ADM-WORKFLOWS、Agent 配置 → WS-WORKFLOW-RUN（发布后运行链接） | API-REGISTRY |
+| ADM-MODEL-PROVIDERS | Model Provider / provider_id | 平台管理 / 模型配置 / 供应商 | 平台管理导航 → ADM-MODEL-TEMPLATES、ADM-MODEL-ROUTING | API-REGISTRY、API-MODEL-TEST、API-MODEL-DISCOVERY |
+| ADM-MODEL-TEMPLATES | Model Template / template_id | 平台管理 / 模型配置 / 模板 | Provider、Agent/Workflow 配置、成本中心 → ADM-MODEL-PROVIDERS、ADM-MODEL-ROUTING、ADM-AGENT-DETAIL | API-REGISTRY |
+| ADM-MODEL-ROUTING | Routing Policy / policy_id | 平台管理 / 模型配置 / 路由策略 | Provider、Template → ADM-MODEL-PROVIDERS、ADM-MODEL-TEMPLATES | API-MODEL-ROUTING |
+| ADM-TOOLS | Tool/MCP Server / tool_id 或 server_id（契约待定） | 平台管理 / 工具与 MCP | Agent 配置 → ADM-AGENT-DETAIL、GLOBAL-AUDIT | API-REGISTRY |
+| ADM-SKILLS | Skill / skill_id | 平台管理 / Skills | Agent 配置 → ADM-AGENT-DETAIL | API-REGISTRY |
+| ADM-PROMPTS | Prompt Registry / item_id + version | 平台管理 / Prompt | Agent/Workflow 配置 → ADM-AGENT-DETAIL、ADM-WORKFLOW-EDITOR | API-PROMPT |
+| ADM-ORG | Organization/Department/Project/Member / 各自稳定 ID | 平台管理 / 组织与成员 | 管理导航 → ADM-RBAC | API-ORG-RBAC |
+| ADM-RBAC | Role/Permission / role_id、permission_id | 平台管理 / 角色与权限 | ADM-ORG、管理导航 → 受控页面入口 | API-ORG-RBAC |
+| OPS-APPROVALS | Approval / approval_id | 智能体运营 / 人工审批 | Task、Run、通知 → OPS-APPROVAL-DETAIL、WS-RUN-DETAIL | API-APPROVAL |
+| OPS-APPROVAL-DETAIL | Approval / approval_id | 智能体运营 / 人工审批 / 详情 | OPS-APPROVALS、Task、Run → WS-TASK-DETAIL、WS-RUN-DETAIL | API-APPROVAL |
+| OPS-KNOWLEDGE | Knowledge Base / knowledge_base_id | 智能体运营 / 知识库 | 搜索、Agent、运营导航 → OPS-DOCUMENT、OPS-MEMORY | API-KNOWLEDGE |
+| OPS-DOCUMENT | Document / document_id | 智能体运营 / 知识库 / 文档详情 | OPS-KNOWLEDGE、RAG 引用 → Chunk 锚点、OPS-FILES | API-KNOWLEDGE、API-SESSION-FILE |
+| OPS-MEMORY | Memory / memory_id | 智能体运营 / 记忆治理 | Agent、知识治理 → OPS-AGENT-DETAIL、OPS-CONVERSATIONS | API-MEMORY |
+| OPS-CONVERSATIONS | Conversation / conversation_id | 智能体运营 / 会话与消息 | Agent、Task → Task、OPS-FILES | API-SESSION-FILE |
+| OPS-FILES | File/Artifact / asset_id（URL 参数名 fileId） | 智能体运营 / 文件与产物 | Task、Run、Conversation → WS-TASK-DETAIL、WS-RUN-DETAIL、OPS-CONVERSATIONS | API-SESSION-FILE |
+| OPS-EVAL-DATASETS | Dataset / dataset_id | 智能体运营 / 评测 / 数据集 | WS-COST、评测导航 → OPS-EVAL-RUNS | API-EVALUATION |
+| OPS-EVAL-RUNS | Evaluation Run/Case / evaluation_run_id、case_id | 智能体运营 / 评测 / 运行详情 | WS-COST、OPS-EVAL-DATASETS → WS-RUN-DETAIL（如关联业务 Run） | API-EVALUATION |
+| GLOBAL-SEARCH | Search Query / q | 全局能力 / 搜索 | 全局搜索入口 → 对应实体唯一详情页 | API-SEARCH |
+| GLOBAL-NOTIFICATIONS | Notification / notification_id | 全局能力 / 通知中心 | 顶栏通知 → Task、Run、Approval 唯一详情 | API-NOTIFICATION |
+| GLOBAL-AUDIT | Audit Event / event_id | 全局能力 / 审计中心 | 运维/实体详情 → 对应资源唯一详情页 | API-AUDIT |
+| GLOBAL-OPS | Component/Event / component_id、event_id | 全局能力 / 系统运维 | 系统导航、健康告警 → GLOBAL-AUDIT、受控 Run/Task 详情 | API-OBSERVABILITY、API-AUDIT |
+| SYS-SETTINGS | Instance Setting / setting key（非秘密） | 平台管理 / 系统设置 | 管理导航 → GLOBAL-OPS | API-OBSERVABILITY、服务端 bootstrap（API-BOOTSTRAP） |
+| AUTH-LOGIN | Auth Session / session_id（不暴露在 URL） | 身份 / 登录 | auth=true 未登录直达 → WS-OVERVIEW | API-AUTH、API-BOOTSTRAP |
+| AUTH-INITIALIZE | Initial Admin Setup / setup state（不暴露密钥） | 身份 / 管理员初始化 | auth=true 且未初始化 → AUTH-LOGIN、WS-OVERVIEW | API-BOOTSTRAP、API-ORG-RBAC |
+
+Chunk 不作为独立导航页面；在 Document 详情中以稳定 `chunkId` 锚点/子资源定位，避免把检索片段误建成全站一级详情页。API 映射为索引引用，不代表对应 API 已实现；状态以 11.4 为准。
+
+### 11.8 视觉资产与设计系统核验结果
+
+- `示意图/首页示意图.png`：已在 main 找到，作为 WS-OVERVIEW 唯一首页视觉基准。
+- `示意图/3D办公室示意图.jpeg`：GitHub Contents API 返回二进制 UTF-8 解码错误；该错误不能证明文件缺失。按仓库文件存在性应在 PR 链接检查中以 Git tree/原始文件路径核验，不在此声称已通过。
+- `docs/frontend/design-system.md`：当前 main 未找到；该文档由 #743 负责建设。本 Issue 仅引用 #743 的设计系统交付，不把未存在文件标为已验证。
+- 视觉基准引用必须保持一对一：WS-OVERVIEW → 首页 PNG；WS-OFFICE → 3D 办公室 JPEG。
