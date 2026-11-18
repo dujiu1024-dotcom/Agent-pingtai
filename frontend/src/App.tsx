@@ -1,39 +1,411 @@
-import {useCallback,useEffect,useMemo,useState} from 'react'
-import {breadcrumbs,resolveRoute,routes,type EntityType,type RouteDefinition} from '@/routes'
-import {EmptyState,ForbiddenState,LoadingState,NotFoundState} from '@/components/States'
-import {ErrorBoundary} from '@/components/ErrorBoundary'
-import {OfficeWorkspace} from '@/components/OfficeWorkspace'
-type Result={id:string;entity_type:EntityType;title:string;snippet?:string;url?:string}
-type Notice={notification_id:string;title:string;body?:string;action_url?:string;read_at?:string|null}
-const kinds:{value:EntityType|'all';label:string}[]=[{value:'all',label:'全部类型'},{value:'agent',label:'智能体'},{value:'task',label:'任务'},{value:'run',label:'运行记录'},{value:'project',label:'项目'},{value:'workflow',label:'工作流'},{value:'knowledge_document',label:'知识文档'},{value:'conversation',label:'会话'},{value:'file',label:'文件'},{value:'approval',label:'审批'}]
-const groups=[{title:'总览',paths:['/app','/office']},{title:'构建',paths:['/agents','/workflows']},{title:'运行',paths:['/tasks','/runs','/approvals']},{title:'资源',paths:['/projects','/knowledge','/conversations','/files']},{title:'管理',paths:['/settings/models','/settings/system']}]
-const searchEndpoint=import.meta.env.VITE_GLOBAL_SEARCH_URL
-const eventEndpoint=import.meta.env.VITE_NOTIFICATION_SSE_URL
-function go(path:string){window.history.pushState({},'',path);window.dispatchEvent(new PopStateEvent('popstate'))}
-function sameOriginPath(value?:string){if(!value)return undefined;try{const url=new URL(value,window.location.origin);return url.origin===window.location.origin?url.pathname+url.search+url.hash:undefined}catch{return undefined}}
-function Content({route}:{route:RouteDefinition}){
- if(route.pageId==='office')return <OfficeWorkspace/>
- if(route.pageId==='dashboard')return <div className="dashboard-grid"><article className="welcome-card"><p className="eyebrow">AGENT PLATFORM</p><h2>智能体工作台</h2><p>统一管理智能体、工作流、任务和知识资产。</p></article><article className="metric-card"><span>已登记页面</span><strong>{routes.length}</strong></article><article className="metric-card"><span>最近访问</span><strong>本地记录</strong></article></div>
- if(route.pageId==='forbidden')return <ForbiddenState/>
- return <EmptyState title={route.title} description={route.description+'。业务内容将在对应模块交付后启用。'}/>
+import { useEffect, useState } from 'react'
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
+
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { GlobalSearch } from '@/components/GlobalSearch'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  ModeRestrictedState,
+  NotFoundState,
+} from '@/components/States'
+import { NotificationsPage } from '@/components/NotificationsPage'
+import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
+import {
+  TaskCommandCenter,
+  TaskDetailPage,
+  RunTracePage,
+} from '@/features/tasks/TaskCommandCenter'
+import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
+import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
+import {
+  authRoutes,
+  detailRoutes,
+  findPageRoute,
+  getVisibleNavigation,
+  globalRoutes,
+  pageRoutes,
+} from '@/routes/route-config'
+import type { PageRoute } from '@/routes/route-config'
+import { useUiStore } from '@/stores/ui-store'
+
+function BootstrapGate() {
+  const [config, setConfig] = useState<BootstrapConfig | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    void loadBootstrapConfig().then(
+      (result) => {
+        if (active) setConfig(result)
+      },
+      (reason: unknown) => {
+        if (active)
+          setError(
+            reason instanceof Error ? reason.message : '启动配置读取失败',
+          )
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [attempt])
+
+  if (error) {
+    return (
+      <div className="bootstrap-screen">
+        <ErrorState
+          title="无法读取服务端启动配置"
+          description={`${error}。为避免猜测 auth.enabled，前端不会自行选择权限模式。`}
+          onRetry={() => {
+            setError(null)
+            setConfig(null)
+            setAttempt((value) => value + 1)
+          }}
+        />
+      </div>
+    )
+  }
+  if (!config) {
+    return (
+      <div className="bootstrap-screen">
+        <LoadingState label="正在读取服务端启动配置" />
+      </div>
+    )
+  }
+
+  return <PlatformRouter config={config} />
 }
-export default function App(){
- const [path,setPath]=useState(window.location.pathname)
- const [collapsed,setCollapsed]=useState(false)
- const [recent,setRecent]=useState<string[]>(()=>{try{return JSON.parse(localStorage.getItem('ui.recent-routes')||'[]') as string[]}catch{return []}})
- const [query,setQuery]=useState(''),[kind,setKind]=useState<EntityType|'all'>('all'),[results,setResults]=useState<Result[]>([])
- const [searchOpen,setSearchOpen]=useState(false),[busy,setBusy]=useState(false),[searchError,setSearchError]=useState('')
- const [notices,setNotices]=useState<Notice[]>([]),[noticeOpen,setNoticeOpen]=useState(false),[sse,setSse]=useState('未配置')
- const route=resolveRoute(path)
- const crumbs=useMemo(()=>route?breadcrumbs(route):[],[route])
- useEffect(()=>{const pop=()=>setPath(window.location.pathname);window.addEventListener('popstate',pop);return()=>window.removeEventListener('popstate',pop)},[])
- useEffect(()=>{if(!route)return;setRecent(old=>{const next=[route.path,...old.filter(x=>x!==route.path)].slice(0,6);localStorage.setItem('ui.recent-routes',JSON.stringify(next));return next})},[path])
- useEffect(()=>{if(!eventEndpoint){setSse('未配置');return}setSse('连接中');const source=new EventSource(eventEndpoint,{withCredentials:true});source.onopen=()=>setSse('已连接');source.onerror=()=>setSse('连接中断');source.onmessage=e=>{try{const item=JSON.parse(e.data) as Notice;if(!item.notification_id||!item.title)return;setNotices(old=>[item,...old.filter(n=>n.notification_id!==item.notification_id)].slice(0,50))}catch(error){console.warn('[notification-sse] invalid event',error)}};return()=>source.close()},[])
- const search=useCallback(async()=>{if(!query.trim()){setResults([]);return}if(!searchEndpoint){setSearchError('全局搜索 API 尚未配置；请接入服务端搜索契约。');return}setBusy(true);setSearchError('');try{const url=new URL(searchEndpoint,window.location.origin);if(url.origin!==window.location.origin)throw new Error('搜索地址必须为同源地址');url.searchParams.set('q',query.trim());if(kind!=='all')url.searchParams.set('entity_type',kind);const response=await fetch(url,{credentials:'same-origin',headers:{Accept:'application/json'}});if(!response.ok)throw new Error('搜索请求失败（HTTP '+response.status+'）');const data=await response.json() as {items?:Result[];results?:Result[]};setResults(data.items||data.results||[])}catch(error){setSearchError(error instanceof Error?error.message:'搜索失败')}finally{setBusy(false)}},[query,kind])
- const unread=notices.filter(n=>!n.read_at).length
- return <ErrorBoundary><div className={collapsed?'app-shell nav-collapsed':'app-shell'}>
- <aside className="sidebar" aria-label="主导航"><a className="brand" href="/app" onClick={e=>{e.preventDefault();go('/app')}}><span className="brand-mark">A</span>{!collapsed&&<span>Agent Platform</span>}</a><button className="collapse-button" onClick={()=>setCollapsed(v=>!v)} aria-label={collapsed?'展开导航':'折叠导航'}>{collapsed?'›':'‹'}</button><nav>{groups.map(group=><section className="nav-group" key={group.title}><div className="nav-group-title">{!collapsed&&group.title}</div>{group.paths.map(p=>{const item=routes.find(r=>r.path===p)!;const active=route?.path===p||route?.parent===p;return <a key={p} title={item.title} className={active?'nav-item active':'nav-item'} href={p} onClick={e=>{e.preventDefault();go(p)}}><span className="nav-dot"/>{!collapsed&&item.title}</a>})}</section>)}</nav>{!collapsed&&<div className="sidebar-footer">最近访问{recent.length?recent.slice(0,4).map(p=>{const item=routes.find(r=>r.path===p);return item?<a key={p} href={p} onClick={e=>{e.preventDefault();go(p)}}>{item.title}</a>:null}):<small>暂无记录</small>}</div>}</aside>
- <main className="main-content"><header className="topbar"><div className="breadcrumbs" aria-label="面包屑导航">{crumbs.map((item,i)=><span key={item.pageId}>{i>0&&<i>/</i>}<a href={item.path} onClick={e=>{e.preventDefault();go(item.path)}}>{item.title}</a></span>)}</div><div className="top-actions"><button className="top-action" onClick={()=>setSearchOpen(v=>!v)}>全局搜索</button><div className="notice-wrap"><button className="top-action" onClick={()=>setNoticeOpen(v=>!v)} aria-expanded={noticeOpen}>通知 {unread>0&&<b className="notice-count">{unread}</b>}</button>{noticeOpen&&<div className="notice-popover"><strong>通知中心</strong><small className="connection-state">SSE：{sse}</small>{notices.length?notices.map(n=><button className="notice-item" key={n.notification_id} onClick={()=>{setNotices(old=>old.map(x=>x.notification_id===n.notification_id?{...x,read_at:new Date().toISOString()}:x));const target=sameOriginPath(n.action_url);if(target)go(target)}}><strong>{n.title}</strong><span>{n.body}</span></button>):<p className="muted">暂无通知</p>}</div>}</div></div></header>
- {searchOpen&&<section className="search-panel"><div className="search-row"><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void search()}} placeholder="搜索智能体、任务、运行记录、项目…" aria-label="搜索关键词"/><select value={kind} onChange={e=>setKind(e.target.value as EntityType|'all')} aria-label="实体类型筛选">{kinds.map(k=><option value={k.value} key={k.value}>{k.label}</option>)}</select><button onClick={()=>void search()}>搜索</button></div>{busy?<LoadingState label="正在搜索"/>:searchError?<p className="search-error" role="alert">{searchError}</p>:results.length?<ul className="search-results">{results.map(r=><li key={r.id}><a href={sameOriginPath(r.url)||'#'} onClick={e=>{const target=sameOriginPath(r.url);if(target){e.preventDefault();go(target)}else e.preventDefault()}}><strong>{r.title}</strong><small>{kinds.find(k=>k.value===r.entity_type)?.label||r.entity_type}</small><span>{r.snippet}</span></a></li>)}</ul>:<p className="muted">{query?'暂无匹配结果':'输入关键词并选择实体类型。'}</p>}</section>}
- <section className="page-heading"><div><p className="eyebrow">{route?.section||'PAGE'}</p><h1>{route?.title||'页面不存在'}</h1><p>{route?.description||'请检查访问地址。'}</p></div></section><ErrorBoundary>{route?<Content route={route}/>:<NotFoundState/>}</ErrorBoundary></main></div></ErrorBoundary>
+
+function PlatformRouter({ config }: { config: BootstrapConfig }) {
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
+  return (
+    <BrowserRouter basename={basename}>
+      <ErrorBoundary>
+        <Routes>
+          <Route element={<AppShell config={config} />}>
+            <Route
+              path="/"
+              element={<Navigate to="/workspace/overview" replace />}
+            />
+            <Route
+              path="/app"
+              element={<Navigate to="/workspace/overview" replace />}
+            />
+            {[...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
+              <Route
+                key={route.pageId}
+                path={route.path}
+                element={
+                  <PageView
+                    route={route}
+                    authEnabled={config.auth.enabled}
+                    capabilities={config.capabilities}
+                  />
+                }
+              />
+            ))}
+            {authRoutes.map((route) => (
+              <Route
+                key={route.pageId}
+                path={route.path}
+                element={
+                  config.auth.enabled ? (
+                    <AuthEntryPage route={route} />
+                  ) : (
+                    <ModeRestrictedState
+                      title="当前模式不提供身份入口"
+                      description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。"
+                    />
+                  )
+                }
+              />
+            ))}
+            <Route path="*" element={<NotFoundState />} />
+          </Route>
+        </Routes>
+      </ErrorBoundary>
+    </BrowserRouter>
+  )
+}
+
+function AppShell({ config }: { config: BootstrapConfig }) {
+  const collapsed = useUiStore((state) => state.sidebarCollapsed)
+  const toggleSidebar = useUiStore((state) => state.toggleSidebar)
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        navigate('/search')
+      }
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [navigate])
+  const current = [
+    ...pageRoutes,
+    ...detailRoutes,
+    ...globalRoutes,
+    ...authRoutes,
+  ].find((route) => {
+    if (route.path === location.pathname) return true
+    const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
+    return pattern.test(location.pathname)
+  })
+  const breadcrumbs = current?.parentPath
+    ? [findPageRoute(current.parentPath)].filter((item): item is PageRoute =>
+        Boolean(item),
+      )
+    : []
+
+  return (
+    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
+      <aside className="sidebar" aria-label="主导航">
+        <Link
+          className="brand"
+          to="/workspace/overview"
+          aria-label="Agent Platform 运营驾驶舱"
+        >
+          <span className="brand-mark">A</span>
+          {!collapsed && <span>Agent Platform</span>}
+        </Link>
+        <button
+          className="collapse-button"
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? '展开导航' : '折叠导航'}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? '›' : '‹'}
+        </button>
+        <nav className="primary-navigation">
+          {getVisibleNavigation(config.auth.enabled, config.capabilities).map(
+            (group) => (
+              <section
+                className="nav-group"
+                key={group.id}
+                aria-label={group.title}
+              >
+                <div className="nav-group-title">
+                  {!collapsed && group.title}
+                </div>
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.pageId}
+                    to={item.path}
+                    title={collapsed ? item.title : undefined}
+                    className={({ isActive }) =>
+                      isActive ? 'nav-item active' : 'nav-item'
+                    }
+                    end
+                  >
+                    <span className="nav-dot" aria-hidden="true" />
+                    {!collapsed && <span>{item.title}</span>}
+                  </NavLink>
+                ))}
+              </section>
+            ),
+          )}
+        </nav>
+        {!collapsed && (
+          <div className="sidebar-footer">
+            <span>模式由服务端启动配置决定</span>
+            <strong>{config.auth.enabled ? '权限模式' : '免登录模式'}</strong>
+            <small>版本 {config.version}</small>
+          </div>
+        )}
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="topbar-start">
+            <div className="breadcrumbs" aria-label="面包屑导航">
+              <Link to="/workspace/overview">Agent Platform</Link>
+              {current && (
+                <span>
+                  <i aria-hidden="true">/</i>
+                  {current.section}
+                </span>
+              )}
+              {breadcrumbs.map((item) => (
+                <span key={item.pageId}>
+                  <i aria-hidden="true">/</i>
+                  {item.title}
+                </span>
+              ))}
+              {current && (
+                <span>
+                  <i aria-hidden="true">/</i>
+                  {current.title}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="top-actions">
+            <Link className="top-action" to="/search" aria-label="打开全局搜索">
+              全局搜索 <kbd>⌘ K</kbd>
+            </Link>
+            <Link
+              className="top-action"
+              to="/notifications"
+              aria-label="打开通知中心"
+            >
+              通知
+            </Link>
+            {config.auth.enabled && (
+              <Link className="top-action auth-entry" to="/auth/login">
+                登录
+              </Link>
+            )}
+            <span className="mode-indicator">
+              {config.auth.enabled ? '权限已启用' : '免登录'}
+            </span>
+          </div>
+        </header>
+        <Outlet />
+      </main>
+    </div>
+  )
+}
+
+function PageView({
+  route,
+  authEnabled,
+  capabilities,
+}: {
+  route: PageRoute
+  authEnabled: boolean
+  capabilities: string[]
+}) {
+  if (route.authOnly && !authEnabled) {
+    return (
+      <ModeRestrictedState
+        title="此页面仅在权限模式开放"
+        description="当前服务端 auth.enabled=false，组织、成员与 RBAC 管理不适用。"
+      />
+    )
+  }
+  if (route.capability && !capabilities.includes(route.capability))
+    return (
+      <ModeRestrictedState
+        title="此功能未启用"
+        description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
+      />
+    )
+  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/search')
+    return (
+      <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
+    )
+  if (route.path === '/notifications') return <NotificationsPage />
+  if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
+  if (route.path === '/operations/runs/:runId') return <RunTracePage />
+  return (
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">
+          {route.pageId} · {route.owner}
+        </p>
+        <h1>{route.title}</h1>
+        <p>{route.description}</p>
+      </div>
+      <EmptyState
+        title="业务页面待模块接入"
+        description={`路由与深链已注册。此页面由 ${route.owner} 负责业务实现；本任务不伪造尚未确认的 API、实体数据或操作。`}
+      />
+    </section>
+  )
+}
+
+function Dashboard() {
+  const shortcuts = [
+    {
+      title: '任务指挥中心',
+      description: '任务队列与执行状态',
+      to: '/workspace/tasks',
+    },
+    {
+      title: 'Agent 协作中心',
+      description: 'Agent 与 Workflow 运行态',
+      to: '/workspace/collaboration',
+    },
+    {
+      title: '成本与质量',
+      description: '用量、质量与评测聚合',
+      to: '/workspace/quality-cost',
+    },
+    {
+      title: '3D 数字办公室',
+      description: '沉浸式办公室入口',
+      to: '/workspace/office',
+    },
+  ]
+  return (
+    <section className="page-content dashboard-page">
+      <div className="dashboard-hero">
+        <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
+        <h1>运营驾驶舱</h1>
+        <p>
+          统一进入工作空间、智能体运营与平台管理。业务指标将在对应模块 API
+          接入后展示。
+        </p>
+      </div>
+      <div className="shortcut-grid">
+        {shortcuts.map((item) => (
+          <Link className="shortcut-card" to={item.to} key={item.to}>
+            <strong>{item.title}</strong>
+            <span>{item.description}</span>
+            <span className="shortcut-arrow" aria-hidden="true">
+              →
+            </span>
+          </Link>
+        ))}
+      </div>
+      <EmptyState
+        title="驾驶舱数据尚未接入"
+        description="当前只提供稳定导航和页面框架，不使用静态假指标替代服务端数据。"
+      />
+    </section>
+  )
+}
+
+function AuthEntryPage({ route }: { route: PageRoute }) {
+  return (
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">{route.pageId}</p>
+        <h1>{route.title}</h1>
+        <p>{route.description}</p>
+      </div>
+      <EmptyState
+        title="身份流程由认证模块提供"
+        description="本任务仅接入服务端权限模式与条件路由，不模拟登录、创建账号或管理员身份。"
+        action={
+          <Link className="text-link" to="/workspace/overview">
+            返回工作空间
+          </Link>
+        }
+      />
+    </section>
+  )
+}
+
+export default function App() {
+  return <BootstrapGate />
 }
