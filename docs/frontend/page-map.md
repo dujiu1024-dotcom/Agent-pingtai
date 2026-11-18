@@ -259,3 +259,125 @@ Workflow：`/admin/workflows` → 草稿编辑 → 节点/边 Schema 校验 → 
 - Evaluation Run/Case 事实详情由 #750 唯一负责；#747 只做指标、趋势和对账聚合。
 - 系统设置与运维配置由 #751 负责；#749 不重复建设系统级运维设置。
 - Prompt 管理为条件页面：仅在 Prompt Registry API 能力真实启用时显示，页面主责 #749。
+
+
+## 11. 现有入口逐页盘点与迁移索引（源码核对）
+
+本节区分“当前入口事实”与“目标路由”。当前页面没有独立 URL 的，不得为其虚构已注册 path；目标 path 仅引用第 2 节 page_id。
+
+### 11.1 `/app` 静态工作台 view key 全量清单
+
+证据文件：`agent_platform/web/static/index.html`、`agent_platform/web/static/app.js`、路由组合 `agent_platform/web/app.py`。入口由 `GET /app` 与 `GET /app/` 返回；导航通过 `data-view` 设置 JS 内存态 `S.view`，不是 URL 路由。
+
+| 当前 view key | 当前显示名 | 目标 page_id | 目标 path | 当前状态 / 迁移说明 |
+|---|---|---|---|---|
+| `overview` | 驾驶舱 | WS-OVERVIEW | `/workspace/overview` | verified：默认内部视图；不是独立 URL |
+| `board` | 运营看板 | WS-TASKS | `/workspace/tasks` | verified：导航链接另开 `/board`；该路径与 JS view key 是两个入口，不推定后端 board 页面 |
+| `tasks` | 在办任务 | WS-TASKS | `/workspace/tasks` | verified：内部视图；详情由内存状态切换 |
+| `sessions` | 会话中心 | OPS-CONVERSATIONS | `/operations/conversations` | verified：内部视图；会话详情非稳定深链 |
+| `batch` | 批量执行 | WS-TASKS | `/workspace/tasks?tab=batch` | verified：内部视图；作为任务中心子视图，不另立 Task 实体详情 |
+| `replay` | Run 回放 | WS-RUN-DETAIL | `/operations/runs/:runId` | verified：内部视图；需 runId 才能定位运行记录 |
+| `artifacts` | 产物交付 | OPS-FILES | `/operations/files` | verified：内部视图；文件/Artifact 详情归 #750 |
+| `approvals` | 待我拍板 | OPS-APPROVALS | `/operations/approvals` | verified：内部视图；详情归审批唯一详情路由 |
+| `registry` | Agent 与资源管理 | ADM-AGENTS | `/admin/agents` | verified：复合入口，含 Agent/模型/工具等资源；必须拆分链接到各自 page_id，不得合并详情责任 |
+| `knowledge-graph` | 知识图谱 | WS-COLLAB | `/workspace/collaboration?tab=graph` | verified：工作台内视图；另有独立 `/graph-view` |
+| `governance` | 知识与运营管理 | OPS-KNOWLEDGE | `/operations/knowledge-bases` | verified：复合入口；知识库/记忆/审计子能力按独立 page_id 分流 |
+| `observability` | 可观测性 | GLOBAL-OPS | `/admin/operations` | verified：内部视图；API 是否可用依赖后端注入与 capability |
+| `prompt-lab` | Prompt 版本管理 | ADM-PROMPTS | `/admin/prompts` | verified：内部视图入口；仅 Prompt Registry capability 启用时显示，缺能力不代表 API 已存在 |
+
+**内部详情 view key / 状态：** `task-detail`、`session-detail` 由 JS 内存状态承载；当前 `S.task` / `S.session` 不构成可复制的 URL 主键。Run/Approval 详情若由列表选择进入，也必须在新前端迁移为 `runId` / `approvalId` 深链；不得沿用纯内存详情作为目标契约。未知/临时视图不增加新的 page_id，除非形成独立导航页面并经 #753 评审。
+
+### 11.2 旧版 `platform-ui/index.html` 页面全量清单
+
+证据文件：仓库根目录 `platform-ui/index.html`（单文件 HTML/CSS/JS）。旧版以 `data-view` / section id 切换，不是后端 URL 路由。
+
+| 旧版 view key / section | 页面 | 目标 page_id | 目标 path | 当前状态 / 迁移说明 |
+|---|---|---|---|---|
+| `overview` | 工作台 | WS-OVERVIEW | `/workspace/overview` | verified：旧版概览；统一迁移至主驾驶舱 |
+| `agents` | Agent 管理 | ADM-AGENTS | `/admin/agents` | verified：定义注册入口；运行态另归 OPS-AGENTS |
+| `runs` | 任务与运行 | WS-TASKS | `/workspace/tasks` | verified：旧版以 Task Center 为主；Run 详情独立归 WS-RUN-DETAIL |
+| `approvals` | 人工审批 | OPS-APPROVALS | `/operations/approvals` | verified：审批列表 |
+| `knowledge` | 知识库 | OPS-KNOWLEDGE | `/operations/knowledge-bases` | verified：知识库/文档/检索入口 |
+| `memory` | 记忆管理 | OPS-MEMORY | `/operations/memories` | verified：记忆列表与治理 |
+| `blackboard` | Blackboard | WS-BLACKBOARD | `/operations/blackboard/:entryId` | verified：旧版按 scope 查询；目标详情使用 entryId |
+| `models` | 模型模板与供应商 | ADM-MODEL-TEMPLATES | `/admin/models/templates` | verified：旧版同一视图含 Provider 与 Template；目标拆为 Provider、Template、Routing 三个一级页面 |
+| `tools` | 工具与 Skills | ADM-TOOLS | `/admin/tools` | verified：目标拆为 Tool/MCP 与 Skill 两个 page_id |
+| `sessions` | 会话 | OPS-CONVERSATIONS | `/operations/conversations` | verified：旧版会话/消息入口 |
+| `files` | 文件 | OPS-FILES | `/operations/files` | verified：旧版文件资产入口 |
+| `operations` | 运营与成本 | WS-COST | `/workspace/quality-cost` | verified：复合视图含 usage/metrics/audit；审计和运维需分别链接 GLOBAL-AUDIT / GLOBAL-OPS |
+| `evaluation` | RAG 评测 | OPS-EVAL-RUNS | `/operations/evaluation/runs` | verified：旧版主要是检索评测表单；数据集与评测运行详情由 #750 负责，聚合指标归 #747 |
+
+旧版 `models`、`tools`、`operations` 是复合页面，拆分仅改变导航/页面归属，不意味着旧版已具有模型路由策略、MCP Server 独立详情、完整审计/运维或全量评测能力。
+
+### 11.3 独立入口、回退与资源
+
+| 当前入口 | 当前代码位置 / 行为 | page_id / 目标 path | 状态 |
+|---|---|---|---|
+| `GET /app`, `GET /app/` | `agent_platform/web/app.py` 返回静态 `index.html` | WS-OVERVIEW / `/workspace/overview` | verified |
+| `GET /app/assets/{name}` | 只允许 ASSETS 白名单中的静态文件 | 不形成业务 page_id | verified |
+| `GET /graph-view` | 静态 `graph.html` 存在时返回；否则 404 | WS-COLLAB / `/workspace/collaboration?tab=graph` | verified：路由已注册，资源存在性需部署核验 |
+| `GET /app?legacy=true` | 307 Redirect 到 `/office` | 不映射 WS-OFFICE；旧回退入口 | verified |
+| `/office` | 当前 web router 不注册；需查其他 legacy bridge/组合入口 | WS-OFFICE / `/workspace/office` | unregistered in `create_platform_web_router`；不可将回退等同新 3D 页面 |
+| `/api/platform/v1/office/*` | `agent_platform/api/office.py` 模块存在，但 `create_platform_app` 未 include office router | WS-OFFICE | module-only-unregistered |
+| `/workspace/*`, `/operations/*`, `/admin/*`, `/search`, `/notifications` | 当前未发现目标态 React Router / SPA route registration | 对应目标 page_id | proposed / not implemented |
+
+### 11.4 API 与字段映射索引
+
+本表只给稳定索引和源码状态，不在页面地图复制字段字典。字段名、类型、必填/空值、分页、错误、权限、事件流 schema 由各主责 Issue 的字段/API 契约维护；未知字段标记待核实，不得以页面设计稿推断。
+
+| API 索引 ID | 当前核对范围（相对路径） | 当前状态 | 关联页面 / 主责 |
+|---|---|---|---|
+| API-AUTH | `/auth/login`, `/auth/logout`, `/auth/me` | source-registered；当前 middleware 仍强制认证 | AUTH-LOGIN / #743 |
+| API-CAPABILITY | `GET /api/platform/v1/workbench/capabilities` | source-registered；具体 features 依 composition | 全部业务页 / #743 |
+| API-TASK | `/api/platform/v1/workbench/tasks*`、batch | source-registered / 条件能力 | WS-TASKS、WS-TASK-DETAIL / #745 |
+| API-RUN | `/api/platform/v1/runs/{run_id}*`、events、stream、interventions | source-registered / resolver 与 authorizer 条件挂载 | WS-RUN-DETAIL / #745 |
+| API-APPROVAL | `/api/platform/v1/approvals*` | source-registered / service+authorizer 条件挂载 | OPS-APPROVALS / #750 |
+| API-REGISTRY | `/api/platform/v1/registry/{kind}*`、versions、publish、rollback、disable、active | source-registered / registry resolver+authorizer 条件挂载 | ADM-AGENTS、ADM-MODEL-PROVIDERS、ADM-MODEL-TEMPLATES、ADM-TOOLS、ADM-SKILLS / #749 |
+| API-MODEL-TEST | Provider connectivity test | missing / not found in checked router composition | ADM-MODEL-PROVIDERS / #749 |
+| API-MODEL-DISCOVERY | Provider model discovery | missing / not found in checked router composition | ADM-MODEL-PROVIDERS / #749 |
+| API-MODEL-ROUTING | Routing policy CRUD/validation | missing or unverified; no dedicated router found | ADM-MODEL-ROUTING / #749 |
+| API-PROMPT | Prompt registry routes | source-registered conditionally via prompt registry dependency | ADM-PROMPTS / #749 |
+| API-BLACKBOARD | `/api/platform/v1/blackboard*` | source-registered / repository+authorizer conditional | WS-BLACKBOARD、WS-COLLAB / #746 |
+| API-KNOWLEDGE | `/api/platform/v1/knowledge/*` | source-registered / service and principal policy; auth=false not available in current baseline | OPS-KNOWLEDGE、OPS-DOCUMENT / #750 |
+| API-MEMORY | `/api/platform/v1/memories/*` | source-registered / memory service and principal policy | OPS-MEMORY / #750 |
+| API-SESSION-FILE | `/api/platform/v1/sessions/*`, `/files/*` | source-registered / session service and authorizer conditional | OPS-CONVERSATIONS、OPS-FILES / #750 |
+| API-EVALUATION | knowledge RAG evaluate and evaluation rollout router | partial/conditional; durable dataset/run/case contract must be confirmed | OPS-EVAL-DATASETS、OPS-EVAL-RUNS / #750 |
+| API-OBSERVABILITY | `/api/platform/v1/observability/*`, metrics/alerts | source-registered / monitor/exporter dependencies conditional | GLOBAL-OPS / #751 |
+| API-QUOTA | `/api/platform/v1/quotas/*` | source-registered / store+authorizer conditional | WS-COST / #747 |
+| API-AUDIT | `/api/platform/v1/audit/*` | source-registered / reader+authorizer conditional | GLOBAL-AUDIT / #751 |
+| API-OFFICE | `agent_platform/api/office.py` office state | module-only-unregistered in current app composition | WS-OFFICE / #748 |
+| API-SEARCH | cross-entity search | missing / not found in checked composition | GLOBAL-SEARCH / #751 |
+| API-NOTIFICATION | notification inbox/read/delivery | missing / not found in checked composition | GLOBAL-NOTIFICATIONS / #751 |
+| API-ORG-RBAC | org/department/member/role/permission administration | missing / not found in checked UI/API composition | ADM-ORG、ADM-RBAC / #749 |
+| API-BOOTSTRAP | startup metadata incl. auth.enabled and capabilities | missing/unverified; do not infer from /auth/me | AUTH-LOGIN、all route guards / #743 |
+
+### 11.5 每页字段/API 映射索引（主责维护）
+
+| page_id 范围 | 字段/API 索引 | 主要实体与主键 | 主责 |
+|---|---|---|---|
+| WS-OVERVIEW、WS-COST | API-CAPABILITY、API-TASK、API-RUN、API-QUOTA、API-OBSERVABILITY、API-EVALUATION | 聚合指标；不设伪造实体主键 | #744、#747 |
+| WS-TASKS、WS-TASK-DETAIL、WS-RUN-DETAIL | API-TASK、API-RUN、API-SESSION-FILE | Task.task_id；Run.run_id | #745 |
+| WS-COLLAB、OPS-AGENTS、OPS-AGENT-DETAIL、WS-WORKFLOW-RUN、WS-BLACKBOARD | API-REGISTRY（只读引用）、API-RUN、API-BLACKBOARD | Agent.agent_id；WorkflowRun.run_id；Entry.entry_id | #746 |
+| ADM-AGENTS、ADM-AGENT-DETAIL、ADM-WORKFLOWS、ADM-WORKFLOW-EDITOR、ADM-MODEL-*、ADM-TOOLS、ADM-SKILLS、ADM-PROMPTS、ADM-ORG、ADM-RBAC | API-REGISTRY、API-MODEL-TEST、API-MODEL-DISCOVERY、API-MODEL-ROUTING、API-PROMPT、API-ORG-RBAC | item_id + version；provider_id/template_id/policy_id | #749 |
+| OPS-APPROVALS、OPS-KNOWLEDGE、OPS-DOCUMENT、OPS-MEMORY、OPS-CONVERSATIONS、OPS-FILES、OPS-EVAL-* | API-APPROVAL、API-KNOWLEDGE、API-MEMORY、API-SESSION-FILE、API-EVALUATION | approval_id、knowledge_base_id、document_id、memory_id、conversation_id、asset_id、evaluation_run_id | #750 |
+| WS-OFFICE | API-OFFICE、API-RUN、API-CAPABILITY | layout_id（API 待补）；Agent/Run 外键引用 | #748 |
+| GLOBAL-SEARCH、GLOBAL-NOTIFICATIONS、GLOBAL-AUDIT、GLOBAL-OPS、SYS-SETTINGS | API-SEARCH、API-NOTIFICATION、API-AUDIT、API-OBSERVABILITY | query / notification_id / event_id / component_id | #751 |
+
+### 11.6 页面状态、响应式和视觉引用
+
+所有页面必须支持并保持语义一致的状态集合：loading/skeleton、empty（无数据与无筛选结果分开）、error/retry、stale/offline、permission-denied（仅 auth=true）、read-only、partial-data、unknown-enum、not-found。页面地图不定义字段顺序或组件布局。
+
+响应式基线：桌面端完整导航与多列信息；平板端导航折叠、表格允许横向滚动/列优先级；窄屏端单列、详情转全屏、复杂图/3D 提供可访问的列表/2D 降级。3D 低性能设备降级不改变 Agent/Run 真实状态。
+
+视觉资产：
+- 首页视觉基准：`示意图/首页示意图.png`，只引用 WS-OVERVIEW；资产当前是否在仓库可访问须以仓库文件检查为准。
+- 3D 场景基准：`示意图/3D办公室示意图.jpeg`，只引用 WS-OFFICE；不得将首页图用于 3D。
+- 全站 Design Token 引用 #743 的 `docs/frontend/design-system.md`；本 Issue 不冻结字段布局、表格列和表单组件。
+
+## 12. 维护规则与冻结判定
+
+- 每个 page_id 在本文件只定义一次；同一实体详情只能有一个主责 page_id/path。导航别名、旧 view key 只能引用目标 page_id，不得复制详情责任。
+- 新增/删除页面、改变 page_id/path/主实体/主责或详情唯一归属，必须先评审本文件；字段、表格列、筛选器、表单布局的业务迭代由模块 Issue 自主维护。
+- 每个新路由 PR 必须列出受影响 page_id、旧入口兼容行为、路由冲突检查和 API 映射索引。
+- 当前代码状态与目标态状态必须分栏表达；不得把 proposed 路由、条件 API、未注册模块写成已实现。
+- 本文件完成 Gate 0 页面结构冻结；不代表 #755 no-auth 后端能力已完成，也不代表 #743–#752 页面实现或 #752 系统 E2E 已通过。
