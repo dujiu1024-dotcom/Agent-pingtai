@@ -311,7 +311,7 @@ function PageView({
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
-  if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/workspace/tasks') return <TaskCommandCenter />\n  if (route.path === '/workspace/collaboration') return <AgentCollaborationCenter />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
