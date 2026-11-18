@@ -51,9 +51,7 @@ const prerequisites = [
 const notice =
   '当前仓库尚无可证实的组织 / RBAC API 注册与响应 schema。为避免前端猜测字段、授权语义或写入路径，管理操作保持禁用，待后端契约确认后接通。'
 
-export function OrganizationAccessPage({
-  page,
-}: OrganizationAccessPageProps) {
+export function OrganizationAccessPage({ page }: OrganizationAccessPageProps) {
   const organization = page === 'organization'
   const areas = organization ? organizationAreas : accessAreas
 
