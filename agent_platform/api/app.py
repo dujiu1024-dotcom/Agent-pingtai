@@ -1,8 +1,7 @@
 """Production composition factory for the platform HTTP API."""
 from __future__ import annotations
 
-import os
-from typing import Any, Protocol, Sequence
+from typing import Any, Sequence
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
@@ -30,6 +29,7 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
+from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.office import OfficeStateService, create_office_router
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
@@ -48,14 +48,12 @@ from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,
 )
-from agent_platform.identity.models import Principal
 from agent_platform.identity.service import IdentityService
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
-from agent_platform.security.audit_context import AuditActor
 from agent_platform.security.audit_http import AuditRequestASGIMiddleware
 from agent_platform.web.app import create_platform_web_router
 
@@ -69,89 +67,14 @@ async def _principal_from_request(request: Any) -> Any:
     return principal
 
 
-class AuthorizationContextStrategy(Protocol):
-    """Pluggable request identity policy selected once during app startup."""
-
-    async def resolve_principal(self, request: Any) -> Any | None: ...
-
-    async def resolve_authorization_context(self, request: Any) -> Any | None: ...
-
-    async def resolve_knowledge_principal(self, request: Any) -> Any: ...
-
-    async def resolve_memory_principal(self, request: Any) -> Any: ...
-
-
-class AuthenticatedAuthorizationContextStrategy:
-    """Resolve real principals and persisted RBAC context in auth-enabled mode."""
-
-    def __init__(self, identity_repository: Any) -> None:
-        self.identity_repository = identity_repository
-
-    async def resolve_principal(self, request: Any) -> Any:
-        return await _principal_from_request(request)
-
-    async def resolve_authorization_context(self, request: Any) -> Any:
-        principal = await self.resolve_principal(request)
-        context = await self.identity_repository.get_authorization_context(
-            tenant_id=principal.tenant_id,
-            user_id=principal.user_id,
-        )
-        if context is None:
-            from fastapi import HTTPException
-            raise HTTPException(403, "active tenant membership required")
-        return context
-
-    async def resolve_knowledge_principal(self, request: Any) -> Any:
-        return await IdentityContextResolver(self.identity_repository).knowledge(request)
-
-    async def resolve_memory_principal(self, request: Any) -> Any:
-        return await IdentityContextResolver(self.identity_repository).memory(request)
-
-
-class InstanceAuthorizationContextStrategy:
-    """No-auth policy: no Principal, user, role, or synthetic AuthorizationContext."""
-
-    async def resolve_principal(self, request: Any) -> None:
-        return None
-
-    async def resolve_authorization_context(self, request: Any) -> None:
-        return None
-
-    async def resolve_knowledge_principal(self, request: Any) -> None:
-        from fastapi import HTTPException
-        raise HTTPException(503, "Knowledge no-auth context adapter is not installed")
-
-    async def resolve_memory_principal(self, request: Any) -> None:
-        from fastapi import HTTPException
-        raise HTTPException(503, "Memory no-auth context adapter is not installed")
-
-
-def _resolve_auth_enabled(value: bool | None) -> bool:
-    """Resolve the immutable startup mode from argument or AUTH_ENABLED env."""
-    if value is not None:
-        if not isinstance(value, bool):
-            raise ValueError("auth_enabled must be a boolean")
-        return value
-    raw = os.getenv("AUTH_ENABLED")
-    if raw is None or not raw.strip():
-        return False
-    normalized = raw.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError("AUTH_ENABLED must be one of true/false, 1/0, yes/no, or on/off")
-
-
 def create_platform_app(
     *,
-    identity: IdentityService | None = None,
-    identity_repository: Any | None = None,
+    identity: IdentityService,
+    identity_repository: Any,
     knowledge: KnowledgeService,
     memory: MemoryService,
     redis: Any,
     allowed_origins: Sequence[str],
-    auth_enabled: bool | None = None,
     service_identity: Any | None = None,
     rag: RAGService | None = None,
     rag_playground_resolver: Any | None = None,
@@ -201,6 +124,7 @@ def create_platform_app(
     audit_authorizer: Any | None = None,
     audit_request_sink: Any | None = None,
     audit_actor_resolver: Any | None = None,
+    audit_null_actor_tenant_resolver: Any | None = None,
     resource_audit_writer: Any | None = None,
     quota_store: Any | None = None,
     quota_reporting_store: Any | None = None,
@@ -235,8 +159,10 @@ def create_platform_app(
     locale_manage_authorizer: Any | None = None,
     publisher_key_registry: Any | None = None,
     publisher_key_authorizer: Any | None = None,
+    auth_enabled: bool = True,
     office_state_service: OfficeStateService | None = None,
-    instance_tenant_id: str | None = None,
+    office_tenant_resolver: Any | None = None,
+    bootstrap_capabilities: Sequence[str] = (),
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -244,15 +170,6 @@ def create_platform_app(
     so multi-instance deployments do not silently fall back to process-local
     security controls.
     """
-    auth_enabled = _resolve_auth_enabled(auth_enabled)
-    if auth_enabled and identity is None:
-        raise ValueError("auth.enabled=true requires an identity service")
-    if auth_enabled and identity_repository is None:
-        raise ValueError("auth.enabled=true requires an identity repository")
-    authorization_strategy: AuthorizationContextStrategy = (
-        AuthenticatedAuthorizationContextStrategy(identity_repository)
-        if auth_enabled else InstanceAuthorizationContextStrategy()
-    )
     if isinstance(allowed_origins, str):
         raise ValueError("allowed_origins must be a sequence of exact origins")
     origins = tuple(origin.strip() for origin in allowed_origins if origin.strip())
@@ -272,20 +189,23 @@ def create_platform_app(
         ):
             raise ValueError("allowed_origins must contain exact HTTPS origins only")
 
-    audit_request_configured = audit_request_sink is not None or audit_actor_resolver is not None
-    if audit_request_configured and audit_request_sink is None:
-        raise ValueError("audit request sink is required when request auditing is configured")
-    if audit_request_configured and auth_enabled and audit_actor_resolver is None:
-        raise ValueError("authenticated request auditing requires an actor resolver")
+    audit_request_configured = any(value is not None for value in (
+        audit_request_sink, audit_actor_resolver, audit_null_actor_tenant_resolver,
+    ))
+    if audit_request_configured and (
+        audit_request_sink is None
+        or (audit_actor_resolver is None and audit_null_actor_tenant_resolver is None)
+        or (auth_enabled and audit_actor_resolver is None)
+    ):
+        raise ValueError(
+            "audit sink and a mode-appropriate actor/instance resolver must be configured"
+        )
 
     app = FastAPI(
         title="Agent Platform API",
         version="1.0.0",
         description="Versioned tenant-scoped API. See docs/api-contract.md for the public contract.",
     )
-    app.state.auth_enabled = auth_enabled
-    app.state.authorization_context_strategy = authorization_strategy
-    app.state.audit_actor_policy = "principal-or-null; no anonymous user is synthesized"
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -313,29 +233,20 @@ def create_platform_app(
     # Add request auditing before Identity middleware so it executes inside the
     # authenticated identity boundary and sees the verified principal.
     if audit_request_configured:
-        if not auth_enabled and (
-            not isinstance(instance_tenant_id, str) or not instance_tenant_id.strip()
-        ):
-            raise ValueError("no-auth request auditing requires explicit instance_tenant_id")
-
-        def resolve_instance_audit_actor(_scope: dict[str, Any]) -> AuditActor:
-            return AuditActor(tenant_id=instance_tenant_id, actor_id=None)
-
         app.add_middleware(
             AuditRequestASGIMiddleware,
             sink=audit_request_sink,
-            resolve_actor=audit_actor_resolver,
-            resolve_instance_actor=resolve_instance_audit_actor if not auth_enabled else None,
+            resolve_actor=audit_actor_resolver or (lambda principal: None),
+            resolve_null_actor_tenant=audit_null_actor_tenant_resolver,
         )
     app.add_middleware(
         IdentityASGIMiddleware,
         identity=identity,
         service_identity=service_identity,
         allowed_origins=origins,
-        protected_paths=("/api", "/auth"),
-        login_rate_limiter=RedisSlidingWindowRateLimiter(redis) if auth_enabled else None,
-        local_principal=local_principal_resolver if auth_enabled else None,
-        auth_enabled=auth_enabled,
+        protected_paths=(("/api", "/auth") if auth_enabled else ("/auth",)),
+        login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
+        local_principal=local_principal_resolver,
     )
     app.add_middleware(TraceContextASGIMiddleware)
     # Outer middleware also covers authentication failures returned before routing.
@@ -345,9 +256,14 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    if auth_enabled:
-        assert identity is not None
-        app.include_router(create_identity_router(identity=identity))
+    app.include_router(create_identity_router(identity=identity))
+    app.include_router(create_bootstrap_router(
+        auth_enabled=auth_enabled, capabilities=bootstrap_capabilities,
+    ))
+    if office_state_service is not None:
+        app.include_router(create_office_router(
+            service=office_state_service, resolve_tenant=office_tenant_resolver,
+        ))
     app.include_router(
         create_health_router(
             readiness_checks=(
@@ -357,51 +273,6 @@ def create_platform_app(
             )
         )
     )
-
-    # Public bootstrap metadata is intentionally limited to non-secret deployment facts.
-    app.state.capabilities = {
-        "office": office_state_service is not None,
-        "knowledge": True,
-        "memory": True,
-        "registry": registry_service_resolver is not None,
-        "sessions": session_service_resolver is not None,
-        "observability": any(value is not None for value in (
-            metrics_exporter, operational_health_monitor, alert_store,
-            evaluation_repository, evaluation_run_service, evaluation_comparison_service,
-        )),
-        "audit": audit_reader is not None and audit_authorizer is not None,
-        "connectors": connector_service_resolver is not None and connector_authorizer is not None,
-    }
-
-    @app.get("/api/platform/v1/bootstrap", tags=["bootstrap"])
-    async def platform_bootstrap():
-        return {
-            "auth": {"enabled": auth_enabled},
-            "version": app.version,
-            "capabilities": dict(app.state.capabilities),
-        }
-
-    if office_state_service is not None:
-        if not auth_enabled and (
-            not isinstance(instance_tenant_id, str) or not instance_tenant_id.strip()
-        ):
-            raise ValueError(
-                "office_state_service in auth-disabled mode requires explicit instance_tenant_id"
-            )
-
-        async def resolve_office_tenant(request: Request) -> str:
-            if not auth_enabled:
-                # Explicit deployment namespace; never fabricate a Principal/user.
-                return instance_tenant_id
-            principal = await authorization_strategy.resolve_principal(request)
-            if not isinstance(principal, Principal):
-                raise HTTPException(401, "authentication required")
-            return principal.tenant_id
-
-        app.include_router(create_office_router(
-            service=office_state_service,
-            resolve_tenant_id=resolve_office_tenant,
-        ))
     evaluation_configured = any(value is not None for value in (
         evaluation_repository, evaluation_run_service,
     ))
@@ -462,19 +333,17 @@ def create_platform_app(
         memory=memory,
         rag=rag,
         memory_extraction=memory_extraction,
-        resolve_knowledge_principal=authorization_strategy.resolve_knowledge_principal,
-        resolve_memory_principal=authorization_strategy.resolve_memory_principal,
         identity_repository=identity_repository,
     ))
     app.include_router(create_knowledge_upload_router(
         knowledge=knowledge,
-        resolve_principal=authorization_strategy.resolve_knowledge_principal,
+        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
     ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
         if not rag_playground_embedding_models:
             raise ValueError("RAG playground requires configured embedding model IDs")
-        knowledge_principal_resolver = authorization_strategy.resolve_knowledge_principal
+        knowledge_principal_resolver = IdentityContextResolver(identity_repository).knowledge
         app.include_router(create_rag_playground_router(
             resolve_principal=knowledge_principal_resolver,
             resolve_rag=rag_playground_resolver,
@@ -508,21 +377,21 @@ def create_platform_app(
         if registry_service_resolver is None or registry_authorizer is None:
             raise ValueError("registry service resolver and authorizer must be configured together")
         app.include_router(create_registry_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_service=registry_service_resolver,
             authorize=registry_authorizer,
         ))
     if sessions_configured:
         if session_service_resolver is None or session_authorizer is None:
             raise ValueError("session service resolver and authorizer must be configured together")
-        memory_context_resolver = authorization_strategy
+        memory_context_resolver = IdentityContextResolver(identity_repository)
         app.include_router(create_sessions_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
             memory_extraction=memory_extraction,
             resolve_memory_principal=(
-                memory_context_resolver.resolve_memory_principal if memory_extraction is not None else None
+                memory_context_resolver.memory if memory_extraction is not None else None
             ),
             audit_writer=resource_audit_writer or audit_request_sink,
         ))
@@ -624,32 +493,32 @@ def create_platform_app(
             "audit": audit_reader is not None and audit_authorizer is not None,
             "prompt_management": prompt_registry is not None and prompt_manage_authorizer is not None,
         },
-        resolve_principal=authorization_strategy.resolve_principal if task_center_configured else None,
+        resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,
         authorize_task=task_authorizer,
     ))
     if batch_api_configured:
         app.include_router(create_batch_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_service=batch_service_resolver,
             authorize=batch_authorizer or task_authorizer,
         ))
     if blackboard_configured:
         app.include_router(create_blackboard_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_repository=blackboard_repository_resolver,
             authorize_scope=blackboard_authorizer,
             verify_evidence_refs=blackboard_evidence_verifier,
             resolve_event_replay=blackboard_event_replay_resolver,
         ))
     if graph_configured:
-        graph_identity_context = authorization_strategy
+        graph_identity_context = IdentityContextResolver(identity_repository)
         app.include_router(create_graph_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_query_service=graph_query_service_resolver,
             authorize_read=graph_read_authorizer,
             resolve_governance=graph_governance_resolver,
-            resolve_knowledge_principal=graph_identity_context.resolve_knowledge_principal,
+            resolve_knowledge_principal=graph_identity_context.knowledge,
             visualization_url=graph_visualization_url,
         ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
@@ -741,7 +610,7 @@ def create_platform_app(
         if connector_service_resolver is None or connector_authorizer is None:
             raise ValueError("connector service resolver and authorizer must be configured together")
         app.include_router(create_connectors_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
@@ -765,7 +634,7 @@ def create_platform_app(
         if run_lifecycle_resolver is None or run_authorizer is None:
             raise ValueError("Run lifecycle resolver and authorizer must be configured together")
         app.include_router(create_runs_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_lifecycle=run_lifecycle_resolver,
             authorize=run_authorizer,
             resolve_interventions=run_intervention_resolver,
@@ -778,7 +647,7 @@ def create_platform_app(
         if run_authorizer is None:
             raise ValueError("Run replay resolver requires the Run authorizer")
         app.include_router(create_run_replay_router(
-            resolve_principal=authorization_strategy.resolve_principal,
+            resolve_principal=_principal_from_request,
             resolve_replay=run_replay_resolver,
             authorize=run_authorizer,
         ))

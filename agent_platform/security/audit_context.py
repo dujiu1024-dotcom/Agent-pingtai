@@ -18,7 +18,7 @@ class AuditActor:
         if self.actor_id is not None and (
             not isinstance(self.actor_id, str) or not self.actor_id.strip()
         ):
-            raise ValueError("actor_id must be a non-empty string when supplied")
+            raise ValueError("actor_id must be a non-empty string or None")
         if self.request_id is not None and (
             not isinstance(self.request_id, str) or not self.request_id.strip()
         ):

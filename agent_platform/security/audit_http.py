@@ -1,4 +1,4 @@
-"""Fail-closed audit boundary for authenticated and instance HTTP requests."""
+"""Fail-closed audit boundary for authenticated HTTP API requests."""
 from __future__ import annotations
 
 import inspect
@@ -9,11 +9,11 @@ from agent_platform.security.audit_context import AuditActor, AuditSink
 
 
 class AuditRequestASGIMiddleware:
-    """Persist request intent and completion with an explicit nullable actor.
+    """Persist an authenticated request intent before entering application code.
 
-    Authenticated requests must resolve to a persisted actor. In no-auth mode,
-    callers may opt in to instance auditing by supplying a resolver that returns
-    an AuditActor with actor_id=None and an explicit instance tenant.
+    The completion record captures the final HTTP outcome. Unauthenticated
+    requests are handled by the identity middleware and are not assigned a
+    fabricated tenant or actor identity here.
     """
 
     def __init__(
@@ -21,29 +21,28 @@ class AuditRequestASGIMiddleware:
         app: Any,
         *,
         sink: AuditSink,
-        resolve_actor: Callable[[Any], Any] | None,
-        resolve_instance_actor: Callable[[dict[str, Any]], Any] | None = None,
+        resolve_actor: Callable[[Any], Any],
+        resolve_null_actor_tenant: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         if not callable(getattr(sink, "record", None)):
             raise TypeError("audit sink must expose record()")
-        if resolve_actor is not None and not callable(resolve_actor):
-            raise TypeError("resolve_actor must be callable when supplied")
-        if resolve_instance_actor is not None and not callable(resolve_instance_actor):
-            raise TypeError("resolve_instance_actor must be callable when supplied")
+        if not callable(resolve_actor):
+            raise TypeError("resolve_actor must be callable")
         self.app = app
         self.sink = sink
         self.resolve_actor = resolve_actor
-        self.resolve_instance_actor = resolve_instance_actor
+        self.resolve_null_actor_tenant = resolve_null_actor_tenant
 
-    async def _resolve(self, resolver: Callable[..., Any], value: Any, *, instance: bool) -> AuditActor:
-        result = resolver(value)
+    async def _actor(self, principal: Any) -> AuditActor | None:
+        result = self.resolve_actor(principal)
         if inspect.isawaitable(result):
             result = await result
+        if result is None:
+            raise RuntimeError(
+                "authenticated principal could not be resolved to an audit actor"
+            )
         if not isinstance(result, AuditActor):
-            kind = "instance actor" if instance else "authenticated actor"
-            raise RuntimeError(f"{kind} could not be resolved to an AuditActor")
-        if instance and result.actor_id is not None:
-            raise RuntimeError("no-auth instance audit actor_id must be null")
+            raise TypeError("resolve_actor must return AuditActor or None")
         return result
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
@@ -54,14 +53,20 @@ class AuditRequestASGIMiddleware:
         state = scope.get("state") or {}
         principal = state.get("identity.principal")
         if principal is None:
-            if self.resolve_instance_actor is None:
+            if self.resolve_null_actor_tenant is None:
                 await self.app(scope, receive, send)
                 return
-            actor = await self._resolve(self.resolve_instance_actor, scope, instance=True)
+            tenant_id = self.resolve_null_actor_tenant(scope)
+            if inspect.isawaitable(tenant_id):
+                tenant_id = await tenant_id
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                raise RuntimeError("no-auth audit requires an explicit instance tenant")
+            actor = AuditActor(tenant_id=tenant_id, actor_id=None)
         else:
-            if self.resolve_actor is None:
-                raise RuntimeError("authenticated request auditing requires an actor resolver")
-            actor = await self._resolve(self.resolve_actor, principal, instance=False)
+            actor = await self._actor(principal)
+        if actor is None:
+            await self.app(scope, receive, send)
+            return
 
         method = str(scope.get("method", "GET")).upper()
         action = "http.request"
@@ -70,20 +75,20 @@ class AuditRequestASGIMiddleware:
         correlation_id = getattr(trace, "correlation_id", None) or state.get("correlation_id")
         trace_id = getattr(trace, "trace_id", None)
 
-        details = {
-            "method": method,
-            "path": path,
-            "request_id": actor.request_id,
-            "correlation_id": correlation_id,
-            "trace_id": trace_id,
-        }
+        # This intent write is deliberately before downstream application code.
         await self.sink.record(
             tenant_id=actor.tenant_id,
             actor_id=actor.actor_id,
             action=f"{action}.requested",
             subject_id="http-request",
             outcome="succeeded",
-            detail=redact_payload(details),
+            detail=redact_payload({
+                "method": method,
+                "path": path,
+                "request_id": actor.request_id,
+                "correlation_id": correlation_id,
+                "trace_id": trace_id,
+            }),
         )
 
         status_code: int | None = None
@@ -115,8 +120,12 @@ class AuditRequestASGIMiddleware:
             subject_id="http-request",
             outcome=outcome,
             detail=redact_payload({
-                **details,
+                "method": method,
+                "path": path,
                 "status_code": status_code,
+                "request_id": actor.request_id,
+                "correlation_id": correlation_id,
+                "trace_id": trace_id,
             }),
         )
         if failure is not None:
