@@ -16,7 +16,7 @@ const routeObjects = allCanonicalRoutes.map((route) => ({ path: route.path }))
 
 describe('Issue #752 system integration gate: route contract', () => {
   it('keeps page ids and canonical paths unique across all route classes', () => {
-    expect(isCanonicalRouteSetValid(allCanonicalRoutes)).toBe(true)
+    expect(isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes])).toBe(true)
   })
 
   it('registers all cross-module journey entry points', () => {
