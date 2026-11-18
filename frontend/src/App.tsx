@@ -21,6 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import {
   TaskCommandCenter,
   TaskDetailPage,
