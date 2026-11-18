@@ -166,9 +166,10 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             <div className="breadcrumbs" aria-label="面包屑导航">
               <Link to="/workspace/overview">Agent Platform</Link>
               {current && <span><i aria-hidden="true">/</i>{current.section}</span>}
-              {breadcrumbs.filter((item) => item.pageId !== current?.pageId).map((item) => (
+              {breadcrumbs.map((item) => (
                 <span key={item.pageId}><i aria-hidden="true">/</i>{item.title}</span>
               ))}
+              {current && <span><i aria-hidden="true">/</i>{current.title}</span>}
             </div>
           </div>
           <div className="top-actions">
