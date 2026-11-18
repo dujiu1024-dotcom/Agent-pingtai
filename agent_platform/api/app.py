@@ -73,6 +73,10 @@ class AuthorizationContextStrategy(Protocol):
 
     async def resolve_authorization_context(self, request: Any) -> Any | None: ...
 
+    async def resolve_knowledge_principal(self, request: Any) -> Any: ...
+
+    async def resolve_memory_principal(self, request: Any) -> Any: ...
+
 
 class AuthenticatedAuthorizationContextStrategy:
     """Resolve real principals and persisted RBAC context in auth-enabled mode."""
@@ -94,6 +98,12 @@ class AuthenticatedAuthorizationContextStrategy:
             raise HTTPException(403, "active tenant membership required")
         return context
 
+    async def resolve_knowledge_principal(self, request: Any) -> Any:
+        return await IdentityContextResolver(self.identity_repository).knowledge(request)
+
+    async def resolve_memory_principal(self, request: Any) -> Any:
+        return await IdentityContextResolver(self.identity_repository).memory(request)
+
 
 class InstanceAuthorizationContextStrategy:
     """No-auth policy: no Principal, user, role, or synthetic AuthorizationContext."""
@@ -103,6 +113,14 @@ class InstanceAuthorizationContextStrategy:
 
     async def resolve_authorization_context(self, request: Any) -> None:
         return None
+
+    async def resolve_knowledge_principal(self, request: Any) -> None:
+        from fastapi import HTTPException
+        raise HTTPException(503, "Knowledge no-auth context adapter is not installed")
+
+    async def resolve_memory_principal(self, request: Any) -> None:
+        from fastapi import HTTPException
+        raise HTTPException(503, "Memory no-auth context adapter is not installed")
 
 
 def _resolve_auth_enabled(value: bool | None) -> bool:
@@ -386,17 +404,19 @@ def create_platform_app(
         memory=memory,
         rag=rag,
         memory_extraction=memory_extraction,
+        resolve_knowledge_principal=authorization_strategy.resolve_knowledge_principal,
+        resolve_memory_principal=authorization_strategy.resolve_memory_principal,
         identity_repository=identity_repository,
     ))
     app.include_router(create_knowledge_upload_router(
         knowledge=knowledge,
-        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
+        resolve_principal=authorization_strategy.resolve_knowledge_principal,
     ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
         if not rag_playground_embedding_models:
             raise ValueError("RAG playground requires configured embedding model IDs")
-        knowledge_principal_resolver = IdentityContextResolver(identity_repository).knowledge
+        knowledge_principal_resolver = authorization_strategy.resolve_knowledge_principal
         app.include_router(create_rag_playground_router(
             resolve_principal=knowledge_principal_resolver,
             resolve_rag=rag_playground_resolver,
@@ -437,14 +457,14 @@ def create_platform_app(
     if sessions_configured:
         if session_service_resolver is None or session_authorizer is None:
             raise ValueError("session service resolver and authorizer must be configured together")
-        memory_context_resolver = IdentityContextResolver(identity_repository)
+        memory_context_resolver = authorization_strategy
         app.include_router(create_sessions_router(
             resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
             memory_extraction=memory_extraction,
             resolve_memory_principal=(
-                memory_context_resolver.memory if memory_extraction is not None else None
+                memory_context_resolver.resolve_memory_principal if memory_extraction is not None else None
             ),
             audit_writer=resource_audit_writer or audit_request_sink,
         ))
@@ -565,13 +585,13 @@ def create_platform_app(
             resolve_event_replay=blackboard_event_replay_resolver,
         ))
     if graph_configured:
-        graph_identity_context = IdentityContextResolver(identity_repository)
+        graph_identity_context = authorization_strategy
         app.include_router(create_graph_router(
             resolve_principal=authorization_strategy.resolve_principal,
             resolve_query_service=graph_query_service_resolver,
             authorize_read=graph_read_authorizer,
             resolve_governance=graph_governance_resolver,
-            resolve_knowledge_principal=graph_identity_context.knowledge,
+            resolve_knowledge_principal=graph_identity_context.resolve_knowledge_principal,
             visualization_url=graph_visualization_url,
         ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
