@@ -193,14 +193,30 @@
   margin-left: auto;
 }
 
-.ds-status--success { color: var(--color-success); }
-.ds-status--success i { background: var(--color-success); }
-.ds-status--warning { color: var(--color-warning); }
-.ds-status--warning i { background: var(--color-warning); }
-.ds-status--danger { color: var(--color-danger); }
-.ds-status--danger i { background: var(--color-danger); }
-.ds-status--info { color: var(--color-info); }
-.ds-status--info i { background: var(--color-info); }
+.ds-status--success {
+  color: var(--color-success);
+}
+.ds-status--success i {
+  background: var(--color-success);
+}
+.ds-status--warning {
+  color: var(--color-warning);
+}
+.ds-status--warning i {
+  background: var(--color-warning);
+}
+.ds-status--danger {
+  color: var(--color-danger);
+}
+.ds-status--danger i {
+  background: var(--color-danger);
+}
+.ds-status--info {
+  color: var(--color-info);
+}
+.ds-status--info i {
+  background: var(--color-info);
+}
 
 .ds-button-row {
   display: flex;
@@ -234,18 +250,24 @@
   color: white;
 }
 
-.ds-button--primary:hover { background: var(--color-brand-700); }
+.ds-button--primary:hover {
+  background: var(--color-brand-700);
+}
 .ds-button--secondary {
   border-color: var(--color-neutral-200);
   background: white;
   color: var(--color-neutral-700);
 }
-.ds-button--secondary:hover { background: var(--color-neutral-50); }
+.ds-button--secondary:hover {
+  background: var(--color-neutral-50);
+}
 .ds-button--danger {
   background: #fff0f1;
   color: var(--color-danger);
 }
-.ds-button--danger:hover { background: #ffe1e4; }
+.ds-button--danger:hover {
+  background: #ffe1e4;
+}
 .ds-button:disabled {
   border-color: var(--color-neutral-200);
   background: var(--color-neutral-100);
@@ -313,11 +335,25 @@
   border-bottom: 1px solid var(--color-neutral-100);
 }
 
-.ds-table tbody tr:last-child td { border-bottom: 0; }
-.ds-table tbody tr:hover { background: var(--color-neutral-50); }
-.ds-table-wrap--comfortable .ds-table td { height: 52px; padding-right: 16px; padding-left: 16px; }
-.ds-table-wrap--standard .ds-table td { height: 44px; }
-.ds-table-wrap--compact .ds-table td { height: 36px; padding-right: 10px; padding-left: 10px; }
+.ds-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ds-table tbody tr:hover {
+  background: var(--color-neutral-50);
+}
+.ds-table-wrap--comfortable .ds-table td {
+  height: 52px;
+  padding-right: 16px;
+  padding-left: 16px;
+}
+.ds-table-wrap--standard .ds-table td {
+  height: 44px;
+}
+.ds-table-wrap--compact .ds-table td {
+  height: 36px;
+  padding-right: 10px;
+  padding-left: 10px;
+}
 
 .ds-chart-bars {
   display: flex;
@@ -349,7 +385,10 @@
   font-size: 10px;
 }
 
-.ds-chart-legend i { width: 7px; height: 7px; }
+.ds-chart-legend i {
+  width: 7px;
+  height: 7px;
+}
 
 .ds-office-preview {
   position: relative;
@@ -391,8 +430,14 @@
   background: var(--office-leaf);
   transform: rotate(-25deg);
 }
-.ds-office-plant i:nth-child(2) { left: 2px; transform: rotate(-55deg); }
-.ds-office-plant i:nth-child(3) { left: 20px; transform: rotate(15deg); }
+.ds-office-plant i:nth-child(2) {
+  left: 2px;
+  transform: rotate(-55deg);
+}
+.ds-office-plant i:nth-child(3) {
+  left: 20px;
+  transform: rotate(15deg);
+}
 
 .ds-office-desk {
   position: absolute;
@@ -445,17 +490,32 @@
 }
 
 @media (max-width: 900px) {
-  .ds-swatches { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ds-swatches {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 }
 
 @media (max-width: 620px) {
-  .ds-grid { grid-template-columns: 1fr; }
-  .ds-panel--wide { grid-column: auto; }
-  .ds-heading { align-items: flex-start; }
-  .ds-version { display: none; }
-  .ds-density-heading { align-items: flex-start; flex-direction: column; }
+.ds-grid {
+  grid-template-columns: 1fr;
+}
+.ds-panel--wide {
+  grid-column: auto;
+}
+.ds-heading {
+  align-items: flex-start;
+}
+.ds-version {
+  display: none;
+}
+.ds-density-heading {
+  align-items: flex-start;
+  flex-direction: column;
+}
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ds-button { transition: none; }
+.ds-button {
+  transition: none;
+}
 }
