@@ -4,9 +4,5 @@ import type { PropsWithChildren } from 'react'
 import { queryClient } from '@/lib/query/query-client'
 
 export default function AppProviders({ children }: PropsWithChildren) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-    </QueryClientProvider>
-  )
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 }
