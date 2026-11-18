@@ -16,7 +16,7 @@ import { EmptyState, ErrorState, LoadingState, ModeRestrictedState, NotFoundStat
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
-import { authRoutes, findPageRoute, getVisibleNavigation, pageRoutes } from '@/routes/route-config'
+import { authRoutes, findPageRoute, getVisibleNavigation, globalRoutes, pageRoutes } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -27,7 +27,6 @@ function BootstrapGate() {
 
   useEffect(() => {
     let active = true
-    setError(null)
     void loadBootstrapConfig().then(
       (result) => {
         if (active) setConfig(result)
@@ -45,7 +44,7 @@ function BootstrapGate() {
         <ErrorState
           title="无法读取服务端启动配置"
           description={`${error}。为避免猜测 auth.enabled，前端不会自行选择权限模式。`}
-          onRetry={() => setAttempt((value) => value + 1)}
+          onRetry={() => { setError(null); setConfig(null); setAttempt((value) => value + 1) }}
         />
       </div>
     )
@@ -66,7 +65,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
           <Route element={<AppShell config={config} />}>
             <Route path="/" element={<Navigate to="/workspace/overview" replace />} />
             <Route path="/app" element={<Navigate to="/workspace/overview" replace />} />
-            {pageRoutes.map((route) => (
+            {[...pageRoutes, ...globalRoutes].map((route) => (
               <Route
                 key={route.pageId}
                 path={route.path}
@@ -84,8 +83,6 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                 }
               />
             ))}
-            <Route path="/search" element={<GlobalSearch />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="*" element={<NotFoundState />} />
           </Route>
         </Routes>
@@ -98,16 +95,13 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
-  const current = [...pageRoutes, ...authRoutes].find((route) => {
+  const current = [...pageRoutes, ...globalRoutes, ...authRoutes].find((route) => {
     if (route.path === location.pathname) return true
     const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
     return pattern.test(location.pathname)
   })
-  const breadcrumbs = current
-    ? [
-        ...(current.parentPath ? [findPageRoute(current.parentPath)].filter((item): item is PageRoute => Boolean(item)) : []),
-        current,
-      ]
+  const breadcrumbs = current?.parentPath
+    ? [findPageRoute(current.parentPath)].filter((item): item is PageRoute => Boolean(item))
     : []
 
   return (
@@ -158,8 +152,9 @@ function AppShell({ config }: { config: BootstrapConfig }) {
         <header className="topbar">
           <div className="topbar-start">
             <div className="breadcrumbs" aria-label="面包屑导航">
-              <Link to="/workspace/overview">工作空间</Link>
-              {breadcrumbs.map((item) => (
+              <Link to="/workspace/overview">Agent Platform</Link>
+              {current && <span><i aria-hidden="true">/</i>{current.section}</span>}
+              {breadcrumbs.filter((item) => item.pageId !== current?.pageId).map((item) => (
                 <span key={item.pageId}><i aria-hidden="true">/</i>{item.title}</span>
               ))}
             </div>
