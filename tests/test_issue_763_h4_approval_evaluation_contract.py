@@ -41,7 +41,7 @@ class ApprovalEvaluationWorkbenchContractTests(unittest.TestCase):
         self.assertIn("evaluation_runs", source)
         self.assertIn("evaluation_reports", source)
         self.assertIn("dataset_version", source)
-        self.assertIn("baseline_run_id", source)
+        self.assertIn("eval_run_ids", source)
         self.assertIn("source_ref", source)
 
 
