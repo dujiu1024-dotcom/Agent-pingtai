@@ -8,7 +8,7 @@
 
 - `ApiClient` 统一 fetch、JSON 编码、request id、标准错误解析、超时与 AbortSignal 取消。
 - `GET` 支持 ETag：缓存带 ETag 的响应；后续请求发送 `If-None-Match`；304 返回缓存表示。缓存只在当前客户端实例内存中、不持久化且最多保留 256 项；成功写请求会清空 validators。会话登录/退出或身份切换时调用 `apiClient.clearEtagCache()`，避免跨会话复用 304 表示。
-- `POST/PATCH` 默认生成 `Idempotency-Key`；调用方可传入稳定 key，以便业务重试复用同一操作标识。不会自动重放非幂等请求。
+- `POST/PATCH/PUT/DELETE` 默认生成 `Idempotency-Key`；调用方可传入稳定 key，以便业务重试复用同一操作标识。不会自动重放非幂等请求。
 - 写请求可传 `ifMatch` 发送 `If-Match` revision 前置条件；409/412 转为 `ApiConflictError`，保留 code/details/request_id，供 UI 显示 revision 冲突和刷新策略。
 - `list(path, params)` 使用统一分页 query：`page`、`page_size`、`cursor`、`sort`、JSON `filters`。返回 `PageEnvelope<T>`：`data[]` 与 `pagination`（page/page_size/total/total_pages/next_cursor/has_more）。
 - 错误 envelope：`code/message/details/request_id/retryable`。HTTP status 与响应 `x-request-id` 一并保留在 `ApiError`。
