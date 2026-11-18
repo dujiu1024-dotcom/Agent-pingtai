@@ -19,7 +19,10 @@ describe('ApiClient', () => {
         { headers: { 'Content-Type': 'application/json' } },
       ),
     )
-    const client = new ApiClient({ baseUrl: 'https://example.test/api', fetcher })
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
 
     await client.list('/tasks', {
       page: 2,
