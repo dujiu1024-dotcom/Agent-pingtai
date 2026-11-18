@@ -117,7 +117,6 @@ export class SseEventBus {
     if (!response.ok || !response.body) {
       throw new Error(`SSE connection failed: HTTP ${response.status}`)
     }
-    this.reconnectAttempt = 0
     this.setStatus('connected')
     this.armHeartbeat(signal)
     const reader = response.body.getReader()
@@ -125,7 +124,15 @@ export class SseEventBus {
     try {
       while (this.running) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          this.buffer += decoder.decode()
+          if (this.buffer) {
+            this.consumeLine(this.buffer.replace(/\\r$/, ''), signal)
+            this.buffer = ''
+          }
+          this.dispatchFrame()
+          break
+        }
         this.buffer += decoder.decode(value, { stream: true })
         let newline = this.buffer.indexOf('\n')
         while (newline >= 0) {
@@ -196,6 +203,7 @@ export class SseEventBus {
       return
     }
 
+    this.reconnectAttempt = 0
     this.rememberEvent(eventId)
     this.lastEventId = eventId
     this.latestSequence.set(event.entity_id, event.sequence)
