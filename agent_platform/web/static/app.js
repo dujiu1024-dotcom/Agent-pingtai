@@ -731,46 +731,111 @@ document.addEventListener("click",async event=>{
 });
 
 
-// UI-G2-759: dedicated Provider/Template lifecycle surface.
-// Connection probing and independent routing APIs are intentionally not simulated;
-// the server-side contracts are not present in the current API composition.
-const modelRegistryPath=kind=>API+"/registry/"+kind;
-async function renderModelResources(){
- $("#title").textContent="模型 Provider / Template 管理";
- $("#crumb").textContent="模型资源";
- let providers=[],templates=[];
- const settled=await Promise.allSettled([
-  list(modelRegistryPath("model_provider")+"?limit=200"),
-  list(modelRegistryPath("model_template")+"?limit=200")
- ]);
- if(settled[0].status==="fulfilled")providers=settled[0].value;
- if(settled[1].status==="fulfilled")templates=settled[1].value;
- const providerRows=providers.map(x=>"<tr><td><b>"+esc(x.definition.name||x.item_id)+"</b><small class='subline'>"+esc(x.item_id)+"</small></td><td>"+esc(x.definition.type||"—")+"</td><td>"+esc(x.definition.base_url||"—")+"</td><td>"+esc(x.definition.secret_ref||"未配置")+"</td><td>"+statusPill(x.status)+"</td><td>"+btn("版本","data-model-versions='provider' data-id='"+esc(x.item_id)+"'")+(x.status==="draft"?btn("发布","data-model-publish='provider' data-id='"+esc(x.item_id)+"' data-version='"+esc(x.version)+"'","primary"):"")+"</td></tr>");
- const templateRows=templates.map(x=>"<tr><td><b>"+esc(x.definition.name||x.item_id)+"</b><small class='subline'>"+esc(x.item_id)+"</small></td><td>"+esc(x.definition.provider_id||"—")+"</td><td>"+esc(x.definition.model_id||"—")+"</td><td>"+esc(x.definition.context_window||"—")+"</td><td>"+statusPill(x.status)+"</td><td>"+btn("版本","data-model-versions='template' data-id='"+esc(x.item_id)+"'")+(x.status==="draft"?btn("发布","data-model-publish='template' data-id='"+esc(x.item_id)+"' data-version='"+esc(x.version)+"'","primary"):"")+"</td></tr>");
- const providerForm="<form id='model-provider-form' class='registry-form'><div class='form-grid'><label>Provider ID<input name='item_id' required pattern='[A-Za-z0-9][A-Za-z0-9._:-]{0,127}'></label><label>显示名称<input name='name' required></label><label>类型<select name='type'><option value='openai-compatible'>OpenAI Compatible</option></select></label><label>Base URL<input name='base_url' type='url' required placeholder='https://api.example.com/v1'></label><label>Secret Reference<input name='secret_ref' required placeholder='secret://tenant/provider/key'></label><label>启用<select name='enabled'><option value='true'>启用</option><option value='false'>停用</option></select></label></div><p class='subtle'>仅保存 secret_ref，不接受或回显密钥明文。密钥创建、轮换、撤销由 Secret Manager 管理。</p><button class='button primary'>创建 Provider 草稿</button></form>";
- const templateForm="<form id='model-template-form' class='registry-form'><div class='form-grid'><label>Template ID<input name='item_id' required pattern='[A-Za-z0-9][A-Za-z0-9._:-]{0,127}'></label><label>显示名称<input name='name' required></label><label>Provider ID<input name='provider_id' required></label><label>模型 ID<input name='model_id' required></label><label>上下文窗口<input name='context_window' type='number' min='1' required></label><label>能力（逗号分隔）<input name='capabilities' placeholder='chat,tools,vision'></label><label>允许数据等级<input name='allowed_data_levels' placeholder='public,internal'></label><label>Fallback Template IDs<input name='fallback' placeholder='template-b,template-c'></label></div><button class='button primary'>创建 Template 草稿</button></form>";
- $("#view").innerHTML=panel("Provider 生命周期",providerForm)+panel("Provider 目录",table(["Provider","类型","Base URL","Secret Ref","状态","操作"],providerRows))+
- panel("Model Template 生命周期",templateForm)+panel("Template 目录",table(["Template","Provider","模型","上下文窗口","状态","操作"],templateRows))+
- panel("连接测试与路由策略 API 状态","<p class='error'>当前 main 的 API composition 未提供 Provider 连接测试、模型发现或独立路由策略读写端点。本页面不伪造测试结果，也不会向真实 Provider 发起网络请求。</p><p>路由策略需由后端实现候选约束、fallback 条件、超时/重试/熔断和解释结果；Run 继续使用 immutable provider/template version snapshot。相关 API 缺口需后端补齐后再启用交互。</p>")+
- (settled.some(x=>x.status==="rejected")?panel("数据源告警","<p class='error'>部分 Registry 数据不可读取，请检查 Registry API 权限与服务配置。</p>"):"");
+/* UI-G2-756: Organization / RBAC shell.
+ * TODO(api): connect organization, department, project, invitation, role,
+ * permission-preview and data-scope endpoints after the backend contract lands.
+ * Keep auth=false free of synthetic users, organizations, roles and ACL claims.
+ */
+S.orgRbac = S.orgRbac || { tab: "org", selectedOrg: null, orgs: [], members: [], roles: [], scopes: [], error: null };
+function orgRbacMode(){
+  // TODO(api): replace the bootstrap injection with the finalized public bootstrap endpoint.
+  const mode = window.PLATFORM_BOOTSTRAP?.auth?.enabled;
+  return mode === false ? "disabled" : mode === true ? "enabled" : "unknown";
 }
-const modelResourcesBaseRender=render;
-render=async function(){if(S.view==="model-resources"){try{await renderModelResources()}catch(e){$("#view").innerHTML=panel("模型资源管理不可用","<p class='error'>"+esc(e.message)+"</p>")}return}return modelResourcesBaseRender()};
-const modelFormsSubmit=document.addEventListener;
-document.addEventListener("submit",async e=>{
- const f=e.target;if(!["model-provider-form","model-template-form"].includes(f.id))return;
- e.preventDefault();const d=new FormData(f),isProvider=f.id==="model-provider-form";
- const id=String(d.get("item_id")||"").trim(),name=String(d.get("name")||"").trim();
- let definition;
- if(isProvider)definition={name,type:d.get("type"),base_url:d.get("base_url"),secret_ref:d.get("secret_ref"),enabled:d.get("enabled")==="true"};
- else definition={name,provider_id:d.get("provider_id"),model_id:d.get("model_id"),context_window:Number(d.get("context_window")),capabilities:String(d.get("capabilities")||"").split(",").map(x=>x.trim()).filter(Boolean),allowed_data_levels:String(d.get("allowed_data_levels")||"").split(",").map(x=>x.trim()).filter(Boolean),fallback:String(d.get("fallback")||"").split(",").map(x=>x.trim()).filter(Boolean)};
- if(!id||!name||Object.values(definition).some(v=>v===undefined||v===null||v==="")){toast("请完整填写必填字段");return}
- try{await api(modelRegistryPath(isProvider?"model_provider":"model_template")+"/"+encodeURIComponent(id)+"/versions",{method:"POST",body:JSON.stringify({definition})});toast("草稿版本已创建");await renderModelResources()}catch(err){toast(err.message)}
+function orgRbacNotice(){
+  const mode=orgRbacMode();
+  if(mode==="disabled") return "<p class='subtle'>当前实例 auth=false：不创建账号、组织、默认角色或身份隔离。此页仅展示管理入口壳；身份/RBAC 操作不适用。</p>";
+  if(mode==="unknown") return "<p class='subtle'>认证模式尚未由公开 bootstrap 元信息确认。页面保持空态，不推断身份模式。</p>";
+  return "<p class='subtle'>认证已启用。以下数据在后端 API 接入前保持空态；本地交互不会写入真实权限。</p>";
+}
+function orgRbacTabButton(key,label){
+  return "<button class='button "+(S.orgRbac.tab===key?"primary":"")+"' data-org-tab='"+key+"' type='button'>"+label+"</button>";
+}
+function renderOrgRbac(){
+  const root=$("#view"),s=S.orgRbac,mode=orgRbacMode();
+  $("#title").textContent="组织与权限管理";$("#crumb").textContent="组织与权限管理";
+  const enabled=mode==="enabled";
+  const tabs=orgRbacTabButton("org","组织 / 部门")+
+    orgRbacTabButton("members","成员邀请")+
+    orgRbacTabButton("roles","角色权限矩阵")+
+    orgRbacTabButton("scopes","数据范围策略");
+  let body="";
+  if(s.tab==="org"){
+    const rows=s.orgs.map(o=>"<tr><td>"+esc(o.name)+"</td><td>"+esc(o.type||"组织")+"</td><td>"+esc(o.status||"草稿")+"</td><td>"+btn("选择","data-org-select='"+esc(o.id)+"'")+"</td></tr>");
+    body=panel("组织 / 部门树",s.orgs.length?table(["名称","类型","状态","操作"],rows):"<div class='empty-state'><strong>暂无组织或部门</strong><p>后端组织 API 接入后将在此显示组织、部门和项目层级。</p></div>",
+      btn("新建组织","data-org-action='create-org'", "primary")+
+      btn("新建部门","data-org-action='create-dept'"))+
+      (s.selectedOrg?panel("当前节点",pre(s.orgs.find(x=>x.id===s.selectedOrg)||{})):"");
+  }else if(s.tab==="members"){
+    body=panel("成员邀请",enabled?
+      "<form id='org-invite-form' class='registry-form'><div class='form-grid'><label>邮箱<input name='email' type='email' required placeholder='name@example.com'></label><label>归属组织<select name='org_id' required><option value=''>请选择组织</option>"+s.orgs.map(o=>"<option value='"+esc(o.id)+"'>"+esc(o.name)+"</option>").join("")+"</select></label></div><label>初始角色<select name='role_id'><option value=''>暂不分配</option>"+s.roles.map(r=>"<option value='"+esc(r.id)+"'>"+esc(r.name)+"</option>").join("")+"</select></label><button class='button primary' "+(!s.orgs.length?"disabled":"")+">创建邀请（本地草稿）</button></form><p class='subtle'>TODO：接入邀请创建、过期、撤销和审计 API。当前提交只保存在页面状态。</p>":
+      "<p class='empty'>auth=false 下不创建成员或邀请，也不生成虚构用户。</p>")+
+      panel("成员列表",s.members.length?table(["邮箱","组织","状态"],s.members.map(m=>"<tr><td>"+esc(m.email)+"</td><td>"+esc(m.org||"—")+"</td><td>"+esc(m.status)+"</td></tr>")):"<p class='empty'>暂无成员记录。</p>");
+  }else if(s.tab==="roles"){
+    const permissions=["组织读取","组织管理","成员邀请","成员停用","角色读取","角色授权","数据范围管理","审计读取"];
+    body=panel("角色与权限矩阵",enabled?
+      (s.roles.length?table(["角色",...permissions].map((x)=>x),s.roles.map(r=>"<tr><td>"+esc(r.name)+"</td>"+permissions.map(p=>"<td>"+(r.permissions?.includes(p)?"✓":"—")+"</td>").join("")+"</tr>")):"<p class='empty'>暂无角色。后端角色 API 接入后显示真实角色和权限集合。</p>")+
+      btn("新建角色草稿","data-org-action='create-role'","primary")+
+      "<p class='subtle'>TODO：补充菜单/路由/操作/API 权限映射、授权预览/差异和影响提示。前端隐藏按钮不构成安全边界。</p>":
+      "<p class='empty'>auth=false 下不创建默认角色或权限主体。</p>");
+  }else{
+    body=panel("数据范围策略",enabled?
+      (s.scopes.length?pre(s.scopes):"<p class='empty'>暂无数据范围策略。</p>")+
+      "<form id='org-scope-form' class='registry-form'><label>策略名称<input name='name' required placeholder='项目范围'></label><label>范围类型<select name='scope'><option value='all'>全部</option><option value='organization'>组织</option><option value='department'>部门</option><option value='project'>项目</option><option value='self'>本人</option></select></label><button class='button primary'>添加策略草稿</button></form>"+
+      "<p class='subtle'>TODO：服务端执行数据范围过滤并提供策略校验/审计；页面配置不能替代资源级授权。</p>":
+      "<p class='empty'>auth=false 不执行用户、部门、项目成员关系 ACL；无需配置数据范围策略。</p>");
+  }
+  root.innerHTML=panel("组织 / RBAC 管理",orgRbacNotice()+tabs)+body+
+    panel("接口与状态", "<p>组织、部门、成员、邀请、角色、权限预览、数据范围 API 尚待后端契约确认。</p><p class='subtle'>加载失败不会回退到伪造身份或默认权限；数据源当前为空数组。</p>"+(s.error?"<p class='error'>"+esc(s.error)+"</p>":""));
+}
+const orgRbacBaseRender=render;
+render=async function(){
+  if(S.view==="org-rbac"){try{renderOrgRbac()}catch(error){S.orgRbac.error=error.message;$("#view").innerHTML=panel("组织权限页面加载失败","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-org-retry='1'"))}return}
+  return orgRbacBaseRender();
+};
+const orgRbacBaseNav=nav;
+nav=function(view){orgRbacBaseNav(view);if(view==="org-rbac"){$("#title").textContent="组织与权限管理";$("#crumb").textContent="组织与权限管理"}};
+document.addEventListener("click",event=>{
+ const b=event.target.closest("button");if(!b)return;
+ if(b.dataset.orgTab){S.orgRbac.tab=b.dataset.orgTab;renderOrgRbac();return}
+ if(b.dataset.orgSelect){S.orgRbac.selectedOrg=b.dataset.orgSelect;renderOrgRbac();return}
+ if(b.dataset.orgRetry){S.orgRbac.error=null;renderOrgRbac();return}
+ if(b.dataset.orgAction){
+  const action=b.dataset.orgAction;
+  if(orgRbacMode()!=="enabled"){toast("当前认证模式不支持身份管理");return}
+  if(action==="create-org"||action==="create-dept"||action==="create-role"){
+   toast("后端 API 尚未就绪；当前仅提供 UI 壳，不写入数据");
+  }
+ }
 });
-document.addEventListener("click",async e=>{
- const b=e.target.closest("button");if(!b)return;
- try{
-  if(b.dataset.modelVersions){const kind=b.dataset.modelVersions==="provider"?"model_provider":"model_template",id=b.dataset.id,versions=await list(modelRegistryPath(kind)+"/"+encodeURIComponent(id)+"/versions");$("#view").insertAdjacentHTML("beforeend",panel("版本历史 · "+esc(id),table(["版本","状态","创建人","创建时间","发布时间"],versions.map(v=>"<tr><td>"+esc(v.version)+"</td><td>"+statusPill(v.status)+"</td><td>"+esc(v.created_by)+"</td><td>"+esc(v.created_at)+"</td><td>"+esc(v.published_at||"—")+"</td></tr>"))));return}
-  if(b.dataset.modelPublish){const kind=b.dataset.modelPublish==="provider"?"model_provider":"model_template";await api(modelRegistryPath(kind)+"/"+encodeURIComponent(b.dataset.id)+"/versions/"+encodeURIComponent(b.dataset.version)+"/publish",{method:"POST",body:"{}"});toast("版本已发布");await renderModelResources();return}
- }catch(err){toast(err.message)}
+document.addEventListener("submit",event=>{
+ const form=event.target;
+ if(form.id==="org-invite-form"){
+  event.preventDefault();
+  if(orgRbacMode()!=="enabled"){toast("当前认证模式不支持成员邀请");return}
+  toast("邀请 API 尚未接入；未发送邀请");
+  return;
+ }
+ if(form.id==="org-scope-form"){
+  event.preventDefault();
+  if(orgRbacMode()!=="enabled"){toast("当前认证模式不支持数据范围策略");return}
+  const d=new FormData(form);S.orgRbac.scopes.push({name:String(d.get("name")||""),scope:String(d.get("scope")||"")});
+  toast("已添加本地策略草稿，尚未保存到服务端");renderOrgRbac();
+ }
 });
+
+/* UI-G2-756: auth=false entry is driven only by trusted public bootstrap metadata. */
+const orgRbacRefreshBase=refresh;
+refresh=async function(){
+ const bootstrap=window.PLATFORM_BOOTSTRAP;
+ if(bootstrap?.auth?.enabled===false){
+  S.me=null;S.authMode="disabled";S.features=bootstrap.features||{};
+  $("#identity").textContent="实例模式（无登录）";
+  $("#logout").hidden=true;$("#login").hidden=true;$("#content").hidden=false;
+  $("#api-state").textContent="实例模式 · 无身份认证";
+  applyCapabilityGate();
+  return;
+ }
+ return orgRbacRefreshBase();
+};
+refresh().then(()=>{if(S.authMode==="disabled"){applyCapabilityGate();nav("overview")}});
