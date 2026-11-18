@@ -39,6 +39,21 @@ class PlatformWorkbenchUiContractTests(unittest.TestCase):
         self.assertIn("不会调用未实现的占位 API", source)
         self.assertIn("当前服务未挂载", source)
 
+    def test_memory_governance_exposes_provenance_versions_and_safe_unknown_states(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "platform-ui" / "index.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="memoryFilter"', source)
+        self.assertIn('data-memory-action=\'detail\'', source)
+        self.assertIn('x.source_ref', source)
+        self.assertIn('x.scope_id', source)
+        self.assertIn('x.version', source)
+        self.assertIn('服务端返回未知状态', source)
+        self.assertIn('最近版本内容差异', source)
+        self.assertIn('api("/memories")', source)
+        self.assertIn('api("/memories/"+id+"/history")', source)
+        self.assertIn('data-memory-action=\'confirm\'', source)
+
 
 if __name__ == "__main__":
     unittest.main()
