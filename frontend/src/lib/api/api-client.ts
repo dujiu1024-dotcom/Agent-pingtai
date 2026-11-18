@@ -245,8 +245,12 @@ export class ApiClient {
   }
 
   private resolveBaseUrl(): string {
-    if (typeof window === 'undefined') return `http://localhost${this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`}`
-    return new URL(this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`, window.location.origin).toString()
+    const normalized = this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`
+    if (/^https?:\\/\\//i.test(normalized)) return new URL(normalized).toString()
+    if (typeof window === 'undefined') {
+      return new URL(normalized, 'http://localhost').toString()
+    }
+    return new URL(normalized, window.location.origin).toString()
   }
 
   private async readBody(response: Response): Promise<unknown> {
