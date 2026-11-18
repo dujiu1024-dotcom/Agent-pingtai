@@ -206,9 +206,20 @@ export class SseEventBus {
     this.reconnectAttempt = 0
     this.rememberEvent(eventId)
     this.lastEventId = eventId
+    this.latestSequence.delete(event.entity_id)
     this.latestSequence.set(event.entity_id, event.sequence)
+    if (this.latestSequence.size > this.options.maxRememberedEvents) {
+      const oldestEntity = this.latestSequence.keys().next().value as
+        | string
+        | undefined
+      if (oldestEntity) this.latestSequence.delete(oldestEntity)
+    }
     for (const listener of this.listeners) {
-      listener({ ...event, event_id: eventId })
+      try {
+        listener({ ...event, event_id: eventId })
+      } catch {
+        // A faulty consumer must not interrupt delivery to other subscribers.
+      }
     }
   }
 
