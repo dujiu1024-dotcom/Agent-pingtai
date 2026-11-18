@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { matchRoutes } from 'react-router-dom'
 
-import { authRoutes, getAllRoutes, getVisibleNavigation, isCanonicalRouteSetValid, pageRoutes } from './route-config'
+import { authRoutes, getAllRoutes, getVisibleNavigation, globalRoutes, isCanonicalRouteSetValid, pageRoutes } from './route-config'
 
 describe('route configuration', () => {
   it('keeps canonical page ids and paths unique', () => {
-    expect(isCanonicalRouteSetValid()).toBe(true)
+    expect(isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes])).toBe(true)
   })
 
   it('uses the frozen dashboard route as the default route target', () => {
