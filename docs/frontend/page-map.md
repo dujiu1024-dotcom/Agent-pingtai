@@ -50,6 +50,8 @@ flowchart TD
 
 ## 2. 页面清单
 
+**实体归属原则：** Agent 运行态（当前状态、活跃 Run、负载）归 #746；Agent 定义（指令、模型模板、工具/Skill 绑定、版本发布）归 #749。评测运行/样本事实详情归 #750；#747 只负责成本与质量聚合指标及趋势，不复制评测实体详情。系统级运维设置归 #751。Prompt/模板管理若后端能力确认存在，归 #749；否则保持隐藏并登记 API 缺口。
+
 | page_id | 页面 | 路由 | 类型 / 主实体 | 主责 | 权限关闭 | 权限启用 |
 |---|---|---|---|---|---|---|
 | WS-OVERVIEW | 运营驾驶舱 | /workspace/overview | Dashboard / 聚合指标 | #744 | 可见 | RBAC |
@@ -62,14 +64,15 @@ flowchart TD
 | WS-COST | 成本与质量中心 | /workspace/quality-cost | Dashboard / Usage+Evaluation metrics | #747 | 可见 | RBAC |
 | WS-OFFICE | 3D 数字办公室 | /workspace/office | 3D Scene / Office layout+Agent status | #748 | 可见 | RBAC |
 | OPS-AGENTS | Agent 与团队 | /operations/agents | List / Agent | #749（定义） | 可见 | RBAC |
-| OPS-AGENT-DETAIL | Agent 定义详情 | /admin/agents/:agentId | Detail/Edit / Agent Registry | #749 | 可见 | RBAC |
+| ADM-AGENTS | Agent 定义管理 | /admin/agents | List / Agent Registry | #749 | 可见 | RBAC |
+| ADM-AGENT-DETAIL | Agent 定义详情 | /admin/agents/:agentId | Detail/Edit / Agent Registry | #749 | 可见 | RBAC |
 | ADM-WORKFLOWS | Workflow 管理 | /admin/workflows | List / Workflow Definition | #749 | 可见 | RBAC |
 | ADM-WORKFLOW-EDITOR | Workflow 设计器 | /admin/workflows/:workflowId/edit | Visual Editor / Workflow Definition | #749 | 可见 | RBAC |
 | ADM-MODEL-PROVIDERS | 模型供应商 | /admin/models/providers | List/Edit / Model Provider | #749 | 可见 | RBAC |
 | ADM-MODEL-TEMPLATES | 模型模板与目录 | /admin/models/templates | List/Edit / Model Template | #749 | 可见 | RBAC |
 | ADM-MODEL-ROUTING | 模型路由策略 | /admin/models/routing | Policy Editor / Routing Policy | #749 | 可见 | RBAC |
 | ADM-TOOLS | 工具与 MCP | /admin/tools | List/Edit / Tool+Server | #749 | 可见 | RBAC |
-| ADM-SKILLS | Skills | /admin/skills | List/Edit / Skill | #749 | 可见 | RBAC |
+| ADM-SKILLS | Skills | /admin/skills | List/Edit / Skill | #749 | 可见 | RBAC |\n| ADM-PROMPTS | Prompt 与模板管理（条件能力） | /admin/prompts | List/Edit / Prompt Registry | #749 | 按能力隐藏 | RBAC |
 | ADM-ORG | 组织/部门/项目/成员 | /admin/organization | Tree+List / Org+Member | #749 | 隐藏 | RBAC |
 | ADM-RBAC | 角色与权限 | /admin/access-control | Matrix / Role+Permission | #749 | 隐藏 | RBAC |
 | OPS-APPROVALS | 审批中心 | /operations/approvals | Inbox / Approval | #750 | 可见 | RBAC |
@@ -80,12 +83,12 @@ flowchart TD
 | OPS-CONVERSATIONS | 会话与消息 | /operations/conversations | List / Conversation | #750 | 可见 | RBAC |
 | OPS-FILES | 文件与产物 | /operations/files | List / File/Artifact | #750 | 可见 | RBAC |
 | OPS-EVAL-DATASETS | 评测数据集 | /operations/evaluation/datasets | List / Dataset | #750 | 可见 | RBAC |
-| OPS-EVAL-RUNS | 评测运行 | /operations/evaluation/runs | List/Detail / Evaluation Run | #750（数据）/#747（指标） | 可见 | RBAC |
+| OPS-EVAL-RUNS | 评测运行与样本详情 | /operations/evaluation/runs | List/Detail / Evaluation Run | #750 | 可见 | RBAC |
 | GLOBAL-SEARCH | 全局搜索 | /search | Search / 多实体 | #751 | 可见 | RBAC |
 | GLOBAL-NOTIFICATIONS | 通知中心 | /notifications | Inbox / Notification | #751 | 可见 | RBAC |
 | GLOBAL-AUDIT | 审计中心 | /admin/audit | Query / Audit Event | #751 | 可见 | RBAC |
 | GLOBAL-OPS | 系统运维 | /admin/operations | Diagnostics / Component+Event | #751 | 可见 | RBAC |
-| SYS-SETTINGS | 系统设置 | /admin/settings | Settings / Instance config | #749/#751 | 可见（非身份设置） | RBAC |
+| SYS-SETTINGS | 系统设置与运维配置 | /admin/settings | Settings / Instance config | #751 | 可见（非身份设置） | RBAC |
 | AUTH-LOGIN | 登录 | /auth/login | Auth | #743 | 不存在 | 仅 auth=true |
 | AUTH-INITIALIZE | 首个管理员初始化 | /auth/initialize | Setup | #743/#749 | 不存在 | 仅未初始化且 auth=true |
 
@@ -101,7 +104,7 @@ flowchart TD
 | Task | /operations/tasks/:taskId | #745 | 驾驶舱、看板、Agent、通知、搜索 |
 | Run | /operations/runs/:runId | #745 | Task、驾驶舱、模型用量 |
 | Workflow Run | /operations/workflow-runs/:runId | #746 | 协作中心、Task/Run |
-| Agent Definition | /admin/agents/:agentId | #749 | Agent 列表、3D 工位、模型绑定 |
+| Agent Runtime | /operations/agents/:agentId | #746 | 协作中心、3D 工位、Task/Run |\n| Agent Definition | /admin/agents/:agentId | #749 | Agent 定义列表、模型绑定 |
 | Workflow Definition | /admin/workflows/:workflowId/edit | #749 | 管理列表、Run 详情（只读跳转） |
 | Blackboard Entry | /operations/blackboard/:entryId | #746 | 协作中心、Run |
 | Model Provider | /admin/models/providers/:providerId | #749 | 模型中心、模板详情 |
@@ -116,7 +119,7 @@ flowchart TD
 | Conversation | /operations/conversations/:conversationId | #750 | Agent、Task |
 | File / Artifact | /operations/files/:fileId | #750 | Task、Run、会话 |
 | Dataset | /operations/evaluation/datasets/:datasetId | #750 | 评测中心 |
-| Evaluation Run | /operations/evaluation/runs/:evaluationRunId | #750 | 成本质量中心 |
+| Evaluation Run | /operations/evaluation/runs/:evaluationRunId | #750 | Dataset、样本列表 |
 | Audit Event | /admin/audit/:eventId | #751 | 任意资源审计入口 |
 
 ## 4. Query 参数约定（摘要）
@@ -247,3 +250,9 @@ Workflow：`/admin/workflows` → 草稿编辑 → 节点/边 Schema 校验 → 
 - /office 的旧控制台回退与未来 /workspace/office 3D 场景必须区分；先确认旧 /office 的实际路由/静态资源，再接入新场景。
 - API 端点必须按“源码已注册、配置条件挂载、模块存在但未注册、完全缺失”四态记录。
 - 组织/RBAC、搜索、通知、模型测试/发现/路由策略、Office 布局 CRUD/状态 API 都必须有独立 API 缺口条目和责任 Issue。
+
+### 10.5 归属冲突修正
+- Agent 运行态与 Agent 定义拆为两个 page_id/详情路由：#746 负责 `/operations/agents/:agentId`，#749 负责 `/admin/agents/:agentId`。不得让同一页面同时承担运行态和注册定义 CRUD。
+- Evaluation Run/Case 事实详情由 #750 唯一负责；#747 只做指标、趋势和对账聚合。
+- 系统设置与运维配置由 #751 负责；#749 不重复建设系统级运维设置。
+- Prompt 管理为条件页面：仅在 Prompt Registry API 能力真实启用时显示，页面主责 #749。
