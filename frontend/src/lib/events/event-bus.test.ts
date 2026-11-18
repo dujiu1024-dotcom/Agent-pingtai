@@ -5,39 +5,39 @@ import { SseEventBus } from './event-bus'
 describe('SseEventBus', () => {
   it('decodes events and drops duplicate event ids and stale entity sequences', async () => {
     const payload = {
-        event_id: 'evt-2',
-        type: 'task.updated',
-        entity_id: 'task-1',
-        version: 2,
-        occurred_at: '2026-11-19T00:00:00Z',
-        sequence: 2,
-        payload: { status: 'running' },
-      }
+      event_id: 'evt-2',
+      type: 'task.updated',
+      entity_id: 'task-1',
+      version: 2,
+      occurred_at: '2026-11-19T00:00:00Z',
+      sequence: 2,
+      payload: { status: 'running' },
+    }
     const frame = [
-        `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
-        `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
-        `id: evt-1\ndata: ${JSON.stringify({
-          ...payload,
-          event_id: 'evt-1',
-          sequence: 1,
-        })}\n\n`,
-      ].join('')
+      `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
+      `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
+      `id: evt-1\ndata: ${JSON.stringify({
+        ...payload,
+        event_id: 'evt-1',
+        sequence: 1,
+      })}\n\n`,
+    ].join('')
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode(frame))
-              controller.close()
-            },
-          }),
-          { headers: { 'Content-Type': 'text/event-stream' } },
-        ),
-      )
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(frame))
+            controller.close()
+          },
+        }),
+        { headers: { 'Content-Type': 'text/event-stream' } },
+      ),
+    )
     const bus = new SseEventBus({
-        url: 'https://example.test/events',
-        fetcher,
-        reconnectBaseMs: 10,
-      })
+      url: 'https://example.test/events',
+      fetcher,
+      reconnectBaseMs: 10,
+    })
     const received: string[] = []
     const unsubscribe = bus.subscribe((event) => received.push(event.event_id))
 
