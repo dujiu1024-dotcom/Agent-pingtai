@@ -23,6 +23,14 @@ pnpm typecheck
 pnpm build
 ```
 
+## Routing and navigation
+
+- React Router 6 uses the canonical paths frozen in [page-map #753](https://github.com/dujiu1024-dotcom/Agent-pingtai/pull/754); `/` and legacy `/app` redirect to `/workspace/overview`.
+- The primary navigation has three groups: workspace, agent operations, and platform administration. Search and notifications are global top-bar entries.
+- The app reads the immutable `auth.enabled` value from the public `/api/platform/v1/bootstrap` response. It does not infer or override the mode from frontend environment variables. Bootstrap failure blocks mode selection and offers retry.
+- In no-auth mode, the dashboard opens directly; login, initialization, organization and RBAC entries are hidden or shown as not applicable. In auth-enabled mode, those routes become available; actual login/session and server authorization remain backend-owned.
+- Cross-entity search and notification feed endpoints are not yet verified in the route contract; the current search indexes page routes only and the notification page explicitly reports the missing API rather than fabricating data.
+
 ## API and events
 
 - API Client: `src/lib/api`，统一分页、错误 envelope、request_id、超时/取消、ETag、If-Match、幂等键。
