@@ -8,6 +8,10 @@ describe('route configuration', () => {
     expect(isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes])).toBe(true)
   })
 
+  it('provides exactly three primary navigation sections', () => {
+    expect(getVisibleNavigation(false).map((group) => group.id)).toEqual(['workspace', 'operations', 'administration'])
+  })
+
   it('uses the frozen dashboard route as the default route target', () => {
     expect(getAllRoutes(false).find((route) => route.pageId === 'WS-OVERVIEW')?.path).toBe('/workspace/overview')
   })
