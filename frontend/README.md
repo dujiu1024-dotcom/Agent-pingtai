@@ -1,20 +1,34 @@
-# Frontend navigation shell (UI-G1-743-e)
+# Frontend workspace
 
-This package is an isolated SPA. The router uses the browser History API and the host must serve `index.html` for application paths (for example `/app`, `/agents/:id`, and `/settings/models`) to support direct refreshes and deep links.
+独立的 React 18 + TypeScript + Vite 应用。此目录不覆盖或复用旧版 `platform-ui/`，旧入口保持原样。
 
-## Optional service adapters
+## Toolchain
 
-- `VITE_GLOBAL_SEARCH_URL`: same-origin search endpoint. The client sends `q` and optional `entity_type` query parameters and accepts an `items` or `results` array of `{ id, entity_type, title, snippet, url }`. No endpoint is assumed when unset.
-- `VITE_NOTIFICATION_SSE_URL`: same-origin Server-Sent Events endpoint. The client consumes JSON messages with `notification_id`, `title`, optional `body` and `action_url`. The browser EventSource handles reconnects; action links are restricted to same-origin paths.
+- Node.js: `20.19.0` baseline（`.nvmrc`）；package engines 要求 Node.js 20.19+
+- pnpm: `9.15.9`（`packageManager` 与 CI action 锁定）
+- React / React DOM: `18.3.1`
+- TanStack Query: `5.83.0`（唯一服务端状态缓存）
+- Zustand: `5.0.6`（客户端 UI 状态）
+- TypeScript: strict mode；`@/*` 指向 `src/*`
 
-These adapters deliberately remain disabled until the backend API/event contracts are configured. No sample business data or synthetic notifications are generated.
+## Commands
 
-The shell includes route metadata, grouped/collapsible navigation, breadcrumb generation, browser-local recent routes, entity-type search filtering, SSE notification presentation, error boundaries, and 403/404/empty/loading states.
+```sh
+corepack enable
+pnpm install
+pnpm dev
+pnpm test
+pnpm lint
+pnpm typecheck
+pnpm build
+```
 
-## Automated browser tests
+## API and events
 
-Run `pnpm test:e2e` from this directory. Playwright starts the Vite development server and runs Chromium projects at 1440×900 (desktop) and 768×1024 (tablet). The suite covers dashboard entry without a login UI prerequisite, deep-link refresh, navigation collapse/expand, 403/404 templates, and horizontal-overflow protection. CI installs Chromium and uploads the HTML report on every run.
+- API Client: `src/lib/api`，统一分页、错误 envelope、request_id、超时/取消、ETag、If-Match、幂等键。
+- SSE Event Bus: `src/lib/events`，心跳 watchdog、Last-Event-ID 续传、指数退避、event_id 与 entity sequence 去重。
+- Query Client: `src/lib/query/query-client.ts`。
+- Zustand UI store: `src/stores/ui-store.ts`；禁止在其中复制服务端业务实体。
+- Contract and usage: `../docs/frontend/api-client-event-bus.md`。
 
-## Dual-auth acceptance boundary
-
-These browser tests currently verify the frontend shell and its public/no-login entry path only. They do **not** establish the backend's `auth.enabled=false` REST/SSE/file authorization behavior, nor the `auth.enabled=true` login/session/CSRF/RBAC path. Those assertions require the completed #755 endpoint adapters and the canonical server bootstrap/login contracts; the current frontend shell has no implemented bootstrap/session integration to drive a truthful authenticated E2E. Do not interpret a passing UI E2E run as final dual-mode acceptance. Track the remaining integration against #755 and the parent #752 acceptance matrix.
+CI workflow `.github/workflows/frontend-ci.yml` 对本目录变更执行 install、unit tests、lint/format、typecheck 和 production build。

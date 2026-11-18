@@ -1,37 +1,67 @@
-import {useCallback,useEffect,useMemo,useState} from 'react'
-import {breadcrumbs,resolveRoute,routes,type EntityType,type RouteDefinition} from '@/routes'
-import {EmptyState,ForbiddenState,LoadingState,NotFoundState} from '@/components/States'
-import {ErrorBoundary} from '@/components/ErrorBoundary'
-type Result={id:string;entity_type:EntityType;title:string;snippet?:string;url?:string}
-type Notice={notification_id:string;title:string;body?:string;action_url?:string;read_at?:string|null}
-const kinds:{value:EntityType|'all';label:string}[]=[{value:'all',label:'全部类型'},{value:'agent',label:'智能体'},{value:'task',label:'任务'},{value:'run',label:'运行记录'},{value:'project',label:'项目'},{value:'workflow',label:'工作流'},{value:'knowledge_document',label:'知识文档'},{value:'conversation',label:'会话'},{value:'file',label:'文件'},{value:'approval',label:'审批'}]
-const groups=[{title:'总览',paths:['/app']},{title:'构建',paths:['/agents','/workflows']},{title:'运行',paths:['/tasks','/runs','/approvals']},{title:'资源',paths:['/projects','/knowledge','/conversations','/files']},{title:'管理',paths:['/settings/models','/settings/system']}]
-const searchEndpoint=import.meta.env.VITE_GLOBAL_SEARCH_URL
-const eventEndpoint=import.meta.env.VITE_NOTIFICATION_SSE_URL
-function go(path:string){window.history.pushState({},'',path);window.dispatchEvent(new PopStateEvent('popstate'))}
-function sameOriginPath(value?:string){if(!value)return undefined;try{const url=new URL(value,window.location.origin);return url.origin===window.location.origin?url.pathname+url.search+url.hash:undefined}catch{return undefined}}
-function Content({route}:{route:RouteDefinition}){
- if(route.pageId==='dashboard')return <div className="dashboard-grid"><article className="welcome-card"><p className="eyebrow">AGENT PLATFORM</p><h2>智能体工作台</h2><p>统一管理智能体、工作流、任务和知识资产。</p></article><article className="metric-card"><span>已登记页面</span><strong>{routes.length}</strong></article><article className="metric-card"><span>最近访问</span><strong>本地记录</strong></article></div>
- if(route.pageId==='forbidden')return <ForbiddenState/>
- return <EmptyState title={route.title} description={route.description+'。业务内容将在对应模块交付后启用。'}/>
-}
-export default function App(){
- const [path,setPath]=useState(window.location.pathname)
- const [collapsed,setCollapsed]=useState(false)
- const [recent,setRecent]=useState<string[]>(()=>{try{return JSON.parse(localStorage.getItem('ui.recent-routes')||'[]') as string[]}catch{return []}})
- const [query,setQuery]=useState(''),[kind,setKind]=useState<EntityType|'all'>('all'),[results,setResults]=useState<Result[]>([])
- const [searchOpen,setSearchOpen]=useState(false),[busy,setBusy]=useState(false),[searchError,setSearchError]=useState('')
- const [notices,setNotices]=useState<Notice[]>([]),[noticeOpen,setNoticeOpen]=useState(false),[sse,setSse]=useState('未配置')
- const route=resolveRoute(path)
- const crumbs=useMemo(()=>route?breadcrumbs(route):[],[route])
- useEffect(()=>{const pop=()=>setPath(window.location.pathname);window.addEventListener('popstate',pop);return()=>window.removeEventListener('popstate',pop)},[])
- useEffect(()=>{if(!route)return;setRecent(old=>{const next=[route.path,...old.filter(x=>x!==route.path)].slice(0,6);localStorage.setItem('ui.recent-routes',JSON.stringify(next));return next})},[path])
- useEffect(()=>{if(!eventEndpoint){setSse('未配置');return}setSse('连接中');const source=new EventSource(eventEndpoint,{withCredentials:true});source.onopen=()=>setSse('已连接');source.onerror=()=>setSse('连接中断');source.onmessage=e=>{try{const item=JSON.parse(e.data) as Notice;if(!item.notification_id||!item.title)return;setNotices(old=>[item,...old.filter(n=>n.notification_id!==item.notification_id)].slice(0,50))}catch(error){console.warn('[notification-sse] invalid event',error)}};return()=>source.close()},[])
- const search=useCallback(async()=>{if(!query.trim()){setResults([]);return}if(!searchEndpoint){setSearchError('全局搜索 API 尚未配置；请接入服务端搜索契约。');return}setBusy(true);setSearchError('');try{const url=new URL(searchEndpoint,window.location.origin);if(url.origin!==window.location.origin)throw new Error('搜索地址必须为同源地址');url.searchParams.set('q',query.trim());if(kind!=='all')url.searchParams.set('entity_type',kind);const response=await fetch(url,{credentials:'same-origin',headers:{Accept:'application/json'}});if(!response.ok)throw new Error('搜索请求失败（HTTP '+response.status+'）');const data=await response.json() as {items?:Result[];results?:Result[]};setResults(data.items||data.results||[])}catch(error){setSearchError(error instanceof Error?error.message:'搜索失败')}finally{setBusy(false)}},[query,kind])
- const unread=notices.filter(n=>!n.read_at).length
- return <ErrorBoundary><div className={collapsed?'app-shell nav-collapsed':'app-shell'}>
- <aside className="sidebar" aria-label="主导航"><a className="brand" href="/app" onClick={e=>{e.preventDefault();go('/app')}}><span className="brand-mark">A</span>{!collapsed&&<span>Agent Platform</span>}</a><button className="collapse-button" onClick={()=>setCollapsed(v=>!v)} aria-label={collapsed?'展开导航':'折叠导航'}>{collapsed?'›':'‹'}</button><nav>{groups.map(group=><section className="nav-group" key={group.title}><div className="nav-group-title">{!collapsed&&group.title}</div>{group.paths.map(p=>{const item=routes.find(r=>r.path===p)!;const active=route?.path===p||route?.parent===p;return <a key={p} title={item.title} className={active?'nav-item active':'nav-item'} href={p} onClick={e=>{e.preventDefault();go(p)}}><span className="nav-dot"/>{!collapsed&&item.title}</a>})}</section>)}</nav>{!collapsed&&<div className="sidebar-footer">最近访问{recent.length?recent.slice(0,4).map(p=>{const item=routes.find(r=>r.path===p);return item?<a key={p} href={p} onClick={e=>{e.preventDefault();go(p)}}>{item.title}</a>:null}):<small>暂无记录</small>}</div>}</aside>
- <main className="main-content"><header className="topbar"><div className="breadcrumbs" aria-label="面包屑导航">{crumbs.map((item,i)=><span key={item.pageId}>{i>0&&<i>/</i>}<a href={item.path} onClick={e=>{e.preventDefault();go(item.path)}}>{item.title}</a></span>)}</div><div className="top-actions"><button className="top-action" onClick={()=>setSearchOpen(v=>!v)}>全局搜索</button><div className="notice-wrap"><button className="top-action" onClick={()=>setNoticeOpen(v=>!v)} aria-expanded={noticeOpen}>通知 {unread>0&&<b className="notice-count">{unread}</b>}</button>{noticeOpen&&<div className="notice-popover"><strong>通知中心</strong><small className="connection-state">SSE：{sse}</small>{notices.length?notices.map(n=><button className="notice-item" key={n.notification_id} onClick={()=>{setNotices(old=>old.map(x=>x.notification_id===n.notification_id?{...x,read_at:new Date().toISOString()}:x));const target=sameOriginPath(n.action_url);if(target)go(target)}}><strong>{n.title}</strong><span>{n.body}</span></button>):<p className="muted">暂无通知</p>}</div>}</div></div></header>
- {searchOpen&&<section className="search-panel"><div className="search-row"><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void search()}} placeholder="搜索智能体、任务、运行记录、项目…" aria-label="搜索关键词"/><select value={kind} onChange={e=>setKind(e.target.value as EntityType|'all')} aria-label="实体类型筛选">{kinds.map(k=><option value={k.value} key={k.value}>{k.label}</option>)}</select><button onClick={()=>void search()}>搜索</button></div>{busy?<LoadingState label="正在搜索"/>:searchError?<p className="search-error" role="alert">{searchError}</p>:results.length?<ul className="search-results">{results.map(r=><li key={r.id}><a href={sameOriginPath(r.url)||'#'} onClick={e=>{const target=sameOriginPath(r.url);if(target){e.preventDefault();go(target)}else e.preventDefault()}}><strong>{r.title}</strong><small>{kinds.find(k=>k.value===r.entity_type)?.label||r.entity_type}</small><span>{r.snippet}</span></a></li>)}</ul>:<p className="muted">{query?'暂无匹配结果':'输入关键词并选择实体类型。'}</p>}</section>}
- <section className="page-heading"><div><p className="eyebrow">{route?.section||'PAGE'}</p><h1>{route?.title||'页面不存在'}</h1><p>{route?.description||'请检查访问地址。'}</p></div></section><ErrorBoundary>{route?<Content route={route}/>:<NotFoundState/>}</ErrorBoundary></main></div></ErrorBoundary>
+import DesignSystemShowcase from '@/components/DesignSystemShowcase'
+import { useUiStore } from '@/stores/ui-store'
+
+const navigation = [
+  { label: '工作台', active: true },
+  { label: '智能体', active: false },
+  { label: '工作流', active: false },
+  { label: '任务中心', active: false },
+  { label: '模型配置', active: false },
+  { label: '知识库', active: false },
+  { label: '系统设置', active: false },
+]
+
+export default function App() {
+  const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed)
+  const toggleSidebar = useUiStore((state) => state.toggleSidebar)
+
+  return (
+    <div
+      className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}
+    >
+      <aside className="sidebar" aria-label="主导航">
+        <a className="brand" href="/" aria-label="Agent Platform 首页">
+          <span className="brand-mark">A</span>
+          <span>Agent Platform</span>
+        </a>
+        <div className="nav-caption">平台</div>
+        <nav>
+          {navigation.map((item) => (
+            <a
+              className={item.active ? 'nav-item active' : 'nav-item'}
+              href="#"
+              aria-current={item.active ? 'page' : undefined}
+              key={item.label}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+        <div className="sidebar-footer">前端工程基座 · 设计系统样例</div>
+      </aside>
+      <main className="main-content">
+        <header className="topbar">
+          <div className="topbar-start">
+            <button
+              className="sidebar-toggle"
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarCollapsed ? '展开导航' : '收起导航'}
+              aria-expanded={!sidebarCollapsed}
+            >
+              {sidebarCollapsed ? '展开导航' : '收起导航'}
+            </button>
+            <span className="breadcrumb">平台 / 工作台</span>
+          </div>
+          <span className="environment">新前端工程</span>
+        </header>
+        <section className="welcome">
+          <p className="eyebrow">AGENT PLATFORM</p>
+          <h1>智能体工作台</h1>
+          <p>企业级智能体平台 · 统一设计语言</p>
+        </section>
+        <DesignSystemShowcase />
+      </main>
+    </div>
+  )
 }
