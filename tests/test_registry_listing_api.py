@@ -60,6 +60,37 @@ class RegistryListingApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_version_diff_reports_nested_changes_and_missing_versions(self):
+        first = self.client.post(
+            "/api/platform/v1/registry/agent/agent-diff/versions",
+            json={"definition": {"name": "Agent", "instructions": "v1", "tools": ["search"]}},
+        )
+        self.assertEqual(first.status_code, 201)
+        second = self.client.post(
+            "/api/platform/v1/registry/agent/agent-diff/versions",
+            json={"definition": {"name": "Agent 2", "instructions": "v2", "skills": ["summary"]}},
+        )
+        self.assertEqual(second.status_code, 201)
+        response = self.client.get(
+            "/api/platform/v1/registry/agent/agent-diff/diff/1/2",
+        )
+        self.assertEqual(response.status_code, 200)
+        changes = response.json()["changes"]
+        self.assertIn({"path": "$.name", "operation": "replace", "before": "Agent", "after": "Agent 2"}, changes)
+        self.assertTrue(any(item["path"] == "$.tools" and item["operation"] == "remove" for item in changes))
+        self.assertTrue(any(item["path"] == "$.skills" and item["operation"] == "add" for item in changes))
+
+    def test_version_detail_is_tenant_scoped(self):
+        self.client.post(
+            "/api/platform/v1/registry/agent/agent-private/versions",
+            json={"definition": {"name": "Private"}},
+        )
+        response = self.client.get(
+            "/api/platform/v1/registry/agent/agent-private/versions/1",
+            headers={"x-tenant": "tenant-b"},
+        )
+        self.assertEqual(response.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()
