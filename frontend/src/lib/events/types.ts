@@ -8,7 +8,12 @@ export interface PlatformEvent<TPayload = unknown> {
   payload: TPayload
 }
 
-export type EventBusStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed'
+export type EventBusStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'closed'
 
 export interface EventBusOptions {
   url: string
