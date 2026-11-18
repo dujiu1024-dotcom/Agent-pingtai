@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom'
 
 import { pageRoutes } from '@/routes/route-config'
 
-export function GlobalSearch() {
+export function GlobalSearch({ authEnabled, capabilities }: { authEnabled: boolean; capabilities: string[] }) {
   const [query, setQuery] = useState('')
   const matches = useMemo(() => {
     const value = query.trim().toLocaleLowerCase()
     if (!value) return []
-    return pageRoutes.filter((route) =>
+    return pageRoutes.filter((route) => (!route.authOnly || authEnabled) && (!route.capability || capabilities.includes(route.capability))).filter((route) =>
       `${route.title} ${route.section} ${route.pageId}`.toLocaleLowerCase().includes(value),
     ).slice(0, 8)
   }, [query])
