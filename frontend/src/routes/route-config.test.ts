@@ -32,6 +32,16 @@ describe('route configuration', () => {
     ).toBe('/workspace/overview')
   })
 
+  it('keeps Agent collaboration reachable in no-auth mode', () => {
+    const visiblePaths = getVisibleNavigation(false).flatMap((group) =>
+      group.items.map((item) => item.path),
+    )
+    expect(visiblePaths).toContain('/workspace/collaboration')
+    expect(
+      getAllRoutes(false).find((route) => route.pageId === 'WS-COLLAB')?.path,
+    ).toBe('/workspace/collaboration')
+  })
+
   it('does not expose identity and RBAC navigation in no-auth mode', () => {
     const paths = getVisibleNavigation(false).flatMap((group) =>
       group.items.map((item) => item.path),
