@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { matchRoutes } from 'react-router-dom'
 
-import { authRoutes, getAllRoutes, getVisibleNavigation, globalRoutes, isCanonicalRouteSetValid, pageRoutes } from './route-config'
+import { authRoutes, detailRoutes, getAllRoutes, getVisibleNavigation, globalRoutes, isCanonicalRouteSetValid, pageRoutes } from './route-config'
 
 describe('route configuration', () => {
   it('keeps canonical page ids and paths unique', () => {
@@ -36,8 +36,9 @@ describe('route configuration', () => {
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
-    const routeObjects = pageRoutes.map((route) => ({ path: route.path }))
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     expect(matchRoutes(routeObjects, '/operations/tasks/task-123')?.[0].params.taskId).toBe('task-123')
     expect(matchRoutes(routeObjects, '/operations/runs/run-456')?.[0].params.runId).toBe('run-456')
+    expect(matchRoutes(routeObjects, '/admin/models/providers/provider-7')?.[0].params.providerId).toBe('provider-7')
   })
 })
