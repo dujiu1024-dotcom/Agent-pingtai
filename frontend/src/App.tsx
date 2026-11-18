@@ -8,6 +8,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -95,6 +96,17 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        navigate('/search')
+      }
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [navigate])
   const current = [...pageRoutes, ...globalRoutes, ...authRoutes].find((route) => {
     if (route.path === location.pathname) return true
     const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
