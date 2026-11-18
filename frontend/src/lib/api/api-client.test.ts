@@ -85,7 +85,6 @@ describe('ApiClient', () => {
     expect(headers.get('Idempotency-Key')).toBeTruthy()
     expect(headers.get('If-Match')).toBe('"rev-1"')
   })
-})
 
   it('preserves caller cancellation instead of reporting a timeout', async () => {
     const fetcher = vi.fn<typeof fetch>(
@@ -137,3 +136,5 @@ describe('ApiClient', () => {
       new Headers(fetcher.mock.calls[0][1]?.headers).get('Idempotency-Key'),
     ).toBe('logical-op-1')
   })
+
+})
