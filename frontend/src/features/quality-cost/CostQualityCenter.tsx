@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { apiClient } from '@/lib/api'
+import './cost-quality-center.css'
 
 type UsageEvent = {
   event_id: string
