@@ -135,4 +135,60 @@ describe('ApiClient', () => {
       new Headers(fetcher.mock.calls[0][1]?.headers).get('Idempotency-Key'),
     ).toBe('logical-op-1')
   })
+
+  it('clears ETag validators after a successful mutation', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: 'v1' }), {
+          headers: { ETag: '"v1"', 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: 'v2' }), {
+          headers: { ETag: '"v2"', 'Content-Type': 'application/json' },
+        }),
+      )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+
+    await client.get('/tasks/task-1')
+    await client.post('/tasks/task-1/refresh', {})
+    await client.get('/tasks/task-1')
+
+    expect(
+      new Headers(fetcher.mock.calls[2][1]?.headers).get('If-None-Match'),
+    ).toBeNull()
+  })
+
+  it('converts a timeout into a retryable API error', async () => {
+    vi.useFakeTimers()
+    const fetcher = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(init.signal?.reason),
+            { once: true },
+          )
+        }),
+    )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      timeoutMs: 25,
+      fetcher,
+    })
+
+    const request = client.get('/slow')
+    await vi.advanceTimersByTimeAsync(25)
+    await expect(request).rejects.toMatchObject({
+      code: 'REQUEST_TIMEOUT',
+      retryable: true,
+    })
+    vi.useRealTimers()
+  })
+
 })
