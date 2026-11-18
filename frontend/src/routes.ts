@@ -14,7 +14,9 @@ export const routes:RouteDefinition[]=[
 {path:'/files',pageId:'files',title:'文件资产',section:'资源',description:'上传文件与解析结果',entityType:'file'},
 {path:'/approvals',pageId:'approvals',title:'审批中心',section:'运行',description:'待处理审批',entityType:'approval'},
 {path:'/settings/models',pageId:'model-settings',title:'模型配置',section:'管理',description:'Provider、模型与路由策略'},
-{path:'/settings/system',pageId:'system-settings',title:'系统设置',section:'管理',description:'实例配置与系统参数'}]
+{path:'/settings/system',pageId:'system-settings',title:'系统设置',section:'管理',description:'实例配置与系统参数'},
+{path:'/admin/organization',pageId:'ADM-ORG',title:'组织与成员',section:'平台管理',description:'组织、部门、项目与成员生命周期'},
+{path:'/admin/access-control',pageId:'ADM-RBAC',title:'角色与权限',section:'平台管理',description:'角色权限矩阵与数据范围策略'}]
 export function resolveRoute(pathname:string):RouteDefinition|undefined{
  const path=pathname.replace(/\/+$/,'')||'/'
  if(path==='/')return routes[0]
