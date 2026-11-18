@@ -55,7 +55,7 @@ describe('SseEventBus', () => {
       payload: {},
     }
     let callCount = 0
-    let bus: SseEventBus
+    const busRef: { current?: SseEventBus } = {}
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
       callCount += 1
       if (callCount === 1) {
@@ -74,15 +74,16 @@ describe('SseEventBus', () => {
         )
       }
       expect(new Headers(init?.headers).get('Last-Event-ID')).toBe('evt-10')
-      bus.stop()
+      busRef.current?.stop()
       return new Response(null, { status: 204 })
     })
-    bus = new SseEventBus({
+    const bus = new SseEventBus({
       url: 'https://example.test/events',
       fetcher,
       reconnectBaseMs: 1,
       reconnectMaxMs: 1,
     })
+    busRef.current = bus
     bus.start()
     await vi.waitFor(() => expect(callCount).toBeGreaterThan(1))
     expect(bus.getStatus()).toBe('closed')
