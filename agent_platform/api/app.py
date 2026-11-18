@@ -55,6 +55,7 @@ from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.extraction import MemoryExtractionService
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.trace_middleware import TraceContextASGIMiddleware
+from agent_platform.security.audit_context import AuditActor
 from agent_platform.security.audit_http import AuditRequestASGIMiddleware
 from agent_platform.web.app import create_platform_web_router
 
@@ -314,10 +315,19 @@ def create_platform_app(
     # Add request auditing before Identity middleware so it executes inside the
     # authenticated identity boundary and sees the verified principal.
     if audit_request_configured:
+        if not auth_enabled and (
+            not isinstance(instance_tenant_id, str) or not instance_tenant_id.strip()
+        ):
+            raise ValueError("no-auth request auditing requires explicit instance_tenant_id")
+
+        def resolve_instance_audit_actor(_scope: dict[str, Any]) -> AuditActor:
+            return AuditActor(tenant_id=instance_tenant_id, actor_id=None)
+
         app.add_middleware(
             AuditRequestASGIMiddleware,
             sink=audit_request_sink,
             resolve_actor=audit_actor_resolver,
+            resolve_instance_actor=resolve_instance_audit_actor if not auth_enabled else None,
         )
     app.add_middleware(
         IdentityASGIMiddleware,

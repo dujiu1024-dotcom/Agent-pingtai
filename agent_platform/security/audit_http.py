@@ -22,6 +22,7 @@ class AuditRequestASGIMiddleware:
         *,
         sink: AuditSink,
         resolve_actor: Callable[[Any], Any],
+        resolve_instance_actor: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         if not callable(getattr(sink, "record", None)):
             raise TypeError("audit sink must expose record()")
@@ -30,6 +31,7 @@ class AuditRequestASGIMiddleware:
         self.app = app
         self.sink = sink
         self.resolve_actor = resolve_actor
+        self.resolve_instance_actor = resolve_instance_actor
 
     async def _actor(self, principal: Any) -> AuditActor | None:
         result = self.resolve_actor(principal)

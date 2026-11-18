@@ -147,6 +147,28 @@ class AuditRequestMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(called, [])
         self.assertEqual(sink.events, [])
+ 
+    async def test_instance_request_is_audited_with_null_actor(self):
+        sink = FakeAuditSink()
+        async def app(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200, "headers": []})
+            await send({"type": "http.response.body", "body": b"ok"})
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+        async def send(message):
+            pass
+        middleware = AuditRequestASGIMiddleware(
+            app, sink=sink, resolve_actor=lambda principal: None,
+            resolve_instance_actor=lambda scope: AuditActor("instance-a", None),
+        )
+        await middleware(
+            {"type": "http", "method": "GET", "path": "/api/platform/v1/office/state", "state": {}},
+            receive, send,
+        )
+        self.assertEqual(len(sink.events), 2)
+        self.assertIsNone(sink.events[0]["actor_id"])
+        self.assertIsNone(sink.events[1]["actor_id"])
+        self.assertEqual(sink.events[0]["tenant_id"], "instance-a")
 
 
 if __name__ == "__main__":
