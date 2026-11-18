@@ -2,6 +2,7 @@ export type EntityType='agent'|'task'|'run'|'project'|'workflow'|'knowledge_docu
 export type RouteDefinition={path:string;pageId:string;title:string;section:string;parent?:string;description:string;entityType?:EntityType}
 export const routes:RouteDefinition[]=[
 {path:'/app',pageId:'dashboard',title:'工作台',section:'总览',description:'平台运行概况与快捷入口'},
+{path:'/office',pageId:'office',title:'3D 数字办公室',section:'总览',description:'楼层、空间与 Agent 工位视图'},
 {path:'/403',pageId:'forbidden',title:'无权访问',section:'错误',description:'当前会话没有访问此页面的权限'},
 {path:'/agents',pageId:'agents',title:'智能体',section:'构建',description:'智能体列表与配置',entityType:'agent'},
 {path:'/agents/:id',pageId:'agent-detail',title:'智能体详情',section:'构建',parent:'/agents',description:'智能体配置',entityType:'agent'},
