@@ -16,7 +16,9 @@ export default function App() {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
 
   return (
-    <div className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}>
+    <div
+      className={sidebarCollapsed ? 'app-shell sidebar-collapsed' : 'app-shell'}
+    >
       <aside className="sidebar" aria-label="主导航">
         <a className="brand" href="/" aria-label="Agent Platform 首页">
           <span className="brand-mark">A</span>
