@@ -21,6 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -312,6 +313,7 @@ function PageView({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/workspace/collaboration') return <AgentCollaborationCenter />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
