@@ -26,8 +26,8 @@ type UsageSummary = {
   estimated_cost_usd: string
   provider_reported_cost_usd: string
   reconciled_event_cost_usd: string
-  by_model: Record<string, { events: number; total_tokens: number; cost_usd: string }>
-  by_agent: Record<string, { events: number; runtime_ms: number; total_tokens: number; cost_usd: string }>
+  by_model: Record<string, { events: number; input_tokens: number; output_tokens: number; cost_usd: string }>
+  by_agent: Record<string, { events: number; runtime_ms: number; input_tokens: number; output_tokens: number; cost_usd: string }>
 }
 
 type UsageResponse = { items: UsageEvent[] }
@@ -100,7 +100,7 @@ function QueryError({ error, onRetry }: { error: unknown; onRetry: () => void })
 export function Dashboard() {
   const [days, setDays] = useState(7)
   const [modelKey, setModelKey] = useState('')
-  const query = queryRange(days, modelKey || undefined)
+  const query = useMemo(() => queryRange(days, modelKey || undefined), [days, modelKey])
   const usageQuery = useQuery({
     queryKey: ['operations-dashboard', 'usage', query],
     queryFn: () => apiClient.get<UsageResponse>(`/platform/v1/quotas/usage?${query}`),
@@ -232,8 +232,8 @@ export function Dashboard() {
           <div className="ops-panel-heading"><h2>模型分布</h2><span>按真实用量事件聚合</span></div>
           {summaryQuery.isLoading ? <p className="muted">正在加载…</p> : models.length ? (
             <ol className="ops-ranking">
-              {Object.entries(summaryQuery.data?.by_model ?? {}).sort((a, b) => b[1].total_tokens - a[1].total_tokens).slice(0, 8).map(([model, value]) => (
-                <li key={model}><span>{model}</span><strong>{number(value.total_tokens)} tokens</strong><small>{money(value.cost_usd)}</small></li>
+              {Object.entries(summaryQuery.data?.by_model ?? {}).sort((a, b) => (b[1].input_tokens + b[1].output_tokens) - (a[1].input_tokens + a[1].output_tokens)).slice(0, 8).map(([model, value]) => (
+                <li key={model}><span>{model}</span><strong>{number(value.input_tokens + value.output_tokens)} tokens</strong><small>{money(value.cost_usd)}</small></li>
               ))}
             </ol>
           ) : <p className="muted">暂无模型用量。</p>}
