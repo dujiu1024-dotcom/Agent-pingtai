@@ -60,7 +60,10 @@ export default function DesignSystemShowcase() {
           <div className="ds-swatches">
             {brandColors.map(([name, value]) => (
               <div className="ds-swatch" key={name}>
-                <span className="ds-swatch-color" style={{ backgroundColor: value }} />
+                <span
+                  className="ds-swatch-color"
+                  style={{ backgroundColor: value }}
+                />
                 <strong>{name}</strong>
                 <code>{value}</code>
               </div>
@@ -75,7 +78,10 @@ export default function DesignSystemShowcase() {
           </div>
           <div className="ds-status-list">
             {semanticColors.map((color) => (
-              <span className={`ds-status ds-status--${color.className}`} key={color.name}>
+              <span
+                className={`ds-status ds-status--${color.className}`}
+                key={color.name}
+              >
                 <i aria-hidden="true" />
                 {color.name}
                 <code>{color.value}</code>
@@ -99,7 +105,11 @@ export default function DesignSystemShowcase() {
             <button className="ds-button ds-button--danger" type="button">
               危险操作
             </button>
-            <button className="ds-button ds-button--primary" disabled type="button">
+            <button
+              className="ds-button ds-button--primary"
+              disabled
+              type="button"
+            >
               禁用状态
             </button>
           </div>
@@ -115,21 +125,23 @@ export default function DesignSystemShowcase() {
               <span>Density</span>
             </div>
             <div className="ds-density-switch" aria-label="选择表格密度">
-              {(['comfortable', 'standard', 'compact'] as const).map((value) => (
-                <button
-                  aria-pressed={density === value}
-                  className={density === value ? 'is-selected' : ''}
-                  key={value}
-                  onClick={() => setDensity(value)}
-                  type="button"
-                >
-                  {value === 'comfortable'
-                    ? '舒适'
-                    : value === 'standard'
-                      ? '标准'
-                      : '紧凑'}
-                </button>
-              ))}
+              {(['comfortable', 'standard', 'compact'] as const).map(
+                (value) => (
+                  <button
+                    aria-pressed={density === value}
+                    className={density === value ? 'is-selected' : ''}
+                    key={value}
+                    onClick={() => setDensity(value)}
+                    type="button"
+                  >
+                    {value === 'comfortable'
+                      ? '舒适'
+                      : value === 'standard'
+                        ? '标准'
+                        : '紧凑'}
+                  </button>
+                ),
+              )}
             </div>
           </div>
           <div className={`ds-table-wrap ds-table-wrap--${density}`}>
@@ -183,15 +195,25 @@ export default function DesignSystemShowcase() {
             <h3>Office 材质基调</h3>
             <span>Low-poly direction</span>
           </div>
-          <div className="ds-office-preview" aria-label="暖白墙面、木质办公桌与植物的材质示意">
+          <div
+            className="ds-office-preview"
+            aria-label="暖白墙面、木质办公桌与植物的材质示意"
+          >
             <div className="ds-office-window" />
-            <div className="ds-office-plant"><i /><i /><i /></div>
+            <div className="ds-office-plant">
+              <i />
+              <i />
+              <i />
+            </div>
             <div className="ds-office-desk" />
             <div className="ds-office-monitor" />
-            <div className="ds-office-person"><i /></div>
+            <div className="ds-office-person">
+              <i />
+            </div>
           </div>
           <p className="ds-helper">
-            暖白建筑、自然木色、墨绿植物、柔和漫射光；实际 3D 场景须提供等价 2D 操作视图。
+            暖白建筑、自然木色、墨绿植物、柔和漫射光；实际 3D 场景须提供等价 2D
+            操作视图。
           </p>
         </article>
       </div>
