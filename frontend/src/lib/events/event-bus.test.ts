@@ -135,5 +135,4 @@ describe('SseEventBus', () => {
     await vi.waitFor(() => expect(received).toEqual(['evt-final']))
     bus.stop()
   })
-
 })
