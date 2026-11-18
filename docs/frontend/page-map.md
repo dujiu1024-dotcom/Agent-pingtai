@@ -63,7 +63,8 @@ flowchart TD
 | WS-BLACKBOARD | Blackboard 条目详情 | /operations/blackboard/:entryId | Detail / Entry | #746 | 可见 | RBAC |
 | WS-COST | 成本与质量中心 | /workspace/quality-cost | Dashboard / Usage+Evaluation metrics | #747 | 可见 | RBAC |
 | WS-OFFICE | 3D 数字办公室 | /workspace/office | 3D Scene / Office layout+Agent status | #748 | 可见 | RBAC |
-| OPS-AGENTS | Agent 运行态列表 | /operations/agents | List / Agent Runtime | #746 | 可见 | RBAC |\n| OPS-AGENT-DETAIL | Agent 运行详情 | /operations/agents/:agentId | Runtime Detail / Agent Runtime | #746 | 可见 | RBAC |
+| OPS-AGENTS | Agent 运行态列表 | /operations/agents | List / Agent Runtime | #746 | 可见 | RBAC |
+| OPS-AGENT-DETAIL | Agent 运行详情 | /operations/agents/:agentId | Runtime Detail / Agent Runtime | #746 | 可见 | RBAC |
 | ADM-AGENTS | Agent 定义管理 | /admin/agents | List / Agent Registry | #749 | 可见 | RBAC |
 | ADM-AGENT-DETAIL | Agent 定义详情 | /admin/agents/:agentId | Detail/Edit / Agent Registry | #749 | 可见 | RBAC |
 | ADM-WORKFLOWS | Workflow 管理 | /admin/workflows | List / Workflow Definition | #749 | 可见 | RBAC |
@@ -72,7 +73,8 @@ flowchart TD
 | ADM-MODEL-TEMPLATES | 模型模板与目录 | /admin/models/templates | List/Edit / Model Template | #749 | 可见 | RBAC |
 | ADM-MODEL-ROUTING | 模型路由策略 | /admin/models/routing | Policy Editor / Routing Policy | #749 | 可见 | RBAC |
 | ADM-TOOLS | 工具与 MCP | /admin/tools | List/Edit / Tool+Server | #749 | 可见 | RBAC |
-| ADM-SKILLS | Skills | /admin/skills | List/Edit / Skill | #749 | 可见 | RBAC |\n| ADM-PROMPTS | Prompt 与模板管理（条件能力） | /admin/prompts | List/Edit / Prompt Registry | #749 | 按能力隐藏 | RBAC |
+| ADM-SKILLS | Skills | /admin/skills | List/Edit / Skill | #749 | 可见 | RBAC |
+| ADM-PROMPTS | Prompt 与模板管理（条件能力） | /admin/prompts | List/Edit / Prompt Registry | #749 | 按能力隐藏 | RBAC |
 | ADM-ORG | 组织/部门/项目/成员 | /admin/organization | Tree+List / Org+Member | #749 | 隐藏 | RBAC |
 | ADM-RBAC | 角色与权限 | /admin/access-control | Matrix / Role+Permission | #749 | 隐藏 | RBAC |
 | OPS-APPROVALS | 审批中心 | /operations/approvals | Inbox / Approval | #750 | 可见 | RBAC |
@@ -104,7 +106,8 @@ flowchart TD
 | Task | /operations/tasks/:taskId | #745 | 驾驶舱、看板、Agent、通知、搜索 |
 | Run | /operations/runs/:runId | #745 | Task、驾驶舱、模型用量 |
 | Workflow Run | /operations/workflow-runs/:runId | #746 | 协作中心、Task/Run |
-| Agent Runtime | /operations/agents/:agentId | #746 | 协作中心、3D 工位、Task/Run |\n| Agent Definition | /admin/agents/:agentId | #749 | Agent 定义列表、模型绑定 |
+| Agent Runtime | /operations/agents/:agentId | #746 | 协作中心、3D 工位、Task/Run |
+| Agent Definition | /admin/agents/:agentId | #749 | Agent 定义列表、模型绑定 |
 | Workflow Definition | /admin/workflows/:workflowId/edit | #749 | 管理列表、Run 详情（只读跳转） |
 | Blackboard Entry | /operations/blackboard/:entryId | #746 | 协作中心、Run |
 | Model Provider | /admin/models/providers/:providerId | #749 | 模型中心、模板详情 |
