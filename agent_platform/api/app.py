@@ -315,6 +315,7 @@ def create_platform_app(
         window_seconds=60,
     )
     if auth_enabled:
+        assert identity is not None
         app.include_router(create_identity_router(identity=identity))
     app.include_router(
         create_health_router(
@@ -429,7 +430,7 @@ def create_platform_app(
         if registry_service_resolver is None or registry_authorizer is None:
             raise ValueError("registry service resolver and authorizer must be configured together")
         app.include_router(create_registry_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=registry_service_resolver,
             authorize=registry_authorizer,
         ))
@@ -438,7 +439,7 @@ def create_platform_app(
             raise ValueError("session service resolver and authorizer must be configured together")
         memory_context_resolver = IdentityContextResolver(identity_repository)
         app.include_router(create_sessions_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
             memory_extraction=memory_extraction,
@@ -545,19 +546,19 @@ def create_platform_app(
             "audit": audit_reader is not None and audit_authorizer is not None,
             "prompt_management": prompt_registry is not None and prompt_manage_authorizer is not None,
         },
-        resolve_principal=_principal_from_request if task_center_configured else None,
+        resolve_principal=authorization_strategy.resolve_principal if task_center_configured else None,
         resolve_task_service=task_service_resolver,
         authorize_task=task_authorizer,
     ))
     if batch_api_configured:
         app.include_router(create_batch_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=batch_service_resolver,
             authorize=batch_authorizer or task_authorizer,
         ))
     if blackboard_configured:
         app.include_router(create_blackboard_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_repository=blackboard_repository_resolver,
             authorize_scope=blackboard_authorizer,
             verify_evidence_refs=blackboard_evidence_verifier,
@@ -566,7 +567,7 @@ def create_platform_app(
     if graph_configured:
         graph_identity_context = IdentityContextResolver(identity_repository)
         app.include_router(create_graph_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_query_service=graph_query_service_resolver,
             authorize_read=graph_read_authorizer,
             resolve_governance=graph_governance_resolver,
@@ -662,7 +663,7 @@ def create_platform_app(
         if connector_service_resolver is None or connector_authorizer is None:
             raise ValueError("connector service resolver and authorizer must be configured together")
         app.include_router(create_connectors_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
@@ -686,7 +687,7 @@ def create_platform_app(
         if run_lifecycle_resolver is None or run_authorizer is None:
             raise ValueError("Run lifecycle resolver and authorizer must be configured together")
         app.include_router(create_runs_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_lifecycle=run_lifecycle_resolver,
             authorize=run_authorizer,
             resolve_interventions=run_intervention_resolver,
@@ -699,7 +700,7 @@ def create_platform_app(
         if run_authorizer is None:
             raise ValueError("Run replay resolver requires the Run authorizer")
         app.include_router(create_run_replay_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_replay=run_replay_resolver,
             authorize=run_authorizer,
         ))
