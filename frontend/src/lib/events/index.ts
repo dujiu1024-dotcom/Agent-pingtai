@@ -1,6 +1,6 @@
 export { SseEventBus, createEventBus } from './event-bus'
-export { connectQueryEvents, createQueryCacheEventHandler } from './query-cache-sync'
-export type { EventCacheBinding } from './query-cache-sync'
+export { connectQueryEvents } from './query-event-bridge'
+export type { EventQueryBinding, EventQueryRoute } from './query-event-bridge'
 export type {
   EventBusOptions,
   EventBusStatus,
