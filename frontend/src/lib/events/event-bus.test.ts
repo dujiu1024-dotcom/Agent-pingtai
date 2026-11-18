@@ -3,10 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { SseEventBus } from './event-bus'
 
 describe('SseEventBus', () => {
-  it(
-    'decodes events and drops duplicate event ids and stale entity sequences',
-    async () => {
-      const payload = {
+  it('decodes events and drops duplicate event ids and stale entity sequences', async () => {
+    const payload = {
         event_id: 'evt-2',
         type: 'task.updated',
         entity_id: 'task-1',
@@ -15,7 +13,7 @@ describe('SseEventBus', () => {
         sequence: 2,
         payload: { status: 'running' },
       }
-      const frame = [
+    const frame = [
         `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
         `id: evt-2\ndata: ${JSON.stringify(payload)}\n\n`,
         `id: evt-1\ndata: ${JSON.stringify({
@@ -24,7 +22,7 @@ describe('SseEventBus', () => {
           sequence: 1,
         })}\n\n`,
       ].join('')
-      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
         new Response(
           new ReadableStream({
             start(controller) {
@@ -35,23 +33,20 @@ describe('SseEventBus', () => {
           { headers: { 'Content-Type': 'text/event-stream' } },
         ),
       )
-      const bus = new SseEventBus({
+    const bus = new SseEventBus({
         url: 'https://example.test/events',
         fetcher,
         reconnectBaseMs: 10,
       })
-      const received: string[] = []
-      const unsubscribe = bus.subscribe((event) =>
-        received.push(event.event_id),
-      )
+    const received: string[] = []
+    const unsubscribe = bus.subscribe((event) => received.push(event.event_id))
 
-      bus.start()
-      await vi.waitFor(() => expect(received).toEqual(['evt-2']))
-      expect(bus.getLastEventId()).toBe('evt-2')
-      unsubscribe()
-      bus.stop()
-    },
-  )
+    bus.start()
+    await vi.waitFor(() => expect(received).toEqual(['evt-2']))
+    expect(bus.getLastEventId()).toBe('evt-2')
+    unsubscribe()
+    bus.stop()
+  })
 
   it('sends the last event cursor on reconnect', async () => {
     const first = {
@@ -84,9 +79,7 @@ describe('SseEventBus', () => {
             { headers: { 'Content-Type': 'text/event-stream' } },
           )
         }
-        expect(
-          new Headers(init?.headers).get('Last-Event-ID'),
-        ).toBe('evt-10')
+        expect(new Headers(init?.headers).get('Last-Event-ID')).toBe('evt-10')
         busRef.current?.stop()
         return new Response(null, { status: 204 })
       })
@@ -102,9 +95,7 @@ describe('SseEventBus', () => {
     expect(bus.getStatus()).toBe('closed')
   })
 
-  it(
-    'dispatches the final frame when the stream ends without a blank line',
-    async () => {
+  it('dispatches the final frame when the stream ends without a blank line', async () => {
     const payload = {
       event_id: 'evt-final',
       type: 'run.completed',
@@ -137,7 +128,6 @@ describe('SseEventBus', () => {
 
     bus.start()
     await vi.waitFor(() => expect(received).toEqual(['evt-final']))
-      bus.stop()
-    },
-  )
+    bus.stop()
+  })
 })
