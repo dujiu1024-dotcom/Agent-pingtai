@@ -127,7 +127,7 @@ class IdentityASGIMiddleware:
         self,
         app: Any,
         *,
-        identity: IdentityService,
+        identity: IdentityService | None,
         service_identity: Any | None = None,
         session_cookie: str = "__Host-platform_session",
         csrf_cookie: str = "__Host-platform_csrf",
@@ -139,7 +139,10 @@ class IdentityASGIMiddleware:
         trust_forwarded_headers: bool = False,
         local_principal: Any | None = None,
         local_client_hosts: tuple[str, ...] = ("127.0.0.1", "::1"),
+        auth_enabled: bool = True,
     ) -> None:
+        if auth_enabled and identity is None:
+            raise ValueError("identity service is required when authentication is enabled")
         if not session_cookie.startswith("__Host-"):
             raise ValueError("session cookie must use __Host- prefix")
         if not csrf_cookie.startswith("__Host-"):
@@ -151,6 +154,7 @@ class IdentityASGIMiddleware:
             raise ValueError("allowed_origins must be unique")
         self.app = app
         self.identity = identity
+        self.auth_enabled = auth_enabled
         self.service_identity = service_identity
         self.session_cookie = session_cookie
         self.csrf_cookie = csrf_cookie
@@ -266,6 +270,13 @@ class IdentityASGIMiddleware:
                 await self._respond(send, 429, b'{"error":"login_rate_limited"}',
                                     [(b"retry-after", str(self.login_window_seconds).encode())])
                 return
+
+        if not self.auth_enabled:
+            # No-auth mode bypasses identity and CSRF gates, but deliberately keeps
+            # origin allowlisting, CORS, and security response headers.
+            scope.setdefault("state", {})["identity.authenticated"] = False
+            await self.app(scope, receive, secure_send)
+            return
 
         cookies = self._cookies(headers.get(b"cookie", b""))
         cookie_token = cookies.get(self.session_cookie)

@@ -1,5 +1,7 @@
 """Tests for production HTTP API composition."""
+import os
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -63,8 +65,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.identity = FakeIdentity()
         self.knowledge = KnowledgeService(InMemoryKnowledgeRepository())
         self.memory = MemoryService(InMemoryMemoryRepository())
-        self.app = create_platform_app(
-            identity=self.identity,
+        self.app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -73,10 +74,42 @@ class PlatformApiCompositionTests(unittest.TestCase):
         )
         self.client = TestClient(self.app, base_url="https://testserver")
 
+    def test_auth_disabled_defaults_to_no_identity_and_starts_without_repository(self):
+        with patch.dict(os.environ, {"AUTH_ENABLED": "false"}):
+            app = create_platform_app(
+                identity=None,
+                identity_repository=None,
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+            )
+        self.assertFalse(app.state.auth_enabled)
+        self.assertEqual(
+            app.state.authorization_context_strategy.__class__.__name__,
+            "InstanceAuthorizationContextStrategy",
+        )
+        client = TestClient(app, base_url="https://testserver")
+        response = client.get("/api/platform/v1/workbench/capabilities")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(client.get("/auth/me").status_code, 404)
+
+    def test_auth_enabled_requires_identity_dependencies(self):
+        with self.assertRaisesRegex(ValueError, "identity service"):
+            create_platform_app(
+                auth_enabled=True,
+                identity=None,
+                identity_repository=None,
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+            )
+
     def test_knowledge_catalog_routes_are_wired_with_authenticated_context(self):
         catalog = InMemoryKnowledgeCatalog()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -140,8 +173,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
         async def authorize(principal, resource_type, resource_id, action):
             return True
 
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -205,10 +237,10 @@ class PlatformApiCompositionTests(unittest.TestCase):
             "task_authorizer": authorize_task,
         }
         with self.assertRaisesRegex(ValueError, "durable task worker"):
-            create_platform_app(**arguments)
+            create_platform_app(auth_enabled=True, **arguments)
 
         worker = Worker()
-        app = create_platform_app(**arguments, task_worker=worker)
+        app = create_platform_app(auth_enabled=True, **arguments, task_worker=worker)
         with TestClient(app, base_url="https://testserver") as client:
             response = client.get(
                 "/api/platform/v1/workbench/capabilities",
@@ -232,8 +264,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 self.stopped = True
 
         worker = Worker()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -251,8 +282,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 pass
 
         with self.assertRaisesRegex(ValueError, "memory_expiry_worker"):
-            create_platform_app(
-                identity=self.identity,
+            create_platform_app(auth_enabled=True, identity=self.identity,
                 identity_repository=FakeIdentityRepository(),
                 knowledge=self.knowledge,
                 memory=self.memory,
@@ -274,8 +304,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 self.stopped = True
 
         worker = Worker()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -293,8 +322,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 pass
 
         with self.assertRaisesRegex(ValueError, "outbox_relay_worker"):
-            create_platform_app(
-                identity=self.identity,
+            create_platform_app(auth_enabled=True, identity=self.identity,
                 identity_repository=FakeIdentityRepository(),
                 knowledge=self.knowledge,
                 memory=self.memory,
@@ -316,8 +344,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 self.stopped = True
 
         worker = Worker()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -353,8 +380,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
         alerts = AlertStore()
         evaluations = EvaluationRepository()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -390,8 +416,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
     def test_observability_evaluation_dependencies_must_be_paired(self):
         with self.assertRaisesRegex(ValueError, "evaluation repository"):
-            create_platform_app(
-                identity=self.identity,
+            create_platform_app(auth_enabled=True, identity=self.identity,
                 identity_repository=FakeIdentityRepository(),
                 knowledge=self.knowledge,
                 memory=self.memory,
@@ -409,9 +434,9 @@ class PlatformApiCompositionTests(unittest.TestCase):
             "redis": FakeRedis(),
         }
         with self.assertRaises(ValueError):
-            create_platform_app(**arguments, allowed_origins=("https://*.example.com",))
+            create_platform_app(auth_enabled=True, **arguments, allowed_origins=("https://*.example.com",))
         with self.assertRaises(ValueError):
-            create_platform_app(**arguments, allowed_origins=("http://console.example.com",))
+            create_platform_app(auth_enabled=True, **arguments, allowed_origins=("http://console.example.com",))
 
     def test_memory_extraction_event_worker_uses_app_lifecycle(self):
         class Worker:
@@ -426,8 +451,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 self.stopped = True
 
         worker = Worker()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -441,8 +465,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
     def test_memory_extraction_event_worker_requires_lifecycle_methods(self):
         with self.assertRaisesRegex(ValueError, "memory_extraction_event_worker"):
-            create_platform_app(
-                identity=self.identity,
+            create_platform_app(auth_enabled=True, identity=self.identity,
                 identity_repository=FakeIdentityRepository(),
                 knowledge=self.knowledge,
                 memory=self.memory,
@@ -462,8 +485,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
             async def register(self, prompt_id, template, *, created_by):
                 return self.inner.register(prompt_id, template)
 
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -498,8 +520,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 )
 
         service = EvaluationService()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -538,8 +559,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 self.stopped = True
 
         worker = Worker()
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -592,8 +612,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
         async def resolve_ledger(principal):
             return ledger
 
-        app = create_platform_app(
-            identity=self.identity, identity_repository=FakeIdentityRepository(),
+        app = create_platform_app(auth_enabled=True, identity=self.identity, identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
             allowed_origins=("https://console.example.com",),
             run_lifecycle_resolver=resolve_lifecycle,
@@ -621,8 +640,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
             async def list_events(self, **kwargs):
                 return ()
 
-        app = create_platform_app(
-            identity=self.identity,
+        app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
             memory=self.memory,
@@ -689,9 +707,9 @@ class PlatformApiCompositionTests(unittest.TestCase):
             "publisher_key_authorizer": lambda principal, extension_id, action: True,
         }
         with self.assertRaisesRegex(ValueError, "append-only audit writer"):
-            create_platform_app(**arguments)
+            create_platform_app(auth_enabled=True, **arguments)
 
-        app = create_platform_app(**arguments, resource_audit_writer=AuditWriter())
+        app = create_platform_app(auth_enabled=True, **arguments, resource_audit_writer=AuditWriter())
         self.assertIs(app.state.trusted_publisher_key_resolver, registry)
         route_paths = {route.path for route in app.routes}
         self.assertIn("/api/platform/v1/extensions/publishers/keys", route_paths)

@@ -1,7 +1,8 @@
 """Production composition factory for the platform HTTP API."""
 from __future__ import annotations
 
-from typing import Any, Sequence
+import os
+from typing import Any, Protocol, Sequence
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
@@ -65,14 +66,89 @@ async def _principal_from_request(request: Any) -> Any:
     return principal
 
 
+class AuthorizationContextStrategy(Protocol):
+    """Pluggable request identity policy selected once during app startup."""
+
+    async def resolve_principal(self, request: Any) -> Any | None: ...
+
+    async def resolve_authorization_context(self, request: Any) -> Any | None: ...
+
+    async def resolve_knowledge_principal(self, request: Any) -> Any: ...
+
+    async def resolve_memory_principal(self, request: Any) -> Any: ...
+
+
+class AuthenticatedAuthorizationContextStrategy:
+    """Resolve real principals and persisted RBAC context in auth-enabled mode."""
+
+    def __init__(self, identity_repository: Any) -> None:
+        self.identity_repository = identity_repository
+
+    async def resolve_principal(self, request: Any) -> Any:
+        return await _principal_from_request(request)
+
+    async def resolve_authorization_context(self, request: Any) -> Any:
+        principal = await self.resolve_principal(request)
+        context = await self.identity_repository.get_authorization_context(
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+        )
+        if context is None:
+            from fastapi import HTTPException
+            raise HTTPException(403, "active tenant membership required")
+        return context
+
+    async def resolve_knowledge_principal(self, request: Any) -> Any:
+        return await IdentityContextResolver(self.identity_repository).knowledge(request)
+
+    async def resolve_memory_principal(self, request: Any) -> Any:
+        return await IdentityContextResolver(self.identity_repository).memory(request)
+
+
+class InstanceAuthorizationContextStrategy:
+    """No-auth policy: no Principal, user, role, or synthetic AuthorizationContext."""
+
+    async def resolve_principal(self, request: Any) -> None:
+        return None
+
+    async def resolve_authorization_context(self, request: Any) -> None:
+        return None
+
+    async def resolve_knowledge_principal(self, request: Any) -> None:
+        from fastapi import HTTPException
+        raise HTTPException(503, "Knowledge no-auth context adapter is not installed")
+
+    async def resolve_memory_principal(self, request: Any) -> None:
+        from fastapi import HTTPException
+        raise HTTPException(503, "Memory no-auth context adapter is not installed")
+
+
+def _resolve_auth_enabled(value: bool | None) -> bool:
+    """Resolve the immutable startup mode from argument or AUTH_ENABLED env."""
+    if value is not None:
+        if not isinstance(value, bool):
+            raise ValueError("auth_enabled must be a boolean")
+        return value
+    raw = os.getenv("AUTH_ENABLED")
+    if raw is None or not raw.strip():
+        return False
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("AUTH_ENABLED must be one of true/false, 1/0, yes/no, or on/off")
+
+
 def create_platform_app(
     *,
-    identity: IdentityService,
-    identity_repository: Any,
+    identity: IdentityService | None = None,
+    identity_repository: Any | None = None,
     knowledge: KnowledgeService,
     memory: MemoryService,
     redis: Any,
     allowed_origins: Sequence[str],
+    auth_enabled: bool | None = None,
     service_identity: Any | None = None,
     rag: RAGService | None = None,
     rag_playground_resolver: Any | None = None,
@@ -163,6 +239,15 @@ def create_platform_app(
     so multi-instance deployments do not silently fall back to process-local
     security controls.
     """
+    auth_enabled = _resolve_auth_enabled(auth_enabled)
+    if auth_enabled and identity is None:
+        raise ValueError("auth.enabled=true requires an identity service")
+    if auth_enabled and identity_repository is None:
+        raise ValueError("auth.enabled=true requires an identity repository")
+    authorization_strategy: AuthorizationContextStrategy = (
+        AuthenticatedAuthorizationContextStrategy(identity_repository)
+        if auth_enabled else InstanceAuthorizationContextStrategy()
+    )
     if isinstance(allowed_origins, str):
         raise ValueError("allowed_origins must be a sequence of exact origins")
     origins = tuple(origin.strip() for origin in allowed_origins if origin.strip())
@@ -195,6 +280,8 @@ def create_platform_app(
         version="1.0.0",
         description="Versioned tenant-scoped API. See docs/api-contract.md for the public contract.",
     )
+    app.state.auth_enabled = auth_enabled
+    app.state.authorization_context_strategy = authorization_strategy
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -233,8 +320,9 @@ def create_platform_app(
         service_identity=service_identity,
         allowed_origins=origins,
         protected_paths=("/api", "/auth"),
-        login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
-        local_principal=local_principal_resolver,
+        login_rate_limiter=RedisSlidingWindowRateLimiter(redis) if auth_enabled else None,
+        local_principal=local_principal_resolver if auth_enabled else None,
+        auth_enabled=auth_enabled,
     )
     app.add_middleware(TraceContextASGIMiddleware)
     # Outer middleware also covers authentication failures returned before routing.
@@ -244,7 +332,9 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    app.include_router(create_identity_router(identity=identity))
+    if auth_enabled:
+        assert identity is not None
+        app.include_router(create_identity_router(identity=identity))
     app.include_router(
         create_health_router(
             readiness_checks=(
@@ -314,17 +404,19 @@ def create_platform_app(
         memory=memory,
         rag=rag,
         memory_extraction=memory_extraction,
+        resolve_knowledge_principal=authorization_strategy.resolve_knowledge_principal,
+        resolve_memory_principal=authorization_strategy.resolve_memory_principal,
         identity_repository=identity_repository,
     ))
     app.include_router(create_knowledge_upload_router(
         knowledge=knowledge,
-        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
+        resolve_principal=authorization_strategy.resolve_knowledge_principal,
     ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
         if not rag_playground_embedding_models:
             raise ValueError("RAG playground requires configured embedding model IDs")
-        knowledge_principal_resolver = IdentityContextResolver(identity_repository).knowledge
+        knowledge_principal_resolver = authorization_strategy.resolve_knowledge_principal
         app.include_router(create_rag_playground_router(
             resolve_principal=knowledge_principal_resolver,
             resolve_rag=rag_playground_resolver,
@@ -358,21 +450,21 @@ def create_platform_app(
         if registry_service_resolver is None or registry_authorizer is None:
             raise ValueError("registry service resolver and authorizer must be configured together")
         app.include_router(create_registry_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=registry_service_resolver,
             authorize=registry_authorizer,
         ))
     if sessions_configured:
         if session_service_resolver is None or session_authorizer is None:
             raise ValueError("session service resolver and authorizer must be configured together")
-        memory_context_resolver = IdentityContextResolver(identity_repository)
+        memory_context_resolver = authorization_strategy
         app.include_router(create_sessions_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=session_service_resolver,
             authorize=session_authorizer,
             memory_extraction=memory_extraction,
             resolve_memory_principal=(
-                memory_context_resolver.memory if memory_extraction is not None else None
+                memory_context_resolver.resolve_memory_principal if memory_extraction is not None else None
             ),
             audit_writer=resource_audit_writer or audit_request_sink,
         ))
@@ -474,32 +566,32 @@ def create_platform_app(
             "audit": audit_reader is not None and audit_authorizer is not None,
             "prompt_management": prompt_registry is not None and prompt_manage_authorizer is not None,
         },
-        resolve_principal=_principal_from_request if task_center_configured else None,
+        resolve_principal=authorization_strategy.resolve_principal if task_center_configured else None,
         resolve_task_service=task_service_resolver,
         authorize_task=task_authorizer,
     ))
     if batch_api_configured:
         app.include_router(create_batch_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=batch_service_resolver,
             authorize=batch_authorizer or task_authorizer,
         ))
     if blackboard_configured:
         app.include_router(create_blackboard_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_repository=blackboard_repository_resolver,
             authorize_scope=blackboard_authorizer,
             verify_evidence_refs=blackboard_evidence_verifier,
             resolve_event_replay=blackboard_event_replay_resolver,
         ))
     if graph_configured:
-        graph_identity_context = IdentityContextResolver(identity_repository)
+        graph_identity_context = authorization_strategy
         app.include_router(create_graph_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_query_service=graph_query_service_resolver,
             authorize_read=graph_read_authorizer,
             resolve_governance=graph_governance_resolver,
-            resolve_knowledge_principal=graph_identity_context.knowledge,
+            resolve_knowledge_principal=graph_identity_context.resolve_knowledge_principal,
             visualization_url=graph_visualization_url,
         ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
@@ -591,7 +683,7 @@ def create_platform_app(
         if connector_service_resolver is None or connector_authorizer is None:
             raise ValueError("connector service resolver and authorizer must be configured together")
         app.include_router(create_connectors_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
@@ -615,7 +707,7 @@ def create_platform_app(
         if run_lifecycle_resolver is None or run_authorizer is None:
             raise ValueError("Run lifecycle resolver and authorizer must be configured together")
         app.include_router(create_runs_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_lifecycle=run_lifecycle_resolver,
             authorize=run_authorizer,
             resolve_interventions=run_intervention_resolver,
@@ -628,7 +720,7 @@ def create_platform_app(
         if run_authorizer is None:
             raise ValueError("Run replay resolver requires the Run authorizer")
         app.include_router(create_run_replay_router(
-            resolve_principal=_principal_from_request,
+            resolve_principal=authorization_strategy.resolve_principal,
             resolve_replay=run_replay_resolver,
             authorize=run_authorizer,
         ))
