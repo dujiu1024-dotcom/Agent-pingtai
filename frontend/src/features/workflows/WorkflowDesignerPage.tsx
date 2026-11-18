@@ -98,6 +98,11 @@ export function WorkflowDesignerPage() {
   const [notice, setNotice] = useState('本地草稿模式：变更仅保存在当前页面内存中。')
   const issues = useMemo(() => validate(draft), [draft])
   const selected = draft.nodes.find((node) => node.id === selectedId)
+  const snapshotDiff = (snapshot: Snapshot) =>
+    (['workflow_id', 'name', 'description', 'nodes', 'edges'] as const).filter(
+      (field) =>
+        JSON.stringify(snapshot.draft[field]) !== JSON.stringify(draft[field]),
+    )
 
   const updateDraft = (patch: Partial<WorkflowDraft>) =>
     setDraft((current) => ({ ...current, ...patch }))
@@ -241,7 +246,7 @@ export function WorkflowDesignerPage() {
         </section>
         <section className="workflow-versions">
           <h2>草稿快照与版本差异</h2>
-          {snapshots.length ? snapshots.map((snapshot) => <div className="workflow-version-row" key={snapshot.version}><div><strong>本地快照 v{snapshot.version}</strong><small>{new Date(snapshot.savedAt).toLocaleString()}</small></div><button type="button" onClick={() => restoreSnapshot(snapshot)}>恢复到编辑器</button></div>) : <p className="workflow-muted">尚无本地快照。服务端版本列表、diff、发布与回滚 API 待接入。</p>}
+          {snapshots.length ? snapshots.map((snapshot) => <div className="workflow-version-row" key={snapshot.version}><div><strong>本地快照 v{snapshot.version}</strong><small>{new Date(snapshot.savedAt).toLocaleString()}</small><small>与当前草稿差异：{snapshotDiff(snapshot).join('、') || '无'}</small></div><button type="button" onClick={() => restoreSnapshot(snapshot)}>恢复到编辑器</button></div>) : <p className="workflow-muted">尚无本地快照。服务端版本列表、持久化 diff、发布与回滚 API 待接入。</p>}
         </section>
       </div>
       <p className="workflow-status" role="status">{notice}</p>
