@@ -30,6 +30,8 @@ export class SseEventBus {
   private reconnectAttempt = 0
   private retryOverride?: number
   private heartbeatTimer?: ReturnType<typeof setTimeout>
+  private delayTimer?: ReturnType<typeof setTimeout>
+  private finishDelay?: () => void
   private frame: SseFrame = { data: [] }
   private buffer = ''
 
@@ -66,6 +68,8 @@ export class SseEventBus {
   stop(): void {
     this.running = false
     this.controller?.abort()
+    if (this.delayTimer) clearTimeout(this.delayTimer)
+    this.finishDelay?.()
     this.clearHeartbeat()
     this.setStatus('closed')
   }
@@ -206,15 +210,12 @@ export class SseEventBus {
 
   private delay(ms: number): Promise<void> {
     return new Promise((resolve) => {
-      const timer = setTimeout(resolve, ms)
-      this.controller?.signal.addEventListener(
-        'abort',
-        () => {
-          clearTimeout(timer)
-          resolve()
-        },
-        { once: true },
-      )
+      this.finishDelay = resolve
+      this.delayTimer = setTimeout(resolve, ms)
+    }).finally(() => {
+      if (this.delayTimer) clearTimeout(this.delayTimer)
+      this.delayTimer = undefined
+      this.finishDelay = undefined
     })
   }
 }
