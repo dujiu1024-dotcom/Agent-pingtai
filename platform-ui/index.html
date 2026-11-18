@@ -280,7 +280,7 @@ $("startEvaluationRun").onclick=async()=>{
  if(!datasetId||!modelKey||!Number.isInteger(version)||version<1){msg("请先读取并选择 Dataset 版本，同时填写 Model key");return}
  try{
   const r=await api("/observability/evaluations/run",{method:"POST",body:JSON.stringify({dataset_id:datasetId,dataset_version:version,model_key:modelKey})});
-  $("evaluationRunResult").innerHTML="<h3>运行结果</h3>"+table([["Eval Run",r.eval_run_id],["Dataset",r.dataset_id+" · v"+r.dataset_version],["Model",r.model_key],["通过率",r.pass_rate],["平均分",r.average_score],["Recall@K",r.average_recall_at_k],["Gate",r.gate_passed?"通过":"未通过"],["失败原因",(r.gate_failures||[]).join(", ")||"—"]])+"<button class='btn' data-eval-compare='"+esc(r.eval_run_id)+"'>与基线比较</button>";
+  $("evaluationRunResult").innerHTML="<h3>运行结果</h3>"+table([["Eval Run",r.eval_run_id],["Dataset",r.dataset_id+" · v"+r.dataset_version],["Model",r.model_key],["通过率",r.pass_rate],["平均分",r.average_score],["Recall@K",r.average_recall_at_k],["Gate",r.gate_passed?"通过":"未通过"],["失败原因",(r.gate_failures||[]).join(", ")||"—"]])+(capabilities.evaluation_comparisons?"<button class='btn' data-eval-compare='"+esc(r.eval_run_id)+"' data-version='"+esc(r.dataset_version)+"'>与基线比较</button>":"");
  }catch(e){msg("Evaluation Run 失败："+e.message)}
 };
 $("loadEvaluationReports").onclick=async()=>{
@@ -295,8 +295,10 @@ $("evaluationRunResult").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-eval-compare]");if(!b)return;
  const baseline=$("evaluationBaselineRunId").value.trim();if(!baseline){msg("请输入基线 Eval Run ID");return}
  try{
-  const r=await api("/observability/evaluations/"+encodeURIComponent(b.dataset.evalCompare)+"/compare",{method:"POST",body:JSON.stringify({baseline_run_id:baseline})});
-  $("evaluationComparison").innerHTML="<h3>基线回归比较</h3>"+table([["比较 ID",r.comparison_id],["基线",r.baseline_run_id],["候选",r.candidate_run_id],["回归项",(r.regressions||[]).join(", ")||"无"]])+"<pre style='white-space:pre-wrap'>"+esc(JSON.stringify(r.deltas||[],null,2))+"</pre>";
+  if(!capabilities.evaluation_comparisons)throw new Error("Evaluation Comparison API 未挂载");
+  const datasetId=$("evaluationDatasetId").value.trim(),version=Number(b.dataset.version);
+  const r=await api("/observability/evaluations/comparisons",{method:"POST",body:JSON.stringify({dataset_id:datasetId,dataset_version:version,eval_run_ids:[baseline,b.dataset.evalCompare]})});
+  $("evaluationComparison").innerHTML="<h3>基线回归比较报告</h3><pre style='white-space:pre-wrap;overflow-wrap:anywhere'>"+esc(JSON.stringify(r,null,2))+"</pre>";
  }catch(err){msg("评测比较失败："+err.message)}
 });
 $("runEvaluation").onclick=async()=>{
