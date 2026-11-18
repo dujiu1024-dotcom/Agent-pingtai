@@ -247,6 +247,58 @@ $("memoryCandidates").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-memory-action='confirm']");if(!b)return;
  try{await api("/memories/"+encodeURIComponent(b.dataset.id)+"/confirm",{method:"POST",body:"{}"});msg("候选记忆已确认");await load("memory")}catch(err){msg("记忆确认失败："+err.message)}
 });
+async function loadEvaluationVersions(){
+ const datasetId=$("evaluationDatasetId").value.trim();if(!datasetId){msg("请输入 Dataset ID");return}
+ if(!capabilities.evaluation_datasets){$("evaluationDatasetVersions").innerHTML=unavailable("版本化评测 Dataset API");return}
+ try{
+  const r=await api("/observability/evaluations/datasets/"+encodeURIComponent(datasetId)+"/versions"),items=r.items||[];
+  $("evaluationDatasetVersions").innerHTML=items.length?"<table><thead><tr><th>版本</th><th>样本数</th><th>创建者</th><th>创建时间</th><th>操作</th></tr></thead><tbody>"+items.map(x=>"<tr><td>v"+esc(x.version)+"</td><td>"+esc(x.case_count)+"</td><td>"+esc(x.created_by)+"</td><td>"+esc(x.created_at||"—")+"</td><td><button class='btn' data-eval-version='"+esc(x.version)+"'>选择 / 查看</button> <a href='"+esc($("apiBase").value.replace(/\/$/,"")+"/observability/evaluations/datasets/"+encodeURIComponent(datasetId)+"/versions/"+encodeURIComponent(x.version)+"/export?format=jsonl")+"'>导出 JSONL</a></td></tr>").join("")+"</tbody></table>":"<p class='muted'>该 Dataset 暂无版本。</p>";
+ }catch(e){msg("Dataset 版本读取失败："+e.message)}
+}
+$("loadEvaluationVersions").onclick=loadEvaluationVersions;
+$("evaluationDatasetVersions").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-eval-version]");if(!b)return;
+ const version=Number(b.dataset.evalVersion);$("evaluationDatasetVersions").dataset.selectedVersion=String(version);
+ try{
+  const id=encodeURIComponent($("evaluationDatasetId").value.trim()),r=await api("/observability/evaluations/datasets/"+id+"/versions/"+encodeURIComponent(version)),cases=r.cases||[];
+  $("evaluationDatasetDetail").innerHTML="<h3>"+esc(r.dataset_id)+" · v"+esc(r.version)+"（"+esc(r.case_count)+" 条）</h3>"+(cases.length?cases.map(c=>"<div class='panel'><strong>"+esc(c.case_id)+"</strong><p>"+esc(c.input)+"</p><p><strong>期望输出</strong><br>"+esc(c.expected_output)+"</p><pre style='white-space:pre-wrap;overflow-wrap:anywhere'>"+esc(JSON.stringify(c.rubric,null,2))+"</pre><small class='muted'>来源："+esc(c.source_ref||"—")+"</small></div>").join(""):"<p class='muted'>零样本 Dataset。</p>");
+ }catch(err){msg("Dataset 版本详情失败："+err.message)}
+});
+$("importEvaluationDataset").onclick=async()=>{
+ if(!capabilities.evaluation_datasets){msg("Dataset 管理 API 未挂载");return}
+ const content=$("evaluationDatasetContent").value,format=$("evaluationFormat").value,datasetId=$("evaluationDatasetId").value.trim();
+ if(!content.trim()){msg("请提供 CSV 或 JSONL 样本内容");return}
+ try{
+  const body={format,content};if(datasetId)body.dataset_id=datasetId;
+  const r=await api("/observability/evaluations/datasets/import",{method:"POST",body:JSON.stringify(body)});
+  $("evaluationDatasetId").value=r.dataset_id;msg("Dataset 版本已创建：v"+r.version+"（"+r.case_count+" 条）");await loadEvaluationVersions();
+ }catch(e){msg("Dataset 导入失败："+e.message)}
+};
+$("startEvaluationRun").onclick=async()=>{
+ if(!capabilities.evaluation_runs){msg("Evaluation Run API 未挂载");return}
+ const datasetId=$("evaluationDatasetId").value.trim(),modelKey=$("evaluationModelKey").value.trim(),version=Number($("evaluationDatasetVersions").dataset.selectedVersion||0);
+ if(!datasetId||!modelKey||!Number.isInteger(version)||version<1){msg("请先读取并选择 Dataset 版本，同时填写 Model key");return}
+ try{
+  const r=await api("/observability/evaluations/run",{method:"POST",body:JSON.stringify({dataset_id:datasetId,dataset_version:version,model_key:modelKey})});
+  $("evaluationRunResult").innerHTML="<h3>运行结果</h3>"+table([["Eval Run",r.eval_run_id],["Dataset",r.dataset_id+" · v"+r.dataset_version],["Model",r.model_key],["通过率",r.pass_rate],["平均分",r.average_score],["Recall@K",r.average_recall_at_k],["Gate",r.gate_passed?"通过":"未通过"],["失败原因",(r.gate_failures||[]).join(", ")||"—"]])+"<button class='btn' data-eval-compare='"+esc(r.eval_run_id)+"'>与基线比较</button>";
+ }catch(e){msg("Evaluation Run 失败："+e.message)}
+};
+$("loadEvaluationReports").onclick=async()=>{
+ if(!capabilities.evaluation_reports){$("evaluationReports").innerHTML=unavailable("Evaluation Report API");return}
+ const id=$("evaluationDatasetId").value.trim();if(!id){msg("请输入 Dataset ID");return}
+ try{
+  const r=await api("/observability/evaluations?dataset_id="+encodeURIComponent(id)+"&limit=50"),items=r.items||[];
+  $("evaluationReports").innerHTML=items.length?"<h3>历史报告</h3>"+table(items.map(x=>[x.eval_run_id||x.run_id,x.dataset_version,x.model_key,x.pass_rate,x.average_score,x.created_at||x.finished_at||"—"])):"<p class='muted'>暂无评测报告。</p>";
+ }catch(e){msg("历史报告读取失败："+e.message)}
+};
+$("evaluationRunResult").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-eval-compare]");if(!b)return;
+ const baseline=$("evaluationBaselineRunId").value.trim();if(!baseline){msg("请输入基线 Eval Run ID");return}
+ try{
+  const r=await api("/observability/evaluations/"+encodeURIComponent(b.dataset.evalCompare)+"/compare",{method:"POST",body:JSON.stringify({baseline_run_id:baseline})});
+  $("evaluationComparison").innerHTML="<h3>基线回归比较</h3>"+table([["比较 ID",r.comparison_id],["基线",r.baseline_run_id],["候选",r.candidate_run_id],["回归项",(r.regressions||[]).join(", ")||"无"]])+"<pre style='white-space:pre-wrap'>"+esc(JSON.stringify(r.deltas||[],null,2))+"</pre>";
+ }catch(err){msg("评测比较失败："+err.message)}
+});
 $("runEvaluation").onclick=async()=>{
  try{const cases=JSON.parse($("evaluationCases").value);const r=await api("/knowledge/evaluate",{method:"POST",body:JSON.stringify({cases,k:Number($("evaluationK").value||5)})});$("evaluationResults").innerHTML="<h3>检索汇总</h3>"+table(Object.entries(r.retrieval_summary).map(([k,v])=>[k,v]))+(r.answer_summary?"<h3>答案汇总</h3>"+table(Object.entries(r.answer_summary).map(([k,v])=>[k,v])):"<p class='muted'>RAG 生成器未配置，仅执行检索评测。</p>")+"<pre style='white-space:pre-wrap'>"+esc(JSON.stringify({retrieval:r.retrieval_results,answers:r.answer_results},null,2))+"</pre>"}catch(e){msg("评测失败："+e.message)}
 };
