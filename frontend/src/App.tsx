@@ -2,15 +2,17 @@ import {useCallback,useEffect,useMemo,useState} from 'react'
 import {breadcrumbs,resolveRoute,routes,type EntityType,type RouteDefinition} from '@/routes'
 import {EmptyState,ForbiddenState,LoadingState,NotFoundState} from '@/components/States'
 import {ErrorBoundary} from '@/components/ErrorBoundary'
+import {OfficeWorkspace} from '@/components/OfficeWorkspace'
 type Result={id:string;entity_type:EntityType;title:string;snippet?:string;url?:string}
 type Notice={notification_id:string;title:string;body?:string;action_url?:string;read_at?:string|null}
 const kinds:{value:EntityType|'all';label:string}[]=[{value:'all',label:'全部类型'},{value:'agent',label:'智能体'},{value:'task',label:'任务'},{value:'run',label:'运行记录'},{value:'project',label:'项目'},{value:'workflow',label:'工作流'},{value:'knowledge_document',label:'知识文档'},{value:'conversation',label:'会话'},{value:'file',label:'文件'},{value:'approval',label:'审批'}]
-const groups=[{title:'总览',paths:['/app']},{title:'构建',paths:['/agents','/workflows']},{title:'运行',paths:['/tasks','/runs','/approvals']},{title:'资源',paths:['/projects','/knowledge','/conversations','/files']},{title:'管理',paths:['/settings/models','/settings/system']}]
+const groups=[{title:'总览',paths:['/app','/office']},{title:'构建',paths:['/agents','/workflows']},{title:'运行',paths:['/tasks','/runs','/approvals']},{title:'资源',paths:['/projects','/knowledge','/conversations','/files']},{title:'管理',paths:['/settings/models','/settings/system']}]
 const searchEndpoint=import.meta.env.VITE_GLOBAL_SEARCH_URL
 const eventEndpoint=import.meta.env.VITE_NOTIFICATION_SSE_URL
 function go(path:string){window.history.pushState({},'',path);window.dispatchEvent(new PopStateEvent('popstate'))}
 function sameOriginPath(value?:string){if(!value)return undefined;try{const url=new URL(value,window.location.origin);return url.origin===window.location.origin?url.pathname+url.search+url.hash:undefined}catch{return undefined}}
 function Content({route}:{route:RouteDefinition}){
+ if(route.pageId==='office')return <OfficeWorkspace/>
  if(route.pageId==='dashboard')return <div className="dashboard-grid"><article className="welcome-card"><p className="eyebrow">AGENT PLATFORM</p><h2>智能体工作台</h2><p>统一管理智能体、工作流、任务和知识资产。</p></article><article className="metric-card"><span>已登记页面</span><strong>{routes.length}</strong></article><article className="metric-card"><span>最近访问</span><strong>本地记录</strong></article></div>
  if(route.pageId==='forbidden')return <ForbiddenState/>
  return <EmptyState title={route.title} description={route.description+'。业务内容将在对应模块交付后启用。'}/>
