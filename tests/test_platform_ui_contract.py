@@ -55,5 +55,29 @@ class PlatformWorkbenchUiContractTests(unittest.TestCase):
         self.assertIn('data-memory-action=\'confirm\'', source)
 
 
+    def test_session_workbench_supports_cursor_history_exports_and_attachments(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "platform-ui" / "index.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="sessionFilter"', source)
+        self.assertIn('include_archived', source)
+        self.assertIn('before_message_id', source)
+        self.assertIn('/export?format=markdown', source)
+        self.assertIn('asset_ids:assetIds', source)
+        self.assertIn('credentials:"same-origin"', source)
+        self.assertIn('sessionMessages").addEventListener("click"', source)
+
+    def test_file_workbench_uses_authorized_metadata_versions_restore_and_delete(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "platform-ui" / "index.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn('id="fileFilterSession"', source)
+        self.assertIn('api("/files/"+id+"/metadata")', source)
+        self.assertIn('api("/files/"+id+"/versions")', source)
+        self.assertIn('/restore?expected_version=', source)
+        self.assertIn('api("/files/"+id,{method:"DELETE"})', source)
+        self.assertIn('downloadResponse("/files/"+id+"/versions/', source)
+
+
 if __name__ == "__main__":
     unittest.main()
