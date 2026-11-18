@@ -490,6 +490,7 @@ def create_platform_app(
             "evaluation_datasets": evaluation_dataset_repository is not None,
             "evaluation_runs": evaluation_run_service is not None,
             "evaluation_reports": evaluation_repository is not None,
+            "evaluation_comparisons": evaluation_comparison_service is not None,
             "blackboard": blackboard_configured,
             "quotas": quota_reporting_store is not None or quota_store is not None,
             "metrics": metrics_exporter is not None,
