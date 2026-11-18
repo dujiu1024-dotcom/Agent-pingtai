@@ -93,3 +93,30 @@
 | 431 | REQUEST_HEADER_FIELDS_TOO_LARGE |
 
 未显式登记的 4xx 映射为 `REQUEST_FAILED`；未显式登记的 5xx 映射为 `INTERNAL_ERROR`，并始终隐藏内部异常文本。客户端应优先依赖稳定错误码，不应解析 message 文本。
+
+
+## Agent Definition registry extensions (UI-G2-757)
+
+The versioned registry is the source of truth for Agent definitions. Agent records use
+`kind=agent`; the immutable `definition` snapshot carries instructions, model template
+reference/version, tool and skill allowlists, workflow reference, and input/output schemas.
+Only fields actually supported by a referenced registry definition may be offered by UI.
+Secret values are rejected by the registry; use secret references and never serialize
+secret material.
+
+| Operation | Method / path | Authorization action | Concurrency / errors |
+|---|---|---|---|
+| List latest Agent definitions | GET `/api/platform/v1/registry/agent` | read on kind + wildcard | limit 1–500; 400 invalid limit; tenant scoped |
+| Read immutable version | GET `/api/platform/v1/registry/agent/{agent_id}/versions/{version}` | read | 404 absent/out-of-tenant |
+| Create draft / next definition revision | POST `/api/platform/v1/registry/agent/{agent_id}/versions` | write | 201; immutable version; 422 invalid definition; 409 revision race |
+| List versions | GET `/api/platform/v1/registry/agent/{agent_id}/versions` | read | ordered ascending |
+| Compare versions | GET `/api/platform/v1/registry/agent/{agent_id}/diff/{from_version}/{to_version}` | read | 400 invalid pair; 404 absent version; nested JSON paths |
+| Publish draft | POST `/api/platform/v1/registry/agent/{agent_id}/versions/{version}/publish` | publish | creates immutable published snapshot and activates it; 404/409 |
+| Read active definition | GET `/api/platform/v1/registry/agent/{agent_id}/active` | read | 404 no active version |
+| Roll back | POST `/api/platform/v1/registry/agent/{agent_id}/rollback/{target_version}` | publish | creates a new published snapshot; history is not rewritten |
+| Disable active definition | POST `/api/platform/v1/registry/agent/{agent_id}/disable` | publish | clears active pointer and records disabled revision |
+
+The registry router is conditionally mounted only when its service resolver and
+authorizer are configured in `create_platform_app`. It currently resolves an authenticated
+Principal; this document does not claim no-auth support. Actor and tenant values are
+derived from the Principal. The UI must not expose unsupported actions as active controls.
