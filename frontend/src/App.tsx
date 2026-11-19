@@ -21,6 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { Dashboard as OperationsDashboard } from '@/components/OperationsDashboard'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
@@ -307,6 +308,7 @@ function PageView({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
+  if (route.path === '/operations/dashboard') return <OperationsDashboard />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/search')
     return (
