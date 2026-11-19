@@ -30,7 +30,7 @@ export const pageRoutes: PageRoute[] = [
   {
     path: '/workspace/quickstart',
     pageId: 'WS-QUICKSTART',
-    title: '快速使用',
+    title: '指令中心',
     section: '工作空间',
     description: '选择 Agent、填写内容并提交任务的最短路径。',
     owner: '#744',
@@ -538,7 +538,7 @@ export const navigationSections: NavigationSection[] = [
     path: '/workspace/overview',
     subpages: [
       { label: '概览', path: '/workspace/overview' },
-      { label: '快速使用', path: '/workspace/quickstart' },
+      { label: '指令中心', path: '/workspace/quickstart' },
       { label: '运行看板', path: '/workspace/status' },
     ],
   },
