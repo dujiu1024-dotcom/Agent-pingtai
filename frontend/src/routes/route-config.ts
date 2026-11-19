@@ -168,6 +168,22 @@ export const pageRoutes: PageRoute[] = [
     owner: '#750',
   },
   {
+    path: '/admin/evaluation/datasets',
+    pageId: 'ADM-EVAL-DATASETS',
+    title: '评测数据集',
+    section: '平台管理',
+    description: '评测数据集版本与样本 Case 管理。',
+    owner: '#803',
+  },
+  {
+    path: '/admin/evaluation/runs',
+    pageId: 'ADM-EVAL-RUNS',
+    title: '评测运行',
+    section: '平台管理',
+    description: '模型评测执行与报告查看。',
+    owner: '#803',
+  },
+  {
     path: '/admin/agents',
     pageId: 'ADM-AGENTS',
     title: 'Agent 定义',
@@ -317,6 +333,27 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/admin/evaluation/datasets/:datasetId',
+    pageId: 'ADM-EVAL-DATASET-DETAIL',
+    title: '数据集详情',
+    section: '平台管理',
+    description: '数据集版本与样本 Case。',
+    parentPath: '/admin/evaluation/datasets',
+    entityIdParam: 'datasetId',
+    owner: '#803',
+  },
+  {
+    path: '/admin/evaluation/runs/:runId',
+    pageId: 'ADM-EVAL-RUN-DETAIL',
+    title: '评测运行详情',
+    section: '平台管理',
+    description: '评测运行指标快照与结果。',
+    parentPath: '/admin/evaluation/runs',
+    entityIdParam: 'runId',
+    owner: '#803',
+  },
+
   {
     path: '/operations/knowledge-bases/:collectionId',
     pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
