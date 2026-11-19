@@ -47,3 +47,10 @@
 .workflow-status { color: #42634d; font-size: 11px; }
 @media (max-width: 1100px) { .workflow-workspace { grid-template-columns: 170px minmax(0, 1fr); } .workflow-inspector { grid-column: 1 / -1; } .workflow-inspector-form { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: none; } }
 @media (max-width: 700px) { .workflow-summary, .workflow-bottom-grid, .workflow-workspace, .workflow-inspector-form { grid-template-columns: 1fr; } .workflow-heading, .workflow-toolbar { align-items: flex-start; flex-direction: column; } .workflow-edge-form { grid-template-columns: 1fr; } }
+
+.workflow-primary-link { display: inline-flex; align-items: center; padding: 9px 13px; border-radius: 7px; background: var(--brand); color: #fff; font-size: 12px; text-decoration: none; }
+.workflow-canvas.drag-over { outline: 2px dashed var(--brand); outline-offset: -5px; background-color: #f2f6ff; }
+.workflow-palette-item[draggable="true"] { cursor: grab; }
+.workflow-palette-item[draggable="true"]:active { cursor: grabbing; }
+.workflow-node-ports { color: var(--muted); font-size: 10px; }
+.workflow-edge-editor li button { margin-left: 8px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: #a23b3b; font-size: 10px; cursor: pointer; }
