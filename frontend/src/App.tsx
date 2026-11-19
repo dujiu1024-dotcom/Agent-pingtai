@@ -40,6 +40,7 @@ import {
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
+import { AdminInitPage, LoginPage } from '@/features/auth/AuthPages'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -388,24 +389,9 @@ function Dashboard() {
 }
 
 function AuthEntryPage({ route }: { route: PageRoute }) {
-  return (
-    <section className="page-content">
-      <div className="page-heading">
-        <p className="eyebrow">{route.pageId}</p>
-        <h1>{route.title}</h1>
-        <p>{route.description}</p>
-      </div>
-      <EmptyState
-        title="身份流程由认证模块提供"
-        description="本任务仅接入服务端权限模式与条件路由，不模拟登录、创建账号或管理员身份。"
-        action={
-          <Link className="text-link" to="/workspace/overview">
-            返回工作空间
-          </Link>
-        }
-      />
-    </section>
-  )
+  if (route.path === '/auth/login') return <LoginPage />
+  if (route.path === '/auth/initialize') return <AdminInitPage />
+  return <NotFoundState />
 }
 
 export default function App() {
