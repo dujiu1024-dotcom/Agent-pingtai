@@ -97,6 +97,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
+          <Route path="/admin/rbac" element={<Navigate to="/admin/access-control" replace />} />
           <Route element={<AppShell config={config} />}>
             <Route
               path="/"
