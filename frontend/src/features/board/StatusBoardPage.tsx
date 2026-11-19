@@ -59,15 +59,15 @@ const statusLabels: Record<string, string> = {
 
 const featureLabels: Array<[key: string, label: string]> = [
   ['task_execution', '任务执行'],
-  ['agent_management', 'Agent 管理'],
+  ['agent_management', '智能体管理'],
   ['knowledge', '知识库'],
-  ['rag', 'RAG 检索'],
+  ['rag', '知识检索'],
   ['memory', '记忆'],
   ['sessions', '会话'],
   ['approvals', '审批'],
   ['evaluation_runs', '评测运行'],
   ['batch_execution', '批量执行'],
-  ['blackboard', 'Blackboard'],
+  ['blackboard', '协作数据板'],
   ['metrics', '指标导出'],
   ['audit', '审计'],
 ]
@@ -400,8 +400,8 @@ export function StatusBoardPage() {
     <section className="page-content status-board">
       <div className="page-heading board-heading">
         <div>
-          <p className="eyebrow">WORKSPACE / RUNTIME BOARD</p>
-          <h1>运行看板</h1>
+          <p className="eyebrow">平台运行状态</p>
+          <h1>运维状态看板</h1>
           <p>服务状态与任务进展，一屏看完。</p>
         </div>
         <div className="board-refresh">
