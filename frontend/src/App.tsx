@@ -36,7 +36,7 @@ import {
 import type { PageRoute } from '@/routes/route-config'
 import { HomePage } from '@/components/HomePage'
 import { OfficePage } from '@/components/OfficePage'
-import { WorkspaceShell } from '@/components/WorkspaceShell'
+import { WorkspaceShell } from '@/shell/WorkspaceShell'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -96,13 +96,15 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
           <Route element={<WorkspaceShell config={config} />}>
             <Route
               path="/"
-              element={<Navigate to="/workspace/overview" replace />}
+              element={<Navigate to="/home" replace />}
             />
             <Route
               path="/app"
               element={<Navigate to="/workspace/overview" replace />}
             />
-            {[...round3Routes, ...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
+            <Route path="/home" element={<HomePage />} />
+            <Route path="/office" element={<OfficePage />} />
+            {[...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
               <Route
                 key={route.pageId}
                 path={route.path}
@@ -131,7 +133,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                 }
               />
             ))}
-            <Route path="*" element={<NotFoundState />} />
+            <Route path="*" element={<Navigate to="/home" replace />} />
           </Route>
         </Routes>
       </ErrorBoundary>
