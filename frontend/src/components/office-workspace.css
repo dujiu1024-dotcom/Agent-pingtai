@@ -50,3 +50,5 @@
 @media(prefers-reduced-motion:reduce){.r3-office-canvas *{scroll-behavior:auto!important}}
 
 .r3-live-dot.is-error{background:#e06c72;box-shadow:0 0 0 4px #e06c7220}.r3-office-loading{display:flex;align-items:center;justify-content:center;gap:9px;min-height:180px;color:#8290a7;font-size:10px}.r3-office-loading i{width:14px;height:14px;border:2px solid #dce5f6;border-top-color:#2f6af0;border-radius:50%;animation:r3-spin .8s linear infinite}@keyframes r3-spin{to{transform:rotate(360deg)}}.r3-office-agent em{padding:4px 6px;border-radius:5px;background:#edf8f2;color:#299d72;font-size:8px;font-style:normal;white-space:nowrap}.r3-office-agent em.running{background:#edf3ff;color:#2f6af0}
+
+.r3-scene-label{padding:3px 7px;border:1px solid #ffffffc9;border-radius:5px;background:#ffffffc9;color:#526687;font:700 9px Inter,Arial,sans-serif;letter-spacing:1px;white-space:nowrap}.r3-scene-title{color:#6f83a5;font:700 10px Inter,Arial,sans-serif;letter-spacing:1.8px;white-space:nowrap}.r3-scene-live-label{padding:4px 7px;border:1px solid #d5e4f8;border-radius:5px;background:#ffffffdf;color:#58729a;font:700 8px Inter,Arial,sans-serif;letter-spacing:1px;white-space:nowrap}
