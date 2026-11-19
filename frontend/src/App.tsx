@@ -20,6 +20,7 @@ import {
   LogIn,
   Search,
   Settings,
+  UserRound,
   Users,
   Wallet,
   Workflow,
@@ -302,7 +303,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
               </Link>
             )}
             <span className="avatar" aria-hidden="true">
-              A
+              <UserRound size={20} strokeWidth={1.8} />
             </span>
           </div>
         </header>
