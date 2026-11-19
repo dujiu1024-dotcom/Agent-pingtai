@@ -711,7 +711,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
         app = create_platform_app(auth_enabled=True, **arguments, resource_audit_writer=AuditWriter())
         self.assertIs(app.state.trusted_publisher_key_resolver, registry)
-        route_paths = {route.path for route in app.routes}
+        route_paths = set(app.openapi()["paths"])
         self.assertIn("/api/platform/v1/extensions/publishers/keys", route_paths)
         self.assertIn(
             "/api/platform/v1/extensions/publishers/{extension_id}/keys/{key_id}/revoke",
@@ -796,10 +796,10 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 return {"tenant_id": tenant_id, "tasks": []}
 
         app = create_platform_app(
-            identity=None, identity_repository=None,
+            identity=None, identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
             allowed_origins=("https://console.example.com",), auth_enabled=False,
-            office_state_service=OfficeService(), instance_tenant_id="integration-workspace",
+            office_state_service=OfficeService(), office_tenant_resolver=lambda request: "integration-workspace",
         )
         client = TestClient(app, base_url="https://testserver")
         matrix = {
