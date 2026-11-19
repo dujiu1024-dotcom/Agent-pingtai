@@ -72,6 +72,6 @@ describe('Issue #752 system integration gate: route contract', () => {
   })
 
   it('retains route ownership metadata for module accountability', () => {
-    expect(allCanonicalRoutes.every((route) => /^#\\d+$/.test(route.owner))).toBe(true)
+    expect(allCanonicalRoutes.every((route) => /^#\d+$/.test(route.owner))).toBe(true)
   })
 })
