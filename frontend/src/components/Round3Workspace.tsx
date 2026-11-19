@@ -37,6 +37,7 @@ export function Round3Home() {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [taskFilter, setTaskFilter] = useState<'all' | 'running' | 'failed'>('all')
 
   useEffect(() => {
     let active = true
@@ -60,7 +61,7 @@ export function Round3Home() {
 
   const total = snapshot?.metrics.total ?? 0
   const successRate = total > 0 ? `${((snapshot!.metrics.done / total) * 100).toFixed(1)}` : '—'
-  const tasks = snapshot?.tasks.slice(0, 3) ?? []
+  const tasks = (snapshot?.tasks ?? []).filter(task => taskFilter === 'all' || (taskFilter === 'running' ? task.db_status === 'doing' : task.db_status === 'blocked')).slice(0, 3)
   const popularAgents = snapshot?.agents.slice(0, 3) ?? []
   const activities = snapshot?.events.list.slice(0, 4) ?? []
 
@@ -94,7 +95,7 @@ export function Round3Home() {
 
         <section className="r3-task-panel">
           <div className="r3-panel-heading"><div><h2>我的工作台</h2><small>任务状态实时概览</small></div><Link to="/workspace/tasks">⚙ 设置</Link></div>
-          <div className="r3-task-tabs"><button className="active">全部任务 <b>{snapshot ? snapshot.metrics.total : '—'}</b></button><button>运行中 <b>{snapshot ? snapshot.metrics.open : '—'}</b></button><button>待审批</button></div>
+          <div className="r3-task-tabs"><button className={taskFilter === 'all' ? 'active' : ''} onClick={() => setTaskFilter('all')}>全部任务 <b>{snapshot ? snapshot.metrics.total : '—'}</b></button><button className={taskFilter === 'running' ? 'active' : ''} onClick={() => setTaskFilter('running')}>执行中 <b>{snapshot ? snapshot.metrics.open : '—'}</b></button><button className={taskFilter === 'failed' ? 'active' : ''} onClick={() => setTaskFilter('failed')}>失败</button></div>
           {tasks.length ? <div className="r3-task-list">{tasks.map(task=><Link to={`/operations/tasks/${task.id}`} className="r3-task-row" key={task.id}><span className={task.db_status==='done'?'done':task.db_status==='blocked'?'blocked':'running'}/><span><b>{task.title}</b><small>{task.owner} · {task.state}</small></span><i>›</i></Link>)}</div> : <div className="r3-task-empty"><span>⌁</span><b>{loading ? '正在读取任务…' : '暂无任务记录'}</b><small>{error ?? '创建任务后，执行进度和审批状态将在这里呈现。'}</small></div>}
           <Link className="r3-task-all" to="/workspace/tasks">查看全部任务 <b>→</b></Link>
         </section>
