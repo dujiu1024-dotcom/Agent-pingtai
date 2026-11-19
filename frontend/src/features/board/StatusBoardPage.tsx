@@ -111,17 +111,6 @@ function timeOf(value?: string): string {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString()
 }
 
-function isToday(value?: string): boolean {
-  if (!value) return false
-  const date = new Date(value)
-  const now = new Date()
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  )
-}
-
 function taskLabel(task: TaskRecord): string {
   const message = task.input?.message
   if (typeof message === 'string' && message.trim()) return message.trim()
@@ -279,14 +268,27 @@ export function StatusBoardPage() {
     // These subsystems have no independently verified probe in the current
     // frontend contract. Keep them visible as unconfigured instead of green.
     const notIndividuallyProbed = [
-      'PostgreSQL 数据库', 'Redis 缓存', '消息队列', 'Worker 执行器',
-      '调度器', '执行队列', '失败重试积压', '消息待确认（Pending）',
-      '事务消息积压（Outbox）', '执行租约（Lease）',
-      '指标采集（Prometheus）', '告警检测', '告警通知通道',
+      'PostgreSQL 数据库',
+      'Redis 缓存',
+      '消息队列',
+      'Worker 执行器',
+      '调度器',
+      '执行队列',
+      '失败重试积压',
+      '消息待确认（Pending）',
+      '事务消息积压（Outbox）',
+      '执行租约（Lease）',
+      '指标采集（Prometheus）',
+      '告警检测',
+      '告警通知通道',
     ]
     for (const name of notIndividuallyProbed) {
       if (!rows.some((row) => row.name === name)) {
-        rows.push({ name, tone: 'off', detail: '尚未接入独立监控探针，无法判断状态' })
+        rows.push({
+          name,
+          tone: 'off',
+          detail: '尚未接入独立监控探针，无法判断状态',
+        })
       }
     }
     return rows
@@ -339,12 +341,28 @@ export function StatusBoardPage() {
   const confirmedProbe = Boolean(liveQuery.data || readyQuery.data)
   const overall: { tone: Tone; title: string; summary: string } =
     liveQuery.isPending || readyQuery.isPending || capabilitiesQuery.isPending
-      ? { tone: 'warn', title: '正在检测', summary: '正在读取服务探针；检测完成前不判断为正常。' }
+      ? {
+          tone: 'warn',
+          title: '正在检测',
+          summary: '正在读取服务探针；检测完成前不判断为正常。',
+        }
       : downCount > 0
-        ? { tone: 'down', title: `${downCount} 项服务异常`, summary: '请优先处理下方异常项。' }
+        ? {
+            tone: 'down',
+            title: `${downCount} 项服务异常`,
+            summary: '请优先处理下方异常项。',
+          }
         : !confirmedProbe || warnCount > 0 || offCount > 0
-          ? { tone: 'warn', title: '监控数据不完整', summary: '部分服务尚未接入或无法检测，暂时不能确认平台整体健康。' }
-          : { tone: 'ok', title: '已检测服务正常', summary: '仅代表已接入并完成探测的服务，不代表未接入组件正常。' }
+          ? {
+              tone: 'warn',
+              title: '监控数据不完整',
+              summary: '部分服务尚未接入或无法检测，暂时不能确认平台整体健康。',
+            }
+          : {
+              tone: 'ok',
+              title: '已检测服务正常',
+              summary: '仅代表已接入并完成探测的服务，不代表未接入组件正常。',
+            }
 
   const updatedAt = Math.max(
     liveQuery.dataUpdatedAt,
@@ -394,30 +412,106 @@ export function StatusBoardPage() {
       </div>
 
       <div className="board-kpis">
-        <article className="board-kpi board-kpi--good"><span>正常服务</span><strong>{okCount}</strong><small>已完成检查且正常</small></article>
-        <article className="board-kpi board-kpi--bad"><span>异常服务</span><strong>{downCount}</strong><small>探测确认异常</small></article>
-        <article className="board-kpi"><span>未检测 / 未接入</span><strong>{offCount + warnCount}</strong><small>无法据此判断健康</small></article>
-        <article className="board-kpi"><span>待处理告警</span><strong>—</strong><small>告警接口尚未接入</small></article>
+        <article className="board-kpi board-kpi--good">
+          <span>正常服务</span>
+          <strong>{okCount}</strong>
+          <small>已完成检查且正常</small>
+        </article>
+        <article className="board-kpi board-kpi--bad">
+          <span>异常服务</span>
+          <strong>{downCount}</strong>
+          <small>探测确认异常</small>
+        </article>
+        <article className="board-kpi">
+          <span>未检测 / 未接入</span>
+          <strong>{offCount + warnCount}</strong>
+          <small>无法据此判断健康</small>
+        </article>
+        <article className="board-kpi">
+          <span>待处理告警</span>
+          <strong>—</strong>
+          <small>告警接口尚未接入</small>
+        </article>
       </div>
       <section className="board-panel board-priority" aria-live="polite">
-        <header><h2>当前需要优先处理</h2><small>{downCount ? `${downCount} 项已确认异常` : '按已取得的数据判断'}</small></header>
-        {downCount > 0 ? <ul className="board-priority-list">{services.filter((row) => row.tone === 'down').map((row) => <li key={row.name}><strong>{row.name}</strong><span>{row.detail}</span><small>建议：查看对应服务日志与健康检查详情；确认依赖恢复后重新探测。</small></li>)}</ul> : !confirmedProbe || offCount + warnCount > 0 ? <p className="board-muted">监控数据尚未完整接入，暂时无法判断平台整体健康状态。请优先补齐未接入服务的探针。</p> : <p className="board-muted">当前没有发现已确认的异常。</p>}
+        <header>
+          <h2>当前需要优先处理</h2>
+          <small>
+            {downCount ? `${downCount} 项已确认异常` : '按已取得的数据判断'}
+          </small>
+        </header>
+        {downCount > 0 ? (
+          <ul className="board-priority-list">
+            {services
+              .filter((row) => row.tone === 'down')
+              .map((row) => (
+                <li key={row.name}>
+                  <strong>{row.name}</strong>
+                  <span>{row.detail}</span>
+                  <small>
+                    建议：查看对应服务日志与健康检查详情；确认依赖恢复后重新探测。
+                  </small>
+                </li>
+              ))}
+          </ul>
+        ) : !confirmedProbe || offCount + warnCount > 0 ? (
+          <p className="board-muted">
+            监控数据尚未完整接入，暂时无法判断平台整体健康状态。请优先补齐未接入服务的探针。
+          </p>
+        ) : (
+          <p className="board-muted">当前没有发现已确认的异常。</p>
+        )}
       </section>
 
       <div className="board-grid">
         <section className="board-panel">
           <header>
             <h2>服务状态</h2>
-            <small>正常 {okCount} · 异常 {downCount} · 警告 {warnCount} · 未接入 {offCount}</small>
+            <small>
+              正常 {okCount} · 异常 {downCount} · 警告 {warnCount} · 未接入{' '}
+              {offCount}
+            </small>
           </header>
-          <nav className="board-filters" aria-label="服务状态筛选">{([{ value: 'all', label: '全部服务' }, { value: 'ok', label: '正常' }, { value: 'down', label: '异常' }, { value: 'warn', label: '警告' }, { value: 'off', label: '未检测 / 未接入' }] as const).map((item) => <button key={item.value} type="button" aria-pressed={serviceFilter === item.value} className={serviceFilter === item.value ? 'active' : ''} onClick={() => setServiceFilter(item.value)}>{item.label}</button>)}</nav>
+          <nav className="board-filters" aria-label="服务状态筛选">
+            {(
+              [
+                { value: 'all', label: '全部服务' },
+                { value: 'ok', label: '正常' },
+                { value: 'down', label: '异常' },
+                { value: 'warn', label: '警告' },
+                { value: 'off', label: '未检测 / 未接入' },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={serviceFilter === item.value}
+                className={serviceFilter === item.value ? 'active' : ''}
+                onClick={() => setServiceFilter(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
           <ul className="board-services">
-            {services.filter((row) => serviceFilter === 'all' || row.tone === serviceFilter).map((row) => (
+            {services
+              .filter(
+                (row) =>
+                  serviceFilter === 'all' || row.tone === serviceFilter,
+              )
+              .map((row) => (
               <li key={row.name} className={`row--${row.tone}`}>
                 <span className="board-dot" aria-hidden="true" />
                 <strong>{row.name}</strong>
                 <small>{row.detail}</small>
-                <em className={`board-status-label status--${row.tone}`}>{{ ok: '正常', down: '异常', warn: '警告', off: '尚未接入' }[row.tone]}</em>
+                <em className={`board-status-label status--${row.tone}`}>
+                  {{
+                    ok: '正常',
+                    down: '异常',
+                    warn: '警告',
+                    off: '尚未接入',
+                  }[row.tone]}
+                </em>
               </li>
             ))}
           </ul>
@@ -513,7 +607,50 @@ export function StatusBoardPage() {
         </section>
       </div>
 
-      <section className="board-panel board-reliability"><header><h2>任务执行可靠性</h2><Link className="text-link" to="/workspace/tasks">查看任务中心 →</Link></header><div className="board-reliability-grid"><div><strong>{queuedCount}</strong><span>等待执行任务</span></div><div><strong>{runningCount}</strong><span>正在执行任务</span></div><div><strong>{tasks.filter((task) => task.status === 'paused').length}</strong><span>已暂停任务</span></div><div><strong>{failedTasks.length}</strong><span>失败任务</span></div><div><strong>—</strong><span>重试积压（尚未接入）</span></div><div><strong>—</strong><span>消息待确认（尚未接入）</span></div><div><strong>{deadLetters.length}</strong><span>死信消息</span></div><div><strong>—</strong><span>事务消息积压（尚未接入）</span></div></div></section>
+      <section className="board-panel board-reliability">
+        <header>
+          <h2>任务执行可靠性</h2>
+          <Link className="text-link" to="/workspace/tasks">
+            查看任务中心 →
+          </Link>
+        </header>
+        <div className="board-reliability-grid">
+          <div>
+            <strong>{queuedCount}</strong>
+            <span>等待执行任务</span>
+          </div>
+          <div>
+            <strong>{runningCount}</strong>
+            <span>正在执行任务</span>
+          </div>
+          <div>
+            <strong>
+              {tasks.filter((task) => task.status === 'paused').length}
+            </strong>
+            <span>已暂停任务</span>
+          </div>
+          <div>
+            <strong>{failedTasks.length}</strong>
+            <span>失败任务</span>
+          </div>
+          <div>
+            <strong>—</strong>
+            <span>重试积压（尚未接入）</span>
+          </div>
+          <div>
+            <strong>—</strong>
+            <span>消息待确认（尚未接入）</span>
+          </div>
+          <div>
+            <strong>{deadLetters.length}</strong>
+            <span>死信消息</span>
+          </div>
+          <div>
+            <strong>—</strong>
+            <span>事务消息积压（尚未接入）</span>
+          </div>
+        </div>
+      </section>
       <p className="board-footnote">绿色仅表示已成功完成探测；红色表示探测确认异常；橙色表示探测失败或数据不完整；灰色表示尚未接入或无法检测。服务数据每 10 秒刷新。</p>
     </section>
   )
