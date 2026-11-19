@@ -177,7 +177,7 @@ class PageMapContractTests(unittest.TestCase):
             self.assertIn(phrase, self.route_contract)
 
     def test_mermaid_fences_are_balanced_and_table_remains_authoritative(self):
-        fences = re.findall(r"^\`\`\`(?:mermaid)?\s*$", self.page_map, re.MULTILINE)
+        fences = re.findall(r"^\x60{3}(?:mermaid)?\s*$", self.page_map, re.MULTILINE)
         self.assertEqual(len(fences) % 2, 0)
         self.assertIn("## 2. 页面清单", self.page_map)
         self.assertIn("## 3. 实体详情唯一归属与穿透", self.page_map)
