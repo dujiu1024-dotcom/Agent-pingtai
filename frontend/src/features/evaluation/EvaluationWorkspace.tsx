@@ -46,7 +46,14 @@ export function EvaluationWorkspace() {
       const result = await apiClient.get<Envelope<DatasetVersion>>(`${base}/datasets/${encodeURIComponent(id.trim())}/versions`)
       const rows = itemsOf(result)
       setVersions(rows)
-      if (rows.length) setSelectedVersion(String(rows[0].version))
+      if (rows.length) {
+        const latest = rows[0]
+        setSelectedVersion(String(latest.version))
+        const cases = await apiClient.get<DatasetDetail>(`${base}/datasets/${encodeURIComponent(id.trim())}/versions/${latest.version}`)
+        setDetail(cases)
+      } else {
+        setDetail(null)
+      }
       setKnownDataset(id.trim())
     } catch (reason) { setError(readError(reason)) } finally { setBusy(false) }
   }, [])
