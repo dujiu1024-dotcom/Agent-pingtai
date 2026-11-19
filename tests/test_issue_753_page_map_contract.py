@@ -229,7 +229,7 @@ class PageMapContractTests(unittest.TestCase):
             re.MULTILINE,
         )
         declaration_pattern = re.compile(
-            r"^\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:\[[^]]*\]|\{[^}]*\}|\([^)]*\))",
+            r"\b([A-Za-z][A-Za-z0-9_]*)\s*(?:\[[^]]*\]|\{[^}]*\}|\([^)]*\))",
             re.MULTILINE,
         )
         blocks = [
