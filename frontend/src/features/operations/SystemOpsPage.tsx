@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { ApiError, apiClient } from '@/lib/api'
@@ -89,7 +90,7 @@ function Panel({
 }: {
   title: string
   endpoint: string
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <section className="system-ops-panel">
