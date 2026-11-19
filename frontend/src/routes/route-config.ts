@@ -426,7 +426,6 @@ export const detailRoutes: PageRoute[] = [
     parentPath: '/operations/files',
     entityIdParam: 'fileId',
     owner: '#802',
-    authOnly: true,
   },
   {
     path: '/admin/audit/:eventId',
