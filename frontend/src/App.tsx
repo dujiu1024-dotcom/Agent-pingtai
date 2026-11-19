@@ -34,8 +34,6 @@ import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
   authRoutes,
   detailRoutes,
-  findPageRoute,
-  getVisibleNavigation,
   globalRoutes,
   pageRoutes,
 } from '@/routes/route-config'
@@ -97,7 +95,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route element={<AppShell config={config} />}>
+          <Route element={<AppShell />}>
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
@@ -143,7 +141,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
   )
 }
 
-function AppShell({ config }: { config: BootstrapConfig }) {
+function AppShell() {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
@@ -159,17 +157,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [navigate])
-
-  const current = [
-    ...pageRoutes,
-    ...detailRoutes,
-    ...globalRoutes,
-    ...authRoutes,
-  ].find((route) => {
-    if (route.path === location.pathname) return true
-    const pattern = new RegExp('^' + route.path.replace(/:[^/]+/g, '[^/]+') + '/?$')
-    return pattern.test(location.pathname)
-  })
 
   const showToast = (message: string) => {
     setToast(message)
@@ -200,8 +187,13 @@ function AppShell({ config }: { config: BootstrapConfig }) {
               to={item.path}
               title={collapsed ? item.title : undefined}
               data-v={item.view}
-              end={item.path === '/workspace/overview' || item.path === '/workspace/office'}
-              className={({ isActive }) => isActive ? 'prototype-nav-item on' : 'prototype-nav-item'}
+              end={
+                item.path === '/workspace/overview' ||
+                item.path === '/workspace/office'
+              }
+              className={({ isActive }) =>
+                isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+              }
             >
               <i aria-hidden="true">{item.icon}</i>
               {!collapsed && <span>{item.title}</span>}
