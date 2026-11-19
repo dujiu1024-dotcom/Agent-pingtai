@@ -104,9 +104,14 @@ function PopularAgents() {
     queryFn: () => apiClient.get<unknown>('/platform/v1/registry/agent').then(unwrapList<AgentRecord>),
     refetchInterval: 30_000,
   })
+  const runCount = (agent: AgentRecord) =>
+    [agent.run_count, agent.total_runs, agent.invocation_count].find(
+      (value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0,
+    )
   const agents = useMemo(() => [...(query.data ?? [])].sort((a, b) =>
-    (b.run_count ?? b.total_runs ?? b.invocation_count ?? 0) - (a.run_count ?? a.total_runs ?? a.invocation_count ?? 0),
+    (runCount(b) ?? -1) - (runCount(a) ?? -1),
   ).slice(0, 3), [query.data])
+  const maxRunCount = Math.max(0, ...agents.map(runCount).filter((value): value is number => value !== undefined))
 
   return (
     <section className="home-panel home-popular-panel" aria-labelledby="home-popular-heading">
@@ -120,7 +125,7 @@ function PopularAgents() {
         <ol className="home-agent-rows">
           {agents.map((agent, index) => {
             const name = agent.name ?? agent.display_name ?? '未命名 Agent'
-            const count = agent.run_count ?? agent.total_runs ?? agent.invocation_count
+            const count = runCount(agent)
             const id = agent.agent_id ?? agent.id ?? name
             return (
               <li key={id}>
@@ -128,7 +133,16 @@ function PopularAgents() {
                   <span className={`home-agent-rank rank-${index + 1}`}>{index + 1}</span>
                   <span className={`home-agent-icon agent-icon-${index + 1}`} aria-hidden="true">{['▥', '▤', '‹›'][index]}</span>
                   <span className="home-agent-main"><strong>{name}</strong><small>{agent.description ?? '智能体'}</small></span>
-                  <span className="home-agent-usage">{typeof count === 'number' ? `${count.toLocaleString()} 次` : agent.status ?? '已注册'}</span>
+                  <span className="home-agent-usage">
+                    {typeof count === 'number' ? (
+                      <>
+                        <span className="home-agent-usage-track" aria-hidden="true">
+                          <span style={{ width: `${maxRunCount ? Math.max(4, (count / maxRunCount) * 100) : 0}%` }} />
+                        </span>
+                        <span>{count.toLocaleString()} 次</span>
+                      </>
+                    ) : agent.status ?? '已注册'}
+                  </span>
                 </Link>
               </li>
             )
