@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { RefreshCw } from 'lucide-react'
@@ -40,6 +40,7 @@ type ProbeResult = {
 type Tone = 'ok' | 'warn' | 'down' | 'off'
 
 type ServiceRow = { name: string; tone: Tone; detail: string }
+type ServiceFilter = 'all' | Tone
 
 const tasksPath = '/platform/v1/workbench/tasks'
 
@@ -138,6 +139,7 @@ function isFailed(status: string): boolean {
 }
 
 export function StatusBoardPage() {
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>('all')
   const liveQuery = useQuery({
     queryKey: ['board', 'live'],
     queryFn: () => probe('/health/live'),
@@ -261,6 +263,19 @@ export function StatusBoardPage() {
           ? '未配置或不可读'
           : '读取中…',
     })
+    // These subsystems have no independently verified probe in the current
+    // frontend contract. Keep them visible as unconfigured instead of green.
+    const notIndividuallyProbed = [
+      'PostgreSQL 数据库', 'Redis 缓存', '消息队列', 'Worker 执行器',
+      '调度器', '执行队列', '失败重试积压', '消息待确认（Pending）',
+      '事务消息积压（Outbox）', '执行租约（Lease）',
+      '指标采集（Prometheus）', '告警检测', '告警通知通道',
+    ]
+    for (const name of notIndividuallyProbed) {
+      if (!rows.some((row) => row.name === name)) {
+        rows.push({ name, tone: 'off', detail: '尚未接入独立监控探针，无法判断状态' })
+      }
+    }
     return rows
   }, [
     liveQuery.data,
@@ -308,20 +323,18 @@ export function StatusBoardPage() {
     .slice(0, 5)
 
   const downCount = services.filter((row) => row.tone === 'down').length
+  const okCount = services.filter((row) => row.tone === 'ok').length
+  const warnCount = services.filter((row) => row.tone === 'warn').length
+  const offCount = services.filter((row) => row.tone === 'off').length
+  const confirmedProbe = Boolean(liveQuery.data || readyQuery.data)
   const overall: { tone: Tone; title: string; summary: string } =
-    liveQuery.isPending || capabilitiesQuery.isPending
-      ? { tone: 'warn', title: '正在检测', summary: '首次探测尚未完成。' }
+    liveQuery.isPending || readyQuery.isPending || capabilitiesQuery.isPending
+      ? { tone: 'warn', title: '正在检测', summary: '正在读取服务探针；检测完成前不判断为正常。' }
       : downCount > 0
-        ? {
-            tone: 'down',
-            title: `${downCount} 项服务异常`,
-            summary: '请检查下方标红项，任务提交可能受影响。',
-          }
-        : {
-            tone: 'ok',
-            title: '全部正常',
-            summary: '接口与已开启的能力均可用，可以正常提交任务。',
-          }
+        ? { tone: 'down', title: `${downCount} 项服务异常`, summary: '请优先处理下方异常项。' }
+        : !confirmedProbe || warnCount > 0 || offCount > 0
+          ? { tone: 'warn', title: '监控数据不完整', summary: '部分服务尚未接入或无法检测，暂时不能确认平台整体健康。' }
+          : { tone: 'ok', title: '已检测服务正常', summary: '仅代表已接入并完成探测的服务，不代表未接入组件正常。' }
 
   const updatedAt = Math.max(
     liveQuery.dataUpdatedAt,
@@ -369,46 +382,30 @@ export function StatusBoardPage() {
       </div>
 
       <div className="board-kpis">
-        <article className="board-kpi">
-          <span>运行中</span>
-          <strong>{runningCount}</strong>
-          <small>正在执行的 Run</small>
-        </article>
-        <article className="board-kpi">
-          <span>排队中</span>
-          <strong>{queuedCount}</strong>
-          <small>等待调度</small>
-        </article>
-        <article className="board-kpi board-kpi--good">
-          <span>今日完成</span>
-          <strong>{doneToday}</strong>
-          <small>当天成功结束</small>
-        </article>
-        <article className="board-kpi board-kpi--bad">
-          <span>异常</span>
-          <strong>{failedTasks.length + deadLetters.length}</strong>
-          <small>
-            失败 {failedTasks.length} · 死信 {deadLetters.length}
-          </small>
-        </article>
+        <article className="board-kpi board-kpi--good"><span>正常服务</span><strong>{okCount}</strong><small>已完成检查且正常</small></article>
+        <article className="board-kpi board-kpi--bad"><span>异常服务</span><strong>{downCount}</strong><small>探测确认异常</small></article>
+        <article className="board-kpi"><span>未检测 / 未接入</span><strong>{offCount + warnCount}</strong><small>无法据此判断健康</small></article>
+        <article className="board-kpi"><span>待处理告警</span><strong>—</strong><small>告警接口尚未接入</small></article>
       </div>
+      <section className="board-panel board-priority" aria-live="polite">
+        <header><h2>当前需要优先处理</h2><small>{downCount ? `${downCount} 项已确认异常` : '按已取得的数据判断'}</small></header>
+        {downCount > 0 ? <ul className="board-priority-list">{services.filter((row) => row.tone === 'down').map((row) => <li key={row.name}><strong>{row.name}</strong><span>{row.detail}</span><small>建议：查看对应服务日志与健康检查详情；确认依赖恢复后重新探测。</small></li>)}</ul> : !confirmedProbe || offCount + warnCount > 0 ? <p className="board-muted">监控数据尚未完整接入，暂时无法判断平台整体健康状态。请优先补齐未接入服务的探针。</p> : <p className="board-muted">当前没有发现已确认的异常。</p>}
+      </section>
 
       <div className="board-grid">
         <section className="board-panel">
           <header>
             <h2>服务状态</h2>
-            <small>
-              正常 {services.filter((row) => row.tone === 'ok').length} · 异常{' '}
-              {downCount} · 未接入{' '}
-              {services.filter((row) => row.tone === 'off').length}
-            </small>
+            <small>正常 {okCount} · 异常 {downCount} · 警告 {warnCount} · 未接入 {offCount}</small>
           </header>
+          <nav className="board-filters" aria-label="服务状态筛选">{([{ value: 'all', label: '全部服务' }, { value: 'ok', label: '正常' }, { value: 'down', label: '异常' }, { value: 'warn', label: '警告' }, { value: 'off', label: '未检测 / 未接入' }] as const).map((item) => <button key={item.value} type="button" aria-pressed={serviceFilter === item.value} className={serviceFilter === item.value ? 'active' : ''} onClick={() => setServiceFilter(item.value)}>{item.label}</button>)}</nav>
           <ul className="board-services">
-            {services.map((row) => (
+            {services.filter((row) => serviceFilter === 'all' || row.tone === serviceFilter).map((row) => (
               <li key={row.name} className={`row--${row.tone}`}>
                 <span className="board-dot" aria-hidden="true" />
                 <strong>{row.name}</strong>
                 <small>{row.detail}</small>
+                <em className={`board-status-label status--${row.tone}`}>{{ ok: '正常', down: '异常', warn: '警告', off: '尚未接入' }[row.tone]}</em>
               </li>
             ))}
           </ul>
@@ -504,10 +501,8 @@ export function StatusBoardPage() {
         </section>
       </div>
 
-      <p className="board-footnote">
-        灰色项表示该能力未接入或未配置，不代表故障；红色才表示探测失败。数据每
-        10 秒自动刷新。
-      </p>
+      <section className="board-panel board-reliability"><header><h2>任务执行可靠性</h2><Link className="text-link" to="/workspace/tasks">查看任务中心 →</Link></header><div className="board-reliability-grid"><div><strong>{queuedCount}</strong><span>等待执行任务</span></div><div><strong>{runningCount}</strong><span>正在执行任务</span></div><div><strong>{tasks.filter((task) => task.status === 'paused').length}</strong><span>已暂停任务</span></div><div><strong>{failedTasks.length}</strong><span>失败任务</span></div><div><strong>—</strong><span>重试积压（尚未接入）</span></div><div><strong>—</strong><span>消息待确认（尚未接入）</span></div><div><strong>{deadLetters.length}</strong><span>死信消息</span></div><div><strong>—</strong><span>事务消息积压（尚未接入）</span></div></div></section>
+      <p className="board-footnote">绿色仅表示已成功完成探测；红色表示探测确认异常；橙色表示探测失败或数据不完整；灰色表示尚未接入或无法检测。服务数据每 10 秒刷新。</p>
     </section>
   )
 }
