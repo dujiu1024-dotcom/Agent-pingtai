@@ -34,12 +34,13 @@ import {
   authRoutes,
   detailRoutes,
   findPageRoute,
-  getVisibleNavigation,
   globalRoutes,
   pageRoutes,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
+import { Round3Home, Round3OfficePage } from '@/components/Round3Workspace'
+import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -157,124 +158,43 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [navigate])
-  const current = [
-    ...pageRoutes,
-    ...detailRoutes,
-    ...globalRoutes,
-    ...authRoutes,
-  ].find((route) => {
+  const current = [...pageRoutes, ...detailRoutes, ...globalRoutes, ...authRoutes].find((route) => {
     if (route.path === location.pathname) return true
     const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
     return pattern.test(location.pathname)
   })
-  const breadcrumbs = current?.parentPath
-    ? [findPageRoute(current.parentPath)].filter((item): item is PageRoute =>
-        Boolean(item),
-      )
-    : []
-
+  const navItems = [
+    { title: 'Agent 协作', icon: '⚇', to: '/workspace/collaboration' },
+    { title: 'Workflow', icon: '⌘', to: '/admin/workflows' },
+    { title: '成本分摊', icon: '¥', to: '/workspace/quality-cost' },
+    { title: '任务中心', icon: '☷', to: '/workspace/tasks' },
+    { title: '系统管理', icon: '⚙', to: '/admin/settings' },
+    { title: '通知', icon: '♧', to: '/notifications' },
+  ]
+  const isOffice = location.pathname === '/workspace/office'
   return (
-    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
-      <aside className="sidebar" aria-label="主导航">
-        <Link
-          className="brand"
-          to="/workspace/overview"
-          aria-label="Agent Platform 运营驾驶舱"
-        >
-          <span className="brand-mark">A</span>
-          {!collapsed && <span>Agent Platform</span>}
-        </Link>
-        <button
-          className="collapse-button"
-          type="button"
-          onClick={toggleSidebar}
-          aria-label={collapsed ? '展开导航' : '折叠导航'}
-          aria-expanded={!collapsed}
-        >
-          {collapsed ? '›' : '‹'}
-        </button>
-        <nav className="primary-navigation">
-          {getVisibleNavigation(config.auth.enabled, config.capabilities).map(
-            (group) => (
-              <section
-                className="nav-group"
-                key={group.id}
-                aria-label={group.title}
-              >
-                <div className="nav-group-title">
-                  {!collapsed && group.title}
-                </div>
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.pageId}
-                    to={item.path}
-                    title={collapsed ? item.title : undefined}
-                    className={({ isActive }) =>
-                      isActive ? 'nav-item active' : 'nav-item'
-                    }
-                    end
-                  >
-                    <span className="nav-dot" aria-hidden="true" />
-                    {!collapsed && <span>{item.title}</span>}
-                  </NavLink>
-                ))}
-              </section>
-            ),
-          )}
+    <div className={collapsed ? 'r3-app-shell r3-nav-collapsed' : 'r3-app-shell'}>
+      <aside className="r3-sidebar" aria-label="主导航">
+        <Link className="r3-brand" to="/workspace/overview"><span className="r3-brand-mark">A</span>{!collapsed && <span>Agent 平台</span>}</Link>
+        <button className="r3-collapse" type="button" onClick={toggleSidebar} aria-label={collapsed ? '展开导航' : '折叠导航'}>{collapsed ? '›' : '‹'}</button>
+        <div className="r3-nav-caption">WORKSPACE</div>
+        <nav className="r3-primary-nav">
+          <NavLink to="/workspace/overview" end className={({isActive}) => isActive ? 'r3-nav-link active' : 'r3-nav-link'} title={collapsed ? '工作台' : undefined}><span>⌂</span>{!collapsed && '工作台'}</NavLink>
+          <NavLink to="/workspace/office" className={({isActive}) => isActive ? 'r3-nav-link active' : 'r3-nav-link'} title={collapsed ? '3D 办公室' : undefined}><span>▣</span>{!collapsed && '3D 办公室'}</NavLink>
         </nav>
-        {!collapsed && (
-          <div className="sidebar-footer">
-            <span>模式由服务端启动配置决定</span>
-            <strong>{config.auth.enabled ? '权限模式' : '免登录模式'}</strong>
-            <small>版本 {config.version}</small>
-          </div>
-        )}
+        {!collapsed && <div className="r3-nav-caption r3-nav-caption-secondary">PLATFORM</div>}
+        <nav className="r3-primary-nav">
+          {navItems.map(item => <NavLink key={item.to} to={item.to} className={({isActive}) => isActive ? 'r3-nav-link active' : 'r3-nav-link'} title={collapsed ? item.title : undefined}><span>{item.icon}</span>{!collapsed && item.title}</NavLink>)}
+        </nav>
+        {!collapsed && <div className="r3-sidebar-bottom"><span className="r3-sidebar-status"><i/>{config.auth.enabled ? '权限模式' : '免登录模式'}</span><small>Agent Platform · {config.version}</small></div>}
       </aside>
-
-      <main className="main-content">
-        <header className="topbar">
-          <div className="topbar-start">
-            <div className="breadcrumbs" aria-label="面包屑导航">
-              <Link to="/workspace/overview">Agent Platform</Link>
-              {current && (
-                <span>
-                  <i aria-hidden="true">/</i>
-                  {current.section}
-                </span>
-              )}
-              {breadcrumbs.map((item) => (
-                <span key={item.pageId}>
-                  <i aria-hidden="true">/</i>
-                  {item.title}
-                </span>
-              ))}
-              {current && (
-                <span>
-                  <i aria-hidden="true">/</i>
-                  {current.title}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="top-actions">
-            <Link className="top-action" to="/search" aria-label="打开全局搜索">
-              全局搜索 <kbd>⌘ K</kbd>
-            </Link>
-            <Link
-              className="top-action"
-              to="/notifications"
-              aria-label="打开通知中心"
-            >
-              通知
-            </Link>
-            {config.auth.enabled && (
-              <Link className="top-action auth-entry" to="/auth/login">
-                登录
-              </Link>
-            )}
-            <span className="mode-indicator">
-              {config.auth.enabled ? '权限已启用' : '免登录'}
-            </span>
+      <main className="r3-main-content">
+        <header className="r3-topbar">
+          <div className="r3-breadcrumb"><Link to="/workspace/overview">Agent 平台</Link><span>/</span><b>{isOffice ? '3D 办公室' : current?.title ?? '工作台'}</b></div>
+          <div className="r3-top-actions">
+            <Link className="r3-search-trigger" to="/search"><span>⌕</span><span>搜索 Agent、任务、文档…</span><kbd>Ctrl K</kbd></Link>
+            <Link className="r3-icon-action" to="/notifications" aria-label="通知中心">♧</Link>
+            <span className="r3-user-avatar" aria-label="Agent Platform 用户">A</span>
           </div>
         </header>
         <Outlet />
@@ -307,7 +227,8 @@ function PageView({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
-  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/overview') return <Round3Home />
+  if (route.path === '/workspace/office') return <><Round3OfficePage /><OfficeWorkspace /></>
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
