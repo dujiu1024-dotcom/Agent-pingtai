@@ -110,7 +110,7 @@ export function QuickStartPage() {
   const agents = agentsQuery.data?.items ?? []
   const features = capabilitiesQuery.data?.features ?? {}
   const taskExecutionReady =
-    capabilitiesQuery.isSuccess && features.task_execution !== false
+    capabilitiesQuery.isSuccess && features.task_execution === true
   const selected = agents.find((item) => item.item_id === agentId)
   const canSubmit =
     Boolean(agentId) &&
@@ -233,6 +233,9 @@ export function QuickStartPage() {
                   {agentSummary(selected) || '该 Agent 未填写说明。'}
                 </p>
               )}
+              <p className="qs-agent-desc">
+                当前仅支持手动选择已注册智能体；自动分配策略尚未接入，不展示虚假的在线状态。
+              </p>
             </>
           )}
         </section>
