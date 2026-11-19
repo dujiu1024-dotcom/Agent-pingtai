@@ -104,7 +104,8 @@ export function WorkflowDesignerPage() {
       const raw = window.localStorage.getItem(storageKey)
       if (raw) setDraft(JSON.parse(raw) as WorkflowDraft)
       else setDraft(emptyDraft(workflowId))
-      setSnapshots([])
+      const savedSnapshots = window.localStorage.getItem(storageKey + ':snapshots')
+      setSnapshots(savedSnapshots ? JSON.parse(savedSnapshots) as Snapshot[] : [])
     } catch {
       setDraft(emptyDraft(workflowId))
       setNotice('浏览器存储不可用，当前仅使用内存草稿。')
@@ -114,6 +115,11 @@ export function WorkflowDesignerPage() {
     try { window.localStorage.setItem(storageKey, JSON.stringify(draft)) }
     catch { setNotice('浏览器存储不可用；当前修改仅保留在页面内存中。') }
   }, [draft, storageKey])
+  useEffect(() => {
+    // TODO(#758): Persist immutable snapshots through the Workflow version API.
+    try { window.localStorage.setItem(storageKey + ':snapshots', JSON.stringify(snapshots)) }
+    catch { setNotice('版本快照无法写入浏览器存储；当前页面仍可继续编辑。') }
+  }, [snapshots, storageKey])
   const issues = useMemo(() => validate(draft), [draft])
   const selected = draft.nodes.find((node) => node.id === selectedId)
   const snapshotDiff = (snapshot: Snapshot) =>
