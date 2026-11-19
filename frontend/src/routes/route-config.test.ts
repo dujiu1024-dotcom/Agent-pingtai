@@ -100,6 +100,14 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers Skills registry list and detail routes under #806', () => {
+    const list = pageRoutes.find((route) => route.path === '/admin/skills')
+    const detail = detailRoutes.find((route) => route.path === '/admin/skills/:skillId')
+    expect(list?.owner).toBe('#806')
+    expect(detail?.owner).toBe('#806')
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
