@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { Group } from 'three'
-import { Canvas, useFrame } from '@react-three/fiber'
+import { Canvas } from '@react-three/fiber'
 import { Html, OrbitControls } from '@react-three/drei'
 import { apiClient } from '@/lib/api'
 
@@ -46,7 +47,7 @@ const ZONES = [
   { id: 'ops', name: '运营中枢', x: 5.8, z: 3.2, width: 2.5, depth: 4.7, color: '#eaf2ed' },
 ]
 const statusLabel = (running: boolean) => running ? '运行中' : '待机'
-const panelStyle: React.CSSProperties = {
+const panelStyle: CSSProperties = {
   position: 'absolute',
   background: COLORS.card,
   border: '1px solid rgba(255,255,255,.95)',
@@ -63,11 +64,18 @@ function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: n
     0,
     DESKS[index % DESKS.length].z + 0.95,
   ]
-  useFrame(({ clock }) => {
-    const time = clock.elapsedTime
-    if (head.current) head.current.rotation.z = Math.sin(time * 0.7 + index) * 0.0349
-    if (body.current) body.current.position.y = 0.78 + Math.sin(time * 1.1 + index) * 0.035
-  })
+  useEffect(() => {
+    let frame = 0
+    const startedAt = performance.now()
+    const animate = (now: number) => {
+      const time = (now - startedAt) / 1000
+      if (head.current) head.current.rotation.z = Math.sin(time * 0.7 + index) * (2 * Math.PI / 180)
+      if (body.current) body.current.position.y = 0.78 + Math.sin(time * 1.6 + index) * 0.035
+      frame = window.requestAnimationFrame(animate)
+    }
+    frame = window.requestAnimationFrame(animate)
+    return () => window.cancelAnimationFrame(frame)
+  }, [index])
   return (
     <group position={position}>
       <group ref={body}>
@@ -190,7 +198,7 @@ export function OfficePage() {
   const runningCount = state?.llm.running.length ?? 0
   return (
     <main style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: COLORS.bg, fontFamily: '-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif' }}>
-      <div id="cv" style={{ position: 'absolute', left: 0, top: 0, width: 1536, height: 1024, overflow: 'hidden', transformOrigin: '0 0', transform: `scale(${scale})`, background: COLORS.bg, color: COLORS.text }}>
+      <div id="cv" style={{ position: 'absolute', left: 0, top: 0, width: 1536, height: 1024, overflow: 'hidden', transformOrigin: '0 0', transform: `translate(${(window.innerWidth - 1536 * scale) / 2}px, ${(window.innerHeight - 1024 * scale) / 2}px) scale(${scale})`, background: COLORS.bg, color: COLORS.text }}>
         <div id="off" style={{ ...panelStyle, left: 205, top: 90, width: 1306, height: 890, overflow: 'hidden', perspective: 1200, display: 'flex', flexDirection: 'column' }}>
           <div style={{ height: 78, flex: '0 0 78px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', borderBottom: '1px solid #e8edf5', background: 'rgba(255,255,255,.94)' }}>
             <div><div style={{ fontSize: 11, letterSpacing: 2, color: COLORS.primary, fontWeight: 800 }}>AGENT OFFICE / 3D</div><strong style={{ display: 'block', marginTop: 4, fontSize: 19 }}>智能体数字办公室</strong></div>
