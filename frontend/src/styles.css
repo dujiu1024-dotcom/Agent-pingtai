@@ -1129,3 +1129,5 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+@tailwind utilities;
