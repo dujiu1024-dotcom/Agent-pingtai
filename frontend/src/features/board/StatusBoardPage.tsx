@@ -152,7 +152,11 @@ export function StatusBoardPage() {
   })
   const capacityQuery = useQuery({
     queryKey: ['board', 'capacity'],
-    queryFn: () => apiClient.get<{ status?: string; capacity?: Record<string, unknown> }>('/platform/v1/observability/health/capacity'),
+    queryFn: () =>
+      apiClient.get<{
+        status?: string
+        capacity?: Record<string, unknown>
+      }>('/platform/v1/observability/health/capacity'),
     refetchInterval: 30_000,
     retry: false,
   })
@@ -236,7 +240,7 @@ export function StatusBoardPage() {
 
     rows.push({
       name: '任务中心',
-      tone: tasksQuery.isSuccess ? 'ok' : tasksQuery.isError ? 'warn' : 'warn',
+      tone: tasksQuery.isSuccess ? 'ok' : 'warn',
       detail: tasksQuery.isSuccess
         ? '任务列表可读取'
         : tasksQuery.isError
@@ -261,8 +265,19 @@ export function StatusBoardPage() {
     const capacityStatus = capacityQuery.data?.status
     rows.push({
       name: '容量监控',
-      tone: capacityStatus === 'ok' ? 'ok' : capacityStatus === 'critical' ? 'down' : capacityStatus === 'warning' ? 'warn' : 'off',
-      detail: capacityStatus ? `容量检查状态：${capacityStatus}` : capacityQuery.isError ? '容量接口不可读' : '尚未取得容量数据',
+      tone:
+        capacityStatus === 'ok'
+          ? 'ok'
+          : capacityStatus === 'critical'
+            ? 'down'
+            : capacityStatus === 'warning'
+              ? 'warn'
+              : 'off',
+      detail: capacityStatus
+        ? `容量检查状态：${capacityStatus}`
+        : capacityQuery.isError
+          ? '容量接口不可读'
+          : '尚未取得容量数据',
     })
 
     // These subsystems have no independently verified probe in the current
