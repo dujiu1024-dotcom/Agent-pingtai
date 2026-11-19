@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ErrorState, LoadingState } from '@/components/States'
 import { ApiError, apiClient } from '@/lib/api'
 
-import './SessionsWorkspace.css'
+import './sessions-workspace.css'
 
 type Session = {
   session_id: string
