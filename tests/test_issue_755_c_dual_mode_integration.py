@@ -122,11 +122,9 @@ class DualModeIntegrationTests(unittest.TestCase):
 
     def test_endpoint_matrix_distinguishes_mounted_from_optional_unmounted_routers(self):
         app = self._app(auth_enabled=False)
-        mounted = {
-            route.path
-            for route in app.routes
-            if isinstance(getattr(route, "path", None), str)
-        }
+        # FastAPI's composed router may be deferred until OpenAPI generation.
+        # Inspect the generated route contract rather than app.routes internals.
+        mounted = set(app.openapi()["paths"])
         self.assertIn("/api/platform/v1/bootstrap", mounted)
         self.assertIn("/api/platform/v1/workbench/capabilities", mounted)
         self.assertIn("/api/platform/v1/office/state", mounted)
