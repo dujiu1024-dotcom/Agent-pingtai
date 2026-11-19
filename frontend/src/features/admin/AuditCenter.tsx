@@ -25,13 +25,6 @@ type AuditEvent = {
 type AuditResponse = { items?: AuditEvent[]; tenant_id?: string }
 type AuditKind = 'tool-events' | 'identity-events'
 
-const endpoint = (kind: AuditKind, search: string) => {
-  const params = new URLSearchParams({ limit: '100' })
-  if (search.trim()) {
-    params.set(kind === 'tool-events' ? 'run_id' : 'action', search.trim())
-  }
-  return `/platform/v1/audit/${kind}?${params.toString()}`
-}
 const eventId = (event: AuditEvent) => String(event.event_id ?? event.audit_id ?? event.id ?? '')
 const eventTime = (event: AuditEvent) => event.occurred_at ?? event.created_at ?? event.timestamp
 const readable = (value: unknown) => {
