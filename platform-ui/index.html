@@ -9,7 +9,13 @@
 <section id="memory" class="hidden"><div class="panel"><h2>记忆治理</h2><p class="muted">按服务端真实状态展示候选、已确认及历史记录；未知状态保留原值。内容仅在详情中按需展示。</p><div class="row"><input id="memoryFilter" placeholder="按记忆 ID / 范围 / 来源筛选"><button class="btn" id="filterMemories">筛选</button><button class="btn" id="clearMemoryFilter">清除</button></div><div id="memoryList"></div><h3>待确认候选记忆</h3><div id="memoryCandidates"></div><h3>记忆详情与来源</h3><div id="memoryDetail" class="panel muted">选择记忆查看来源、保留期限与内容。</div><h3>记忆版本历史与差异</h3><div id="memoryHistory" class="muted">选择记忆查看历史。</div></div></section><section id="blackboard" class="hidden"><div class="panel"><h2>协作黑板</h2><p class="muted">按任务、运行或项目范围查看专家提案、证据与决策记录。</p><div class="row"><select id="blackboardScope"><option value="task">任务</option><option value="run">运行</option><option value="project">项目</option><option value="tenant">租户</option></select><input id="blackboardScopeId" placeholder="范围 ID"><button class="btn primary" id="loadBlackboard">查询条目</button></div><div id="blackboardList"></div><h3>条目版本历史</h3><div id="blackboardHistory" class="muted">选择条目后查看历史版本。</div></div></section><section id="models" class="hidden"><div class="panel"><h2>模型模板与供应商</h2><div class="row"><input id="newModelId" placeholder="模型模板 ID"><input id="newModelName" placeholder="显示名称"><input id="newModelProvider" placeholder="供应商标识"></div><textarea id="newModelDefinition" placeholder='模型定义 JSON，例如 {"provider":"deepseek-official","model":"...","parameters":{}}'></textarea><button class="btn primary" id="createModel">保存模型模板草稿</button><div id="modelList"></div></div></section><section id="tools" class="hidden"><div class="panel"><h2>工具与 Skills</h2><div class="row"><input id="newToolId" placeholder="工具或 Skill ID"><input id="newToolName" placeholder="名称"></div><textarea id="newToolDefinition" placeholder='定义 JSON，例如 {"description":"...","input_schema":{}}'></textarea><div class="row"><button class="btn primary" id="createTool">保存工具草稿</button><button class="btn" id="createSkill">保存 Skill 草稿</button></div><div id="toolList"></div></div></section>
 <section id="sessions" class="hidden"><div class="panel"><h2>会话与消息</h2><div class="row"><input id="sessionTitle" placeholder="会话标题"><input id="sessionProject" placeholder="项目 ID（可选）"><button class="btn primary" id="createSession">新建会话</button><input id="sessionFilter" placeholder="按标题 / ID 筛选"><label><input type="checkbox" id="includeArchived"> 包含归档</label><button class="btn" id="refreshSessions">刷新</button></div><div id="sessionList"></div><div id="sessionDetail" class="panel muted">选择会话查看详情。</div><h3>消息时间线</h3><div class="row"><button class="btn" id="loadOlderMessages" disabled>加载更早消息</button><button class="btn" id="refreshMessages" disabled>刷新消息</button><button class="btn" id="exportSessionJson" disabled>导出 JSON</button><button class="btn" id="exportSessionMarkdown" disabled>导出 Markdown</button></div><div id="sessionMessages" class="muted">选择会话查看消息。</div><textarea id="sessionMessage" placeholder="发送一条消息"></textarea><input id="sessionAssetIds" placeholder="附件 Asset ID，逗号分隔（可选）"><button class="btn primary" id="sendSessionMessage">发送消息</button></div></section>
 <section id="files" class="hidden"><div class="panel"><h2>文件与产物</h2><div class="row"><input type="file" id="fileInput"><input id="fileSessionId" placeholder="关联会话 ID（可选）"><input id="fileProjectId" placeholder="关联项目 ID（可选）"><button class="btn primary" id="uploadFile">上传文件</button></div><div class="row"><input id="fileFilterSession" placeholder="按 Session ID 筛选"><input id="fileFilterProject" placeholder="按 Project ID 筛选"><button class="btn" id="filterFiles">筛选</button><button class="btn" id="clearFileFilters">清除</button></div><div id="fileList"></div><h3>文件元数据与版本</h3><div id="fileDetail" class="panel muted">选择文件查看元数据和操作。</div><div id="fileVersions"></div></div></section>
-<section id="evaluation" class="hidden"><div class="panel"><h2>RAG 评测</h2><p class="muted">输入固定评测样本，输出 Recall@K、引用覆盖率、答案词覆盖率和引用精确率/召回率。</p><textarea id="evaluationCases" rows="8">[{"case_id":"sample-1","query":"输入评测问题","expected_document_ids":[],"expected_answer_terms":[],"expected_citation_document_ids":[],"expect_abstain":false}]</textarea><div class="row"><label>K <input id="evaluationK" type="number" min="1" max="20" value="5"></label><button class="btn primary" id="runEvaluation">运行评测</button></div><div id="evaluationResults"></div></div></section>
+<section id="evaluation" class="hidden">
+<div class="panel"><h2>评测数据集与版本</h2><p class="muted">版本化 Dataset 使用服务端不可变快照；导入支持 JSONL/CSV。每行字段：case_id（可选）、input、expected_output、rubric（JSON 对象）、source_ref（可选）。</p>
+<div class="row"><input id="evaluationDatasetId" placeholder="Dataset ID（新建可留空）"><select id="evaluationFormat"><option value="jsonl">JSONL</option><option value="csv">CSV</option></select><button class="btn primary" id="importEvaluationDataset">导入并创建版本</button><button class="btn" id="loadEvaluationVersions">读取版本</button></div>
+<textarea id="evaluationDatasetContent" rows="7" placeholder='{"case_id":"case-1","input":"问题","expected_output":"期望答案","rubric":{"criteria":["正确性"]},"source_ref":"doc://..."}'></textarea>
+<div id="evaluationDatasetVersions" class="muted">输入 Dataset ID 后读取版本。</div><div id="evaluationDatasetDetail"></div></div>
+<div class="panel"><h2>评测运行与回归比较</h2><div class="row"><input id="evaluationModelKey" placeholder="Model key（后端已配置模型标识）"><input id="evaluationBaselineRunId" placeholder="基线 Eval Run ID（可选）"><button class="btn primary" id="startEvaluationRun">运行指定 Dataset 版本</button><button class="btn" id="loadEvaluationReports">查询历史报告</button></div><div id="evaluationRunResult"></div><div id="evaluationReports"></div><div id="evaluationComparison"></div></div>
+<div class="panel"><h2>Knowledge RAG 检索评测</h2><p class="muted">保留原有知识检索评测入口，与版本化 Agent Evaluation Dataset 分开。</p><textarea id="evaluationCases" rows="5">[{"case_id":"sample-1","query":"输入评测问题","expected_document_ids":[],"expected_answer_terms":[],"expected_citation_document_ids":[],"expect_abstain":false}]</textarea><div class="row"><label>K <input id="evaluationK" type="number" min="1" max="20" value="5"></label><button class="btn" id="runEvaluation">运行 RAG 检索评测</button></div><div id="evaluationResults"></div></div></section>
 <section id="operations" class="hidden"><div class="panel"><h2>运营与成本</h2><div class="row"><label>开始 <input type="datetime-local" id="usageStart"></label><label>结束 <input type="datetime-local" id="usageEnd"></label><button class="btn primary" id="loadUsage">查询用量</button></div><div id="usageReport"></div><h3>Prometheus 指标</h3><button class="btn" id="loadMetrics">读取指标</button><pre id="metricsReport" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><h3>审计记录</h3><button class="btn" id="loadAudit">查询最近审计事件</button><div id="auditReport" class="muted">当前宿主未挂载审计查询 API；不调用占位接口。</div></div></section>
 </main></div>
 <script>
@@ -77,8 +83,8 @@ function show(view){current=view;document.querySelectorAll("main section").forEa
 $("nav").addEventListener("click",e=>{const b=e.target.closest("button[data-view]");if(b)show(b.dataset.view)});
 
 function renderApprovals(items){
- if(!items.length){$("approvalList").innerHTML="<p class='muted'>暂无待审批动作</p>";return}
- $("approvalList").innerHTML="<table><thead><tr><th>审批编号</th><th>动作</th><th>资源</th><th>状态</th><th>操作</th></tr></thead><tbody>"+items.map(x=>"<tr><td>"+esc(x.approval_id)+"</td><td>"+esc(x.action)+"</td><td>"+esc(x.resource)+"</td><td>"+esc(x.status)+"</td><td><button class='btn' data-approval-action='detail' data-id='"+esc(x.approval_id)+"'>详情</button> <button class='btn primary' data-approval-action='approve' data-id='"+esc(x.approval_id)+"'>批准</button> <button class='btn' data-approval-action='reject' data-id='"+esc(x.approval_id)+"'>拒绝</button> <button class='btn' data-approval-action='revoke' data-id='"+esc(x.approval_id)+"'>撤销</button></td></tr>").join("")+"</tbody></table>";
+ if(!items.length){$("approvalList").innerHTML="<p class='muted'>暂无当前可见的待审批动作。此列表 API 仅返回 pending 项。</p>";return}
+ $("approvalList").innerHTML="<table><thead><tr><th>审批编号</th><th>动作 / 资源</th><th>风险</th><th>申请者</th><th>关联 Run</th><th>到期</th><th>操作</th></tr></thead><tbody>"+items.map(x=>"<tr><td>"+esc(x.approval_id)+"</td><td>"+esc(x.action)+"<br>"+esc(x.resource)+"</td><td>"+esc(x.risk_level)+"</td><td>"+esc(x.requested_by)+"</td><td>"+esc(x.run_id||"—")+"</td><td>"+esc(x.expires_at)+"</td><td><button class='btn' data-approval-action='detail' data-id='"+esc(x.approval_id)+"'>详情 / Digest</button> <button class='btn primary' data-approval-action='approve' data-id='"+esc(x.approval_id)+"'>批准</button> <button class='btn' data-approval-action='reject' data-id='"+esc(x.approval_id)+"'>拒绝</button> <button class='btn' data-approval-action='revoke' data-id='"+esc(x.approval_id)+"'>撤销</button></td></tr>").join("")+"</tbody></table>";
 }
 $("approvalList").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-approval-action]");if(!b)return;
@@ -87,7 +93,7 @@ $("approvalList").addEventListener("click",async e=>{
   if(action==="detail"){
    const d=await api("/approvals/"+encodeURIComponent(id));
    $("approvalDetail").classList.remove("hidden");
-   $("approvalDetail").innerHTML="<h3>审批详情</h3>"+table([["审批编号",d.approval_id],["运行",d.run_id||"—"],["动作",d.action],["资源",d.resource],["风险级别",d.risk_level],["参数摘要",d.action_hash],["申请人",d.requested_by],["审批人",d.decided_by||"—"],["状态",d.status],["过期时间",d.expires_at]]);
+   $("approvalDetail").innerHTML="<h3>审批详情</h3>"+table([["审批编号",d.approval_id],["关联 Run",d.run_id||"—"],["动作",d.action],["资源",d.resource],["风险级别",d.risk_level],["参数 Digest（action_hash）",d.action_hash],["申请者",d.requested_by],["审批者",d.decided_by||"—"],["服务端状态",d.status],["到期时间",d.expires_at]])+"<p class='muted'>当前 GET /approvals/{id} 契约只返回 action_hash，不返回原始参数快照；页面不会推测或重建参数。决策由服务端校验并留痕。</p>";
    return;
   }
   if(action==="approve"||action==="reject"){
@@ -119,7 +125,7 @@ if(view==="models"){if(capabilities.registry)await loadRegistryKinds([["model_te
 if(view==="tools"){if(capabilities.registry)await loadRegistryKinds([["tool","工具"],["skill","Skill"]],"toolList");else $("toolList").innerHTML=unavailable("注册中心 API");}
 if(view==="sessions"){if(capabilities.sessions){const params=new URLSearchParams({limit:"100"});if($("includeArchived").checked)params.set("include_archived","true");const r=await api("/sessions?"+params.toString());const needle=$("sessionFilter").value.trim().toLowerCase();const items=(r.items||[]).filter(x=>[x.session_id,x.title,x.project_id,x.status].some(v=>String(v??"").toLowerCase().includes(needle)));$("sessionList").innerHTML=items.length?items.map(x=>"<div class='row panel'><strong>"+esc(x.title||"未命名会话")+"</strong><span class='muted'>"+esc(x.session_id)+" · "+esc(x.status)+" · "+esc(x.updated_at)+"</span><button class='btn' data-session-open='"+esc(x.session_id)+"'>打开</button></div>").join(""):"<p class='muted'>暂无匹配会话</p>"}else $("sessionList").innerHTML=unavailable("会话/文件 API")}
 if(view==="files"){if(capabilities.sessions){const params=new URLSearchParams({limit:"100"});if($("fileFilterSession").value.trim())params.set("session_id",$("fileFilterSession").value.trim());if($("fileFilterProject").value.trim())params.set("project_id",$("fileFilterProject").value.trim());const r=await api("/files?"+params.toString());const items=r.items||[];$("fileList").innerHTML=items.length?"<table><thead><tr><th>文件</th><th>类型</th><th>大小</th><th>状态</th><th>版本</th><th>关联</th><th>操作</th></tr></thead><tbody>"+items.map(x=>"<tr><td>"+esc(x.filename)+"</td><td>"+esc(x.media_type)+"</td><td>"+esc(x.size_bytes)+"</td><td>"+esc(x.status)+"</td><td>v"+esc(x.version)+"</td><td>"+esc(x.session_id||x.project_id||"—")+"</td><td><button class='btn' data-file-open='"+esc(x.asset_id)+"'>详情 / 版本</button></td></tr>").join("")+"</tbody></table>":"<p class='muted'>暂无文件</p>"}else $("fileList").innerHTML=unavailable("会话/文件 API")}
-if(view==="evaluation"){if(!capabilities.knowledge)$("evaluationResults").innerHTML=unavailable("知识库评测 API")}
+if(view==="evaluation"){if(!capabilities.evaluation_datasets)$("evaluationDatasetVersions").innerHTML=unavailable("版本化评测 Dataset API");if(!capabilities.evaluation_runs)$("evaluationRunResult").innerHTML=unavailable("Evaluation Run API");if(!capabilities.evaluation_reports)$("evaluationReports").innerHTML=unavailable("Evaluation Report API");if(!capabilities.knowledge)$("evaluationResults").innerHTML=unavailable("Knowledge RAG 评测 API")}
 if(view==="operations"){if(!capabilities.quotas)$("usageReport").innerHTML=unavailable("配额用量 API");if(!capabilities.metrics)$("metricsReport").textContent="当前服务未挂载 Prometheus 指标 API";if(!capabilities.audit)$("auditReport").innerHTML=unavailable("审计查询 API");}
 }catch(e){msg("API 请求失败："+e.message)}}
 
@@ -240,6 +246,60 @@ $("memoryList").addEventListener("click",async e=>{
 $("memoryCandidates").addEventListener("click",async e=>{
  const b=e.target.closest("button[data-memory-action='confirm']");if(!b)return;
  try{await api("/memories/"+encodeURIComponent(b.dataset.id)+"/confirm",{method:"POST",body:"{}"});msg("候选记忆已确认");await load("memory")}catch(err){msg("记忆确认失败："+err.message)}
+});
+async function loadEvaluationVersions(){
+ const datasetId=$("evaluationDatasetId").value.trim();if(!datasetId){msg("请输入 Dataset ID");return}
+ if(!capabilities.evaluation_datasets){$("evaluationDatasetVersions").innerHTML=unavailable("版本化评测 Dataset API");return}
+ try{
+  const r=await api("/observability/evaluations/datasets/"+encodeURIComponent(datasetId)+"/versions"),items=r.items||[];
+  $("evaluationDatasetVersions").innerHTML=items.length?"<table><thead><tr><th>版本</th><th>样本数</th><th>创建者</th><th>创建时间</th><th>操作</th></tr></thead><tbody>"+items.map(x=>"<tr><td>v"+esc(x.version)+"</td><td>"+esc(x.case_count)+"</td><td>"+esc(x.created_by)+"</td><td>"+esc(x.created_at||"—")+"</td><td><button class='btn' data-eval-version='"+esc(x.version)+"'>选择 / 查看</button> <a href='"+esc($("apiBase").value.replace(/\/$/,"")+"/observability/evaluations/datasets/"+encodeURIComponent(datasetId)+"/versions/"+encodeURIComponent(x.version)+"/export?format=jsonl")+"'>导出 JSONL</a></td></tr>").join("")+"</tbody></table>":"<p class='muted'>该 Dataset 暂无版本。</p>";
+ }catch(e){msg("Dataset 版本读取失败："+e.message)}
+}
+$("loadEvaluationVersions").onclick=loadEvaluationVersions;
+$("evaluationDatasetVersions").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-eval-version]");if(!b)return;
+ const version=Number(b.dataset.evalVersion);$("evaluationDatasetVersions").dataset.selectedVersion=String(version);
+ try{
+  const id=encodeURIComponent($("evaluationDatasetId").value.trim()),r=await api("/observability/evaluations/datasets/"+id+"/versions/"+encodeURIComponent(version)),cases=r.cases||[];
+  $("evaluationDatasetDetail").innerHTML="<h3>"+esc(r.dataset_id)+" · v"+esc(r.version)+"（"+esc(r.case_count)+" 条）</h3>"+(cases.length?cases.map(c=>"<div class='panel'><strong>"+esc(c.case_id)+"</strong><p>"+esc(c.input)+"</p><p><strong>期望输出</strong><br>"+esc(c.expected_output)+"</p><pre style='white-space:pre-wrap;overflow-wrap:anywhere'>"+esc(JSON.stringify(c.rubric,null,2))+"</pre><small class='muted'>来源："+esc(c.source_ref||"—")+"</small></div>").join(""):"<p class='muted'>零样本 Dataset。</p>");
+ }catch(err){msg("Dataset 版本详情失败："+err.message)}
+});
+$("importEvaluationDataset").onclick=async()=>{
+ if(!capabilities.evaluation_datasets){msg("Dataset 管理 API 未挂载");return}
+ const content=$("evaluationDatasetContent").value,format=$("evaluationFormat").value,datasetId=$("evaluationDatasetId").value.trim();
+ if(!content.trim()){msg("请提供 CSV 或 JSONL 样本内容");return}
+ try{
+  const body={format,content};if(datasetId)body.dataset_id=datasetId;
+  const r=await api("/observability/evaluations/datasets/import",{method:"POST",body:JSON.stringify(body)});
+  $("evaluationDatasetId").value=r.dataset_id;msg("Dataset 版本已创建：v"+r.version+"（"+r.case_count+" 条）");await loadEvaluationVersions();
+ }catch(e){msg("Dataset 导入失败："+e.message)}
+};
+$("startEvaluationRun").onclick=async()=>{
+ if(!capabilities.evaluation_runs){msg("Evaluation Run API 未挂载");return}
+ const datasetId=$("evaluationDatasetId").value.trim(),modelKey=$("evaluationModelKey").value.trim(),version=Number($("evaluationDatasetVersions").dataset.selectedVersion||0);
+ if(!datasetId||!modelKey||!Number.isInteger(version)||version<1){msg("请先读取并选择 Dataset 版本，同时填写 Model key");return}
+ try{
+  const r=await api("/observability/evaluations/run",{method:"POST",body:JSON.stringify({dataset_id:datasetId,dataset_version:version,model_key:modelKey})});
+  $("evaluationRunResult").innerHTML="<h3>运行结果</h3>"+table([["Eval Run",r.eval_run_id],["Dataset",r.dataset_id+" · v"+r.dataset_version],["Model",r.model_key],["通过率",r.pass_rate],["平均分",r.average_score],["Recall@K",r.average_recall_at_k],["Gate",r.gate_passed?"通过":"未通过"],["失败原因",(r.gate_failures||[]).join(", ")||"—"]])+(capabilities.evaluation_comparisons?"<button class='btn' data-eval-compare='"+esc(r.eval_run_id)+"' data-version='"+esc(r.dataset_version)+"'>与基线比较</button>":"");
+ }catch(e){msg("Evaluation Run 失败："+e.message)}
+};
+$("loadEvaluationReports").onclick=async()=>{
+ if(!capabilities.evaluation_reports){$("evaluationReports").innerHTML=unavailable("Evaluation Report API");return}
+ const id=$("evaluationDatasetId").value.trim();if(!id){msg("请输入 Dataset ID");return}
+ try{
+  const r=await api("/observability/evaluations?dataset_id="+encodeURIComponent(id)+"&limit=50"),items=r.items||[];
+  $("evaluationReports").innerHTML=items.length?"<h3>历史报告</h3>"+table(items.map(x=>[x.eval_run_id||x.run_id,x.dataset_version,x.model_key,x.pass_rate,x.average_score,x.created_at||x.finished_at||"—"])):"<p class='muted'>暂无评测报告。</p>";
+ }catch(e){msg("历史报告读取失败："+e.message)}
+};
+$("evaluationRunResult").addEventListener("click",async e=>{
+ const b=e.target.closest("button[data-eval-compare]");if(!b)return;
+ const baseline=$("evaluationBaselineRunId").value.trim();if(!baseline){msg("请输入基线 Eval Run ID");return}
+ try{
+  if(!capabilities.evaluation_comparisons)throw new Error("Evaluation Comparison API 未挂载");
+  const datasetId=$("evaluationDatasetId").value.trim(),version=Number(b.dataset.version);
+  const r=await api("/observability/evaluations/comparisons",{method:"POST",body:JSON.stringify({dataset_id:datasetId,dataset_version:version,eval_run_ids:[baseline,b.dataset.evalCompare]})});
+  $("evaluationComparison").innerHTML="<h3>基线回归比较报告</h3><pre style='white-space:pre-wrap;overflow-wrap:anywhere'>"+esc(JSON.stringify(r,null,2))+"</pre>";
+ }catch(err){msg("评测比较失败："+err.message)}
 });
 $("runEvaluation").onclick=async()=>{
  try{const cases=JSON.parse($("evaluationCases").value);const r=await api("/knowledge/evaluate",{method:"POST",body:JSON.stringify({cases,k:Number($("evaluationK").value||5)})});$("evaluationResults").innerHTML="<h3>检索汇总</h3>"+table(Object.entries(r.retrieval_summary).map(([k,v])=>[k,v]))+(r.answer_summary?"<h3>答案汇总</h3>"+table(Object.entries(r.answer_summary).map(([k,v])=>[k,v])):"<p class='muted'>RAG 生成器未配置，仅执行检索评测。</p>")+"<pre style='white-space:pre-wrap'>"+esc(JSON.stringify({retrieval:r.retrieval_results,answers:r.answer_results},null,2))+"</pre>"}catch(e){msg("评测失败："+e.message)}

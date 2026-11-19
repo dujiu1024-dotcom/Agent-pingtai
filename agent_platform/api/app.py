@@ -107,6 +107,7 @@ def create_platform_app(
     alert_store: Any | None = None,
     alert_manage_authorizer: Any | None = None,
     evaluation_repository: Any | None = None,
+    evaluation_dataset_repository: Any | None = None,
     evaluation_run_service: Any | None = None,
     evaluation_comparison_service: Any | None = None,
     evaluation_worker: Any | None = None,
@@ -274,19 +275,17 @@ def create_platform_app(
         )
     )
     evaluation_configured = any(value is not None for value in (
-        evaluation_repository, evaluation_run_service,
+        evaluation_repository, evaluation_dataset_repository, evaluation_run_service,
     ))
-    if evaluation_configured and any(value is None for value in (
-        evaluation_repository, evaluation_manage_authorizer,
-    )):
+    if evaluation_configured and evaluation_manage_authorizer is None:
         raise ValueError(
-            "evaluation repository and evaluation manager authorizer must be configured together"
+            "evaluation services and evaluation manager authorizer must be configured together"
         )
     if evaluation_comparison_service is not None and evaluation_manage_authorizer is None:
         raise ValueError("evaluation comparison service requires the evaluation manager authorizer")
     observability_api_configured = any(value is not None for value in (
         metrics_exporter, operational_health_monitor, alert_store, evaluation_repository,
-        evaluation_run_service, evaluation_comparison_service,
+        evaluation_dataset_repository, evaluation_run_service, evaluation_comparison_service,
     ))
     evaluation_rollout_configured = any(value is not None for value in (
         evaluation_rollout_bridge, evaluation_rollout_authorizer,
@@ -311,6 +310,7 @@ def create_platform_app(
             alert_store=alert_store,
             authorize_alert_manage=alert_manage_authorizer,
             evaluation_repository=evaluation_repository,
+            evaluation_dataset_repository=evaluation_dataset_repository,
             evaluation_run_service=evaluation_run_service,
             evaluation_comparison_service=evaluation_comparison_service,
             authorize_eval_manage=evaluation_manage_authorizer,
@@ -487,6 +487,10 @@ def create_platform_app(
             "graph_visualization": graph_visualization_url is not None,
             "batch_execution": batch_api_configured,
             "approvals": approval_service is not None and approval_authorizer is not None,
+            "evaluation_datasets": evaluation_dataset_repository is not None,
+            "evaluation_runs": evaluation_run_service is not None,
+            "evaluation_reports": evaluation_repository is not None,
+            "evaluation_comparisons": evaluation_comparison_service is not None,
             "blackboard": blackboard_configured,
             "quotas": quota_reporting_store is not None or quota_store is not None,
             "metrics": metrics_exporter is not None,
