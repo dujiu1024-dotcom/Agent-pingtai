@@ -242,6 +242,14 @@ export const pageRoutes: PageRoute[] = [
     authOnly: true,
   },
   {
+    path: '/admin/audit',
+    pageId: 'ADM-AUDIT',
+    title: '审计中心',
+    section: '平台管理',
+    description: '只读查询工具调用与身份审计事件。',
+    owner: '#811',
+  },
+  {
     path: '/admin/settings',
     pageId: 'SYS-SETTINGS',
     title: '系统设置',
@@ -317,6 +325,16 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/admin/audit/:auditId',
+    pageId: 'ADM-AUDIT-DETAIL',
+    title: '审计事件详情',
+    section: '平台管理',
+    description: '单条审计事件详情；只读，不提供写操作。',
+    parentPath: '/admin/audit',
+    entityIdParam: 'auditId',
+    owner: '#811',
+  },
   {
     path: '/operations/knowledge-bases/:collectionId',
     pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
@@ -454,14 +472,6 @@ export const globalRoutes: PageRoute[] = [
     title: '通知中心',
     section: '全局能力',
     description: '通知列表与已读 API 尚待 #751 核实；不伪造通知数据。',
-    owner: '#751',
-  },
-  {
-    path: '/admin/audit',
-    pageId: 'GLOBAL-AUDIT',
-    title: '审计中心',
-    section: '全局能力',
-    description: '审计事件查询入口。',
     owner: '#751',
   },
   {
