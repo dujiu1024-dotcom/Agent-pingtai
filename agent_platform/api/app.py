@@ -245,6 +245,7 @@ def create_platform_app(
         service_identity=service_identity,
         allowed_origins=origins,
         protected_paths=(("/api", "/auth") if auth_enabled else ("/auth",)),
+        auth_enabled=auth_enabled,
         login_rate_limiter=RedisSlidingWindowRateLimiter(redis),
         local_principal=local_principal_resolver,
     )
