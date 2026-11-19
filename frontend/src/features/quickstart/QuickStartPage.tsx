@@ -153,7 +153,7 @@ export function QuickStartPage() {
     <section className="page-content quickstart">
       <div className="page-heading">
         <p className="eyebrow">WORKSPACE / QUICK START</p>
-        <h1>快速使用</h1>
+        <h1>指令中心</h1>
         <p>用自然语言描述目标，核对执行对象后再下达真实任务。</p>
       </div>
 
