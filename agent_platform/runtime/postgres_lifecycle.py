@@ -348,12 +348,16 @@ class PostgresRunStateStore(RunStateStore):
             AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
         OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
     ORDER BY priority DESC,created_at ASC FOR UPDATE SKIP LOCKED LIMIT %s
-    )
+    ),
+    claimed AS (
     UPDATE platform_runs r SET worker_id=%s,
       worker_attempts=COALESCE(r.worker_attempts,0)+1,
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
-    RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
+    RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at,r.priority
+    )
+    SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at
+    FROM claimed ORDER BY priority DESC,run_id ASC""",
     (tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
 

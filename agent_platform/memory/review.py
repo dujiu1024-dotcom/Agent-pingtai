@@ -126,14 +126,13 @@ class MemoryCandidateWorkflow:
         )
         if decision is MemoryReviewDecision.CONFIRM:
             result: MemoryRecord | bool = await self.memory.confirm(
-                tenant_id=principal.tenant_id,
                 memory_id=memory_id,
-                confirmer_id=principal.user_id,
+                principal=principal,
             )
         else:
             result = await self.memory.reject(
-                tenant_id=principal.tenant_id,
                 memory_id=memory_id,
+                principal=principal,
             )
         await self.audit.append(event)
         return result

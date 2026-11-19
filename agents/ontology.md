@@ -68,7 +68,7 @@
 | Coach（教练） | 交付伴随，新工具新任务的指南与验收 | 教练事件触发 | 幕僚长 |
 | Scout（商机侦察） | 线索发现与初步筛选 | 线索源更新 | 幕僚长 |
 | Content（内容） | 案例沉淀、对外内容生产 | 阶段结束 / 复盘完成 | 幕僚长 |
-| HR | 外援协调、合同与用工合规 | 招聘需求 / 合同到期 | 幕僚长 |
+| HR（Agent 团队全权负责人） | **Agent 招聘/调整/提升**（新建/合并/下线/优化 ROLE.md/模型路由/触发事件）；传统人力为副业（外包协调、合同合规） | Agent 熔断 / 唤醒频率异常 / 业务线变更 / 季度盘点 / 合同到期 | 幕僚长 |
 | Finance（财务） | 接单审查、开票清单、回款跟踪、成本归集；A1 只起草 | `task_created`（kind=code）/ `invoice_overdue` | 幕僚长 |
 | Producer（制作人） | 目标 → 任务草案；不写库、不关任务 | 目标下达 | 幕僚长 |
 
@@ -183,6 +183,11 @@
 | `contract_signed` | 合同签署 | PM / 财务 |
 | `invoice_overdue` | 发票到期未回款 | 财务（催款） |
 | `dependency_overdue` | 依赖清单缺料逾期未提供 | 秘书（催办）/ 创始人 |
+| `agent_circuit_break` | Agent 连续失败 3 次触发熔断 | HR（诊断 prompt/模型/边界） |
+| `agent_low_output` | Agent 被唤醒 ≥10 次/周但有效产出 < 3 条 | HR（诊断职责重叠/触发过宽） |
+| `agent_role_overlap` | 巡检发现两个 Agent ROLE.md 职责交叉 | HR（合并或划清边界） |
+| `agent_subscribe_flood` | 同一事件类型被 ≥3 个角色重复订阅 | HR（裁掉重复订阅） |
+| `quarterly_review` | 自然季度结束，触发全量盘点 | HR（能力矩阵 + 所有 Agent 体检）、幕僚长、审计 |
 
 ### 3.7 其他常量
 

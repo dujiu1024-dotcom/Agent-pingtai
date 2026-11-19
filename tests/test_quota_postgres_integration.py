@@ -69,7 +69,7 @@ class QuotaPostgresMigrationTests(unittest.IsolatedAsyncioTestCase):
             "platform_quota_budgets", "platform_quota_reservations",
             "platform_usage_ledger", "platform_usage_reconciliation",
         })
-        self.assertEqual(len(columns), 1)
+        self.assertEqual({row[0] for row in columns}, {"heartbeat_at", "expires_at"})
         self.assertEqual(len(context_columns), 1)
 
     async def test_reserve_enforces_hard_limits_with_empty_ledger_and_reservations(self):

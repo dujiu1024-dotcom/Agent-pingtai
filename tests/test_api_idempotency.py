@@ -59,6 +59,7 @@ class ApiIdempotencyServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls, [1])
 
     async def test_conflicting_payload_and_in_progress_request_are_rejected(self):
+        from agent_platform.api.idempotency import request_fingerprint
         backend = Backend(); service = ApiIdempotencyService(backend)
         operation = lambda: IdempotencyResponse(200, {}, b'ok')
         args = dict(tenant_id='t1', principal_id='u1', method='POST', route='/runs', key='k1', body=b'one', operation=operation)
@@ -66,7 +67,10 @@ class ApiIdempotencyServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException) as caught:
             await service.execute(**{**args, 'body':b'two'})
         self.assertEqual(caught.exception.status_code, 409)
-        backend.rows[('t1','u2','POST','/runs','busy')] = {'hash':'f'*64, 'owner':'other'}
+        # Seed an in-progress claim for a different principal: same scope,
+        # same request_hash (body=b'one'), so Backend.claim returns 'in_progress'.
+        matching_hash = request_fingerprint('POST', '/runs', b'one')
+        backend.rows[('t1','u2','POST','/runs','busy')] = {'hash': matching_hash, 'owner': 'other-token'}
         with self.assertRaises(HTTPException) as busy:
             await service.execute(**{**args, 'principal_id':'u2', 'key':'busy'})
         self.assertEqual(busy.exception.detail['code'], 'IDEMPOTENCY_REQUEST_IN_PROGRESS')

@@ -15,7 +15,7 @@ from agent_platform.security.secrets import SecretManager
 
 _CREDENTIAL_TYPES = {"oauth", "api_key", "service_account"}
 _CONSUMER_TYPES = {"agent", "workflow"}
-_SCOPE = re.compile(r"[a-z][a-z0-9:_-]{0,95}\Z")
+_SCOPE = re.compile(r"[a-z][a-z0-9:_.\-]{0,95}\Z")
 
 
 @dataclass(frozen=True)

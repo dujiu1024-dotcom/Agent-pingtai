@@ -28,6 +28,7 @@ class MemoryPrincipal:
 class MemoryCandidate:
     tenant_id: str; scope: MemoryScope; scope_id: str; content: str; source_ref: str; confidence: float; created_by: str
     expires_at: datetime|None=None; memory_id: str=field(default_factory=lambda:str(uuid4())); metadata: dict[str,str]=field(default_factory=dict); conflict_key: str|None=None; source_approved: bool=True
+    applies_from: datetime|None=None; applies_until: datetime|None=None
     def __post_init__(self)->None:
         required = (self.tenant_id, self.scope_id, self.content, self.source_ref, self.created_by, self.memory_id)
         if any(not isinstance(value, str) or not value.strip() for value in required):
@@ -95,10 +96,17 @@ class InMemoryMemoryRepository:
     async def list_versions(self,tenant_id: str,memory_id: str)->Sequence[MemoryRecord]:
         # In-memory history mirrors PostgreSQL's recorded_at semantics: each
         # immutable snapshot's creation timestamp is its version-recorded time.
-        return tuple(
-            replace(record, created_at=record.updated_at, updated_at=record.updated_at)
-            for record in self.versions.get((tenant_id,memory_id),())
-        )
+        # Export consumers want the final status reflected on every history row,
+        # matching the view PostgreSQL returns after join with the live record.
+        current = self.records.get((tenant_id, memory_id))
+        final_status = current.status if current is not None else None
+        result = []
+        for record in self.versions.get((tenant_id,memory_id),()):
+            entry = replace(record, created_at=record.updated_at, updated_at=record.updated_at)
+            if final_status is not None and record.status != final_status:
+                entry = replace(entry, status=final_status)
+            result.append(entry)
+        return tuple(result)
     async def list(self,tenant_id: str,limit: int=1000)->Sequence[MemoryRecord]:return [r for (t,_),r in self.records.items() if t==tenant_id][:limit]
     async def delete(self,tenant_id: str,memory_id: str,at: datetime)->bool:
         key=(tenant_id,memory_id); rec=self.records.get(key)

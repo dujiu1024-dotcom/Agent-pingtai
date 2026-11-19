@@ -364,8 +364,8 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
         a, b = await asyncio.gather(
             store_a.claim_batch(limit=10), store_b.claim_batch(limit=10)
         )
-        ids_a = {item.outbox_id for item in a}
-        ids_b = {item.outbox_id for item in b}
+        ids_a = {item.outbox_id for item in a if item.tenant_id == self.tenant_id}
+        ids_b = {item.outbox_id for item in b if item.tenant_id == self.tenant_id}
         self.assertFalse(ids_a & ids_b)
         self.assertEqual(len(ids_a | ids_b), 1)
 
@@ -1091,6 +1091,7 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             AssetStatus,
             ConversationSession,
             FileAsset,
+            SessionNotFound,
         )
 
         tenant_b = f"it-{uuid4().hex}"
@@ -1136,9 +1137,12 @@ class PostgresIdentityIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await repo_b.list_messages(tenant_b, session_a.session_id), (),
         )
 
-        # A tenant-B asset cannot attach to tenant-A's session through the composite FK.
+        # A tenant-B asset cannot attach to tenant-A's session. The repository
+        # rejects this at the application layer with SessionNotFound (tenant-scoped
+        # lookup keeps cross-tenant existence hidden); the composite FK remains a
+        # defence-in-depth backstop should that check ever be bypassed.
         from psycopg.errors import ForeignKeyViolation
-        with self.assertRaises(ForeignKeyViolation):
+        with self.assertRaises((SessionNotFound, ForeignKeyViolation)):
             await repo_b.create_asset(FileAsset(
                 tenant_id=tenant_b, asset_id=str(uuid4()), owner_id="tenant-b-user",
                 object_key=f"tenant/{tenant_b}/assets/{uuid4().hex}",
@@ -1632,7 +1636,7 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.tenant_id, "actor-a",
         )), 1)
         claimed = await store.claim_workbench_tasks(
-            "worker-integration", limit=10, lease_seconds=30,
+            "worker-integration", tenant_id=self.tenant_id, limit=10, lease_seconds=30,
         )
         self.assertEqual([row.run_id for row in claimed], [run_id])
 

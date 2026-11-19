@@ -199,19 +199,19 @@ class SessionMemoryBoundaryTests(unittest.IsolatedAsyncioTestCase):
             return self.drafts
 
         async def test_completed_turn_creates_candidate_not_active_memory(self):
-        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
-        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
-        repository = InMemoryMemoryRepository()
-        extractor = self.Extractor([MemoryDraft(scope=MemoryScope.USER, scope_id="user-a", content="prefers concise technical summaries", confidence=0.91)])
-        service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
-        principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
-        turn = MemoryTurn(tenant_id="tenant-a", user_id="user-a", source_ref="session://tenant-a/message-assistant-42@1", user_message="Please keep technical summaries concise.", assistant_message="I will keep future technical summaries concise.", completed=True)
-        records = await service.propose_from_turn(principal=principal, turn=turn)
-        assert len(records) == 1
-        assert records[0].status.value == "candidate"
-        assert records[0].candidate.source_ref == turn.source_ref
-        assert records[0].candidate.content != turn.user_message + turn.assistant_message
-        assert extractor.calls == 1
+            from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
+            from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+            repository = InMemoryMemoryRepository()
+            extractor = self.Extractor([MemoryDraft(scope=MemoryScope.USER, scope_id="user-a", content="prefers concise technical summaries", confidence=0.91)])
+            service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
+            principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")
+            turn = MemoryTurn(tenant_id="tenant-a", user_id="user-a", source_ref="session://tenant-a/message-assistant-42@1", user_message="Please keep technical summaries concise.", assistant_message="I will keep future technical summaries concise.", completed=True)
+            records = await service.propose_from_turn(principal=principal, turn=turn)
+            assert len(records) == 1
+            assert records[0].status.value == "candidate"
+            assert records[0].candidate.source_ref == turn.source_ref
+            assert records[0].candidate.content != turn.user_message + turn.assistant_message
+            assert extractor.calls == 1
 
     @pytest.mark.asyncio
     async def test_incomplete_turn_is_rejected_before_extractor_or_write(self):

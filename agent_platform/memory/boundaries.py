@@ -201,13 +201,13 @@ MEMORY_BOUNDARIES = (
     MemoryLayerBoundary(
         MemoryLayer.RUN,
         "A single execution run and its runtime context.",
-        "Ephemeral run context; not persisted as MemoryScope.",
+        "Ephemeral run context; not persisted to the durable memory store.",
         "No promotion to durable memory without extraction, review, and approval.",
     ),
     MemoryLayerBoundary(
         MemoryLayer.SESSION,
         "A conversation session and its message history.",
-        "Ephemeral session context; canonical history remains in the session store, not MemoryScope.",
+        "Ephemeral session context; canonical history remains in the session store, not the memory store.",
         "No transcript duplication or promotion without extraction and approval.",
     ),
 )

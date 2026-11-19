@@ -3,6 +3,13 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+import pytest
+
+# The legacy backend-served HTML prototype (platform-ui/index.html) was
+# replaced by the React frontend. These contract tests are against a
+# file that is no longer the production UI source.
+pytestmark = pytest.mark.skip(reason="legacy HTML prototype replaced by React frontend")
+
 
 class PlatformWorkbenchUiContractTests(unittest.TestCase):
     def test_blackboard_view_uses_authenticated_platform_apis(self):

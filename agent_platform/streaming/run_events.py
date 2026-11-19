@@ -109,7 +109,7 @@ class RunEventBroker:
                 int((self._history[key][0].event_id or "").rpartition(":")[2])
                 if self._history[key] else self._sequence[key] + 1
             )
-            if cursor and cursor < oldest - 1:
+            if cursor and cursor < oldest:
                 raise ValueError("Last-Event-ID is older than the retained Run event window")
             for event in history:
                 queue.put_nowait(event)

@@ -15,7 +15,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
     async def test_candidate_rejects_invalid_scope_confidence_and_metadata(self):
         base = dict(
             tenant_id="tenant-a", scope=MemoryScope.USER, scope_id="user-a",
-            content="prefers concise answers", source_ref="conversation:1",
+            content="prefers concise answers", source_ref="session://t/turn-1@1",
             confidence=0.9, created_by="extractor",
         )
         invalid = (
@@ -30,7 +30,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
                 MemoryCandidate(**{**base, **overrides})
 
     async def test_candidate_is_not_retrievable_until_confirmed(self):
-        service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="prefers concise reports",source_ref="conversation:123",confidence=.9,created_by="extractor")
+        service=MemoryService(InMemoryMemoryRepository()); c=MemoryCandidate(tenant_id="t",scope=MemoryScope.USER,scope_id="u1",content="prefers concise reports",source_ref="session://t/turn-123@1",confidence=.9,created_by="extractor")
         await service.propose(c); p=MemoryPrincipal(tenant_id="t",user_id="u1"); self.assertEqual(await service.retrieve(principal=p),[])
         await service.confirm(principal=MemoryPrincipal(tenant_id="t", user_id="u1", permissions=frozenset({"memory.manage"})), memory_id=c.memory_id); self.assertEqual(len(await service.retrieve(principal=p)),1)
     async def test_reject_retries_derived_data_cleanup_after_tombstone(self):
@@ -230,17 +230,17 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         extractor=Extractor()
         pipeline=MemoryExtractionService(memory=service,extractor=extractor)
         principal=MemoryPrincipal(tenant_id="t",user_id="u")
-        turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="conversation:turn-9",user_message="Please keep it concise.")
+        turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="session://t/turn-9@1",user_message="Please keep it concise.",assistant_message="Okay.",completed=True)
         records=await pipeline.propose_from_turn(principal=principal,turn=turn)
         self.assertEqual(len(records),1)
         self.assertEqual(records[0].status.value,"candidate")
-        self.assertEqual(records[0].candidate.source_ref,"conversation:turn-9")
+        self.assertEqual(records[0].candidate.source_ref,"session://t/turn-9@1")
         self.assertEqual(extractor.received,turn)
         self.assertEqual(await service.retrieve(principal=principal),[])
         with self.assertRaises(PermissionError):
             await pipeline.propose_from_turn(
                 principal=principal,
-                turn=MemoryTurn(tenant_id="other",user_id="u",source_ref="conversation:other",user_message="x"),
+                turn=MemoryTurn(tenant_id="other",user_id="u",source_ref="session://other/turn-other@1",user_message="x",assistant_message="y",completed=True),
             )
 
     async def test_repeated_turn_extraction_reuses_same_candidate_ids(self):
@@ -256,7 +256,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         memory = MemoryService(repository)
         pipeline = MemoryExtractionService(memory=memory, extractor=Extractor())
         principal = MemoryPrincipal(tenant_id='t', user_id='u')
-        turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session:s:user:m1:assistant:m2', user_message='Remember this', assistant_message='Okay')
+        turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session://t/turn-m2@1', user_message='Remember this', assistant_message='Okay', completed=True)
         first = await pipeline.propose_from_turn(principal=principal, turn=turn)
         second = await pipeline.propose_from_turn(principal=principal, turn=turn)
         self.assertEqual(first[0].candidate.memory_id, second[0].candidate.memory_id)
@@ -275,7 +275,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         memory = MemoryService(InMemoryMemoryRepository())
         pipeline = MemoryExtractionService(memory=memory, extractor=Extractor())
         principal = MemoryPrincipal(tenant_id='t', user_id='u')
-        turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session:s:user:m3:assistant:m4', user_message='Fact', assistant_message='Acknowledged')
+        turn = MemoryTurn(tenant_id='t', user_id='u', source_ref='session://t/turn-m4@1', user_message='Fact', assistant_message='Acknowledged', completed=True)
         first = (await pipeline.propose_from_turn(principal=principal, turn=turn))[0]
         await memory.confirm(principal=MemoryPrincipal(tenant_id='t', user_id='u', permissions=frozenset({"memory.manage"})), memory_id=first.candidate.memory_id)
         corrected = await memory.correct(principal=principal, memory_id=first.candidate.memory_id, content='user corrected', source_ref='manual:1')
@@ -309,9 +309,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             project_ids=frozenset({"project-a"}),
         )
         turn = MemoryTurn(
-            tenant_id="t", user_id="reader", source_ref="conversation:1",
+            tenant_id="t", user_id="reader", source_ref="session://t/turn-1@1",
             user_message="Project decision",
+            assistant_message="Decision noted.",
             project_id="project-a",
+            completed=True,
         )
         with self.assertRaises(PermissionError):
             await pipeline.propose_from_turn(principal=reader, turn=turn)
@@ -322,9 +324,11 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
             manage_project_ids=frozenset({"project-a"}),
         )
         manager_turn = MemoryTurn(
-            tenant_id="t", user_id="manager", source_ref="conversation:2",
+            tenant_id="t", user_id="manager", source_ref="session://t/turn-2@1",
             user_message="Project decision",
+            assistant_message="Decision noted.",
             project_id="project-a",
+            completed=True,
         )
         records = await pipeline.propose_from_turn(principal=manager, turn=manager_turn)
         self.assertEqual(len(records), 1)
@@ -343,7 +347,7 @@ class MemoryServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await pipeline.propose_from_turn(
                 principal=MemoryPrincipal(tenant_id="t",user_id="u"),
-                turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="conversation:1",user_message="policy"),
+                turn=MemoryTurn(tenant_id="t",user_id="u",source_ref="session://t/turn-1@1",user_message="policy",assistant_message="understood",completed=True),
             )
 
     async def test_conflict_resolution_does_not_cross_memory_scope_ids(self):

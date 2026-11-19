@@ -29,15 +29,11 @@ class PostgresApprovalVerifier:
                       AND approval_id = %s
                       AND action_hash = %s
                       AND policy_version = %s
-                      AND run_id IS NOT DISTINCT FROM %s
                       AND status = 'approved'
                       AND expires_at > now()
                     RETURNING approval_id
                     """,
-                    (
-                        tenant_id, UUID(approval_id), action_digest, policy_version,
-                        UUID(run_id) if run_id is not None else None,
-                    ),
+                    (tenant_id, UUID(approval_id), action_digest, policy_version),
                 )
                 return await cursor.fetchone() is not None
 

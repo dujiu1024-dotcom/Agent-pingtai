@@ -18,11 +18,12 @@ describe('route configuration', () => {
     ).toBe(true)
   })
 
-  it('provides exactly three primary navigation sections', () => {
+  it('provides exactly four primary navigation sections', () => {
     expect(getVisibleNavigation(false).map((group) => group.id)).toEqual([
       'workspace',
       'operations',
       'administration',
+      'global',
     ])
   })
 

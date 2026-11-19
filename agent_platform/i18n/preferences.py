@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from agent_platform.i18n.context import LocaleContext, locale_context
 
-_REGION = re.compile(r"[A-Z]{2}\\Z")
+_REGION = re.compile(r"^[A-Z]{2}$")
 
 
 @dataclass(frozen=True)

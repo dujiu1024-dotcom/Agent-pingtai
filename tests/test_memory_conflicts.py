@@ -65,8 +65,8 @@ class MemoryConflictResolverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             {(item.memory_id, item.version, item.source_ref) for item in history[0].sources},
             {
-                (active.candidate.memory_id, active.version, "session:one"),
-                (conflict.candidate.memory_id, conflict.version, "session:two"),
+                (active.candidate.memory_id, active.version, "session://tenant-a/message-1@1"),
+                (conflict.candidate.memory_id, conflict.version, "session://tenant-a/message-2@3"),
             },
         )
 

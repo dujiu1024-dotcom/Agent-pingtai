@@ -55,6 +55,7 @@ from agent_platform.memory.postgres_repository import PostgresMemoryRepository
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.prompt_store import PostgresPromptRegistry
 from agent_platform.observability.evaluation_store import PostgresEvaluationRepository
+from agent_platform.observability.operational_health import OperationalHealthMonitor
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.production_config import ProductionSettings, load_production_settings
 from agent_platform.runtime.lifecycle import RunLifecycleManager
@@ -155,7 +156,7 @@ def create_production_app(
     quota_service = QuotaService(quota_store)
     quota_policy_repository = PostgresQuotaPolicyRepository(connection_factory)
     quota_policy_service = QuotaPolicyService(quota_policy_repository)
-    quota_maintenance_worker = QuotaReservationMaintenanceWorker(quota_service)
+    quota_reservation_worker = QuotaReservationMaintenanceWorker(quota_service)
     audit_writer = PostgresAuditWriter(connection_factory)
     audit_reader = PostgresAuditReader(connection_factory)
     identity_audit_reader = PostgresIdentityAuditReader(connection_factory)
@@ -163,6 +164,77 @@ def create_production_app(
     prompt_registry = PostgresPromptRegistry(connection_factory)
     evaluation_repository = PostgresEvaluationRepository(connection_factory)
     metrics_exporter = PrometheusClientMetricsRecorder()
+
+    # ------------------------------------------------------------------ observability wiring
+    import asyncio as _asyncio, os as _os, shutil as _shutil, ssl as _ssl
+    import urllib.request as _ur
+    from datetime import datetime as _dt, timezone as _tz
+
+    class _InMemoryAlertStore:
+        def __init__(self) -> None:
+            self._open: dict[tuple[str, str], dict[str, Any]] = {}
+
+        async def list_open(self, *, scope_key: str, limit: int = 100) -> list[dict[str, Any]]:
+            rows = [v for (sk, _), v in self._open.items() if sk == scope_key]
+            rows.sort(key=lambda r: r.get("occurred_at", ""), reverse=True)
+            return rows[:limit]
+
+        async def acknowledge(self, event_id: str, *, scope_key: str, actor_id: str, now: datetime) -> bool:
+            key = (scope_key, event_id)
+            row = self._open.get(key)
+            if row is None:
+                return False
+            row["status"] = "acknowledged"
+            row["acknowledged_by"] = actor_id
+            row["acknowledged_at"] = now.isoformat()
+            self._open.pop(key, None)
+            return True
+
+        async def resolve(self, event_id: str, *, scope_key: str, actor_id: str, now: datetime) -> bool:
+            key = (scope_key, event_id)
+            row = self._open.get(key)
+            if row is None:
+                return False
+            row["status"] = "resolved"
+            row["resolved_by"] = actor_id
+            row["resolved_at"] = now.isoformat()
+            self._open.pop(key, None)
+            return True
+
+    alert_store: Any = _InMemoryAlertStore()
+
+    def _probe_fs_disk(path: str = ".") -> dict[str, float]:
+        try:
+            usage = _shutil.disk_usage(path)
+            return {"used": float(usage.used), "capacity": float(usage.total)}
+        except Exception:
+            return {"used": 0.0, "capacity": 1.0}
+
+    def _probe_cpu() -> dict[str, float]:
+        try:
+            load1 = float(_os.sysconf(_os.sysconf_names.get("SC_LOADAVG", 0))) if "SC_LOADAVG" in _os.sysconf_names else 0.0
+            nproc = float(_os.cpu_count() or 1)
+            return {"used": min(load1, nproc), "capacity": nproc}
+        except Exception:
+            return {"used": 0.0, "capacity": 1.0}
+
+    def _probe_uptime() -> dict[str, float]:
+        try:
+            stat = _os.statvfs("/") if hasattr(_os, "statvfs") else None
+            if stat is None:
+                return {"used": 0.0, "capacity": 1.0}
+            return {"used": stat.f_blocks - stat.f_bavail, "capacity": stat.f_blocks}
+        except Exception:
+            return {"used": 0.0, "capacity": 1.0}
+
+    operational_health_monitor = OperationalHealthMonitor(
+        capacity_probes={
+            "disk": lambda: _probe_fs_disk(),
+            "cpu_load": lambda: _probe_cpu(),
+        },
+        certificate_expiry_probes={},
+    )
+    # -----------------------------------------------------------------------------------------
 
     async def authorize_eval_manage(principal: Any) -> bool:
         try:
@@ -324,6 +396,39 @@ def create_production_app(
     async def authorize_quota_scope(principal: Any, scope_type: str, scope_id: str) -> bool:
         resource_type = {
             "project": "project",
+            "agent": "agent",
+            "run": "run",
+            "model": "model",
+            "queue": "queue",
+            "worker_pool": "worker_pool",
+        }.get(scope_type)
+        if resource_type is None or not scope_id:
+            return False
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef(resource_type, scope_id),
+                permission_key="quota.manage",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    async def authorize_quota_default_policy(principal: Any) -> bool:
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key="quota.manage",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    async def authorize_quota_policy_scope(principal: Any, scope_type: str, scope_id: str) -> bool:
+        resource_type = {
+            "project": "project",
+            "subject": "agent",
             "agent": "agent",
             "run": "run",
             "model": "model",
@@ -510,6 +615,15 @@ def create_production_app(
             await connection.execute("SELECT 1")
         return True
 
+    async def quota_schema_ready() -> bool:
+        connection = await connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                "SELECT to_regclass('public.platform_quota_budgets') IS NOT NULL AS ready"
+            )
+            row = await cursor.fetchone()
+            return bool(row and row["ready"])
+
     app = create_platform_app(
         identity=identity_service,
         identity_repository=identity_repository,
@@ -542,7 +656,10 @@ def create_production_app(
         quota_manage_authorizer=authorize_quota_manage,
         quota_scope_authorizer=authorize_quota_scope,
         quota_audit_writer=quota_audit_writer,
-        quota_reservation_worker=quota_maintenance_worker,
+        quota_reservation_worker=quota_reservation_worker,
+        quota_policy_service=quota_policy_service,
+        quota_default_policy_authorizer=authorize_quota_default_policy,
+        quota_policy_scope_authorizer=authorize_quota_policy_scope,
         blackboard_repository_resolver=resolve_blackboard_repository,
         blackboard_authorizer=authorize_blackboard_scope,
         blackboard_event_replay_resolver=resolve_blackboard_event_replay,
@@ -550,6 +667,8 @@ def create_production_app(
         graph_read_authorizer=authorize_graph_read,
         graph_governance_resolver=resolve_graph_governance,
         metrics_exporter=metrics_exporter,
+        operational_health_monitor=operational_health_monitor,
+        alert_store=alert_store,
         audit_reader=audit_reader,
         identity_audit_reader=identity_audit_reader,
         audit_authorizer=authorize_audit_read,
@@ -562,6 +681,7 @@ def create_production_app(
         readiness_checks={
             "postgres": postgres_ready,
             "redis": redis_client.ping,
+            "quota_schema": quota_schema_ready,
         },
     )
     app.state.production_settings = configured
@@ -575,7 +695,7 @@ def create_production_app(
     app.state.quota_service = quota_service
     app.state.quota_policy_repository = quota_policy_repository
     app.state.quota_policy_service = quota_policy_service
-    app.state.quota_reservation_worker = quota_maintenance_worker
+    app.state.quota_reservation_worker = quota_reservation_worker
     app.state.quota_audit_writer = quota_audit_writer
     if close_redis_on_shutdown:
         async def close_production_resources() -> None:

@@ -251,8 +251,8 @@ class PostgresQuotaStore:
                           storage_bytes,price_card_version,source,root_run_id
                    FROM platform_usage_ledger
                    WHERE tenant_id=%s AND occurred_at >= %s AND occurred_at < %s
-                     AND (%s IS NULL OR run_id=%s)
-                     AND (%s IS NULL OR model_key=%s)
+                     AND (%s::text IS NULL OR run_id=%s)
+                     AND (%s::text IS NULL OR model_key=%s)
                    ORDER BY occurred_at,event_id LIMIT %s""",
                 (tenant_id,start,end,run_id,run_id,model_key,model_key,limit),
             )

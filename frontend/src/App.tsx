@@ -49,6 +49,8 @@ import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
 import { Dashboard } from '@/components/OperationsDashboard'
+import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
+import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -179,6 +181,35 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [navigate])
+  useEffect(() => {
+    const root = document.documentElement
+    const apply = () => {
+      const raw = Math.min(window.innerWidth / 1536, window.innerHeight / 1024)
+      const scale = Number(Math.min(1.5, Math.max(0.7, raw)).toFixed(4))
+      if (window.innerWidth >= 1181) {
+        const offset = Math.max(0, (window.innerWidth / scale - 1536) / 2)
+        const side = Math.max(0, (window.innerWidth - 1536 * scale) / 2)
+        root.style.setProperty('--ui-scale', String(scale))
+        root.style.setProperty('--ui-offset', `${offset.toFixed(2)}px`)
+        root.style.setProperty('--ui-side', `${side.toFixed(2)}px`)
+        root.classList.add('scaled-ui')
+      } else {
+        root.classList.remove('scaled-ui')
+        root.style.removeProperty('--ui-scale')
+        root.style.removeProperty('--ui-offset')
+        root.style.removeProperty('--ui-side')
+      }
+    }
+    apply()
+    window.addEventListener('resize', apply)
+    return () => {
+      window.removeEventListener('resize', apply)
+      root.classList.remove('scaled-ui')
+      root.style.removeProperty('--ui-scale')
+      root.style.removeProperty('--ui-offset')
+      root.style.removeProperty('--ui-side')
+    }
+  }, [])
   const current = [
     ...pageRoutes,
     ...detailRoutes,
@@ -259,7 +290,11 @@ function AppShell({ config }: { config: BootstrapConfig }) {
           aria-expanded={!collapsed}
         >
           <span className="nav-icon" aria-hidden="true">
-            {collapsed ? <ChevronsRight size={17} /> : <ChevronsLeft size={17} />}
+            {collapsed ? (
+              <ChevronsRight size={17} />
+            ) : (
+              <ChevronsLeft size={17} />
+            )}
           </span>
           {!collapsed && <span>收起侧边栏</span>}
         </button>
@@ -398,6 +433,8 @@ function PageView({
     )
   }
   if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/quickstart') return <QuickStartPage />
+  if (route.path === '/workspace/status') return <StatusBoardPage />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />

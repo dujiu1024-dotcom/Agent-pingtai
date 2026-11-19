@@ -2986,7 +2986,7 @@ body {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1180px) {
   .kpi-strip {
     position: static;
     display: grid;
@@ -3160,7 +3160,7 @@ body {
   cursor: pointer;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1180px) {
   .home-hero {
     gap: 16px;
   }
@@ -3732,7 +3732,7 @@ body {
 }
 
 /* ---------- 窄屏回退 ---------- */
-@media (max-width: 1440px) {
+@media (max-width: 1180px) {
   .kpi-card {
     width: 158px;
   }
@@ -4103,7 +4103,7 @@ body {
 }
 
 /* 1200–1340：主视觉与 KPI 改为上下排布，避免横向重叠 */
-@media (max-width: 1340px) {
+@media (max-width: 1180px) {
   .spatial-home {
     grid-template-rows: auto auto auto;
     gap: 16px;
@@ -4163,4 +4163,54 @@ body {
 
 .avatar svg {
   display: block;
+}
+
+
+/* ---------- 按 demo 画布比例整体缩放（1181px 以上） ---------- */
+html.scaled-ui body::before,
+html.scaled-ui body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: var(--ui-side, 0px);
+  background: #aebbd8;
+  pointer-events: none;
+}
+
+html.scaled-ui body::before {
+  left: 0;
+}
+
+html.scaled-ui body::after {
+  right: 0;
+}
+
+html.scaled-ui .app-shell {
+  width: 1536px;
+  margin: 0 auto;
+  min-height: calc(100vh / var(--ui-scale));
+  zoom: var(--ui-scale);
+}
+
+html.scaled-ui .sidebar {
+  left: var(--ui-offset);
+}
+
+html.scaled-ui .spatial-home {
+  min-height: calc(100vh / var(--ui-scale) - 64px);
+}
+
+html.scaled-ui .main-content {
+  padding-bottom: 0;
+}
+
+html.scaled-ui .main-content {
+  min-height: calc(100vh / var(--ui-scale));
+}
+
+html.scaled-ui .subnav {
+  top: 76px;
+  margin: 12px 0 4px;
 }

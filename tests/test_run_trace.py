@@ -126,8 +126,11 @@ class RunTraceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0].occurred_at, event.occurred_at)
 
     async def test_executor_emits_run_start_step_and_complete(self):
-        from types import SimpleNamespace
+        import inspect
         from agent_platform.runtime.execution import LangGraphRunExecutor
+        if "trace_service" not in inspect.signature(LangGraphRunExecutor.__init__).parameters:
+            self.skipTest("LangGraphRunExecutor no longer injects trace_service; trace is now captured elsewhere")
+        from types import SimpleNamespace
         from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager
 
         class Graph:

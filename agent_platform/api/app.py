@@ -135,6 +135,9 @@ def create_platform_app(
     quota_manage_authorizer: Any | None = None,
     quota_scope_authorizer: Any | None = None,
     quota_audit_writer: Any | None = None,
+    quota_policy_service: Any | None = None,
+    quota_default_policy_authorizer: Any | None = None,
+    quota_policy_scope_authorizer: Any | None = None,
     webhook_admin_service: WebhookSubscriptionService | None = None,
     webhook_admin_authorizer: Any | None = None,
     webhook_delivery_store: Any | None = None,
@@ -561,6 +564,9 @@ def create_platform_app(
             authorize_manage=quota_manage_authorizer,
             authorize_scope=quota_scope_authorizer,
             audit_writer=quota_audit_writer or resource_audit_writer,
+            quota_policy_service=quota_policy_service,
+            authorize_default_policy=quota_default_policy_authorizer,
+            authorize_policy_scope=quota_policy_scope_authorizer,
         ))
         if quota_service is not None and quota_manage_authorizer is not None:
             app.include_router(create_quota_admin_router(

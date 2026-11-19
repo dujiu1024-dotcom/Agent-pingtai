@@ -16,7 +16,14 @@ from agent_platform.quotas.service import Budget, QuotaService
 from agent_platform.quotas.usage_reporting import build_usage_report
 
 
-def create_quota_reporting_router(*, quota_store: Any, quota_service: QuotaService | None = None, authorize_manage: Any | None = None, authorize_scope: Any | None = None, audit_writer: Any | None = None) -> APIRouter:
+def create_quota_reporting_router(
+    *, quota_store: Any, quota_service: QuotaService | None = None,
+    authorize_manage: Any | None = None, authorize_scope: Any | None = None,
+    audit_writer: Any | None = None,
+    quota_policy_service: Any | None = None,
+    authorize_default_policy: Any | None = None,
+    authorize_policy_scope: Any | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/quotas", tags=["quotas"])
 
     def actor(request: Request) -> Principal:

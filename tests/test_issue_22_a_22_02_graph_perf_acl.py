@@ -70,7 +70,7 @@ class GraphQueryPerformanceAndAclAcceptanceTests(unittest.IsolatedAsyncioTestCas
             )
             relations.extend(
                 (self.tenant_id, f"leaf-{i:03d}", "references",
-                 f"n{i+00100:05d}", f"n{i+200:05d}", "document", "document",
+                 f"n{i+100:05d}", f"n{i+200:05d}", "document", "document",
                  "{}", "project-a")
                 for i in range(24)
             )

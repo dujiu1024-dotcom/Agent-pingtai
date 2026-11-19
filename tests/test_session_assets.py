@@ -314,7 +314,7 @@ class SessionAssetServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_presigned_download_requires_available_asset(self) -> None:
         class SignedStorage(InMemoryObjectStorage):
-            async def presign_get(self, object_key, *, filename, media_type, expires_in):
+            async def presign_get(self, object_key, *, expires_in=300, filename=None, media_type=None):
                 return "https://objects.example.test/signed"
         storage = SignedStorage()
         service = SessionAssetService(self.repository, storage)
