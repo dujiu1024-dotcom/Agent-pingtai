@@ -100,6 +100,12 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers audit list and read-only detail routes under #811', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    expect(routes.find((route) => route.path === '/admin/audit')?.owner).toBe('#811')
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/admin/audit/audit-123')?.[0].params.auditId).toBe('audit-123')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
