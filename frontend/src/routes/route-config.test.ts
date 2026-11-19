@@ -116,4 +116,13 @@ describe('route configuration', () => {
         .params.providerId,
     ).toBe('provider-7')
   })
+  it('registers the auth-only files workspace and asset deep link under #802', () => {
+    const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
+    expect(filesRoute?.owner).toBe('#802')
+    expect(filesRoute?.authOnly).toBe(true)
+    const detail = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
+    expect(detail?.owner).toBe('#802')
+    expect(detail?.authOnly).toBe(true)
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/files/asset-123')?.[0].params.fileId).toBe('asset-123')
+  })
 })
