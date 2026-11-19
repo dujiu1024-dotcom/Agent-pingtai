@@ -69,7 +69,9 @@ class PageMapContractTests(unittest.TestCase):
         cls.pages = markdown_table(
             cls.page_map,
             "## 2. 页面清单",
-            ("page_id", "页面", "路由", "类型 / 主实体", "主责", "权限关闭", "权限启用"),
+            (
+                "page_id", "页面", "路由", "类型 / 主实体", "主责", "权限关闭", "权限启用"
+            ),
         )
         cls.details = markdown_table(
             cls.page_map,
@@ -155,7 +157,7 @@ class PageMapContractTests(unittest.TestCase):
             self.assertEqual(len(rows), expected_count, section)
             for row in rows:
                 page_id = row[2]
-                path = row[3].split("?", 1)[0]
+                path = row[3].strip("`").split("?", 1)[0]
                 self.assertIn(page_id, canonical, (section, page_id))
                 self.assertEqual(path, canonical[page_id], (section, page_id, path))
 
