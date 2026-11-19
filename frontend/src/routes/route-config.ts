@@ -435,7 +435,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Audit Event 唯一详情路由。',
     parentPath: '/admin/audit',
     entityIdParam: 'eventId',
-    owner: '#751',
+    owner: '#811',
   },
 ]
 
@@ -461,8 +461,8 @@ export const globalRoutes: PageRoute[] = [
     pageId: 'GLOBAL-AUDIT',
     title: '审计中心',
     section: '全局能力',
-    description: '审计事件查询入口。',
-    owner: '#751',
+    description: '只读审计事件列表与详情。',
+    owner: '#811',
   },
   {
     path: '/admin/operations',
