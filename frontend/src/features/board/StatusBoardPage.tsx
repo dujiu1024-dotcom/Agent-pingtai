@@ -539,20 +539,20 @@ export function StatusBoardPage() {
                   serviceFilter === 'all' || row.tone === serviceFilter,
               )
               .map((row) => (
-              <li key={row.name} className={`row--${row.tone}`}>
-                <span className="board-dot" aria-hidden="true" />
-                <strong>{row.name}</strong>
-                <small>{row.detail}</small>
-                <em className={`board-status-label status--${row.tone}`}>
-                  {{
-                    ok: '正常',
-                    down: '异常',
-                    warn: '警告',
-                    off: '尚未接入',
-                  }[row.tone]}
-                </em>
-              </li>
-            ))}
+                <li key={row.name} className={`row--${row.tone}`}>
+                  <span className="board-dot" aria-hidden="true" />
+                  <strong>{row.name}</strong>
+                  <small>{row.detail}</small>
+                  <em className={`board-status-label status--${row.tone}`}>
+                    {{
+                      ok: '正常',
+                      down: '异常',
+                      warn: '警告',
+                      off: '尚未接入',
+                    }[row.tone]}
+                  </em>
+                </li>
+              ))}
           </ul>
         </section>
 
@@ -690,7 +690,10 @@ export function StatusBoardPage() {
           </div>
         </div>
       </section>
-      <p className="board-footnote">绿色仅表示已成功完成探测；红色表示探测确认异常；橙色表示探测失败或数据不完整；灰色表示尚未接入或无法检测。服务数据每 10 秒刷新。</p>
+      <p className="board-footnote">
+        绿色仅表示已成功完成探测；红色表示探测确认异常；橙色表示探测失败或数据不完整；
+        灰色表示尚未接入或无法检测。服务数据每 10 秒刷新。
+      </p>
     </section>
   )
 }
