@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { EmptyState } from '@/components/States'
@@ -95,7 +95,25 @@ export function WorkflowDesignerPage() {
   const [targetId, setTargetId] = useState('')
   const [condition, setCondition] = useState('')
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [notice, setNotice] = useState('本地草稿模式：变更仅保存在当前页面内存中。')
+  const [notice, setNotice] = useState('本地草稿模式：变更保存在当前浏览器；服务端 API 待接入。')
+  const [dragOver, setDragOver] = useState(false)
+  const storageKey = 'agent-platform:workflow-draft:' + (workflowId || 'new')
+  useEffect(() => {
+    // TODO(#758): Replace browser-local persistence with versioned Definition CRUD + ETag.
+    try {
+      const raw = window.localStorage.getItem(storageKey)
+      if (raw) setDraft(JSON.parse(raw) as WorkflowDraft)
+      else setDraft(emptyDraft(workflowId))
+      setSnapshots([])
+    } catch {
+      setDraft(emptyDraft(workflowId))
+      setNotice('浏览器存储不可用，当前仅使用内存草稿。')
+    }
+  }, [storageKey, workflowId])
+  useEffect(() => {
+    try { window.localStorage.setItem(storageKey, JSON.stringify(draft)) }
+    catch { setNotice('浏览器存储不可用；当前修改仅保留在页面内存中。') }
+  }, [draft, storageKey])
   const issues = useMemo(() => validate(draft), [draft])
   const selected = draft.nodes.find((node) => node.id === selectedId)
   const snapshotDiff = (snapshot: Snapshot) =>
@@ -107,10 +125,14 @@ export function WorkflowDesignerPage() {
   const updateDraft = (patch: Partial<WorkflowDraft>) =>
     setDraft((current) => ({ ...current, ...patch }))
   const addNode = (type: NodeKind) => {
-    const node = newNode(type, draft.nodes.length + 1)
+    const nextIndex = draft.nodes.reduce((max, node) => {
+      const match = node.id.match(/-(\d+)$/)
+      return match ? Math.max(max, Number(match[1])) : max
+    }, 0) + 1
+    const node = newNode(type, nextIndex)
     updateDraft({ nodes: [...draft.nodes, node] })
     setSelectedId(node.id)
-    setNotice('已添加本地节点；尚未写入服务端。')
+    setNotice('已添加节点；草稿保存在当前浏览器，尚未写入服务端。')
   }
   const updateNode = (patch: Partial<WorkflowNode>) => {
     if (!selected) return
@@ -134,11 +156,24 @@ export function WorkflowDesignerPage() {
       ...current,
       { version: current.length + 1, savedAt: new Date().toISOString(), draft: clone(draft) },
     ])
-    setNotice('已创建当前会话内的草稿快照；刷新页面后不会保留。')
+    setNotice('已创建本地版本快照；可查看字段差异并恢复，服务端版本仍待接入。')
   }
   const restoreSnapshot = (snapshot: Snapshot) => {
     setDraft(clone(snapshot.draft))
     setNotice('已在本地恢复快照 v' + snapshot.version + '；未调用服务端回滚 API。')
+  }
+
+  if (!workflowId) {
+    return (
+      <section className="page-content workflow-designer">
+        <div className="workflow-heading">
+          <div><p className="eyebrow">ADM-WORKFLOW · ISSUE #758</p><h1>Workflow 定义</h1><p>版本化工作流定义管理入口。后端列表 API 尚未就绪，当前不展示虚构数据。</p></div>
+          <Link className="workflow-primary-link" to="/admin/workflows/new/edit">新建 Workflow 草稿</Link>
+        </div>
+        <EmptyState title="暂无可展示的 Workflow" description="Workflow Definition 列表 API 尚未接入。你可以先创建本地草稿并使用可视化设计器。" />
+        <p className="workflow-footer-note">TODO(#758)：接入定义列表、版本摘要、状态过滤、权限控制与分页；列表为空不代表服务端没有定义。</p>
+      </section>
+    )
   }
 
   return (
@@ -173,17 +208,17 @@ export function WorkflowDesignerPage() {
       <div className="workflow-workspace">
         <aside className="workflow-palette">
           <h2>节点 Palette</h2>
-          <p>选择节点加入画布</p>
+          <p>拖拽节点到画布，或点击快速添加</p>
           {palette.map((item) => (
-            <button type="button" className="workflow-palette-item" key={item.type} onClick={() => addNode(item.type)}>
+            <button type="button" draggable className="workflow-palette-item" key={item.type} onDragStart={(event) => { event.dataTransfer.setData('application/x-workflow-node', item.type); event.dataTransfer.effectAllowed = 'copy' }} onClick={() => addNode(item.type)}>
               <strong>{item.title}</strong><small>{item.detail}</small>
             </button>
           ))}
           <div className="workflow-api-note">TODO(#758)：从后端 Node Registry 读取 node_type、版本、端口及 config_schema；未知节点禁止发布。</div>
         </aside>
 
-        <section className="workflow-canvas" aria-label="Workflow 画布">
-          <div className="workflow-canvas-header"><div><h2>流程画布</h2><p>节点与连线只保存在当前页面状态</p></div><span>LangGraph StateGraph target</span></div>
+        <section className={dragOver ? 'workflow-canvas drag-over' : 'workflow-canvas'} aria-label="Workflow 画布" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDragOver(true) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragOver(false) }} onDrop={(event) => { event.preventDefault(); const kind = event.dataTransfer.getData('application/x-workflow-node') as NodeKind; if (palette.some((item) => item.type === kind)) addNode(kind); setDragOver(false) }}>
+          <div className="workflow-canvas-header"><div><h2>流程画布</h2><p>拖拽 Palette 节点至此；节点可选择并配置</p></div><span>LangGraph StateGraph target</span></div>
           {draft.nodes.length === 0 ? (
             <EmptyState title="画布为空" description="从左侧 Palette 添加 Agent、Tool、条件、并行、Join 或审批节点。" />
           ) : (
@@ -195,6 +230,7 @@ export function WorkflowDesignerPage() {
                     <strong>{node.name}</strong>
                     <small>{node.id}</small>
                     <span className="workflow-node-risk">风险：{node.risk}</span>
+                    <span className="workflow-node-ports">端口：{node.ports.join(', ') || '未配置'}</span>
                   </button>
                   {index < draft.nodes.length - 1 && <span className="workflow-node-arrow" aria-hidden="true">↓</span>}
                 </div>
@@ -213,7 +249,7 @@ export function WorkflowDesignerPage() {
               <input aria-label="条件表达式" value={condition} onChange={(event) => setCondition(event.target.value)} placeholder="条件（可选）" />
               <button type="button" onClick={addEdge} disabled={!sourceId || !targetId || sourceId === targetId}>添加连线</button>
             </div>
-            {draft.edges.length ? <ul>{draft.edges.map((edge) => <li key={edge.id}>{edge.source} → {edge.target}{edge.condition ? ' · ' + edge.condition : ''}</li>)}</ul> : <p className="workflow-muted">尚无连线。</p>}
+            {draft.edges.length ? <ul>{draft.edges.map((edge) => <li key={edge.id}>{edge.source} → {edge.target}{edge.condition ? ' · ' + edge.condition : ''} <button type="button" aria-label={'删除连线 ' + edge.id} onClick={() => updateDraft({ edges: draft.edges.filter((item) => item.id !== edge.id) })}>删除</button></li>)}</ul> : <p className="workflow-muted">尚无连线。</p>}
           </div>
         </section>
 
@@ -246,7 +282,7 @@ export function WorkflowDesignerPage() {
         </section>
         <section className="workflow-versions">
           <h2>草稿快照与版本差异</h2>
-          {snapshots.length ? snapshots.map((snapshot) => <div className="workflow-version-row" key={snapshot.version}><div><strong>本地快照 v{snapshot.version}</strong><small>{new Date(snapshot.savedAt).toLocaleString()}</small><small>与当前草稿差异：{snapshotDiff(snapshot).join('、') || '无'}</small></div><button type="button" onClick={() => restoreSnapshot(snapshot)}>恢复到编辑器</button></div>) : <p className="workflow-muted">尚无本地快照。服务端版本列表、持久化 diff、发布与回滚 API 待接入。</p>}
+          {snapshots.length ? snapshots.map((snapshot) => <div className="workflow-version-row" key={snapshot.version}><div><strong>本地快照 v{snapshot.version}</strong><small>{new Date(snapshot.savedAt).toLocaleString()}</small><small>与当前草稿差异：{snapshotDiff(snapshot).join('、') || '无'}</small></div><button type="button" onClick={() => restoreSnapshot(snapshot)}>恢复到编辑器</button></div>) : <p className="workflow-muted">尚无本地快照。保存快照后可查看字段级差异与恢复；服务端版本列表、持久化 diff、发布与回滚 API 待接入。</p>}
         </section>
       </div>
       <p className="workflow-status" role="status">{notice}</p>
