@@ -37,3 +37,6 @@ legacy/v1-archive/agency/state/
 .trae-html-share-packages/
 .git-sync.lock
 backups/
+frontend/node_modules/
+frontend/dist/
+frontend/package-lock.json
