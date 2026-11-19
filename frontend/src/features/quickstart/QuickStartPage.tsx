@@ -77,7 +77,9 @@ export function QuickStartPage() {
   const [agentId, setAgentId] = useState('')
   const [message, setMessage] = useState('')
   const [projectId, setProjectId] = useState('')
-  const [priority, setPriority] = useState<'low' | 'normal' | 'high' | 'urgent'>('normal')
+  const [priority, setPriority] = useState<
+    'low' | 'normal' | 'high' | 'urgent'
+  >('normal')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -161,7 +163,29 @@ export function QuickStartPage() {
         </div>
       )}
 
-      <section className="qs-examples" aria-label="常用指令示例"><strong>常用指令</strong><div><button type="button" onClick={() => { setMessage("帮我分析最近一周系统运行情况。"); setConfirmOpen(false) }}>帮我分析最近一周系统运行情况。</button><button type="button" onClick={() => { setMessage("检查所有执行失败的任务并整理原因。"); setConfirmOpen(false) }}>检查所有执行失败的任务并整理原因。</button><button type="button" onClick={() => { setMessage("汇总今天所有 Agent 的工作进度。"); setConfirmOpen(false) }}>汇总今天所有 Agent 的工作进度。</button><button type="button" onClick={() => { setMessage("帮我整理本周项目进展报告。"); setConfirmOpen(false) }}>帮我整理本周项目进展报告。</button><button type="button" onClick={() => { setMessage("检查任务执行队列是否存在积压。"); setConfirmOpen(false) }}>检查任务执行队列是否存在积压。</button></div></section>
+      <section className="qs-examples" aria-label="常用指令示例">
+        <strong>常用指令</strong>
+        <div>
+          {[
+            '帮我分析最近一周系统运行情况。',
+            '检查所有执行失败的任务并整理原因。',
+            '汇总今天所有 Agent 的工作进度。',
+            '帮我整理本周项目进展报告。',
+            '检查任务执行队列是否存在积压。',
+          ].map((example) => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => {
+                setMessage(example)
+                setConfirmOpen(false)
+              }}
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="qs-steps">
         <section className="qs-card">
@@ -223,7 +247,10 @@ export function QuickStartPage() {
             rows={7}
             placeholder="告诉平台你希望完成什么，例如：分析最近一周系统运行情况，找出主要风险并给出处理建议。"
             value={message}
-            onChange={(event) => { setMessage(event.target.value); setConfirmOpen(false) }}
+            onChange={(event) => {
+              setMessage(event.target.value)
+              setConfirmOpen(false)
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
@@ -236,13 +263,42 @@ export function QuickStartPage() {
         <section className="qs-card qs-card--settings">
           <header className="qs-card-head">
             <span className="qs-step">3</span>
-            <div><h2>补充任务信息</h2><p>项目为可选项；优先级随任务提交。</p></div>
+            <div>
+              <h2>补充任务信息</h2>
+              <p>项目为可选项；优先级随任务提交。</p>
+            </div>
           </header>
-          <label className="qs-field">项目编号（可选）<input value={projectId} onChange={(event) => setProjectId(event.target.value)} placeholder="不填写则不关联项目" /></label>
-          <label className="qs-field">任务优先级<select value={priority} onChange={(event) => setPriority(event.target.value as typeof priority)}><option value="low">低</option><option value="normal">普通</option><option value="high">高</option><option value="urgent">紧急</option></select></label>
+          <label className="qs-field">
+            项目编号（可选）
+            <input
+              value={projectId}
+              onChange={(event) => setProjectId(event.target.value)}
+              placeholder="不填写则不关联项目"
+            />
+          </label>
+          <label className="qs-field">
+            任务优先级
+            <select
+              value={priority}
+              onChange={(event) =>
+                setPriority(event.target.value as typeof priority)
+              }
+            >
+              <option value="low">低</option>
+              <option value="normal">普通</option>
+              <option value="high">高</option>
+              <option value="urgent">紧急</option>
+            </select>
+          </label>
         </section>
         <section className="qs-card qs-card--submit">
-          <header className="qs-card-head"><span className="qs-step">4</span><div><h2>确认并下达</h2><p>提交前先核对任务目标和执行对象。</p></div></header>
+          <header className="qs-card-head">
+            <span className="qs-step">4</span>
+            <div>
+              <h2>确认并下达</h2>
+              <p>提交前先核对任务目标和执行对象。</p>
+            </div>
+          </header>
           <button
             className="qs-submit"
             type="button"
@@ -255,11 +311,54 @@ export function QuickStartPage() {
             {submitting ? '提交中…' : '检查任务并确认'}
           </button>
           {confirmOpen && !result && (
-            <div className="qs-confirm" role="region" aria-label="任务确认">
-              <strong>请确认任务信息</strong><p>{message.trim()}</p>
-              <dl><div><dt>执行智能体</dt><dd>{selected ? agentName(selected) : '未选择'}</dd></div><div><dt>所属项目</dt><dd>{projectId.trim() || '不关联项目'}</dd></div><div><dt>优先级</dt><dd>{{ low: '低', normal: '普通', high: '高', urgent: '紧急' }[priority]}</dd></div></dl>
-              <p className="qs-risk-note">确认下达不替代高风险操作所需的正式审批。</p>
-              <div className="qs-confirm-actions"><button type="button" className="qs-secondary" onClick={() => setConfirmOpen(false)}>返回修改</button><button type="button" className="qs-submit" disabled={!canSubmit} onClick={() => void submit()}>{submitting ? '提交中…' : '确认下达'}</button></div>
+            <div
+              className="qs-confirm"
+              role="region"
+              aria-label="任务确认"
+            >
+              <strong>请确认任务信息</strong>
+              <p>{message.trim()}</p>
+              <dl>
+                <div>
+                  <dt>执行智能体</dt>
+                  <dd>{selected ? agentName(selected) : '未选择'}</dd>
+                </div>
+                <div>
+                  <dt>所属项目</dt>
+                  <dd>{projectId.trim() || '不关联项目'}</dd>
+                </div>
+                <div>
+                  <dt>优先级</dt>
+                  <dd>
+                    {{
+                      low: '低',
+                      normal: '普通',
+                      high: '高',
+                      urgent: '紧急',
+                    }[priority]}
+                  </dd>
+                </div>
+              </dl>
+              <p className="qs-risk-note">
+                确认下达不替代高风险操作所需的正式审批。
+              </p>
+              <div className="qs-confirm-actions">
+                <button
+                  type="button"
+                  className="qs-secondary"
+                  onClick={() => setConfirmOpen(false)}
+                >
+                  返回修改
+                </button>
+                <button
+                  type="button"
+                  className="qs-submit"
+                  disabled={!canSubmit}
+                  onClick={() => void submit()}
+                >
+                  {submitting ? '提交中…' : '确认下达'}
+                </button>
+              </div>
             </div>
           )}
           {submitError && (
