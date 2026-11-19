@@ -26,6 +26,18 @@ describe('route configuration', () => {
     ])
   })
 
+  it('registers system settings as a directly reachable instance page', () => {
+    const route = getAllRoutes(false).find((item) => item.path === '/admin/settings')
+    expect(route?.pageId).toBe('SYS-SETTINGS')
+    expect(route?.owner).toBe('#812')
+    expect(
+      matchRoutes(
+        getAllRoutes(false).map((item) => ({ path: item.path })),
+        '/admin/settings',
+      ),
+    ).toBeTruthy()
+  })
+
   it('uses the frozen dashboard route as the default route target', () => {
     expect(
       getAllRoutes(false).find((route) => route.pageId === 'WS-OVERVIEW')?.path,
