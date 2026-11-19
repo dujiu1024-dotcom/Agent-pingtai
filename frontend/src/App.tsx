@@ -13,6 +13,7 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import {
   EmptyState,
   ErrorState,
@@ -313,6 +314,8 @@ function PageView({
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
+  if (route.path === '/admin/organization') return <OrganizationAccessPage page="organization" />
+  if (route.path === '/admin/access-control') return <OrganizationAccessPage page="rbac" />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
