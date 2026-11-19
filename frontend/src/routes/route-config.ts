@@ -166,6 +166,7 @@ export const pageRoutes: PageRoute[] = [
     section: '智能体运营',
     description: '会话列表、消息时间线与关联文件资产。',
     owner: '#801',
+    authOnly: true,
   },
   {
     path: '/operations/files',
@@ -334,6 +335,7 @@ export const detailRoutes: PageRoute[] = [
     parentPath: '/operations/sessions',
     entityIdParam: 'sessionId',
     owner: '#801',
+    authOnly: true,
   },
   {
     path: '/operations/knowledge-bases/:collectionId',
