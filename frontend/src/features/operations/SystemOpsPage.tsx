@@ -104,12 +104,6 @@ function Panel({
 }
 
 export function SystemOpsPage() {
-  const readiness = useQuery({
-    queryKey: ['system-ops', 'readiness'],
-    queryFn: () => apiClient.get<HealthResult>('/health/ready'),
-    refetchInterval: 30_000,
-    retry: false,
-  })
   const capacity = useQuery({
     queryKey: ['system-ops', 'capacity'],
     queryFn: () => apiClient.get<HealthResult>('/platform/v1/observability/health/capacity'),
@@ -141,7 +135,6 @@ export function SystemOpsPage() {
     [metricRows],
   )
   const refreshAll = () => {
-    void readiness.refetch()
     void capacity.refetch()
     void metrics.refetch()
     void jobs.refetch()
@@ -161,9 +154,9 @@ export function SystemOpsPage() {
 
       <div className="system-ops-summary">
         <article className="system-ops-summary-card">
-          <span>服务就绪</span>
-          <Status value={readiness.data?.status ?? (readiness.isError ? 'unavailable' : 'loading')} />
-          <small>{readiness.data?.reason ?? (readiness.isError ? errorMessage(readiness.error) : '依赖检查状态')}</small>
+          <span>服务健康</span>
+          <Status value={capacity.data?.status ?? (capacity.isError ? 'unavailable' : 'loading')} />
+          <small>{capacity.isError ? errorMessage(capacity.error) : '容量监控器的服务端评估结果'}</small>
         </article>
         <article className="system-ops-summary-card">
           <span>容量健康</span>
