@@ -173,7 +173,7 @@ export function OfficeWorkspace() {
         <div className="office-viewport">
           <div className="office-viewport-caption"><span><i /> 3D SPACE</span><span>拖拽旋转 · 滚轮缩放 · 点击工位查看</span></div>
           <div className={view === 'top' ? 'office-canvas office-canvas-top' : 'office-canvas'}>
-            <Canvas shadows dpr={[1, 1.6]} camera={{ position: [13, 12, 16], fov: 38 }}>
+            <Canvas shadows dpr={[1, 1.6]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
               <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} />
             </Canvas>
           </div>
