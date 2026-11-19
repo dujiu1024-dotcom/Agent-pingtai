@@ -22,6 +22,7 @@ import {
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
+import { AgentRuntimeList, AgentRuntimeDetail } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
   TaskCommandCenter,
@@ -316,6 +317,8 @@ function PageView({
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
+  if (route.path === '/operations/agents') return <AgentRuntimeList />
+  if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
