@@ -43,6 +43,7 @@ jobs:
           tests.test_legacy_identity_revoke
           tests.test_legacy_identity_migration
           tests.test_platform_api_app
+          tests.test_issue_755_c_dual_mode_integration
           -v
 
   test:
