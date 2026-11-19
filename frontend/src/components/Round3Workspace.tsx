@@ -12,9 +12,9 @@ const agents = [
   { rank: '03', name: '代码助手', tone: 'green' },
 ]
 const activity = [
-  { time: '—', label: '任务执行完成后，最新动态会显示在这里', tone: 'blue' },
-  { time: '—', label: 'Agent 配置更新事件', tone: 'violet' },
-  { time: '—', label: 'Workflow 创建与发布事件', tone: 'green' },
+  { time: '—', label: '任务事件流等待接入', tone: 'blue' },
+  { time: '—', label: 'Agent 更新事件等待接入', tone: 'violet' },
+  { time: '—', label: 'Workflow 发布事件等待接入', tone: 'green' },
 ]
 
 function KpiCard({ icon, label, unit, tone }: { icon: string; label: string; unit: string; tone: string }) {
