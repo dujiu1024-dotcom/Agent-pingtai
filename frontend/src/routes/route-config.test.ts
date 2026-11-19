@@ -16,7 +16,14 @@ describe('route configuration', () => {
   it('registers the Round 3 /home and /office entry routes', () => {
     expect(round3Routes.map((route) => route.path)).toEqual(['/home', '/office'])
     expect(getAllRoutes(false)).toEqual(expect.arrayContaining(round3Routes))
-    expect(isCanonicalRouteSetValid([...round3Routes, ...pageRoutes, ...globalRoutes, ...authRoutes])).toBe(true)
+    expect(
+      isCanonicalRouteSetValid([
+        ...round3Routes,
+        ...pageRoutes,
+        ...globalRoutes,
+        ...authRoutes,
+      ]),
+    ).toBe(true)
   })
 
   it('keeps canonical page ids and paths unique', () => {
