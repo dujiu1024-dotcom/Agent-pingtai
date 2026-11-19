@@ -260,16 +260,6 @@ export const pageRoutes: PageRoute[] = [
     owner: '#746',
   },
   {
-    path: '/admin/agents/:agentId',
-    pageId: 'ADM-AGENT-DETAIL',
-    title: 'Agent 定义详情',
-    section: '平台管理',
-    description: 'Agent 定义详情、配置与版本历史。',
-    parentPath: '/admin/agents',
-    entityIdParam: 'agentId',
-    owner: '#757',
-  },
-  {
     path: '/admin/workflows/:workflowId/edit',
     pageId: 'ADM-WORKFLOW-EDITOR',
     title: 'Workflow 设计器',
@@ -317,6 +307,16 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/admin/agents/:agentId',
+    pageId: 'ADM-AGENT-DETAIL',
+    title: 'Agent 定义详情',
+    section: '平台管理',
+    description: 'Agent 定义详情、配置与版本历史。',
+    parentPath: '/admin/agents',
+    entityIdParam: 'agentId',
+    owner: '#757',
+  },
   {
     path: '/operations/knowledge-bases/:collectionId',
     pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
