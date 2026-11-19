@@ -1129,3 +1129,125 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Issue #812 — read-only instance settings */
+.system-settings-page {
+  max-width: 1120px;
+}
+.system-settings-section {
+  margin: 0 0 18px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 5px 18px #263b6410;
+}
+.system-settings-section > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.system-settings-section h2 {
+  margin: 0 0 6px;
+  color: #1c2540;
+  font-size: 16px;
+}
+.system-settings-section header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.system-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.system-setting-value {
+  display: grid;
+  gap: 10px;
+  min-height: 92px;
+  align-content: center;
+  padding: 16px;
+  border: 1px solid #e9edf5;
+  border-radius: 9px;
+  background: #f8faff;
+}
+.system-setting-value span,
+.settings-capability-list li > span:first-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+.system-setting-value strong {
+  color: #1c2540;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.settings-status {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 20px;
+  background: #f0f2f6;
+  color: #69758a;
+  font-size: 11px;
+  font-weight: 650;
+}
+.settings-status.enabled {
+  background: #eaf2ff;
+  color: #2f6af0;
+}
+.settings-capability-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-capability-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+}
+.settings-capability-list li > span:first-child {
+  color: #1c2540;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.settings-empty,
+.settings-readonly-note {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+  border: 1px dashed #dce3ef;
+  border-radius: 9px;
+  background: #f8faff;
+}
+.settings-empty strong,
+.settings-readonly-note strong {
+  color: #1c2540;
+  font-size: 13px;
+}
+.settings-empty span,
+.settings-readonly-note span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+@media (max-width: 720px) {
+  .system-settings-section {
+    padding: 16px;
+  }
+  .system-settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .system-settings-section > header {
+    flex-direction: column;
+  }
+}
