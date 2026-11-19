@@ -336,7 +336,9 @@ export function StatusBoardPage() {
         (Date.parse(b.started_at ?? b.created_at ?? '') || 0),
     )
     .slice(0, 6)
-  const runningCount = tasks.filter((task) => task.status === 'running').length
+  const runningCount = tasks.filter(
+    (task) => task.status === 'running',
+  ).length
   const queuedCount = tasks.filter((task) =>
     ['queued', 'pending'].includes(task.status ?? ''),
   ).length
@@ -355,7 +357,9 @@ export function StatusBoardPage() {
   const offCount = services.filter((row) => row.tone === 'off').length
   const confirmedProbe = Boolean(liveQuery.data || readyQuery.data)
   const overall: { tone: Tone; title: string; summary: string } =
-    liveQuery.isPending || readyQuery.isPending || capabilitiesQuery.isPending
+    liveQuery.isPending ||
+    readyQuery.isPending ||
+    capabilitiesQuery.isPending
       ? {
           tone: 'warn',
           title: '正在检测',
@@ -476,7 +480,9 @@ export function StatusBoardPage() {
                 <strong>任务失败：{taskLabel(task)}</strong>
                 <span>{task.last_error ?? '任务执行失败，需查看任务详情。'}</span>
                 <small>
-                  <Link to={`/operations/tasks/${encodeURIComponent(task.task_id)}`}>
+                  <Link
+                    to={`/operations/tasks/${encodeURIComponent(task.task_id)}`}
+                  >
                     查看任务详情
                   </Link>
                 </small>
