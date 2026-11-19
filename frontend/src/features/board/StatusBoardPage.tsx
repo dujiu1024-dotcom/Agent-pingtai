@@ -469,6 +469,30 @@ export function StatusBoardPage() {
                 </li>
               ))}
           </ul>
+        ) : failedTasks.length > 0 || deadLetters.length > 0 ? (
+          <ul className="board-priority-list">
+            {failedTasks.map((task) => (
+              <li key={task.task_id}>
+                <strong>任务失败：{taskLabel(task)}</strong>
+                <span>{task.last_error ?? '任务执行失败，需查看任务详情。'}</span>
+                <small>
+                  <Link to={`/operations/tasks/${encodeURIComponent(task.task_id)}`}>
+                    查看任务详情
+                  </Link>
+                </small>
+              </li>
+            ))}
+            {deadLetters.map((item) => (
+              <li key={item.run_id}>
+                <strong>存在未处理的死信消息</strong>
+                <span>{item.reason ?? '消息进入死信队列，等待人工检查。'}</span>
+                <small>
+                  执行标识：{item.run_id} · 重试 {item.attempt_count ?? 0}/
+                  {item.max_attempts ?? 0}
+                </small>
+              </li>
+            ))}
+          </ul>
         ) : !confirmedProbe || offCount + warnCount > 0 ? (
           <p className="board-muted">
             监控数据尚未完整接入，暂时无法判断平台整体健康状态。请优先补齐未接入服务的探针。
