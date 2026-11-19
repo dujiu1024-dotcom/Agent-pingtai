@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { ApiError, apiClient } from '@/lib/api'
 import './knowledge-workbench.css'
 
@@ -143,7 +143,6 @@ function CollectionDetail({ collectionId }: { collectionId: string }) {
 }
 
 function DocumentDetail({ documentId }: { documentId: string }) {
-  const [searchParams] = useSearchParams()
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [chunks, setChunks] = useState<Chunk[]>([])
   const [error, setError] = useState('')
