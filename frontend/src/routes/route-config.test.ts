@@ -93,6 +93,15 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
+  it('registers organization and RBAC admin pages in auth mode', () => {
+    const routes = getAllRoutes(true)
+    expect(routes.find((route) => route.path === '/admin/organization')?.pageId).toBe('ADM-ORG')
+    expect(routes.find((route) => route.path === '/admin/organization')?.authOnly).toBe(true)
+    expect(routes.find((route) => route.path === '/admin/access-control')?.pageId).toBe('ADM-RBAC')
+    expect(routes.find((route) => route.path === '/admin/access-control')?.authOnly).toBe(true)
+    expect(matchRoutes([{ path: '/admin/rbac' }], '/admin/rbac')?.[0].pathname).toBe('/admin/rbac')
+  })
+
   it('registers Knowledge collection and document deep links under #760', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     expect(matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0].params.collectionId).toBe('collection-123')
