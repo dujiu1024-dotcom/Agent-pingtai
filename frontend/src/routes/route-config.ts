@@ -166,7 +166,6 @@ export const pageRoutes: PageRoute[] = [
     section: '智能体运营',
     description: '文件和运行产物入口。',
     owner: '#802',
-    authOnly: true,
   },
   {
     path: '/admin/agents',
