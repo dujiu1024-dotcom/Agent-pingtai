@@ -128,7 +128,7 @@ derived from the Principal. The UI must not expose unsupported actions as active
 
 ## 双认证模式端点矩阵（UI-G1-755-c）
 
-矩阵只记录已在生产 composition 中核实的挂载行为；“未挂载/未验证”不等于 no-auth 已通过。集成测试使用 HTTPS TestClient、无 Authorization/Cookie 头，auth.enabled=false 且不提供 identity service/repository。
+矩阵只记录已在生产 composition 中核实的挂载行为；“未挂载/未验证”不等于 no-auth 已通过。集成测试使用 HTTPS TestClient、无 Authorization/Cookie 头，auth.enabled=false、identity service=None、无 Authorization/Cookie；当前 app composition 仍要求 identity_repository 用于注册 Knowledge/Memory resolver，因此本测试不声称“无 identity repository 启动”已通过。
 
 | 领域 / endpoint | 注册条件与实现位置 | auth=false 无 token | auth=true | 当前集成证据 |
 |---|---|---|---|---|
@@ -146,7 +146,7 @@ derived from the Principal. The UI must not expose unsupported actions as active
 ### 集成测试解释与边界
 
 - auth.enabled=false 的 middleware 对 /api 不施加身份门槛，但这不代表每个 handler 已移除 Principal 依赖。必须请求真实 handler；仅验证 middleware 不返回 401 不足以证明 no-auth。
-- 当前无 token 成功证据限于 Bootstrap、Workbench capabilities、Office state 三个真实端点。Office 使用显式 instance_tenant_id，没有创建匿名 Principal 或默认用户。
+- 当前无 token 成功证据限于 Bootstrap、Workbench capabilities、Office state 三个真实端点。测试不提供 identity service、token 或 cookie；由于当前 composition 仍要求 identity_repository 注册 Knowledge/Memory resolver，尚不能证明无 identity repository 的干净启动。Office 使用显式 office_tenant_resolver 返回实例 tenant，没有创建匿名 Principal 或默认用户。
 - Run、Approvals、Knowledge upload、Sessions/Files 等路由在 P0-2 完成逐路由 context 适配前不得标记通过。不存在或未配置的路由应标记 unavailable，而不是把 404 当成 no-auth 成功。
 - auth.enabled=true 的既有认证基线由 test_business_routes_require_authenticated_session、test_authenticated_session_is_resolved_into_business_principal、test_auth_me_and_security_headers_are_available 及相关 RBAC/tenant isolation tests 覆盖。本矩阵不替代授权测试。
 - CORS allowlist、共享 Redis rate limiting、安全响应头、输入校验、上传大小/类型限制、业务不变量和审计不因 auth.enabled=false 关闭。
