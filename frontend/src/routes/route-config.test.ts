@@ -104,6 +104,9 @@ describe('route configuration', () => {
     const routes = [...pageRoutes, ...detailRoutes]
     expect(routes.find((route) => route.path === '/operations/sessions')?.owner).toBe('#801')
     expect(routes.find((route) => route.path === '/operations/sessions/:sessionId')?.owner).toBe('#801')
+    expect(routes.find((route) => route.path === '/operations/sessions')?.authOnly).toBe(true)
+    expect(getVisibleNavigation(false).flatMap((group) => group.items).map((route) => route.path)).not.toContain('/operations/sessions')
+    expect(getVisibleNavigation(true).flatMap((group) => group.items).map((route) => route.path)).toContain('/operations/sessions')
     expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
   })
 
