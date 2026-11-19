@@ -161,6 +161,12 @@ export function StatusBoardPage() {
     refetchInterval: 10_000,
     retry: false,
   })
+  const capacityQuery = useQuery({
+    queryKey: ['board', 'capacity'],
+    queryFn: () => apiClient.get<{ status?: string; capacity?: Record<string, unknown> }>('/platform/v1/observability/health/capacity'),
+    refetchInterval: 30_000,
+    retry: false,
+  })
   const tasksQuery = useQuery({
     queryKey: ['board', 'tasks'],
     queryFn: () => apiClient.get<{ items?: TaskRecord[] }>(tasksPath),
@@ -223,9 +229,9 @@ export function StatusBoardPage() {
     if (!features) {
       rows.push({
         name: '能力清单',
-        tone: capabilitiesQuery.isError ? 'down' : 'warn',
+        tone: 'warn',
         detail: capabilitiesQuery.isError
-          ? errorText(capabilitiesQuery.error)
+          ? `能力清单不可读：${errorText(capabilitiesQuery.error)}`
           : '读取中…',
       })
     } else {
@@ -241,7 +247,7 @@ export function StatusBoardPage() {
 
     rows.push({
       name: '任务中心',
-      tone: tasksQuery.isSuccess ? 'ok' : tasksQuery.isError ? 'down' : 'warn',
+      tone: tasksQuery.isSuccess ? 'ok' : tasksQuery.isError ? 'warn' : 'warn',
       detail: tasksQuery.isSuccess
         ? '任务列表可读取'
         : tasksQuery.isError
@@ -263,6 +269,13 @@ export function StatusBoardPage() {
           ? '未配置或不可读'
           : '读取中…',
     })
+    const capacityStatus = capacityQuery.data?.status
+    rows.push({
+      name: '容量监控',
+      tone: capacityStatus === 'ok' ? 'ok' : capacityStatus === 'critical' ? 'down' : capacityStatus === 'warning' ? 'warn' : 'off',
+      detail: capacityStatus ? `容量检查状态：${capacityStatus}` : capacityQuery.isError ? '容量接口不可读' : '尚未取得容量数据',
+    })
+
     // These subsystems have no independently verified probe in the current
     // frontend contract. Keep them visible as unconfigured instead of green.
     const notIndividuallyProbed = [
@@ -286,6 +299,8 @@ export function StatusBoardPage() {
     capabilitiesQuery.data,
     capabilitiesQuery.isError,
     capabilitiesQuery.error,
+    capacityQuery.data,
+    capacityQuery.isError,
     tasksQuery.isSuccess,
     tasksQuery.isError,
     tasksQuery.error,
@@ -307,11 +322,6 @@ export function StatusBoardPage() {
   const runningCount = tasks.filter((task) => task.status === 'running').length
   const queuedCount = tasks.filter((task) =>
     ['queued', 'pending'].includes(task.status ?? ''),
-  ).length
-  const doneToday = tasks.filter(
-    (task) =>
-      ['succeeded', 'completed'].includes(task.status ?? '') &&
-      isToday(task.finished_at ?? task.updated_at),
   ).length
   const failedTasks = tasks
     .filter((task) => isFailed(task.status ?? ''))
@@ -340,6 +350,7 @@ export function StatusBoardPage() {
     liveQuery.dataUpdatedAt,
     readyQuery.dataUpdatedAt,
     capabilitiesQuery.dataUpdatedAt,
+    capacityQuery.dataUpdatedAt,
     tasksQuery.dataUpdatedAt,
     deadLetterQuery.dataUpdatedAt,
   )
@@ -347,6 +358,7 @@ export function StatusBoardPage() {
     void liveQuery.refetch()
     void readyQuery.refetch()
     void capabilitiesQuery.refetch()
+    void capacityQuery.refetch()
     void tasksQuery.refetch()
     void deadLetterQuery.refetch()
   }
