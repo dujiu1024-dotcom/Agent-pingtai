@@ -93,7 +93,7 @@ export function OfficeWorkspace() {
 
       <section className="r3-office-overview">
         <div><span className="r3-office-eyebrow">DIGITAL OFFICE / FLOOR {floor.label}</span><h2>{floor.name}</h2><p>{floor.description}</p></div>
-        <div className="r3-office-stats"><span><i className={error ? 'r3-live-dot is-error' : 'r3-live-dot'}/>{error ? '状态连接异常' : '状态快照已连接'}</span><b>{agents.length.toString().padStart(2, '0')} <small>Agent</small></b><small>{updatedAt ? `更新于 ${new Date(updatedAt).toLocaleTimeString()}` : '等待首个快照'}</small></div>
+        <div className="r3-office-stats"><span><i className={error ? 'r3-live-dot is-error' : 'r3-live-dot'}/>{error ? '状态连接异常' : loading ? '正在连接状态快照' : '状态快照已连接'}</span><b>{agents.length.toString().padStart(2, '0')} <small>Agent</small></b><small>{updatedAt ? `更新于 ${new Date(updatedAt).toLocaleTimeString()}` : '等待首个快照'}</small></div>
       </section>
 
       <div className="r3-office-grid">
