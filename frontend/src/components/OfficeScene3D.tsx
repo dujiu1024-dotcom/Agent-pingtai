@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Html, OrbitControls, Text } from '@react-three/drei'
+import { Html, OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 import type { Group } from 'three'
 
@@ -98,9 +98,9 @@ function ZoneRoom({ zone, selected, onSelect }: { zone: (typeof zoneLayout)[numb
           <Chair position={[p[0], 0, p[2] + 0.58]} />
         </group>
       ))}
-      <Text position={[zone.x, 0.18, zone.z - zone.d / 2 + 0.25]} fontSize={0.2} color="#465777" anchorX="center" anchorY="middle" outlineWidth={0.006} outlineColor="#ffffff">
-        {zone.id === 'open-work' ? 'OPEN WORKSPACE' : zone.id === 'team-studios' ? 'TEAM STUDIO' : zone.id === 'meeting-hub' ? 'MEETING HUB' : zone.id === 'knowledge-center' ? 'KNOWLEDGE' : 'OPERATIONS'}
-      </Text>
+      <Html position={[zone.x, 0.2, zone.z - zone.d / 2 + 0.25]} center transform distanceFactor={10}>
+        <div className="r3-scene-label">{zone.id === 'open-work' ? 'OPEN WORKSPACE' : zone.id === 'team-studios' ? 'TEAM STUDIO' : zone.id === 'meeting-hub' ? 'MEETING HUB' : zone.id === 'knowledge-center' ? 'KNOWLEDGE' : 'OPERATIONS'}</div>
+      </Html>
     </group>
   )
 }
@@ -151,8 +151,8 @@ function OfficeModel({ zones, selectedZone, onSelectZone, agents }: { zones: Zon
         <ZoneRoom key={zone.id} zone={zone} selected={selectedZone === zone.id} onSelect={() => onSelectZone(zone.id)} />
       ))}
       {agents.map((agent, index) => <AgentFigure key={agent.agent_id} agent={agent} index={index} />)}
-      <Text position={[0, 0.12, -4.7]} fontSize={0.25} color="#7183a3" anchorX="center">AGENT PLATFORM · DIGITAL OFFICE</Text>
-      {agents.length > 0 && <Text position={[0, 0.2, 4.8]} fontSize={0.14} color="#5f779e" anchorX="center">LIVE AGENTS · WORKSTATION LOCATION NOT PROVIDED</Text>}
+      <Html position={[0, 0.2, -4.7]} center transform distanceFactor={10}><div className="r3-scene-title">AGENT PLATFORM · DIGITAL OFFICE</div></Html>
+      {agents.length > 0 && <Html position={[0, 0.2, 4.8]} center transform distanceFactor={10}><div className="r3-scene-live-label">LIVE AGENTS · LOCATION NOT PROVIDED</div></Html>}
       <OrbitControls makeDefault minDistance={10} maxDistance={24} maxPolarAngle={Math.PI / 2.08} minPolarAngle={0.55} target={[0, 0.5, 0]} enableDamping dampingFactor={0.08} />
     </>
   )
