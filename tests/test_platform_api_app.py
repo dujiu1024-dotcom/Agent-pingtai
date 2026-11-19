@@ -788,5 +788,47 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 office_state_service=object(),
             )
 
+
+    def test_no_auth_integration_matrix_proves_public_core_and_marks_unwired_routes(self):
+        """No bearer token is required for the public no-auth core surfaces."""
+        class OfficeService:
+            async def build(self, tenant_id):
+                return {"tenant_id": tenant_id, "tasks": []}
+
+        app = create_platform_app(
+            identity=None, identity_repository=None,
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",), auth_enabled=False,
+            office_state_service=OfficeService(), instance_tenant_id="integration-workspace",
+        )
+        client = TestClient(app, base_url="https://testserver")
+        matrix = {
+            "bootstrap": client.get("/api/platform/v1/bootstrap"),
+            "workbench": client.get("/api/platform/v1/workbench/capabilities"),
+            "office": client.get("/api/platform/v1/office/state"),
+        }
+        for endpoint, response in matrix.items():
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertNotIn("WWW-Authenticate", response.headers)
+                self.assertEqual(response.headers["x-api-version"], "v1")
+        self.assertEqual(matrix["bootstrap"].json()["auth"], {"enabled": False})
+        self.assertEqual(matrix["workbench"].json()["auth"]["enabled"], False)
+        self.assertEqual(matrix["office"].json()["data"]["tenant_id"], "integration-workspace")
+        self.assertFalse(hasattr(app.state, "anonymous_principal"))
+        self.assertIsNone(getattr(app.state, "instance_principal", None))
+
+        # Routes not yet adapted by P0-2 must not be misreported as passing.
+        route_paths = {route.path for route in app.routes}
+        for endpoint, path in {
+            "runs": "/api/platform/v1/runs/{run_id}",
+            "approvals": "/api/platform/v1/approvals",
+            "sessions": "/api/platform/v1/sessions",
+            "knowledge upload": "/api/platform/v1/knowledge/documents/upload",
+        }.items():
+            with self.subTest(endpoint=endpoint):
+                self.assertNotIn(path, route_paths)
+
+
 if __name__ == "__main__":
     unittest.main()
