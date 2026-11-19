@@ -128,25 +128,31 @@ derived from the Principal. The UI must not expose unsupported actions as active
 
 ## 双认证模式端点矩阵（UI-G1-755-c）
 
-矩阵只记录已在生产 composition 中核实的挂载行为；“未挂载/未验证”不等于 no-auth 已通过。集成测试使用 HTTPS TestClient、无 Authorization/Cookie 头，auth.enabled=false、identity service=None、无 Authorization/Cookie；当前 app composition 仍要求 identity_repository 用于注册 Knowledge/Memory resolver，因此本测试不声称“无 identity repository 启动”已通过。
+本矩阵区分三种状态：**已由集成测试请求成功**、**已确认条件挂载但未验证业务访问**、**本测试 fixture 未挂载**。未挂载或未测试绝不等同于 no-auth 通过。集成测试位于 `tests/test_issue_755_c_dual_mode_integration.py`，使用 HTTPS TestClient 和内存依赖；不启动真实服务器、不访问外部身份服务。
 
-| 领域 / endpoint | 注册条件与实现位置 | auth=false 无 token | auth=true | 当前集成证据 |
+| 领域 / endpoint | 注册条件与实现位置 | auth=false 无 token | auth=true | 集成测试证据 |
 |---|---|---|---|---|
-| Bootstrap GET /api/platform/v1/bootstrap | 始终注册；api/bootstrap.py | 公开；仅返回 auth mode、version、capabilities | 公开元信息 | test_no_auth_integration_matrix_proves_public_core_and_marks_unwired_routes |
-| Workbench capabilities GET /api/platform/v1/workbench/capabilities | 始终注册；api/workbench.py | 公开能力发现 | API 受 Identity middleware 保护 | 同上；test_auth_disabled_defaults_to_no_identity_and_starts_without_repository |
-| Office state GET /api/platform/v1/office/state | 配置 office_state_service 后注册；api/office.py | 显式 instance_tenant_id，无 Principal | 需按部署身份策略访问；本矩阵只覆盖 auth=false | 同上；test_bootstrap_and_office_state_use_instance_context_without_principal |
-| Workbench Task CRUD / Task worker | task service resolver + authorizer + worker；api/app.py | P0-2 逐路由适配前未通过 | Principal + task authorizer | 无 auth=false 成功证据 |
-| Run detail/events/stream/control | 对应 run resolvers/authorizer 配置；api/runs.py | P0-2 逐路由适配前未通过 | Principal + run authorizer | 无 auth=false 成功证据 |
-| Approvals list/detail/decision | approval service + authorizer + risk resolver；api/approvals.py | P0-2 逐路由适配前未通过 | Principal + approver authorization | 无 auth=false 成功证据 |
-| Knowledge collections/documents/search/upload | knowledge router 常驻；upload 使用 IdentityContextResolver；api/knowledge_memory.py、api/knowledge_upload.py | 部分 handlers 仍依赖 KnowledgePrincipal；未通过 | KnowledgePrincipal / permissions | 无 auth=false 成功证据 |
-| Sessions/messages | session service resolver + authorizer；api/sessions.py | P0-2 逐路由适配前未通过 | Principal + resource/project ACL | 无 auth=false 成功证据 |
-| Files upload/read/download | sessions/files router；session service resolver + authorizer | P0-2 逐路由适配前未通过；文件安全校验仍须保留 | Principal + file/session/project ACL | 无 auth=false 成功证据 |
-| SSE / run stream | 依赖 run/session router 和事件流配置 | 未形成跨路由无 token 证据 | Identity middleware + run/session policy | 无 auth=false 成功证据 |
+| Bootstrap GET `/api/platform/v1/bootstrap` | 始终注册；`api/bootstrap.py` | **200**；返回 auth mode、version、capabilities | **200**；公开元信息 | `test_no_auth_without_token_or_cookie_reaches_real_business_handlers`; `test_auth_mode_requires_credentials_for_business_routes_but_keeps_bootstrap_public` |
+| Workbench capabilities GET `/api/platform/v1/workbench/capabilities` | 始终注册；`api/workbench.py` | **200**；无 Authorization/Cookie | **401** 无凭据 | 同上 |
+| Office state GET `/api/platform/v1/office/state` | 配置 `office_state_service` 后注册；`api/office.py` | **200**；显式 instance tenant resolver，无凭据 | **401** 无凭据 | 同上；验证实例 namespace 为 `instance-workspace` |
+| Knowledge documents GET `/api/platform/v1/knowledge/documents` | 常驻；`api/knowledge_memory.py` | **200**；无 Authorization/Cookie | **401** 无凭据；有效 session **200** | 上述两项测试 |
+| Workbench Task CRUD / worker | task service resolver + authorizer + worker；`api/app.py` | 本 fixture 未配置，未验证 | 依赖真实 Principal + task authorizer | 无本项 no-auth 证据 |
+| Run detail/events/stream/control | run resolvers / authorizer；`api/runs.py` | 本 fixture 未配置，未验证 | 依赖 Principal + run authorizer | 无本项 no-auth 证据 |
+| Approvals list/detail/decision | approval service + authorizer + risk resolver；`api/approvals.py` | 本 fixture 未配置，未验证 | 依赖 Principal + approver authorization | 无本项 no-auth 证据 |
+| Knowledge collections/search/upload、Memory | Knowledge/Memory router 常驻；`api/knowledge_memory.py`、`api/knowledge_upload.py` | 仅 documents GET 已验证；其他 handlers 未验证 | KnowledgePrincipal / MemoryPrincipal + permissions | 仅 documents GET 有 no-auth 证据 |
+| Sessions/messages | session service resolver + authorizer；`api/sessions.py` | 本 fixture 未配置，未验证 | Principal + resource/project ACL | 无本项 no-auth 证据 |
+| Files upload/read/download | session service resolver + authorizer；sessions/files composition | 本 fixture 未配置，未验证 | Principal + file/session/project ACL | 无本项 no-auth 证据 |
+| SSE / run stream | 依赖 run/session router 和事件流配置 | 本 fixture 未配置，未验证 | Identity middleware + run/session policy | 无本项 no-auth 证据 |
+| Registry / Model | registry service resolver + authorizer；`api/registry.py` | 本 fixture 未配置，未验证 | Principal + registry authorizer | 无本项 no-auth 证据 |
 
-### 集成测试解释与边界
+### 测试解释与安全边界
 
-- auth.enabled=false 的 middleware 对 /api 不施加身份门槛，但这不代表每个 handler 已移除 Principal 依赖。必须请求真实 handler；仅验证 middleware 不返回 401 不足以证明 no-auth。
-- 当前无 token 成功证据限于 Bootstrap、Workbench capabilities、Office state 三个真实端点。测试不提供 identity service、token 或 cookie；由于当前 composition 仍要求 identity_repository 注册 Knowledge/Memory resolver，尚不能证明无 identity repository 的干净启动。Office 使用显式 office_tenant_resolver 返回实例 tenant，没有创建匿名 Principal 或默认用户。
-- Run、Approvals、Knowledge upload、Sessions/Files 等路由在 P0-2 完成逐路由 context 适配前不得标记通过。不存在或未配置的路由应标记 unavailable，而不是把 404 当成 no-auth 成功。
-- auth.enabled=true 的既有认证基线由 test_business_routes_require_authenticated_session、test_authenticated_session_is_resolved_into_business_principal、test_auth_me_and_security_headers_are_available 及相关 RBAC/tenant isolation tests 覆盖。本矩阵不替代授权测试。
+- No-auth 集成测试使用 `auth_enabled=false`、`identity=None`，请求不发送 Authorization 或 Cookie，并直接命中真实 FastAPI handler；不是只测 middleware 的空路径。
+- 当前生产 middleware 在 no-auth 模式会注入兼容性 dummy Principal（`user_id=anon`、`tenant_id=default`）。本测试证明的是无凭据请求可进入上述已测 handler，不证明“完全不创建匿名 Principal/默认 tenant”这一独立验收项已经满足。
+- No-auth fixture 仍提供 `identity_repository`，用于构造 Knowledge/Memory resolver；因此不声称“无 identity repository 的干净启动”已通过。
+- Office 测试使用显式 instance tenant resolver，验证状态读取选择 `instance-workspace`；没有连接真实数据库。
+- Auth=true 测试验证 bootstrap 保持公开、Workbench/Office/Knowledge 业务路径无凭据返回 401，以及有效 Bearer session 可访问 Knowledge documents。既有 RBAC、CSRF、跨租户隔离测试仍是独立验收项。
+- 可选 router 在 fixture 中未配置时，测试通过路由表确认其未挂载；404 或未挂载不计作 no-auth 成功。
+- 本轮未覆盖真实 SSE/WebSocket、文件上传下载/range、任务执行/审批决策和跨模块状态变更；这些端点不得据此标记双模式通过。
 - CORS allowlist、共享 Redis rate limiting、安全响应头、输入校验、上传大小/类型限制、业务不变量和审计不因 auth.enabled=false 关闭。
+
