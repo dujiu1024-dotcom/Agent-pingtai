@@ -93,6 +93,16 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
+  it('gates Agent runtime list/detail on registry capability and assigns #808 ownership', () => {
+    const visibleWithoutRegistry = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
+    const visibleWithRegistry = getVisibleNavigation(true, ['agent_management']).flatMap((group) => group.items.map((item) => item.path))
+    expect(visibleWithoutRegistry).not.toContain('/operations/agents')
+    expect(visibleWithRegistry).toContain('/operations/agents')
+    expect(pageRoutes.find((route) => route.path === '/operations/agents')?.owner).toBe('#808')
+    expect(detailRoutes.find((route) => route.path === '/operations/agents/:agentId')?.owner).toBe('#808')
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/agents/agent-123')?.[0].params.agentId).toBe('agent-123')
+  })
+
   it('registers Knowledge collection and document deep links under #760', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     expect(matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0].params.collectionId).toBe('collection-123')
