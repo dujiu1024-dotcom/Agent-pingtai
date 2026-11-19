@@ -100,6 +100,13 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers the dedicated immersive Office page under #817', () => {
+    const route = pageRoutes.find((item) => item.path === '/office')
+    expect(route?.pageId).toBe('UI-R3-OFFICE')
+    expect(route?.owner).toBe('#817')
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((item) => ({ path: item.path })), '/office')?.[0].route.path).toBe('/office')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
