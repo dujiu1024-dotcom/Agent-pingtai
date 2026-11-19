@@ -11,6 +11,7 @@ type OfficeAgent = {
   desc: string
   command: string
 }
+type OfficeTask = { owner: string; db_status: string; state: string }
 type OfficeRun = {
   id: string
   role: string
@@ -22,6 +23,7 @@ type OfficeState = {
   generated_at: string
   agents: OfficeAgent[]
   runs: OfficeRun[]
+  tasks: OfficeTask[]
   llm: { running: string[]; model: string; tokens_today: number }
   metrics: { agents: number; open: number; total: number; done: number }
 }
@@ -46,7 +48,16 @@ const ZONES = [
   { id: 'knowledge', name: '知识中心', x: 1.1, z: 3.2, width: 3.5, depth: 4.7, color: '#f6f0e8' },
   { id: 'ops', name: '运营中枢', x: 5.8, z: 3.2, width: 2.5, depth: 4.7, color: '#eaf2ed' },
 ]
-const statusLabel = (running: boolean) => running ? '运行中' : '待机'
+function agentStatus(agent: OfficeAgent, state: OfficeState | null): { label: string; active: boolean; color: string } {
+  if (!state) return { label: '状态未知', active: false, color: '#9aa9c2' }
+  if (state.llm.running.includes(agent.name)) return { label: '运行中', active: true, color: '#36ad78' }
+  const task = state.tasks.find((item) => item.owner === agent.name)
+  if (task?.db_status === 'todo') return { label: '排队中', active: false, color: '#d9a34e' }
+  if (task?.db_status === 'blocked') return { label: '异常', active: false, color: '#d86d78' }
+  if (task?.db_status === 'done') return { label: '已完成', active: false, color: '#6b7794' }
+  if (task?.db_status === 'doing') return { label: '执行中', active: true, color: '#36ad78' }
+  return { label: '暂无活动任务', active: false, color: '#9aa9c2' }
+}
 const panelStyle: CSSProperties = {
   position: 'absolute',
   background: COLORS.card,
@@ -56,7 +67,8 @@ const panelStyle: CSSProperties = {
   color: COLORS.text,
 }
 
-function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: number; running: boolean }) {
+function AnimatedAgent({ agent, index, state }: { agent: OfficeAgent; index: number; state: OfficeState | null }) {
+  const status = agentStatus(agent, state)
   const head = useRef<Group>(null)
   const body = useRef<Group>(null)
   const position: [number, number, number] = [
@@ -81,7 +93,7 @@ function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: n
       <group ref={body}>
         <mesh position={[0, 0, 0]} castShadow>
           <capsuleGeometry args={[0.22, 0.48, 4, 8]} />
-          <meshStandardMaterial color={running ? '#5c8cf5' : '#9aa9c2'} roughness={0.68} />
+          <meshStandardMaterial color={status.active ? '#5c8cf5' : '#9aa9c2'} roughness={0.68} />
         </mesh>
       </group>
       <group ref={head} position={[0, 1.35, 0]}>
@@ -96,12 +108,12 @@ function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: n
         <Html position={[0, 0.48, 0]} center distanceFactor={11} occlude={false}>
           <div style={{
             whiteSpace: 'nowrap', padding: '4px 9px', borderRadius: 20,
-            background: 'rgba(255,255,255,.94)', border: `1px solid ${running ? '#a9c2ff' : '#dce2ed'}`,
+            background: 'rgba(255,255,255,.94)', border: `1px solid ${status.active ? '#a9c2ff' : '#dce2ed'}`,
             boxShadow: '0 4px 12px rgba(35,60,110,.14)', color: COLORS.text,
             font: '600 10px/1.2 -apple-system,BlinkMacSystemFont,sans-serif',
           }}>
-            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', marginRight: 5, background: running ? '#36ad78' : '#9aa9c2' }} />
-            {agent.title || agent.name} · {statusLabel(running)}
+            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', marginRight: 5, background: status.color }} />
+            {agent.title || agent.name} · {status.label}
           </div>
         </Html>
       </group>
@@ -110,7 +122,6 @@ function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: n
 }
 
 function OfficeStage({ state }: { state: OfficeState | null }) {
-  const running = new Set(state?.llm.running ?? [])
   return (
     <>
       <color attach="background" args={[COLORS.bg]} />
@@ -155,7 +166,7 @@ function OfficeStage({ state }: { state: OfficeState | null }) {
           </group>
         ))}
         {(state?.agents ?? []).slice(0, DESKS.length).map((agent, index) => (
-          <AnimatedAgent key={agent.name} agent={agent} index={index} running={running.has(agent.name)} />
+          <AnimatedAgent key={agent.name} agent={agent} index={index} state={state} />
         ))}
       </group>
       <OrbitControls makeDefault minDistance={10} maxDistance={27} maxPolarAngle={Math.PI / 2.08}
