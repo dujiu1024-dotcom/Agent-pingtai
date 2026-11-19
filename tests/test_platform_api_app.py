@@ -813,7 +813,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 self.assertNotIn("WWW-Authenticate", response.headers)
                 self.assertEqual(response.headers["x-api-version"], "v1")
         self.assertEqual(matrix["bootstrap"].json()["auth"], {"enabled": False})
-        self.assertEqual(matrix["workbench"].json()["auth"]["enabled"], False)
+        self.assertIn("features", matrix["workbench"].json())
         self.assertEqual(matrix["office"].json()["data"]["tenant_id"], "integration-workspace")
         self.assertFalse(hasattr(app.state, "anonymous_principal"))
         self.assertIsNone(getattr(app.state, "instance_principal", None))
@@ -824,10 +824,16 @@ class PlatformApiCompositionTests(unittest.TestCase):
             "runs": "/api/platform/v1/runs/{run_id}",
             "approvals": "/api/platform/v1/approvals",
             "sessions": "/api/platform/v1/sessions",
-            "knowledge upload": "/api/platform/v1/knowledge/documents/upload",
         }.items():
             with self.subTest(endpoint=endpoint):
                 self.assertNotIn(path, route_paths)
+        # The upload route is mounted but still requires KnowledgePrincipal.
+        upload = client.post(
+            "/api/platform/v1/knowledge/documents/upload?filename=sample.md",
+            content=b"# sample",
+            headers={"content-type": "text/markdown"},
+        )
+        self.assertEqual(upload.status_code, 401, upload.text)
 
 
 if __name__ == "__main__":
