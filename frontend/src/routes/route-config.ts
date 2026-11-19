@@ -60,6 +60,14 @@ export const pageRoutes: PageRoute[] = [
     owner: '#748',
   },
   {
+    path: '/office',
+    pageId: 'UI-R3-OFFICE',
+    title: '沉浸式 3D 办公室',
+    section: '工作空间',
+    description: '3D 空间舞台、Agent 动画与实时状态穿透。',
+    owner: '#817',
+  },
+  {
     path: '/operations/agents',
     pageId: 'OPS-AGENTS',
     title: 'Agent 运行态',

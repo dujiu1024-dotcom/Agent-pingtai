@@ -13,6 +13,8 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { HomePage } from '@/pages/home/HomePage'
+import { OfficePage } from '@/pages/OfficePage'
 import {
   EmptyState,
   ErrorState,
@@ -34,7 +36,6 @@ import {
   authRoutes,
   detailRoutes,
   findPageRoute,
-  getVisibleNavigation,
   globalRoutes,
   pageRoutes,
 } from '@/routes/route-config'
@@ -193,34 +194,28 @@ function AppShell({ config }: { config: BootstrapConfig }) {
         >
           {collapsed ? '›' : '‹'}
         </button>
-        <nav className="primary-navigation">
-          {getVisibleNavigation(config.auth.enabled, config.capabilities).map(
-            (group) => (
-              <section
-                className="nav-group"
-                key={group.id}
-                aria-label={group.title}
-              >
-                <div className="nav-group-title">
-                  {!collapsed && group.title}
-                </div>
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.pageId}
-                    to={item.path}
-                    title={collapsed ? item.title : undefined}
-                    className={({ isActive }) =>
-                      isActive ? 'nav-item active' : 'nav-item'
-                    }
-                    end
-                  >
-                    <span className="nav-dot" aria-hidden="true" />
-                    {!collapsed && <span>{item.title}</span>}
-                  </NavLink>
-                ))}
-              </section>
-            ),
-          )}
+        <nav className="prototype-navigation" aria-label="全局导航">
+          {[
+            { path: '/workspace/collaboration', title: 'Agent协作', icon: '✳' },
+            { path: '/admin/workflows', title: 'Workflow', icon: '⌘' },
+            { path: '/workspace/quality-cost', title: '成本分摊', icon: '¥' },
+            { path: '/workspace/tasks', title: '任务中心', icon: '☰' },
+            { path: '/admin/settings', title: '系统管理', icon: '⚙' },
+            { path: '/notifications', title: '通知', icon: '🔔' },
+          ].map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              title={collapsed ? item.title : undefined}
+              className={({ isActive }) =>
+                isActive ? 'prototype-nav-item active' : 'prototype-nav-item'
+              }
+              end
+            >
+              <span className="nav-icon">{item.icon}</span>
+              {!collapsed && <span>{item.title}</span>}
+            </NavLink>
+          ))}
         </nav>
         {!collapsed && (
           <div className="sidebar-footer">
@@ -307,7 +302,8 @@ function PageView({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
-  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/overview') return <HomePage />
+  if (route.path === '/workspace/office') return <OfficePage />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
@@ -330,58 +326,6 @@ function PageView({
       <EmptyState
         title="业务页面待模块接入"
         description={`路由与深链已注册。此页面由 ${route.owner} 负责业务实现；本任务不伪造尚未确认的 API、实体数据或操作。`}
-      />
-    </section>
-  )
-}
-
-function Dashboard() {
-  const shortcuts = [
-    {
-      title: '任务指挥中心',
-      description: '任务队列与执行状态',
-      to: '/workspace/tasks',
-    },
-    {
-      title: 'Agent 协作中心',
-      description: 'Agent 与 Workflow 运行态',
-      to: '/workspace/collaboration',
-    },
-    {
-      title: '成本与质量',
-      description: '用量、质量与评测聚合',
-      to: '/workspace/quality-cost',
-    },
-    {
-      title: '3D 数字办公室',
-      description: '沉浸式办公室入口',
-      to: '/workspace/office',
-    },
-  ]
-  return (
-    <section className="page-content dashboard-page">
-      <div className="dashboard-hero">
-        <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
-        <h1>运营驾驶舱</h1>
-        <p>
-          统一进入工作空间、智能体运营与平台管理。业务指标将在对应模块 API
-          接入后展示。
-        </p>
-      </div>
-      <div className="shortcut-grid">
-        {shortcuts.map((item) => (
-          <Link className="shortcut-card" to={item.to} key={item.to}>
-            <strong>{item.title}</strong>
-            <span>{item.description}</span>
-            <span className="shortcut-arrow" aria-hidden="true">
-              →
-            </span>
-          </Link>
-        ))}
-      </div>
-      <EmptyState
-        title="驾驶舱数据尚未接入"
-        description="当前只提供稳定导航和页面框架，不使用静态假指标替代服务端数据。"
       />
     </section>
   )
