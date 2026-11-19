@@ -1,11 +1,10 @@
 import { useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Html, OrbitControls } from '@react-three/drei'
-import * as THREE from 'three'
 import type { Group } from 'three'
 
 type Zone = { id: string; label: string; description: string }
-type Agent = { agent_id: string; name: string; status: string; zone_id: string }
+type Agent = { agent_id: string; name: string; status: string }
 
 const zoneLayout = [
   { id: 'open-work', x: -4.1, z: -1.25, w: 5.5, d: 3.2, tint: '#dce8ff', desks: 4 },
