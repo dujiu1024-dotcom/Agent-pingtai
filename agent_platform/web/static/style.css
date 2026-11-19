@@ -124,3 +124,11 @@ tbody tr:hover{background:rgba(130,146,244,.06)}
 .empty-state p{margin:0;color:#8996ae}
 #view [data-org-tab]{margin:5px 7px 5px 0}
 #view .panel-head{flex-wrap:wrap}
+
+/* UI-G3-751 global capability center */
+#view [data-global-tab],#view [data-notification-filter]{margin:4px 6px 4px 0}
+#view .empty-state{padding:26px 18px;text-align:center;border:1px dashed #405174;border-radius:9px;color:#aab6cc}
+#view .empty-state strong{display:block;color:#e8edf7;margin-bottom:7px}
+#view .empty-state p{margin:0;color:#8996ae}
+#view .toolbar{display:flex;gap:8px;flex-wrap:wrap}
+#view .status.muted{color:#9aa6bb}

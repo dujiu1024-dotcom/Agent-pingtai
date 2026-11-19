@@ -839,3 +839,133 @@ refresh=async function(){
  return orgRbacRefreshBase();
 };
 refresh().then(()=>{if(S.authMode==="disabled"){applyCapabilityGate();nav("overview")}});
+
+
+/* UI-G3-751: global search, notifications, audit and operations shell.
+ * TODO(api): connect only after backend publishes the indexed-search,
+ * persisted-notification, redacted-audit and read-only-diagnostics contracts.
+ * No speculative endpoints are called and no health state is fabricated.
+ */
+S.globalOps=S.globalOps||{
+ tab:"search",query:"",category:"all",project:"",from:"",to:"",
+ notifications:[],audit:[],searchResults:[],ops:[],error:null,
+ notificationFilter:"all",auditFilter:""
+};
+const GLOBAL_SEARCH_TYPES=[
+ ["agent","Agent"],["task","Task"],["run","Run"],["project","Project"],
+ ["workflow","Workflow"],["knowledge_document","知识文档"],["conversation","会话"],
+ ["file","文件"],["approval","审批"]
+];
+const GLOBAL_SAFE_ROUTES={
+ task:"tasks",run:"replay",approval:"approvals",conversation:"sessions",
+ knowledge_document:"governance",agent:"registry",project:"overview",
+ workflow:"overview",file:"artifacts"
+};
+function globalOpsTab(key,label){
+ return "<button type='button' class='button "+(S.globalOps.tab===key?"primary":"")+"' data-global-tab='"+key+"'>"+label+"</button>";
+}
+function safeAuditSummary(metadata){
+ // Display an allow-listed summary only. Never render raw payloads, tokens, credentials or headers.
+ if(!metadata||typeof metadata!=="object")return "—";
+ const allowed=["source","category","count","duration_ms","status","reason_code","entity_type"];
+ const out={};
+ for(const key of allowed)if(metadata[key]!==undefined)out[key]=metadata[key];
+ return Object.keys(out).length?json(out):"无可展示摘要";
+}
+function globalOpsNotice(){
+ return "<p class='subtle'>此页面不调用尚未确认的 API。数据为空时显示明确空态；后端契约就绪后再接入索引、持久化通知、脱敏审计和只读诊断。</p>";
+}
+function renderGlobalOps(){
+ const root=$("#view"),s=S.globalOps;
+ $("#title").textContent="全局搜索 / 通知 / 审计 / 运维";
+ $("#crumb").textContent="全局能力";
+ const tabs=globalOpsTab("search","全局搜索")+
+  globalOpsTab("notifications","通知中心")+
+  globalOpsTab("audit","审计查询")+
+  globalOpsTab("operations","运维诊断");
+ let body="";
+ if(s.tab==="search"){
+  const categoryOptions=GLOBAL_SEARCH_TYPES.map(x=>"<option value='"+x[0]+"' "+(s.category===x[0]?"selected":"")+">"+x[1]+"</option>").join("");
+  const rows=s.searchResults.map(item=>{
+   const type=GLOBAL_SEARCH_TYPES.find(x=>x[0]===item.entity_type)?.[1]||"其他";
+   return "<tr><td>"+esc(type)+"</td><td><b>"+esc(item.title||"未命名")+"</b><p class='subtle'>"+esc(item.snippet||"")+"</p></td><td>"+esc(item.status||"—")+"</td><td>"+esc(item.updated_at||"—")+"</td><td>"+btn("打开","data-global-open='"+esc(item.entity_type)+"' data-entity-id='"+esc(item.id)+"'")+"</td></tr>";
+  });
+  body=panel("跨模块搜索", "<form id='global-search-form' class='registry-form'><div class='form-grid'><label>关键词<input name='query' value='"+esc(s.query)+"' placeholder='输入名称、ID 或内容关键词'></label><label>实体类型<select name='category'><option value='all'>全部类型</option>"+categoryOptions+"</select></label><label>项目 ID<input name='project' value='"+esc(s.project)+"' placeholder='可选项目过滤'></label><label>更新时间起<input name='from' type='date' value='"+esc(s.from)+"'></label><label>更新时间止<input name='to' type='date' value='"+esc(s.to)+"'></label></div><button class='button primary'>搜索</button><button type='button' class='button' data-global-clear='search'>清空</button></form>")+
+   panel("搜索结果",s.searchResults.length?table(["类型","标题 / 摘要","状态","更新时间","深链"],rows):"<div class='empty-state'><strong>暂无搜索结果</strong><p>索引 API 尚未接入，当前不生成模拟命中。接入后支持相关性排序、高亮、游标分页、权限过滤及删除同步。</p></div>")+
+   "<p class='subtle'>搜索上下文：关键词、类型、项目和时间范围保存在当前页面状态；深链目标使用固定路由白名单，不接受任意外部 URL。</p>";
+ }else if(s.tab==="notifications"){
+  const list=s.notifications.filter(n=>s.notificationFilter==="all"||(s.notificationFilter==="unread"&&!n.read_at)||(s.notificationFilter==="read"&&n.read_at));
+  const rows=list.map(n=>"<tr><td>"+esc(n.severity||"info")+"</td><td><b>"+esc(n.title||"通知")+"</b><p class='subtle'>"+esc(n.body||"")+"</p></td><td>"+esc(n.created_at||"—")+"</td><td>"+(n.read_at?"已读":"未读")+"</td><td>"+(!n.read_at?btn("标记已读","data-notification-read='"+esc(n.notification_id)+"'"):"")+ (n.entity_type&&n.entity_id?btn("查看上下文","data-notification-open='"+esc(n.entity_type)+"' data-entity-id='"+esc(n.entity_id)+"'"):"")+"</td></tr>");
+  body=panel("通知筛选", "<div class='toolbar'>"+btn("全部","data-notification-filter='all'",s.notificationFilter==="all"?"primary":"")+btn("未读","data-notification-filter='unread'",s.notificationFilter==="unread"?"primary":"")+btn("已读","data-notification-filter='read'",s.notificationFilter==="read"?"primary":"")+btn("全部标记已读（本地）","data-notification-read-all='1'")+"</div>")+
+   panel("通知列表",list.length?table(["级别","通知","创建时间","状态","操作"],rows):"<div class='empty-state'><strong>暂无通知</strong><p>通知持久化、去重、SSE 投递、失败重试和断线补偿 API 尚未接入。当前无模拟通知。</p></div>")+
+   "<p class='subtle'>已读状态目前仅存在当前页面状态，不会跨设备同步。TODO：接入 recipient（仅 auth=true）、实例级 no-auth 通知、批量已读及投递状态。</p>";
+ }else if(s.tab==="audit"){
+  const rows=s.audit.filter(a=>!s.auditFilter||[a.actor,a.action,a.resource_type,a.resource_id,a.result,a.request_id,a.trace_id].join(" ").toLowerCase().includes(s.auditFilter.toLowerCase())).map(a=>"<tr><td>"+esc(a.timestamp||"—")+"</td><td>"+esc(a.actor||"system / instance")+"</td><td>"+esc(a.action||"—")+"</td><td>"+esc((a.resource_type||"—")+"/"+(a.resource_id||"—"))+"</td><td>"+esc(a.result||"—")+"</td><td><code>"+esc(a.trace_id||a.request_id||"—")+"</code></td><td>"+esc(safeAuditSummary(a.metadata))+"</td></tr>");
+  body=panel("审计检索", "<form id='global-audit-form' class='inline-form'><label>操作者 / 动作 / 资源 / 结果 / Trace<input name='filter' value='"+esc(s.auditFilter)+"' placeholder='输入筛选关键词'></label><button class='button primary'>筛选</button></form>")+
+   panel("审计事件",s.audit.length?table(["时间","操作者","动作","资源","结果","Trace / Request","脱敏摘要"],rows):"<div class='empty-state'><strong>暂无审计记录</strong><p>审计查询 API 尚未接入。actor 可为空或标记 system/instance；不会创建虚构账号。</p></div>")+
+   "<p class='subtle'>安全策略：只展示白名单摘要字段；原始 metadata/payload、Authorization、Cookie、密码、密钥及个人敏感字段不进入 UI。TODO：服务端脱敏、append-only、保留期限和游标分页。</p>";
+ }else{
+  const components=[
+   ["api","平台 API"],["database","数据库"],["redis","Redis"],
+   ["outbox","Outbox backlog"],["stream","Stream pending"],
+   ["dlq","DLQ"],["consumers","消费者"],["providers","模型 Provider / MCP"]
+  ];
+  body=panel("只读健康诊断", "<p class='subtle'>仅展示后端真实探针，不提供重启、重试、清理或 DLQ 重放等变更操作。</p>")+
+   panel("组件状态",table(["组件","状态","采样时间","说明"],components.map(x=>"<tr><td>"+x[1]+"</td><td><span class='status muted'>未接入</span></td><td>—</td><td>TODO：后端诊断探针与 stale 判定契约</td></tr>")))+
+   panel("最近错误 / 连接健康","<div class='empty-state'><strong>诊断数据不可用</strong><p>数据库、Redis、队列、消费者和外部模型/MCP 健康状态尚无已确认的数据源；不会显示虚构的绿色健康状态。</p></div>");
+ }
+ root.innerHTML=panel("全局能力中心",globalOpsNotice()+tabs)+body+
+  (s.error?panel("页面错误","<p class='error'>"+esc(s.error)+"</p>"+btn("重试","data-global-retry='1'")):"");
+}
+const globalOpsBaseRender=render;
+render=async function(){
+ if(S.view==="global-ops"){
+  try{renderGlobalOps()}catch(error){S.globalOps.error=error.message;$("#view").innerHTML=panel("全局能力加载失败","<p class='error'>"+esc(error.message)+"</p>"+btn("重试","data-global-retry='1'"))}
+  return;
+ }
+ return globalOpsBaseRender();
+};
+const globalOpsBaseNav=nav;
+nav=function(view){globalOpsBaseNav(view);if(view==="global-ops"){$("#title").textContent="全局搜索 / 通知 / 审计 / 运维";$("#crumb").textContent="全局能力"}};
+document.addEventListener("submit",event=>{
+ const form=event.target;
+ if(form.id==="global-search-form"){
+  event.preventDefault();const d=new FormData(form),s=S.globalOps;
+  s.query=String(d.get("query")||"").trim();s.category=String(d.get("category")||"all");
+  s.project=String(d.get("project")||"").trim();s.from=String(d.get("from")||"");s.to=String(d.get("to")||"");
+  // TODO(api): GET indexed search with server-side authorization, highlighting and cursor pagination.
+  s.searchResults=[];renderGlobalOps();return;
+ }
+ if(form.id==="global-audit-form"){
+  event.preventDefault();S.globalOps.auditFilter=String(new FormData(form).get("filter")||"").trim();renderGlobalOps();
+ }
+});
+document.addEventListener("click",event=>{
+ const b=event.target.closest("button");if(!b)return;const s=S.globalOps;
+ if(b.dataset.globalTab){s.tab=b.dataset.globalTab;renderGlobalOps();return}
+ if(b.dataset.globalClear==="search"){s.query="";s.category="all";s.project="";s.from="";s.to="";s.searchResults=[];renderGlobalOps();return}
+ if(b.dataset.globalRetry){s.error=null;renderGlobalOps();return}
+ if(b.dataset.globalOpen||b.dataset.notificationOpen){
+  const type=b.dataset.globalOpen||b.dataset.notificationOpen;
+  const target=GLOBAL_SAFE_ROUTES[type],id=b.dataset.entityId;
+  if(!target||!id){toast("该实体暂不支持安全深链");return}
+  s.lastSearchContext={query:s.query,category:s.category,project:s.project,from:s.from,to:s.to};
+  if(target==="tasks")renderTask(id).catch(error=>toast(error.message));
+  else if(target==="replay")nav("replay");
+  else if(target==="approvals")nav("approvals");
+  else nav(target);
+  return;
+ }
+ if(b.dataset.notificationFilter){s.notificationFilter=b.dataset.notificationFilter;renderGlobalOps();return}
+ if(b.dataset.notificationRead){
+  const n=s.notifications.find(x=>x.notification_id===b.dataset.notificationRead);
+  if(n&&!n.read_at)n.read_at=new Date().toISOString();
+  // TODO(api): persist read_at and synchronize across devices.
+  renderGlobalOps();return;
+ }
+ if(b.dataset.notificationReadAll){
+  const now=new Date().toISOString();s.notifications.forEach(n=>{if(!n.read_at)n.read_at=now});
+  // TODO(api): bulk read acknowledgement.
+  renderGlobalOps();return;
+ }
+});
