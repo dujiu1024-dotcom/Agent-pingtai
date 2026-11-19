@@ -92,7 +92,9 @@ flowchart TD
 | GLOBAL-OPS | 系统运维 | /admin/operations | Diagnostics / Component+Event | #751 | 可见 | RBAC |
 | SYS-SETTINGS | 系统设置与运维配置 | /admin/settings | Settings / Instance config | #751 | 可见（非身份设置） | RBAC |
 | AUTH-LOGIN | 登录 | /auth/login | Auth | #743 | 不存在 | 仅 auth=true |
-| AUTH-INITIALIZE | 首个管理员初始化 | /auth/initialize | Setup | #743/#749 | 不存在 | 仅未初始化且 auth=true |
+| AUTH-INITIALIZE | 首个管理员初始化 | /auth/initialize | Setup | #743 | 不存在 | 仅未初始化且 auth=true |
+
+说明：AUTH-INITIALIZE 的页面与路由主责唯一归属为 #743；#749 仅提供首个管理员初始化完成后的平台管理能力，不共同拥有该页面。
 
 说明：
 1. 表内路由是拟定的稳定契约，不是当前仓库已存在的路由；实施前必须与现有路由盘点结果核对。
