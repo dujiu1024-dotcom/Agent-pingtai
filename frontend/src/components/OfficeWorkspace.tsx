@@ -100,7 +100,7 @@ export function OfficeWorkspace() {
         <section className={view === 'immersive' ? 'r3-scene-panel' : 'r3-scene-panel is-2d'}>
           <div className="r3-scene-panel-head"><div><b>空间总览</b><span>INTERACTIVE 3D ENVIRONMENT</span></div><div className="r3-scene-key"><i/>空间区域 <i className="agent-key"/>Agent 状态</div></div>
           {view === 'immersive' ? <OfficeScene3D zones={zones} selectedZone={zoneId} onSelectZone={id => setZoneId(current => current === id ? null : id)} agents={agents} /> : (
-            <div className="r3-office-2d-map">{zones.map((zone,index)=><button key={zone.id} className={zoneId===zone.id?'active':''} onClick={()=>setZoneId(current=>current===zone.id?null:zone.id)}><span>{['▦','⌂','◫','▤','⌘'][index]}</span><b>{zone.label}</b><small>{zone.description}</small><em>{zone.id==='open-work'?agents.length:0} Agent</em></button>)}</div>
+            <div className="r3-office-2d-map">{zones.map((zone,index)=><button key={zone.id} className={zoneId===zone.id?'active':''} onClick={()=>setZoneId(current=>current===zone.id?null:zone.id)}><span>{['▦','⌂','◫','▤','⌘'][index]}</span><b>{zone.label}</b><small>{zone.description}</small><em>— Agent</em></button>)}</div>
           )}
           <footer className="r3-scene-footer"><span>拖动旋转 · 滚轮缩放 · 点击区域查看详情</span><span>楼层布局为默认空间模板</span></footer>
         </section>
@@ -110,7 +110,7 @@ export function OfficeWorkspace() {
           <label className="r3-office-search"><span>⌕</span><input value={search} onChange={event=>setSearch(event.target.value)} placeholder="搜索 Agent" aria-label="搜索 Agent"/></label>
           <div className="r3-zone-filters">
             <button className={zoneId===null?'active':''} onClick={()=>setZoneId(null)}>全部空间 <b>{agents.length}</b></button>
-            {zones.map(zone=><button key={zone.id} className={zoneId===zone.id?'active':''} onClick={()=>setZoneId(current=>current===zone.id?null:zone.id)}>{zone.label}<b>{zone.id==='open-work'?agents.length:0}</b></button>)}
+            {zones.map(zone=><button key={zone.id} className={zoneId===zone.id?'active':''} onClick={()=>setZoneId(current=>current===zone.id?null:zone.id)}>{zone.label}<b>—</b></button>)}
           </div>
           {selectedZone && <div className="r3-zone-detail"><b>{selectedZone.label}</b><p>{selectedZone.description}</p><small>{selectedZone.kind} · {selectedZone.id}</small></div>}
           {error ? <ErrorState title="Office 状态暂不可用" description={error}/> : loading && !snapshot ? <div className="r3-office-loading"><i/>正在读取真实 Agent 状态…</div> : filteredAgents.length ? (
