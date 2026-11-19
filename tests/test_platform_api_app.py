@@ -711,7 +711,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
         app = create_platform_app(auth_enabled=True, **arguments, resource_audit_writer=AuditWriter())
         self.assertIs(app.state.trusted_publisher_key_resolver, registry)
-        route_paths = {route.path for route in app.routes}
+        route_paths = set(app.openapi()["paths"])
         self.assertIn("/api/platform/v1/extensions/publishers/keys", route_paths)
         self.assertIn(
             "/api/platform/v1/extensions/publishers/{extension_id}/keys/{key_id}/revoke",
@@ -787,6 +787,54 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 auth_enabled=False,
                 office_state_service=object(),
             )
+
+
+    def test_no_auth_integration_matrix_proves_public_core_and_marks_unwired_routes(self):
+        """No bearer token is required for the public no-auth core surfaces."""
+        class OfficeService:
+            async def build(self, tenant_id):
+                return {"tenant_id": tenant_id, "tasks": []}
+
+        app = create_platform_app(
+            identity=None, identity_repository=FakeIdentityRepository(),
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",), auth_enabled=False,
+            office_state_service=OfficeService(), office_tenant_resolver=lambda request: "integration-workspace",
+        )
+        client = TestClient(app, base_url="https://testserver")
+        matrix = {
+            "bootstrap": client.get("/api/platform/v1/bootstrap"),
+            "workbench": client.get("/api/platform/v1/workbench/capabilities"),
+            "office": client.get("/api/platform/v1/office/state"),
+        }
+        for endpoint, response in matrix.items():
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertNotIn("WWW-Authenticate", response.headers)
+                self.assertEqual(response.headers["x-api-version"], "v1")
+        self.assertEqual(matrix["bootstrap"].json()["auth"], {"enabled": False})
+        self.assertIn("features", matrix["workbench"].json())
+        self.assertEqual(matrix["office"].json()["data"]["tenant_id"], "integration-workspace")
+        self.assertFalse(hasattr(app.state, "anonymous_principal"))
+        self.assertIsNone(getattr(app.state, "instance_principal", None))
+
+        # Routes not yet adapted by P0-2 must not be misreported as passing.
+        route_paths = {route.path for route in app.routes}
+        for endpoint, path in {
+            "runs": "/api/platform/v1/runs/{run_id}",
+            "approvals": "/api/platform/v1/approvals",
+            "sessions": "/api/platform/v1/sessions",
+        }.items():
+            with self.subTest(endpoint=endpoint):
+                self.assertNotIn(path, route_paths)
+        # The upload route is mounted but still requires KnowledgePrincipal.
+        upload = client.post(
+            "/api/platform/v1/knowledge/documents/upload?filename=sample.md",
+            content=b"# sample",
+            headers={"content-type": "text/markdown"},
+        )
+        self.assertEqual(upload.status_code, 401, upload.text)
+
 
 if __name__ == "__main__":
     unittest.main()
