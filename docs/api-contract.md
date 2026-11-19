@@ -147,7 +147,7 @@ derived from the Principal. The UI must not expose unsupported actions as active
 
 ### 测试解释与安全边界
 
-- No-auth 集成测试使用 `auth_enabled=false`、`identity=None`，请求不发送 Authorization 或 Cookie，并直接命中真实 FastAPI handler；不是只测 middleware 的空路径。
+- No-auth 集成测试使用 `auth_enabled=false`、`identity=None`，请求不发送 Authorization 或 Cookie，并直接命中真实 FastAPI handler；不是只测 middleware 的空路径。此次测试同时修正了 app composition 未将 `auth_enabled` 传递给 `IdentityASGIMiddleware` 的接线缺陷，否则 no-auth 配置仍会在 middleware 初始化时按 auth=true fail-closed。
 - 当前生产 middleware 在 no-auth 模式会注入兼容性 dummy Principal（`user_id=anon`、`tenant_id=default`）。本测试证明的是无凭据请求可进入上述已测 handler，不证明“完全不创建匿名 Principal/默认 tenant”这一独立验收项已经满足。
 - No-auth fixture 仍提供 `identity_repository`，用于构造 Knowledge/Memory resolver；因此不声称“无 identity repository 的干净启动”已通过。
 - Office 测试使用显式 instance tenant resolver，验证状态读取选择 `instance-workspace`；没有连接真实数据库。
