@@ -66,7 +66,7 @@ function Desk({ id, x, z, selected, onSelect }: {
         <boxGeometry args={[1.35, 0.12, 0.82]} />
         <meshStandardMaterial color={surface} roughness={0.72} />
       </mesh>
-      {[[-0.55, -0.27], [0.55, -0.27], [-0.55, 0.27], [0.55, 0.27]].map(([dx, dz]) => (
+      {([[-0.55, -0.27], [0.55, -0.27], [-0.55, 0.27], [0.55, 0.27]] as const).map(([dx, dz]) => (
         <mesh key={`${dx}-${dz}`} position={[dx, 0.29, dz]}>
           <boxGeometry args={[0.07, 0.55, 0.07]} />
           <meshStandardMaterial color="#9aa9c2" />
