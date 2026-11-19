@@ -73,11 +73,11 @@ function errorMessage(error: unknown): string {
 
 function Status({ value }: { value: unknown }) {
   const normalized = String(value ?? 'unknown').toLowerCase()
-  const tone = ['ok', 'ready', 'healthy', 'success', 'completed', 'enabled'].includes(normalized)
+  const tone = ['ok', 'ready', 'healthy', 'success', 'completed', 'enabled', 'idle', 'succeeded'].includes(normalized)
     ? 'good'
     : ['warning', 'pending', 'running', 'queued'].includes(normalized)
       ? 'warning'
-      : ['unknown', '—', ''].includes(normalized)
+      : ['unknown', '—', '', 'loading', 'disabled', 'skipped'].includes(normalized)
         ? 'neutral'
         : 'bad'
   return <span className={`system-ops-status ${tone}`}>{display(value)}</span>
@@ -183,20 +183,6 @@ export function SystemOpsPage() {
       </div>
 
       <div className="system-ops-grid">
-        <Panel title="依赖就绪检查" endpoint="GET /health/ready">
-          {readiness.isLoading ? <p className="system-ops-muted">正在读取就绪状态…</p> : readiness.isError ? (
-            <p className="system-ops-error" role="alert">{errorMessage(readiness.error)}</p>
-          ) : (
-            <>
-              <div className="system-ops-status-line"><span>整体状态</span><Status value={readiness.data?.status} /></div>
-              {Object.entries(readiness.data?.checks ?? {}).map(([name, value]) => (
-                <div className="system-ops-status-line" key={name}><span>{name}</span><Status value={value} /></div>
-              ))}
-              {readiness.data?.reason && <p className="system-ops-muted">{readiness.data.reason}</p>}
-            </>
-          )}
-        </Panel>
-
         <Panel title="容量健康" endpoint="GET /platform/v1/observability/health/capacity">
           {capacity.isLoading ? <p className="system-ops-muted">正在读取容量状态…</p> : capacity.isError ? (
             <p className="system-ops-error" role="alert">{errorMessage(capacity.error)}</p>
