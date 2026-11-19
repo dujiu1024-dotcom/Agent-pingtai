@@ -17,6 +17,25 @@ export interface NavigationGroup {
   items: PageRoute[]
 }
 
+export const round3Routes: PageRoute[] = [
+  {
+    path: '/home',
+    pageId: 'R3-HOME',
+    title: '工作台',
+    section: '工作空间',
+    description: 'Round 3 工作台入口。',
+    owner: '#814',
+  },
+  {
+    path: '/office',
+    pageId: 'R3-OFFICE',
+    title: '3D 办公室',
+    section: '工作空间',
+    description: 'Round 3 3D 办公室入口。',
+    owner: '#814',
+  },
+]
+
 export const pageRoutes: PageRoute[] = [
   {
     path: '/workspace/overview',
@@ -531,6 +550,7 @@ export function getVisibleNavigation(
 
 export function getAllRoutes(authEnabled: boolean): PageRoute[] {
   return [
+    ...round3Routes,
     ...pageRoutes,
     ...detailRoutes,
     ...globalRoutes,
@@ -539,13 +559,13 @@ export function getAllRoutes(authEnabled: boolean): PageRoute[] {
 }
 
 export function findPageRoute(path: string): PageRoute | undefined {
-  return [...pageRoutes, ...globalRoutes, ...authRoutes].find(
+  return [...round3Routes, ...pageRoutes, ...globalRoutes, ...authRoutes].find(
     (route) => route.path === path,
   )
 }
 
 export function isCanonicalRouteSetValid(
-  routes: PageRoute[] = [...pageRoutes, ...globalRoutes, ...authRoutes],
+  routes: PageRoute[] = [...round3Routes, ...pageRoutes, ...globalRoutes, ...authRoutes],
 ): boolean {
   const paths = routes.map((route) => route.path)
   const ids = routes.map((route) => route.pageId)
