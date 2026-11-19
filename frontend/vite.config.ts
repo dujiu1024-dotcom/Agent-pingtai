@@ -1,7 +1,7 @@
 import { fileURLToPath, URL } from 'node:url'
 
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
   base: '/app/',
@@ -17,5 +17,8 @@ export default defineConfig({
   build: {
     outDir: '../agent_platform/web/static',
     emptyOutDir: true,
+  },
+  test: {
+    include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
   },
 })
