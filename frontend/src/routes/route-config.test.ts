@@ -100,6 +100,15 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers evaluation dataset and run routes under #803', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    expect(pageRoutes.find((route) => route.path === '/admin/evaluation/datasets')?.owner).toBe('#803')
+    expect(pageRoutes.find((route) => route.path === '/admin/evaluation/runs')?.owner).toBe('#803')
+    const routeObjects = routes.map((route) => ({ path: route.path }))
+    expect(matchRoutes(routeObjects, '/admin/evaluation/datasets/ds-42')?.[0].params.datasetId).toBe('ds-42')
+    expect(matchRoutes(routeObjects, '/admin/evaluation/runs/run-17')?.[0].params.runId).toBe('run-17')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
