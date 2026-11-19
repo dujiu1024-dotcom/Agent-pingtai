@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
 import {
   authRoutes,
@@ -11,7 +12,7 @@ const bootstrapUrl = '**/api/platform/v1/bootstrap'
 const businessRoutes = [...pageRoutes, ...detailRoutes, ...globalRoutes]
 
 async function stubBootstrap(
-  page: Parameters<Parameters<typeof test>[1]>[0]['page'],
+  page: Page,
   authEnabled: boolean,
 ) {
   await page.route(bootstrapUrl, async (route) => {
