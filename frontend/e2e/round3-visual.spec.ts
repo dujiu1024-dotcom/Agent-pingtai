@@ -43,6 +43,13 @@ test.beforeEach(async ({ page }) => {
 
 test('Round 3 home visual snapshot · 1536×1024', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1536, height: 1024 })
+  const reference = await page.context().newPage()
+  await reference.setViewportSize({ width: 1536, height: 1024 })
+  await reference.goto('/prototypes/agent-platform.html')
+  await expect(reference.locator('#home')).toBeVisible()
+  const referenceScreenshot = await reference.screenshot({ fullPage: true })
+  await testInfo.attach('prototype-home-reference-1536x1024', { body: referenceScreenshot, contentType: 'image/png' })
+  await reference.close()
   await page.goto('/workspace/overview')
   await expect(page.locator('.r3-home')).toBeVisible()
   await expect(page.getByRole('heading', { name: '欢迎回来！' })).toBeVisible()
@@ -54,6 +61,13 @@ test('Round 3 home visual snapshot · 1536×1024', async ({ page }, testInfo) =>
 
 test('Round 3 3D office visual snapshot · 1536×1024', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1536, height: 1024 })
+  const reference = await page.context().newPage()
+  await reference.setViewportSize({ width: 1536, height: 1024 })
+  await reference.goto('/prototypes/agent-platform.html#office')
+  await expect(reference.locator('#off')).toBeVisible()
+  const referenceScreenshot = await reference.screenshot({ fullPage: true })
+  await testInfo.attach('prototype-office-reference-1536x1024', { body: referenceScreenshot, contentType: 'image/png' })
+  await reference.close()
   await page.goto('/workspace/office')
   await expect(page.locator('.r3-office')).toBeVisible()
   await expect(page.locator('.r3-office-canvas canvas')).toBeVisible()
