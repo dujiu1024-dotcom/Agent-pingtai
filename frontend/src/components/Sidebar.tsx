@@ -16,7 +16,12 @@ const navigation = [
   { title: '通知', icon: '♧', to: '/notifications' },
 ]
 
-export function Sidebar({ collapsed, authEnabled, version, onToggle }: SidebarProps) {
+export function Sidebar({
+  collapsed,
+  authEnabled,
+  version,
+  onToggle,
+}: SidebarProps) {
   return (
     <aside className="r3-sidebar" aria-label="主导航">
       <Link className="r3-brand" to="/home">
@@ -34,11 +39,26 @@ export function Sidebar({ collapsed, authEnabled, version, onToggle }: SidebarPr
       </button>
       <div className="r3-nav-caption">WORKSPACE</div>
       <nav className="r3-primary-nav" aria-label="工作空间">
-        <NavLink to="/home" end className={({ isActive }) => isActive ? 'r3-nav-link active' : 'r3-nav-link'} title={collapsed ? '工作台' : undefined}>
-          <span>⌂</span>{!collapsed && '工作台'}
+        <NavLink
+          to="/home"
+          end
+          className={({ isActive }) =>
+            isActive ? 'r3-nav-link active' : 'r3-nav-link'
+          }
+          title={collapsed ? '工作台' : undefined}
+        >
+          <span>⌂</span>
+          {!collapsed && '工作台'}
         </NavLink>
-        <NavLink to="/office" className={({ isActive }) => isActive ? 'r3-nav-link active' : 'r3-nav-link'} title={collapsed ? '3D 办公室' : undefined}>
-          <span>▣</span>{!collapsed && '3D 办公室'}
+        <NavLink
+          to="/office"
+          className={({ isActive }) =>
+            isActive ? 'r3-nav-link active' : 'r3-nav-link'
+          }
+          title={collapsed ? '3D 办公室' : undefined}
+        >
+          <span>▣</span>
+          {!collapsed && '3D 办公室'}
         </NavLink>
       </nav>
       {!collapsed && <div className="r3-nav-caption r3-nav-caption-secondary">PLATFORM</div>}
@@ -47,10 +67,13 @@ export function Sidebar({ collapsed, authEnabled, version, onToggle }: SidebarPr
           <NavLink
             key={item.to}
             to={item.to}
-            className={({ isActive }) => isActive ? 'r3-nav-link active' : 'r3-nav-link'}
+            className={({ isActive }) =>
+              isActive ? 'r3-nav-link active' : 'r3-nav-link'
+            }
             title={collapsed ? item.title : undefined}
           >
-            <span>{item.icon}</span>{!collapsed && item.title}
+            <span>{item.icon}</span>
+            {!collapsed && item.title}
           </NavLink>
         ))}
       </nav>
