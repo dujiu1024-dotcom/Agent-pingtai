@@ -7,7 +7,6 @@ import {
   Outlet,
   Route,
   Routes,
-  useLocation,
   useNavigate,
 } from 'react-router-dom'
 
@@ -144,7 +143,6 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
 function AppShell() {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
-  const location = useLocation()
   const navigate = useNavigate()
   const [toast, setToast] = useState('')
   useEffect(() => {
