@@ -32,12 +32,16 @@ export function AgentCollaborationCenter() {
   const [runId, setRunId] = useState('')
   const [selectedEntry, setSelectedEntry] = useState('')
   const [kind, setKind] = useState('')
+  // TODO(#746): Replace this read adapter with the finalized Agent Registry contract
+  // when backend pagination and live-health fields are available.
   const agentsQuery = useQuery({
     queryKey: ['collaboration', 'agents'],
     queryFn: () => apiClient.get<unknown>('/platform/v1/registry/agent'),
     refetchInterval: 30000,
   })
   const agents = useMemo(() => unwrap<RecordValue>(agentsQuery.data), [agentsQuery.data])
+  // TODO(#746): Bind the runtime canvas to LangGraph node/edge telemetry once
+  // the backend publishes its versioned graph snapshot and event schema.
   const runQuery = useQuery({
     queryKey: ['collaboration', 'run', runId],
     enabled: Boolean(runId.trim()),
@@ -50,6 +54,8 @@ export function AgentCollaborationCenter() {
     queryFn: () => apiClient.get<unknown>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}/events?limit=200`),
     refetchInterval: 10000,
   })
+  // TODO(#746): Extend this adapter with authorized evidence/source locators
+  // after the Blackboard locator contract is finalized.
   const entriesQuery = useQuery({
     queryKey: ['collaboration', 'blackboard', scope, scopeId, kind],
     enabled: Boolean(scopeId.trim()),
@@ -116,11 +122,24 @@ export function AgentCollaborationCenter() {
             <article className="collab-run-summary">
               <span className="muted">RUN / {text(runQuery.data.run_id, runId)}</span>
               <strong>{text(runQuery.data.status, '状态未知')}</strong>
-              <dl><div><dt>版本</dt><dd>{text(runQuery.data.version)}</dd></div><div><dt>更新时间</dt><dd>{date(runQuery.data.updated_at)}</dd></div><div><dt>Checkpoint</dt><dd>{text(runQuery.data.checkpoint_ref)}</dd></div></dl>
+              <dl><div><dt>Workflow</dt><dd>{text(runQuery.data.workflow_id)}</dd></div><div><dt>Workflow 版本</dt><dd>{text(runQuery.data.workflow_version)}</dd></div><div><dt>Run 版本</dt><dd>{text(runQuery.data.version)}</dd></div><div><dt>更新时间</dt><dd>{date(runQuery.data.updated_at)}</dd></div><div><dt>Checkpoint</dt><dd>{text(runQuery.data.checkpoint_ref)}</dd></div></dl>
               {runQuery.data.last_error ? <p className="collab-error">{compact(runQuery.data.last_error)}</p> : null}
             </article>
-            <div className="collab-event-panel">
-              <h3>执行事件时间线</h3>
+            <div className="collab-run-observability">
+              <section className="collab-canvas-placeholder" aria-label="Workflow 运行画布占位">
+                <div>
+                  <span className="eyebrow">WORKFLOW RUNTIME CANVAS</span>
+                  <h3>运行态画布</h3>
+                  <p>当前 Run 已加载。节点、边、分支与状态映射等待服务端 LangGraph 图快照/节点事件契约接入。</p>
+                  <span className="muted">workflow_id: {text(runQuery.data.workflow_id)} · version: {text(runQuery.data.workflow_version)} · run_id: {text(runQuery.data.run_id, runId)}</span>
+                </div>
+                <div className="collab-canvas-empty" role="status">
+                  <strong>暂无节点级遥测</strong>
+                  <span>不会根据父 Run 状态推断节点成功、失败或分支路径。</span>
+                </div>
+              </section>
+              <div className="collab-event-panel">
+              <h3>执行事件时间线（列表替代视图）</h3>
               {eventsQuery.isPending ? <LoadingState label="正在读取 Run 事件" /> :
                 eventsQuery.isError ? <ErrorState title="Run 事件读取失败" description={errorText(eventsQuery.error)} onRetry={() => void eventsQuery.refetch()} /> :
                 events.length === 0 ? <EmptyState title="暂无事件记录" description="事件接口没有返回节点级遥测；不会从 Run 总状态推断节点状态。" /> :
@@ -132,6 +151,7 @@ export function AgentCollaborationCenter() {
                   </div>
                 </li>)}</ol>}
               <p className="muted">节点/边状态仅在服务端事件明确提供时呈现；当前事件列表不等同于完整 LangGraph 执行图。</p>
+              </div>
             </div>
           </div>}
       </section>
