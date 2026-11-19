@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { Group } from 'three'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Html, OrbitControls } from '@react-three/drei'
 import { apiClient } from '@/lib/api'
@@ -55,8 +56,8 @@ const panelStyle: React.CSSProperties = {
 }
 
 function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: number; running: boolean }) {
-  const head = useMemo(() => ({ current: null as THREE.Group | null }), [])
-  const body = useMemo(() => ({ current: null as THREE.Group | null }), [])
+  const head = useRef<Group>(null)
+  const body = useRef<Group>(null)
   const position: [number, number, number] = [
     DESKS[index % DESKS.length].x,
     0,
@@ -70,7 +71,7 @@ function AnimatedAgent({ agent, index, running }: { agent: OfficeAgent; index: n
   return (
     <group position={position}>
       <group ref={body}>
-        <mesh position={[0, 0.78, 0]} castShadow>
+        <mesh position={[0, 0, 0]} castShadow>
           <capsuleGeometry args={[0.22, 0.48, 4, 8]} />
           <meshStandardMaterial color={running ? '#5c8cf5' : '#9aa9c2'} roughness={0.68} />
         </mesh>
