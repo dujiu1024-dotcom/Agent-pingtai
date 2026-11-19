@@ -441,6 +441,14 @@ export const detailRoutes: PageRoute[] = [
 
 export const globalRoutes: PageRoute[] = [
   {
+    path: '/admin/ops',
+    pageId: 'GLOBAL-SYSTEM-OPS',
+    title: '系统运维',
+    section: '全局能力',
+    description: '服务健康、Prometheus 指标与定时调度状态。',
+    owner: '#813',
+  },
+  {
     path: '/search',
     pageId: 'GLOBAL-SEARCH',
     title: '全局搜索',
