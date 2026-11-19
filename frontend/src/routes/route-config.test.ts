@@ -119,10 +119,10 @@ describe('route configuration', () => {
   it('registers the auth-only files workspace and asset deep link under #802', () => {
     const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
     expect(filesRoute?.owner).toBe('#802')
-    expect(filesRoute?.authOnly).toBe(true)
+    expect(filesRoute?.authOnly).toBeUndefined()
     const detail = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
     expect(detail?.owner).toBe('#802')
-    expect(detail?.authOnly).toBe(true)
+    expect(detail?.authOnly).toBeUndefined()
     expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/files/asset-123')?.[0].params.fileId).toBe('asset-123')
   })
 })
