@@ -39,7 +39,7 @@ export function EvaluationWorkspace() {
   const [notice, setNotice] = useState('')
   const [lastRun, setLastRun] = useState<RunResult | null>(null)
 
-  const loadVersions = useCallback(async (id = knownDataset) => {
+  const loadVersions = useCallback(async (id: string) => {
     if (!id.trim()) { setError('请输入数据集 ID。'); return }
     setBusy(true); setError(''); setNotice('')
     try {
@@ -49,7 +49,7 @@ export function EvaluationWorkspace() {
       if (rows.length) setSelectedVersion(String(rows[0].version))
       setKnownDataset(id.trim())
     } catch (reason) { setError(readError(reason)) } finally { setBusy(false) }
-  }, [knownDataset])
+  }, [])
 
   const loadCases = useCallback(async (id = knownDataset, version = selectedVersion) => {
     if (!id.trim() || !version) return
@@ -73,7 +73,7 @@ export function EvaluationWorkspace() {
 
   useEffect(() => {
     if (datasetId) { setKnownDataset(datasetId); void loadVersions(datasetId) }
-  }, [datasetId]) // route change only; loadVersions is intentionally invoked for the route ID
+  }, [datasetId, loadVersions]) // route change only; loadVersions is intentionally invoked for the route ID
   useEffect(() => {
     if (runId) setActiveTab('runs')
   }, [runId])
@@ -112,7 +112,7 @@ export function EvaluationWorkspace() {
     <header className="eval-heading"><div><p className="eyebrow">P-UI-002-W1-5 · EVALUATION</p><h1>评测数据集与运行</h1><p>管理评测数据集版本、样本 Case，并执行模型评测和查看报告。</p></div><div className="eval-tabs"><button className={activeTab === 'datasets' ? 'active' : ''} onClick={() => setActiveTab('datasets')}>Datasets & Cases</button><button className={activeTab === 'runs' ? 'active' : ''} onClick={() => setActiveTab('runs')}>Evaluation Runs</button></div></header>
     {error && <div className="eval-alert" role="alert">{error}</div>}{notice && <div className="eval-notice" role="status">{notice}</div>}
     {activeTab === 'datasets' ? <div className="eval-grid">
-      <section className="eval-panel"><h2>数据集版本</h2><p className="eval-help">后端提供按 dataset_id 查询版本；目前没有全局数据集目录接口，因此通过 ID 定位，不展示虚构的全量目录。</p><form className="eval-inline" onSubmit={event => {event.preventDefault(); void loadVersions()}}><input aria-label="数据集 ID" value={knownDataset} onChange={event => setKnownDataset(event.target.value)} placeholder="输入 dataset_id" /><button className="button-primary" disabled={busy}>查询版本</button></form>
+      <section className="eval-panel"><h2>数据集版本</h2><p className="eval-help">后端提供按 dataset_id 查询版本；目前没有全局数据集目录接口，因此通过 ID 定位，不展示虚构的全量目录。</p><form className="eval-inline" onSubmit={event => {event.preventDefault(); void loadVersions(knownDataset)}}><input aria-label="数据集 ID" value={knownDataset} onChange={event => setKnownDataset(event.target.value)} placeholder="输入 dataset_id" /><button className="button-primary" disabled={busy}>查询版本</button></form>
       {versions.length ? <div className="eval-list">{versions.map(row => <button key={row.version} className={selectedVersion === String(row.version) ? 'eval-list-row selected' : 'eval-list-row'} onClick={() => {setSelectedVersion(String(row.version)); void loadCases(row.dataset_id, String(row.version))}}><strong>{row.dataset_id} · v{row.version}</strong><span>{row.case_count} Cases · {dateText(row.created_at)}</span></button>)}</div> : <p className="eval-empty">输入数据集 ID 查询已存在版本。</p>}
       {detail && <><h3>v{detail.version} · Cases ({detail.case_count})</h3><div className="eval-cases">{detail.cases.map(item => <details key={item.case_id}><summary>{item.case_id}</summary><pre>{pretty({input:item.input,expected_output:item.expected_output,rubric:item.rubric,source_ref:item.source_ref})}</pre></details>)}</div></>}
       </section>
