@@ -153,8 +153,14 @@ function TrendChart({
   return (
     <div className="dashboard-chart">
       <div className="dashboard-chart-legend">
-        <span><i className="dashboard-legend-task" />任务数</span>
-        <span><i className="dashboard-legend-success" />成功率</span>
+        <span>
+          <i className="dashboard-legend-task" />
+          任务数
+        </span>
+        <span>
+          <i className="dashboard-legend-success" />
+          成功率
+        </span>
       </div>
       {loading ? (
         <div className="dashboard-chart-state">正在加载趋势数据…</div>
@@ -347,7 +353,9 @@ export function Dashboard() {
             </span>
             <span className="dashboard-kpi-label">{metric.label}</span>
             <strong>
-              {tasksQuery.isPending && metric.label !== '平均耗时' && metric.label !== '总成本'
+              {tasksQuery.isPending &&
+              metric.label !== '平均耗时' &&
+              metric.label !== '总成本'
                 ? '…'
                 : metric.value}
             </strong>
@@ -365,7 +373,7 @@ export function Dashboard() {
             </div>
             <span className="dashboard-live-state">
               <i />
-              运行状态
+              趋势统计
             </span>
           </header>
           <TrendChart
