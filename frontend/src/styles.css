@@ -1272,7 +1272,11 @@ input:focus-visible {
 .home-agent-main { display:grid; min-width:0; flex:1; gap:3px; }
 .home-agent-main strong { overflow:hidden; color:#25314c; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
 .home-agent-main small { overflow:hidden; color:#8994a8; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
-.home-agent-usage { color:#68758e; font-size:9px; white-space:nowrap; }
+.home-agent-usage { display:flex; min-width:0; align-items:center; justify-content:flex-end; gap:8px; color:#68758e; font-size:9px; white-space:nowrap; }
+.home-agent-usage-track { display:block; width:64px; height:5px; overflow:hidden; border-radius:5px; background:#edf1f8; }
+.home-agent-usage-track > span { display:block; height:100%; border-radius:inherit; background:#4f7cff; }
+.home-agent-row:nth-child(2) .home-agent-usage-track > span { background:#a78bfa; }
+.home-agent-row:nth-child(3) .home-agent-usage-track > span { background:#34d399; }
 .home-activity-rows li { display:grid; min-height:46px; grid-template-columns:8px 39px minmax(0,1fr); align-items:center; gap:8px; border-bottom:1px solid #eff2f7; }
 .home-activity-dot { width:7px; height:7px; border-radius:50%; background:#38bdf8; }
 .home-activity-dot.home-state-waiting { background:#a78bfa; }
