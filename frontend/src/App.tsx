@@ -23,6 +23,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -318,6 +319,7 @@ function PageView({
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
+  if (route.path.startsWith('/admin/evaluation/')) return <EvaluationWorkspace />
   return (
     <section className="page-content">
       <div className="page-heading">
