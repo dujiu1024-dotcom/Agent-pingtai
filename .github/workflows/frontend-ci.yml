@@ -45,17 +45,23 @@ jobs:
       - name: Lint and format
         run: pnpm lint
       - name: Typecheck
+        if: always()
         run: pnpm typecheck
       - name: Production build
+        if: always()
         run: pnpm build
       - name: Install Playwright browser
+        if: always()
         run: pnpm exec playwright install --with-deps chromium
       - name: Core UI E2E (desktop and tablet)
+        if: always()
         run: pnpm test:e2e
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: frontend-playwright-report
-          path: frontend/playwright-report/
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
           retention-days: 7
