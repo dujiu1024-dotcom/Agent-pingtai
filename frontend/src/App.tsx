@@ -21,7 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
-import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
+import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -313,7 +313,7 @@ function PageView({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
-  if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.pageId === 'ADM-AGENTS' || route.pageId === 'ADM-AGENT-DETAIL') return <AgentDefinitionPage />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (

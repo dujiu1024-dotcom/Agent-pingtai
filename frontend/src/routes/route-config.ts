@@ -172,8 +172,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-AGENTS',
     title: 'Agent 定义',
     section: '平台管理',
-    description: 'Agent 定义、版本与发布管理入口。',
-    owner: '#749',
+    description: 'Agent 定义 CRUD、指令版本、模型模板与工具/Skill/Workflow 关联。',
+    owner: '#757',
   },
   {
     path: '/admin/workflows',
@@ -264,10 +264,10 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-AGENT-DETAIL',
     title: 'Agent 定义详情',
     section: '平台管理',
-    description: 'Agent 定义唯一详情路由。',
+    description: 'Agent 定义详情、配置与版本历史。',
     parentPath: '/admin/agents',
     entityIdParam: 'agentId',
-    owner: '#749',
+    owner: '#757',
   },
   {
     path: '/admin/workflows/:workflowId/edit',
