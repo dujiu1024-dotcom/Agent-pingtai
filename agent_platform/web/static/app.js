@@ -969,4 +969,3 @@ document.addEventListener("click",event=>{
   renderGlobalOps();return;
  }
 });
-VIEW_CAPABILITIES["global-ops"]=["search","notifications","audit","observability"];
