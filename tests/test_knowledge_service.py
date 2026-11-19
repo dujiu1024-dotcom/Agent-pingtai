@@ -760,3 +760,112 @@ class KnowledgeServiceTests(unittest.IsolatedAsyncioTestCase):
             [item.chunk_id for item in first],
             [item.chunk_id for item in next_version],
         )
+
+
+    async def test_chunk_update_invalidates_embedding_and_cache(self):
+        class Embedder:
+            model_id = "fixture"
+            dimensions = 2
+
+            async def embed_query(self, text):
+                return (1.0, 0.0)
+
+            async def embed_documents(self, texts):
+                return [(1.0, 0.0) for _ in texts]
+
+        repository = InMemoryKnowledgeRepository()
+        service = KnowledgeService(repository, embedder=Embedder())
+        document = Document(
+            tenant_id="tenant-c10-03", title="editable",
+            source_uri="memory://editable", content_hash="pending",
+        )
+        result = await service.ingest(document=document, content=b"original evidence")
+        chunk = result.chunks[0]
+        self.assertIn(("tenant-c10-03", chunk.chunk_id), repository.embeddings)
+
+        updated = await repository.update_chunk(
+            "tenant-c10-03", document.document_id, 1,
+            chunk.chunk_id, "replacement evidence",
+        )
+
+        self.assertEqual(updated.text, "replacement evidence")
+        self.assertNotIn(("tenant-c10-03", chunk.chunk_id), repository.embeddings)
+        self.assertEqual(
+            repository.cache_invalidations[-1],
+            {
+                "tenant_id": "tenant-c10-03", "resource_type": "chunk",
+                "resource_id": chunk.chunk_id, "reason": "updated",
+            },
+        )
+
+    async def test_document_delete_removes_all_derived_data_for_every_version(self):
+        class Embedder:
+            model_id = "fixture"
+            dimensions = 2
+
+            async def embed_query(self, text):
+                return (1.0, 0.0)
+
+            async def embed_documents(self, texts):
+                return [(1.0, 0.0) for _ in texts]
+
+        from dataclasses import replace
+
+        repository = InMemoryKnowledgeRepository()
+        service = KnowledgeService(repository, embedder=Embedder())
+        original = Document(
+            tenant_id="tenant-c10-03", title="deletable",
+            source_uri="memory://deletable", content_hash="pending",
+            document_id="delete-all-versions",
+        )
+        first = await service.ingest(document=original, content=b"first searchable version")
+        second = await service.ingest(
+            document=replace(original, version=2),
+            content=b"second searchable version",
+        )
+        owner = KnowledgePrincipal(
+            tenant_id="tenant-c10-03", user_id="owner",
+            permissions=frozenset({"knowledge.manage"}),
+        )
+        await service.grant_document_access(
+            principal=owner, document_id=original.document_id,
+            principal_type="user", principal_id="reader",
+        )
+        await service.grant_chunk_access(
+            principal=owner, document_id=original.document_id,
+            chunk_id=second.chunks[0].chunk_id,
+            principal_type="user", principal_id="reader",
+        )
+        self.assertTrue(repository.embeddings)
+
+        self.assertTrue(await service.delete_document(
+            principal=owner, document_id=original.document_id,
+        ))
+
+        self.assertIsNone(await repository.get_document(
+            "tenant-c10-03", original.document_id,
+        ))
+        self.assertFalse(any(
+            key[0] == "tenant-c10-03" and key[1] == original.document_id
+            for key in repository.chunks
+        ))
+        self.assertFalse(any(
+            tenant_id == "tenant-c10-03"
+            and chunk_id in {chunk.chunk_id for chunk in (*first.chunks, *second.chunks)}
+            for tenant_id, chunk_id in repository.embeddings
+        ))
+        self.assertNotIn(
+            ("tenant-c10-03", original.document_id), repository.document_acl,
+        )
+        self.assertFalse(any(
+            key[0] == "tenant-c10-03"
+            and key[1] in {chunk.chunk_id for chunk in (*first.chunks, *second.chunks)}
+            for key in repository.chunk_acl
+        ))
+        invalidated = {
+            (item["resource_type"], item["resource_id"], item["reason"])
+            for item in repository.cache_invalidations
+        }
+        self.assertIn(("document", original.document_id, "deleted"), invalidated)
+        for chunk in (*first.chunks, *second.chunks):
+            self.assertIn(("chunk", chunk.chunk_id, "deleted"), invalidated)
