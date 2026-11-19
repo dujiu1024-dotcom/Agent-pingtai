@@ -23,6 +23,19 @@ class IdentityContextResolver:
         if not isinstance(authenticated, (Principal, AuthenticatedApiCredential)):
             raise HTTPException(status_code=403, detail="unsupported identity for Knowledge/Memory routes")
 
+        # No-auth mode (auth.enabled=false): skip RBAC lookup, grant full access
+        # to the dummy principal seeded by identity middleware.
+        is_no_auth = getattr(request.state, "identity.authenticated", True) is False
+        if is_no_auth and isinstance(authenticated, Principal) and authenticated.user_id == "anon":
+            ALL_KNOWLEDGE_PERMS = frozenset({
+                "knowledge.read", "knowledge.manage",
+            })
+            ALL_MEMORY_PERMS = frozenset({
+                "memory.read", "memory.manage",
+            })
+            ALL_PERMS = ALL_KNOWLEDGE_PERMS | ALL_MEMORY_PERMS
+            return authenticated, None, ALL_PERMS
+
         context = await self.identity_repository.get_authorization_context(
             tenant_id=authenticated.tenant_id,
             user_id=authenticated.user_id,
@@ -39,6 +52,17 @@ class IdentityContextResolver:
 
     async def knowledge(self, request: Request) -> KnowledgePrincipal:
         authenticated, context, permissions = await self._context(request)
+        is_no_auth = getattr(request.state, "identity.authenticated", True) is False
+        if is_no_auth:
+            # No-auth: full-access dummy knowledge principal with default tenant
+            return KnowledgePrincipal(
+                tenant_id=authenticated.tenant_id,
+                user_id=authenticated.user_id,
+                project_ids=frozenset(),
+                roles=frozenset({"tenant.admin"}),
+                permissions=frozenset({"knowledge.read", "knowledge.manage"}),
+                manage_project_ids=frozenset(),
+            )
         if isinstance(authenticated, AuthenticatedApiCredential) and not (
             {"knowledge.read", "knowledge.manage"} & permissions
         ):
@@ -57,6 +81,18 @@ class IdentityContextResolver:
 
     async def memory(self, request: Request) -> MemoryPrincipal:
         authenticated, context, permissions = await self._context(request)
+        is_no_auth = getattr(request.state, "identity.authenticated", True) is False
+        if is_no_auth:
+            # No-auth: full-access dummy memory principal with default tenant
+            return MemoryPrincipal(
+                tenant_id=authenticated.tenant_id,
+                user_id=authenticated.user_id,
+                project_ids=frozenset(),
+                agent_ids=frozenset(),
+                permissions=frozenset({"memory.read", "memory.manage"}),
+                manage_project_ids=frozenset(),
+                manage_agent_ids=frozenset(),
+            )
         if isinstance(authenticated, AuthenticatedApiCredential) and not (
             {"memory.read", "memory.manage"} & permissions
         ):

@@ -79,6 +79,10 @@ class IdentityService:
     ) -> None:
         if not permission_key.strip():
             raise ValueError("permission_key must not be empty")
+        # No-auth mode (auth.enabled=false): dummy principal seeded by
+        # identity middleware bypasses all RBAC checks.
+        if isinstance(principal, Principal) and principal.user_id == "anon":
+            return
         if isinstance(principal, AuthenticatedApiCredential):
             await self.authorize_api_credential(
                 credential=principal, resource=resource,

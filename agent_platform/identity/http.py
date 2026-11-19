@@ -274,7 +274,18 @@ class IdentityASGIMiddleware:
         if not self.auth_enabled:
             # No-auth mode bypasses identity and CSRF gates, but deliberately keeps
             # origin allowlisting, CORS, and security response headers.
-            scope.setdefault("state", {})["identity.authenticated"] = False
+            # Seed a dummy principal so every downstream resolve_principal call
+            # and authorizer check sees a non-None identity with a default tenant.
+            from agent_platform.identity.models import Principal
+            state = scope.setdefault("state", {})
+            state["identity.authenticated"] = False
+            state["identity.principal"] = Principal(
+                user_id="anon",
+                tenant_id="default",
+                session_id="no-auth",
+                email="anon@local",
+                display_name="Anonymous",
+            )
             await self.app(scope, receive, secure_send)
             return
 

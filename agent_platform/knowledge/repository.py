@@ -457,6 +457,13 @@ class InMemoryKnowledgeRepository:
             if chunk.chunk_id == chunk_id:
                 updated = replace(chunk, text=text, content_hash=sha256_text(text), end_offset=chunk.start_offset + len(text), metadata={**chunk.metadata, "embedding_status": "stale"})
                 items[index] = updated
+                # The old vector no longer represents the edited chunk. Remove it
+                # immediately so test/in-memory retrieval cannot observe stale data.
+                self.embeddings.pop((tenant_id, chunk_id), None)
+                self.cache_invalidations.append({
+                    "tenant_id": tenant_id, "resource_type": "chunk",
+                    "resource_id": chunk_id, "reason": "updated",
+                })
                 return updated
         return None
 
@@ -480,6 +487,7 @@ class InMemoryKnowledgeRepository:
                 acl_key = (tenant_id, chunk_id)
                 self.chunk_acl.pop(acl_key, None)
                 self.chunk_acl_enforced.discard(acl_key)
+                self.embeddings.pop(acl_key, None)
                 self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "chunk", "resource_id": chunk_id, "reason": "deleted"})
             self.cache_invalidations.append({"tenant_id": tenant_id, "resource_type": "document", "resource_id": document_id, "reason": "deleted"})
         return found
