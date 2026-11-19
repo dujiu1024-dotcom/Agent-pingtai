@@ -23,6 +23,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -308,6 +309,7 @@ function PageView({
       />
     )
   if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version: 'unknown', capabilities }} />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
