@@ -156,14 +156,14 @@ export function QuickStartPage() {
   return (
     <section className="page-content quickstart">
       <div className="page-heading">
-        <p className="eyebrow">WORKSPACE / QUICK START</p>
+        <p className="eyebrow">指令下达</p>
         <h1>指令中心</h1>
         <p>用自然语言描述目标，核对执行对象后再下达真实任务。</p>
       </div>
 
       {capabilitiesQuery.isSuccess && !taskExecutionReady && (
         <div className="qs-banner qs-banner--warn" role="status">
-          当前实例未开启任务执行能力（task_execution=false），提交入口不可用。
+          当前实例尚未启用任务执行能力，暂时无法提交任务。
         </div>
       )}
 
