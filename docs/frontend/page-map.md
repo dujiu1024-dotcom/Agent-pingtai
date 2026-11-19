@@ -94,7 +94,7 @@ flowchart TD
 | AUTH-LOGIN | 登录 | /auth/login | Auth | #743 | 不存在 | 仅 auth=true |
 | AUTH-INITIALIZE | 首个管理员初始化 | /auth/initialize | Setup | #743 | 不存在 | 仅未初始化且 auth=true |
 
-说明：AUTH-INITIALIZE 的页面与路由主责唯一归属为 #743；#749 仅提供首个管理员初始化完成后的平台管理能力，不共同拥有该页面。\n\n说明：
+说明：AUTH-INITIALIZE 的页面与路由主责唯一归属为 #743；#749 仅提供首个管理员初始化完成后的平台管理能力，不共同拥有该页面。说明：
 1. 表内路由是拟定的稳定契约，不是当前仓库已存在的路由；实施前必须与现有路由盘点结果核对。
 2. 若后端没有独立 Document/Approval/Memory 等详情接口，详情页仍可用列表/聚合 API 组合，但缺失契约必须标注，不得假造 endpoint。
 3. 页面拆分允许最终合并为 tabs/drawers，但 page_id、实体主责和深链语义保持稳定。
