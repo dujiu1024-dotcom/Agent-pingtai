@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useUiStore } from '@/stores/ui-store'
-import { Outlet, useLocation } from 'react-router-dom'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import { Sidebar } from '@/components/Sidebar'
 import { Topbar } from '@/components/Topbar'
@@ -24,6 +25,19 @@ export function WorkspaceShell({ config }: WorkspaceShellProps) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        navigate('/search')
+      }
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [navigate])
+
   const title = pageTitles[location.pathname] ?? '工作空间'
 
   return (
