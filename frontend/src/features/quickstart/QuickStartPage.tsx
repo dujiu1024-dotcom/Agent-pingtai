@@ -272,7 +272,7 @@ export function QuickStartPage() {
             <span className="qs-step">3</span>
             <div>
               <h2>补充任务信息</h2>
-              <p>项目为可选项；优先级随任务提交。</p>
+              <p>项目为可选项；当前通过项目编号提交，项目选择器尚未接入。</p>
             </div>
           </header>
           <label className="qs-field">
@@ -398,11 +398,14 @@ export function QuickStartPage() {
 
       <section className="qs-recent">
         <header className="qs-recent-head">
-          <h2>最近提交</h2>
+          <h2>最近任务</h2>
           <Link className="text-link" to="/workspace/tasks">
             全部任务 →
           </Link>
         </header>
+        <p className="qs-agent-desc">
+          会话历史列表尚未接入；下方仅展示真实任务记录，任务与每次运行记录分开管理。
+        </p>
         {recentQuery.isError ? (
           <div className="qs-note">
             任务列表暂不可用：{errorText(recentQuery.error)}
