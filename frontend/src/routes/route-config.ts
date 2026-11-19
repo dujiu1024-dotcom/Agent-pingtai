@@ -130,8 +130,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'OPS-KNOWLEDGE',
     title: '知识库',
     section: '智能体运营',
-    description: '知识库与文档管理入口。',
-    owner: '#750',
+    description: 'Knowledge collections、documents、chunks 与检索。',
+    owner: '#760',
   },
   {
     path: '/operations/documents/:documentId',
@@ -141,7 +141,7 @@ export const pageRoutes: PageRoute[] = [
     description: 'Document 实体唯一详情路由。',
     parentPath: '/operations/knowledge-bases',
     entityIdParam: 'documentId',
-    owner: '#750',
+    owner: '#760',
   },
   {
     path: '/operations/memories',
@@ -317,6 +317,16 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/operations/knowledge-bases/:collectionId',
+    pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
+    title: '知识集合详情',
+    section: '智能体运营',
+    description: '集合成员文档与索引版本。',
+    parentPath: '/operations/knowledge-bases',
+    entityIdParam: 'collectionId',
+    owner: '#760',
+  },
   {
     path: '/operations/evaluation/datasets/:datasetId',
     pageId: 'OPS-EVAL-DATASETS',

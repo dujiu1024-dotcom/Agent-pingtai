@@ -21,8 +21,8 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
-import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
-import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
+import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
+import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -314,8 +314,8 @@ function PageView({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
-  if (route.pageId === 'ADM-AGENTS' || route.pageId === 'ADM-AGENT-DETAIL') return <AgentDefinitionPage />
-  if (route.pageId === 'ADM-WORKFLOWS' || route.pageId === 'ADM-WORKFLOW-EDITOR' || route.pageId === 'ADM-WORKFLOW-DETAIL') return <WorkflowDesignerPage />
+  if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
