@@ -1129,3 +1129,9 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+.audit-center { max-width: 1500px; }
+.audit-center .page-heading { padding-top: 32px; }
+.audit-center .task-toolbar { align-items: center; }
+.audit-center .task-toolbar input { flex: 1; min-width: 220px; }
+.audit-value { white-space: pre-wrap; overflow-wrap: anywhere; }
