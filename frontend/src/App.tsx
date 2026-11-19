@@ -21,6 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
@@ -110,7 +111,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                 key={route.pageId}
                 path={route.path}
                 element={
-                  <PageView
+                  <RouteGuard
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
@@ -147,6 +148,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
   const navigate = useNavigate()
+  const [toast, setToast] = useState('')
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -157,6 +159,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [navigate])
+
   const current = [
     ...pageRoutes,
     ...detailRoutes,
@@ -164,126 +167,105 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     ...authRoutes,
   ].find((route) => {
     if (route.path === location.pathname) return true
-    const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
+    const pattern = new RegExp('^' + route.path.replace(/:[^/]+/g, '[^/]+') + '/?$')
     return pattern.test(location.pathname)
   })
-  const breadcrumbs = current?.parentPath
-    ? [findPageRoute(current.parentPath)].filter((item): item is PageRoute =>
-        Boolean(item),
-      )
-    : []
+
+  const showToast = (message: string) => {
+    setToast(message)
+    window.setTimeout(() => setToast(''), 1700)
+  }
+
+  const navigation = [
+    { path: '/workspace/overview', title: '工作台', icon: '⌂', view: 'home' },
+    { path: '/workspace/office', title: '3D 办公室', icon: '▣', view: 'office' },
+    { path: '/workspace/tasks', title: '任务中心', icon: '☰' },
+    { path: '/workspace/collaboration', title: 'Agent 协作', icon: '⚇' },
+    { path: '/admin/workflows', title: 'Workflow', icon: '⌘' },
+    { path: '/workspace/quality-cost', title: '成本分摊', icon: '¥' },
+    { path: '/admin/settings', title: '系统管理', icon: '⚙' },
+  ]
 
   return (
     <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
-        <Link
-          className="brand"
-          to="/workspace/overview"
-          aria-label="Agent Platform 运营驾驶舱"
-        >
-          <span className="brand-mark">A</span>
-          {!collapsed && <span>Agent Platform</span>}
+        <Link className="brand" to="/workspace/overview" aria-label="Agent 平台工作台">
+          <span className="brand-mark" aria-hidden="true">A</span>
+          {!collapsed && <span>Agent 平台</span>}
         </Link>
-        <button
-          className="collapse-button"
-          type="button"
-          onClick={toggleSidebar}
-          aria-label={collapsed ? '展开导航' : '折叠导航'}
-          aria-expanded={!collapsed}
-        >
-          {collapsed ? '›' : '‹'}
-        </button>
-        <nav className="primary-navigation">
-          {getVisibleNavigation(config.auth.enabled, config.capabilities).map(
-            (group) => (
-              <section
-                className="nav-group"
-                key={group.id}
-                aria-label={group.title}
-              >
-                <div className="nav-group-title">
-                  {!collapsed && group.title}
-                </div>
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.pageId}
-                    to={item.path}
-                    title={collapsed ? item.title : undefined}
-                    className={({ isActive }) =>
-                      isActive ? 'nav-item active' : 'nav-item'
-                    }
-                    end
-                  >
-                    <span className="nav-dot" aria-hidden="true" />
-                    {!collapsed && <span>{item.title}</span>}
-                  </NavLink>
-                ))}
-              </section>
-            ),
-          )}
+        <nav className="prototype-navigation" aria-label="全局导航">
+          {navigation.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              title={collapsed ? item.title : undefined}
+              data-v={item.view}
+              end={item.path === '/workspace/overview' || item.path === '/workspace/office'}
+              className={({ isActive }) => isActive ? 'prototype-nav-item on' : 'prototype-nav-item'}
+            >
+              <i aria-hidden="true">{item.icon}</i>
+              {!collapsed && <span>{item.title}</span>}
+            </NavLink>
+          ))}
+          <button
+            className="prototype-nav-item collapse-nav-item"
+            type="button"
+            aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+            aria-expanded={!collapsed}
+            onClick={() => {
+              toggleSidebar()
+              showToast(collapsed ? '已展开侧边栏（演示）' : '已收起侧边栏（演示）')
+            }}
+          >
+            <i aria-hidden="true">{collapsed ? '»' : '«'}</i>
+            {!collapsed && <span>收起侧边栏</span>}
+          </button>
         </nav>
-        {!collapsed && (
-          <div className="sidebar-footer">
-            <span>模式由服务端启动配置决定</span>
-            <strong>{config.auth.enabled ? '权限模式' : '免登录模式'}</strong>
-            <small>版本 {config.version}</small>
-          </div>
-        )}
       </aside>
 
       <main className="main-content">
-        <header className="topbar">
-          <div className="topbar-start">
-            <div className="breadcrumbs" aria-label="面包屑导航">
-              <Link to="/workspace/overview">Agent Platform</Link>
-              {current && (
-                <span>
-                  <i aria-hidden="true">/</i>
-                  {current.section}
-                </span>
-              )}
-              {breadcrumbs.map((item) => (
-                <span key={item.pageId}>
-                  <i aria-hidden="true">/</i>
-                  {item.title}
-                </span>
-              ))}
-              {current && (
-                <span>
-                  <i aria-hidden="true">/</i>
-                  {current.title}
-                </span>
-              )}
-            </div>
-          </div>
+        <header className="topbar" aria-label="顶部工具栏">
+          <form
+            className="top-search"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              navigate('/search')
+            }}
+          >
+            <span className="top-search-icon" aria-hidden="true">⌕</span>
+            <input
+              aria-label="搜索 Agent、任务、文档"
+              placeholder="搜索 Agent、任务、文档…"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') event.currentTarget.blur()
+              }}
+            />
+            <kbd>Ctrl + K</kbd>
+          </form>
           <div className="top-actions">
-            <Link className="top-action" to="/search" aria-label="打开全局搜索">
-              全局搜索 <kbd>⌘ K</kbd>
+            <Link className="top-icon-button notification-button" to="/notifications" aria-label="通知">
+              <span aria-hidden="true">♧</span>
+              <i aria-hidden="true" />
             </Link>
-            <Link
-              className="top-action"
-              to="/notifications"
-              aria-label="打开通知中心"
-            >
-              通知
-            </Link>
-            {config.auth.enabled && (
-              <Link className="top-action auth-entry" to="/auth/login">
-                登录
-              </Link>
-            )}
-            <span className="mode-indicator">
-              {config.auth.enabled ? '权限已启用' : '免登录'}
-            </span>
+            <button className="top-icon-button" type="button" aria-label="主题" onClick={() => showToast('主题切换待接入')}>
+              ☼
+            </button>
+            <button className="user-avatar" type="button" aria-label="用户账户" onClick={() => showToast('用户菜单待接入')}>
+              A
+            </button>
           </div>
         </header>
         <Outlet />
       </main>
+      <div className={toast ? 'prototype-toast visible' : 'prototype-toast'} role="status" aria-live="polite">
+        {toast}
+      </div>
     </div>
   )
 }
 
-function PageView({
+function RouteGuard({
   route,
   authEnabled,
   capabilities,
@@ -308,6 +290,7 @@ function PageView({
       />
     )
   if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
