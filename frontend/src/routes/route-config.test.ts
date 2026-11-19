@@ -116,7 +116,7 @@ describe('route configuration', () => {
         .params.providerId,
     ).toBe('provider-7')
   })
-  it('registers the auth-only files workspace and asset deep link under #802', () => {
+  it('registers the files workspace and asset deep link under #802', () => {
     const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
     expect(filesRoute?.owner).toBe('#802')
     expect(filesRoute?.authOnly).toBeUndefined()
