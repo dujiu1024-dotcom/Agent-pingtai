@@ -107,17 +107,17 @@ function ZoneRoom({ zone, selected, onSelect }: { zone: (typeof zoneLayout)[numb
 
 function AgentFigure({ agent, index }: { agent: Agent; index: number }) {
   const group = useRef<Group>(null)
-  const color = agent.status === 'running' ? '#2f6af0' : agent.status === 'failed' ? '#e36c70' : agent.status === 'waiting_approval' ? '#e6a84f' : '#4caf91'
+  const color = agent.status === 'running' ? '#2f6af0' : '#4caf91'
   useFrame(({ clock }) => {
     if (group.current) group.current.position.y = 0.04 + Math.sin(clock.elapsedTime * 2 + index) * 0.035
   })
   return (
-    <group ref={group} position={[-4.1 + (index % 3) * 1.25, 0, -1.25 + Math.floor(index / 3) * 1.1]}>
+    <group ref={group} position={[-5.1 + (index % 7) * 1.65, 0, 4.1 + Math.floor(index / 7) * 0.55]}>
       <mesh position={[0, 0.88, 0]} castShadow><capsuleGeometry args={[0.19, 0.42, 4, 8]} /><meshStandardMaterial color={color} roughness={0.5} /></mesh>
       <mesh position={[0, 1.23, 0]} castShadow><sphereGeometry args={[0.16, 16, 16]} /><meshStandardMaterial color="#f1c9a8" /></mesh>
       <mesh position={[0, 1.48, 0]}><sphereGeometry args={[0.055, 12, 12]} /><meshBasicMaterial color={color} /></mesh>
       <Html position={[0, 1.78, 0]} center distanceFactor={10} style={{ pointerEvents: 'none' }}>
-        <div className="r3-agent-tag"><b>{agent.name}</b><span>{agent.status}</span></div>
+        <div className="r3-agent-tag"><b>{agent.name}</b><span>{agent.status === 'running' ? '运行中' : '空闲'} · 未分配工位</span></div>
       </Html>
     </group>
   )
@@ -147,11 +147,12 @@ function OfficeModel({ zones, selectedZone, onSelectZone, agents }: { zones: Zon
         <boxGeometry args={[0.16, 3.3, 10.2]} />
         <meshStandardMaterial color="#d9e2f0" transparent opacity={0.34} />
       </mesh>
-      {zoneLayout.map((zone) => (
+      {zoneLayout.filter((layout) => zones.some((zone) => zone.id === layout.id)).map((zone) => (
         <ZoneRoom key={zone.id} zone={zone} selected={selectedZone === zone.id} onSelect={() => onSelectZone(zone.id)} />
       ))}
       {agents.map((agent, index) => <AgentFigure key={agent.agent_id} agent={agent} index={index} />)}
       <Text position={[0, 0.12, -4.7]} fontSize={0.25} color="#7183a3" anchorX="center">AGENT PLATFORM · DIGITAL OFFICE</Text>
+      {agents.length > 0 && <Text position={[0, 0.2, 4.8]} fontSize={0.14} color="#5f779e" anchorX="center">LIVE AGENTS · WORKSTATION LOCATION NOT PROVIDED</Text>}
       <OrbitControls makeDefault minDistance={10} maxDistance={24} maxPolarAngle={Math.PI / 2.08} minPolarAngle={0.55} target={[0, 0.5, 0]} enableDamping dampingFactor={0.08} />
     </>
   )
