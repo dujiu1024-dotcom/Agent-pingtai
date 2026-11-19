@@ -21,7 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
-import { OfficePage } from '@/pages/OfficePage'
+import { OfficePage } from '@/pages/office/OfficePage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
