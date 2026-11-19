@@ -235,7 +235,7 @@ function AppShell() {
           </form>
           <div className="top-actions">
             <Link className="top-icon-button notification-button" to="/notifications" aria-label="通知">
-              <span aria-hidden="true">♧</span>
+              <span aria-hidden="true">🔔</span>
               <i aria-hidden="true" />
             </Link>
             <button className="top-icon-button" type="button" aria-label="主题" onClick={() => showToast('主题切换待接入')}>
