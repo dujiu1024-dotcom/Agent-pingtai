@@ -1377,3 +1377,11 @@ input:focus-visible {
   .dashboard-kpi-card strong { font-size: 20px; }
   .dashboard-kpi-card small { font-size: 9px; }
 }
+
+
+/* Dual-axis markers for the dashboard trend chart */
+.dashboard-dot-success {
+  fill: #a78bfa;
+  stroke: #fff;
+  stroke-width: 2;
+}
