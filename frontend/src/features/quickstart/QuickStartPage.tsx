@@ -112,7 +112,11 @@ export function QuickStartPage() {
   const taskExecutionReady =
     capabilitiesQuery.isSuccess && features.task_execution !== false
   const selected = agents.find((item) => item.item_id === agentId)
-  const canSubmit = Boolean(agentId) && message.trim().length > 0 && !submitting
+  const canSubmit =
+    Boolean(agentId) &&
+    message.trim().length > 0 &&
+    !submitting &&
+    taskExecutionReady
 
   const recentTasks = useMemo(
     () =>
