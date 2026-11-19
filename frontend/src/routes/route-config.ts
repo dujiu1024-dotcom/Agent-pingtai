@@ -12,7 +12,7 @@ export interface PageRoute {
 }
 
 export interface NavigationGroup {
-  id: 'workspace' | 'operations' | 'administration'
+  id: 'workspace' | 'operations' | 'administration' | 'global'
   title: string
   items: PageRoute[]
 }
@@ -172,7 +172,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-AGENTS',
     title: 'Agent 定义',
     section: '平台管理',
-    description: 'Agent 定义 CRUD、指令版本、模型模板与工具/Skill/Workflow 关联。',
+    description:
+      'Agent 定义 CRUD、指令版本、模型模板与工具/Skill/Workflow 关联。',
     owner: '#757',
   },
   {
@@ -472,7 +473,180 @@ export const globalRoutes: PageRoute[] = [
     description: '系统诊断与运维事件入口。',
     owner: '#751',
   },
+  {
+    path: '/admin/scheduler/jobs',
+    pageId: 'GLOBAL-SCHEDULER-JOBS',
+    title: '调度任务',
+    section: '全局能力',
+    description: 'Scheduler Jobs — 巡检、逾期扫描、死信等定时任务。',
+    owner: '#OPS',
+  },
+  {
+    path: '/admin/scheduler/subscriptions',
+    pageId: 'GLOBAL-SCHEDULER-SUBS',
+    title: '事件订阅',
+    section: '全局能力',
+    description: 'Scheduler Subscriptions — 事件订阅与通知通道。',
+    owner: '#OPS',
+  },
 ]
+
+export interface SubPageNav {
+  label: string
+  path: string
+  authOnly?: boolean
+  capability?: string
+}
+
+export interface NavigationSection {
+  id:
+    | 'home'
+    | 'office'
+    | 'tasks'
+    | 'collaboration'
+    | 'workflow'
+    | 'cost'
+    | 'administration'
+  label: string
+  icon: string
+  path: string
+  subpages: SubPageNav[]
+}
+
+/** 一级导航按演示首页合并为 7 个入口，原路由作为子页面挂载 */
+export const navigationSections: NavigationSection[] = [
+  {
+    id: 'home',
+    label: '工作台',
+    icon: '⌂',
+    path: '/workspace/overview',
+    subpages: [],
+  },
+  {
+    id: 'office',
+    label: '3D 办公室',
+    icon: '▣',
+    path: '/workspace/office',
+    subpages: [],
+  },
+  {
+    id: 'tasks',
+    label: '任务中心',
+    icon: '☰',
+    path: '/workspace/tasks',
+    subpages: [
+      { label: '任务列表', path: '/workspace/tasks' },
+      { label: '审批中心', path: '/operations/approvals' },
+      { label: '会话与消息', path: '/operations/conversations' },
+      { label: '文件与产物', path: '/operations/files' },
+    ],
+  },
+  {
+    id: 'collaboration',
+    label: 'Agent 协作',
+    icon: '⚇',
+    path: '/workspace/collaboration',
+    subpages: [
+      { label: '协作中心', path: '/workspace/collaboration' },
+      { label: 'Agent 运行态', path: '/operations/agents' },
+      { label: '知识库', path: '/operations/knowledge-bases' },
+      { label: '记忆治理', path: '/operations/memories' },
+    ],
+  },
+  {
+    id: 'workflow',
+    label: 'Workflow',
+    icon: '⌘',
+    path: '/admin/workflows',
+    subpages: [
+      { label: 'Workflow 设计', path: '/admin/workflows' },
+      {
+        label: 'Prompt 模板',
+        path: '/admin/prompts',
+        capability: 'prompt_management',
+      },
+    ],
+  },
+  {
+    id: 'cost',
+    label: '成本分摊',
+    icon: '¥',
+    path: '/workspace/quality-cost',
+    subpages: [
+      { label: '成本与质量', path: '/workspace/quality-cost' },
+      { label: '评测数据集', path: '/operations/evaluation/datasets' },
+      { label: '评测运行', path: '/operations/evaluation/runs' },
+    ],
+  },
+  {
+    id: 'administration',
+    label: '系统管理',
+    icon: '⚙',
+    path: '/admin/agents',
+    subpages: [
+      { label: 'Agent 定义', path: '/admin/agents' },
+      { label: '模型供应商', path: '/admin/models/providers' },
+      { label: '模型模板', path: '/admin/models/templates' },
+      { label: '模型路由', path: '/admin/models/routing' },
+      { label: '工具与 MCP', path: '/admin/tools' },
+      { label: 'Skills', path: '/admin/skills' },
+      {
+        label: '组织与成员',
+        path: '/admin/organization',
+        authOnly: true,
+      },
+      {
+        label: '角色与权限',
+        path: '/admin/access-control',
+        authOnly: true,
+      },
+      { label: '系统设置', path: '/admin/settings' },
+      { label: '审计中心', path: '/admin/audit' },
+      { label: '调度任务', path: '/admin/scheduler/jobs' },
+      { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
+      { label: '系统运维', path: '/admin/operations' },
+    ],
+  },
+]
+
+export function getNavigationSections(
+  authEnabled: boolean,
+  capabilities: string[] = [],
+): NavigationSection[] {
+  return navigationSections.map((section) => ({
+    ...section,
+    subpages: section.subpages.filter(
+      (page) =>
+        (!page.authOnly || authEnabled) &&
+        (!page.capability || capabilities.includes(page.capability)),
+    ),
+  }))
+}
+
+function matchesPath(base: string, pathname: string): boolean {
+  return pathname === base || pathname.startsWith(`${base}/`)
+}
+
+export function findNavigationSection(
+  pathname: string,
+): NavigationSection | undefined {
+  return navigationSections.find(
+    (section) =>
+      matchesPath(section.path, pathname) ||
+      section.subpages.some((page) => matchesPath(page.path, pathname)),
+  )
+}
+
+export function findSubPage(
+  section: NavigationSection | undefined,
+  pathname: string,
+): SubPageNav | undefined {
+  if (!section) return undefined
+  return (
+    section.subpages.find((page) => matchesPath(page.path, pathname)) ??
+    section.subpages.find((page) => page.path === section.path)
+  )
+}
 
 export const authRoutes: PageRoute[] = [
   {
@@ -523,6 +697,15 @@ export function getVisibleNavigation(
           !item.path.includes('/:') &&
           (!item.authOnly || authEnabled) &&
           (!item.capability || capabilities.includes(item.capability)),
+      ),
+    },
+    {
+      id: 'global',
+      title: '全局能力',
+      items: globalRoutes.filter(
+        (item) =>
+          !item.path.includes('/:') &&
+          !['/search', '/notifications'].includes(item.path),
       ),
     },
   ]

@@ -449,6 +449,24 @@ class RegistryBackedTaskCenterService:
         )
         return _task_view(row) if row is not None else None
 
+    async def list_task_runs(
+        self, *, tenant_id: str, task_id: str,
+    ) -> list[Mapping[str, Any]]:
+        self._check_tenant(tenant_id)
+        rows = await self.run_store.list_runs_by_task(tenant_id, task_id)
+        return [
+            {
+                "run_id": str(row["run_id"]),
+                "status": row["status"],
+                "agent_id": row.get("agent_id"),
+                "started_at": _json_value(row.get("started_at")),
+                "finished_at": _json_value(row.get("finished_at")),
+                "last_error": row.get("last_error"),
+                "updated_at": _json_value(row.get("updated_at")),
+            }
+            for row in rows
+        ]
+
     async def retry_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
         idempotency_key: str,

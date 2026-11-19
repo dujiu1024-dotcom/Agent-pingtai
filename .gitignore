@@ -35,5 +35,10 @@ legacy/v1-archive/agency/state/
 
 # 本地工具产物
 .trae-html-share-packages/
+.trae/
+
+# 前端依赖与冗余构建产物（实际构建输出为 agent_platform/web/static）
+frontend/node_modules/
+frontend/dist/
 .git-sync.lock
 backups/

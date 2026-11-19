@@ -113,6 +113,7 @@ def create_platform_app(
     evaluation_worker: Any | None = None,
     evaluation_manage_authorizer: Any | None = None,
     evaluation_review_authorizer: Any | None = None,
+    connection_factory: Any | None = None,
     evaluation_rollout_bridge: Any | None = None,
     evaluation_rollout_authorizer: Any | None = None,
     prompt_registry: Any | None = None,
@@ -316,7 +317,11 @@ def create_platform_app(
             evaluation_comparison_service=evaluation_comparison_service,
             authorize_eval_manage=evaluation_manage_authorizer,
             authorize_eval_review=evaluation_review_authorizer,
+            connection_factory=connection_factory,
         ))
+    if connection_factory is not None:
+        from agent_platform.api.admin import create_admin_router
+        app.include_router(create_admin_router(connection_factory=connection_factory))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
     ))

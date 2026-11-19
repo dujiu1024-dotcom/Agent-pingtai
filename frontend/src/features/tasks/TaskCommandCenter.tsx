@@ -10,8 +10,8 @@ import {
   unwrapRecord,
 } from './task-model'
 import type { RunEvent, RunRecord, TaskRecord } from './task-model'
-const TASKS = '/workbench/tasks',
-  RUNS = '/workbench/runs'
+const TASKS = '/platform/v1/workbench/tasks',
+  RUNS = '/platform/v1/runs'
 const labels: Record<string, string> = {
   pending: '待处理',
   queued: '排队中',

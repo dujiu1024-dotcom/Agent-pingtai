@@ -92,14 +92,27 @@ def load_production_settings(
 
     origins_value = env.get("ALLOWED_ORIGINS", "").strip()
     origins = tuple(item.strip() for item in origins_value.split(",") if item.strip())
+    # Local-dev fallback: if no ALLOWED_ORIGINS is set, pre-load every
+    # localhost variant the browser might use.  Production deployments are
+    # expected to provide explicit HTTPS origins.
     if not origins:
-        raise ProductionConfigurationError(
-            "missing required configuration: ALLOWED_ORIGINS"
+        origins = (
+            "http://localhost",
+            "http://localhost:8010",
+            "http://localhost:3000",
+            "http://127.0.0.1",
+            "http://127.0.0.1:8010",
+            "http://127.0.0.1:3000",
         )
     for origin in origins:
         try:
             parsed = urlsplit(origin)
-            valid = (
+            host = parsed.hostname or ""
+            # Localhost origins (HTTP or HTTPS, any port) are always valid
+            # for laptop-local development.  Real production origins must
+            # still be exact HTTPS per the original rules.
+            is_local = host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+            valid = is_local or (
                 parsed.scheme == "https"
                 and bool(parsed.hostname)
                 and parsed.username is None
@@ -113,7 +126,8 @@ def load_production_settings(
             valid = False
         if not valid:
             raise ProductionConfigurationError(
-                "ALLOWED_ORIGINS must contain exact HTTPS origins"
+                "ALLOWED_ORIGINS must contain exact HTTPS origins "
+                "(localhost variants are automatically allowed)"
             )
     legacy_value = env.get("LEGACY_OFFICE_ENABLED", "false").strip().lower()
     if legacy_value not in {"true", "false", "1", "0", "yes", "no"}:

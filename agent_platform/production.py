@@ -54,6 +54,7 @@ from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.postgres_repository import PostgresMemoryRepository
 from agent_platform.memory.service import MemoryService
 from agent_platform.observability.prompt_store import PostgresPromptRegistry
+from agent_platform.observability.evaluation_store import PostgresEvaluationRepository
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.production_config import ProductionSettings, load_production_settings
 from agent_platform.runtime.lifecycle import RunLifecycleManager
@@ -160,7 +161,30 @@ def create_production_app(
     identity_audit_reader = PostgresIdentityAuditReader(connection_factory)
     quota_audit_writer = _QuotaAuditAdapter(audit_writer)
     prompt_registry = PostgresPromptRegistry(connection_factory)
+    evaluation_repository = PostgresEvaluationRepository(connection_factory)
     metrics_exporter = PrometheusClientMetricsRecorder()
+
+    async def authorize_eval_manage(principal: Any) -> bool:
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key="knowledge.manage",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    async def authorize_eval_review(principal: Any) -> bool:
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key="knowledge.read",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
 
     async def resolve_registry(principal: Any) -> RegistryService:
         return RegistryService(PostgresRegistryRepository(
@@ -531,6 +555,10 @@ def create_production_app(
         audit_authorizer=authorize_audit_read,
         prompt_registry=prompt_registry,
         prompt_manage_authorizer=authorize_prompt_management,
+        evaluation_repository=evaluation_repository,
+        evaluation_manage_authorizer=authorize_eval_manage,
+        evaluation_review_authorizer=authorize_eval_review,
+        connection_factory=connection_factory,
         readiness_checks={
             "postgres": postgres_ready,
             "redis": redis_client.ping,

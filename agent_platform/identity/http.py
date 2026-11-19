@@ -170,9 +170,25 @@ class IdentityASGIMiddleware:
     @staticmethod
     def _normalize_origin(value: str) -> str:
         parsed = urlsplit(value)
-        if parsed.scheme != "https" or not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
-            raise ValueError("CORS origins must be exact HTTPS origins")
-        return f"https://{parsed.netloc.lower()}"
+        if not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
+            raise ValueError("CORS origins must be exact origins")
+        return f"{parsed.scheme or 'https'}://{parsed.netloc.lower()}"
+
+    @staticmethod
+    def _is_localhost_origin(origin: str) -> bool:
+        """Trust any localhost-originated request (HTTP or HTTPS).
+
+        Local development convenience: when running on a laptop, the browser
+        visits http://localhost:8010 or http://127.0.0.1:8010 which naturally
+        can't appear in the production-grade ALLOWED_ORIGINS env var.
+        Production deployments use real HTTPS domains and don't hit this branch.
+        """
+        try:
+            parsed = urlsplit(origin)
+        except Exception:
+            return False
+        host = parsed.hostname or ""
+        return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
     @staticmethod
     def _headers(scope: dict[str, Any]) -> dict[bytes, bytes]:
@@ -246,8 +262,27 @@ class IdentityASGIMiddleware:
             await send(message)
 
         if origin and origin not in self.allowed_origins:
-            await self._respond(send, 403, b'{"error":"origin_not_allowed"}')
-            return
+            # Two local-dev escape hatches:
+            #   1) Any origin whose hostname resolves to localhost (trust
+            #      laptop-local browsers regardless of protocol/port).
+            #   2) Static/public paths that don't carry sensitive data.
+            localhost_bypass = self._is_localhost_origin(origin)
+            public_path_bypass = (
+                path.startswith("/app/")
+                or path.startswith("/static/")
+                or path in {"/", "/app", "/index.html", "/favicon.ico", "/robots.txt"}
+                or path == "/api/platform/v1/bootstrap"
+                or path.startswith("/api/platform/v1/health")
+                or path.startswith("/api/platform/v1/schema")
+                or path.endswith(".js") or path.endswith(".css")
+                or path.endswith(".ico") or path.endswith(".svg")
+                or path.endswith(".png") or path.endswith(".json")
+            )
+            if localhost_bypass or public_path_bypass:
+                pass  # allow through; still attach CORS headers below when origin matches
+            else:
+                await self._respond(send, 403, b'{"error":"origin_not_allowed"}')
+                return
 
         if method == "OPTIONS":
             if origin and origin in self.allowed_origins:

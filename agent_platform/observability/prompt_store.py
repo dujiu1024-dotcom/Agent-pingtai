@@ -83,6 +83,26 @@ class PostgresPromptRegistry:
             for row in rows
         ]
 
+    async def list_prompts(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """List distinct prompt_ids with latest version summary."""
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT pv.prompt_id, MAX(pv.version) AS latest_version,
+                          (SELECT active_version FROM platform_prompt_deployments pd
+                           WHERE pd.prompt_id=pv.prompt_id LIMIT 1) AS active_version,
+                          COUNT(DISTINCT pv.version) AS total_versions
+                   FROM platform_prompt_versions pv
+                   GROUP BY pv.prompt_id
+                   ORDER BY pv.prompt_id
+                   LIMIT %s""",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
     async def create_variant(
         self, prompt_id: str, name: str, version: int, *, created_by: str,
     ) -> PromptVariant:

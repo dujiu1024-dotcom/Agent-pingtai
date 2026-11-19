@@ -196,6 +196,16 @@ class PostgresRunStateStore(RunStateStore):
    rows=await cur.fetchall()
   return [dict(row) for row in rows]
 
+ async def list_runs_by_task(self, tenant_id:str, task_id:str)->list[dict[str,Any]]:
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT run_id,status,agent_id,started_at,finished_at,
+    last_error,updated_at,usage,registry_snapshot_digest
+    FROM platform_runs WHERE tenant_id=%s AND task_id=%s
+    ORDER BY created_at ASC""",(tenant_id,task_id))
+   rows=await cur.fetchall()
+  return [dict(row) for row in rows]
+
  async def claim_task_preparation(self,tenant_id:str,run_id:str,owner:str,*,lease_seconds:int=60)->bool:
   if not owner.strip() or lease_seconds<5:
    raise ValueError("invalid task preparation lease")

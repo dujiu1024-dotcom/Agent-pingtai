@@ -1,16 +1,11 @@
 from pathlib import Path
+import mimetypes
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 STATIC = Path(__file__).with_name("static")
 LEGACY_CONSOLE = Path(__file__).resolve().parents[2] / "console.html"
-ASSETS = {
-    "app.js": "text/javascript; charset=utf-8",
-    "style.css": "text/css; charset=utf-8",
-    "console.js": "text/javascript; charset=utf-8",
-    "console-config.js": "text/javascript; charset=utf-8",
-}
 
 
 def _legacy_console_response() -> FileResponse:
@@ -23,28 +18,37 @@ def _legacy_console_response() -> FileResponse:
     )
 
 
+def _index_response() -> FileResponse:
+    if not (STATIC / "index.html").is_file():
+        return _legacy_console_response()
+    return FileResponse(
+        STATIC / "index.html",
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 def create_platform_web_router() -> APIRouter:
     router = APIRouter(tags=["platform-web"])
 
     @router.get("/app", include_in_schema=False)
     @router.get("/app/", include_in_schema=False)
     async def index(legacy: bool = False):
-        # Explicit opt-in keeps the legacy UI available during an incomplete
-        # deployment. Missing new UI files also fail over without a dead link.
         if legacy:
-            # 3D 办公室现在由 legacy bridge 在新平台同源提供（含所需 CSP）。
             return RedirectResponse(url="/office", status_code=307)
-        if not (STATIC / "index.html").is_file():
-            return _legacy_console_response()
-        return FileResponse(
-            STATIC / "index.html",
-            media_type="text/html; charset=utf-8",
-            headers={"Cache-Control": "no-store"},
-        )
+        return _index_response()
+
+    @router.get("/app/assets/{path:path}", include_in_schema=False)
+    async def asset(path: str):
+        """通配符 assets — 支持 Vite hash 产物（如 index-CQC_7KwS.js）。"""
+        f = STATIC / "assets" / path
+        if not f.is_file():
+            raise HTTPException(404, "asset not found")
+        media_type, _ = mimetypes.guess_type(str(f))
+        return FileResponse(f, media_type=media_type or "application/octet-stream")
 
     @router.get("/graph-view", include_in_schema=False)
     async def graph_view():
-        # 平台内置只读图谱页；未登录时页面仍可打开，API 会返回 401。
         if not (STATIC / "graph.html").is_file():
             raise HTTPException(404, "graph view is not installed")
         return FileResponse(
@@ -53,10 +57,9 @@ def create_platform_web_router() -> APIRouter:
             headers={"Cache-Control": "no-store"},
         )
 
-    @router.get("/app/assets/{name}", include_in_schema=False)
-    async def asset(name: str):
-        if name not in ASSETS or not (STATIC / name).is_file():
-            raise HTTPException(404, "asset not found")
-        return FileResponse(STATIC / name, media_type=ASSETS[name])
+    @router.get("/app/{path:path}", include_in_schema=False)
+    async def spa_fallback(path: str):
+        """React Router SPA fallback — 任意未匹配子路由返回 index.html。"""
+        return _index_response()
 
     return router

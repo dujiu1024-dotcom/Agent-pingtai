@@ -30,6 +30,10 @@ class TaskCenterService(Protocol):
         self, *, tenant_id: str, task_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None: ...
 
+    async def list_task_runs(
+        self, *, tenant_id: str, task_id: str,
+    ) -> Sequence[Mapping[str, Any]]: ...
+
     async def cancel_task(
         self, *, tenant_id: str, task_id: str, actor_id: str,
     ) -> Mapping[str, Any] | None: ...
@@ -166,6 +170,21 @@ def create_workbench_router(
             if result is None:
                 raise HTTPException(404, "task not found")
             return dict(result)
+
+        @router.get("/tasks/{task_id}/runs")
+        async def list_task_runs(task_id: str, request: Request):
+            principal, service = await task_context(request, task_id, "read")
+            # First confirm the task exists; returns 404 for missing tasks.
+            task = await service.get_task(
+                tenant_id=principal.tenant_id, task_id=task_id,
+                actor_id=principal.user_id,
+            )
+            if task is None:
+                raise HTTPException(404, "task not found")
+            items = await service.list_task_runs(
+                tenant_id=principal.tenant_id, task_id=task_id,
+            )
+            return {"items": [dict(item) for item in items]}
 
         @router.post("/tasks/{task_id}/retry")
         async def retry_task(task_id: str, request: Request):

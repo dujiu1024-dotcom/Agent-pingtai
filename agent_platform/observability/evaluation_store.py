@@ -151,22 +151,53 @@ class PostgresEvaluationRepository:
             rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-    async def latest_reports(
-        self, dataset_id: str, *, tenant_id: str, limit: int = 20,
+    async def list_datasets(
+        self, *, tenant_id: str, limit: int = 50,
     ) -> list[dict[str, Any]]:
-        if not dataset_id.strip() or not tenant_id.strip():
-            raise ValueError("dataset_id and tenant_id are required")
+        """List distinct dataset_ids with latest version + case count."""
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT dataset_id, MAX(version) AS latest_version,
+                          MAX(case_count) AS case_count
+                   FROM platform_eval_datasets
+                   GROUP BY dataset_id
+                   ORDER BY dataset_id
+                   LIMIT %s""",
+                (limit,),
+            )
+            rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def latest_reports(
+        self, dataset_id: str | None = None, *, tenant_id: str, limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
         if not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
         connection = await self._connect()
         async with connection:
-            cursor = await connection.execute(
-                """SELECT eval_run_id,tenant_id,dataset_id,dataset_version,model_key,report,
-                          gate_passed,created_at
-                   FROM platform_eval_runs WHERE dataset_id=%s AND tenant_id=%s
-                   ORDER BY created_at DESC LIMIT %s""",
-                (dataset_id,tenant_id,limit),
-            )
+            if dataset_id and dataset_id.strip():
+                cursor = await connection.execute(
+                    """SELECT eval_run_id,tenant_id,dataset_id,dataset_version,model_key,report,
+                              gate_passed,created_at
+                       FROM platform_eval_runs WHERE dataset_id=%s AND tenant_id=%s
+                       ORDER BY created_at DESC LIMIT %s""",
+                    (dataset_id,tenant_id,limit),
+                )
+            else:
+                cursor = await connection.execute(
+                    """SELECT eval_run_id,tenant_id,dataset_id,dataset_version,model_key,report,
+                              gate_passed,created_at
+                       FROM platform_eval_runs WHERE tenant_id=%s
+                       ORDER BY created_at DESC LIMIT %s""",
+                    (tenant_id,limit),
+                )
             rows = await cursor.fetchall()
         return [{
             "eval_run_id": str(row["eval_run_id"]), "tenant_id": row["tenant_id"],

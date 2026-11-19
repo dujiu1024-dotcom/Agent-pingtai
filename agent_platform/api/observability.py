@@ -46,7 +46,9 @@ def create_observability_router(
     evaluation_governance_service: Any | None = None,
     evaluation_comparison_service: Any | None = None,
     operational_health_monitor: Any | None = None,
+    connection_factory: Any | None = None,
 ) -> APIRouter:
+    import json as _json
     router = APIRouter(prefix="/api/platform/v1/observability", tags=["observability"])
 
     @router.get("/metrics", response_class=PlainTextResponse)
@@ -56,6 +58,16 @@ def create_observability_router(
         if not callable(render):
             raise HTTPException(503, "metrics exporter is not configured")
         return PlainTextResponse(render(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+    @router.get("/metrics/json")
+    async def metrics_json_endpoint(request: Request):
+        _principal(request)
+        export_fn = getattr(metrics, "export_json", None)
+        if callable(export_fn):
+            items = export_fn()
+        else:
+            items = []
+        return {"items": items, "count": len(items)}
 
     @router.get("/health/capacity")
     async def operational_capacity_health(request: Request):
@@ -148,6 +160,21 @@ def create_observability_router(
             "dataset_id": record.dataset_id, "version": record.version,
             "case_count": len(record.cases), "tenant_id": record.tenant_id,
         }
+
+    @router.get("/evaluations/datasets")
+    async def list_evaluation_datasets(
+        request: Request, limit: int = Query(default=50, ge=1, le=200),
+    ):
+        actor = _principal(request)
+        if evaluation_repository is None:
+            raise HTTPException(503, "evaluation repository is not configured")
+        if not await _allowed(authorize_eval_manage, actor):
+            raise HTTPException(403, "evaluation dataset management permission required")
+        list_fn = getattr(evaluation_repository, "list_datasets", None)
+        if not callable(list_fn):
+            raise HTTPException(501, "evaluation dataset listing is not supported")
+        rows = await list_fn(tenant_id=actor.tenant_id, limit=limit)
+        return {"items": rows, "count": len(rows)}
 
     @router.get("/evaluations/datasets/{dataset_id}/versions")
     async def list_evaluation_dataset_versions(dataset_id: str, request: Request):
@@ -256,7 +283,7 @@ def create_observability_router(
 
     @router.get("/evaluations")
     async def list_evaluation_reports(
-        request: Request, dataset_id: str = Query(min_length=1),
+        request: Request, dataset_id: str | None = Query(default=None),
         limit: int = Query(default=20, ge=1, le=100),
     ):
         actor = _principal(request)

@@ -122,3 +122,23 @@ class PrometheusClientMetricsRecorder:
     def registry(self) -> Any:
         """Expose the private registry for controlled integration with a WSGI/ASGI server."""
         return self._registry
+
+    def export_json(self) -> list[dict[str, Any]]:
+        """Export all registered metrics as a JSON-friendly list."""
+        export: list[dict[str, Any]] = []
+        for family in self._registry.collect():
+            samples: list[dict[str, Any]] = []
+            for sample in family.samples:
+                labels = dict(sample.labels) if sample.labels else {}
+                samples.append({
+                    "name": sample.name,
+                    "value": sample.value,
+                    "labels": labels,
+                })
+            export.append({
+                "name": family.name,
+                "type": family.type,
+                "help": family.help,
+                "samples": samples,
+            })
+        return export

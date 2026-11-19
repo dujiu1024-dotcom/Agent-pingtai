@@ -91,7 +91,7 @@ export class ApiClient {
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? '/api'
     this.timeoutMs = options.timeoutMs ?? 15_000
-    this.fetcher = options.fetcher ?? fetch
+    this.fetcher = options.fetcher ?? fetch.bind(globalThis)
     this.defaultHeaders = options.defaultHeaders ?? {}
     this.credentials = options.credentials ?? 'same-origin'
   }
