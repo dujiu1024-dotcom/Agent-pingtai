@@ -182,7 +182,6 @@ class PageMapContractTests(unittest.TestCase):
         self.assertIn("## 2. 页面清单", self.page_map)
         self.assertIn("## 3. 实体详情唯一归属与穿透", self.page_map)
 
-
     def test_local_markdown_links_resolve_to_files_and_headings(self):
         from urllib.parse import unquote
 
@@ -213,6 +212,15 @@ class PageMapContractTests(unittest.TestCase):
                         if line.startswith("#")
                     }
                     self.assertIn(unquote(fragment).lower(), headings, target)
+
+    def test_visual_reference_assets_exist_in_repository(self):
+        assets = re.findall(r"\x60(示意图/[^\x60]+)\x60", self.page_map)
+        self.assertIn("示意图/首页示意图.png", assets)
+        self.assertIn("示意图/3D办公室示意图.jpeg", assets)
+        for asset in set(assets):
+            path = (ROOT / asset).resolve()
+            self.assertTrue(path.is_relative_to(ROOT), asset)
+            self.assertTrue(path.is_file(), asset)
 
     def test_mermaid_flowchart_edges_reference_declared_nodes(self):
         documents = (self.page_map, self.route_contract)
