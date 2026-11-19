@@ -1230,3 +1230,9 @@ input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .home-glow { animation: none; }
 }
+
+.home-page { position: fixed; inset: 0; z-index: 20; overflow: hidden; }
+.home-canvas { position: relative; width: 1536px; height: 1024px; }
+.home-welcome { position: absolute; }
+.home-kpi-card { position: absolute; }
+.home-glow { position: absolute; }
