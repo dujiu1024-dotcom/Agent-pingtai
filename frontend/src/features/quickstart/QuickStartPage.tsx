@@ -60,7 +60,8 @@ function agentName(item: AgentItem): string {
 }
 
 function agentSummary(item: AgentItem): string {
-  const description = item.definition?.description ?? item.definition?.summary
+  const description =
+    item.definition?.description ?? item.definition?.summary
   return typeof description === 'string' ? description : ''
 }
 
@@ -97,7 +98,9 @@ export function QuickStartPage() {
   const agentsQuery = useQuery({
     queryKey: ['quickstart', 'agents'],
     queryFn: () =>
-      apiClient.get<{ items?: AgentItem[] }>('/platform/v1/registry/agents'),
+      apiClient.get<{ items?: AgentItem[] }>(
+        '/platform/v1/registry/agents',
+      ),
     retry: false,
   })
   const recentQuery = useQuery({
@@ -310,7 +313,8 @@ export function QuickStartPage() {
             className="qs-submit"
             type="button"
             disabled={
-              !canSubmit || (capabilitiesQuery.isSuccess && !taskExecutionReady)
+              !canSubmit ||
+              (capabilitiesQuery.isSuccess && !taskExecutionReady)
             }
             onClick={() => setConfirmOpen(true)}
           >
@@ -380,7 +384,9 @@ export function QuickStartPage() {
                 <strong>已提交</strong>
                 <small>
                   任务 {result.task_id ?? '—'} · 状态{' '}
-                  {statusLabels[result.status ?? ''] ?? result.status ?? '未知'}
+                  {statusLabels[result.status ?? ''] ??
+                    result.status ??
+                    '未知'}
                 </small>
               </div>
               {result.task_id && (
