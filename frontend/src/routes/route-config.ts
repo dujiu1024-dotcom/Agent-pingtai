@@ -441,6 +441,14 @@ export const detailRoutes: PageRoute[] = [
 
 export const globalRoutes: PageRoute[] = [
   {
+    path: '/operations/dashboard',
+    pageId: 'OPS-DASHBOARD',
+    title: '运营驾驶舱',
+    section: '智能体运营',
+    description: '用量、容量健康与告警的运营数据看板。',
+    owner: '#797',
+  },
+  {
     path: '/search',
     pageId: 'GLOBAL-SEARCH',
     title: '全局搜索',
