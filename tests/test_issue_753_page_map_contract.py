@@ -183,5 +183,61 @@ class PageMapContractTests(unittest.TestCase):
         self.assertIn("## 3. 实体详情唯一归属与穿透", self.page_map)
 
 
+    def test_local_markdown_links_resolve_to_files_and_headings(self):
+        from urllib.parse import unquote
+
+        documents = {
+            PAGE_MAP: self.page_map,
+            ROUTE_CONTRACT: self.route_contract,
+        }
+        link_pattern = re.compile(r"!?(?:\\[[^\\]]*\\])\\(([^)]+)\\)")
+        for source, document in documents.items():
+            for raw_target in link_pattern.findall(document):
+                target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
+                if re.match(r"^(?:[a-z][a-z0-9+.-]*:|//)", target, re.I):
+                    continue
+                path_part, _, fragment = target.partition("#")
+                if path_part:
+                    destination = (source.parent / unquote(path_part)).resolve()
+                    self.assertTrue(destination.is_relative_to(ROOT), target)
+                    self.assertTrue(destination.is_file(), target)
+                else:
+                    destination = source
+                if fragment:
+                    target_text = destination.read_text(encoding="utf-8")
+                    headings = {
+                        re.sub(r"[^\\w\\- ]", "", line.lstrip("#").strip()).lower().replace(" ", "-")
+                        for line in target_text.splitlines()
+                        if line.startswith("#")
+                    }
+                    self.assertIn(unquote(fragment).lower(), headings, target)
+
+    def test_mermaid_flowchart_edges_reference_declared_nodes(self):
+        documents = (self.page_map, self.route_contract)
+        edge_pattern = re.compile(
+            r"^\\s*([A-Za-z][A-Za-z0-9_]*)\\s*-->\\s*(?:\\|[^|]*\\|\\s*)?([A-Za-z][A-Za-z0-9_]*)",
+            re.MULTILINE,
+        )
+        declaration_pattern = re.compile(
+            r"^\\s*([A-Za-z][A-Za-z0-9_]*)\\s*(?:\\[[^]]*\\]|\\{[^}]*\\}|\\([^)]*\\))",
+            re.MULTILINE,
+        )
+        blocks = [
+            match.group(1)
+            for document in documents
+            for match in re.finditer(r"\x60{3}mermaid\\s*\\n([\\s\\S]*?)\x60{3}", document)
+        ]
+        self.assertTrue(blocks, "page map must retain at least one Mermaid diagram")
+        for block in blocks:
+            declared = set(declaration_pattern.findall(block))
+            referenced = {
+                node
+                for edge in edge_pattern.findall(block)
+                for node in edge
+            }
+            self.assertTrue(referenced, block)
+            self.assertTrue(referenced.issubset(declared), sorted(referenced - declared))
+
+
 if __name__ == "__main__":
     unittest.main()
