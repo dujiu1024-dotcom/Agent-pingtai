@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import './prompt-registry.css'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { ApiError, apiClient } from '@/lib/api'
@@ -47,7 +47,6 @@ export function PromptRegistryPage({
 }: {
   evaluationGateEnabled: boolean
 }) {
-  const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { promptId } = useParams<{ promptId: string }>()
