@@ -301,6 +301,14 @@ export const pageRoutes: PageRoute[] = [
     description: 'Evaluation Run 列表入口。',
     owner: '#750',
   },
+  {
+    path: '/admin/approvals',
+    pageId: 'ADM-APPROVALS',
+    title: '审批中心',
+    section: '平台管理',
+    description: '待处理审批列表与审批详情。',
+    owner: '#799',
+  },
 ]
 
 export const detailRoutes: PageRoute[] = [
@@ -445,6 +453,16 @@ export const detailRoutes: PageRoute[] = [
     owner: '#750',
   },
   {
+    path: '/admin/approvals/:approvalId',
+    pageId: 'ADM-APPROVAL-DETAIL',
+    title: '审批详情',
+    section: '平台管理',
+    description: 'Approval 实体唯一详情路由。',
+    parentPath: '/admin/approvals',
+    entityIdParam: 'approvalId',
+    owner: '#799',
+  },
+  {
     path: '/admin/audit/:eventId',
     pageId: 'GLOBAL-AUDIT',
     title: '审计事件详情',
@@ -556,7 +574,7 @@ export const navigationSections: NavigationSection[] = [
     path: '/workspace/tasks',
     subpages: [
       { label: '任务列表', path: '/workspace/tasks' },
-      { label: '审批中心', path: '/operations/approvals' },
+      { label: '审批中心', path: '/admin/approvals' },
       { label: '会话与消息', path: '/operations/conversations' },
       { label: '文件与产物', path: '/operations/files' },
     ],
