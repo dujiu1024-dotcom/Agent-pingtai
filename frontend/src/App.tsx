@@ -425,6 +425,14 @@ function PageView({
   authEnabled: boolean
   capabilities: string[]
 }) {
+  if (route.capability && !capabilities.includes(route.capability)) {
+    return (
+      <ModeRestrictedState
+        title="当前实例未启用此能力"
+        description={`服务端启动配置未声明 ${route.capability}，此入口不会尝试调用对应 API。`}
+      />
+    )
+  }
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
