@@ -49,6 +49,7 @@ import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
 import { Dashboard } from '@/components/OperationsDashboard'
+import { ApprovalCenterPage } from '@/features/approvals/ApprovalCenterPage'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
@@ -468,6 +469,11 @@ function PageView({
     route.path === '/operations/documents/:documentId'
   )
     return <KnowledgeWorkbench />
+  if (
+    route.path === '/admin/approvals' ||
+    route.path === '/admin/approvals/:approvalId'
+  )
+    return <ApprovalCenterPage authEnabled={authEnabled} />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
 
