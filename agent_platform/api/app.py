@@ -264,14 +264,17 @@ def create_platform_app(
     )
     app.include_router(create_identity_router(identity=identity))
     prompt_management_available = (
-        auth_enabled and prompt_registry is not None and prompt_manage_authorizer is not None
+        auth_enabled
+        and prompt_registry is not None
+        and callable(getattr(prompt_registry, "list_prompts", None))
+        and prompt_manage_authorizer is not None
     )
     effective_bootstrap_capabilities = resolve_bootstrap_capabilities(
         bootstrap_capabilities,
         auth_enabled=auth_enabled,
         prompt_registry_configured=prompt_management_available,
         prompt_evaluation_gate_configured=(
-            prompt_management_available and prompt_evaluation_gate is not None
+            prompt_management_available and callable(prompt_evaluation_gate)
         ),
     )
     app.include_router(create_bootstrap_router(
@@ -515,7 +518,7 @@ def create_platform_app(
             "quotas": quota_reporting_store is not None or quota_store is not None,
             "metrics": metrics_exporter is not None,
             "audit": audit_reader is not None and audit_authorizer is not None,
-            "prompt_management": prompt_registry is not None and prompt_manage_authorizer is not None,
+            "prompt_management": prompt_management_available,
         },
         resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,
