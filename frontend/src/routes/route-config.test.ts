@@ -59,7 +59,9 @@ describe('route configuration', () => {
     )
     expect(paths).toContain('/admin/workflows')
     const routes = getAllRoutes(false)
-    expect(routes.find((route) => route.pageId === 'ADM-WORKFLOWS')?.owner).toBe('#758')
+    expect(
+      routes.find((route) => route.pageId === 'ADM-WORKFLOWS')?.owner,
+    ).toBe('#758')
     expect(
       matchRoutes(
         routes.map((route) => ({ path: route.path })),
@@ -95,7 +97,9 @@ describe('route configuration', () => {
   })
 
   it('registers Knowledge collection and document deep links under #760', () => {
-    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
+      path: route.path,
+    }))
     expect(
       matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0]
         .params.collectionId,
@@ -113,7 +117,9 @@ describe('route configuration', () => {
     const withoutCapability = getVisibleNavigation(true).flatMap((group) =>
       group.items.map((item) => item.path),
     )
-    const withCapability = getVisibleNavigation(true, ['prompt_management']).flatMap(
+    const withCapability = getVisibleNavigation(true, [
+      'prompt_management',
+    ]).flatMap(
       (group) => group.items.map((item) => item.path),
     )
     expect(withoutCapability).not.toContain('/admin/prompts')
