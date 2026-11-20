@@ -101,6 +101,14 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers memory governance list and version-history deep links under #800', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    expect(matchRoutes(routeObjects, '/workspace/memory')?.[0].route.path).toBe('/workspace/memory')
+    expect(matchRoutes(routeObjects, '/workspace/memory/memory-123')?.[0].params.memoryId).toBe('memory-123')
+    expect(pageRoutes.find((route) => route.path === '/workspace/memory')?.owner).toBe('#800')
+    expect(detailRoutes.find((route) => route.path === '/workspace/memory/:memoryId')?.owner).toBe('#800')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
