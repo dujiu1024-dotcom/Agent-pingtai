@@ -91,7 +91,8 @@ export function PromptRegistryPage({
   const diffQuery = useQuery({
     queryKey: ['prompt-diff', promptId, selectedVersion, baseVersion],
     queryFn: () => apiClient.get<PromptDiff>(
-      `/platform/v1/prompts/${encodeURIComponent(promptId!)}/versions/${selectedVersion}/diff?base_version=${baseVersion}`,
+      `/platform/v1/prompts/${encodeURIComponent(promptId!)}` +
+        `/versions/${selectedVersion}/diff?base_version=${baseVersion}`,
     ),
     enabled: Boolean(promptId && selectedVersion && baseVersion && selectedVersion !== baseVersion),
   })
@@ -156,7 +157,12 @@ export function PromptRegistryPage({
             <span>{listQuery.data?.count ?? 0} 项 · 30 秒刷新</span>
           </div>
           <label className="field-label" htmlFor="prompt-filter">筛选 Prompt ID</label>
-          <input id="prompt-filter" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="输入 Prompt ID" />
+          <input
+            id="prompt-filter"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder="输入 Prompt ID"
+          />
           {listQuery.isLoading ? <p className="muted">正在加载 Prompt…</p> : null}
           {listQuery.isError ? (
             <div className="ops-query-error" role="alert">
@@ -172,7 +178,11 @@ export function PromptRegistryPage({
               <Link
                 key={item.prompt_id}
                 role="listitem"
-                className={item.prompt_id === promptId ? 'prompt-list-item active' : 'prompt-list-item'}
+                className={
+                  item.prompt_id === promptId
+                    ? 'prompt-list-item active'
+                    : 'prompt-list-item'
+                }
                 to={`/admin/prompts/${encodeURIComponent(item.prompt_id)}`}
               >
                 <strong>{item.prompt_id}</strong>
@@ -191,17 +201,31 @@ export function PromptRegistryPage({
                 <Link className="text-link" to="/admin/prompts">返回列表</Link>
               </div>
               {versionListQuery.isLoading ? <p className="muted">正在加载版本历史…</p> : null}
-              {versionListQuery.isError ? <p role="alert">{errorMessage(versionListQuery.error)}</p> : null}
+              {versionListQuery.isError ? (
+                <p role="alert">{errorMessage(versionListQuery.error)}</p>
+              ) : null}
               <div className="prompt-version-toolbar">
                 <label className="field-label" htmlFor="prompt-version-select">查看版本</label>
                 <select
                   id="prompt-version-select"
                   value={currentVersion ?? ''}
-                  onChange={(event) => setSelectedVersion(event.target.value ? Number(event.target.value) : '')}
+                  onChange={(event) =>
+                    setSelectedVersion(
+                      event.target.value ? Number(event.target.value) : '',
+                    )
+                  }
                 >
-                  {versions.map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
+                  {versions.map((version) => (
+                    <option key={version.version} value={version.version}>
+                      v{version.version}
+                    </option>
+                  ))}
                 </select>
-                <span className="muted">{summary?.active_version ? `Active v${summary.active_version}` : '无 Active 版本'}</span>
+                <span className="muted">
+                  {summary?.active_version
+                    ? `Active v${summary.active_version}`
+                    : '无 Active 版本'}
+                </span>
               </div>
               {detailQuery.isLoading ? <p className="muted">正在读取模板内容…</p> : null}
               {detailQuery.isError ? <p role="alert">{errorMessage(detailQuery.error)}</p> : null}
@@ -209,36 +233,71 @@ export function PromptRegistryPage({
                 <>
                   <div className="prompt-version-meta">
                     <span>v{detailQuery.data.version}</span>
-                    <span>变量：{detailQuery.data.variables.length ? detailQuery.data.variables.join(', ') : '无'}</span>
+                    <span>
+                      变量：
+                      {detailQuery.data.variables.length
+                        ? detailQuery.data.variables.join(', ')
+                        : '无'}
+                    </span>
                     <span>SHA-256：{detailQuery.data.content_hash}</span>
                   </div>
                   <pre className="prompt-template-preview">{detailQuery.data.template}</pre>
                   <button
                     type="button"
-                    disabled={!evaluationGateEnabled || activateVersion.isPending || summary?.active_version === detailQuery.data.version}
+                    disabled={
+                      !evaluationGateEnabled ||
+                      activateVersion.isPending ||
+                      summary?.active_version === detailQuery.data.version
+                    }
                     onClick={() => activateVersion.mutate(detailQuery.data!.version)}
                   >
                     {activateVersion.isPending ? '提交评测 Gate…' : '通过评测 Gate 并激活'}
                   </button>
-                  {!evaluationGateEnabled ? <p className="muted">当前后端未配置 Prompt Evaluation Gate，激活/灰度/回滚操作已禁用。</p> : null}
-                  {activateVersion.isError ? <p role="alert">{errorMessage(activateVersion.error)}</p> : null}
+                  {!evaluationGateEnabled ? (
+                    <p className="muted">
+                      当前后端未配置 Prompt Evaluation Gate，激活/灰度/回滚操作已禁用。
+                    </p>
+                  ) : null}
+                  {activateVersion.isError ? (
+                    <p role="alert">{errorMessage(activateVersion.error)}</p>
+                  ) : null}
                 </>
               ) : null}
               <h3>版本差异</h3>
               <div className="prompt-version-toolbar">
                 <label htmlFor="prompt-diff-base">基准版本</label>
-                <select id="prompt-diff-base" value={baseVersion} onChange={(event) => setBaseVersion(event.target.value ? Number(event.target.value) : '')}>
+                <select
+                  id="prompt-diff-base"
+                  value={baseVersion}
+                  onChange={(event) =>
+                    setBaseVersion(
+                      event.target.value ? Number(event.target.value) : '',
+                    )
+                  }
+                >
                   <option value="">选择版本</option>
                   {versions.map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
                 </select>
                 <label htmlFor="prompt-diff-target">目标版本</label>
-                <select id="prompt-diff-target" value={selectedVersion} onChange={(event) => setSelectedVersion(event.target.value ? Number(event.target.value) : '')}>
+                <select
+                  id="prompt-diff-target"
+                  value={selectedVersion}
+                  onChange={(event) =>
+                    setSelectedVersion(
+                      event.target.value ? Number(event.target.value) : '',
+                    )
+                  }
+                >
                   <option value="">选择版本</option>
                   {versions.map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
                 </select>
               </div>
               {diffQuery.isError ? <p role="alert">{errorMessage(diffQuery.error)}</p> : null}
-              {diffQuery.data ? <pre className="prompt-template-preview">{diffQuery.data.diff || '两个版本没有文本差异。'}</pre> : null}
+              {diffQuery.data ? (
+                <pre className="prompt-template-preview">
+                  {diffQuery.data.diff || '两个版本没有文本差异。'}
+                </pre>
+              ) : null}
             </>
           ) : (
             <>
@@ -246,12 +305,27 @@ export function PromptRegistryPage({
               <p className="muted">填写新 Prompt ID 创建首个版本，或输入已有 ID 追加不可变版本。保存不会自动激活。</p>
               <form onSubmit={handleCreate} className="prompt-create-form">
                 <label className="field-label" htmlFor="new-prompt-id">Prompt ID</label>
-                <input id="new-prompt-id" value={newPromptId} onChange={(event) => setNewPromptId(event.target.value)} placeholder="例如：support.reply" required />
+                <input
+                  id="new-prompt-id"
+                  value={newPromptId}
+                  onChange={(event) => setNewPromptId(event.target.value)}
+                  placeholder="例如：support.reply"
+                  required
+                />
                 <label className="field-label" htmlFor="new-prompt-template">模板内容</label>
-                <textarea id="new-prompt-template" rows={14} value={template} onChange={(event) => setTemplate(event.target.value)} spellCheck={false} required />
+                <textarea
+                  id="new-prompt-template"
+                  rows={14}
+                  value={template}
+                  onChange={(event) => setTemplate(event.target.value)}
+                  spellCheck={false}
+                  required
+                />
                 <p className="muted">变量使用简单占位符，例如 {'{input}'}。保存后生成新版本，只有通过评测 Gate 才能激活。</p>
                 {formError ? <p role="alert">{formError}</p> : null}
-                <button type="submit" disabled={createVersion.isPending}>{createVersion.isPending ? '保存中…' : '保存 Prompt 版本'}</button>
+                <button type="submit" disabled={createVersion.isPending}>
+                  {createVersion.isPending ? '保存中…' : '保存 Prompt 版本'}
+                </button>
               </form>
             </>
           )}
