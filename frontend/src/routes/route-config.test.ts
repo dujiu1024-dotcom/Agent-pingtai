@@ -86,11 +86,21 @@ describe('route configuration', () => {
   })
 
   it('registers Prompt Registry detail deep links under #807', () => {
-    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
+      path: route.path,
+    }))
     expect(
-      matchRoutes(routeObjects, '/admin/prompts/customer-support')?.[0].params.promptId,
+      matchRoutes(routeObjects, '/admin/prompts/customer-support')?.[0].params
+        .promptId,
     ).toBe('customer-support')
-    expect(detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')?.owner).toBe('#807')
+    expect(
+      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')
+        ?.owner,
+    ).toBe('#807')
+    expect(
+      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')
+        ?.capability,
+    ).toBe('prompt_management')
   })
 
   it('exposes identity and RBAC routes only when server mode enables auth', () => {
