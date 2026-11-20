@@ -188,7 +188,9 @@ export function PromptRegistryPage({
               </button>
             </div>
           ) : null}
-          {!listQuery.isLoading && !listQuery.isError && filteredPrompts.length === 0 ? (
+          {!listQuery.isLoading &&
+          !listQuery.isError &&
+          filteredPrompts.length === 0 ? (
             <p className="muted">
               {prompts.length
                 ? '没有匹配的 Prompt。'
