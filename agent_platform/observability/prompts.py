@@ -281,7 +281,7 @@ class PromptRegistry:
         if not 0 < percentage <= 100:
             raise ValueError("canary percentage must be in (0, 100]")
         self._canary[prompt_id] = (candidate_version, percentage)
-        self._record_audit(prompt_id, "version.canary_configured", updated_by, {
+        self._record_audit(prompt_id, "canary.configured", updated_by, {
             "canary_version": candidate_version, "percentage": percentage,
             "evaluation_run_id": evaluation_run_id,
         })
