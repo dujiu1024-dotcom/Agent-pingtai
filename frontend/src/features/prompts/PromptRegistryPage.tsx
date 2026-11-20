@@ -37,7 +37,7 @@ export function PromptRegistryPage() {
   const listQuery = useQuery({
     queryKey: ['prompt-registry'],
     queryFn: () => apiClient.get<ListResponse<PromptSummary>>('/platform/v1/prompts/?limit=200'),
-    enabled: !promptId,
+    enabled: true,
   })
   const versionsQuery = useQuery({
     queryKey: ['prompt-versions', promptId],
@@ -45,8 +45,8 @@ export function PromptRegistryPage() {
     enabled: Boolean(promptId),
   })
   const versions = versionsQuery.data?.items ?? []
-  const currentVersion = selectedVersion ?? versions.at(-1)?.version ?? null
-  const comparisonVersion = baseVersion ?? (versions.length > 1 ? versions[versions.length - 2].version : null)
+  const currentVersion = selectedVersion ?? (versions.length ? versions[versions.length - 1].version : null)
+  const comparisonVersion = baseVersion ?? [...versions].reverse().find((item) => item.version !== currentVersion)?.version ?? null
 
   const detailQuery = useQuery({
     queryKey: ['prompt-version', promptId, currentVersion],
