@@ -27,8 +27,8 @@ import {
 } from 'lucide-react'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import {
   EmptyState,
   ErrorState,
