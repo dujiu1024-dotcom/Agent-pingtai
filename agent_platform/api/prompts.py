@@ -311,6 +311,38 @@ def create_prompt_registry_router(
         return {"prompt_id": prompt_id, "active_version": version,
                 "updated_by": actor.user_id, "eval_run_id": gate["eval_run_id"]}
 
+    @router.get("/{prompt_id}/evaluation-gate")
+    async def evaluation_gate_status(
+        prompt_id: str, request: Request, version: int = Query(ge=1),
+    ):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        list_audit = getattr(registry, "list_audit", None)
+        if not callable(list_audit):
+            raise HTTPException(501, "prompt evaluation evidence is not supported")
+        events = await invoke(list_audit, storage_key, limit=200)
+        for event in reversed(events):
+            action = event.get("action") if isinstance(event, dict) else getattr(event, "action", None)
+            details = event.get("details") if isinstance(event, dict) else getattr(event, "details", ())
+            if isinstance(details, (list, tuple)):
+                details = dict(details)
+            if not isinstance(details, dict):
+                details = {}
+            event_version = details.get("active_version", details.get("canary_version"))
+            if (
+                action in {"version.activated", "version.canary_configured", "version.rolled_back"}
+                and event_version == version
+                and isinstance(details.get("evaluation_run_id"), str)
+                and details["evaluation_run_id"].strip()
+            ):
+                return {
+                    "prompt_id": prompt_id, "version": version, "status": "passed",
+                    "eval_run_id": details["evaluation_run_id"], "action": action,
+                }
+        return {
+            "prompt_id": prompt_id, "version": version,
+            "status": "not_recorded", "eval_run_id": None, "action": None,
+        }
+
     @router.get("/{prompt_id}/audit")
     async def prompt_audit(prompt_id: str, request: Request, limit: int = 100):
         _actor, storage_key = await context(request, prompt_id, "read_audit")
