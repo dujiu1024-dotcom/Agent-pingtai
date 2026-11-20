@@ -29,7 +29,7 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
-from agent_platform.api.bootstrap import create_bootstrap_router
+from agent_platform.api.bootstrap import create_bootstrap_router, resolve_bootstrap_capabilities
 from agent_platform.api.office import OfficeStateService, create_office_router
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
@@ -263,8 +263,19 @@ def create_platform_app(
         window_seconds=60,
     )
     app.include_router(create_identity_router(identity=identity))
+    prompt_management_available = (
+        auth_enabled and prompt_registry is not None and prompt_manage_authorizer is not None
+    )
+    effective_bootstrap_capabilities = resolve_bootstrap_capabilities(
+        bootstrap_capabilities,
+        auth_enabled=auth_enabled,
+        prompt_registry_configured=prompt_management_available,
+        prompt_evaluation_gate_configured=(
+            prompt_management_available and prompt_evaluation_gate is not None
+        ),
+    )
     app.include_router(create_bootstrap_router(
-        auth_enabled=auth_enabled, capabilities=bootstrap_capabilities,
+        auth_enabled=auth_enabled, capabilities=effective_bootstrap_capabilities,
     ))
     if office_state_service is not None:
         app.include_router(create_office_router(
