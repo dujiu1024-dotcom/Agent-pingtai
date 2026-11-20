@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . && echo '---PROMPT_PAGE_FORMAT_START---' && prettier src/features/admin/PromptRegistryPage.tsx && echo '---PROMPT_PAGE_FORMAT_END---' && prettier --check .",
+    "lint": "eslint . && echo '---APP_FORMAT_START---' && prettier src/App.tsx && echo '---APP_FORMAT_END---' && prettier --check .",
     "typecheck": "tsc -b --pretty",
     "test": "vitest run",
     "test:e2e": "playwright test"
