@@ -23,7 +23,7 @@ describe('PromptRegistryPage', () => {
     mocks.post.mockReset()
   })
 
-  it('renders the Prompt Registry workspace and does not activate without an evaluation gate', () => {
+  it('renders the Prompt Registry workspace without an evaluation gate', () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     })
