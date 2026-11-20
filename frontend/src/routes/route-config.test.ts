@@ -102,12 +102,18 @@ describe('route configuration', () => {
   })
 
   it('gates Prompt Registry navigation and detail routes by server capabilities', () => {
-    const withoutCapability = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
-    const withCapability = getVisibleNavigation(true, ['prompt_management']).flatMap((group) => group.items.map((item) => item.path))
+    const withoutCapability = getVisibleNavigation(true).flatMap((group) =>
+      group.items.map((item) => item.path),
+    )
+    const withCapability = getVisibleNavigation(true, ['prompt_management']).flatMap(
+      (group) => group.items.map((item) => item.path),
+    )
     expect(withoutCapability).not.toContain('/admin/prompts')
     expect(withCapability).toContain('/admin/prompts')
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
-    expect(matchRoutes(routeObjects, '/admin/prompts/support.reply')?.[0].params.promptId).toBe('support.reply')
+    expect(
+      matchRoutes(routeObjects, '/admin/prompts/support.reply')?.[0].params.promptId,
+    ).toBe('support.reply')
     expect(detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')?.owner).toBe('#807')
   })
 
