@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . && echo '---ROUTE_FORMAT_START---' && prettier src/routes/prompt-registry-route.test.ts && echo '---ROUTE_FORMAT_END---' && prettier --check .",
     "typecheck": "tsc -b --pretty",
     "test": "vitest run",
     "test:e2e": "playwright test"
