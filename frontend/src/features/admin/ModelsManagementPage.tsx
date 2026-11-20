@@ -83,16 +83,16 @@ export function ModelsManagementPage() {
   const itemId = kind === 'model_provider' ? providerId : kind === 'model_template' ? templateId : undefined
   const [filter, setFilter] = useState('')
   const [draftId, setDraftId] = useState('')
-  const [draftJson, setDraftJson] = useState('{
-  "name": "",
-  "provider_type": "",
-  "endpoint": "",
-  "model": "",
-  "timeout_seconds": 30,
-  "max_retries": 2,
-  "fallback_model": null,
-  "secret_ref": ""
-}')
+  const [draftJson, setDraftJson] = useState(JSON.stringify({
+    name: '',
+    provider_type: '',
+    endpoint: '',
+    model: '',
+    timeout_seconds: 30,
+    max_retries: 2,
+    fallback_model: null,
+    secret_ref: '',
+  }, null, 2))
   const [formError, setFormError] = useState<string | null>(null)
 
   const listQuery = useQuery({
