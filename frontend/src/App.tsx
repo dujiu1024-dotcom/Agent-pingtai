@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import {
   EmptyState,
@@ -51,7 +52,6 @@ import { GenericListPage } from '@/components/GenericListPage'
 import { Dashboard } from '@/components/OperationsDashboard'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
-import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
