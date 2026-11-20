@@ -296,10 +296,15 @@ class PromptRegistry:
         return prompt.template.format_map(variables), prompt
 
 
-def tenant_prompt_key(tenant_id: str, prompt_id: str) -> str:
-    """Namespace prompt identifiers because the legacy registry schema is global."""
+def tenant_prompt_prefix(tenant_id: str) -> str:
+    """Return an unambiguous namespace prefix for one tenant."""
     if not isinstance(tenant_id, str) or not tenant_id.strip():
         raise ValueError("tenant_id is required")
+    return f"tenant:{len(tenant_id)}:{tenant_id}:"
+
+
+def tenant_prompt_key(tenant_id: str, prompt_id: str) -> str:
+    """Namespace prompt identifiers because the legacy registry schema is global."""
     if not isinstance(prompt_id, str) or not prompt_id.strip():
         raise ValueError("prompt_id is required")
-    return f"tenant:{len(tenant_id)}:{tenant_id}:{prompt_id}"
+    return f"{tenant_prompt_prefix(tenant_id)}{prompt_id}"
