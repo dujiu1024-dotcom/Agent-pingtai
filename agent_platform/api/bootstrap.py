@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 from fastapi import APIRouter
 
+
 def resolve_bootstrap_capabilities(
     capabilities: Sequence[str],
     *,
