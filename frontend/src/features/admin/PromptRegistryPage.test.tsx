@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { StaticRouter } from 'react-router-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
@@ -29,14 +29,9 @@ describe('PromptRegistryPage', () => {
     })
     const html = renderToStaticMarkup(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/admin/prompts']}>
-          <Routes>
-            <Route
-              path="/admin/prompts"
-              element={<PromptRegistryPage evaluationGateEnabled={false} />}
-            />
-          </Routes>
-        </MemoryRouter>
+        <StaticRouter location="/admin/prompts">
+          <PromptRegistryPage evaluationGateEnabled={false} />
+        </StaticRouter>
       </QueryClientProvider>,
     )
 
