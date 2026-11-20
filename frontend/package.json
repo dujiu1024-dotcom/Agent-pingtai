@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . && tsc -b --pretty && vite build && prettier --check .",
     "typecheck": "tsc -b --pretty",
     "test": "vitest run",
     "test:e2e": "playwright test"
