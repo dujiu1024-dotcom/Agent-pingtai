@@ -9,7 +9,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from agent_platform.identity.models import Principal
-from agent_platform.observability.prompts import tenant_prompt_key
+from agent_platform.observability.prompts import tenant_prompt_key, tenant_prompt_prefix
 
 
 def _principal(request: Request) -> Principal:
@@ -87,8 +87,46 @@ def create_prompt_registry_router(
         list_fn = getattr(registry, "list_prompts", None)
         if not callable(list_fn):
             raise HTTPException(501, "prompt listing is not supported by this registry")
-        rows = await list_fn(limit=limit)
-        return {"items": rows, "count": len(rows)}
+        prefix = tenant_prompt_prefix(actor.tenant_id)
+        try:
+            rows = list_fn(prefix=prefix, limit=limit)
+            if inspect.isawaitable(rows):
+                rows = await rows
+        except (TypeError, ValueError):
+            raise HTTPException(503, "tenant-scoped prompt listing is not supported") from None
+        if not isinstance(rows, (list, tuple)):
+            raise HTTPException(503, "prompt registry returned an invalid list")
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            storage_key = row.get("storage_key")
+            if not isinstance(storage_key, str) or not storage_key.startswith(prefix):
+                continue
+            prompt_id = storage_key[len(prefix):]
+            if not prompt_id or not await _allowed(authorize, actor, prompt_id, "read"):
+                continue
+            latest_version = row.get("latest_version")
+            active_version = row.get("active_version")
+            version_count = row.get("version_count")
+            if (
+                isinstance(latest_version, bool) or not isinstance(latest_version, int)
+                or latest_version < 1
+                or (active_version is not None and (
+                    isinstance(active_version, bool) or not isinstance(active_version, int)
+                    or active_version < 1
+                ))
+                or isinstance(version_count, bool) or not isinstance(version_count, int)
+                or version_count < 1
+            ):
+                continue
+            items.append({
+                "prompt_id": prompt_id,
+                "latest_version": latest_version,
+                "active_version": active_version,
+                "version_count": version_count,
+            })
+        return {"items": items, "count": len(items)}
 
     @router.post("/{prompt_id}/versions", status_code=201)
     async def register_version(prompt_id: str, request: Request):
