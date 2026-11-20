@@ -35,6 +35,9 @@ def test_list_prompts_reports_latest_active_and_canary_versions() -> None:
     assert row["canary_version"] == 2
     assert row["canary_percentage"] == 10
     assert row["versions_count"] == 2
+    canary_event = registry.list_audit(key)[-1]
+    assert canary_event.action == "canary.configured"
+    assert dict(canary_event.details)["evaluation_run_id"] == "eval-102"
 
 
 @pytest.mark.parametrize("limit", [0, -1, 201, True, 1.5])
