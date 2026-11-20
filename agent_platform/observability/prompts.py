@@ -51,6 +51,27 @@ class PromptRegistry:
         self._variant_history: dict[tuple[str, str], list[int]] = {}
         self._audit_events: list[PromptAuditEvent] = []
 
+    def list_prompts(self, *, prefix: str, limit: int = 50) -> tuple[dict[str, object], ...]:
+        """List only prompt keys under one tenant prefix; never return template contents."""
+        if not isinstance(prefix, str) or not prefix.startswith("tenant:") or not prefix.endswith(":"):
+            raise ValueError("a tenant prompt prefix is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        rows: list[dict[str, object]] = []
+        for storage_key in sorted(self._versions):
+            if not storage_key.startswith(prefix):
+                continue
+            versions = self._versions[storage_key]
+            if not versions:
+                continue
+            rows.append({
+                "storage_key": storage_key,
+                "latest_version": max(versions),
+                "active_version": self._active.get(storage_key),
+                "version_count": len(versions),
+            })
+        return tuple(rows[:limit])
+
     def _record_audit(
         self, prompt_id: str, action: str, actor_id: str,
         details: dict[str, str | int | float | None],
