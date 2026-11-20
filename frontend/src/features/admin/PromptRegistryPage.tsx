@@ -276,7 +276,11 @@ export function PromptRegistryPage({
                   }
                 >
                   <option value="">选择版本</option>
-                  {versions.map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
+                  {versions.map((version) => (
+                    <option key={version.version} value={version.version}>
+                      v{version.version}
+                    </option>
+                  ))}
                 </select>
                 <label htmlFor="prompt-diff-target">目标版本</label>
                 <select
