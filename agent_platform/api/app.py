@@ -263,8 +263,11 @@ def create_platform_app(
         window_seconds=60,
     )
     app.include_router(create_identity_router(identity=identity))
+    advertised_capabilities = set(bootstrap_capabilities)
+    if auth_enabled and prompt_registry is not None and prompt_manage_authorizer is not None:
+        advertised_capabilities.add("prompt_management")
     app.include_router(create_bootstrap_router(
-        auth_enabled=auth_enabled, capabilities=bootstrap_capabilities,
+        auth_enabled=auth_enabled, capabilities=sorted(advertised_capabilities),
     ))
     if office_state_service is not None:
         app.include_router(create_office_router(
