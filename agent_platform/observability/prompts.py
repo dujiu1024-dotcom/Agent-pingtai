@@ -238,6 +238,7 @@ class PromptRegistry:
 
     def activate(
         self, prompt_id: str, version: int, *, updated_by: str = "system",
+        evaluation_run_id: str | None = None,
     ) -> None:
         if not isinstance(updated_by, str) or not updated_by.strip():
             raise ValueError("updated_by is required")
@@ -248,10 +249,13 @@ class PromptRegistry:
         self._active[prompt_id] = version
         self._canary.pop(prompt_id, None)
         self._record_audit(prompt_id, "version.activated", updated_by, {
-            "active_version": version,
+            "active_version": version, "evaluation_run_id": evaluation_run_id,
         })
 
-    def rollback(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+    def rollback(
+        self, prompt_id: str, version: int, *, updated_by: str,
+        evaluation_run_id: str | None = None,
+    ) -> None:
         if not isinstance(updated_by, str) or not updated_by.strip():
             raise ValueError("updated_by is required")
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -261,10 +265,13 @@ class PromptRegistry:
         self._active[prompt_id] = version
         self._canary.pop(prompt_id, None)
         self._record_audit(prompt_id, "version.rolled_back", updated_by, {
-            "active_version": version,
+            "active_version": version, "evaluation_run_id": evaluation_run_id,
         })
 
-    def set_canary(self, prompt_id: str, candidate_version: int, percentage: float) -> None:
+    def set_canary(
+        self, prompt_id: str, candidate_version: int, percentage: float, *,
+        updated_by: str = "system", evaluation_run_id: str | None = None,
+    ) -> None:
         if prompt_id not in self._active:
             raise ValueError("activate a stable prompt version before setting a canary")
         if candidate_version not in self._versions.get(prompt_id, {}):
@@ -274,6 +281,10 @@ class PromptRegistry:
         if not 0 < percentage <= 100:
             raise ValueError("canary percentage must be in (0, 100]")
         self._canary[prompt_id] = (candidate_version, percentage)
+        self._record_audit(prompt_id, "version.canary_configured", updated_by, {
+            "canary_version": candidate_version, "percentage": percentage,
+            "evaluation_run_id": evaluation_run_id,
+        })
 
     def resolve(self, prompt_id: str, *, rollout_key: str = "", version: int | None = None) -> PromptVersion:
         versions = self._versions.get(prompt_id, {})
