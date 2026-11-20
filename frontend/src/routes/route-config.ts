@@ -282,7 +282,7 @@ export const pageRoutes: PageRoute[] = [
     title: 'Prompt 与模板管理',
     section: '平台管理',
     description: 'Prompt Registry 条件能力入口。',
-    owner: '#749',
+    owner: '#807',
     capability: 'prompt_management',
   },
   {
@@ -453,6 +453,17 @@ export const detailRoutes: PageRoute[] = [
     parentPath: '/admin/audit',
     entityIdParam: 'eventId',
     owner: '#751',
+  },
+  {
+    path: '/admin/prompts/:promptId',
+    pageId: 'ADM-PROMPT-DETAIL',
+    title: 'Prompt 详情',
+    section: '平台管理',
+    description: 'Prompt 模板版本、历史差异与评测 Gate 状态。',
+    parentPath: '/admin/prompts',
+    entityIdParam: 'promptId',
+    capability: 'prompt_management',
+    owner: '#807',
   },
 ]
 
