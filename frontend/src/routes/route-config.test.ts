@@ -101,6 +101,29 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers the #799 approval center list and detail routes', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    const list = routes.find((route) => route.path === '/admin/approvals')
+    const detail = routes.find(
+      (route) => route.path === '/admin/approvals/:approvalId',
+    )
+    expect(list?.pageId).toBe('ADM-APPROVALS')
+    expect(list?.owner).toBe('#799')
+    expect(detail?.owner).toBe('#799')
+    expect(detail?.parentPath).toBe('/admin/approvals')
+    expect(
+      matchRoutes(
+        routes.map((route) => ({ path: route.path })),
+        '/admin/approvals/approval-123',
+      )?.[0].params.approvalId,
+    ).toBe('approval-123')
+    expect(
+      getVisibleNavigation(false).flatMap((group) =>
+        group.items.map((item) => item.path),
+      ),
+    ).toContain('/admin/approvals')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
