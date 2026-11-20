@@ -101,6 +101,18 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers model provider, template and routing routes under #804', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    expect(pageRoutes.find((route) => route.path === '/admin/models/providers')?.owner).toBe('#804')
+    expect(pageRoutes.find((route) => route.path === '/admin/models/templates')?.owner).toBe('#804')
+    expect(pageRoutes.find((route) => route.path === '/admin/models/routing')?.owner).toBe('#804')
+    expect(detailRoutes.find((route) => route.path === '/admin/models/providers/:providerId')?.owner).toBe('#804')
+    expect(detailRoutes.find((route) => route.path === '/admin/models/templates/:templateId')?.owner).toBe('#804')
+    expect(matchRoutes(routeObjects, '/admin/models/providers/provider-7')?.[0].params.providerId).toBe('provider-7')
+    expect(matchRoutes(routeObjects, '/admin/models/templates/template-9')?.[0].params.templateId).toBe('template-9')
+    expect(matchRoutes(routeObjects, '/admin/models/routing/policy-1')?.[0].params.policyId).toBe('policy-1')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
