@@ -79,6 +79,9 @@ export function PromptRegistryPage({
       : prompts
   }, [filter, prompts])
 
+  const showEmptyState =
+    filteredPrompts.length === 0 && !listQuery.isLoading && !listQuery.isError
+
   const summary = prompts.find((item) => item.prompt_id === promptId)
   const versionListQuery = useQuery({
     queryKey: ['prompt-versions', promptId],
@@ -196,9 +199,7 @@ export function PromptRegistryPage({
               </button>
             </div>
           ) : null}
-          {filteredPrompts.length === 0 &&
-          !listQuery.isLoading &&
-          !listQuery.isError ? (
+          {showEmptyState ? (
             <p className="muted">
               {prompts.length
                 ? '没有匹配的 Prompt。'
