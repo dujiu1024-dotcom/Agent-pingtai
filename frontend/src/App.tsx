@@ -49,6 +49,7 @@ import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
 import { Dashboard } from '@/components/OperationsDashboard'
+import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
@@ -470,6 +471,7 @@ function PageView({
     return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
+  if (route.path.startsWith('/admin/models/')) return <ModelsManagementPage />
 
   // 通用分支：后端有 API → GenericListPage，无 API → EmptyState
   const apiPath = resolveApiPath(route.path)
