@@ -44,7 +44,9 @@ import {
   TaskDetailPage,
   RunTracePage,
 } from '@/features/tasks/TaskCommandCenter'
-import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
+import {
+  AgentCollaborationCenter,
+} from '@/features/collaboration/AgentCollaborationCenter'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
