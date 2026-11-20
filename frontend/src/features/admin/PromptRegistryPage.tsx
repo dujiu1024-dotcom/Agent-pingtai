@@ -1,3 +1,5 @@
+
+---PROMPT_PAGE_FORMAT_START---
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -53,7 +55,9 @@ export function PromptRegistryPage({
   const { promptId } = useParams<{ promptId: string }>()
   const [filter, setFilter] = useState('')
   const [newPromptId, setNewPromptId] = useState('')
-  const [template, setTemplate] = useState('你是一个专业助手，请根据以下信息完成任务：\n\n{input}')
+  const [template, setTemplate] = useState(
+    '你是一个专业助手，请根据以下信息完成任务：\n\n{input}',
+  )
   const [selectedVersion, setSelectedVersion] = useState<number | ''>('')
   const [baseVersion, setBaseVersion] = useState<number | ''>('')
   const [formError, setFormError] = useState<string | null>(null)
@@ -85,9 +89,10 @@ export function PromptRegistryPage({
   const summary = prompts.find((item) => item.prompt_id === promptId)
   const versionListQuery = useQuery({
     queryKey: ['prompt-versions', promptId],
-    queryFn: () => apiClient.get<PromptVersions>(
-      `/platform/v1/prompts/${encodeURIComponent(promptId!)}/versions`,
-    ),
+    queryFn: () =>
+      apiClient.get<PromptVersions>(
+        `/platform/v1/prompts/${encodeURIComponent(promptId!)}/versions`,
+      ),
     enabled: Boolean(promptId),
   })
   const versions = versionListQuery.data?.items ?? []
@@ -98,18 +103,20 @@ export function PromptRegistryPage({
     versions[versions.length - 1]?.version
   const detailQuery = useQuery({
     queryKey: ['prompt-version', promptId, currentVersion],
-    queryFn: () => apiClient.get<PromptVersion>(
-      `/platform/v1/prompts/${encodeURIComponent(promptId!)}` +
-        `/versions/${currentVersion}`,
-    ),
+    queryFn: () =>
+      apiClient.get<PromptVersion>(
+        `/platform/v1/prompts/${encodeURIComponent(promptId!)}` +
+          `/versions/${currentVersion}`,
+      ),
     enabled: Boolean(promptId && currentVersion),
   })
   const diffQuery = useQuery({
     queryKey: ['prompt-diff', promptId, selectedVersion, baseVersion],
-    queryFn: () => apiClient.get<PromptDiff>(
-      `/platform/v1/prompts/${encodeURIComponent(promptId!)}` +
-        `/versions/${selectedVersion}/diff?base_version=${baseVersion}`,
-    ),
+    queryFn: () =>
+      apiClient.get<PromptDiff>(
+        `/platform/v1/prompts/${encodeURIComponent(promptId!)}` +
+          `/versions/${selectedVersion}/diff?base_version=${baseVersion}`,
+      ),
     enabled: Boolean(
       promptId &&
         selectedVersion &&
@@ -157,7 +164,9 @@ export function PromptRegistryPage({
     event.preventDefault()
     const id = newPromptId.trim()
     if (!safePromptId(id)) {
-      setFormError('Prompt ID 必须为 1-128 位字母、数字、点、下划线、冒号或连字符。')
+      setFormError(
+        'Prompt ID 必须为 1-128 位字母、数字、点、下划线、冒号或连字符。',
+      )
       return
     }
     if (!template.trim()) {
@@ -173,7 +182,11 @@ export function PromptRegistryPage({
       <div className="page-heading">
         <p className="eyebrow">PLATFORM MANAGEMENT / PROMPT REGISTRY</p>
         <h1>Prompt 与模板管理</h1>
-        <p>按租户隔离的 Prompt 模板、不可变版本、差异追踪与评测门禁。激活、灰度和回滚必须由后端评测 Gate 授权。</p>
+        <p>
+          按租户隔离的 Prompt
+          模板、不可变版本、差异追踪与评测门禁。激活、灰度和回滚必须由后端评测
+          Gate 授权。
+        </p>
       </div>
       <div className="prompt-registry-layout">
         <section className="ops-panel prompt-list-panel">
@@ -190,7 +203,9 @@ export function PromptRegistryPage({
             onChange={(event) => setFilter(event.target.value)}
             placeholder="输入 Prompt ID"
           />
-          {listQuery.isLoading ? <p className="muted">正在加载 Prompt…</p> : null}
+          {listQuery.isLoading ? (
+            <p className="muted">正在加载 Prompt…</p>
+          ) : null}
           {listQuery.isError ? (
             <div className="ops-query-error" role="alert">
               <span>{errorMessage(listQuery.error)}</span>
@@ -236,8 +251,13 @@ export function PromptRegistryPage({
           {promptId ? (
             <>
               <div className="ops-panel-heading">
-                <div><h2>{promptId}</h2><span>Prompt 版本管理</span></div>
-                <Link className="text-link" to="/admin/prompts">返回列表</Link>
+                <div>
+                  <h2>{promptId}</h2>
+                  <span>Prompt 版本管理</span>
+                </div>
+                <Link className="text-link" to="/admin/prompts">
+                  返回列表
+                </Link>
               </div>
               {versionListQuery.isLoading ? (
                 <p className="muted">正在加载版本历史…</p>
@@ -246,10 +266,7 @@ export function PromptRegistryPage({
                 <p role="alert">{errorMessage(versionListQuery.error)}</p>
               ) : null}
               <div className="prompt-version-toolbar">
-                <label
-                  className="field-label"
-                  htmlFor="prompt-version-select"
-                >
+                <label className="field-label" htmlFor="prompt-version-select">
                   查看版本
                 </label>
                 <select
@@ -305,11 +322,14 @@ export function PromptRegistryPage({
                       activateVersion.mutate(detailQuery.data!.version)
                     }
                   >
-                    {activateVersion.isPending ? '提交评测 Gate…' : '通过评测 Gate 并激活'}
+                    {activateVersion.isPending
+                      ? '提交评测 Gate…'
+                      : '通过评测 Gate 并激活'}
                   </button>
                   {!evaluationGateEnabled ? (
                     <p className="muted">
-                      当前后端未配置 Prompt Evaluation Gate，激活/灰度/回滚操作已禁用。
+                      当前后端未配置 Prompt Evaluation
+                      Gate，激活/灰度/回滚操作已禁用。
                     </p>
                   ) : null}
                   {activateVersion.isError ? (
@@ -370,7 +390,8 @@ export function PromptRegistryPage({
                 <span>未激活</span>
               </div>
               <p className="muted">
-                填写新 Prompt ID 创建首个版本，或输入已有 ID 追加不可变版本。保存不会自动激活。
+                填写新 Prompt ID 创建首个版本，或输入已有 ID
+                追加不可变版本。保存不会自动激活。
               </p>
               <form onSubmit={handleCreate} className="prompt-create-form">
                 <label className="field-label" htmlFor="new-prompt-id">
@@ -395,7 +416,8 @@ export function PromptRegistryPage({
                   required
                 />
                 <p className="muted">
-                  变量使用简单占位符，例如 {'{input}'}。保存后生成新版本，只有通过评测 Gate 才能激活。
+                  变量使用简单占位符，例如 {'{input}'}
+                  。保存后生成新版本，只有通过评测 Gate 才能激活。
                 </p>
                 {formError ? <p role="alert">{formError}</p> : null}
                 <button type="submit" disabled={createVersion.isPending}>
