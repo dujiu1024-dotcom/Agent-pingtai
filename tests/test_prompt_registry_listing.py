@@ -47,5 +47,5 @@ class PromptRegistryListingTests(unittest.TestCase):
                     registry.list_prompts(prefix="tenant:3:org:", limit=limit)  # type: ignore[arg-type]
 
     def test_list_prompts_rejects_missing_tenant_prefix(self) -> None:
-        with self.assertRaisesRegex(ValueError, "tenant prompt prefix is required"):
+        with self.assertRaisesRegex(ValueError, "tenant prompt prefix must end with a separator"):
             PromptRegistry().list_prompts(prefix="")
