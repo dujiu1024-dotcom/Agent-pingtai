@@ -329,7 +329,7 @@ def create_prompt_registry_router(
                 details = {}
             event_version = details.get("active_version", details.get("canary_version"))
             if (
-                action in {"version.activated", "version.canary_configured", "version.rolled_back"}
+                action in {"version.activated", "canary.configured", "version.rolled_back"}
                 and event_version == version
                 and isinstance(details.get("evaluation_run_id"), str)
                 and details["evaluation_run_id"].strip()
