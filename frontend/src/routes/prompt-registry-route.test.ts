@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { matchRoutes } from 'react-router-dom'
 
-import {
-  detailRoutes,
-  getVisibleNavigation,
-  pageRoutes,
-} from './route-config'
+import { detailRoutes, getVisibleNavigation, pageRoutes } from './route-config'
 
 describe('Prompt Registry routes', () => {
   it('shows navigation only when the server advertises prompt management', () => {
