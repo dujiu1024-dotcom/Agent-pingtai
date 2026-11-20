@@ -160,6 +160,14 @@ export const pageRoutes: PageRoute[] = [
     owner: '#760',
   },
   {
+    path: '/workspace/memory',
+    pageId: 'WS-MEMORY',
+    title: '记忆治理',
+    section: '智能体运营',
+    description: '候选记忆审核、状态治理与版本追溯。',
+    owner: '#800',
+  },
+  {
     path: '/operations/memories',
     pageId: 'OPS-MEMORY',
     title: '记忆治理',
@@ -415,6 +423,16 @@ export const detailRoutes: PageRoute[] = [
     owner: '#758',
   },
   {
+    path: '/workspace/memory/:memoryId',
+    pageId: 'WS-MEMORY-DETAIL',
+    title: '记忆详情',
+    section: '智能体运营',
+    description: 'Memory 版本历史与来源追溯。',
+    parentPath: '/workspace/memory',
+    entityIdParam: 'memoryId',
+    owner: '#800',
+  },
+  {
     path: '/operations/memories/:memoryId',
     pageId: 'OPS-MEMORY',
     title: '记忆详情',
@@ -570,7 +588,7 @@ export const navigationSections: NavigationSection[] = [
       { label: '协作中心', path: '/workspace/collaboration' },
       { label: 'Agent 运行态', path: '/operations/agents' },
       { label: '知识库', path: '/operations/knowledge-bases' },
-      { label: '记忆治理', path: '/operations/memories' },
+      { label: '记忆治理', path: '/workspace/memory' },
     ],
   },
   {
