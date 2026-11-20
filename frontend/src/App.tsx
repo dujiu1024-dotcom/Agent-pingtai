@@ -51,6 +51,7 @@ import { GenericListPage } from '@/components/GenericListPage'
 import { Dashboard } from '@/components/OperationsDashboard'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
+import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -432,6 +433,15 @@ function PageView({
       />
     )
   }
+  if (route.capability && !capabilities.includes(route.capability)) {
+    return (
+      <ModeRestrictedState
+        title="当前实例未启用此能力"
+        description="服务端 bootstrap 未声明所需 capability，页面不会尝试调用未配置的管理 API。"
+      />
+    )
+  }
+  if (route.path === '/admin/prompts' || route.path === '/admin/prompts/:promptId') return <PromptRegistryPage evaluationGateEnabled={capabilities.includes('prompt_evaluation_gate')} />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
