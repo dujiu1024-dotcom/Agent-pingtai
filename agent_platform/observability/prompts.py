@@ -55,6 +55,15 @@ class PromptRegistry:
         """List only prompt keys under one tenant prefix; never return template contents."""
         if not isinstance(prefix, str) or not prefix.startswith("tenant:") or not prefix.endswith(":"):
             raise ValueError("a tenant prompt prefix is required")
+        prefix_body = prefix[len("tenant:"):-1]
+        length_text, separator, tenant_id = prefix_body.partition(":")
+        if (
+            not separator
+            or not length_text.isdigit()
+            or not tenant_id
+            or len(tenant_id) != int(length_text)
+        ):
+            raise ValueError("a valid tenant prompt prefix is required")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
         rows: list[dict[str, object]] = []
