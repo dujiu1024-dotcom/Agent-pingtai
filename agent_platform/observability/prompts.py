@@ -109,8 +109,8 @@ class PromptRegistry:
 
     def list_prompts(self, *, prefix: str, limit: int = 50) -> tuple[dict[str, object], ...]:
         """List prompt summaries scoped to an exact tenant storage-key prefix."""
-        if not isinstance(prefix, str) or not prefix:
-            raise ValueError("tenant prompt prefix is required")
+        if not isinstance(prefix, str) or not prefix.endswith(":"):
+            raise ValueError("tenant prompt prefix must end with a separator")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
             raise ValueError("limit must be between 1 and 200")
         summaries: list[dict[str, object]] = []
