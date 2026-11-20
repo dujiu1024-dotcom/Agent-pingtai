@@ -286,18 +286,6 @@ export const pageRoutes: PageRoute[] = [
     capability: 'prompt_management',
   },
   {
-    path: '/admin/prompts/:promptId',
-    pageId: 'ADM-PROMPTS-DETAIL',
-    title: 'Prompt 详情',
-    section: '平台管理',
-    description: 'Prompt 版本内容、历史差异与评测门禁状态。',
-    parentPath: '/admin/prompts',
-    entityIdParam: 'promptId',
-    owner: '#807',
-    authOnly: true,
-    capability: 'prompt_management',
-  },
-  {
     path: '/operations/evaluation/datasets',
     pageId: 'OPS-EVAL-DATASETS',
     title: '评测数据集',
@@ -316,6 +304,18 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/admin/prompts/:promptId',
+    pageId: 'ADM-PROMPTS-DETAIL',
+    title: 'Prompt 详情',
+    section: '平台管理',
+    description: 'Prompt 版本内容、历史差异与评测门禁状态。',
+    parentPath: '/admin/prompts',
+    entityIdParam: 'promptId',
+    owner: '#807',
+    authOnly: true,
+    capability: 'prompt_management',
+  },
   {
     path: '/operations/knowledge-bases/:collectionId',
     pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
