@@ -96,9 +96,17 @@ describe('route configuration', () => {
 
   it('registers Knowledge collection and document deep links under #760', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
-    expect(matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0].params.collectionId).toBe('collection-123')
-    expect(matchRoutes(routeObjects, '/operations/documents/document-456')?.[0].params.documentId).toBe('document-456')
-    expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
+    expect(
+      matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0]
+        .params.collectionId,
+    ).toBe('collection-123')
+    expect(
+      matchRoutes(routeObjects, '/operations/documents/document-456')?.[0]
+        .params.documentId,
+    ).toBe('document-456')
+    expect(
+      detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner,
+    ).toBe('#760')
   })
 
   it('gates Prompt Registry navigation and detail routes by server capabilities', () => {
@@ -114,7 +122,9 @@ describe('route configuration', () => {
     expect(
       matchRoutes(routeObjects, '/admin/prompts/support.reply')?.[0].params.promptId,
     ).toBe('support.reply')
-    expect(detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')?.owner).toBe('#807')
+    expect(
+      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')?.owner,
+    ).toBe('#807')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
