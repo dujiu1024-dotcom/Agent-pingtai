@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import './prompt-registry.css'
-import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+
+import './prompt-registry.css'
 
 import { ApiError, apiClient } from '@/lib/api'
 import { safePromptId } from './prompt-registry-utils'
