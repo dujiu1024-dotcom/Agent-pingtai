@@ -441,7 +441,16 @@ function PageView({
       />
     )
   }
-  if (route.path === '/admin/prompts' || route.path === '/admin/prompts/:promptId') return <PromptRegistryPage evaluationGateEnabled={capabilities.includes('prompt_evaluation_gate')} />
+  if (
+    route.path === '/admin/prompts' ||
+    route.path === '/admin/prompts/:promptId'
+  ) {
+    return (
+      <PromptRegistryPage
+        evaluationGateEnabled={capabilities.includes('prompt_evaluation_gate')}
+      />
+    )
+  }
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
