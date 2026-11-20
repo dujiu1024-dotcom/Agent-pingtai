@@ -101,6 +101,16 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('gates Prompt Registry navigation and detail routes by server capabilities', () => {
+    const withoutCapability = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
+    const withCapability = getVisibleNavigation(true, ['prompt_management']).flatMap((group) => group.items.map((item) => item.path))
+    expect(withoutCapability).not.toContain('/admin/prompts')
+    expect(withCapability).toContain('/admin/prompts')
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    expect(matchRoutes(routeObjects, '/admin/prompts/support.reply')?.[0].params.promptId).toBe('support.reply')
+    expect(detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')?.owner).toBe('#807')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
