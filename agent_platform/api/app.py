@@ -332,6 +332,8 @@ def create_platform_app(
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
     ))
     if prompt_registry_configured:
+        if not auth_enabled:
+            raise ValueError("Prompt Registry requires auth_enabled=True")
         if prompt_registry is None or prompt_manage_authorizer is None:
             raise ValueError(
                 "prompt registry and prompt manager authorizer must be configured together"
