@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -58,6 +58,11 @@ export function PromptRegistryPage({
   const [baseVersion, setBaseVersion] = useState<number | ''>('')
   const [formError, setFormError] = useState<string | null>(null)
 
+  useEffect(() => {
+    setSelectedVersion('')
+    setBaseVersion('')
+  }, [promptId])
+
   const listQuery = useQuery({
     queryKey: ['prompt-registry'],
     queryFn: () => apiClient.get<PromptList>('/platform/v1/prompts/?limit=100'),
@@ -84,7 +89,10 @@ export function PromptRegistryPage({
   })
   const versions = versionListQuery.data?.items ?? []
   const currentVersion =
-    selectedVersion || summary?.active_version || summary?.latest_version
+    selectedVersion ||
+    summary?.active_version ||
+    summary?.latest_version ||
+    versions[versions.length - 1]?.version
   const detailQuery = useQuery({
     queryKey: ['prompt-version', promptId, currentVersion],
     queryFn: () => apiClient.get<PromptVersion>(
@@ -188,9 +196,9 @@ export function PromptRegistryPage({
               </button>
             </div>
           ) : null}
-          {!listQuery.isLoading &&
-          !listQuery.isError &&
-          filteredPrompts.length === 0 ? (
+          {filteredPrompts.length === 0 &&
+          !listQuery.isLoading &&
+          !listQuery.isError ? (
             <p className="muted">
               {prompts.length
                 ? '没有匹配的 Prompt。'
