@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
+import './prompt-registry.css'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { ApiError, apiClient } from '@/lib/api'
+import { safePromptId } from './prompt-registry-utils'
 
 type PromptSummary = {
   prompt_id: string
@@ -37,10 +40,6 @@ function errorMessage(error: unknown): string {
     return error.message
   }
   return error instanceof Error ? error.message : 'Prompt Registry 请求失败'
-}
-
-function safePromptId(value: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)
 }
 
 export function PromptRegistryPage({
@@ -129,7 +128,7 @@ export function PromptRegistryPage({
     },
   })
 
-  const handleCreate = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleCreate = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const id = newPromptId.trim()
     if (!safePromptId(id)) {
