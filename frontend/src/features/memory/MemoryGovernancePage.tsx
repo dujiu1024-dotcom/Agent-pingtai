@@ -149,7 +149,7 @@ function MemoryList() {
         <input aria-label="搜索记忆" value={query} onChange={event => setQuery(event.target.value)} placeholder="搜索内容、ID、范围或来源" />
       </div>
       {loading ? <p className="memory-empty">正在加载记忆记录…</p> : visibleItems.length === 0 ? (
-        <div className="memory-empty"><strong>暂无匹配记录</strong><span>{tab === 'archived' || tab === 'rejected' ? '当前 API 未提供该状态的全量列表接口；详情历史仍可追溯已知记忆。' : '调整筛选条件，或刷新后重试。'}</span></div>
+        <div className="memory-empty"><strong>暂无匹配记录</strong><span>{tab === 'archived' || tab === 'expired' || tab === 'rejected' ? '当前列表 API 只返回有效记忆和候选记录，不提供归档、过期或拒绝记录的全量查询；详情历史仍可追溯已知记忆。' : '调整筛选条件，或刷新后重试。'}</span></div>
       ) : <div className="memory-table-wrap"><table className="memory-table">
         <thead><tr><th>记忆内容</th><th>范围</th><th>状态</th><th>置信度</th><th>版本</th><th>有效期</th><th>操作</th></tr></thead>
         <tbody>{visibleItems.map(item => <tr key={item.memory_id}>
