@@ -107,6 +107,32 @@ class PromptRegistry:
         })
         return record
 
+    def list_prompts(self, *, prefix: str, limit: int = 50) -> tuple[dict[str, object], ...]:
+        """List prompt summaries scoped to an exact tenant storage-key prefix."""
+        if not isinstance(prefix, str) or not prefix:
+            raise ValueError("tenant prompt prefix is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        summaries: list[dict[str, object]] = []
+        for storage_key, versions in self._versions.items():
+            if not storage_key.startswith(prefix) or not versions:
+                continue
+            latest_version = max(versions)
+            latest = versions[latest_version]
+            canary = self._canary.get(storage_key)
+            summaries.append({
+                "prompt_id": storage_key[len(prefix):],
+                "latest_version": latest_version,
+                "active_version": self._active.get(storage_key),
+                "canary_version": canary[0] if canary else None,
+                "canary_percentage": canary[1] if canary else None,
+                "versions_count": len(versions),
+                "variables": list(latest.variables),
+                "content_hash": latest.content_hash,
+            })
+        summaries.sort(key=lambda item: str(item["prompt_id"]))
+        return tuple(summaries[:limit])
+
     def list_versions(self, prompt_id: str) -> tuple[PromptVersion, ...]:
         """Return immutable versions in ascending version order."""
         return tuple(
