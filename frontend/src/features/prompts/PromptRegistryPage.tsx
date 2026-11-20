@@ -60,6 +60,11 @@ export function PromptRegistryPage() {
     ),
     enabled: Boolean(promptId && currentVersion && comparisonVersion && currentVersion !== comparisonVersion),
   })
+  const selectedSummary = useMemo(
+    () => listQuery.data?.items.find((item) => item.prompt_id === promptId),
+    [listQuery.data, promptId],
+  )
+
   const gateVersion = selectedVersion ?? selectedSummary?.active_version ?? currentVersion
   const gateQuery = useQuery({
     queryKey: ['prompt-evaluation-gate', promptId, gateVersion],
@@ -83,11 +88,6 @@ export function PromptRegistryPage() {
     },
     onError: (error) => setDraftError(error instanceof Error ? error.message : String(error)),
   })
-  const selectedSummary = useMemo(
-    () => listQuery.data?.items.find((item) => item.prompt_id === promptId),
-    [listQuery.data, promptId],
-  )
-
   if (!promptId) {
     if (listQuery.isPending) return <LoadingState label="正在加载 Prompt Registry" />
     if (listQuery.isError) return (
