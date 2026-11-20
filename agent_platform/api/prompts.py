@@ -84,11 +84,14 @@ def create_prompt_registry_router(
     @router.get("/")
     async def list_prompts(request: Request, limit: int = Query(default=50, ge=1, le=200)):
         actor = _principal(request)
+        if not await _allowed(authorize, actor, "*", "read"):
+            raise HTTPException(403, "prompt registry permission required")
         list_fn = getattr(registry, "list_prompts", None)
         if not callable(list_fn):
             raise HTTPException(501, "prompt listing is not supported by this registry")
-        rows = await list_fn(limit=limit)
-        return {"items": rows, "count": len(rows)}
+        tenant_prefix = f"tenant:{len(actor.tenant_id)}:{actor.tenant_id}:"
+        rows = await invoke(list_fn, prefix=tenant_prefix, limit=limit)
+        return {"items": list(rows), "count": len(rows)}
 
     @router.post("/{prompt_id}/versions", status_code=201)
     async def register_version(prompt_id: str, request: Request):
@@ -100,8 +103,8 @@ def create_prompt_registry_router(
         if not isinstance(body, dict) or not isinstance(body.get("template"), str):
             raise HTTPException(400, "template string is required")
         try:
-            version = await registry.register(
-                storage_key, body["template"], created_by=actor.user_id,
+            version = await invoke(
+                registry.register, storage_key, body["template"], created_by=actor.user_id,
             )
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -248,8 +251,8 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         gate = await require_evaluation_gate(actor, prompt_id, version, "activate")
         try:
-            await registry.activate(
-                storage_key, version, updated_by=actor.user_id,
+            await invoke(
+                registry.activate, storage_key, version, updated_by=actor.user_id,
                 evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
@@ -273,8 +276,8 @@ def create_prompt_registry_router(
             raise HTTPException(400, "percentage must be a finite number")
         gate = await require_evaluation_gate(actor, prompt_id, version, "canary")
         try:
-            await registry.set_canary(
-                storage_key, version, float(percentage), updated_by=actor.user_id,
+            await invoke(
+                registry.set_canary, storage_key, version, float(percentage), updated_by=actor.user_id,
                 evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
@@ -299,8 +302,8 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         gate = await require_evaluation_gate(actor, prompt_id, version, "rollback")
         try:
-            await registry.rollback(
-                storage_key, version, updated_by=actor.user_id,
+            await invoke(
+                registry.rollback, storage_key, version, updated_by=actor.user_id,
                 evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
@@ -316,7 +319,7 @@ def create_prompt_registry_router(
         list_audit = getattr(registry, "list_audit", None)
         if not callable(list_audit):
             raise HTTPException(501, "prompt audit history is not supported")
-        rows = await list_audit(storage_key, limit=limit)
+        rows = await invoke(list_audit, storage_key, limit=limit)
         return {"items": rows, "count": len(rows)}
 
     @router.post("/{prompt_id}/render")
@@ -343,8 +346,8 @@ def create_prompt_registry_router(
         ):
             raise HTTPException(400, "version must be a positive integer")
         try:
-            rendered, selected = await registry.render(
-                storage_key, variables, rollout_key=rollout_key, version=version,
+            rendered, selected = await invoke(
+                registry.render, storage_key, variables, rollout_key=rollout_key, version=version,
             )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
