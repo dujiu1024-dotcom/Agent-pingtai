@@ -293,7 +293,11 @@ export function PromptRegistryPage({
                   }
                 >
                   <option value="">选择版本</option>
-                  {versions.map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
+                  {versions.map((version) => (
+                    <option key={version.version} value={version.version}>
+                      v{version.version}
+                    </option>
+                  ))}
                 </select>
               </div>
               {diffQuery.isError ? <p role="alert">{errorMessage(diffQuery.error)}</p> : null}
@@ -305,7 +309,10 @@ export function PromptRegistryPage({
             </>
           ) : (
             <>
-              <div className="ops-panel-heading"><h2>新建 Prompt 版本</h2><span>Draft</span></div>
+              <div className="ops-panel-heading">
+                <h2>新建 Prompt 版本</h2>
+                <span>未激活</span>
+              </div>
               <p className="muted">填写新 Prompt ID 创建首个版本，或输入已有 ID 追加不可变版本。保存不会自动激活。</p>
               <form onSubmit={handleCreate} className="prompt-create-form">
                 <label className="field-label" htmlFor="new-prompt-id">Prompt ID</label>
