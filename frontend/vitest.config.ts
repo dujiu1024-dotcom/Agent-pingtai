@@ -1,12 +1,18 @@
+import { mergeConfig } from 'vite'
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
-  test: {
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/e2e/**',
-      '**/.{idea,git,cache,output,temp}/**',
-    ],
-  },
-})
+import viteConfig from './vite.config'
+
+export default mergeConfig(
+  viteConfig,
+  defineConfig({
+    test: {
+      exclude: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/e2e/**',
+        '**/.{idea,git,cache,output,temp}/**',
+      ],
+    },
+  }),
+)
