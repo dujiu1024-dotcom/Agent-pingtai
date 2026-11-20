@@ -196,8 +196,6 @@ export function ModelsManagementPage() {
     )
   }
 
-  const draftVersions = (versionsQuery.data?.items ?? []).filter((version) => version.status === 'draft')
-
   return (
     <section className="page-content">
       <div className="page-heading">
