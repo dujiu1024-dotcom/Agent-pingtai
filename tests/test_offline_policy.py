@@ -114,7 +114,10 @@ class OfflinePolicyTests(unittest.TestCase):
         self.now = 10_100
         self.assertEqual(self.evaluate().decision, OfflineDecision.DEGRADED)
         self.authorization = CachedAuthorization(
-            **{**self.authorization.__dict__, "action": OfflineAction.RESUMABLE_INTERNAL}
+            **{
+                **self.authorization.__dict__,
+                "action": OfflineAction.RESUMABLE_INTERNAL,
+            }
         )
         self.assertEqual(
             self.evaluate(action=OfflineAction.RESUMABLE_INTERNAL).decision,
