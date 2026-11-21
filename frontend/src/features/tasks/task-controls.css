@@ -223,3 +223,22 @@
     left: 0;
   }
 }
+
+.task-date-filter {
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+.task-date-filter input {
+  min-height: 38px;
+  min-width: 190px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  color: #526078;
+  font: inherit;
+  font-size: 12px;
+}
