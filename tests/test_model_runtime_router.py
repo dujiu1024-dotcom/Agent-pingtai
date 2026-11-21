@@ -508,13 +508,16 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
 
         estimator = RejectingEstimator()
         transport = NeverDispatchTransport()
+        audit = AuditRecorder()
         router = OpenAICompatibleModelRouter(
-            audit_sink=AuditRecorder(),
+            audit_sink=audit,
             resolver=RegistryModelResolver(Secrets()),
             transport=transport,
             token_estimator=estimator,
         )
-        with self.assertRaisesRegex(ValueError, "exceeds model context window"):
+        # The router exposes a stable routing-layer error while preserving the
+        # context-overflow message and recording the fail-closed preflight result.
+        with self.assertRaisesRegex(ModelRoutingError, "exceeds model context window"):
             await router.complete(
                 snapshot=self.snapshot(), tenant_id="tenant-a",
                 run_id="run-context-guard", template_id="primary",
@@ -525,6 +528,12 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(estimator.calls, 1)
         self.assertGreater(estimator.context_window, 0)
         self.assertEqual(transport.calls, 0)
+        self.assertEqual(audit.events[-1]["action"], "model.response")
+        self.assertEqual(audit.events[-1]["outcome"], "failed")
+        self.assertEqual(
+            audit.events[-1]["detail"]["reason"],
+            "token_estimate_invalid_or_context_window_exceeded",
+        )
 
 
     async def test_token_estimator_receives_pinned_model_context_window(self):
