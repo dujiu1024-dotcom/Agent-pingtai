@@ -72,7 +72,7 @@ class PostgresAIValueRepository:
         self, *, tenant_id: str, process_id: str, role_id: str, baseline_version: str,
         actor_id: str, window_start: datetime, window_end: datetime,
         contribution: AIContribution, result: ValueResult, cost_source: str | None,
-        business_evidence: Any | None,
+        business_evidence: Any | None, cost_basis: str,
     ) -> AttributionRecord:
         if window_start.tzinfo is None or window_end.tzinfo is None or window_end <= window_start:
             raise ValueError("window_start and window_end must be ordered timezone-aware timestamps")
@@ -87,8 +87,8 @@ class PostgresAIValueRepository:
                  units_total,auto_completed,assisted_completed,human_takeovers,rework_units,
                  failed_units,actual_human_minutes,rework_human_minutes,agent_run_minutes,
                  saved_minutes,labor_savings,ai_cost,other_business_benefit,net_benefit,roi,
-                 financial_status,cost_source,business_evidence,attribution_version,actor_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
+                 financial_status,cost_source,cost_basis,business_evidence,attribution_version,actor_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
                 RETURNING id""",
                 (tenant_id,process_id,role_id,baseline_version,window_start,window_end,
                  contribution.units_total,contribution.auto_completed,contribution.assisted_completed,
@@ -96,7 +96,7 @@ class PostgresAIValueRepository:
                  contribution.actual_human_minutes,contribution.rework_human_minutes,
                  contribution.agent_run_minutes,result.saved_minutes,result.labor_savings,
                  result.ai_cost,result.other_business_benefit,result.net_benefit,result.roi,
-                 result.financial_status,cost_source,evidence,result.attribution_version,actor_id),
+                 result.financial_status,cost_source,cost_basis,evidence,result.attribution_version,actor_id),
             )
             row = await cursor.fetchone()
         if row is None:
