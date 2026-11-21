@@ -75,6 +75,29 @@ def create_supply_chain_governance_router(
             "sandbox_id": result.sandbox_id,
         }
 
+    @router.post("/governance/trials/{sandbox_id}/complete")
+    async def complete_trial(sandbox_id: str, request: Request) -> dict[str, Any]:
+        principal = await principal_for(request)
+        service = await resolve_admission(principal)
+        if service.policy.tenant_id != str(principal.tenant_id):
+            raise HTTPException(403, "tenant policy scope mismatch")
+        trial_resolver = getattr(request.app.state, "supply_chain_trial_resolver", None)
+        verdict_resolver = getattr(request.app.state, "supply_chain_trial_verdict_resolver", None)
+        if trial_resolver is None or verdict_resolver is None:
+            raise HTTPException(503, "trusted sandbox trial resolvers are not configured")
+        trial = await trial_resolver(principal, sandbox_id)
+        if trial is None:
+            raise HTTPException(404, "sandbox trial not found")
+        passed, evidence_digest = await verdict_resolver(principal, sandbox_id)
+        result = await service.complete_trial(
+            trial, sandbox_passed=bool(passed), evidence_digest=str(evidence_digest),
+        )
+        return {
+            "tenant_id": result.tenant_id, "artifact_id": result.artifact_id,
+            "version": result.version, "state": result.state.value,
+            "sandbox_id": result.sandbox_id, "reason": result.reason,
+        }
+
     @router.post("/runtime/observations")
     async def observe(request: Request) -> dict[str, Any]:
         principal = await principal_for(request)
