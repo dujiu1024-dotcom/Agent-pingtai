@@ -17,7 +17,7 @@ export interface SessionInfo {
 
 export async function fetchSession(): Promise<SessionInfo | null> {
   try {
-    return await authClient.get<SessionInfo>('/auth/me')
+    return await authClient.get<SessionInfo>('/auth/me', { etag: false })
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) return null
     throw error
@@ -29,6 +29,7 @@ export async function login(input: {
   email: string
   password: string
 }): Promise<void> {
+  authClient.clearEtagCache()
   await authClient.post('/auth/login', {
     tenant_id: input.tenantId.trim(),
     email: input.email.trim(),
@@ -37,6 +38,7 @@ export async function login(input: {
 }
 
 export async function logout(): Promise<void> {
+  authClient.clearEtagCache()
   try {
     await authClient.post('/auth/logout')
   } catch (error) {
