@@ -17,44 +17,72 @@ permissions:
 
 concurrency:
   group: platform-release-gate-${{ github.event.pull_request.number || github.ref }}
-  # Cancel stale runs for the same branch/PR so squash-merged branches don't
-  # leave zombie runners blocking new CI indefinitely.
   cancel-in-progress: true
 
 jobs:
   changes:
-    name: Detect code changes
+    name: Classify changed paths
     runs-on: ubuntu-latest
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      platform: ${{ steps.filter.outputs.platform }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - id: filter
-        name: Classify changed files
+        name: Detect platform code changes
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            echo "platform=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git fetch origin "$BASE_REF" --depth=1
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          if printf '%s\n' "$changed" | grep -Eq '^(agent_platform/|tests/|scripts/|frontend/|requirements[^/]*\.txt$|pyproject\.toml$|mypy\.ini$|ruff\.toml$|Dockerfile|docker/|deploy/|compose[^/]*\.ya?ml$)'; then
+            echo "platform=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "platform=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  docs-validation:
+    name: Docs and workflow validation
+    needs: changes
+    if: needs.changes.outputs.platform != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate changed documentation and configuration files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
           python - <<'PY'
-          import os, subprocess
-          files = subprocess.check_output(["git", "diff", "--name-only", "FETCH_HEAD...HEAD"], text=True).splitlines()
-          docs_only = bool(files) and all(path.startswith("docs/") or path.lower().endswith((".md", ".markdown", ".rst")) or path in {"LICENSE", "CHANGELOG", "CONTRIBUTING"} for path in files)
-          print("Changed files:", files)
-          print("Documentation-only:", docs_only)
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"code={str(not docs_only).lower()}\n")
+          import subprocess
+          from pathlib import Path
+          import os
+
+          base = os.environ["BASE_SHA"]
+          head = os.environ["HEAD_SHA"]
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base}...{head}"], text=True
+          ).splitlines()
+          for name in changed:
+              path = Path(name)
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f"changed file is missing or empty: {name}")
+              path.read_bytes().decode("utf-8")
+          print(f"validated {len(changed)} changed UTF-8 files")
           PY
+      - name: Validate workflow YAML syntax
+        run: ruby -e 'require "yaml"; ARGV.each { |file| YAML.load_file(file) }' .github/workflows/ci.yml .github/workflows/platform-release-gate.yml
 
   e2e-security-integration:
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -89,10 +117,6 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: |
-            requirements-platform.txt
-            requirements-knowledge-parsers.txt
-            requirements-harness-strands.txt
       - name: Install PostgreSQL backup tools
         run: |
           sudo apt-get update
@@ -110,7 +134,7 @@ jobs:
             tests.test_release_gate_evidence \
             tests.test_identity_api \
             tests.test_identity_http \
-            tests.test_knowledge_memory_api \\
+            tests.test_knowledge_memory_api \
             tests.test_knowledge_acl_propagation \
             tests.test_memory_boundaries \
             tests.test_graph_governance \
@@ -149,12 +173,12 @@ jobs:
             tests.test_session_assets \
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
-            tests.test_issue_22_a_22_05_graph_storage_benchmark \\
+            tests.test_issue_22_a_22_05_graph_storage_benchmark \
             tests.test_platform_perf_smoke -v
 
   e2e-focused-unit:
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -163,12 +187,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: |
-            requirements-platform.txt
-            requirements-knowledge-parsers.txt
-            requirements-harness-strands.txt
       - name: Install focused test dependencies
-        run: python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Validate page map and route contract
         run: python -m unittest tests.test_issue_753_page_map_contract -v
       - name: Run core business journey, unified model budget and release evidence acceptance tests
@@ -182,6 +204,7 @@ jobs:
 
   production-release-evidence:
     needs:
+      - changes
       - e2e-security-integration
       - e2e-focused-unit
     if: github.event_name == 'workflow_dispatch'
@@ -192,6 +215,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
       - name: Validate complete production evidence (fail-closed)
         env:
           RELEASE_EVIDENCE: ${{ inputs.release_evidence }}
