@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -187,8 +187,14 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route path="/auth/login" element={<LoginPage />} />
-          <Route path="/auth/initialize" element={<InitializePage />} />
+          <Route
+            path="/auth/login"
+            element={config.auth.enabled ? <LoginPage /> : <Navigate to="/workspace/overview" replace />}
+          />
+          <Route
+            path="/auth/initialize"
+            element={config.auth.enabled ? <InitializePage /> : <Navigate to="/workspace/overview" replace />}
+          />
           <Route
             element={
               <RequireSession enabled={config.auth.enabled}>
@@ -230,11 +236,22 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
   const navigate = useNavigate()
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [toast, setToast] = useState('')
+  const toastTimer = useRef<number | undefined>(undefined)
+  const showToast = (message: string) => {
+    if (toastTimer.current !== undefined) window.clearTimeout(toastTimer.current)
+    setToast(message)
+    toastTimer.current = window.setTimeout(() => setToast(''), 1700)
+  }
+  useEffect(() => () => {
+    if (toastTimer.current !== undefined) window.clearTimeout(toastTimer.current)
+  }, [])
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        navigate('/search')
+        searchInputRef.current?.focus()
       }
     }
     window.addEventListener('keydown', onShortcut)
@@ -310,15 +327,15 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const effectivePath = current?.parentPath ?? location.pathname
   const section = findNavigationSection(effectivePath)
   const activePage = findSubPage(section, effectivePath)
-  const navIcons: Record<string, typeof Home> = {
-    home: Home,
-    office: Building2,
-    tasks: ListTodo,
-    collaboration: Users,
-    workflow: Workflow,
-    cost: Wallet,
-    administration: Settings,
-  }
+  // 六个一级入口；工作流与平台管理共用入口，原有管理路由保持可直达。
+  const primaryNavigation = [
+    { id: 'home', label: '工作台', path: '/workspace/overview', Icon: Home, sections: ['home'] },
+    { id: 'office', label: '3D 办公室', path: '/workspace/office', Icon: Building2, sections: ['office'] },
+    { id: 'tasks', label: '任务中心', path: '/workspace/tasks', Icon: ListTodo, sections: ['tasks'] },
+    { id: 'collaboration', label: '智能体协作', path: '/workspace/collaboration', Icon: Users, sections: ['collaboration'] },
+    { id: 'workflow', label: '工作流与系统管理', path: '/admin/workflows', Icon: Workflow, sections: ['workflow', 'administration'] },
+    { id: 'cost', label: '成本分摊', path: '/workspace/quality-cost', Icon: Wallet, sections: ['cost'] },
+  ]
 
   return (
     <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
@@ -344,31 +361,33 @@ function AppShell({ config }: { config: BootstrapConfig }) {
           </span>
           {!collapsed && <span className="brand-name">龍奕 FDE 工作室</span>}
         </Link>
-        <nav className="primary-navigation">
-          {sections.map((item) => {
-            const Icon = navIcons[item.id] ?? Home
+        <nav className="primary-navigation" aria-label="全局导航">
+          {primaryNavigation.map((item) => {
+            const active = item.sections.includes(section?.id ?? '')
             return (
-              <Link
+              <NavLink
                 key={item.id}
                 to={item.path}
+                end
                 title={collapsed ? item.label : undefined}
-                className={
-                  section?.id === item.id ? 'nav-item active' : 'nav-item'
-                }
-                aria-current={section?.id === item.id ? 'page' : undefined}
+                className={active ? 'nav-item active' : 'nav-item'}
+                aria-current={active ? 'page' : undefined}
               >
                 <span className="nav-icon" aria-hidden="true">
-                  <Icon size={18} strokeWidth={1.9} />
+                  <item.Icon size={18} strokeWidth={1.9} />
                 </span>
                 {!collapsed && <span>{item.label}</span>}
-              </Link>
+              </NavLink>
             )
           })}
         </nav>
         <button
           className="collapse-button"
           type="button"
-          onClick={toggleSidebar}
+          onClick={() => {
+            toggleSidebar()
+            showToast(collapsed ? '已展开侧边栏（演示）' : '已收起侧边栏（演示）')
+          }}
           aria-label={collapsed ? '展开导航' : '折叠导航'}
           aria-expanded={!collapsed}
         >
@@ -392,17 +411,25 @@ function AppShell({ config }: { config: BootstrapConfig }) {
 
       <main className="main-content">
         <header className="topbar">
-          <Link
-            className="global-search"
-            to="/search"
-            aria-label="打开全局搜索"
+          <form
+            className="top-search"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              navigate('/search')
+            }}
           >
             <Search size={16} strokeWidth={2} aria-hidden="true" />
-            <span className="global-search-placeholder">
-              搜索 Agent、任务、文档…
-            </span>
+            <input
+              ref={searchInputRef}
+              aria-label="搜索 Agent、任务、文档"
+              placeholder="搜索 Agent、任务、文档…"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') event.currentTarget.blur()
+              }}
+            />
             <kbd>Ctrl K</kbd>
-          </Link>
+          </form>
           <div className="top-actions">
             <Link
               className="icon-button"
@@ -427,14 +454,12 @@ function AppShell({ config }: { config: BootstrapConfig }) {
                 </button>
               </span>
             )}
-            <img
-              className="avatar"
-              src={avatarImage}
-              alt=""
-              aria-hidden="true"
-            />
+            <button className="avatar-button" type="button" aria-label="用户账户">
+              <img className="avatar" src={avatarImage} alt="" />
+            </button>
           </div>
         </header>
+        {toast && <div className="shell-toast" role="status" aria-live="polite">{toast}</div>}
         <nav className="page-breadcrumb" aria-label="面包屑">
           <Link to="/workspace/overview">首页</Link>
           {section && (
