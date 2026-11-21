@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeOfficeAgents } from './OfficeWorkspace'
+import { normalizeOfficeAgents, shouldUseOffice2DFallback } from './OfficeWorkspace'
 
 describe('normalizeOfficeAgents', () => {
   it('preserves live status, floor and workstation coordinates from the Office snapshot', () => {
@@ -21,8 +21,8 @@ describe('normalizeOfficeAgents', () => {
       floor_id: 'floor-02',
       desk_id: 'desk-03',
       task: '代码审查',
-      x: -2.5,
-      z: -4.6,
+      x: undefined,
+      z: undefined,
     })
   })
 
@@ -45,5 +45,21 @@ describe('normalizeOfficeAgents', () => {
       ],
     })
     expect(agents.map((agent) => agent.status)).toEqual(['failed', 'idle'])
+  })
+})
+
+
+describe('Office rendering fallbacks', () => {
+  it('switches to the accessible 2D layout on narrow or coarse-pointer devices', () => {
+    expect(shouldUseOffice2DFallback(390, false)).toBe(true)
+    expect(shouldUseOffice2DFallback(1024, true)).toBe(true)
+    expect(shouldUseOffice2DFallback(1440, false)).toBe(false)
+  })
+
+  it('keeps unknown server statuses neutral and does not infer scene coordinates from a desk label', () => {
+    const [agent] = normalizeOfficeAgents({ agents: [{ agent_id: 'agent-unknown', status: 'new_status', desk_id: 'desk-03' }] })
+    expect(agent.status).toBe('offline')
+    expect(agent.x).toBeUndefined()
+    expect(agent.z).toBeUndefined()
   })
 })
