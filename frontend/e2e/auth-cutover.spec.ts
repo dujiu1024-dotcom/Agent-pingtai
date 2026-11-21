@@ -130,4 +130,29 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
     await page.getByRole('button', { name: '登录' }).click()
     await expect(page).toHaveURL(/\/operations\/runs\/run-cutover$/)
   })
+
+  test('auth=true blocks a second first-admin initialization with 409', async ({ page }) => {
+    await stubBootstrap(page, true)
+    await page.route('**/auth/me', async (route) => {
+      await route.fulfill({ status: 401, contentType: 'application/json', body: '{}' })
+    })
+    await page.route('**/auth/initialize', async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'platform is already initialized' }),
+      })
+    })
+
+    await page.goto('/auth/initialize')
+    await page.getByLabel('租户 ID').fill('acme')
+    await page.getByLabel('租户名称').fill('Acme')
+    await page.getByLabel('管理员邮箱').fill('owner@acme.test')
+    await page.getByLabel('管理员名称').fill('Owner')
+    await page.getByLabel('密码（至少 12 位）').fill('correct-horse-battery')
+    await page.getByRole('button', { name: '创建管理员并登录' }).click()
+    await expect(page.getByRole('alert')).toContainText('platform is already initialized')
+    await expect(page).toHaveURL(/\\/auth\\/initialize$/)
+  })
+
 })
