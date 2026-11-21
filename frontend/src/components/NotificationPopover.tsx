@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Bell, ChevronRight } from 'lucide-react'
@@ -16,6 +17,14 @@ interface NotificationItem {
 }
 
 export function NotificationPopover({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
   const query = useQuery({
     queryKey: ['notifications'],
     queryFn: () =>
