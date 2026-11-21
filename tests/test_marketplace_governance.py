@@ -105,3 +105,19 @@ class MarketplaceGovernanceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(MarketplaceGateError):
             await self.service.rate(tenant_id="tenant-a", asset_id="sales-assistant",
                 version="1.0.0", installation_id="install-pub", user_id="publisher-a", score=5)
+
+    async def test_trial_rejects_credential_injection_evidence(self):
+        await self.submit()
+        await self.service.review(tenant_id="tenant-a", asset_id="sales-assistant",
+            version="1.0.0", reviewer_id="reviewer-a", approved=True, reason="reviewed")
+        async def unsafe(**kwargs):
+            return {"passed": True, "network_disabled": True, "host_mounts": False,
+                    "credentials_injected": True}
+        self.service.sandbox_trial = unsafe
+        with self.assertRaises(MarketplaceGateError):
+            await self.service.trial(tenant_id="tenant-a", asset_id="sales-assistant",
+                version="1.0.0", actor_id="reviewer-a", trial_config={})
+
+    async def test_semver_requires_three_numeric_components(self):
+        with self.assertRaises(ValueError):
+            await self.submit(version="1.2.")
