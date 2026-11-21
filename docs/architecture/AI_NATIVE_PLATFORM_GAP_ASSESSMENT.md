@@ -962,3 +962,43 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P2 | Outbox at-least-once 与 Secret rotation 仍缺真实多实例故障注入证据 | PostgreSQL+Redis/Vault 故障演练通过，重复消费可幂等，撤销传播可验证 |
 
 本轮只更新审查报告和 Issue 记录，没有修改产品代码；未在本环境运行容器或多实例故障测试。结论来自 main 分支静态代码、生产 Compose、运维文档和测试源码对照。
+
+
+## 23. 第十一轮：工具副作用对账生产装配与授权审计闭环
+
+### 23.1 P1：生产 Tool Effect Reconciliation Resolver 注入了无效审计依赖和无条件授权
+
+证据：
+- `agent_platform/production.py` 的 `_resolve_tool_effects(principal)` 创建 `ToolEffectReconciliationService`，传入：
+  - `store=PostgresToolEffectStore(...)`
+  - `authorize_operator=lambda *a, **kw: None`
+  - `audit_sink=None`
+- `agent_platform/tools/idempotency.py` 的 `ToolEffectReconciliationService.reconcile()` 先调用 `authorize_operator(operator_id, tenant_id, run_id, call_id)`，随后调用 `self.audit_sink.record(... reconciliation_started ...)`，再写入 Store，最后再次写入 `reconciliation_completed` 审计。
+- 因此生产 resolver 中的授权 callback 返回值为 `None`，会被服务解释为 falsy，触发 `PermissionError("operator is not authorized...")`；即使把 callback 改成返回 True，`audit_sink=None` 仍会在首次审计调用时触发 `AttributeError`。当前生产装配下该服务无法成功执行 reconcile。
+- `agent_platform/api/runs.py` 的 `POST /{run_id}/tool-effects/{call_id}/reconcile` 只捕获 `PermissionError`、`KeyError`、`ValueError` 和 `EffectConflict`，不捕获 `AttributeError`；因此空审计依赖会表现为未处理的 500。
+- 路由在调用服务前还执行 `context(..., "reconcile")`，即要求 Run 级 reconcile 权限。这是独立的第一道授权，不足以替代服务所设计的操作员/资源级授权策略；生产 resolver 不能以无条件 callback 代替真实策略。
+- `tests/test_tool_effect_reconciliation_api.py` 使用自定义 Fake `ReconciliationService`，直接更新内存对象，不会执行真实 `ToolEffectReconciliationService` 的授权和审计逻辑。
+- `tests/test_tool_effect_reconciliation_postgres_integration.py` 只在配置 DSN 时验证 migration 的状态列和审计表结构，没有验证生产 resolver、审计写入器或完整 reconcile 事务路径。
+
+判断：
+- 这是生产组合根的确定性装配缺陷，不是“尚未证明”的一般性风险。
+- 当前接口即使调用者具有 Run reconcile 权限，也不能通过生产注入的服务完成对账；接口错误会阻断对外部副作用状态的人工确认和后续重试决策。
+- 由于服务先审计后更新状态，当前空审计依赖会在状态变更前失败；本轮没有证据表明该缺陷会直接导致未经授权的状态修改，不能把无条件授权 callback 误报为已验证的越权利用。
+- 如果只修复 audit_sink 而保留授权 lambda，服务仍会拒绝所有请求；如果只让 lambda 返回 True 而不接入审计，则会在审计调用处失败。必须同时修复授权策略和审计依赖。
+- 现有 Fake API 测试与 migration schema 测试均未覆盖生产装配，因此不能作为该闭环已通过的证据。
+
+建议：
+1. 在生产组合根注入真实的操作员授权函数，至少校验 principal 在当前 tenant 对该 Run/ToolEffect 具有专门的 reconcile 权限；不要复用无条件 lambda。
+2. 注入 append-only 的生产审计 writer，并保证审计失败时对账状态不发生变更；明确审计与状态更新的事务/补偿语义。
+3. 对审计开始与完成事件使用一致的 correlation/action digest，记录 actor、tenant、Run、call、resolution 和结果摘要，避免把敏感外部结果全文写入审计。
+4. 增加使用真实 `ToolEffectReconciliationService` + Postgres Store + 生产 resolver 的集成测试：授权通过/拒绝、审计 writer 缺失时启动失败、审计写入失败时不更新状态、成功对账、重复对账拒绝、跨租户 Run 不可见。
+5. 在服务构造时将必需的 `authorize_operator` 和 `audit_sink` 设为不可缺省的强类型依赖，并在启动阶段 fail fast，避免服务运行到请求时才因 None 失败。
+
+### 23.2 本轮优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P1 | 生产 Tool Effect Reconciliation 使用无效授权 callback 和空 audit sink | 生产 resolver 接入真实 tenant/Run 级操作员授权与 append-only audit writer；完整 PostgreSQL 集成测试通过 |
+| P2 | 现有 API Fake 测试未覆盖真实 Service/Production Resolver 组合 | 测试真实服务注入、授权拒绝、审计失败原子性、成功/重复对账和跨租户边界 |
+
+本轮只更新审查报告和 Issue 记录，没有修改产品代码；未在本环境运行 PostgreSQL 测试。结论来自 main 分支生产组合根、服务实现、API 路由和测试源码对照。
