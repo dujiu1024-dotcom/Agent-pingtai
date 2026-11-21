@@ -436,7 +436,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             {config.auth.enabled && auth.status === 'authenticated' && auth.session && (
               <span className="top-action auth-entry">
                 <LogIn size={14} strokeWidth={2} aria-hidden="true" />
-                {auth.session.user?.display_name || auth.session.user?.email || auth.session.principal_type}
+                {auth.session.display_name || auth.session.email || auth.session.principal_type}
                 <button
                   className="text-link"
                   type="button"
