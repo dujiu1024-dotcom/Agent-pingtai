@@ -334,6 +334,12 @@ class IdentityASGIMiddleware:
         token = bearer or cookie_token
         principal: Any = None
 
+        identity = self.identity
+        if identity is None:
+            # The constructor rejects this configuration when auth is enabled;
+            # retain a fail-closed guard at the async request boundary as well.
+            raise RuntimeError("identity service is unavailable while authentication is enabled")
+
         if token:
             if bearer and token.startswith("svc_") and self.service_identity is not None:
                 try:
@@ -342,11 +348,11 @@ class IdentityASGIMiddleware:
                     principal = None
             else:
                 try:
-                    principal = await self.identity.authenticate(token)
+                    principal = await identity.authenticate(token)
                 except AuthenticationError:
                     if bearer:
                         try:
-                            principal = await self.identity.authenticate_api_credential(token)
+                            principal = await identity.authenticate_api_credential(token)
                         except AuthenticationError:
                             principal = None
                     else:

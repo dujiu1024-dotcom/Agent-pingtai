@@ -64,9 +64,6 @@ class AuditRequestASGIMiddleware:
             actor = AuditActor(tenant_id=tenant_id, actor_id=None)
         else:
             actor = await self._actor(principal)
-        if actor is None:
-            await self.app(scope, receive, send)
-            return
 
         method = str(scope.get("method", "GET")).upper()
         action = "http.request"
