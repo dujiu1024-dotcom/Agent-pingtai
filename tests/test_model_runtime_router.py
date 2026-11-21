@@ -529,7 +529,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(estimator.context_window, 0)
         self.assertEqual(transport.calls, 0)
         self.assertEqual(audit.events[-1]["action"], "model.response")
-        self.assertEqual(audit.events[-1]["outcome"], "failed")
+        self.assertEqual(audit.events[-1]["outcome"], "denied")
         self.assertEqual(
             audit.events[-1]["detail"]["reason"],
             "token_estimate_invalid_or_context_window_exceeded",
