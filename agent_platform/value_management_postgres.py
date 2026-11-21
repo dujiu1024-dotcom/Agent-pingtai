@@ -155,7 +155,7 @@ class PostgresAIValueRepository:
                  throughput_change_rate,run_ids,cost_breakdown,metric_version,source_metadata,actor_id)
                 SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s
                 FROM ai_value_attributions a
-                WHERE a.id=%s AND a.tenant_id=%s AND a.process_id=%s AND a.role_id=%s AND %s <= a.units_total
+                WHERE a.id=%s AND a.tenant_id=%s AND a.process_id=%s AND a.role_id=%s AND %s <= (a.auto_completed + a.assisted_completed + a.human_takeovers)
                 RETURNING id""",
                 (tenant_id,UUID(attribution_id),process_id,role_id,window_start,window_end,
                  metrics.completed_units,metrics.baseline_cycle_minutes_per_unit,
