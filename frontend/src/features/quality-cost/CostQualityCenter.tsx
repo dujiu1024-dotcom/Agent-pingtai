@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { Pagination } from '@/components/Pagination'
@@ -58,6 +59,7 @@ type UsageSummary = {
   estimated_vs_provider_actual_variance_usd: string
   by_model: Record<string, { events: number; total_tokens?: number; cost_usd: string }>
   by_project: Record<string, { events: number; cost_usd: string }>
+  by_agent?: Record<string, { events: number; cost_usd: string }>
   price_card_versions: string[]
   tool_and_storage_pricing: string
 }
@@ -384,6 +386,7 @@ export function CostQualityCenter() {
         <label>Agent ID<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="全部 Agent" /></label>
         <span className="cq-refresh-note">数据自动刷新 · 30 秒</span>
       </div>
+      <p className="cq-footnote">Project / Agent 是显式业务分析筛选，不是权限边界。权限关闭模式下按实例默认租户账本读取，不按用户、部门或成员关系过滤；权限启用模式仍由服务端身份与授权策略控制访问。</p>
       {!rangeValid && <p className="cq-inline-error" role="alert">日期范围无效，请确认开始日期不晚于结束日期。</p>}
 
       {summary.isPending && rangeValid ? <LoadingState label="正在读取用量账本" /> : summary.isError ? (
@@ -410,6 +413,14 @@ export function CostQualityCenter() {
                 const width = maxModelCost > 0 && Number.isFinite(amount) ? Math.max(0, amount / maxModelCost * 100) : 0
                 return <div className="cq-bar-row" key={key}><span title={key}>{key}</span><div className="cq-bar-track"><i style={{ width: width + '%' }} /></div><strong>{usd(item.cost_usd)}</strong></div>
               })}</div> : <EmptyState title="暂无模型费用记录" description="当前筛选范围没有可归因的账本事件。" />}
+            </section>
+            <section className="cq-panel">
+              <header><div><h2>项目费用排行</h2><p>按服务端 by_project 聚合；选择项目可下钻到账本</p></div></header>
+              {Object.keys(summary.data.by_project ?? {}).length ? <div className="cq-bars">{Object.entries(summary.data.by_project ?? {}).sort((a,b) => Number(b[1].cost_usd)-Number(a[1].cost_usd)).map(([id,item]) => <button type="button" className="cq-bar-row cq-drilldown" key={id} onClick={() => setProjectId(projectId === id ? '' : id)}><span>{id}</span><span>{number(item.events)} 条</span><strong>{usd(item.cost_usd)}</strong></button>)}</div> : <EmptyState title="暂无项目归因" description="账本没有提供可归因的 project_id。" />}
+            </section>
+            <section className="cq-panel">
+              <header><div><h2>Agent 费用排行</h2><p>按服务端 by_agent 聚合；选择 Agent 可下钻到账本</p></div></header>
+              {Object.keys(summary.data.by_agent ?? {}).length ? <div className="cq-bars">{Object.entries(summary.data.by_agent ?? {}).sort((a,b) => Number(b[1].cost_usd)-Number(a[1].cost_usd)).map(([id,item]) => <button type="button" className="cq-bar-row cq-drilldown" key={id} onClick={() => setAgentId(agentId === id ? '' : id)}><span>{id}</span><span>{number(item.events)} 条</span><strong>{usd(item.cost_usd)}</strong></button>)}</div> : <EmptyState title="暂无 Agent 归因" description="账本没有提供可归因的 agent_id。" />}
             </section>
             <section className="cq-panel">
               <header><div><h2>容量健康</h2><p>服务端探针状态，不从浏览器推算</p></div></header>
@@ -439,7 +450,12 @@ export function CostQualityCenter() {
           <button className="button-primary" type="submit" disabled={!datasetId.trim()}>查询报告</button>
         </form>
         {reports.isPending && submittedDataset ? <LoadingState label="正在读取评测报告" /> : reports.isError ? <ErrorState title="评测报告不可用" description={errorText(reports.error)} onRetry={() => void reports.refetch()} /> : submittedDataset && reportItems.length ? (
-          <div className="cq-report-list">{reportItems.map((item, index) => <article key={String(item.eval_run_id ?? item.evaluation_run_id ?? item.id ?? index)}><strong>{String(item.eval_run_id ?? item.evaluation_run_id ?? item.id ?? '评测记录')}</strong><span>{Object.entries(item).filter(([key, value]) => key !== 'cases' && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')).map(([key, value]) => fieldLabel(key) + '：' + displayValue(key, value)).join(' · ')}</span></article>)}</div>
+          <div className="cq-report-list">{reportItems.map((item, index) => {
+          const runId = String(item.eval_run_id ?? item.evaluation_run_id ?? item.id ?? '')
+          const metrics = Object.entries(item).filter(([key, value]) => key !== 'cases' && key !== 'results' && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'))
+          const results = Array.isArray(item.results) ? item.results : Array.isArray(item.cases) ? item.cases : []
+          return <article key={runId || index}><strong>{runId || '评测记录'}</strong><span>{metrics.map(([key, value]) => fieldLabel(key) + '：' + displayValue(key, value)).join(' · ')}</span>{runId && <Link className="text-link" to={`/operations/evaluation/runs/${encodeURIComponent(runId)}`}>查看运行与样本证据（{results.length || '详情'}）</Link>}</article>
+        })}</div>
         ) : submittedDataset ? <EmptyState title="没有评测报告" description="该数据集当前没有可读取的评测历史，或服务端未返回记录。" /> : <EmptyState title="选择数据集查看质量结果" description="输入数据集 ID 后查询评测报告；不会展示虚构的准确率、召回率或回归分数。" />}
       </section>
       )}
