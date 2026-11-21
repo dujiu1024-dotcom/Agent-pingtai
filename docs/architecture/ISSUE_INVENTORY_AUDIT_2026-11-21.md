@@ -122,3 +122,23 @@ Each reopened Issue received a comment stating the specific unresolved acceptanc
 Current inventory state after reopening: 30 open Issues and 69 closed Issues (99 total). This count includes the 11 originally open Issues (#848, #870, #881–#889) plus the 19 reopened Issues listed above.
 
 No PR was merged or closed in this reconciliation. No Issue was closed. Reopened Issues must remain open until their own remaining acceptance criteria are evidenced; field-only tasks should be split into linked follow-up Issues if they need independent ownership or scheduling.
+
+
+## 全仓 99 个 Issue 防重复开发规则同步 — 2026-11-21
+
+已将“防重复开发与任务归属”章节逐一写入本次库存中的全部 99 个 Issue 正文，保留每个 Issue 原有正文、验收项、评论和状态。更新覆盖：
+- 原始基础/领域 Issue #2–#21、#71–#72、#79–#85、#262；
+- 执行台账与领域任务 #267、#517、#520–#528、#614、#665–#667；
+- 前端父子任务 #742–#763（本库存中实际存在的 21 项）及 #797–#818；
+- 战略、审计与企业级能力 #848、#870、#881–#889。
+
+每个 Issue 的治理段落按其角色区分：
+1. 领域实施 Issue：唯一承接自身业务范围，禁止平行实现相同 API/Service/模型/页面；
+2. 子 Issue：明确模块边界，回链父 Issue，不重复兄弟任务；
+3. CI baseline Issue：只维护测试/类型/发布验证基线，产品缺陷回链领域 Issue；
+4. 审查/台账 Issue（#848/#884/#267）：负责差距、任务映射和证据，不另行承接平行产品实现；
+5. 历史/归档 Issue：只保留背景与迁移指针，不重新承接已迁移实现。
+
+所有 Issue 均增加开发前查重、唯一实现 owner、子任务拆分规则、PR/commit/CI/现场证据要求，并链接 #884、#267 和 D4 Backlog。正文中已有的显式交叉引用被保留并列出作为关联线索，不据此自动扩大实施范围。
+
+本轮只修改 Issue 正文治理段落及本报告；没有删除、合并或关闭任何 Issue，也没有更改现有 Issue 状态。库存搜索结果仍为 30 open / 69 closed / 99 total（若后续有新 Issue 创建，需在下一轮盘点中纳入）。
