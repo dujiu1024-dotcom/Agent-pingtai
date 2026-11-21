@@ -62,6 +62,30 @@ function safeArray<T>(value: string): T[] {
   }
 }
 
+function workflowNodes(value: string): WorkflowNode[] {
+  return safeArray<WorkflowNode>(value).map((node) => ({
+    ...node,
+    config: node.config ?? {},
+    config_schema: node.config_schema ?? { type: 'object', properties: {} },
+    input_schema: node.input_schema ?? { type: 'object' },
+    output_schema: node.output_schema ?? { type: 'object' },
+    ports: node.ports ?? { inputs: ['main'], outputs: ['main'] },
+    permissions: node.permissions ?? [],
+    risk: node.risk ?? 'low',
+    error_retry: node.error_retry ?? { max_attempts: 1, backoff: 'none' },
+    version: node.version ?? 1,
+  }))
+}
+
+function workflowEdges(value: string): WorkflowEdge[] {
+  return safeArray<WorkflowEdge>(value).map((edge, index) => ({
+    ...edge,
+    id: edge.id ?? `edge-${index + 1}`,
+    source_port: edge.source_port ?? 'main',
+    target_port: edge.target_port ?? 'main',
+  }))
+}
+
 function parseJson(value: string, label: string): unknown {
   try {
     return JSON.parse(value || '[]')
@@ -267,8 +291,8 @@ export function WorkflowDesignerPage() {
       )}
 
       <WorkflowGraphEditor
-        nodes={safeArray<WorkflowNode>(form.nodes)}
-        edges={safeArray<WorkflowEdge>(form.edges)}
+        nodes={workflowNodes(form.nodes)}
+        edges={workflowEdges(form.edges)}
         onNodesChange={(nodes) => setForm((current) => ({ ...current, nodes: pretty(nodes) }))}
         onEdgesChange={(edges) => setForm((current) => ({ ...current, edges: pretty(edges) }))}
       />
