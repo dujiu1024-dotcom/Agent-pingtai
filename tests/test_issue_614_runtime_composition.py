@@ -169,7 +169,6 @@ class ProductionEntrypointWiringTests(unittest.TestCase):
         from unittest.mock import patch
 
         from fastapi import FastAPI
-        from agent_platform.production import create_production_app
         from agent_platform.production_config import ProductionSettings
 
         settings = ProductionSettings(
@@ -177,9 +176,15 @@ class ProductionEntrypointWiringTests(unittest.TestCase):
             redis_url="redis://redis:6379/0",
             allowed_origins=("https://platform.example.com",),
         )
-        with patch.dict(os.environ, {"AGENT_PLATFORM_RUN_WORKER_ENABLED": "false"}), patch(
+        with patch.dict(os.environ, {
+            "AGENT_PLATFORM_DSN": "postgresql://platform@db/platform",
+            "REDIS_URL": "redis://redis:6379/0",
+            "ALLOWED_ORIGINS": "https://platform.example.com",
+            "AGENT_PLATFORM_RUN_WORKER_ENABLED": "false",
+        }), patch(
             "agent_platform.production.create_platform_app", return_value=FastAPI()
         ):
+            from agent_platform.production import create_production_app
             app = create_production_app(
                 settings=settings,
                 connection_factory=lambda: None,
