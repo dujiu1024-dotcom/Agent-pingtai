@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -50,12 +50,23 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
                 labor_cost_per_hour=Decimal(str(body["labor_cost_per_hour"])),
                 quality_rate=Decimal(str(body["quality_rate"])), sample_size=int(body["sample_size"]),
                 source=str(body["source"]), owner_id=actor.user_id, version=str(body.get("version", "1")),
+                historical_business_volume=(int(body["historical_business_volume"])
+                    if body.get("historical_business_volume") is not None else None),
+                volume_period_start=(date.fromisoformat(body["volume_period_start"])
+                    if body.get("volume_period_start") is not None else None),
+                volume_period_end=(date.fromisoformat(body["volume_period_end"])
+                    if body.get("volume_period_end") is not None else None),
+                volume_source=(str(body["volume_source"]) if body.get("volume_source") is not None else None),
             )
             saved = await service.save_baseline(baseline)
         except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"tenant_id": actor.tenant_id, "process_id": saved.process_id,
-                "role_id": saved.role_id, "version": saved.version}
+                "role_id": saved.role_id, "version": saved.version,
+                "historical_business_volume": saved.historical_business_volume,
+                "volume_period_start": saved.volume_period_start.isoformat() if saved.volume_period_start else None,
+                "volume_period_end": saved.volume_period_end.isoformat() if saved.volume_period_end else None,
+                "volume_source": saved.volume_source}
 
     @router.post("/attributions", status_code=201)
     async def record_attribution(request: Request):
