@@ -25,11 +25,11 @@ export function AgentTeamGraph({ agents }: { agents: Agent[] }) {
       const definition = obj(agent.definition)
       const id = label(agent.item_id, String(index))
       const name = label(definition.name, id)
-      return <Link key={id} to={`/admin/agents/${encodeURIComponent(id)}`} className="agent-team-node"><span>{name.slice(0, 1).toUpperCase()}</span><strong>{name}</strong><small>{label(definition.role, label(agent.kind, 'Agent'))}</small></Link>
+      return <Link key={id} to={`/admin/agents/${encodeURIComponent(id)}`} className="agent-team-node"><span>{name.slice(0, 1).toUpperCase()}</span><strong>{name}</strong><small>{label(definition.role, label(agent.kind, 'Agent'))}</small><small>模型：{label(definition.model_template_name ?? definition.model_template_id, '未声明')}</small><small>状态：{label(agent.health, label(agent.status, '未知'))}</small><small>运行中：{typeof agent.active_run_count === 'number' ? agent.active_run_count : '未提供'}</small></Link>
     })}</div></section>)}</div> : <ul className="agent-team-list">{agents.map((agent, index) => {
       const definition = obj(agent.definition)
       const id = label(agent.item_id, String(index))
-      return <li key={id}><Link to={`/admin/agents/${encodeURIComponent(id)}`}>{label(definition.name, id)}</Link><span>{label(definition.role, label(agent.kind, 'Agent'))}</span><span>{label(definition.team_name ?? definition.team ?? definition.department_name ?? definition.department, '未分组')}</span></li>
+      return <li key={id}><Link to={`/admin/agents/${encodeURIComponent(id)}`}>{label(definition.name, id)}</Link><span>{label(definition.role, label(agent.kind, 'Agent'))}</span><span>{label(definition.team_name ?? definition.team ?? definition.department_name ?? definition.department, '未分组')}</span><span>{label(definition.model_template_name ?? definition.model_template_id, '模型未声明')}</span><span>{label(agent.health, label(agent.status, '健康状态未知'))}</span></li>
     })}</ul>}
   </section>
 }
