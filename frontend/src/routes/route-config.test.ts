@@ -5,6 +5,7 @@ import {
   authRoutes,
   detailRoutes,
   getAllRoutes,
+  getAuthFallbackPath,
   getVisibleNavigation,
   globalRoutes,
   isCanonicalRouteSetValid,
@@ -25,6 +26,12 @@ describe('route configuration', () => {
       'administration',
       'global',
     ])
+  })
+
+  it('redirects auth entry routes to the workspace when auth is disabled', () => {
+    expect(getAuthFallbackPath(false)).toBe('/workspace/overview')
+    expect(getAuthFallbackPath(true)).toBe('/auth/login')
+    expect(getAllRoutes(false)).not.toEqual(expect.arrayContaining(authRoutes))
   })
 
   it('uses the frozen dashboard route as the default route target', () => {
