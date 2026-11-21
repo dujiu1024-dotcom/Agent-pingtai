@@ -44,9 +44,12 @@ def create_quota_reporting_router(
             raise HTTPException(400, "report range cannot exceed 366 days")
         if not 1 <= limit <= 10000:
             raise HTTPException(400, "limit must be between 1 and 10000")
+        # Apply attribution filters before the public result limit so a sparse
+        # project/agent slice is not truncated by unrelated tenant events.
+        fetch_limit = 10000 if project_id or agent_id else limit
         events = await quota_store.list_usage(
             principal.tenant_id, start, end,
-            run_id=run_id, model_key=model_key, limit=limit,
+            run_id=run_id, model_key=model_key, limit=fetch_limit,
         )
         # Project/Agent are analytics dimensions, not authorization predicates.
         # In auth.enabled=false the anon principal still receives the complete
@@ -55,7 +58,7 @@ def create_quota_reporting_router(
             events = [event for event in events if event.project_id == project_id]
         if agent_id:
             events = [event for event in events if event.agent_id == agent_id]
-        return events
+        return events[:limit]
 
     @router.post("/budgets", status_code=201)
     async def configure_budget(request: Request):
