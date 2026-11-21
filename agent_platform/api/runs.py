@@ -20,6 +20,24 @@ EventBrokerResolver = Callable[[str], Awaitable[Any]]
 BudgetLedgerResolver = Callable[[Principal], Awaitable[Any]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
+_TITLE_KEYS = ("prompt", "task", "title", "query", "message", "instruction", "content", "summary")
+
+
+def _run_title(raw: Any) -> str:
+    """从 run.input 提取一句可读标题，供运行列表展示。"""
+    text = ""
+    if isinstance(raw, str):
+        text = raw.strip()
+    elif isinstance(raw, dict):
+        for key in _TITLE_KEYS:
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                text = value.strip()
+                break
+    if not text:
+        return ""
+    return text[:80] + ("…" if len(text) > 80 else "")
+
 
 def create_runs_router(
     *, resolve_principal: PrincipalResolver,
@@ -56,6 +74,7 @@ def create_runs_router(
                     "version": s.version,
                     "checkpoint_ref": s.checkpoint_ref,
                     "last_error": s.last_error,
+                    "title": _run_title(s.input),
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None,
                 }
                 for s in snapshots
