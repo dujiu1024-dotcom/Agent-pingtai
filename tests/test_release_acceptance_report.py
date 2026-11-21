@@ -89,7 +89,7 @@ class ReleaseAcceptanceReportTests(unittest.TestCase):
         self.document["release_id"] = "release-1| forged row\n| forged |"
         report, passed = render_acceptance_report(self.document, now=self.now)
         self.assertTrue(passed)
-        self.assertIn("release-1\\| forged row |\\| forged \\|", report)
+        self.assertIn("release-1\\| forged row \\| forged \\|", report)
         self.assertEqual(report.count("| forged |"), 0)
 
     def test_cli_writes_report_even_when_release_is_blocked(self):
