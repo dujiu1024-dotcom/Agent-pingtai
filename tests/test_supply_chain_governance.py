@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from agent_platform.supply_chain.admission import AdmissionDecision, AdmissionReport, SecurityFinding, Severity
 from agent_platform.supply_chain.governance import (
-    AdmissionRequest, ApprovalResult, ApprovalStatus, EnterpriseAdmissionOrchestrator,
+    ApprovalResult, ApprovalStatus, EnterpriseAdmissionOrchestrator,
     EnterpriseSupplyChainPolicy, LifecycleState, RiskLevel, RuntimeAction,
     RuntimeGovernanceMonitor, RuntimeObservation,
 )
