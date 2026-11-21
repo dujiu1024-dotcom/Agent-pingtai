@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Html, OrbitControls } from '@react-three/drei'
+import { Detailed, Html, OrbitControls } from '@react-three/drei'
 import type { Group } from 'three'
 import { useQuery } from '@tanstack/react-query'
 
@@ -74,11 +74,12 @@ const defaultFloors: Floor[] = [
   { id: 'floor-01', label: '01', name: '运营与知识层', description: '知识中心与运维空间' },
 ]
 const defaultZones = [
-  { id: 'focus', name: '专注工位', subtitle: 'FOCUS PODS', x: -6.1, z: -3.8, width: 5.4, depth: 4.5 },
-  { id: 'studio', name: '团队工作室', subtitle: 'TEAM STUDIO', x: 1.1, z: -3.8, width: 7.2, depth: 4.5 },
-  { id: 'meeting', name: '协作会议区', subtitle: 'MEETING HUB', x: -6.1, z: 3.2, width: 5.4, depth: 4.7 },
-  { id: 'knowledge', name: '知识中心', subtitle: 'KNOWLEDGE', x: 1.1, z: 3.2, width: 3.5, depth: 4.7 },
-  { id: 'ops', name: '运营中枢', subtitle: 'OPS CENTER', x: 5.8, z: 3.2, width: 2.5, depth: 4.7 },
+  { id: 'departments', name: '部门协作区', subtitle: 'DEPARTMENT HUB', x: -6.1, z: -3.8, width: 5.4, depth: 4.5 },
+  { id: 'open-work', name: '开放工位区', subtitle: 'OPEN WORKSPACE', x: 1.1, z: -3.8, width: 7.2, depth: 4.5 },
+  { id: 'private-office', name: '独立办公室', subtitle: 'PRIVATE OFFICES', x: -6.1, z: 3.2, width: 5.4, depth: 4.7 },
+  { id: 'meeting', name: '会议室', subtitle: 'MEETING ROOMS', x: 1.1, z: 3.2, width: 3.5, depth: 4.7 },
+  { id: 'archive', name: '档案/知识中心', subtitle: 'ARCHIVE & KNOWLEDGE', x: 5.8, z: 3.2, width: 2.5, depth: 4.7 },
+  { id: 'operations', name: '运维中心', subtitle: 'OPERATIONS CENTER', x: 5.8, z: -3.8, width: 2.5, depth: 4.5 },
 ]
 const defaultDesks: DeskLayout[] = Array.from({ length: 21 }, (_, index) => ({
   id: `desk-${String(index + 1).padStart(2, '0')}`,
@@ -111,8 +112,6 @@ export function normalizeOfficeAgents(snapshot: OfficeSnapshot): OfficeAgent[] {
       ?? validStatus(run?.status)
       ?? (run?.error ? 'failed' : run?.ok === true ? 'idle' : 'offline')
     const position = agent.position
-    const deskIndex = (agent.desk_id?.match(/(\d+)$/)?.[1] ?? '')
-    const fallbackDesk = deskIndex ? defaultDesks[Number(deskIndex) - 1] : undefined
     const currentTask = typeof agent.current_task === 'string'
       ? agent.current_task
       : agent.current_task?.title ?? agent.current_task?.task_id ?? run?.task_id
@@ -124,8 +123,8 @@ export function normalizeOfficeAgents(snapshot: OfficeSnapshot): OfficeAgent[] {
       floor_id: agent.floor_id,
       zone_id: agent.zone_id,
       desk_id: agent.desk_id,
-      x: typeof position?.x === 'number' ? position.x : typeof agent.x === 'number' ? agent.x : fallbackDesk?.x,
-      z: typeof position?.z === 'number' ? position.z : typeof agent.z === 'number' ? agent.z : fallbackDesk?.z,
+      x: typeof position?.x === 'number' ? position.x : typeof agent.x === 'number' ? agent.x : undefined,
+      z: typeof position?.z === 'number' ? position.z : typeof agent.z === 'number' ? agent.z : undefined,
       task: currentTask,
     }
   })
@@ -142,18 +141,18 @@ function AgentMarker({ agent, selected, onSelect }: { agent: OfficeAgent; select
   const color = statusColors[agent.status]
   return (
     <group ref={group} position={[agent.x ?? 0, 0, agent.z ?? 0]} onClick={(event) => { event.stopPropagation(); onSelect(agent.agent_id) }}>
-      <mesh position={[0, 0.98, 0]} castShadow>
-        <capsuleGeometry args={[0.27, 0.48, 5, 10]} />
-        <meshStandardMaterial color={color} roughness={0.48} />
-      </mesh>
-      <mesh position={[0, 1.42, 0]} castShadow>
-        <sphereGeometry args={[0.23, 16, 16]} />
-        <meshStandardMaterial color="#f4f7fc" roughness={0.35} />
-      </mesh>
-      <mesh position={[0, 1.43, 0.205]}>
-        <sphereGeometry args={[0.035, 8, 8]} />
-        <meshBasicMaterial color="#1c2540" />
-      </mesh>
+      <Detailed distances={[0, 16, 30]}>
+        <group>
+          <mesh position={[0, 0.98, 0]} castShadow><capsuleGeometry args={[0.27, 0.48, 5, 10]} /><meshStandardMaterial color={color} roughness={0.48} /></mesh>
+          <mesh position={[0, 1.42, 0]} castShadow><sphereGeometry args={[0.23, 16, 16]} /><meshStandardMaterial color="#f4f7fc" roughness={0.35} /></mesh>
+          <mesh position={[0, 1.43, 0.205]}><sphereGeometry args={[0.035, 8, 8]} /><meshBasicMaterial color="#1c2540" /></mesh>
+        </group>
+        <group>
+          <mesh position={[0, 1.05, 0]}><capsuleGeometry args={[0.3, 0.45, 3, 6]} /><meshStandardMaterial color={color} /></mesh>
+          <mesh position={[0, 1.48, 0]}><sphereGeometry args={[0.22, 8, 8]} /><meshStandardMaterial color="#f4f7fc" /></mesh>
+        </group>
+        <mesh position={[0, 1.05, 0]}><capsuleGeometry args={[0.32, 0.48, 2, 4]} /><meshStandardMaterial color={color} /></mesh>
+      </Detailed>
       <mesh position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[selected ? 0.62 : 0.48, selected ? 0.72 : 0.56, 28]} />
         <meshBasicMaterial color={selected ? '#2f6af0' : color} />
@@ -181,6 +180,11 @@ function Desk({ desk, selected, occupied, onSelect }: { desk: DeskLayout; select
       <mesh position={[0, 0.91, -0.125]}><boxGeometry args={[0.53, 0.32, 0.018]} /><meshStandardMaterial color="#b9d0ff" emissive="#4779dc" emissiveIntensity={0.14} /></mesh>
       <mesh position={[0, 0.07, 0.78]} castShadow><boxGeometry args={[0.66, 0.12, 0.62]} /><meshStandardMaterial color={occupied ? '#2f6af0' : '#c8d2e2'} /></mesh>
       <mesh position={[0, 0.39, 1.02]} castShadow><boxGeometry args={[0.66, 0.55, 0.1]} /><meshStandardMaterial color={occupied ? '#8eabed' : '#d8e0ec'} /></mesh>
+      <Detailed distances={[0, 18, 34]}>
+        <mesh position={[0, 0.58, 0]} castShadow receiveShadow><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} roughness={0.72} /></mesh>
+        <mesh position={[0, 0.58, 0]}><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} /></mesh>
+        <mesh position={[0, 0.58, 0]}><boxGeometry args={[1.2, 0.1, 0.7]} /><meshStandardMaterial color={surface} /></mesh>
+      </Detailed>
       {selected && <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.82, 0.94, 32]} /><meshBasicMaterial color="#2f6af0" /></mesh>}
     </group>
   )
@@ -224,9 +228,22 @@ function OfficeScene({ floorId, agents, desks, selectedDesk, selectedAgent, onSe
   )
 }
 
+export function shouldUseOffice2DFallback(width: number, coarsePointer: boolean): boolean {
+  return width <= 760 || coarsePointer
+}
+
 export function OfficeWorkspace() {
   const [floorId, setFloorId] = useState(defaultFloors[1].id)
-  const [view, setView] = useState<'space' | 'top'>('space')
+  const [view, setView] = useState<'space' | 'top' | '2d'>('space')
+  const [mobileFallback, setMobileFallback] = useState(false)
+  useEffect(() => {
+    const media = window.matchMedia('(pointer: coarse)')
+    const update = () => setMobileFallback(shouldUseOffice2DFallback(window.innerWidth, media.matches))
+    update()
+    window.addEventListener('resize', update)
+    media.addEventListener('change', update)
+    return () => { window.removeEventListener('resize', update); media.removeEventListener('change', update) }
+  }, [])
   const [selectedDesk, setSelectedDesk] = useState<string | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -271,6 +288,7 @@ export function OfficeWorkspace() {
           <span className={snapshot.isError ? 'office-sync-state error' : 'office-sync-state'}><i />{apiState}</span>
           <button className={view === 'space' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('space')} aria-pressed={view === 'space'}>空间视角</button>
           <button className={view === 'top' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('top')} aria-pressed={view === 'top'}>俯视图</button>
+          <button className={view === '2d' || mobileFallback ? 'office-view-button active' : 'office-view-button'} onClick={() => setView(view === '2d' ? 'space' : '2d')} aria-pressed={view === '2d' || mobileFallback}>2D 视图</button>
         </div>
       </header>
       <section className="office-heading">
@@ -279,11 +297,19 @@ export function OfficeWorkspace() {
       </section>
       <section className="office-main-grid">
         <div className="office-viewport">
-          <div className="office-viewport-caption"><span><i /> 3D SPACE</span><span>拖拽旋转 · 滚轮缩放 · 点击工位或 Agent 查看</span></div>
+          <div className="office-viewport-caption"><span><i /> {mobileFallback || view === '2d' ? '2D OFFICE' : '3D SPACE'}</span><span>{mobileFallback ? '移动端轻量模式 · 楼层 / 区域 / 工位 / Agent' : '拖拽旋转 · 滚轮缩放 · 点击工位或 Agent 查看'}</span></div>
           <div className={view === 'top' ? 'office-canvas office-canvas-top' : 'office-canvas'}>
-            <Canvas key={view} shadows dpr={[1, 1.6]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
-              <OfficeScene floorId={floorId} agents={sceneAgents} desks={desks} selectedDesk={selectedDesk} selectedAgent={selectedAgent} onSelectDesk={setSelectedDesk} onSelectAgent={setSelectedAgent} />
-            </Canvas>
+            {mobileFallback || view === '2d' ? (
+              <div className="office-2d-fallback" aria-label="办公室二维平面视图">
+                <div className="office-2d-zones">{defaultZones.map((zone) => <section key={zone.id} className="office-2d-zone"><strong>{zone.name}</strong><small>{zone.subtitle}</small></section>)}</div>
+                <div className="office-2d-desks" aria-label="工位列表">{desks.map((desk) => <button key={desk.id} type="button" className={selectedDesk === desk.id ? 'office-2d-desk selected' : 'office-2d-desk'} onClick={() => { setSelectedDesk(desk.id); setSelectedAgent(null) }}>{desk.id.toUpperCase()}</button>)}</div>
+                <div className="office-2d-agents">{visibleAgents.map((agent) => <button key={agent.agent_id} type="button" className={selectedAgent === agent.agent_id ? 'office-2d-agent selected' : 'office-2d-agent'} onClick={() => { setSelectedAgent(agent.agent_id); setSelectedDesk(agent.desk_id ?? null) }}><i className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{statusLabels[agent.status]} · {agent.task ?? '暂无当前任务'}</small></span></button>)}</div>
+              </div>
+            ) : (
+              <Canvas key={view} shadows={!mobileFallback} dpr={[1, 1.5]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
+                <OfficeScene floorId={floorId} agents={sceneAgents} desks={desks} selectedDesk={selectedDesk} selectedAgent={selectedAgent} onSelectDesk={setSelectedDesk} onSelectAgent={setSelectedAgent} />
+              </Canvas>
+            )}
           </div>
           <div className="office-map-legend"><span><i className="legend-desk" />标准工位</span><span><i className="legend-selected" />已选工位</span><span><i className="legend-agent" />Agent 状态穿透</span><small>Agent 仅在服务端返回位置字段时落位；状态来自实时快照 / Run 数据</small></div>
         </div>
