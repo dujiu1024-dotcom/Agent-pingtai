@@ -94,11 +94,11 @@ function costOf(task: TaskRecord): number | undefined {
 }
 
 function formatCount(value: number | undefined): string {
-  return value == null ? '0' : new Intl.NumberFormat('zh-CN').format(value)
+  return value == null ? '暂无数据' : new Intl.NumberFormat('zh-CN').format(value)
 }
 
 function formatRate(value: number | undefined): string {
-  return value == null ? '0%' : `${value.toFixed(1)}%`
+  return value == null ? '暂无数据' : `${value.toFixed(1)}%`
 }
 
 function formatDuration(value: number | undefined): string {
@@ -192,7 +192,7 @@ export function Dashboard() {
   const tasks = useMemo(() => unwrapList<TaskRecord>(tasksQuery.data), [tasksQuery.data])
   const completed = tasks.filter((task) => isCompleted(statusOf(task))).length
   const inProgress = tasks.filter((task) => isInProgress(statusOf(task))).length
-  const successRate = tasks.length ? completed / tasks.length * 100 : undefined
+  const successRate = tasks.length ? completed / tasks.length * 100 : tasksQuery.isSuccess ? 0 : undefined
   const durations = tasks.map((task) => task.duration_ms).filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0)
   const costs = tasks.map(costOf).filter((value): value is number => value != null)
   const averageDuration = durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : undefined
