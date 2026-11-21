@@ -163,12 +163,12 @@ async def run_redis_queue_probe(url: str, *, workers: int, operations: int) -> d
     tenant = f"bench-{uuid4().hex}"
     topic = "queue.latency"
     group = "benchmark"
-    consumer = "benchmark-consumer"
     await transport.connect()
     samples: list[float] = []
-    try:
-        await transport.ensure_group(tenant_id=tenant, topic=topic, group=group)
-        for index in range(operations):
+    semaphore = asyncio.Semaphore(workers)
+
+    async def publish_and_ack(index: int) -> None:
+        async with semaphore:
             event_id = str(uuid4())
             sent = time.perf_counter_ns()
             await transport.publish(
@@ -176,35 +176,48 @@ async def run_redis_queue_probe(url: str, *, workers: int, operations: int) -> d
                 payload={"sent_ns": sent, "index": index},
             )
             deadline = time.perf_counter() + 10
-            received = []
-            while not received and time.perf_counter() < deadline:
+            while time.perf_counter() < deadline:
                 received = await transport.read_group(
                     tenant_id=tenant, topic=topic, group=group,
-                    consumer=consumer, count=1, block_ms=100,
+                    consumer=f"benchmark-consumer-{index % workers}",
+                    count=1, block_ms=100,
                 )
-            if not received:
-                raise TimeoutError("Redis stream message was not delivered within 10 seconds")
-            for message_id, fields in received:
-                payload = json.loads(fields["payload"])
-                samples.append((time.perf_counter_ns() - int(payload["sent_ns"])) / 1_000_000)
-                await transport.acknowledge(
-                    tenant_id=tenant, topic=topic, group=group, message_id=message_id,
-                )
-        elapsed_ms = max(samples) if samples else 0
+                if not received:
+                    continue
+                for message_id, fields in received:
+                    payload = json.loads(fields["payload"])
+                    samples.append((time.perf_counter_ns() - int(payload["sent_ns"])) / 1_000_000)
+                    await transport.acknowledge(
+                        tenant_id=tenant, topic=topic, group=group, message_id=message_id,
+                    )
+                return
+            raise TimeoutError("Redis stream message was not delivered within 10 seconds")
+
+    try:
+        await transport.ensure_group(tenant_id=tenant, topic=topic, group=group)
+        started = time.perf_counter()
+        await asyncio.gather(*(publish_and_ack(index) for index in range(operations)))
+        elapsed = time.perf_counter() - started
+        ordered = sorted(samples)
         return {
             "status": "measured",
             "backend": "redis_stream_publish_to_consumer_ack",
             "workers": workers,
             "metrics": {
                 "messages": len(samples),
+                "ops_per_second": round(len(samples) / elapsed, 2) if elapsed else 0.0,
+                "elapsed_seconds": round(elapsed, 6),
                 "latency_ms": {
-                    "p50": round(statistics.median(samples), 3) if samples else 0.0,
-                    "p95": round(sorted(samples)[int((len(samples)-1)*0.95)], 3) if samples else 0.0,
-                    "p99": round(sorted(samples)[int((len(samples)-1)*0.99)], 3) if samples else 0.0,
-                    "max": round(elapsed_ms, 3),
+                    "p50": round(statistics.median(ordered), 3) if ordered else 0.0,
+                    "p95": round(ordered[int((len(ordered)-1)*0.95)], 3) if ordered else 0.0,
+                    "p99": round(ordered[int((len(ordered)-1)*0.99)], 3) if ordered else 0.0,
+                    "max": round(max(ordered), 3) if ordered else 0.0,
                 },
             },
-            "notes": ["Sequential publish→consumer-read→ACK latency; not multi-consumer throughput."],
+            "notes": [
+                "Concurrent publish→consumer-read→ACK probe bounded by the configured worker count.",
+                "Measures queue delivery latency and probe throughput, not full Run execution throughput.",
+            ],
         }
     finally:
         await transport.close()
