@@ -75,6 +75,7 @@ export async function login(input: {
     result?.authenticated !== true ||
     typeof result.tenant_id !== 'string' ||
     typeof result.expires_at !== 'string' ||
+    !Number.isFinite(Date.parse(result.expires_at)) ||
     result.csrf_header !== 'X-CSRF-Token'
   ) {
     throw new Error('登录响应缺少有效的会话信息')
