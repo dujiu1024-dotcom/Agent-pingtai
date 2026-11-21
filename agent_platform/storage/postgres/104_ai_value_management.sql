@@ -46,9 +46,9 @@ CREATE TABLE IF NOT EXISTS ai_value_attributions (
     FOREIGN KEY (tenant_id, process_id, role_id, baseline_version)
       REFERENCES ai_value_baselines (tenant_id, process_id, role_id, version),
     CHECK (auto_completed + assisted_completed + human_takeovers + failed_units <= units_total),
-    CHECK ((financial_status = 'estimated' AND (net_benefit IS NULL OR roi IS NULL))
+    CHECK (financial_status = 'estimated'
         OR (financial_status = 'financially_confirmed' AND cost_basis = 'settled'
-            AND ai_cost IS NOT NULL AND other_business_benefit IS NOT NULL))
+            AND ai_cost IS NOT NULL AND other_business_benefit IS NOT NULL AND business_evidence IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS ix_ai_value_attributions_tenant_window
     ON ai_value_attributions (tenant_id, window_start, window_end);
