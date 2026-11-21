@@ -1,9 +1,12 @@
 """Tenant-scoped digital employee catalog and AI team template API."""
 from __future__ import annotations
+
 import inspect
 from typing import Any, Callable
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
 from agent_platform.identity.models import Principal
 
 async def _resolve(value: Any) -> Any:
