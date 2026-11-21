@@ -5,6 +5,7 @@ import {
   authRoutes,
   detailRoutes,
   getAllRoutes,
+  getNavigationSections,
   getVisibleNavigation,
   globalRoutes,
   isCanonicalRouteSetValid,
@@ -72,6 +73,33 @@ describe('route configuration', () => {
         '/admin/workflows/research-flow',
       )?.[0].params.workflowId,
     ).toBe('research-flow')
+  })
+
+  it('filters RBAC submenu entries by exact grants and preserves no-auth mode', () => {
+    const noAuth = getNavigationSections(false)
+      .flatMap((section) => section.subpages)
+      .map((page) => page.path)
+    const noGrants = getNavigationSections(true, [], [])
+      .flatMap((section) => section.subpages)
+      .map((page) => page.path)
+    const rbacGrant = getNavigationSections(true, [], ['platform.rbac.read'])
+      .flatMap((section) => section.subpages)
+      .map((page) => page.path)
+    const allGrants = getNavigationSections(true, [], [
+      'platform.organization.read',
+      'platform.rbac.read',
+    ])
+      .flatMap((section) => section.subpages)
+      .map((page) => page.path)
+
+    expect(noAuth).not.toContain('/admin/access-control')
+    expect(noAuth).not.toContain('/admin/organization')
+    expect(noGrants).not.toContain('/admin/access-control')
+    expect(noGrants).not.toContain('/admin/organization')
+    expect(rbacGrant).toContain('/admin/access-control')
+    expect(rbacGrant).not.toContain('/admin/organization')
+    expect(allGrants).toContain('/admin/access-control')
+    expect(allGrants).toContain('/admin/organization')
   })
 
   it('shows capability-gated navigation only when bootstrap advertises it', () => {
