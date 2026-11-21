@@ -18,7 +18,7 @@ class OfflinePolicyTests(unittest.TestCase):
         self.evaluator = OfflinePolicyEvaluator(
             OfflinePolicy(
                 authorization_cache_ttl_seconds=600,
-                revocation_max_delay_seconds=300,
+                revocation_max_delay_seconds=900,
                 license_grace_seconds=3600,
             ),
             clock=lambda: self.now,
@@ -69,7 +69,7 @@ class OfflinePolicyTests(unittest.TestCase):
         self.assertEqual(result.decision, OfflineDecision.ALLOW)
         self.now = 10_201
         self.authorization = CachedAuthorization(
-            **{**self.authorization.__dict__, "last_revocation_sync_at": 9_800}
+            **{**self.authorization.__dict__, "last_revocation_sync_at": 9_000}
         )
         result = self.evaluate()
         self.assertEqual(result.decision, OfflineDecision.DENY)
