@@ -4,42 +4,87 @@
 
 - Issue：[#848](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/848)
 - 任务：C5 WP-E，前端生产构建、核心后端测试矩阵、执行结果、跳过原因与覆盖率。
-- 代码基线：`audit/issue-848-ai-native-gap-assessment`（以 PR base SHA 为准）。
+- PR：[#868](https://github.com/dujiu1024-dotcom/Agent-pingtai/pull/868)
+- 代码基线：`audit/issue-848-ai-native-gap-assessment`（PR base SHA：`442863ab00cf08617f4e21d53d2a373cd5054bb5`）。
+- 首轮执行提交：`86daffaae56da1489502ead272ab1669ddcf1553`。
 - Node 版本：仓库 `.nvmrc` 声明 `20.19.0`。
 - Python 矩阵：3.11、3.12。
 - 前端构建命令：`cd frontend && npm install --no-package-lock && npm run build`。
-- 后端核心测试：CI 中执行身份/租户授权专项 unittest，以及 `python -m unittest discover -s tests -t . -q` 全量测试。
+- 后端核心测试：身份/租户授权专项 unittest，以及 `python -m unittest discover -s tests -t . -q` 全量测试。
 - 覆盖率：`coverage run --branch --source=agent_platform -m unittest discover -s tests -t . -q`，输出终端报告及 `coverage.xml` artifact。
 
-## 2. 执行环境限制
+## 2. 执行环境与真实结果
 
-本会话执行环境没有仓库工作副本，尝试从 GitHub 克隆时因运行容器 DNS 无法解析 `github.com` 而失败。因此，**没有声称本地 npm build 或本地 Python 测试已执行**。为获得真实可复现结果，本 PR 新增专用 GitHub Actions 工作流 `.github/workflows/c5-test-execution.yml`，由 PR 自动执行上述命令并保存覆盖率产物。该工作流完成前，测试结果和覆盖率均标记为待 CI 实际回填。
+GitHub Actions 首轮执行记录：
 
-## 3. 测试矩阵
+- Workflow：`C5 real test execution matrix`
+- Run：[#1](https://github.com/dujiu1024-dotcom/Agent-pingtai/actions/runs/44902799369)
+- Run ID：`44902799369`
+- 结论：**failure**，不是 pending，也不是通过。
 
-| 类别 | 命令/矩阵 | 结果 | 备注 |
-|---|---|---|---|
-| 前端依赖安装 | `npm install --no-package-lock` | 待 CI | Node 20.19.0；不生成/提交 package-lock |
-| 前端生产构建 | `npm run build` | 待 CI | 执行 TypeScript project build 与 Vite production build |
-| 身份与租户专项 | `python -m unittest tests.test_identity ... tests.test_issue_755_c_dual_mode_integration -v` | 待 CI | Python 3.11 / 3.12 |
-| 后端全量 unittest | `python -m unittest discover -s tests -t . -q` | 待 CI | Python 3.11 / 3.12 |
-| 分支覆盖率 | `coverage run --branch --source=agent_platform ...` | 待 CI | 生成 coverage summary 与 XML artifact |
-| Lint / mypy | 未纳入本 WP 独立验收命令 | 跳过 | 当前任务聚焦真实测试与构建；仓库主 CI 另有 ruff/mypy 门禁 |
-| 浏览器 E2E / Playwright | 未在本工作流执行 | 跳过 | 本次指定重点为 npm build 与核心后端测试矩阵；浏览器 E2E 需要浏览器安装和独立运行时间 |
-| 真机 / 真实服务器 / 外部业务系统 | 未执行 | 按调度要求跳过 | 不申请真实服务器或外部资源 |
-| 外部模型供应商联调 | 未执行 | 跳过 | 避免外部凭据和计费依赖 |
+### 2.1 后端专项测试
 
-## 4. 结果与覆盖率回填规则
+Python 3.11 和 3.12 均执行了 79 个专项测试，结果均为：
 
-- 当前文档提交时：CI 尚未完成，所有构建/测试结果均为 **待 CI**，不能填写虚构通过数或覆盖率百分比。
-- GitHub Actions 工作流：`.github/workflows/c5-test-execution.yml`。
-- Backend coverage artifacts：`c5-backend-coverage-py3.11`、`c5-backend-coverage-py3.12`，在工作流完成后提供真实 `coverage.xml`。
-- PR 评论和最终交付状态将以工作流实际结论更新；失败时保留失败 job、错误摘要与跳过原因，不将失败改写为通过。
+- 失败：1
+- 跳过：2
+- 失败用例：`tests.test_platform_api_app.PlatformApiCompositionTests.test_file_assets_are_isolated_by_tenant_in_authenticated_api`
+- 失败位置：`tests/test_platform_api_app.py:214`
+- 实际断言：同租户请求返回 HTTP 405，测试预期 HTTP 200。
+- 错误：`AssertionError: 405 != 200`
 
-## 5. 已知限制
+这属于真实 API 路由/方法行为与测试预期不一致，当前不能判定租户文件资产链路通过。
 
-1. 本轮没有本地运行结果；真实命令由 GitHub Actions runner 执行。
-2. 测试覆盖率只针对 `agent_platform` Python 源码，并以 coverage 实际报告为准；不代表前端覆盖率或端到端生产覆盖率。
-3. 全量 unittest 可能受仓库既有测试失败、可选依赖或环境差异影响；失败需按日志区分代码失败、依赖失败和外部服务依赖。
-4. 未执行真实服务器部署、真机验证和外部业务系统联调。
+### 2.2 全量测试与覆盖率
 
+首轮工作流中，专项测试失败导致后续全量 unittest + coverage 步骤被 GitHub Actions 跳过。因此：
+
+- 全量 unittest：未执行（skipped），不是通过。
+- 分支覆盖率：未生成。
+- `.coverage` 与 `coverage.xml`：未产生，首轮 artifact 上传步骤提示未找到文件。
+- 覆盖率百分比：无有效数据，不填写虚构数值。
+
+为避免专项失败阻断全量测试，本 PR 已调整工作流：专项测试和全量测试在同一 shell 步骤中分别执行、分别记录退出码；即使专项失败也继续执行全量测试和覆盖率报告，最后汇总失败状态。
+
+### 2.3 前端构建
+
+Node `20.19.0`、npm `10.8.2`，依赖安装成功；`npm run build` 在 TypeScript 检查阶段失败，发现 4 项错误：
+
+| 文件 | 错误 |
+|---|---|
+| `src/components/crud/RegistryCatalogPage.tsx` | TS6133：`RegistryNameRow` 声明但未使用 |
+| `src/features/agents/AgentDefinitionPage.tsx` | TS6133：`resolveNames` 导入但未使用 |
+| `src/features/tasks/TaskCommandCenter.tsx:721` | TS2345：`string \| null \| undefined` 不能赋给 `string \| undefined` |
+| `src/lib/i18n/labels.ts:136` | TS1117：对象字面量存在重复属性 |
+
+以上是当前构建基线的实际失败，不属于本 WP 自动修复范围；本任务记录并报告，不擅自修改业务页面。
+
+依赖安装另报告 16 项 npm audit 漏洞（8 moderate、6 high、2 critical）；本次构建工作流不执行依赖升级。
+
+## 3. 修正后的测试执行策略
+
+工作流文件：`.github/workflows/c5-test-execution.yml`
+
+- Python 3.11 / 3.12 分别执行专项测试与全量测试。
+- 专项测试失败后仍继续执行全量 unittest。
+- 全量测试结束后仍生成 coverage summary 和 `coverage.xml`，即使测试本身失败也尽量保留覆盖率证据。
+- 上传步骤使用 `if: always()`，找不到覆盖率文件时发出 warning，不伪装成成功产物。
+- 最终根据专项测试、全量测试、覆盖率报告和 XML 生成状态汇总退出码；任一失败则 job 失败。
+- 前端构建继续独立执行，保留真实 TypeScript 错误日志。
+
+## 4. 跳过项与边界
+
+| 类别 | 结果 | 备注 |
+|---|---|---|
+| Lint / mypy | 本 WP 未执行 | 本任务聚焦指定构建与测试矩阵 |
+| 浏览器 E2E / Playwright | 未执行 | 本轮指定重点为 npm build 与核心后端测试矩阵 |
+| 真机 / 真实服务器 / 外部业务系统 | 按调度要求跳过 | 不申请真实服务器或外部资源 |
+| 外部模型供应商联调 | 未执行 | 避免外部凭据和计费依赖 |
+
+## 5. 结论与后续验收
+
+- 首轮真实 CI 已证明当前分支存在后端 API 测试失败和前端 TypeScript 构建失败。
+- 首轮覆盖率缺失的直接原因是专项测试失败后，全量测试步骤被跳过。
+- 已修正工作流控制流，等待 PR 更新后的第二轮 CI 验证。
+- 在第二轮 CI 完成前，最终状态仍为失败/待复验；不得填写通过率、覆盖率百分比或声称交付验收通过。
+- 本 PR 不合并；业务代码中的 405 与 TypeScript 问题应作为独立缺陷修复，不在 C5 WP-E 的测试执行记录任务中越界修改。
