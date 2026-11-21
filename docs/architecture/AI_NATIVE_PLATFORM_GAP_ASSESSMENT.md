@@ -617,3 +617,82 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P1 | Workflow 只做 snapshot 引用校验，未证明被 runtime 装配执行 | Workflow definition/version 解析、编译、执行、审计端到端通过 |
 | P1 | 默认生产 Entry Point 指向 local_runtime，本地能力限制成为默认生产边界 | 分离 local 与 enterprise builder；生产 preflight 验证能力 profile |
 | P1 | 默认图内工具调用与 Runtime Tool Gateway 边界需统一 | 所有工具调用统一经过权限、超时、幂等、审计和效果对账层 |
+
+
+## 18. 第六轮审查：产品中心前后端调用闭环（2026-11-21）
+
+本轮抽查前端产品中心真实 API 调用、FastAPI 路由注册和服务端能力开关。结论不以页面是否存在作为功能完成标准。
+
+### 18.1 产品中心已接入真实 API 的证据
+
+抽查的页面中，以下页面存在真实 API 调用和交互，不应归类为纯静态 Demo：
+- Agent 定义页：Registry agent 列表、版本读取、创建版本、发布、回滚、禁用。
+- Workflow Designer：Registry workflow 列表、版本读取、创建版本、发布、回滚、禁用。
+- Task Command Center：任务查询、取消、重试；Run 暂停、恢复、取消；事件和 Tool Effect 对账入口。
+- Agent Collaboration Center：Agent、Task、Run、Blackboard 条目/历史、SSE 事件流及修订/挑战/决策操作。
+- Batch Execution：批量任务创建、查询、取消、重试。
+- Knowledge Workbench：Collection、Document、上传、检索、问答、Chunk、ACL 授权/撤销。
+- Memory Governance：候选、记忆列表、激活/治理、删除和导出相关 API。
+- Prompt Lifecycle：Prompt 列表、版本、审计、渲染、激活、灰度和回滚 API。
+- Run Replay、Audit、Alerts、Knowledge Graph、RAG Playground、Quick Start 等页面也能观察到真实 apiClient 请求。
+
+这些证据证明多个产品中心已具备服务端交互，不代表所有操作在生产 profile 都已配置，也不代表 API 背后的真实执行能力已完整闭环。多项 API 在依赖未配置时会返回 503，前端已有部分显式错误态。
+
+### 18.2 P2：多模型变体评测 API 实现存在，但没有挂载到生产 FastAPI 应用
+
+证据：
+- `agent_platform/api/evaluation_variants.py` 实现了 `create_eval_variants_router()`，路由前缀为 `/api/platform/v1/observability/evaluations`，并定义 `POST /variants/run`，会校验登录用户、评测管理权限，并调用变体评测 service。
+- `agent_platform/api/app.py` 导入并挂载 `evaluation_rollout`、`observability` 等路由，但没有导入 `create_eval_variants_router`，也没有对应的 service/authorizer 参数和 `include_router`。
+- `frontend/src/features/evaluation/EvaluationInsightsPage.tsx:882-883` 明确提示：多模型变体评测接口尚未在平台应用中挂载，本页不提供变体运行入口。
+
+判断：
+- 这是一个明确的“后端模块存在但生产 API 未接线”的产品能力缺口，不是前端漏写按钮。
+- 当前 Evaluation Insights 支持读取评测报告、对比运行、评分和 Prompt rollout（具体受配置影响），但不能在该页面直接启动多模型变体评测。
+- `evaluation_variants.py` 当前属于孤立 API router 模块，不能计入生产已交付能力。
+
+建议：
+1. 如果多模型变体评测属于产品范围，为 `create_production_app` 增加明确的 service/authorization 注入参数，挂载 router，并增加生产 app route contract 测试。
+2. 增加端到端验收：导入 dataset version → 选择多个 model variants → 启动评测 → 持久化各 variant 的 pass rate、score、token/cost、latency → Evaluation Insights 展示结果。
+3. 如果短期不做，保留页面明确提示，并在产品能力矩阵标注“后端模块已实现、生产入口未开放”。
+
+### 18.3 P2：产品中心的可用状态由多组独立依赖开关决定，需形成部署级能力契约
+
+证据：
+- `agent_platform/api/app.py` 按服务/仓储/授权器是否注入来决定是否注册 Registry、Sessions、Evaluation、RAG、Blackboard、Graph、Approvals、Audit、Connectors、Runs 等路由。
+- 部分能力要求依赖成组配置，例如 Evaluation rollout 必须同时配置 bridge、authorizer 和 audit writer；Approval 必须配置 service、authorizer、risk resolver；Connector routes 必须配置 service resolver 和 authorizer。
+- `/workbench/capabilities` 和前端 Status Board 会展示部分能力启用状态，StatusBoardPage 明确区分“未接入或未配置”和“探测失败”。
+
+判断：
+- 条件化装配本身是合理的模块化设计，不是缺陷。
+- 但仅凭一个统一“生产部署成功”状态，无法推断所有产品中心均已可用；需要把 compose profile / environment variables / dependency health / route registration 映射成一份部署能力清单。
+- 当前前端能力状态主要是功能开关和部分探测，不足以证明每个产品中心的完整依赖链路已就绪。
+
+建议：
+1. 生成机器可读的 Deployment Capability Manifest：每项能力列出 API routes、required services、stores、workers、secrets、external dependencies、health probes 和限制。
+2. CI 按 local、single-node production、hybrid enterprise 等部署 profile 分别启动 app，断言应开放/应关闭的路由及 capability map。
+3. 对关键产品中心执行最小业务冒烟，而非只检查 HTTP health endpoint。
+
+### 18.4 本轮产品中心接线状态
+
+| 产品中心/能力 | 前端交互 | 后端 API | 本轮结论 |
+|---|---|---|---|
+| Agent Registry | 有 | 有 | 已接入；执行语义仍受第 17 节 Workflow 装配差距影响 |
+| Workflow Designer | 有 | Registry CRUD/发布/回滚有 | 资产治理接入；不代表 Workflow 已进入生产执行器 |
+| Task / Run Center | 有 | Task/Run API 有 | 主链路已接入；实际默认 graph 能力见第 17 节 |
+| Collaboration / Blackboard | 有 | Blackboard/SSE API 有 | 已接入；多专家生产执行闭环仍未证明 |
+| Batch Execution | 有 | Batch API 有 | 已接入；依赖配置和 worker 执行仍需 profile 验收 |
+| Knowledge / RAG | 有 | Knowledge、Graph、RAG API 有 | 已接入；ACL 列表读取仍缺（第 14 节） |
+| Memory Governance | 有 | Memory API 有 | 已接入；需继续核对 extraction worker 与自动激活策略 |
+| Prompt Lifecycle | 有 | Prompt Registry API 有 | 已接入；评测门禁和审计缺失时部分操作受限 |
+| Evaluation Insights | 有 | 评测、对比、评分、rollout 有 | 多模型 variants router 未挂载，不能运行变体评测 |
+| Extension Publisher | 有 | Publisher key API 有 | 仅证明发布者密钥治理入口，不等同于 Extension Marketplace |
+| Cost / Quota | 有 | Quota/Usage API 有 | 已接入；实际账单 reconciliation 与 provider usage 对账需单独验收 |
+| Alerts / Audit / Replay | 有 | 对应 API 有 | 已接入；受存储、权限和 trace 配置约束 |
+
+### 18.5 本轮新增差距优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P2 | 多模型变体评测 router 未挂载 | 生产 app 注册路由并通过 dataset→variants→report→UI E2E |
+| P2 | 缺少部署级产品能力契约 | 每种 deployment profile 有 capability manifest 和路由/依赖/worker 验收 |
+| P2 | 多产品中心真实业务冒烟分散 | 按产品中心维护从 UI/API 到 service/store/worker 的关键业务旅程测试 |
