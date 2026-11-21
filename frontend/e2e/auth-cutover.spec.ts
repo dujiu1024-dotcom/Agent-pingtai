@@ -24,11 +24,11 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
   }) => {
     await stubBootstrap(page, false)
     await page.goto(appPath('/auth/login'))
-    await expect(page).toHaveURL(/\/workspace\/overview$/)
+    await expect(page).toHaveURL(/\/app\/workspace\/overview$/)
     await expect(page.getByText('免登录模式')).toBeVisible()
 
     await page.goto(appPath('/auth/initialize'))
-    await expect(page).toHaveURL(/\/workspace\/overview$/)
+    await expect(page).toHaveURL(/\/app\/workspace\/overview$/)
     await expect(
       page.getByRole('heading', { name: '运营驾驶舱' }),
     ).toBeVisible()
@@ -101,7 +101,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
     await page.getByLabel('密码（至少 12 位）').fill('correct-horse-battery')
     await page.getByRole('button', { name: '创建管理员并登录' }).click()
 
-    await expect(page).toHaveURL(/\/workspace\/overview$/)
+    await expect(page).toHaveURL(/\/app\/workspace\/overview$/)
     await expect(page.getByText('Owner')).toBeVisible()
     expect(initializePayload).toMatchObject({
       tenant_id: 'acme',
@@ -144,7 +144,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
     await expect(page.getByRole('alert')).toContainText(
       'platform is already initialized',
     )
-    await expect(page).toHaveURL(/\/auth\/initialize$/)
+    await expect(page).toHaveURL(/\/app\/auth\/initialize$/)
   })
 
   test('login rejects invalid credentials and returns to the requested deep link on success', async ({
@@ -194,7 +194,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
     })
 
     await page.goto(appPath('/operations/runs/run-cutover'))
-    await expect(page).toHaveURL(/\/auth\/login$/)
+    await expect(page).toHaveURL(/\/app\/auth\/login$/)
     await page.getByLabel('租户 ID').fill('acme')
     await page.getByLabel('邮箱').fill('user@acme.test')
     await page.getByLabel('密码').fill('wrong-password')
@@ -203,6 +203,6 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
 
     await page.getByLabel('密码').fill('valid-password')
     await page.getByRole('button', { name: '登录' }).click()
-    await expect(page).toHaveURL(/\/operations\/runs\/run-cutover$/)
+    await expect(page).toHaveURL(/\/app\/operations\/runs\/run-cutover$/)
   })
 })
