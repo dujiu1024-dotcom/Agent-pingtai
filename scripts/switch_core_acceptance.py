@@ -2,10 +2,10 @@
 """Run the core platform journeys and fail on test failures or error-level logs."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import sys
 import unittest
-from dataclasses import dataclass
 
 
 CORE_SUITES = (
