@@ -236,7 +236,6 @@ files = [
   "agent_platform/runtime/langgraph_adapter.py",
   "agent_platform/runtime/execution.py",
   "agent_platform/runtime/replay.py",
-  "agent_platform/observability/run_trace.py",
   "agent_platform/tools/mcp_adapter.py",
   "agent_platform/workflows/multi_expert.py",
   "agent_platform/workflows/blackboard_services.py",
