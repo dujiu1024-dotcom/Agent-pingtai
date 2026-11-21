@@ -34,7 +34,7 @@ class BusinessValueMetrics:
     cycle_time_reduction_rate: Decimal
     cycle_minutes_saved: Decimal
     throughput_delta_per_hour: Decimal
-    throughput_change_rate: Decimal | None
+    throughput_change_rate: Decimal
 
 
 def calculate_business_value_metrics(
@@ -78,7 +78,10 @@ class ToolCostLine:
     evidence_ref: str | None = None
 
     def __post_init__(self) -> None:
-        if not self.tool_key.strip() or not self.pricing_version.strip():
+        if (
+            not isinstance(self.tool_key, str) or not self.tool_key.strip()
+            or not isinstance(self.pricing_version, str) or not self.pricing_version.strip()
+        ):
             raise ValueError("tool_key and pricing_version are required")
         if self.source in {"provider_reported", "reconciled"} and not (self.evidence_ref or "").strip():
             raise ValueError("provider-reported or reconciled tool cost requires evidence_ref")
