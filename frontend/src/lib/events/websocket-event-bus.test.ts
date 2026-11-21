@@ -36,6 +36,7 @@ describe('WebSocketEventBus', () => {
     bus.subscribe((value) => received.push(value.event_id))
     bus.start()
     socket.onopen?.()
+    socket.onmessage?.({ data: JSON.stringify({ ...JSON.parse(event('evt-2', 2)), event_id: '' }) })
     socket.onmessage?.({ data: event('evt-2', 2) })
     socket.onmessage?.({ data: event('evt-2', 2) })
     socket.onmessage?.({ data: event('evt-1', 1) })
