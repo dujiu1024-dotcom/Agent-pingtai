@@ -85,3 +85,17 @@ export function ModeRestrictedState({
     </section>
   )
 }
+
+
+export function ForbiddenState() {
+  return (
+    <section className="state-panel state-panel--error" role="alert">
+      <strong className="state-code">403</strong>
+      <h2>无权访问</h2>
+      <p>当前会话未获得此页面所需权限。请联系管理员分配权限。</p>
+      <Link className="text-link" to="/workspace/overview">
+        返回运营驾驶舱
+      </Link>
+    </section>
+  )
+}
