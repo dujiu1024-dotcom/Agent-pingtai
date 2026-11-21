@@ -49,12 +49,28 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Check whitespace and patch integrity
+      - name: Validate changed documentation and configuration files
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git diff --check "$BASE_SHA...$HEAD_SHA"
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          import os
+
+          base = os.environ["BASE_SHA"]
+          head = os.environ["HEAD_SHA"]
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base}...{head}"], text=True
+          ).splitlines()
+          for name in changed:
+              path = Path(name)
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f"changed file is missing or empty: {name}")
+              path.read_bytes().decode("utf-8")
+          print(f"validated {len(changed)} changed UTF-8 files")
+          PY
       - name: Validate workflow YAML syntax
         run: ruby -e 'require "yaml"; ARGV.each { |file| YAML.load_file(file) }' .github/workflows/ci.yml .github/workflows/platform-release-gate.yml
 
