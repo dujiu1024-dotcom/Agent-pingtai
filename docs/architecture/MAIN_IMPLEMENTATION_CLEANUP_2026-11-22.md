@@ -94,3 +94,14 @@ No dedicated end-to-end delivery PR was identified for these five domain issues 
 2. Execute opt-in integration tests against real PostgreSQL/Redis/object storage/Secret Manager/OCI hosts.
 3. Run production/field acceptance for #15/#18 and the strategic gaps #885–#889.
 4. Complete the full Requirement ID → unique Issue → main code path → test → PR/commit → current CI → field evidence matrix before treating the atomic ledger as fully audited.
+
+
+## 9. Representative CI failure shape
+
+For PR #530 (Run context snapshots), the latest recorded `ci` run exposed multiple distinct outcomes:
+- Identity focused tests on Python 3.11 and 3.12 failed at the test step.
+- PostgreSQL/Redis platform integration tests failed at the test step.
+- The full `test (3.11)` and `test (3.12)` jobs were cancelled while running the full unit-test step (approximately 45 minutes elapsed); lint/type-check steps were skipped after cancellation.
+- Dependency/security checks passed, but that does not compensate for the failed identity/integration tests or cancelled full test matrix.
+
+This is a representative example only, not a proven common root cause for every failed PR. Before changing CI policy globally, inspect each failing job's test output and group failures by root cause. Do not classify cancelled full-suite runs as pass, and do not disable product tests simply because a PR is documentation-only; use path-aware workflow selection for documentation-only changes while retaining relevant test coverage for code changes.
