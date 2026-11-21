@@ -67,7 +67,7 @@ class PostgresAlertEventStore:
                                   AND delivery_attempts < delivery_max_attempts)
                               OR (delivery_status='sending' AND delivery_claimed_at < now() - interval '5 minutes'
                                   AND delivery_attempts < delivery_max_attempts))
-                           AND (%s IS NULL OR event_id=%s)
+                           AND (%s::uuid IS NULL OR event_id=%s)
                          ORDER BY fired_at
                          LIMIT %s
                          FOR UPDATE SKIP LOCKED
