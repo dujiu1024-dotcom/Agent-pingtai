@@ -56,6 +56,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-platform.txt
+            requirements-knowledge-parsers.txt
+            requirements-harness-strands.txt
       - name: Install PostgreSQL backup tools
         run: |
           sudo apt-get update
@@ -128,9 +133,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install focused test dependencies
-        run: |
-          python -m pip install -U pip
-          python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
+        run: python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Validate page map and route contract
         run: python -m unittest tests.test_issue_753_page_map_contract -v
       - name: Run core business journey, unified model budget and release evidence acceptance tests
