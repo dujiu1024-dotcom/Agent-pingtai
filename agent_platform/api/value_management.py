@@ -11,7 +11,9 @@ from fastapi import APIRouter, HTTPException, Request
 from agent_platform.identity.models import Principal
 from agent_platform.value_management import AIContribution, HumanBaseline, calculate_value
 from agent_platform.value_management_metrics import (
-    ToolCostLine, aggregate_value_costs, calculate_business_value_metrics,
+    ToolCostLine,
+    aggregate_value_costs,
+    calculate_business_value_metrics,
 )
 
 
