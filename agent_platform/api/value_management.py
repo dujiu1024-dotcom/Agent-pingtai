@@ -123,17 +123,22 @@ def create_value_management_router(
             run_ids = body.get("run_ids")
             if (
                 not isinstance(run_ids, list) or not run_ids
-                or len(run_ids) > 100
+                or len(run_ids) > 25
                 or any(not isinstance(item, str) or not item.strip() for item in run_ids)
                 or len(set(run_ids)) != len(run_ids)
             ):
-                raise ValueError("run_ids must contain 1-100 unique non-empty strings")
+                raise ValueError("run_ids must contain 1-25 unique non-empty strings")
             start = datetime.fromisoformat(str(body["window_start"]))
             end = datetime.fromisoformat(str(body["window_end"]))
             if start.tzinfo is None or end.tzinfo is None or end <= start:
                 raise ValueError("metrics window must be ordered and timezone-aware")
+            if end - start > __import__("datetime").timedelta(days=366):
+                raise ValueError("metrics window cannot exceed 366 days")
+            completed_units = body["completed_units"]
+            if isinstance(completed_units, bool) or not isinstance(completed_units, int):
+                raise ValueError("completed_units must be a non-negative integer")
             metric = calculate_business_value_metrics(
-                completed_units=int(body["completed_units"]),
+                completed_units=completed_units,
                 baseline_cycle_minutes_per_unit=Decimal(str(body["baseline_cycle_minutes_per_unit"])),
                 actual_cycle_minutes_per_unit=Decimal(str(body["actual_cycle_minutes_per_unit"])),
                 baseline_throughput_per_hour=Decimal(str(body["baseline_throughput_per_hour"])),
@@ -147,6 +152,7 @@ def create_value_management_router(
                     tool_key=str(item["tool_key"]), call_count=item["call_count"],
                     cost_usd=Decimal(str(item["cost_usd"])), source=str(item["source"]),
                     pricing_version=str(item["pricing_version"]),
+                    evidence_ref=str(item["evidence_ref"]) if item.get("evidence_ref") is not None else None,
                 )
                 for item in raw_tool_lines if isinstance(item, dict)
             )
@@ -165,7 +171,9 @@ def create_value_management_router(
             role_id = str(body["role_id"])
             attribution_id = str(body["attribution_id"])
             metric_version = str(body.get("metric_version", "1"))
-            source_metadata = body.get("source_metadata") or {}
+            source_metadata = body.get("source_metadata")
+            if source_metadata is None:
+                source_metadata = {}
             if not isinstance(source_metadata, dict):
                 raise ValueError("source_metadata must be a JSON object")
             try:
