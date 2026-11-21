@@ -38,7 +38,7 @@ function AuthLayout({
 }
 
 export function LoginPage() {
-  const { enabled, status, refresh } = useAuth()
+  const { enabled, status, refresh, error: sessionError } = useAuth()
   const location = useLocation()
   const [tenantId, setTenantId] = useState('')
   const [email, setEmail] = useState('')
@@ -111,7 +111,7 @@ export function LoginPage() {
             required
           />
         </label>
-        {error && (
+        {(error || sessionError) && (
           <p className="auth-error" role="alert">
             {error}
           </p>
