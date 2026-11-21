@@ -112,7 +112,7 @@ describe('route configuration', () => {
     expect(
       matchRoutes(routes.map((route) => ({ path: route.path })), '/admin/rbac')?.[0].route.path,
     ).toBe('/admin/rbac')
-    expect(getAllRoutes(false).some((route) => route.path === '/admin/rbac')).toBe(false)
+    expect(getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))).not.toContain('/admin/rbac')
   })
 
   it('registers Knowledge collection and document deep links under #760', () => {
