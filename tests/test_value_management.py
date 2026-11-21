@@ -34,16 +34,18 @@ def test_savings_uses_baseline_and_human_touch_and_rework_not_agent_runtime():
     assert result.net_benefit is None
     assert result.roi is None
     assert result.financial_status == "estimated"
+    assert result.cost_basis == "estimated"
 
 
 def test_financial_roi_requires_both_cost_and_business_evidence():
     result = calculate_value(
         baseline(), contribution(), other_business_benefit=Decimal("40"),
-        ai_cost=Decimal("20"),
+        ai_cost=Decimal("20"), cost_is_settled=True, business_benefit_confirmed=True,
     )
     assert result.net_benefit == Decimal("80")
     assert result.roi == Decimal("4")
     assert result.financial_status == "financially_confirmed"
+    assert result.cost_basis == "settled"
 
 
 def test_missing_business_evidence_does_not_fake_zero_or_roi():
@@ -80,3 +82,13 @@ def test_missing_baseline_provenance_is_rejected():
             manual_minutes_per_unit=Decimal("10"), labor_cost_per_hour=Decimal("60"),
             quality_rate=Decimal("0.98"), sample_size=100, source="", owner_id="mgr",
         )
+
+
+def test_estimated_cost_and_unconfirmed_benefit_never_claim_financial_confirmation():
+    result = calculate_value(
+        baseline(), contribution(), other_business_benefit=Decimal("40"),
+        ai_cost=Decimal("20"), cost_is_settled=False, business_benefit_confirmed=False,
+    )
+    assert result.net_benefit == Decimal("80")
+    assert result.roi == Decimal("4")
+    assert result.financial_status == "estimated"
