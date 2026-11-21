@@ -96,6 +96,7 @@ const AuditEventDetailPage = lazy(() => import('@/features/audit/AuditEventDetai
 const ApprovalDetailPage = lazy(() => import('@/features/approvals/ApprovalDetailPage').then((m) => ({ default: m.ApprovalDetailPage })))
 const MemoryGovernancePage = lazy(() => import('@/features/memories/MemoryGovernancePage').then((m) => ({ default: m.MemoryGovernancePage })))
 const EvaluationInsightsPage = lazy(() => import('@/features/evaluation/EvaluationInsightsPage').then((m) => ({ default: m.EvaluationInsightsPage })))
+const BusinessManagementHub = lazy(() => import('@/features/business/BusinessManagementHub').then((m) => ({ default: m.BusinessManagementHub })))
 
 const PageFallback = () => <LoadingState label="正在加载页面" />
 
@@ -577,6 +578,7 @@ function PageView({
   if (route.path === '/admin/extensions') return <Lazy><ExtensionPublishersPage /></Lazy>
   if (route.path === '/admin/prompts') return <Lazy><PromptLifecyclePage /></Lazy>
   if (route.path === '/admin/audit') return <Lazy><AuditCenterPage /></Lazy>
+  if (route.path === '/operations/business-management') return <Lazy><BusinessManagementHub /></Lazy>
   if (route.path === '/operations/memories') return <Lazy><MemoryGovernancePage /></Lazy>
   if (route.path === '/operations/evaluation/insights') return <Lazy><EvaluationInsightsPage /></Lazy>
   if (route.path === '/operations/tasks/:taskId') return <Lazy><TaskDetailPage /></Lazy>
