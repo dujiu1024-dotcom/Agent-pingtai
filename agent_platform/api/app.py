@@ -14,6 +14,9 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
+from agent_platform.business_automation import (
+    WorkflowDefinitionRepository, create_business_automation_router,
+)
 from agent_platform.api.contract import (
     API_V1_PREFIX,
     ApiV1CompatibilityMiddleware,
@@ -96,6 +99,8 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     connector_sync_worker: Any | None = None,
     connector_cleanup_worker: Any | None = None,
+    workflow_definition_repository: WorkflowDefinitionRepository | None = None,
+    workflow_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_replay_resolver: Any | None = None,
     run_authorizer: Any | None = None,
@@ -721,6 +726,15 @@ def create_platform_app(
             resolve_service=connector_service_resolver,
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
+        ))
+    workflow_configured = any(value is not None for value in (workflow_definition_repository, workflow_authorizer))
+    if workflow_configured:
+        if workflow_definition_repository is None or workflow_authorizer is None:
+            raise ValueError("workflow definition repository and authorizer must be configured together")
+        app.include_router(create_business_automation_router(
+            resolve_principal=_principal_from_request,
+            repository=workflow_definition_repository,
+            authorize=workflow_authorizer,
         ))
     for worker, name in (
         (connector_sync_worker, "connector_sync_worker"),
