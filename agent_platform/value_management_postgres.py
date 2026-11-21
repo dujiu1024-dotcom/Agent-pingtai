@@ -171,3 +171,45 @@ class PostgresAIValueRepository:
         if row is None:
             raise KeyError("attribution not found for authenticated tenant")
         return str(row["id"])
+
+
+    async def list_metrics(self, *, tenant_id: str, attribution_id: str) -> list[dict[str, Any]]:
+        """Read metric snapshots through tenant and attribution scope."""
+        from uuid import UUID
+
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT id,attribution_id,process_id,role_id,window_start,window_end,
+                          completed_units,baseline_cycle_minutes_per_unit,
+                          actual_cycle_minutes_per_unit,cycle_time_delta_minutes_per_unit,
+                          cycle_time_reduction_rate,cycle_minutes_saved,
+                          baseline_throughput_per_hour,actual_throughput_per_hour,
+                          throughput_delta_per_hour,throughput_change_rate,run_ids,
+                          cost_breakdown,metric_version,source_metadata,actor_id,created_at
+                   FROM ai_value_metric_snapshots
+                   WHERE tenant_id=%s AND attribution_id=%s
+                   ORDER BY created_at,id""",
+                (tenant_id,UUID(attribution_id)),
+            )
+            rows = await cursor.fetchall()
+        fields = (
+            "baseline_cycle_minutes_per_unit", "actual_cycle_minutes_per_unit",
+            "cycle_time_delta_minutes_per_unit", "cycle_time_reduction_rate",
+            "cycle_minutes_saved", "baseline_throughput_per_hour",
+            "actual_throughput_per_hour", "throughput_delta_per_hour",
+            "throughput_change_rate",
+        )
+        return [{
+            "id": str(row["id"]), "attribution_id": str(row["attribution_id"]),
+            "process_id": row["process_id"], "role_id": row["role_id"],
+            "window_start": row["window_start"].isoformat(),
+            "window_end": row["window_end"].isoformat(),
+            "completed_units": row["completed_units"],
+            **{field: str(row[field]) for field in fields},
+            "run_ids": list(row["run_ids"]),
+            "cost_breakdown": row["cost_breakdown"],
+            "metric_version": row["metric_version"],
+            "source_metadata": row["source_metadata"],
+            "actor_id": row["actor_id"], "created_at": row["created_at"].isoformat(),
+        } for row in rows]
