@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 
-from agent_platform.supply_chain.admission import AdmissionDecision, AdmissionReport, SecurityFinding, Severity
+from agent_platform.supply_chain.admission import AdmissionDecision, AdmissionReport, Severity
 from agent_platform.supply_chain.governance import (
     ApprovalResult, ApprovalStatus, EnterpriseAdmissionOrchestrator,
     EnterpriseSupplyChainPolicy, LifecycleState, RiskLevel, RuntimeAction,
