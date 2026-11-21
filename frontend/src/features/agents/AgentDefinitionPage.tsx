@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { ErrorState, LoadingState } from '@/components/States'
 import { apiClient } from '@/lib/api/api-client'
-import { resolveNames, useRegistryCaches } from '@/lib/registry-names'
+import { useRegistryCaches } from '@/lib/registry-names'
 import { valueLabel } from '@/lib/i18n/labels'
 
 interface RegistryItem {

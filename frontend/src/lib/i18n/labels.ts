@@ -133,7 +133,7 @@ const FIELD_LABELS: Record<string, string> = {
   checksum: '校验和',
   sha256: 'SHA-256',
   owner_id: '上传者',
-  agent_id: '生成 Agent',
+  generator_agent_id: '生成 Agent',
   collection_id: '知识库 ID',
   document_id: '文档 ID',
   chunk_id: '分块 ID',
