@@ -345,8 +345,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-PROMPTS',
     title: '提示词与模板管理',
     section: '平台管理',
-    description: '提示词注册条件能力入口。',
-    owner: '#749',
+    description: 'Prompt Registry 列表、模板版本、差异与评测 Gate。',
+    owner: '#807',
     capability: 'prompt_management',
   },
   {
@@ -525,6 +525,19 @@ export const detailRoutes: PageRoute[] = [
     parentPath: '/admin/audit',
     entityIdParam: 'eventId',
     owner: '#751',
+  },
+]
+
+  {
+    path: '/admin/prompts/:promptId',
+    pageId: 'ADM-PROMPT-DETAIL',
+    title: 'Prompt 详情',
+    section: '平台管理',
+    description: 'Prompt 模板版本、历史差异与评测 Gate 状态。',
+    parentPath: '/admin/prompts',
+    entityIdParam: 'promptId',
+    capability: 'prompt_management',
+    owner: '#807',
   },
 ]
 
