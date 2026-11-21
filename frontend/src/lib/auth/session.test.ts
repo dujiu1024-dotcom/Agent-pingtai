@@ -15,11 +15,9 @@ describe('parseSessionInfo', () => {
     ).toEqual({
       tenant_id: 'tenant-1',
       principal_type: 'user',
-      user: {
-        user_id: 'user-1',
-        email: 'user@example.test',
-        display_name: 'User One',
-      },
+      user_id: 'user-1',
+      email: 'user@example.test',
+      display_name: 'User One',
     })
   })
 
