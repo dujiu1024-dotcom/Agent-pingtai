@@ -5,19 +5,54 @@ import html
 import json
 import math
 from datetime import datetime
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, TypedDict
 from uuid import uuid4
+
+
+class EvaluationRunRow(TypedDict, total=False):
+    eval_run_id: str
+    model_key: str
+    gate_passed: bool
+    created_at: datetime | str | None
+    report: Mapping[str, object] | str | None
+
+
+class EvaluationVariant(TypedDict):
+    eval_run_id: str
+    model_key: str
+    gate_passed: bool
+    created_at: str
+    metrics: dict[str, float]
+
+
+class EvaluationComparisonRow(TypedDict):
+    eval_run_id: str
+    model_key: str
+    delta_to_recommended: dict[str, float]
+
+
+class EvaluationComparisonReport(TypedDict):
+    report_id: str
+    tenant_id: str
+    dataset_id: str
+    dataset_version: int
+    variant_count: int
+    metric_names: list[str]
+    variants: list[dict[str, object]]
+    comparisons_to_recommended: list[EvaluationComparisonRow]
+    recommended: dict[str, str]
+    created_by: str
 
 
 class EvaluationComparisonRepository(Protocol):
     async def list_variant_runs(self, *, tenant_id: str, dataset_id: str,
                                 dataset_version: int, limit: int) -> list[dict[str, Any]]: ...
-    async def save_variant_report(self, *, tenant_id: str, report: Mapping[str, Any]) -> str: ...
+    async def save_variant_report(self, *, tenant_id: str, report: Mapping[str, object]) -> str: ...
     async def load_variant_report(self, *, tenant_id: str, report_id: str) -> dict[str, Any]: ...
 
 
 class PdfRenderer(Protocol):
-    def render(self, report: Mapping[str, Any]) -> bytes: ...
+    def render(self, report: Mapping[str, object]) -> bytes: ...
 
 
 def _finite(value: Any, name: str) -> float:
@@ -29,7 +64,7 @@ def _finite(value: Any, name: str) -> float:
     return result
 
 
-def _metrics(run: Mapping[str, Any]) -> dict[str, float]:
+def _metrics(run: Mapping[str, object]) -> dict[str, float]:
     payload = run.get("report") or {}
     if isinstance(payload, str):
         payload = json.loads(payload)
@@ -42,8 +77,12 @@ def _metrics(run: Mapping[str, Any]) -> dict[str, float]:
     if extra is not None:
         if not isinstance(extra, Mapping):
             raise ValueError("evaluation report metrics must be an object")
-        values.update(extra)
-    return {str(key): _finite(value, str(key)) for key, value in values.items() if value is not None}
+        values.update({str(key): value for key, value in extra.items()})
+    return {
+        str(key): _finite(value, str(key))
+        for key, value in values.items()
+        if value is not None
+    }
 
 
 class EvaluationComparisonService:
@@ -86,7 +125,7 @@ class EvaluationComparisonService:
             rows = [by_id[item] for item in eval_run_ids]
         if not 2 <= len(rows) <= 32:
             raise ValueError("at least two and at most 32 variant runs are required")
-        variants = []
+        variants: list[EvaluationVariant] = []
         for row in rows:
             created = row.get("created_at")
             variants.append({
@@ -101,7 +140,7 @@ class EvaluationComparisonService:
         if not common_quality:
             raise ValueError("variants have no comparable quality metrics")
 
-        def rank(item: Mapping[str, Any]) -> tuple[Any, ...]:
+        def rank(item: EvaluationVariant) -> tuple[Any, ...]:
             metrics = item["metrics"]
             return (
                 0 if item["gate_passed"] else 1,
@@ -118,7 +157,7 @@ class EvaluationComparisonService:
             "gate_passed": item["gate_passed"],
             "metrics": {name: item["metrics"].get(name) for name in metric_names},
         } for item in variants]
-        comparisons = []
+        comparisons: list[EvaluationComparisonRow] = []
         for item in variants[1:]:
             deltas = {
                 name: item["metrics"][name] - recommended["metrics"][name]
@@ -257,7 +296,7 @@ class PostgresEvaluationComparisonRepository:
             rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-    async def save_variant_report(self, *, tenant_id: str, report: Mapping[str, Any]) -> str:
+    async def save_variant_report(self, *, tenant_id: str, report: Mapping[str, object]) -> str:
         payload = json.dumps(dict(report), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         connection = await self._connect()
         async with connection:
