@@ -52,7 +52,8 @@ export function LoginPage() {
   if (status === 'loading') return <div className="bootstrap-screen"><LoadingState label="正在校验登录会话" /></div>
   if (status === 'authenticated') {
     const from = (location.state as { from?: string } | null)?.from
-    return <Navigate to={from || '/workspace/overview'} replace />
+    const safeFrom = from?.startsWith('/') && !from.startsWith('//') ? from : undefined
+    return <Navigate to={safeFrom || '/workspace/overview'} replace />
   }
 
   async function onSubmit(event: FormEvent) {
