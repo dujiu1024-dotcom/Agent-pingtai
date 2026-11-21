@@ -14,6 +14,9 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
+from agent_platform.api.digital_employees import (
+    create_digital_employee_router, create_team_template_router,
+)
 from agent_platform.api.contract import (
     API_V1_PREFIX,
     ApiV1CompatibilityMiddleware,
@@ -176,6 +179,9 @@ def create_platform_app(
     office_tenant_resolver: Any | None = None,
     bootstrap_capabilities: Sequence[str] | None = None,
     knowledge_catalog: Any | None = None,
+    digital_employee_service_resolver: Any | None = None,
+    digital_employee_read_authorizer: Any | None = None,
+    digital_employee_install_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -772,5 +778,29 @@ def create_platform_app(
             service=locale_preference_service,
             authorize_manage=locale_manage_authorizer,
             audit_writer=resource_audit_writer,
+        ))
+    digital_employee_configured = any(value is not None for value in (
+        digital_employee_service_resolver, digital_employee_read_authorizer,
+        digital_employee_install_authorizer,
+    ))
+    if digital_employee_configured:
+        if any(value is None for value in (
+            digital_employee_service_resolver, digital_employee_read_authorizer,
+            digital_employee_install_authorizer,
+        )):
+            raise ValueError(
+                "digital employee service resolver and read/install authorizers must be configured together"
+            )
+        app.include_router(create_digital_employee_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=digital_employee_service_resolver,
+            authorize_read=digital_employee_read_authorizer,
+            authorize_install=digital_employee_install_authorizer,
+        ))
+        app.include_router(create_team_template_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=digital_employee_service_resolver,
+            authorize_read=digital_employee_read_authorizer,
+            authorize_install=digital_employee_install_authorizer,
         ))
     return app
