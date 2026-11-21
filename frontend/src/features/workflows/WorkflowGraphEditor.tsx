@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 
+
 export type WorkflowNode = {
   id: string; name: string; node_type: string; version: number
   config: Record<string, unknown>; config_schema: Record<string, unknown>
