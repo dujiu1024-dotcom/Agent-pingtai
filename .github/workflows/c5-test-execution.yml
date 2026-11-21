@@ -30,25 +30,39 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install coverage ruff mypy
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt pytest
-      - name: Identity and tenant authorization tests
-        run: >-
-          python -m unittest
-          tests.test_identity
-          tests.test_identity_api
-          tests.test_identity_context
-          tests.test_identity_http
-          tests.test_service_identity
-          tests.test_legacy_identity_audit
-          tests.test_legacy_identity_revoke
-          tests.test_legacy_identity_migration
-          tests.test_platform_api_app
-          tests.test_issue_755_c_dual_mode_integration
-          -v
-      - name: Full unittest suite with coverage
+      - name: Run focused and full unittest suites with coverage
+        shell: bash
         run: |
+          set +e
+
+          python -m unittest \
+            tests.test_identity \
+            tests.test_identity_api \
+            tests.test_identity_context \
+            tests.test_identity_http \
+            tests.test_service_identity \
+            tests.test_legacy_identity_audit \
+            tests.test_legacy_identity_revoke \
+            tests.test_legacy_identity_migration \
+            tests.test_platform_api_app \
+            tests.test_issue_755_c_dual_mode_integration \
+            -v
+          focused_status=$?
+          echo "Focused identity/tenant test exit code: ${focused_status}"
+
           coverage run --branch --source=agent_platform -m unittest discover -s tests -t . -q
+          full_status=$?
+          echo "Full unittest + coverage exit code: ${full_status}"
+
           coverage report -m
+          report_status=$?
           coverage xml -o coverage.xml
+          xml_status=$?
+
+          if [ "${focused_status}" -ne 0 ] || [ "${full_status}" -ne 0 ] || [ "${report_status}" -ne 0 ] || [ "${xml_status}" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Upload backend coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,7 +71,7 @@ jobs:
           path: |
             .coverage
             coverage.xml
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 7
 
   frontend-build:
