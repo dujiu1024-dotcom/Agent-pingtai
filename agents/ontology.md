@@ -1,4 +1,4 @@
-# FDE Agent 平台领域本体（Ontology）
+# AI 原生运行底座 · 领域本体（Ontology）
 
 - 版本：v1.2
 - 更新：2026-11-20

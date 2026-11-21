@@ -370,20 +370,21 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    cur=await c.execute("""
     WITH
-    -- 清僵尸：attempts >= max 的 queued/interrupted run 永远不会再被 claim，
-    -- 直接晋级 failed 防止堆积。
+    -- 清僵尸：attempts >= max 且没有有效租约的 run 永远不会再被 claim，
+    -- 直接晋级 failed 防止堆积。包含 status='running' 的失联 run，
+    -- 以及 task_id IS NULL 的孤儿 run。
     _zombie AS (
       UPDATE platform_runs SET
         status='failed',
-        last_error='killed zombie run: worker_attempts >= max_worker_attempts, never finalized',
+        last_error='运行已终止：重试次数已用尽，未能正常收尾',
         dead_lettered_at=now(),
         dead_letter_reason='exhausted_attempts_never_finalized',
         finished_at=now(),
         worker_id=NULL, lease_expires_at=NULL, updated_at=now()
-      WHERE task_id IS NOT NULL AND dispatch_ready=true
-        AND (%s::text IS NULL OR tenant_id=%s)
-        AND status IN ('queued','interrupted')
+      WHERE (%s::text IS NULL OR tenant_id=%s)
         AND COALESCE(worker_attempts,0) >= COALESCE(max_worker_attempts,5)
+        AND status IN ('queued','interrupted','running','cancelling')
+        AND (lease_expires_at IS NULL OR lease_expires_at<=now())
     ),
     candidates AS (
     SELECT tenant_id,run_id FROM platform_runs

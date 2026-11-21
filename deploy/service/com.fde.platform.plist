@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FDE 平台后端服务 - macOS launchd 配置
+  功能：开机自启 + 进程崩溃自动拉起 + 输出日志
+  安装：cp 此文件到 ~/Library/LaunchAgents/ 后执行 install.sh
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fde.platform</string>
+
+    <!-- 工作目录 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/longyi/FDE工程</string>
+
+    <!-- 启动命令 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>deploy.local_app:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+        <string>--ssl-keyfile</string>
+        <string>/Users/longyi/.fde-local-tls/key.pem</string>
+        <string>--ssl-certfile</string>
+        <string>/Users/longyi/.fde-local-tls/cert.pem</string>
+        <string>--log-level</string>
+        <string>info</string>
+        <string>--timeout-keep-alive</string>
+        <string>60</string>
+    </array>
+
+    <!-- 开机自启 + 用户登录后自动启动 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 退出后自动重启（核心看门狗） -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <!-- 环境变量 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>LOCAL_TENANT_ID</key>
+        <string>fde</string>
+        <key>LOCAL_OWNER_EMAIL</key>
+        <string>872276292@qq.com</string>
+        <key>DATABASE_URL</key>
+        <string>postgresql://longyi@localhost:5432/fde_platform</string>
+        <key>REDIS_URL</key>
+        <string>redis://localhost:6379/0</string>
+        <key>SCHEDULER_ENABLED</key>
+        <string>true</string>
+        <key>ALLOWED_ORIGINS</key>
+        <string>https://127.0.0.1:8000,https://localhost:8000,https://127.0.0.1,https://localhost</string>
+        <key>OPENAI_API_KEY</key>
+        <string>sk-EdnEKrd7LsBGXn1taoaPf2mwcFzVNFO4</string>
+        <key>OPENAI_BASE_URL</key>
+        <string>https://token.sensenova.cn/v1</string>
+        <key>SENSENOVA_API_KEY</key>
+        <string>sk-EdnEKrd7LsBGXn1taoaPf2mwcFzVNFO4</string>
+    </dict>
+
+    <!-- 标准输出日志 -->
+    <key>StandardOutPath</key>
+    <string>/Users/longyi/FDE工程/deploy/service/logs/platform.stdout.log</string>
+    <!-- 标准错误日志 -->
+    <key>StandardErrorPath</key>
+    <string>/Users/longyi/FDE工程/deploy/service/logs/platform.stderr.log</string>
+
+    <!-- 重启节流：避免无限快速重启 -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- PID 文件位置 -->
+    <key>PIDFile</key>
+    <string>/Users/longyi/FDE工程/deploy/service/run/platform.pid</string>
+
+    <!-- 资源限制 -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+</dict>
+</plist>
