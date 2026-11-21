@@ -40,7 +40,22 @@ const accessPayload = {
   ],
 }
 
+async function stubBootstrap(page: import('@playwright/test').Page) {
+  await page.route('**/api/platform/v1/bootstrap', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        auth: { enabled: false },
+        version: 'e2e',
+        capabilities: [],
+      }),
+    })
+  })
+}
+
 test('organization route renders live admin data', async ({ page }) => {
+  await stubBootstrap(page)
   await page.route('**/api/platform/v1/admin/organization', async (route) => {
     await route.fulfill({
       status: 200,
@@ -48,13 +63,14 @@ test('organization route renders live admin data', async ({ page }) => {
       body: JSON.stringify(organizationPayload),
     })
   })
-  await page.goto('/admin/organization')
+  await page.goto('/app/admin/organization')
   await expect(page.getByRole('heading', { name: '组织与成员' })).toBeVisible()
   await expect(page.getByText('owner@acme.test')).toBeVisible()
   await expect(page.locator('.admin-section')).toHaveCount(3)
 })
 
 test('RBAC route renders live access-control data', async ({ page }) => {
+  await stubBootstrap(page)
   await page.route('**/api/platform/v1/admin/access-control', async (route) => {
     await route.fulfill({
       status: 200,
@@ -62,7 +78,7 @@ test('RBAC route renders live access-control data', async ({ page }) => {
       body: JSON.stringify(accessPayload),
     })
   })
-  await page.goto('/admin/access-control')
+  await page.goto('/app/admin/access-control')
   await expect(page.getByRole('heading', { name: '角色与权限' })).toBeVisible()
   await expect(page.getByText('platform.admin')).toBeVisible()
   await expect(page.locator('.admin-section')).toHaveCount(3)
