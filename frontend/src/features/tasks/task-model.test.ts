@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, sortEvents, unwrapList } from './task-model'
+import { formatDuration, normalizeTaskListColumns, sortEvents, unwrapList } from './task-model'
 describe('task command center model', () => {
   it('normalizes list envelopes', () => {
     expect(unwrapList({ data: [1] })).toEqual([1])
@@ -13,6 +13,11 @@ describe('task command center model', () => {
         { event_id: 'a', type: 'x', sequence: 1 },
       ]).map((x) => x.event_id),
     ).toEqual(['a', 'b'])
+  })
+  it('keeps the task title column and normalizes URL-configured columns', () => {
+    expect(normalizeTaskListColumns(null)).toEqual(['title', 'status', 'priority', 'project', 'agent', 'created', 'run'])
+    expect(normalizeTaskListColumns('status,created,unknown,status')).toEqual(['title', 'status', 'created'])
+    expect(normalizeTaskListColumns('trace')).toEqual(['title', 'trace'])
   })
   it('formats known durations', () => {
     expect(formatDuration(65000)).toBe('1m 5s')
