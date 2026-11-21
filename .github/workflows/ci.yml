@@ -107,6 +107,32 @@ jobs:
           tests.test_issue_755_c_dual_mode_integration
           -v
 
+  offline-policy:
+    name: Offline policy tests
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Ruff
+        run: python -m pip install ruff
+      - name: Run offline policy unit tests
+        run: python -m unittest tests.test_offline_policy -v
+      - name: Lint offline policy files
+        run: >-
+          ruff check
+          agent_platform/resilience/offline_policy.py
+          agent_platform/resilience/__init__.py
+          tests/test_offline_policy.py
+
   test:
     needs: [changes, lint, typecheck]
     if: needs.changes.outputs.platform == 'true'
