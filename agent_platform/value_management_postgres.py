@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Callable
-from uuid import UUID
 
 from agent_platform.value_management import AIContribution, HumanBaseline, ValueResult
 
