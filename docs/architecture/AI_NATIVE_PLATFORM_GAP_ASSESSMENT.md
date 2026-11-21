@@ -696,3 +696,63 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P2 | 多模型变体评测 router 未挂载 | 生产 app 注册路由并通过 dataset→variants→report→UI E2E |
 | P2 | 缺少部署级产品能力契约 | 每种 deployment profile 有 capability manifest 和路由/依赖/worker 验收 |
 | P2 | 多产品中心真实业务冒烟分散 | 按产品中心维护从 UI/API 到 service/store/worker 的关键业务旅程测试 |
+
+
+## 19. 第七轮审查：执行时工具治理与记忆提取闭环（2026-11-21）
+
+本轮继续沿 Task Worker → Graph Factory → Registry Runtime → Tool Handler，以及 Session → Memory Extraction → Candidate → Confirmation 路径追踪。重点检查“运行时是否真正执行了已装配的治理策略”。
+
+### 19.1 P1：默认生产工具调用循环绕过 SupervisedToolGateway
+
+证据链：
+- `agent_platform/runtime/registry_runtime.py:180-222` 的 `RegistryRuntimeAssembler.assemble()` 从 Run snapshot 读取已发布 Tool Registry 版本，通过 `build_tool_definitions()` 生成 Gateway ToolDefinition；要求 trusted handler 同时提供 resource_resolver/resource_authorizer，并校验 risk_level、JSON Schema、allowed_roles。
+- `agent_platform/tools/gateway.py:180-330` 的 `SupervisedToolGateway` 执行路径包含角色检查、可信资源解析、JSON Schema 校验、资源授权、外部/不可逆操作幂等存储、审批消费、策略决策和审计。
+- 但默认生产 Entry Point 指向的 `deploy/local_runtime.py`，其 graph 的 assistant 节点在模型返回 tool_calls 后（约 830-862 行）直接执行 `REGISTRY_TOOL_HANDLERS.get(tool_name)`，随后直接调用 `_run_tool_handler(handler=handler.handler, ...)`。
+- `_run_tool_handler()`（约 526-544 行）只注入 tenant_id/run_id/agent_id/session_id 并直接调用 handler；这条路径没有调用 `SupervisedToolGateway.execute()`。
+- 同一 graph 节点暴露给模型的 schema 来自静态 `tool_schemas_for_llm()`，再按 Agent definition 的 tool_ids 过滤；并非从 Run Registry Runtime 的 `runtime.tools` 构造。
+
+判断：
+- 这不是“Gateway 模块不存在”，而是默认生产图中的工具执行路径没有消费 Gateway 装配结果。
+- 因而不能证明 Tool Registry 中的 risk_level、allowed_roles、resource_resolver/resource_authorizer、Gateway 输入校验、审批消费、外部副作用幂等和统一审计策略对默认生产工具调用生效。
+- 该路径仍可能由具体 handler 自身做部分业务授权，但不能替代 Gateway 所承诺的统一策略边界。
+- 属于生产执行链路中的治理绕过风险，优先级 P1。是否构成可利用漏洞还需结合每个 trusted handler 的内部校验逐项验证；本报告不推断所有 handler 均可越权。
+
+建议：
+1. 默认生产 graph 不直接调用全局 handler map；必须从当前 Run 的 Registry Runtime 获取已 pin 的 ToolDefinition，并通过 SupervisedToolGateway 统一执行。
+2. 从模型 tool_call 提取稳定 call_id、resource、approval_id、actor_roles 和 correlation_id；缺少必要上下文时 fail closed。
+3. 对 read-only、reversible、external/irreversible、financial/security 四类风险分别增加端到端测试，断言授权拒绝、审批消费、重复调用幂等、审计记录和副作用对账。
+4. 加一条架构约束测试：默认生产 graph 的工具执行代码不得直接引用 `REGISTRY_TOOL_HANDLERS` 或绕开 Gateway 调用 handler。
+
+### 19.2 P1：Memory Extraction API 的请求构造与服务契约不兼容，按当前路径无法成功提取
+
+证据：
+- `agent_platform/api/knowledge_memory.py:620-632` 的 `POST /memories/extract` 从请求体构造 `MemoryTurn`，只传 tenant_id、user_id、source_ref、user_message、assistant_message、agent_id、project_id，没有传 `completed=True`。
+- `agent_platform/memory/extraction.py` 的 `MemoryTurn.completed` 默认值为 `False`；`MemoryExtractionService.propose_from_turn()` 明确拒绝 `completed=False`，错误为 `memory extraction requires a completed assistant turn`。
+- 同一 service 还要求 source_ref 通过 `MemoryBoundaryPolicy.validate_reference()`，且 source domain 必须为 SESSION、tenant 必须匹配。
+- `tests/test_knowledge_memory_api.py:248-260` 的旧测试却提交 `source_ref="conversation:turn-42"`，并断言 200；该 fixture 与当前 SESSION 来源契约也不一致。
+- 另一条 `POST /sessions/{session_id}/memory-extract` 路径（`agent_platform/api/sessions.py:300-383`）从已持久化 Session 读取消息，检查 Session owner、最后一条消息为 Assistant、定位对应 User turn，并以持久化 Assistant message ID 作为 source_ref；这条路径更接近服务契约要求。
+
+判断：
+- `/memories/extract` 路由按当前实现把默认 completed=False 的 MemoryTurn 传入服务，必然在 extractor 调用前被拒绝；即使补上 completed=True，现有测试的 conversation:// 来源仍会被 SESSION 来源校验拒绝。
+- 该 API 当前不能作为有效的记忆提取入口。旧测试对成功结果的断言没有覆盖当前服务契约，属于 API/测试契约漂移。
+- 不应简单将 completed=True 写死来“修复”：客户端提交的消息内容和 source_ref 并不能证明对应 Session 中确实存在已完成轮次。会话专用接口已经提供更可信的服务端取证方式。
+
+建议：
+1. 如果不再支持客户端直接提交任意 MemoryTurn，移除/废弃 `/memories/extract`，将 UI/调用方统一迁移到 session 专用提取接口。
+2. 如果保留通用 API，改为只接受 session_id / assistant_message_id，由服务端加载和验证持久化轮次，不接受客户端自证 completed 和任意消息正文。
+3. 修订测试：有效 Session message source 成功；不存在的 message、非 Session source、跨租户 source、未完成轮次均拒绝；提取结果仍保持 candidate，不能自动激活。
+
+### 19.3 P1/P2：Registry Runtime 已构造 Gateway ToolDefinition，但默认 graph 没有使用其输出
+
+此项与 19.1 属于同一根因，作为架构接线问题记录，不重复计数：
+- Registry Runtime 生成的 tools 和 skill_reviews 是可信装配结果。
+- 默认 local graph 使用静态 tool schemas 和全局 handler map。
+- Registry 发布、Run snapshot pinning、Runtime assembly、模型工具调用、Gateway 执行之间尚未形成同一条可信运行时链路。
+
+### 19.4 本轮结论更新
+
+本轮把“工具治理闭环”从第 17 节的接线疑问提升为有代码路径证据的 P1：默认 graph 的工具调用直接执行 handler，绕过 SupervisedToolGateway 的统一授权/风险/审批/幂等/审计执行链。
+
+同时确认 Memory Extraction 有两条入口，其中 session 专用入口具备服务端轮次验证；通用 `/memories/extract` 则与 extraction service 契约不兼容，且旧 API 测试使用过期的 conversation source_ref。
+
+本轮仅更新审查报告和 Issue 记录，没有修改产品代码；未在本环境运行测试，因此结论基于 main 分支静态代码路径与测试断言对照。
