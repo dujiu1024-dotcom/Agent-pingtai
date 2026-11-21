@@ -48,3 +48,15 @@
 @media(max-width:1050px) { .cq-panels { grid-template-columns:1fr; } .cq-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:650px) { .cq-heading { align-items:flex-start; flex-direction:column; } .cq-filters { align-items:stretch; } .cq-filters label { flex:1 1 130px; } .cq-filters input,.cq-filters select { width:100%; min-width:0; } .cq-refresh-note { width:100%; margin-left:0; } .cq-metrics { grid-template-columns:1fr 1fr; gap:8px; } .cq-metric { min-height:105px; padding:12px; } .cq-panel { padding:12px; } .cq-bar-row { grid-template-columns:minmax(70px,1fr) minmax(50px,1.2fr) auto; gap:6px; } }
 @media(prefers-reduced-motion:reduce) { .cq-page * { scroll-behavior:auto !important; transition:none !important; animation:none !important; } }
+
+
+/* L3-T17 attribution filters, optional metrics and evidence drill-down */
+.cq-usage-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cq-usage-actions .button-secondary{white-space:nowrap}
+.cq-drilldown{width:100%;padding:7px 0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.cq-drilldown:hover,.cq-drilldown:focus-visible{background:var(--surface-raised);outline:2px solid var(--brand);outline-offset:2px}
+.cq-drilldown>span:nth-child(2){color:var(--muted);text-align:right}
+.cq-report-list article{display:grid;gap:7px}
+.cq-report-list article .text-link{width:max-content;font-size:11px}
+.cq-usage-panel .cq-table{min-width:1120px}
+@media(max-width:720px){.cq-usage-actions{align-items:flex-start;flex-direction:column}.cq-usage-actions .button-secondary{width:100%}}
