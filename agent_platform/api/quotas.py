@@ -213,7 +213,7 @@ def create_quota_reporting_router(
                             limit: int = 10000):
         """Return tenant-isolated totals and cost variance, grouped by attribution."""
         principal = actor(request)
-        events = await rows(principal, start, end, run_id, model_key, limit)
+        events = await rows(principal, start, end, run_id, model_key, limit, project_id, agent_id)
         return {
             "tenant_id": principal.tenant_id,
             "period_start": start.isoformat(),
@@ -227,7 +227,7 @@ def create_quota_reporting_router(
                         project_id: str | None = None, agent_id: str | None = None,
                         limit: int = 10000):
         principal = actor(request)
-        events = await rows(principal, start, end, run_id, model_key, limit)
+        events = await rows(principal, start, end, run_id, model_key, limit, project_id, agent_id)
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow([
