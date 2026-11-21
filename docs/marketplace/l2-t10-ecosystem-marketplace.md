@@ -7,7 +7,7 @@
 - 试运行仅对审核通过版本开放；适配器调用既有共享 OCI 沙箱，必须传入 network disabled、no host mounts、no credential injection，并返回隔离证据。
 - 发布门禁要求审核、签名、来源证明、扫描、评测、隔离试运行全部通过。
 - 评分仅允许已发布版本、真实安装验证通过的用户；发布者不能自评，同一安装每版本只能评分一次。
-- 支持撤回；市场查询只返回当前租户内已发布资产。
+- 支持撤回；企业目录返回本租户已发布资产，公共目录可跨租户发现明确标记为 public 的已发布资产；private/team/enterprise/partner 资产不会进入跨租户公共结果。
 
 ## Reuse boundaries
 本模块只维护市场发布元数据和审批状态，不重建 Extension Registry、包签名、SBOM/来源验证、Skill/Extension 包扫描或 OCI Sandbox。通过 adapter 调用现有可信发布者注册、供应链准入、评测和 `OciSandboxRunner`/`ExtensionOciRuntime`。市场数据库使用宿主持久化 Store；随附 InMemory store 仅用于单元测试。
