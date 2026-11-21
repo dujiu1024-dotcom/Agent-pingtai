@@ -546,6 +546,8 @@ function PageView({
     return <Lazy><OrganizationAccessPage page="organization" /></Lazy>
   if (route.path === '/admin/access-control')
     return <Lazy><OrganizationAccessPage page="rbac" /></Lazy>
+  if (route.path === '/admin/rbac')
+    return <Navigate to="/admin/access-control" replace />
   if (route.path === '/admin/settings') return <Lazy><SystemSettingsPage /></Lazy>
   if (route.path === '/operations/approvals/:approvalId')
     return <Lazy><ApprovalDetailPage /></Lazy>
