@@ -156,3 +156,24 @@ derived from the Principal. The UI must not expose unsupported actions as active
 - 本轮未覆盖真实 SSE/WebSocket、文件上传下载/range、任务执行/审批决策和跨模块状态变更；这些端点不得据此标记双模式通过。
 - CORS allowlist、共享 Redis rate limiting、安全响应头、输入校验、上传大小/类型限制、业务不变量和审计不因 auth.enabled=false 关闭。
 
+
+
+## auth.enabled=true 回归安全契约（Issue #755 L1-T15）
+
+启用身份认证时，关闭模式的便捷路径不得改变既有安全边界。以下行为是发布契约：
+
+| 安全域 | 契约 | 回归证据 |
+|---|---|---|
+| 认证 | 除 bootstrap 外，受保护的 `/api` 与 `/auth` 路由必须解析真实 Bearer/API credential 或有效会话；缺失/无效身份返回 401，不得回退为匿名主体 | `tests/test_platform_api_app.py::test_business_routes_require_authenticated_session`；`tests/test_identity_http.py::test_protected_path_requires_authentication` |
+| CSRF | 使用 Cookie 会话执行 POST/PUT/PATCH/DELETE 时，必须同时提供 CSRF Cookie 与 `X-CSRF-Token`，且常量时间比较一致；缺失或不匹配返回 403。Bearer 请求不依赖 Cookie CSRF，但仍受认证和授权约束 | `tests/test_identity_http.py::test_cookie_mutation_requires_matching_csrf_token`；`tests/test_issue_755_l1_t15_auth_enabled_regression.py` |
+| CORS / 安全响应头 | 非允许 Origin 的受保护请求返回 403；允许来源按精确 allowlist 返回 CORS 凭据头；安全响应头继续注入 | `tests/test_identity_http.py::test_disallowed_origin_is_rejected`、`test_bearer_session_populates_principal_and_security_headers`；L1-T15 regression suite |
+| RBAC / 资源授权 | 认证成功只建立 Principal，不代表拥有权限。每个业务 handler 仍须执行对应 permission/resource/action 授权；缺少授权不得因 auth=true composition 或 no-auth 代码路径而放行 | `tests/test_platform_api_app.py::test_knowledge_catalog_routes_are_wired_with_authenticated_context`；`test_file_assets_are_isolated_by_tenant_in_authenticated_api` |
+| 跨租户隔离 | tenant scope 必须从已认证 Principal 派生；不得信任请求体/URL 提供的 tenant_id。跨租户读取不得返回其他租户资源（可按资源契约返回 404/403） | `tests/test_platform_api_app.py::test_knowledge_catalog_routes_are_wired_with_authenticated_context`；`test_file_assets_are_isolated_by_tenant_in_authenticated_api` |
+| 审计 | 已认证请求审计 actor 必须解析为真实 AuditActor；无法解析时 fail-closed。审计意图先于业务副作用写入，完成记录保留 succeeded/denied/failed 结果 | `tests/test_audit_http.py::test_records_intent_before_completion_with_authenticated_actor`、`test_authenticated_principal_without_actor_fails_closed`、`test_maps_client_and_server_failures_to_audit_outcomes` |
+
+### 认证模式边界
+
+- `auth.enabled=true` 是 fail-closed 模式：身份服务缺失、身份无效、权限不足或审计主体无法解析，不得静默降级为 no-auth。
+- Cookie 会话的 CSRF 检查仅豁免安全方法；Bearer/API credential 的 CSRF 处理不替代 RBAC、资源授权、CORS 或审计。
+- 本节引用的是各安全边界的独立回归测试；它们不能被解释为所有可选 router 均已挂载，也不能替代逐路由端点矩阵及真实部署验收。
+- 本契约不承诺未挂载的可选能力可访问；能力状态以 bootstrap capability 与 router composition 为准。
