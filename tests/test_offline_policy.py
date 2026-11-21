@@ -68,10 +68,18 @@ class OfflinePolicyTests(unittest.TestCase):
         result = self.evaluate()
         self.assertEqual(result.decision, OfflineDecision.ALLOW)
         self.now = 10_201
+        evaluator = OfflinePolicyEvaluator(
+            OfflinePolicy(3600, 900, 3600), clock=lambda: self.now,
+            audit_writer=self.events.append,
+        )
         self.authorization = CachedAuthorization(
             **{**self.authorization.__dict__, "last_revocation_sync_at": 9_000}
         )
-        result = self.evaluate()
+        result = evaluator.evaluate(
+            self.authorization, self.license, subject_id="user-1",
+            resource_id="agent-1", action=OfflineAction.READ,
+            local_audit_available=True,
+        )
         self.assertEqual(result.decision, OfflineDecision.DENY)
         self.assertEqual(result.reason, "revocation_sync_stale")
 
