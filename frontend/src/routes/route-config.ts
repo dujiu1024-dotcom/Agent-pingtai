@@ -727,7 +727,7 @@ export function getNavigationSections(
       (page) =>
         (!page.authOnly || authEnabled) &&
         (!page.capability || capabilities.includes(page.capability)) &&
-        (!page.permission || permissions.includes(page.permission)),
+        (!authEnabled || !page.permission || permissions.includes(page.permission)),
     ),
   }))
 }
