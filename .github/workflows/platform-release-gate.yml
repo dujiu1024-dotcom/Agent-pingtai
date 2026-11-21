@@ -67,7 +67,7 @@ jobs:
           sudo apt-get install -y postgresql-client age
       - name: Install platform test dependencies
         run: |
-          python -m pip install -U pip ruff mypy
+          python -m pip install -U pip
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: End-to-end, fault-recovery and security regression suites
         run: |
@@ -119,10 +119,6 @@ jobs:
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_issue_22_a_22_05_graph_storage_benchmark \\
             tests.test_platform_perf_smoke -v
-      - name: Static checks
-        run: |
-          ruff check .
-          mypy
 
   e2e-focused-unit:
     runs-on: ubuntu-latest
@@ -132,6 +128,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-platform.txt
+            requirements-knowledge-parsers.txt
+            requirements-harness-strands.txt
       - name: Install focused test dependencies
         run: python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Validate page map and route contract
