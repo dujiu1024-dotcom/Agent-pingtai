@@ -224,7 +224,6 @@ files = [
   "agent_platform/blackboard/protocol.py",
   "agent_platform/tools/gateway.py",
   "agent_platform/observability/*.py",
-  "agent_platform/observability/run_trace.py",
   "agent_platform/sandbox/oci.py",
   "agent_platform/sandbox/lifecycle.py",
   "agent_platform/tools/gateway_mcp.py",
