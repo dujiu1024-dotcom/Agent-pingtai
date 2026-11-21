@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import type { PropsWithChildren } from 'react'
@@ -34,6 +35,7 @@ export function AuthProvider({
     enabled ? 'loading' : 'anonymous',
   )
   const [session, setSession] = useState<SessionInfo | null>(null)
+  const sessionRef = useRef<SessionInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
@@ -41,23 +43,25 @@ export function AuthProvider({
     if (!enabled) {
       setStatus('anonymous')
       setSession(null)
+      sessionRef.current = null
       return
     }
-    if (!session) setStatus('loading')
+    if (!sessionRef.current) setStatus('loading')
     setError(null)
     try {
       const result = await fetchSession()
       setSession(result)
+      sessionRef.current = result
       setStatus(result ? 'authenticated' : 'anonymous')
       if (!result) {
         queryClient.clear()
         apiClient.clearEtagCache()
       }
     } catch (reason) {
-      if (!session) setStatus('anonymous')
+      if (!sessionRef.current) setStatus('anonymous')
       setError(reason instanceof Error ? reason.message : '会话读取失败')
     }
-  }, [enabled, queryClient, session])
+  }, [enabled, queryClient])
 
   useEffect(() => {
     void refresh()
