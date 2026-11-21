@@ -140,6 +140,7 @@ class EnterpriseAdmissionOrchestrator:
             return result
         needs_approval = (
             self._risk_rank(risk) >= self._risk_rank(self.policy.approval_required_at)
+            or report.risk_score > self.policy.max_auto_admit_risk
             or (publisher_is_external and self.policy.approval_required_for_external_publishers)
         )
         approval: ApprovalResult | None = None
@@ -157,7 +158,10 @@ class EnterpriseAdmissionOrchestrator:
                     LifecycleState.PENDING_APPROVAL, risk, approval, reason="awaiting authorized approver")
                 await self._audit("supply_chain.approval_requested", result, report.evidence_digest)
                 return result
-        if self._risk_rank(risk) >= self._risk_rank(self.policy.sandbox_required_at):
+        if (
+            self._risk_rank(risk) >= self._risk_rank(self.policy.sandbox_required_at)
+            and self._risk_rank(risk) >= self._risk_rank(self.policy.trial_required_at)
+        ):
             sandbox_id = await self.sandbox.start_trial(
                 tenant_id=report.tenant_id, artifact_id=report.artifact_id, version=report.version,
                 max_duration_minutes=self.policy.max_trial_minutes, network_isolated=True,
