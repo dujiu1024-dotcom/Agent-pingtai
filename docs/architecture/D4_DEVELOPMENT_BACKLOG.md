@@ -649,6 +649,16 @@ flowchart TD
 | §10 P0 | 全仓库能力矩阵、生产身份/租户、混合自治、生产 E2E | P0-01A…P0-07C；P1-AUD-02；P2-AUD-16 | G0/G1 |
 | §10 P1 | 资产生命周期、连接器、可靠性/灾备、质量评测/成本、前端产品中心 E2E | P1-01A…P1-09；P1-AUD-04/06/08/09 | G0/G1 |
 | §10 P2 | 数字员工、伙伴生态、战略扩展中心 | P1-01B；P1-09；P2-01…P2-08；P2-AUD-15 | G1/G2 |
+| §14.1 | Workbench retry 将 Task ID/Run ID 混用，重试目标与运行实例关联不可靠 | P1-03（Task/Run/Event 责任链）；P0-07B 仅承接集成回归，不替代领域修复 | G0/G1 |
+| §14.2 | Migration 文件存在重复版本前缀/编号冲突，升级顺序不确定 | P0-06A；P0-07B（真实 PostgreSQL 回归） | G0 |
+| §14.3 | Redis Outbox 重复 claim、Stream pending/丢失恢复路径不完整 | P0-01C；P1-04；P2-AUD-13；P0-07B（PG+Redis 崩溃窗口回归） | G0/G1 |
+| §14.4 | pgvector schema 维度与默认 embedding/provider/测试维度不一致（1024/1536） | P0-04B（向量数据面租户隔离与 schema 契约）；P0-07B（集成矩阵） | G0 |
+| §14.5 | SQL 参数类型、Prompt Audit action constraint、MemoryService/fixture 契约不一致 | P0-07A（focused 契约测试）；P0-07B（PG 约束/Memory 集成）；对应领域 Issue #10/#12/#15 | G0/G1 |
+| §14.6 | ModelRuntimeRouter transport、fake/test double 与错误语义漂移 | P0-07A；P1-AUD-02（生产运行时装配） | G0/G1 |
+| §14.7 | 文件资产 API 路由、OpenAPI、前端 client、测试路径出现 HTTP 405 契约偏差 | P0-05（API 授权/路由组合根）；领域 Issue #8；P0-07A（契约回归） | G0/G1 |
+| §14.8 | Knowledge ACL 缺列表读取 API，公开/受限 Chunk ACL fixture 语义不一致 | P0-04A/P0-04B；领域 Issue #10；P0-07B（真实 PG/租户负向测试） | G0 |
+| §14.9 | Memory Extraction 直接 API 缺 completed/source_ref/owner/tenant 来源约束 | P1-AUD-05；P0-01A/P0-04A；领域 Issue #10 | G0/G1 |
+| §14.10 | 初始化 API 并发竞争，可能重复创建或产生部分初始化状态 | P1-AUD-01；P0-01A；领域 Issue #15 | G0/G1 |
 | §15.1 | 首次初始化并发竞争 | P1-AUD-01 | G1 |
 | §16.3 | Service Worker 构建产物/路由不一致 | P1-AUD-07 | G2 |
 | §17.1–17.3 | 默认生产图未装配 Workflow/Multi-Agent；local adapter 成为默认生产边界 | P1-AUD-02；P2-AUD-16 | G0/G1 |
@@ -676,3 +686,23 @@ flowchart TD
 - [x] 真机、真实服务器、外部业务系统验证跳过。
 
 **结论：** D4 WP-F 形成 54 项可独立实施任务（基础 38 项 + 审计发现补充 16 项），按 G0/G1/G2 门禁分层。建议先处理 G0，再推进 G1 企业试点链路，最后交付 G2 规模化产品能力。
+
+
+## 14. §14 具体缺陷逐项验收补充
+
+以下任务映射将 §14 发现从宽泛 CI 基线中拆出。P0-07A/P0-07B 只负责测试基线与回归执行；领域修复必须在对应领域 Issue 中完成，并提供真实服务/数据库证据。
+
+| 稳定缺陷键 | 发现 | 主实施任务 | 领域追踪 | 最低验收证据 |
+|---|---|---|---|---|
+| D4-14-01 | Workbench retry Task/Run ID 关系 | P1-03 | #9 | Task→Run 关系约束、retry 新旧 Run 关联、PostgreSQL 回归 |
+| D4-14-02 | Migration 重复编号 | P0-06A | #18 | 全量 migration prefix 唯一性检查、空库安装及上一版本升级 |
+| D4-14-03 | Redis Outbox 重复 claim/Stream 恢复 | P0-01C、P1-04、P2-AUD-13 | #9、#18 | 重复 claim、pending reclaim、consumer crash/replay、外部副作用至多一次 |
+| D4-14-04 | pgvector 维度契约 | P0-04B | #10 | schema/provider/config/fixture 维度统一；错误维度拒绝；真实 PG+pgvector 测试 |
+| D4-14-05 | SQL/Prompt Audit/Memory 契约 | P0-07A、P0-07B | #10、#12、#15 | SQL 参数绑定、DB constraint、Memory API→Service→Repository 集成证据 |
+| D4-14-06 | ModelRuntimeRouter transport/error 契约 | P0-07A、P1-AUD-02 | #12 | 真实 transport adapter 与 fake protocol 一致；超时/限流/服务端错误语义测试 |
+| D4-14-07 | 文件 API 405 路由契约 | P0-05 | #8 | OpenAPI/client/router/test path 一致；合法路径成功、旧路径兼容策略明确 |
+| D4-14-08 | Knowledge ACL 列表与 Chunk 语义 | P0-04A、P0-04B | #10 | ACL 列表分页筛选；公开/受限 Chunk；匿名/同租户/跨租户负向矩阵 |
+| D4-14-09 | Memory Extraction 来源契约 | P1-AUD-05 | #10 | completed、SESSION source_ref、owner、tenant 与持久化候选记忆验证 |
+| D4-14-10 | 初始化并发竞争 | P1-AUD-01 | #15 | 并发初始化唯一性、事务回滚、重复请求幂等和审计证据 |
+
+**边界：** 本矩阵是任务归属与验收定义，不代表缺陷已修复；每项须在 #267 记录代码路径、测试路径、PR/Commit、CI run 和现场验收状态。
