@@ -108,3 +108,712 @@
     align-self: flex-start;
   }
 }
+
+.collab-bb-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  font-size: 13px;
+  color: var(--muted, #6b7280);
+}
+.collab-bb-pagination button {
+  padding: 4px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  background: var(--surface, #fff);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.collab-bb-pagination button:hover:not(:disabled) { background: var(--hover, #f9fafb); }
+.collab-bb-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ============ Runtime Timeline ============ */
+
+/* --- 运行概览卡 --- */
+.collab-run-overview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 24px;
+  padding: 20px 24px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fafbfc 0%, #ffffff 100%);
+}
+.collab-run-overview .rov-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.collab-run-overview .rov-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #111827);
+  letter-spacing: 0.02em;
+}
+.collab-run-overview .rov-sub {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #6b7280;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.collab-run-overview .rov-stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 4px 0;
+}
+.collab-run-overview .rov-stats > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  background: #fff;
+}
+.collab-run-overview .rov-stats span {
+  font-size: 11px;
+  color: #6b7280;
+}
+.collab-run-overview .rov-stats strong {
+  font-size: 15px;
+  color: #111827;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.collab-run-overview .rov-status {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.collab-run-overview dl {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 24px;
+  margin: 0;
+}
+.collab-run-overview .rov-output-row { grid-column: 1 / -1; }
+.collab-run-overview dd.rov-output {
+  font-family: inherit;
+  font-size: 12.5px;
+  color: #374151;
+  line-height: 1.6;
+  word-break: break-word;
+}
+.collab-run-overview dl > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.collab-run-overview dt {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.collab-run-overview dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text, #111827);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+.collab-run-overview .rov-error {
+  grid-column: 1 / -1;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* 状态徽章颜色 */
+.status-queued    { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.status-running   { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.status-succeeded { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.status-failed    { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+.status-cancelled { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+
+/* --- 事件时间线 --- */
+.collab-timeline {
+  position: relative;
+  padding: 8px 0 8px 24px;
+  margin: 0;
+  list-style: none;
+}
+.collab-timeline::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  background: linear-gradient(180deg, #e5e7eb 0%, #f3f4f6 100%);
+  border-radius: 2px;
+}
+.collab-timeline li {
+  position: relative;
+  padding: 8px 0 14px 0;
+  margin-bottom: 2px;
+}
+.collab-timeline li:last-child { padding-bottom: 4px; }
+
+/* 时间点（圆点） */
+.ctl-dot {
+  position: absolute;
+  left: -24px;
+  top: 14px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 2px var(--dot-color, #9ca3af);
+  background: var(--dot-color, #9ca3af);
+  transition: transform 0.15s ease;
+}
+.ctl-dot.status-queued    { --dot-color: #f59e0b; }
+.ctl-dot.status-running   { --dot-color: #3b82f6; animation: ctl-pulse 1.6s ease-in-out infinite; }
+.ctl-dot.status-succeeded { --dot-color: #22c55e; }
+.ctl-dot.status-failed    { --dot-color: #ef4444; }
+.ctl-dot.status-cancelled { --dot-color: #9ca3af; }
+.ctl-dot.event-generic    { --dot-color: #6366f1; }
+
+@keyframes ctl-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--dot-color); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--dot-color) 40%, transparent); }
+}
+
+/* 事件卡片 */
+.ctl-card {
+  padding: 10px 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.collab-timeline li:hover .ctl-card {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px -2px rgba(0,0,0,0.06);
+}
+.ctl-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.ctl-type {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+.ctl-time {
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ctl-delta {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-size: 10.5px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+.ctl-body {
+  font-size: 12.5px;
+  color: #374151;
+  line-height: 1.6;
+}
+.ctl-body p { margin: 0; }
+.ctl-foot {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: #9ca3af;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* 状态变化 from → to */
+.ctl-status-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+.ctl-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.ctl-arrow {
+  color: #cbd5e1;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* 事件面板容器 */
+.collab-event-panel {
+  padding: 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  background: #fafbfc;
+}
+.collab-event-panel > h3 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+.collab-event-panel > .muted {
+  display: block;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+/* --- 运行画布占位符（改为节点状态表） --- */
+.collab-run-canvas {
+  padding: 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 12px;
+  background: #fff;
+}
+.collab-run-canvas > h3 {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.collab-run-canvas > p {
+  margin: 0 0 12px 0;
+  font-size: 11px;
+  color: var(--muted, #6b7280);
+}
+.collab-run-summary-stats {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.collab-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+.collab-stat-pill strong {
+  font-size: 14px;
+  color: var(--text, #111827);
+}
+
+/* --- 黑板条目列表（表格式） --- */
+.collab-entry-table {
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.collab-entry-thead,
+.collab-row {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 78px 60px 72px 132px 50px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 14px;
+}
+.collab-entry-thead {
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+.collab-entry-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 520px;
+  overflow-y: auto;
+}
+.collab-row {
+  border-bottom: 1px solid #f1f5f9;
+  color: #374151;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+.collab-row:hover { background: #f8fafc; }
+.collab-row.selected { background: #eff6ff; }
+.collab-row:last-child { border-bottom: none; }
+
+/* 列样式 */
+.col-kind {
+  display: inline-block;
+  align-self: start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+.col-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.col-title strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-title small {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.col-status, .col-scope, .col-author, .col-ver {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.bb-status.status-proposed   { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+.bb-status.status-accepted   { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+.bb-status.status-rejected   { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.bb-status.status-conflict   { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.bb-status.status-decided    { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.bb-status.status-superseded { background: #f3f4f6; color: #6b7280; border-color: #e5e7eb; }
+.bb-status.status-draft      { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+.col-time {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+.col-ver { color: #94a3b8; font-variant-numeric: tabular-nums; }
+
+/* 表格占满整行；详情走弹窗 */
+.collab-blackboard-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.collab-blackboard-layout > .collab-entry-table { min-width: 0; }
+
+/* --- 视图切换（看板 / 时间线） --- */
+.collab-bb-views {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.collab-bb-views button {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+}
+.collab-bb-views button.active {
+  background: #fff;
+  color: #111827;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+/* --- 任务看板 --- */
+.collab-kanban {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.collab-kanban-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 180px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+.collab-kanban-col > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 12.5px;
+  color: #374151;
+}
+.collab-kanban-col > header span {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #64748b;
+  font-size: 11px;
+  text-align: center;
+}
+.collab-kanban-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 560px;
+  padding: 10px;
+  overflow-y: auto;
+}
+.collab-kanban-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  background: #fff;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.collab-kanban-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px -2px rgba(15, 23, 42, 0.08);
+}
+.kk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kk-head time {
+  font-size: 10.5px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.kk-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: #111827;
+  line-height: 1.45;
+}
+.kk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: #64748b;
+}
+.kk-error {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 0;
+  font-size: 11px;
+  color: #b42332;
+  line-height: 1.5;
+}
+.collab-kanban-empty {
+  margin: 12px 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+.collab-kanban-hint {
+  display: block;
+  margin: 10px 0 0;
+  font-size: 11px;
+}
+
+/* --- 条目详情弹窗 --- */
+.collab-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.collab-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  max-height: min(86vh, 920px);
+  background: #fff;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px -16px rgba(15, 23, 42, 0.4);
+}
+.collab-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.collab-modal-title h3 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  color: #111827;
+}
+.collab-modal-title .eyebrow { margin: 0; }
+.collab-modal-close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.collab-modal-close:hover { background: #eef2f7; }
+.collab-modal-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+}
+.collab-modal-section h4 {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: #374151;
+}
+.collab-bb-summary {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+.collab-history-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.collab-history-list li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+.collab-history-list strong { font-size: 12.5px; color: #111827; }
+.collab-history-list span { font-size: 11.5px; color: #64748b; }
+.collab-history-list p { margin: 2px 0 0; font-size: 12px; color: #374151; line-height: 1.5; }
+.collab-history-list small { font-size: 11px; color: #94a3b8; }
+
+/* 弹窗内操作表单两列自适应 */
+.collab-modal .collab-bb-actions {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* 分页作为表格页脚，居中 */
+.collab-bb-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  background: #fafbfc;
+  font-size: 12.5px;
+  color: var(--muted, #6b7280);
+}
+
+@media (max-width: 1100px) {
+  .collab-kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .collab-kanban { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- 手动输入运行标识（默认折叠，避免一屏都是 ID） --- */
+.collab-manual-run {
+  align-self: end;
+}
+.collab-manual-run summary {
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.collab-manual-run label {
+  margin-top: 6px;
+}
+
+/* --- 响应式 --- */
+@media (max-width: 980px) {
+  .collab-run-overview { grid-template-columns: 1fr; }
+  .collab-blackboard-layout { grid-template-columns: minmax(0, 1fr); }
+  .collab-entry-thead,
+  .collab-row {
+    grid-template-columns: 60px minmax(0, 1fr) 76px;
+  }
+  .collab-entry-thead .col-scope,
+  .collab-entry-thead .col-author,
+  .collab-entry-thead .col-time,
+  .collab-entry-thead .col-ver,
+  .collab-row .col-scope,
+  .collab-row .col-author,
+  .collab-row .col-time,
+  .collab-row .col-ver { display: none; }
+}
