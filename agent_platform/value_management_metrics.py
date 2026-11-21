@@ -98,6 +98,7 @@ def aggregate_value_costs(
     tenant_id: str,
     run_ids: Iterable[str],
     tool_cost_lines: Iterable[ToolCostLine] | None = None,
+    usage_truncated: bool = False,
 ) -> dict[str, Any]:
     """Aggregate existing model usage ledger rows for the exact tenant and Runs."""
     requested = tuple(dict.fromkeys(run_ids))
@@ -170,20 +171,24 @@ def aggregate_value_costs(
             }
             for key, value in sorted(raw_breakdown.items())
         }
-        if tool_line_calls == tool_calls and (tool_lines or (tool_calls == 0 and selected)):
+        if (
+            not usage_truncated and tool_line_calls == tool_calls
+            and (tool_lines or (tool_calls == 0 and selected))
+        ):
             tool_cost = sum((line.cost_usd for line in tool_lines), Decimal("0"))
-    elif tool_calls == 0 and selected:
+    elif tool_calls == 0 and selected and not usage_truncated:
         tool_cost = Decimal("0")
 
     model_total = (
         sum(model_costs.values(), Decimal("0"))
-        if selected and not unpriced_models else None
+        if selected and not unpriced_models and not usage_truncated else None
     )
     total_cost = model_total + tool_cost if model_total is not None and tool_cost is not None else None
     return {
         "tenant_id": tenant_id,
         "run_ids": list(requested),
         "usage_event_count": len(selected),
+        "usage_truncated": usage_truncated,
         "usage_event_ids": sorted(selected),
         "missing_run_ids": sorted(requested_set - {event.run_id for event in selected.values()}),
         "input_tokens": total_input,
@@ -194,7 +199,10 @@ def aggregate_value_costs(
         "tool_cost_usd": str(tool_cost) if tool_cost is not None else None,
         "total_ai_cost_usd": str(total_cost) if total_cost is not None else None,
         "model_cost_by_key_usd": {
-            key: None if key in unpriced_models else str(model_costs.get(key, Decimal("0")))
+            key: (
+                None if key in unpriced_models or usage_truncated
+                else str(model_costs.get(key, Decimal("0")))
+            )
             for key in sorted(set(model_costs) | unpriced_models)
         },
         "unpriced_model_events": sum(
@@ -209,6 +217,7 @@ def aggregate_value_costs(
         "tool_cost_by_key": tool_breakdown,
         "tool_cost_status": (
             "usage_missing" if not selected
+            else "usage_truncated" if usage_truncated
             else "not_applicable" if tool_calls == 0 and not tool_lines
             else "not_priced" if tool_lines is None or not tool_lines
             else "provided" if tool_line_calls == tool_calls
@@ -217,6 +226,7 @@ def aggregate_value_costs(
         "cost_status": (
             "complete" if total_cost is not None
             else "model_usage_missing" if not selected
+            else "usage_truncated" if usage_truncated
             else "model_cost_incomplete" if unpriced_models
             else "tool_cost_missing"
         ),
