@@ -8,7 +8,6 @@ import {
   Route,
   Routes,
   useLocation,
-  useNavigate,
 } from 'react-router-dom'
 import {
   Bell,
@@ -231,7 +230,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
-  const navigate = useNavigate()
   const [searchOpen, setSearchOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const closeSearch = useCallback(() => setSearchOpen(false), [])
