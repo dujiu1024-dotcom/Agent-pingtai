@@ -117,3 +117,46 @@ D5 交付记录明确保留 A5 证据矩阵未定位项、C4 未完整阅读路�
 - [#18 部署升级与灾备](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18)
 - [#10 知识库与 RAG](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/10)
 - [#13 多专家 Blackboard 协作](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/13)
+
+
+## 9. 具体审查缺陷到实施 Issue 的逐项映射（2026-11-21 第二阶段）
+
+本节依据 #848 审查报告 §14、§19–27 与 D4 Backlog，区分“有实施归属”与“已经修复/验收”。任务被 Issue 承接不代表代码已改或 CI 已通过。
+
+| 具体缺陷 | 领域实施 Issue | CI/专项 Issue | D4 任务 | 当前覆盖结论 |
+|---|---|---|---|---|
+| Workbench retry 混淆 Run ID 与 Task ID，返回 None | [#9](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/9) | [#882](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/882) | P1-03、P0-07B | 有归属；#9 已补独立回归验收 |
+| Migration 重复编号 | [#18](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18) | [#882](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/882) | P0-06A | 有归属；须兼容已部署库和历史 checksum |
+| Redis Outbox 重复 claim / Stream 丢失后恢复遗漏 | [#9](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/9)、[#18](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18) | [#882](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/882) | P0-07B、P1-04、P2-AUD-13 | 有归属；两类故障需分别验收 |
+| pgvector 1024 schema 与 1536 默认/测试维度冲突 | [#10](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/10) | [#882](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/882) | P0-07B | 有归属；#10 已补 provider/schema 一致性验收 |
+| SQL 参数类型、Prompt Audit action constraint、Memory Service/fixture 契约失败 | 依具体根因归属 #10/#15/#18 | [#882](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/882) | P0-07A、P0-07B | 有归属；逐项区分产品缺陷与测试契约漂移 |
+| ModelRuntimeRouter transport/test double 与错误语义漂移 | [#12](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/12) | [#881](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/881)、[#883](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/883) | P0-07A、P0-07C | 有归属；不得缩小静态检查范围或放宽断言 |
+| 默认生产工具执行绕过 SupervisedToolGateway、审批消费契约不一致 | [#12](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/12)、[#15](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/15) | [#881](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/881) | P0-02B、P1-AUD-02、P1-AUD-03 | 有明确归属；G0 安全阻断 |
+| PostgreSQL/MySQL Connector 未强制只读 | [#15](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/15) | [#882](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/882) | P1-AUD-04 | 有明确归属；真实写权限账号负向测试 |
+| Prompt Evaluation Gate 未注入生产发布路径 | #848 审查追踪；Prompt Registry 实施域 | #881/#883（相关 CI 契约） | P1-AUD-06、P1-05 | 有明确归属；发布/激活/回滚均须 fail-closed |
+| Run Worker 与 API 生命周期耦合、MinIO readiness 不真实 | [#9](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/9)、[#18](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18) | — | P1-04、P2-AUD-11 | 有明确归属；多实例与真实对象存储故障待验收 |
+| Effect Reconciliation 授权/审计依赖无效，审计 append-only 与 DB 角色冲突 | [#15](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/15) | — | P0-03A/B、P1-AUD-03 | 有明确归属；G0 |
+| No-auth 生产误配置、异步执行/重放未重新授权 | [#9](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/9)、[#15](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/15) | — | P0-01A/B/C、P2-AUD-12 | 有明确归属；G0 fail-closed |
+| Consumer 外部副作用幂等依赖 Handler 自律 | [#9](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/9) | — | P1-04、P2-AUD-13 | 有明确归属；须覆盖崩溃窗口与 replay |
+| 出站代理旁路、MinIO Root 凭据复用 | [#15](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/15)、[#18](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18) | — | P1-AUD-08/09 | 有明确归属；G0 |
+| 异地备份/跨组件一致性、单机 Compose 不构成 HA/混合部署验收 | [#18](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18)、[#889](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/889) | — | P1-06A/B、P2-AUD-14/16 | 有明确归属；真实演练未完成 |
+
+### 9.1 已有领域 Issue，但原子验收曾不够明确；本轮已补回正文
+
+- [#8](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/8)：文件 API 路由与 OpenAPI/前端/测试契约对齐，覆盖 HTTP 405。
+- [#9](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/9)：Workbench retry 的 Task/Run ID 关联、Redis Outbox 重复 claim/恢复遗漏、Worker 执行前重新授权。
+- [#10](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/10)：embedding 维度一致性、ACL 列表读取 API、公开/受限 Chunk ACL 语义、Memory Extraction 来源契约。
+- [#12](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/12)：默认工具调用 Gateway 强制、ApprovalVerifier Run 绑定契约、ModelRuntimeRouter Protocol/错误语义。
+- [#15](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/15)：Worker/异步重放再授权、Effect Reconciliation 审计授权、Connector 只读、生产 No-auth 防护。
+- [#18](https://github.com/dujiu1024-dotcom/Agent-pingtai/issues/18)：迁移编号兼容治理、Outbox 故障恢复、跨组件备份恢复、对象存储最小权限与 readiness。
+
+### 9.2 不重复建 Issue 的决定
+
+本轮没有为上述具体缺陷再创建重复 Issue。已将缺陷补入既有领域 Issue #8/#9/#10/#12/#15/#18；CI 基线继续由 #881/#882/#883 负责。#881–#883 的 CI 通过不自动代表领域功能验收通过，领域 Issue 仍需自己的代码、集成测试和生产证据。
+
+### 9.3 仍未完成的工作
+
+1. 将上述每项映射同步到 #267 的稳定原子任务编号和证据字段。
+2. 更新 D4 Backlog 第 12 节追踪矩阵，逐项列出 §14 的 Workbench retry、迁移编号、Redis Outbox、pgvector 维度和 API/ACL 契约问题；不能只映射到宽泛的 CI 基线任务。
+3. 对 #848 报告第 14、19–27 节之外的所有具体发现继续按相同方法逐项映射。
+4. #884 的全量 Issue 正文、评论、父子关系、重复项、孤儿项和关闭依据审计仍未完成；本节不是全量审计完成声明。
