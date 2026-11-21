@@ -20,7 +20,7 @@ class LangGraphRunExecutor:
   worker_id:str|None=None,lease_seconds:int=60,registry_snapshot_service:Any|None=None,
   registry_runtime_provider:Any|None=None,model_template_id:str|None=None,
   required_tools:tuple[str,...]=(),run_context_service:Any|None=None,session_repository:Any|None=None,intervention_store:Any|None=None,
-  intervention_applier:Any|None=None,event_broker:Any|None=None)->None:
+  intervention_applier:Any|None=None,event_broker:Any|None=None,trace_service:Any|None=None)->None:
   if timeout_seconds<=0 or lease_seconds<5:raise ValueError("invalid Run timeout or lease duration")
   if getattr(graph,"checkpointer",None) is None:raise ValueError("LangGraph must be compiled with a durable Checkpointer")
   if registry_runtime_provider is not None and not (model_template_id or "").strip():
@@ -38,6 +38,7 @@ class LangGraphRunExecutor:
    from agent_platform.runtime.session_persistence import SessionRunPersistence
    self.session_persistence=SessionRunPersistence(session_repository)
   self.event_broker=event_broker
+  self.trace_service=trace_service
   self.intervention_store=intervention_store
   self.intervention_applier=intervention_applier
   if intervention_store is not None and intervention_applier is None:
@@ -61,6 +62,11 @@ class LangGraphRunExecutor:
    config["configurable"]["platform_run_context"]=await self.run_context_service.rebuild(
     tenant_id=tenant_id,run_id=run_id,
    )
+  if self.trace_service is not None:
+   from agent_platform.observability.run_trace import RunTraceCallbackHandler
+   config["callbacks"]=[RunTraceCallbackHandler(
+    trace=self.trace_service,tenant_id=tenant_id,run_id=run_id,
+   )]
   return config
  async def _session_begin(self,tenant_id:str,run_id:str,payload:Any,session_context:Any)->tuple[dict[str,Any]|None,Any|None]:
   if session_context is None:return None,None
@@ -81,7 +87,7 @@ class LangGraphRunExecutor:
    tenant_id=tenant_id,run_id=run_id,event_type=event_type,data=data,
   )
  async def _invoke_graph(self,payload:Any,config:Any,*,tenant_id:str,run_id:str,session:Any)->Any:
-  from agent_platform.streaming.context import run_event_context,token_callback_context
+  from agent_platform.streaming.context import run_event_context, token_callback_context
   async def emit_token(token:str)->None:
    await self._publish_event(tenant_id,run_id,"TOKEN_STREAM",token=token)
   async def emit_event(event_type:str,**data:Any)->None:

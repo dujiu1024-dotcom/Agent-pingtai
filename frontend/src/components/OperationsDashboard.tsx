@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Activity,
   Bot,
-  BookOpen,
   ChartLine,
+  CheckCircle2,
   Inbox,
-  ListTodo,
-  MessageSquare,
+  Play,
+  Timer,
+  Wallet,
 } from 'lucide-react'
 
 import { ApiError, apiClient } from '@/lib/api'
@@ -100,6 +101,62 @@ function requestId(error: unknown): string | undefined {
 
 type KpiTone = 'blue' | 'violet' | 'green' | 'amber'
 
+const sparkColors: Record<KpiTone, string> = {
+  blue: '#3b6cf6',
+  violet: '#a78bfa',
+  green: '#10b981',
+  amber: '#f59e0b',
+}
+
+function dayKey(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+}
+
+function trendNote(current: number, previous: number): string | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0)
+    return null
+  const change = ((current - previous) / previous) * 100
+  if (!Number.isFinite(change)) return null
+  return `${change >= 0 ? '↑' : '↓'} ${Math.abs(change).toFixed(1)}%`
+}
+
+function KpiSpark({ values, tone }: { values: number[]; tone: KpiTone }) {
+  if (values.length < 2) return null
+  const width = 84
+  const height = 34
+  const pad = 3
+  const max = Math.max(1, ...values)
+  const points = values.map((value, index) => {
+    const x = pad + (index / (values.length - 1)) * (width - pad * 2)
+    const y = height - pad - (value / max) * (height - pad * 2)
+    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`
+  })
+  const line = points.join(' ')
+  const area = `${line} L${width - pad} ${height - pad} L${pad} ${height - pad} Z`
+  const color = sparkColors[tone]
+  return (
+    <svg
+      className="kpi-spark"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      aria-hidden="true"
+    >
+      <path d={area} fill={color} fillOpacity="0.14" />
+      <path
+        d={line}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function KpiCard({
   to,
   label,
@@ -107,6 +164,8 @@ function KpiCard({
   note,
   icon,
   tone,
+  series,
+  noteMuted,
 }: {
   to: string
   label: string
@@ -114,6 +173,8 @@ function KpiCard({
   note: string
   icon: ReactNode
   tone: KpiTone
+  series?: number[]
+  noteMuted?: boolean
 }) {
   return (
     <Link className={`kpi-card tone-${tone}`} to={to}>
@@ -123,8 +184,13 @@ function KpiCard({
       <span className="kpi-label">{label}</span>
       <div className="kpi-figure">
         <strong className="kpi-value">{value}</strong>
-        <small className="kpi-note">{note}</small>
+        <small className={noteMuted ? 'kpi-note is-muted' : 'kpi-note'}>
+          {note}
+        </small>
       </div>
+      {series && series.some((item) => item > 0) && (
+        <KpiSpark values={series} tone={tone} />
+      )}
     </Link>
   )
 }
@@ -169,7 +235,9 @@ function QueryError({
 
 export function Dashboard() {
   const [days, setDays] = useState(7)
-  const [taskTab, setTaskTab] = useState<'pending' | 'done'>('pending')
+  const [taskTab, setTaskTab] = useState<'active' | 'done' | 'approval'>(
+    'active',
+  )
   const query = useMemo(() => queryRange(days), [days])
   const usageQuery = useQuery({
     queryKey: ['operations-dashboard', 'usage', query],
@@ -206,7 +274,7 @@ export function Dashboard() {
   const agentsQuery = useQuery({
     queryKey: ['dash-fallback', 'agents'],
     queryFn: () =>
-      apiClient.get<{ items: unknown[] }>('/platform/v1/registry/agents'),
+      apiClient.get<{ items: unknown[] }>('/platform/v1/registry/agent'),
     refetchInterval: 30_000,
     retry: false,
   })
@@ -229,18 +297,34 @@ export function Dashboard() {
   const daily = useMemo(() => {
     const groups = new Map<
       string,
-      { tokens: number; cost: number; events: number }
+      {
+        day: string
+        tokens: number
+        cost: number
+        events: number
+        runtimeMs: number
+      }
     >()
     for (const event of events) {
-      const day = new Date(event.occurred_at).toLocaleDateString()
-      const current = groups.get(day) ?? { tokens: 0, cost: 0, events: 0 }
+      const key = dayKey(event.occurred_at)
+      if (!key) continue
+      const current = groups.get(key) ?? {
+        day: new Date(event.occurred_at).toLocaleDateString(),
+        tokens: 0,
+        cost: 0,
+        events: 0,
+        runtimeMs: 0,
+      }
       current.tokens +=
         Number(event.input_tokens || 0) + Number(event.output_tokens || 0)
       current.cost += Number(event.cost_usd || 0)
       current.events += 1
-      groups.set(day, current)
+      current.runtimeMs += Number(event.runtime_ms || 0)
+      groups.set(key, current)
     }
-    return [...groups.entries()].map(([day, value]) => ({ day, ...value }))
+    return [...groups.entries()]
+      .map(([key, value]) => ({ key, ...value }))
+      .sort((a, b) => a.key.localeCompare(b.key))
   }, [events])
   const maxTokens = Math.max(1, ...daily.map((item) => item.tokens))
   const agents = Object.entries(summaryQuery.data?.by_agent ?? {})
@@ -259,38 +343,116 @@ export function Dashboard() {
   const quotaAvailable = Boolean(
     !usageQuery.isError && usageQuery.data && summaryQuery.data,
   )
+  const allTasks = (tasksQuery.data?.items ?? []).map(
+    (item) => item as Record<string, unknown>,
+  )
+  const isDoneStatus = (status: string) =>
+    ['completed', 'succeeded', 'success', 'done'].includes(status.toLowerCase())
+  const isApprovalStatus = (status: string) =>
+    [
+      'waiting_approval',
+      'awaiting_approval',
+      'pending_approval',
+      'approval_pending',
+    ].includes(status.toLowerCase())
+  const isFailedStatus = (status: string) =>
+    ['failed', 'error', 'cancelled', 'dead_letter'].includes(
+      status.toLowerCase(),
+    )
+  const doneCount = allTasks.filter((task) =>
+    isDoneStatus(taskStatus(task)),
+  ).length
+  const approvalCount = allTasks.filter((task) =>
+    isApprovalStatus(taskStatus(task)),
+  ).length
+  const activeCount = allTasks.filter((task) => {
+    const status = taskStatus(task)
+    return (
+      !isDoneStatus(status) &&
+      !isApprovalStatus(status) &&
+      !isFailedStatus(status)
+    )
+  }).length
+  const visibleTasks = allTasks
+    .filter((task) => {
+      const status = taskStatus(task)
+      if (taskTab === 'done') return isDoneStatus(status)
+      if (taskTab === 'approval') return isApprovalStatus(status)
+      return (
+        !isDoneStatus(status) &&
+        !isApprovalStatus(status) &&
+        !isFailedStatus(status)
+      )
+    })
+    .slice(0, 4)
+
+  const sortedDaily = daily
+  const tokenSeries = sortedDaily.map((item) => item.tokens)
+  const costSeries = sortedDaily.map((item) => item.cost)
+  const runtimeSeries = sortedDaily.map((item) =>
+    item.events ? item.runtimeMs / item.events : 0,
+  )
+  const todayKey = dayKey(new Date())
+  const yesterdayDate = new Date()
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+  const yesterdayKey = dayKey(yesterdayDate)
+  const todayEvents = events.filter(
+    (event) => dayKey(event.occurred_at) === todayKey,
+  )
+  const yesterdayEvents = events.filter(
+    (event) => dayKey(event.occurred_at) === yesterdayKey,
+  )
+  const runsTrend = trendNote(todayEvents.length, yesterdayEvents.length)
+  const successRate =
+    allTasks.length > 0 ? (doneCount / allTasks.length) * 100 : undefined
+  const avgRuntime =
+    events.length > 0
+      ? events.reduce((sum, event) => sum + Number(event.runtime_ms || 0), 0) /
+        events.length
+      : undefined
+  const avgRuntimeLabel =
+    avgRuntime !== undefined && Number.isFinite(avgRuntime)
+      ? `${(avgRuntime / 1000).toFixed(1)}s`
+      : '—'
   const kpis = [
     {
       to: '/workspace/tasks',
-      label: '待处理任务',
-      value: number(tasksQuery.data?.items?.length),
-      note: '实时同步',
-      icon: <ListTodo size={16} strokeWidth={2} />,
+      label: '今日运行',
+      value: number(todayEvents.length),
+      note: runsTrend ?? '暂无对比',
+      noteMuted: !runsTrend,
+      icon: <Play size={16} strokeWidth={2} />,
       tone: 'blue' as const,
+      series: sortedDaily.map((item) => item.events),
     },
     {
-      to: '/admin/agents',
-      label: 'Agent 定义',
-      value: number(agentsQuery.data?.items?.length),
-      note: '在册定义',
-      icon: <Bot size={16} strokeWidth={2} />,
-      tone: 'violet' as const,
+      to: '/workspace/quality-cost',
+      label: '总成本',
+      value: money(summaryQuery.data?.estimated_cost_usd),
+      note: `${days} 天合计`,
+      noteMuted: true,
+      icon: <Wallet size={16} strokeWidth={2} />,
+      tone: 'amber' as const,
+      series: sortedDaily.map((item) => item.cost),
     },
     {
-      to: '/operations/knowledge-bases',
-      label: '知识库集合',
-      value: number(knowledgeQuery.data?.items?.length),
-      note: '知识集合',
-      icon: <BookOpen size={16} strokeWidth={2} />,
+      to: '/workspace/tasks',
+      label: '成功率',
+      value: successRate !== undefined ? `${successRate.toFixed(1)}%` : '—',
+      note: allTasks.length ? `${doneCount}/${allTasks.length} 已完成` : '暂无任务',
+      noteMuted: true,
+      icon: <CheckCircle2 size={16} strokeWidth={2} />,
       tone: 'green' as const,
     },
     {
-      to: '/operations/conversations',
-      label: '活跃会话',
-      value: number(sessionsQuery.data?.items?.length),
-      note: '实时会话',
-      icon: <MessageSquare size={16} strokeWidth={2} />,
-      tone: 'amber' as const,
+      to: '/workspace/quality-cost',
+      label: '平均耗时',
+      value: avgRuntimeLabel,
+      note: events.length ? `${number(events.length)} 次调用` : '暂无调用',
+      noteMuted: true,
+      icon: <Timer size={16} strokeWidth={2} />,
+      tone: 'blue' as const,
+      series: runtimeSeries,
     },
   ]
   const recentEvents = [...events]
@@ -310,29 +472,53 @@ export function Dashboard() {
     return String(task.status ?? 'unknown')
   }
 
-  const sortedDaily = [...daily].sort(
-    (a, b) => new Date(a.day).getTime() - new Date(b.day).getTime(),
-  )
-  const tokenSeries = sortedDaily.map((item) => item.tokens)
-  const costSeries = sortedDaily.map((item) => item.cost)
-  const allTasks = (tasksQuery.data?.items ?? []).map(
-    (item) => item as Record<string, unknown>,
-  )
-  const isDoneStatus = (status: string) =>
-    ['completed', 'succeeded', 'success', 'done'].includes(
-      status.toLowerCase(),
-    )
-  const doneCount = allTasks.filter((task) =>
-    isDoneStatus(taskStatus(task)),
-  ).length
-  const pendingCount = Math.max(0, allTasks.length - doneCount)
-  const visibleTasks = allTasks
-    .filter((task) =>
-      taskTab === 'done'
-        ? isDoneStatus(taskStatus(task))
-        : !isDoneStatus(taskStatus(task)),
-    )
-    .slice(0, 4)
+  const homeRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const node = homeRef.current
+    if (!node) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const root = document.documentElement
+    let frame = 0
+    let targetX = 0
+    let targetY = 0
+    const paint = () => {
+      frame = 0
+      root.style.setProperty('--par-x', `${targetX.toFixed(1)}px`)
+      root.style.setProperty('--par-y', `${targetY.toFixed(1)}px`)
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(paint)
+    }
+    const onMove = (event: PointerEvent) => {
+      const rect = node.getBoundingClientRect()
+      const x = Math.max(
+        -0.5,
+        Math.min(0.5, (event.clientX - rect.left) / rect.width - 0.5),
+      )
+      const y = Math.max(
+        -0.5,
+        Math.min(0.5, (event.clientY - rect.top) / rect.height - 0.5),
+      )
+      targetX = -x * 18
+      targetY = -y * 10
+      schedule()
+    }
+    const reset = () => {
+      targetX = 0
+      targetY = 0
+      schedule()
+    }
+    node.addEventListener('pointermove', onMove)
+    node.addEventListener('pointerleave', reset)
+    return () => {
+      node.removeEventListener('pointermove', onMove)
+      node.removeEventListener('pointerleave', reset)
+      if (frame) cancelAnimationFrame(frame)
+      root.style.removeProperty('--par-x')
+      root.style.removeProperty('--par-y')
+    }
+  }, [])
+
   const topAgents = agents.slice(0, 3)
   const hotAgentMax = Math.max(1, ...topAgents.map(([, value]) => value.events))
   const healthStatus = healthQuery.data?.status
@@ -340,15 +526,21 @@ export function Dashboard() {
     healthStatus === 'ok' || healthStatus === 'healthy'
       ? '运行正常'
       : healthStatus
+  const agentCount = agentsQuery.data?.items?.length
 
   return (
-    <section className="spatial-home">
+    <section className="spatial-home" ref={homeRef}>
       <div className="spatial-top">
         <header className="home-hero">
           <BusinessMark />
           <div className="home-intro">
             <h1>欢迎回来！</h1>
             <p>让 AI 赋能每一个工作场景</p>
+            <div className="home-status-pill">
+              <b aria-hidden="true">●</b>
+              {number(agentCount)} 个 Agent 在册 · {number(activeCount)}{' '}
+              个任务进行中
+            </div>
           </div>
         </header>
         <div className="kpi-strip">
@@ -360,6 +552,8 @@ export function Dashboard() {
 
       <div className="spatial-main">
         <div className="spatial-stage" aria-label="3D 办公室快捷入口">
+          <div className="stage-glow" aria-hidden="true" />
+          <span className="stage-ripple" aria-hidden="true" />
           <Link
             className="stage-hotspot hotspot-create"
             to="/admin/agents"
@@ -375,8 +569,14 @@ export function Dashboard() {
           <Link
             className="stage-hotspot hotspot-flow"
             to="/admin/workflows"
-            title="管理 Workflow"
-            aria-label="管理 Workflow"
+            title="管理工作流"
+            aria-label="管理工作流"
+          />
+          <Link
+            className="stage-hotspot hotspot-assistant"
+            to="/workspace/quickstart"
+            title="Agent 助手"
+            aria-label="Agent 助手"
           />
         </div>
 
@@ -386,24 +586,24 @@ export function Dashboard() {
             <span className="card-tag">实时</span>
           </header>
           <div className="wb-tabs" role="tablist" aria-label="任务筛选">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={taskTab === 'pending'}
-              className={taskTab === 'pending' ? 'active' : ''}
-              onClick={() => setTaskTab('pending')}
-            >
-              待处理 ({pendingCount})
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={taskTab === 'done'}
-              className={taskTab === 'done' ? 'active' : ''}
-              onClick={() => setTaskTab('done')}
-            >
-              已完成 ({doneCount})
-            </button>
+            {(
+              [
+                ['active', `进行中 (${activeCount})`],
+                ['done', `已完成 (${doneCount})`],
+                ['approval', `待审批 (${approvalCount})`],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={taskTab === key}
+                className={taskTab === key ? 'active' : ''}
+                onClick={() => setTaskTab(key)}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           {tasksQuery.isLoading ? (
             <p className="muted">正在加载…</p>
@@ -435,7 +635,15 @@ export function Dashboard() {
           ) : (
             <div className="wb-empty">
               <Inbox size={22} strokeWidth={1.6} aria-hidden="true" />
-              <p>暂无{taskTab === 'pending' ? '待处理' : '已完成'}任务</p>
+              <p>
+                暂无
+                {taskTab === 'done'
+                  ? '已完成'
+                  : taskTab === 'approval'
+                    ? '待审批'
+                    : '进行中'}
+                任务
+              </p>
               <small>任务会实时同步到这里</small>
             </div>
           )}
@@ -528,15 +736,15 @@ export function Dashboard() {
                   <span className="hot-avatar" aria-hidden="true">
                     <Bot size={14} strokeWidth={2} />
                   </span>
-                  <div className="hot-info">
-                    <strong>{agent}</strong>
-                    <div className="hot-bar">
-                      <span
-                        style={{
-                          width: `${Math.max(8, (value.events / hotAgentMax) * 100)}%`,
-                        }}
-                      />
-                    </div>
+                  <Link className="hot-name" to={`/admin/agents/${agent}`}>
+                    {agent}
+                  </Link>
+                  <div className="hot-bar">
+                    <span
+                      style={{
+                        width: `${Math.max(8, (value.events / hotAgentMax) * 100)}%`,
+                      }}
+                    />
                   </div>
                   <em>{number(value.events)} 次</em>
                 </li>
@@ -579,7 +787,7 @@ export function Dashboard() {
       </div>
 
       <p className="home-footnote">
-        指标来自已接入服务端数据；成功率、并发与失败 TopN 尚未接入，未做估算展示。
+        指标来自已接入服务端数据；并发与失败 TopN 尚未接入，未做估算展示。
       </p>
     </section>
   )
@@ -591,6 +799,9 @@ function statusLabel(status: string): string {
     queued: '排队中',
     pending: '待处理',
     waiting_approval: '等待审批',
+    awaiting_approval: '等待审批',
+    pending_approval: '等待审批',
+    approval_pending: '等待审批',
     completed: '已完成',
     succeeded: '已完成',
     failed: '失败',
@@ -610,9 +821,9 @@ function Sparkline({
   if (primary.length < 2) {
     return <p className="muted">数据点不足，暂无法绘制趋势。</p>
   }
-  const width = 300
-  const height = 96
-  const pad = 6
+  const width = 400
+  const height = 130
+  const pad = 8
   const maxPrimary = Math.max(1, ...primary)
   const maxSecondary = Math.max(0.000001, ...secondary)
   const pathFor = (values: number[], max: number) =>

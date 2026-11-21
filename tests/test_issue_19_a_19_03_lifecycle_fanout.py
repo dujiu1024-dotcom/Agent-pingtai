@@ -5,7 +5,6 @@ import unittest
 from agent_platform.data_governance.export import SubjectExportCoordinator
 from agent_platform.data_governance.lifecycle import DeletionCoordinator
 
-
 SYSTEMS = (
     "primary_database",
     "object_storage",

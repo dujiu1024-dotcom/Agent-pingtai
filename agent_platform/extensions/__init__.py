@@ -1,12 +1,15 @@
 """Extension package validation and lifecycle public interfaces."""
 from agent_platform.extensions.manager import (
-    ExtensionLifecycleManager, InMemoryExtensionStateStore, InstalledExtension,
+    ExtensionLifecycleManager,
+    InMemoryExtensionStateStore,
+    InstalledExtension,
 )
 from agent_platform.extensions.manifest import ExtensionManifest, validate_platform_compatibility
-from agent_platform.extensions.publishers import TrustedPublisherKeyRegistry
 from agent_platform.extensions.postgres import (
-    PostgresExtensionStateStore, PostgresTrustedPublisherKeyRepository,
+    PostgresExtensionStateStore,
+    PostgresTrustedPublisherKeyRepository,
 )
+from agent_platform.extensions.publishers import TrustedPublisherKeyRegistry
 
 __all__ = [
     "ExtensionLifecycleManager", "InMemoryExtensionStateStore",

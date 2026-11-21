@@ -1,13 +1,18 @@
-"""飞书长连接监听（入站指令）。
+"""飞书长连接监听（入站对话与指令）。
 
 运行在独立的 `.venv-listener` 进程中，通过长连接接收 `im.message.receive_v1`，
-把指令转成新平台的 HTTP API 调用，再用飞书回复。只允许配置的 owner open_id。
+把消息转成新平台的 HTTP API 调用，再用飞书回复。只允许配置的 owner open_id。
+
+私聊直接发文本即进入对话；群聊必须 @机器人。未显式指定智能体时，按注册表中的
+智能体描述做轻量意图匹配，命中不了再走 FEISHU_DEFAULT_AGENT。
 
 支持指令：
   /help              指令说明
+  /agents            列出可用智能体
   /status            平台健康与任务概览
   /brief             当日运营简报
-  /run <内容>        提交 Agent 任务并回传结果
+  /run <内容>        提交 Agent 任务并回传结果（同样走意图匹配）
+  /agent <id> <内容> 指定智能体
   /task add <内容>   同 /run
   /sync              查看待审批与最近失败任务
   /plan ...          计划拆解尚未迁移，给出提示
@@ -36,17 +41,32 @@ logger = logging.getLogger("agent_platform.feishu.listener")
 
 PLATFORM_BASE_URL = os.environ.get("PLATFORM_BASE_URL", "https://127.0.0.1:8000")
 PLATFORM_AGENT_ID = os.environ.get("FEISHU_AGENT_ID", "local-assistant")
+DEFAULT_AGENT = os.environ.get("FEISHU_DEFAULT_AGENT", PLATFORM_AGENT_ID)
+AGENT_CACHE_SECONDS = 120  # 缩短缓存到 2 分钟，agent 发布/更新后更快生效
+AGENT_KEYWORDS_RAW = os.environ.get("FEISHU_AGENT_KEYWORDS") or ""
+AGENT_KEYWORDS = AGENT_KEYWORDS_RAW if AGENT_KEYWORDS_RAW.strip() else (
+    # 默认覆盖所有已发布 agent 的高频意图词；空字符串意味着只靠 bigram/description 匹配。
+    # 单一事实源：Registry /api/platform/v1/registry/agent 里的 agent 清单，每次新增 agent 必须同步到此。
+    "hr:招,招聘,招人,招个,招一名,招一位,简历,面试,入职,离职,绩效,薪酬,薪资,人力,人事,秘书,岗位,候选人,JD,offer,晋升,调岗,裁员;"
+    "finance:财务,账,账本,账目,支出,收入,流水,记账,报表,预算,账单,付款,收款,发票,报销,工资,成本,盈利,亏损,算账;"
+    "ops:运维,服务器,服务器运维,记账,账本,ledger,服务器维护;"
+    "test-ops:运维,部署,上线,宕机,挂了,崩溃,重启,告警,报警,监控,服务,系统,日志,报错,故障,排查,恢复,扩容,带宽,挂;"
+    "local-assistant:老板,助理,万能,帮我,转派,任务,查账本,做报表,看团队,万能助理"
+)
 TASK_POLL_SECONDS = 3
 TASK_TIMEOUT_SECONDS = 180
 
 HELP_TEXT = (
     "FDE 平台飞书指令：\n"
+    "直接发消息 → 自动识别意图并交给对应智能体\n"
+    "/agents 列出可用智能体\n"
+    "/agent <id> <内容> 指定智能体\n"
     "/status 平台状态与任务概览\n"
     "/brief 今日运营简报\n"
-    "/run <内容> 提交 Agent 任务并回传结果\n"
-    "/task add <内容> 同 /run\n"
+    "/run <内容> 提交任务并回传结果\n"
     "/sync 查看待审批与最近失败任务\n"
-    "/help 显示本说明"
+    "/help 显示本说明\n"
+    "群聊中需要 @机器人 才会响应。"
 )
 
 _SEEN: OrderedDict[str, float] = OrderedDict()
@@ -104,11 +124,17 @@ class PlatformClient:
     async def health(self) -> dict[str, Any]:
         return await self._get("/health/ready")
 
-    async def submit_task(self, prompt: str) -> dict[str, Any]:
-        return await self._post(
-            "/api/platform/v1/workbench/tasks",
-            {"agent_id": PLATFORM_AGENT_ID, "input": {"prompt": prompt}},
-        )
+    async def submit_task(
+        self, prompt: str, agent_id: str = PLATFORM_AGENT_ID,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "agent_id": agent_id or PLATFORM_AGENT_ID,
+            "input": {"prompt": prompt},
+        }
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return await self._post("/api/platform/v1/workbench/tasks", body)
 
     async def task(self, task_id: str) -> dict[str, Any]:
         return await self._get(f"/api/platform/v1/workbench/tasks/{task_id}")
@@ -125,6 +151,143 @@ class PlatformClient:
         payload = await self._get("/api/platform/v1/scheduler/jobs")
         return list(payload.get("items") or [])
 
+    async def agents(self) -> list[dict[str, Any]]:
+        payload = await self._get("/api/platform/v1/registry/agent")
+        return list(payload.get("items") or [])
+
+
+def _bigrams(text: str) -> set[str]:
+    cleaned = re.sub(r"[\s\W_]+", "", text.lower())
+    if not cleaned:
+        return set()
+    if len(cleaned) == 1:
+        return {cleaned}
+    return {cleaned[index:index + 2] for index in range(len(cleaned) - 1)}
+
+
+def _keyword_map(raw: str) -> dict[str, tuple[str, ...]]:
+    """解析 FEISHU_AGENT_KEYWORDS，格式：hr:招聘,简历;assistant:闲聊"""
+    mapping: dict[str, list[str]] = {}
+    for block in raw.split(";"):
+        agent_id, _, words = block.partition(":")
+        agent_id = agent_id.strip()
+        if not agent_id:
+            continue
+        for word in re.split(r"[,，\s]+", words):
+            if word.strip():
+                mapping.setdefault(agent_id, []).append(word.strip())
+    return {key: tuple(value) for key, value in mapping.items()}
+
+
+class AgentRouter:
+    """按注册表里的智能体描述做轻量意图匹配。
+
+    推理顺序：显式指定 > 关键词 / 描述相似度 > 默认智能体。
+    只读取注册表的公开定义，不额外调用模型，避免拖慢单条消息的响应。
+    """
+
+    def __init__(self, platform: PlatformClient, default_agent: str = DEFAULT_AGENT) -> None:
+        self._platform = platform
+        self._default = default_agent or PLATFORM_AGENT_ID
+        self._keywords = _keyword_map(AGENT_KEYWORDS)
+        self._cached_at = 0.0
+        self._agents: list[dict[str, Any]] = []
+
+    async def available(self, *, refresh: bool = False) -> list[dict[str, Any]]:
+        now = time.time()
+        if refresh or not self._agents or now - self._cached_at > AGENT_CACHE_SECONDS:
+            try:
+                items = await self._platform.agents()
+            except Exception:
+                logger.exception("读取智能体列表失败，沿用缓存")
+                return self._agents
+            agents: list[dict[str, Any]] = []
+            for item in items:
+                definition = item.get("definition") or {}
+                if not isinstance(definition, dict):
+                    definition = {}
+                agent_id = str(item.get("item_id") or "")
+                if not agent_id:
+                    continue
+                agents.append({
+                    "agent_id": agent_id,
+                    "name": str(definition.get("name") or agent_id),
+                    "description": str(definition.get("description") or ""),
+                })
+            self._agents = agents
+            self._cached_at = now
+        return self._agents
+
+    def _explicit(self, text: str) -> tuple[str, str] | None:
+        match = re.match(r"^/agent\s+(\S+)\s*(.*)$", text, re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(1), match.group(2).strip()
+        match = re.match(r"^#(\S+)\s+(.*)$", text, re.DOTALL)
+        if match:
+            return match.group(1), match.group(2).strip()
+        return None
+
+    @staticmethod
+    def _score(text: str, agent: dict[str, Any], keywords: tuple[str, ...]) -> float:
+        score = 0.0
+        for word in keywords:
+            if word and word in text:
+                score += 3.0
+        message_grams = _bigrams(text)
+        if message_grams:
+            description_grams = _bigrams(f"{agent['name']} {agent['description']}")
+            if description_grams:
+                score += len(message_grams & description_grams) / len(message_grams) * 2
+        return score
+
+    async def resolve(self, text: str) -> tuple[str, str, str]:
+        """返回 (agent_id, 展示名, 原因)。"""
+        agents = await self.available()
+        explicit = self._explicit(text)
+        if explicit:
+            agent_id, rest = explicit
+            if rest:
+                match = next(
+                    (item for item in agents
+                     if agent_id.lower() in {item["agent_id"].lower(), item["name"].lower()}),
+                    None,
+                )
+                return agent_id, match["name"] if match else agent_id, "指定"
+        best: tuple[float, str, str] | None = None
+        for agent in agents:
+            keywords = self._keywords.get(agent["agent_id"], ())
+            score = self._score(text, agent, keywords)
+            if score <= 0:
+                continue
+            if best is None or score > best[0]:
+                best = (score, agent["agent_id"], agent["name"])
+        if best is None:
+            match = next((a for a in agents if a["agent_id"] == self._default), None)
+            return self._default, match["name"] if match else self._default, "默认"
+        return best[1], best[2], "意图"
+
+
+def _mask_id(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 8:
+        return value[:2] + "***"
+    return f"{value[:6]}***{value[-4:]}"
+
+
+def _mention_fields(message: Any) -> tuple[set[str], set[str]]:
+    open_ids: set[str] = set()
+    names: set[str] = set()
+    for mention in getattr(message, "mentions", None) or []:
+        identifier = getattr(mention, "id", None)
+        open_id = getattr(identifier, "open_id", "") if identifier else ""
+        if open_id:
+            open_ids.add(str(open_id))
+        name = getattr(mention, "name", "")
+        if name:
+            names.add(str(name))
+    return open_ids, names
+
 
 def _result_text(task: dict[str, Any]) -> str:
     output = task.get("output")
@@ -138,9 +301,13 @@ def _result_text(task: dict[str, Any]) -> str:
 
 
 class FeishuCommandService:
-    def __init__(self, notifier: FeishuNotifier, platform: PlatformClient) -> None:
+    def __init__(
+        self, notifier: FeishuNotifier, platform: PlatformClient,
+        router: AgentRouter | None = None,
+    ) -> None:
         self._notifier = notifier
         self._platform = platform
+        self._router = router or AgentRouter(platform)
 
     async def _reply(self, message_id: str, text: str) -> None:
         result = await self._notifier.reply_text(message_id, text)
@@ -150,34 +317,56 @@ class FeishuCommandService:
     async def handle(self, text: str, message_id: str) -> None:
         command, argument = _parse(text)
         try:
-            if command in {"help", ""}:
+            if command == "help":
                 await self._reply(message_id, HELP_TEXT)
+            elif command == "agents":
+                await self._reply(message_id, await self._agents_text())
             elif command == "status":
                 await self._reply(message_id, await self._status_text())
             elif command == "brief":
                 await self._reply(message_id, await self._brief_text())
             elif command in {"run", "task"}:
                 await self._run(argument or "", message_id)
+            elif command == "agent":
+                await self._run(f"/agent {argument or ''}", message_id)
             elif command == "sync":
                 await self._reply(message_id, await self._sync_text())
             elif command == "plan":
                 await self._reply(
                     message_id,
-                    "计划拆解尚未迁移到新平台；可以先用 /run <内容> 直接执行单步任务。",
+                    "计划拆解尚未迁移到新平台；可以直接发消息交给智能体处理。",
                 )
+            elif command == "":
+                # 普通文本（私聊，或群聊里已 @机器人）直接进入对话。
+                await self._run(text, message_id)
             else:
                 await self._reply(message_id, "未识别指令。\n\n" + HELP_TEXT)
         except Exception as exc:  # 单条指令失败不影响长连接
-            logger.exception("处理飞书指令失败：%s", text)
+            logger.exception("处理飞书消息失败：%s", text[:80])
             await self._reply(message_id, f"处理失败：{type(exc).__name__}: {exc}")
 
+    async def _agents_text(self) -> str:
+        agents = await self._router.available(refresh=True)
+        if not agents:
+            return "注册表里还没有可用的智能体。"
+        lines = [f"- {item['agent_id']}（{item['name']}）：{item['description'][:60]}"
+                 for item in agents]
+        return "可用智能体：\n" + "\n".join(lines)
+
     async def _run(self, prompt: str, message_id: str) -> None:
-        if not prompt.strip():
-            await self._reply(message_id, "用法：/run <要执行的内容>")
+        prompt = prompt.strip()
+        if not prompt:
+            await self._reply(message_id, "用法：/run <要执行的内容>，或直接发消息。")
             return
-        task = await self._platform.submit_task(prompt.strip())
+        agent_id, agent_name, reason = await self._router.resolve(prompt)
+        logger.info("飞书消息路由 agent=%s reason=%s", agent_id, reason)
+        # 飞书 message_id 天然唯一，直接当幂等键——后端收到相同 message_id 会返回已有任务。
+        task = await self._platform.submit_task(prompt, agent_id, idempotency_key=message_id)
         task_id = str(task.get("task_id") or "")
-        await self._reply(message_id, f"已提交任务 {task_id}，执行完成后会把结果发给你。")
+        await self._reply(
+            message_id,
+            f"已交给 {agent_name}（{reason}），任务 {task_id} 执行完成后回传结果。",
+        )
         threading.Thread(
             target=lambda: asyncio.run(self._await_result(task_id, message_id)),
             daemon=True,
@@ -278,13 +467,32 @@ def _parse(text: str) -> tuple[str, str]:
     return command.lower(), argument.strip()
 
 
+def _mentions_bot(message: Any, bot_open_id: str, bot_name: str) -> bool:
+    open_ids, names = _mention_fields(message)
+    if bot_open_id and bot_open_id in open_ids:
+        return True
+    if bot_name and any(bot_name in name or name in bot_name for name in names):
+        return True
+    # 拿不到自身身份时退化为“有 @ 就算”，避免群聊完全不可用。
+    return not bot_open_id and bool(open_ids)
+
+
 def build_listener() -> Any:
     config = load_feishu_config()
     if not config.configured:
         raise RuntimeError("飞书未配置：缺少 FEISHU_APP_ID / FEISHU_APP_SECRET / 收件人")
     notifier = FeishuNotifier(config)
     platform = PlatformClient()
-    service = FeishuCommandService(notifier, platform)
+    router = AgentRouter(platform)
+    service = FeishuCommandService(notifier, platform, router)
+    try:
+        bot = asyncio.run(notifier.bot_info())
+    except Exception:
+        logger.exception("读取机器人信息失败，群聊 @ 判定退化为有 @ 即响应")
+        bot = {}
+    bot_open_id = str(bot.get("open_id") or "")
+    bot_name = str(bot.get("app_name") or "")
+    logger.info("机器人身份 open_id=%s name=%s", _mask_id(bot_open_id), bot_name)
 
     def on_message(data: P2ImMessageReceiveV1) -> None:
         event = data.event
@@ -295,12 +503,18 @@ def build_listener() -> Any:
             return
         sender = event.sender.sender_id.open_id if event.sender and event.sender.sender_id else ""
         if config.user_open_id and sender != config.user_open_id:
-            logger.warning("忽略非白名单用户消息：%s", sender)
+            logger.warning("忽略非白名单用户消息：%s", _mask_id(sender))
             return
+        if str(getattr(message, "chat_type", "") or "") == "group":
+            if not _mentions_bot(message, bot_open_id, bot_name):
+                return
         if message.message_type != "text":
-            asyncio.run(service._reply(str(message.message_id), "暂只支持文本指令，发送 /help 查看用法。"))
+            asyncio.run(service._reply(str(message.message_id), "暂只支持文本消息，发送 /help 查看用法。"))
             return
         text = _clean_text(message.content)
+        if not text:
+            asyncio.run(service._reply(str(message.message_id), HELP_TEXT))
+            return
         threading.Thread(
             target=lambda: asyncio.run(service.handle(text, str(message.message_id))),
             daemon=True,

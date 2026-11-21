@@ -19,6 +19,8 @@ import httpx
 
 from agent_platform.observability.alert_notifications import (
     AlertNotificationDispatcher as DurableAlertNotificationDispatcher,
+)
+from agent_platform.observability.alert_notifications import (
     WebhookAlertNotificationProvider,
 )
 from agent_platform.observability.alert_store import PostgresAlertEventStore

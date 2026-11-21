@@ -5,7 +5,8 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from agent_platform.observability.evaluation_worker import (
-    EvaluationSchedule, EvaluationScheduleWorker,
+    EvaluationSchedule,
+    EvaluationScheduleWorker,
 )
 
 

@@ -85,6 +85,20 @@ class PostgresQuotaStore:
         connection = await self._connection_factory()
         async with connection:
             async with connection.transaction():
+                # Idempotency for fallback retries: a prior candidate may have
+                # reserved this run_id + scope but then failed; the partial unique
+                # constraint only applies to status='active', so mark stale rows
+                # as released instead of DELETE (DELETE would violate FK from
+                # platform_usage_ledger if the prior candidate already recorded usage).
+                await connection.execute(
+                    """UPDATE platform_quota_reservations
+                       SET status='released', settled_at=now()
+                       WHERE status='active'
+                         AND tenant_id=%s AND run_id=%s
+                         AND scope_type=%s AND scope_id=%s""",
+                    (reservation.tenant_id, UUID(reservation.run_id),
+                     reservation.scope_type, reservation.scope_id),
+                )
                 try:
                     cursor = await connection.execute(
                         """SELECT warning_soft_tokens,warning_soft_cost

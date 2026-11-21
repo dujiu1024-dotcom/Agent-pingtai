@@ -1,8 +1,15 @@
 from __future__ import annotations
+
 import unittest
 from types import SimpleNamespace
-from agent_platform.observability.run_trace import InMemoryRunTraceRepository, RunTraceEventType, RunTraceService
+
+from agent_platform.observability.run_trace import (
+    InMemoryRunTraceRepository,
+    RunTraceEventType,
+    RunTraceService,
+)
 from agent_platform.runtime.replay import ReplayContextIncomplete, RunReplayService
+
 
 class RunReplayServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

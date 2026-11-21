@@ -25,7 +25,10 @@ class RegistryConflict(RegistryError):
     """Optimistic concurrency or immutable-version conflict."""
 
 
-_KINDS = frozenset({"agent", "workflow", "tool", "skill", "model_provider", "model_template"})
+_KINDS = frozenset({
+    "agent", "workflow", "tool", "skill",
+    "model_provider", "model_template", "routing_policy",
+})
 _STATUSES = frozenset({"draft", "published", "disabled", "deprecated"})
 _SECRET_KEYS = frozenset({
     "api_key", "api_secret", "access_token", "refresh_token", "password",

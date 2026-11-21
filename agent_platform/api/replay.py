@@ -1,7 +1,10 @@
 """Authenticated tenant-scoped Run replay endpoints."""
 from __future__ import annotations
+
 from typing import Any, Awaitable, Callable
+
 from fastapi import APIRouter, HTTPException, Request
+
 from agent_platform.identity.models import Principal
 from agent_platform.runtime.replay import ReplayContextIncomplete, ReplayNotFound, RunReplayService
 

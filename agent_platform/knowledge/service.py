@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Mapping, Protocol, Sequence
 from uuid import uuid4
 
-from agent_platform.knowledge.chunking import clean_document_text, chunk_document, sha256_text
+from agent_platform.knowledge.chunking import chunk_document, clean_document_text, sha256_text
 from agent_platform.knowledge.connectors import KnowledgeConnector
 from agent_platform.knowledge.contracts import (
     Document,

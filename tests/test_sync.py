@@ -12,8 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import agency  # noqa: E402
 import db as dbm  # noqa: E402
+
+import agency  # noqa: E402
 
 TODAY = "2026-11-11"
 DAYTIME = dt.datetime(2026, 11, 11, 10, 0, tzinfo=dt.timezone(dt.timedelta(hours=8)))

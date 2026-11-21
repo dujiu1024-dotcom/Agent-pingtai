@@ -121,7 +121,10 @@ class IdentityASGIMiddleware:
     """Authenticate HTTP requests and enforce cookie CSRF/CORS/security headers."""
 
     SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-    PUBLIC_PATHS = {"/health", "/ready", "/auth/login", "/api/platform/v1/bootstrap"}
+    PUBLIC_PATHS = {
+        "/health", "/ready", "/auth/login", "/auth/initialize",
+        "/api/platform/v1/bootstrap",
+    }
 
     def __init__(
         self,

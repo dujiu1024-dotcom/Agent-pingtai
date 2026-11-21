@@ -48,7 +48,6 @@ def create_observability_router(
     operational_health_monitor: Any | None = None,
     connection_factory: Any | None = None,
 ) -> APIRouter:
-    import json as _json
     router = APIRouter(prefix="/api/platform/v1/observability", tags=["observability"])
 
     @router.get("/metrics", response_class=PlainTextResponse)
@@ -63,10 +62,15 @@ def create_observability_router(
     async def metrics_json_endpoint(request: Request):
         _principal(request)
         export_fn = getattr(metrics, "export_json", None)
-        if callable(export_fn):
-            items = export_fn()
-        else:
-            items = []
+        items = export_fn() if callable(export_fn) else []
+        if not items:
+            # Fallback: derive basic operational metrics from DB counters so the
+            # operations dashboard never shows an empty list just because the
+            # prometheus registry has not been populated yet.
+            try:
+                items = await _fallback_db_metrics()
+            except Exception:
+                items = []
         return {"items": items, "count": len(items)}
 
     @router.get("/health/capacity")
@@ -479,3 +483,111 @@ def create_observability_router(
             raise HTTPException(503, str(exc)) from exc
 
     return router
+
+
+async def _fallback_db_metrics() -> list[dict[str, Any]]:
+    """Derive a handful of gauge metrics from the current DB state.
+
+    Used by ``metrics_json_endpoint`` as a fallback when the Prometheus
+    registry has not yet been populated by live exporters.
+    """
+    import psycopg
+    from psycopg.rows import dict_row
+    from agent_platform.production_config import load_production_settings
+
+    settings = load_production_settings()
+    dsn = settings.postgres_dsn
+
+    # metric_name → 中文显示名（前端直接展示中文名）
+    NAME_CN = {
+        "platform_runs_total": "运行总数",
+        "platform_tool_calls_total": "工具调用数",
+        "platform_scheduled_runs_24h": "24h 调度运行数",
+        "platform_active_agents_24h": "24h 活跃智能体数",
+        "platform_open_alerts": "未关闭告警数",
+        "platform_tokens_used_24h": "24h Token 消耗量",
+    }
+    STATUS_CN = {
+        "succeeded": "成功", "failed": "失败", "cancelled": "已取消",
+        "interrupted": "中断", "running": "运行中", "pending": "待处理",
+        "queued": "排队中", "dead_letter": "死信",
+    }
+    OUTCOME_CN = {
+        "succeeded": "成功", "failed": "失败", "started": "已开始",
+        "denied": "已拒绝", "error": "错误",
+    }
+
+    def _cn_labels(labels: dict) -> dict:
+        out = {}
+        for k, v in labels.items():
+            if k == "status":
+                out["状态"] = STATUS_CN.get(str(v), str(v))
+            elif k == "outcome":
+                out["结果"] = OUTCOME_CN.get(str(v), str(v))
+            elif k == "window":
+                out["窗口"] = str(v)
+            else:
+                out[str(k)] = str(v)
+        return out
+
+    async with await psycopg.AsyncConnection.connect(dsn, row_factory=dict_row) as conn:
+        async with conn.cursor() as cur:
+            metrics_out: list[dict[str, Any]] = []
+
+            async def add(name: str, type_: str, help_: str, labels: dict, value: float):
+                metrics_out.append({
+                    "name": NAME_CN.get(name, name),
+                    "type": type_, "help": help_,
+                    "labels": _cn_labels(labels), "value": value,
+                })
+
+            # 运行总数（按状态）
+            await cur.execute(
+                "SELECT status, count(*) as cnt FROM platform_runs GROUP BY status"
+            )
+            for row in await cur.fetchall():
+                await add("platform_runs_total", "gauge", "运行总数（按状态）",
+                          {"status": row["status"]}, float(row["cnt"]))
+
+            # 工具调用数（按结果）
+            await cur.execute(
+                "SELECT outcome, count(*) as cnt FROM platform_tool_audit GROUP BY outcome"
+            )
+            for row in await cur.fetchall():
+                await add("platform_tool_calls_total", "gauge", "工具调用数（按结果）",
+                          {"outcome": row["outcome"]}, float(row["cnt"]))
+
+            # 最近 24 小时调度任务运行数
+            await cur.execute(
+                "SELECT count(*) as cnt FROM platform_scheduled_job_runs "
+                "WHERE started_at > now() - interval '24 hours'"
+            )
+            row = await cur.fetchone()
+            await add("platform_scheduled_runs_24h", "gauge", "最近 24 小时调度任务运行数",
+                      {"window": "24h"}, float(row["cnt"]))
+
+            # 最近 24 小时活跃智能体数
+            await cur.execute(
+                "SELECT count(DISTINCT agent_id) as cnt FROM platform_runs "
+                "WHERE created_at > now() - interval '24 hours'"
+            )
+            row = await cur.fetchone()
+            await add("platform_active_agents_24h", "gauge", "最近 24 小时活跃智能体数",
+                      {"window": "24h"}, float(row["cnt"]))
+
+            # 当前未关闭告警数
+            await cur.execute("SELECT count(*) as cnt FROM platform_alert_events WHERE status='open'")
+            row = await cur.fetchone()
+            await add("platform_open_alerts", "gauge", "当前未关闭告警数",
+                      {"status": "open"}, float(row["cnt"]))
+
+            # 最近 24 小时 Token 消耗总量
+            await cur.execute(
+                "SELECT coalesce(sum((usage->>'total_tokens')::int), 0) as total "
+                "FROM platform_runs WHERE created_at > now() - interval '24 hours'"
+            )
+            row = await cur.fetchone()
+            await add("platform_tokens_used_24h", "counter", "最近 24 小时 Token 消耗总量",
+                      {"window": "24h"}, float(row["total"]))
+
+        return metrics_out

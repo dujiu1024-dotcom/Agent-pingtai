@@ -6,8 +6,8 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
-from agent_platform.identity.models import Principal
 from agent_platform.i18n.preferences import TenantLocalePreferenceService
+from agent_platform.identity.models import Principal
 
 
 def create_locale_preferences_router(

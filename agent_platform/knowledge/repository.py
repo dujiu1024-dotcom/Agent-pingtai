@@ -449,6 +449,7 @@ class InMemoryKnowledgeRepository:
 
     async def update_chunk(self, tenant_id: str, document_id: str, version: int, chunk_id: str, text: str) -> DocumentChunk | None:
         from dataclasses import replace
+
         from agent_platform.knowledge.chunking import sha256_text
         if not isinstance(text, str) or not text.strip() or len(text) > 20000:
             raise ValueError("chunk text must contain 1-20000 characters")

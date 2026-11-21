@@ -1,0 +1,166 @@
+.run-controls {
+  display: grid;
+  gap: 10px;
+}
+.run-controls-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.run-controls-head h2 {
+  margin: 0;
+}
+.run-controls-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.run-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.run-action-hint {
+  margin: 0;
+  color: #778296;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+.run-action-ok {
+  color: #2f7a4f;
+  font-size: 12px;
+}
+.run-error-text {
+  margin: 0;
+  color: #c0392b;
+  font-size: 12px;
+}
+.run-danger {
+  border-color: #e3b4b4;
+  color: #b03030;
+}
+.run-danger:hover:not(:disabled) {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+.run-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #f0c9c9;
+  border-radius: 8px;
+  background: #fff6f6;
+  font-size: 12px;
+}
+.run-confirm .button-secondary,
+.run-confirm .button-primary,
+.run-action-row .button-secondary {
+  height: 34px;
+  padding: 0 14px;
+}
+.intervention-list,
+.revision-list,
+.effect-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.intervention-item,
+.revision-item,
+.effect-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #fbfcfe;
+  font-size: 12px;
+}
+.intervention-item p,
+.revision-item p,
+.effect-item p {
+  margin: 0;
+  line-height: 1.6;
+}
+.intervention-meta,
+.effect-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.intervention-meta strong,
+.effect-meta strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+.intervention-item textarea,
+.effect-item textarea,
+.effect-item select,
+.tool-effect-lookup input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+.intervention-item textarea,
+.effect-item textarea {
+  resize: vertical;
+}
+.intervention-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.intervention-actions .button-primary,
+.intervention-actions .button-secondary {
+  height: 34px;
+  padding: 0 14px;
+}
+.effect-reconcile {
+  display: grid;
+  gap: 8px;
+}
+.tool-effect-lookup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.tool-effect-lookup input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+}
+.tool-effect-lookup .button-secondary {
+  height: 34px;
+  padding: 0 14px;
+  flex: 0 0 auto;
+}
+.revision-item pre,
+.intervention-item pre,
+.effect-item pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 7px;
+  background: #f2f5fa;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.task-actions {
+  margin-bottom: 6px;
+}

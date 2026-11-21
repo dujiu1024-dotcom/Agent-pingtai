@@ -7,7 +7,11 @@ import unittest
 import zipfile
 from types import SimpleNamespace
 
-from agent_platform.control_plane.registry import InMemoryRegistryRepository, RegistryService, RegistryVersion
+from agent_platform.control_plane.registry import (
+    InMemoryRegistryRepository,
+    RegistryService,
+    RegistryVersion,
+)
 from agent_platform.control_plane.skill_dependency_review import (
     InMemorySkillDependencyReviewStore,
     SkillDependencyReviewer,
@@ -22,7 +26,6 @@ from agent_platform.control_plane.skill_sandbox import (
     SkillSandboxRuntime,
 )
 from agent_platform.sandbox.oci import SandboxResult
-
 
 PACKAGE_MANIFEST = """name: report-summarizer
 version: 1.2.0

@@ -14,6 +14,8 @@ from agent_platform.data_governance.legacy_inventory import (
     inventory_report,
     validate_inventory,
 )
+
+
 class LegacyInventoryTests(unittest.TestCase):
     def test_catalog_is_sorted_and_requires_explicit_targets(self):
         records = validate_inventory(DEFAULT_LEGACY_ASSETS)

@@ -65,6 +65,46 @@ class RunRegistrySnapshotService:
                 "kind": item.kind, "item_id": item.item_id,
                 "version": item.version, "definition": copy.deepcopy(dict(item.definition)),
             })
+        # Recursively pin any items referenced by model_template provider_fallbacks.
+        # Without this, the fallback chain's template/provider entries won't be in the
+        # snapshot and the router can't resolve them during circuit-breaker failover.
+        extra_references: list[tuple[str, str, int]] = []
+        for entry in entries:
+            if entry["kind"] != "model_template":
+                continue
+            definition = entry.get("definition", {})
+            if not isinstance(definition, dict):
+                continue
+            fallbacks = definition.get("provider_fallbacks", [])
+            if not isinstance(fallbacks, list):
+                continue
+            for fb in fallbacks:
+                if not isinstance(fb, dict):
+                    continue
+                tid = fb.get("template_id"); tv = fb.get("template_version")
+                pid = fb.get("provider_id"); pv = fb.get("provider_version")
+                if tid and isinstance(tv, int):
+                    extra_references.append(("model_template", tid, tv))
+                if pid and isinstance(pv, int):
+                    extra_references.append(("model_provider", pid, pv))
+        # Deduplicate & pin extras (same repo.get / resolve_active as primary)
+        for kind, item_id, version in extra_references:
+            key = (kind, item_id)
+            if seen.get(key) == version:
+                continue
+            seen[key] = version
+            item = await self.registry.repository.get(
+                tenant_id, kind, item_id, version,
+            )
+            if item is None or item.status != "published":
+                raise RegistryNotFound(
+                    f"published fallback registry version not found: {kind}:{item_id}@{version}"
+                )
+            entries.append({
+                "kind": item.kind, "item_id": item.item_id,
+                "version": item.version,
+                "definition": copy.deepcopy(dict(item.definition)),
+            })
         entries.sort(key=lambda entry: (entry["kind"], entry["item_id"]))
         canonical = json.dumps(
             {"tenant_id": tenant_id, "run_id": run_id, "entries": entries},
@@ -107,6 +147,46 @@ class RunRegistrySnapshotService:
                 raise ValueError(
                     f"registry active version changed before Run snapshot pin: "
                     f"{kind}:{item_id}@{version}"
+                )
+            entries.append({
+                "kind": item.kind, "item_id": item.item_id,
+                "version": item.version,
+                "definition": copy.deepcopy(dict(item.definition)),
+            })
+        # Recursively pin any items referenced by model_template provider_fallbacks.
+        # Without this, the fallback chain's template/provider entries won't be in the
+        # snapshot and the router can't resolve them during circuit-breaker failover.
+        extra_references: list[tuple[str, str, int]] = []
+        for entry in entries:
+            if entry["kind"] != "model_template":
+                continue
+            definition = entry.get("definition", {})
+            if not isinstance(definition, dict):
+                continue
+            fallbacks = definition.get("provider_fallbacks", [])
+            if not isinstance(fallbacks, list):
+                continue
+            for fb in fallbacks:
+                if not isinstance(fb, dict):
+                    continue
+                tid = fb.get("template_id"); tv = fb.get("template_version")
+                pid = fb.get("provider_id"); pv = fb.get("provider_version")
+                if tid and isinstance(tv, int):
+                    extra_references.append(("model_template", tid, tv))
+                if pid and isinstance(pv, int):
+                    extra_references.append(("model_provider", pid, pv))
+        # Deduplicate & pin extras (same repo.get / resolve_active as primary)
+        for kind, item_id, version in extra_references:
+            key = (kind, item_id)
+            if seen.get(key) == version:
+                continue
+            seen[key] = version
+            item = await self.registry.repository.get(
+                tenant_id, kind, item_id, version,
+            )
+            if item is None or item.status != "published":
+                raise RegistryNotFound(
+                    f"published fallback registry version not found: {kind}:{item_id}@{version}"
                 )
             entries.append({
                 "kind": item.kind, "item_id": item.item_id,

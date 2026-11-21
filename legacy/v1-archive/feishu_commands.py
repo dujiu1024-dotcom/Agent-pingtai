@@ -52,7 +52,7 @@ DOMAINS = [
     ("线索与客户", ["scout"]),
     ("财务", ["finance"]),
     ("审计与质量", ["auditor"]),
-    ("人与协作", ["hr", "coach", "secretary"]),
+    ("人与协作", ["coach", "secretary"]),
 ]
 CAPABILITIES = [
     ("任务与计划", "建任务、拆目标、排里程碑、盯交付进度"),

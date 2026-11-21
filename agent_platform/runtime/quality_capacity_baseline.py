@@ -13,9 +13,9 @@ import json
 import math
 import time
 from dataclasses import asdict, dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from statistics import mean
-from typing import Awaitable, Callable, Mapping, Sequence
+from typing import Awaitable, Callable, Sequence
 
 from agent_platform.observability.evaluation import EvalCase, evaluate_case
 

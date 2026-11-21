@@ -33,6 +33,17 @@ class BlackboardRepository(Protocol):
     ) -> list[BlackboardEntry]:
         ...
 
+    async def list_all(
+        self,
+        *,
+        scope: Scope | None = None,
+        scope_id: str | None = None,
+        kinds: Sequence[str] = (),
+        limit: int = 100,
+    ) -> list[BlackboardEntry]:
+        """List entries at the tenant level, optionally filtered by scope/scope_id."""
+        ...
+
     async def list_versions(self, entry_id: str) -> list[BlackboardEntry]:
         """Return the immutable version chain for one tenant-scoped entry."""
         ...

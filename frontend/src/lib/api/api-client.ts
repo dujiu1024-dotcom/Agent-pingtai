@@ -135,6 +135,19 @@ export class ApiClient {
 
     if (ifMatch) headers.set('If-Match', ifMatch)
 
+    if (
+      ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) &&
+      typeof document !== 'undefined' &&
+      !headers.has('X-CSRF-Token')
+    ) {
+      const match = document.cookie
+        .split('; ')
+        .find((item) => item.startsWith('__Host-platform_csrf='))
+      if (match) {
+        headers.set('X-CSRF-Token', decodeURIComponent(match.split('=').slice(1).join('=')))
+      }
+    }
+
     if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
       headers.set('Idempotency-Key', idempotencyKey ?? makeIdempotencyKey())
     } else if (idempotencyKey) {

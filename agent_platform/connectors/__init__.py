@@ -2,9 +2,9 @@
 
 from agent_platform.connectors.base import (
     BaseConnector,
-    ConnectorAuthRequest,
     ConnectorAuthenticationError,
     ConnectorAuthenticator,
+    ConnectorAuthRequest,
     SecretStoreConnectorAuthenticator,
 )
 

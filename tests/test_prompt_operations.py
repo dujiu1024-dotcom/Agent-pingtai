@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
 from fastapi import FastAPI
@@ -53,7 +54,7 @@ class PromptOperationsTests(unittest.TestCase):
         self.key = "tenant:8:tenant-a:assistant"
         self.first = self.registry.register(self.key, "Answer {question}")
         self.second = self.registry.register(self.key, "Carefully answer {question}")
-        self.registry.activate(self.key, self.first.version)
+        asyncio.run(self.registry.activate(self.key, self.first.version, updated_by="test-user"))
         self.audit = AuditRecorder()
         self.gate = GateEvidence()
         self.app = FastAPI()
@@ -89,7 +90,7 @@ class PromptOperationsTests(unittest.TestCase):
             "version": self.second.version, "canary_percentage": 10,
         })
         self.assertEqual(rejected.status_code, 409)
-        self.assertEqual(self.registry.resolve(self.key).version, self.first.version)
+        self.assertEqual(asyncio.run(self.registry.resolve(self.key)).version, self.first.version)
 
         self.gate = GateEvidence(True)
         accepted = self.client.post("/api/platform/v1/prompts/assistant/release", json={
@@ -105,14 +106,14 @@ class PromptOperationsTests(unittest.TestCase):
             "version": self.second.version, "canary_percentage": 0,
         })
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(self.registry.resolve(self.key).version, self.first.version)
+        self.assertEqual(asyncio.run(self.registry.resolve(self.key)).version, self.first.version)
 
     def test_rollback_restores_requested_immutable_version(self):
         response = self.client.post("/api/platform/v1/prompts/assistant/rollback", json={
             "version": self.first.version,
         })
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.registry.resolve(self.key).version, self.first.version)
+        self.assertEqual(asyncio.run(self.registry.resolve(self.key)).version, self.first.version)
         self.assertEqual(self.audit.events[-1]["action"], "prompt.version.rollback_requested")
 
 

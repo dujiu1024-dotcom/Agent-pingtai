@@ -120,6 +120,7 @@ class PostgresModelUsageRecorder:
 @dataclass(frozen=True)
 class RoutedModelResponse:
     content: str
+    tool_calls: Any
     model_id: str
     template_id: str
     template_version: int
@@ -149,6 +150,8 @@ class OpenAICompatibleHTTPTransport:
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+        tool_choice: Any = None,
         on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> Mapping[str, Any]:
         if timeout_seconds <= 0:
@@ -159,6 +162,7 @@ class OpenAICompatibleHTTPTransport:
         if on_token is None:
             return await asyncio.to_thread(
                 self._complete_sync, config, messages, request_parameters, timeout_seconds,
+                tools, tool_choice,
             )
         loop = asyncio.get_running_loop()
 
@@ -167,7 +171,8 @@ class OpenAICompatibleHTTPTransport:
             future.result(timeout=timeout_seconds)
 
         return await asyncio.to_thread(
-            self._complete_sync, config, messages, request_parameters, timeout_seconds, emit,
+            self._complete_sync, config, messages, request_parameters, timeout_seconds,
+            tools, tool_choice, emit,
         )
 
     def _complete_sync(
@@ -175,18 +180,24 @@ class OpenAICompatibleHTTPTransport:
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+        tool_choice: Any = None,
         emit_token: Callable[[str], None] | None = None,
     ) -> Mapping[str, Any]:
-        reserved = {"model", "messages", "stream", "stream_options", "tools", "tool_choice", "api_key", "authorization", "base_url"}
+        reserved = {"model", "messages", "stream", "stream_options", "api_key", "authorization", "base_url"}
         if reserved.intersection(config.parameters) or reserved.intersection(request_parameters):
-            raise ModelTransportError("model parameters cannot override routing or tool controls")
+            raise ModelTransportError("model parameters cannot override routing controls")
         streaming = emit_token is not None
-        payload = {
+        payload: dict[str, Any] = {
             **dict(config.parameters),
             **dict(request_parameters),
             "model": config.model_id,
             "messages": [dict(message) for message in messages],
         }
+        if tools:
+            payload["tools"] = [dict(t) for t in tools]
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
         if streaming:
             payload["stream"] = True
             payload["stream_options"] = {"include_usage": True}
@@ -316,6 +327,8 @@ class OpenAICompatibleModelRouter:
         fallback_template_ids: Sequence[str] = (),
         request_parameters: Mapping[str, Any] | None = None,
         protected_context: Mapping[str, Any] | None = None,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+        tool_choice: Any = None,
         on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> RoutedModelResponse:
         if not tenant_id.strip() or not run_id.strip() or not request_id.strip():
@@ -603,6 +616,7 @@ class OpenAICompatibleModelRouter:
                                 config=config, messages=dispatch_messages,
                                 request_parameters=parameters,
                                 timeout_seconds=self.timeout_seconds,
+                                tools=tools, tool_choice=tool_choice,
                             )
                         else:
                             async def emit_stream_token(token: str) -> None:
@@ -613,6 +627,7 @@ class OpenAICompatibleModelRouter:
                                 config=config, messages=dispatch_messages,
                                 request_parameters=parameters,
                                 timeout_seconds=self.timeout_seconds,
+                                tools=tools, tool_choice=tool_choice,
                                 on_token=emit_stream_token,
                             )
                     except ModelTransportError as exc:
@@ -642,12 +657,23 @@ class OpenAICompatibleModelRouter:
                     status = "response_received"
                     safe_update(span, output={"status": status})
             except ModelTransportError as exc:
-                if quota_reservation is not None or stream_tokens_emitted:
-                    # Once tokens are visible, fallback would duplicate partial user output.
-                    # Keep any reservation and let reconciliation handle ambiguous billing.
+                if stream_tokens_emitted:
+                    # Once tokens are visible to the user, fallback would duplicate
+                    # partial output. Quota reservation alone doesn't block fallback
+                    # — the reservation can be released when the candidate is abandoned.
                     raise ModelUsageRecordingError(
                         "streaming model outcome is ambiguous; fallback is prohibited"
                     ) from exc
+                # Circuit breaker already recorded the failure. Move to next candidate
+                # in the fallback list — but first cancel this candidate's quota
+                # reservation if one was created; otherwise the next candidate's
+                # reserve_run() hits the unique constraint on (run_id, scope).
+                if quota_reservation is not None and hasattr(self.quota_service, "cancel_run"):
+                    try:
+                        await self.quota_service.cancel_run(reservation=quota_reservation)
+                    except Exception:
+                        pass  # Best-effort cleanup; don't mask the transport error
+                quota_reservation = None
                 last_error = exc
                 safe_metric(
                     self.metrics, "increment", "model_retries_total",
@@ -668,8 +694,69 @@ class OpenAICompatibleModelRouter:
                 raise ModelRoutingError("model provider returned no completion choice")
             message = choices[0].get("message")
             content = message.get("content") if isinstance(message, Mapping) else None
+            tool_calls = message.get("tool_calls") if isinstance(message, Mapping) else None
+            if not isinstance(content, str) and not tool_calls:
+                # 附带可诊断的元信息，但不记录模型正文。
+                finish_reason = choices[0].get("finish_reason")
+                raise ModelRoutingError(
+                    "model provider returned non-text completion content "
+                    f"(finish_reason={finish_reason}, content_type={type(content).__name__})"
+                )
             if not isinstance(content, str):
-                raise ModelRoutingError("model provider returned non-text completion content")
+                content = ""
+            # --- tool_calls 缺失 fallback ---
+            # 调用者明确传了 tools 期望模型调工具，但模型返回纯文本回复
+            # （finish_reason=stop 且 tool_calls 为空）。如果还有 fallback
+            # candidate 可用，放弃这次（已 billable），换到下一模型重试。
+            if (
+                tools is not None
+                and len(tools) > 0
+                and not tool_calls
+                and index + 1 < len(candidates)
+                and not stream_tokens_emitted
+            ):
+                finish_reason = choices[0].get("finish_reason") if choices else None
+                try:
+                    await audit_sink.record(
+                        tenant_id=tenant_id, actor_id="system:model-router",
+                        action="model.response", subject_id=request_id,
+                        outcome="failed",
+                        detail={
+                            "run_id": run_id,
+                            "template_id": config.template_id,
+                            "template_version": config.template_version,
+                            "provider_id": config.provider_id,
+                            "provider_version": config.provider_version,
+                            "model_id": config.model_id,
+                            "reason": "tool_calls_missing",
+                            "finish_reason": finish_reason,
+                            "fallback_attempt": index + 1,
+                        },
+                    )
+                except Exception:
+                    pass
+                # 释放当前 quota reservation，让下一 candidate 重新 reserve
+                if quota_reservation is not None and hasattr(
+                    self.quota_service, "cancel_run"
+                ):
+                    try:
+                        await self.quota_service.cancel_run(
+                            reservation=quota_reservation
+                        )
+                    except Exception:
+                        pass
+                quota_reservation = None
+                last_error = ModelRoutingError(
+                    f"model {config.model_id} returned no tool_calls "
+                    f"though {len(tools)} tools were offered "
+                    f"(finish_reason={finish_reason}); "
+                    f"falling back to {candidates[index + 1]}"
+                )
+                safe_metric(
+                    self.metrics, "increment", "model_retries_total",
+                    labels={**labels, "operation": "tool_calls_missing_retry"},
+                )
+                continue
             usage = raw.get("usage")
             if not isinstance(usage, Mapping):
                 raise ModelUsageRecordingError(
@@ -716,7 +803,7 @@ class OpenAICompatibleModelRouter:
                         raise ValueError("model price card version must be non-empty text")
                     await self.quota_service.settle_run(
                         quota_reservation,
-                        model_key=f"{config.template_id}@{config.template_version}",
+                        model_key=config.model_id,
                         input_tokens=input_tokens, output_tokens=output_tokens,
                         cost_usd=Decimal(actual_micros) / Decimal(1_000_000),
                         project_id=getattr(snapshot, "project_id", None),
@@ -808,7 +895,8 @@ class OpenAICompatibleModelRouter:
                     labels={**labels, "operation": "fallback"},
                 )
             return RoutedModelResponse(
-                content=content, model_id=config.model_id,
+                content=content, tool_calls=tool_calls,
+                model_id=config.model_id,
                 template_id=config.template_id, template_version=config.template_version,
                 provider_id=config.provider_id, provider_version=config.provider_version,
                 usage=dict(usage), fallback_used=index > 0,

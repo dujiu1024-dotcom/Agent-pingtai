@@ -18,7 +18,7 @@ class FakeApprovalVerifier:
         self.valid = valid
         self.calls = []
 
-    async def consume(self, *, tenant_id, approval_id, action_digest, policy_version="1"):
+    async def consume(self, *, tenant_id, approval_id, action_digest, policy_version="1", run_id=None):
         self.calls.append((tenant_id, approval_id, action_digest))
         return self.valid
 

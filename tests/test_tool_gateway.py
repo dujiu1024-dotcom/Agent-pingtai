@@ -9,10 +9,14 @@ from agent_platform.observability.trace_spans import current_trace_span, trace_s
 from agent_platform.runtime.tool_gateway import (
     InMemoryToolAuditSink,
     InMemoryToolRunRegistry,
-    ToolDefinition as RuntimeToolDefinition,
-    ToolGateway as RuntimeToolGateway,
     ToolPrincipal,
     ToolRunBinding,
+)
+from agent_platform.runtime.tool_gateway import (
+    ToolDefinition as RuntimeToolDefinition,
+)
+from agent_platform.runtime.tool_gateway import (
+    ToolGateway as RuntimeToolGateway,
 )
 from agent_platform.tools.gateway import (
     SupervisedToolGateway,
@@ -23,6 +27,7 @@ from agent_platform.tools.idempotency import (
     InMemoryToolEffectStore,
     ToolEffectReconciliationService,
 )
+
 
 class FakeApprovalVerifier:
     def __init__(self, valid=False):

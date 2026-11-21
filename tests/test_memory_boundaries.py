@@ -5,14 +5,14 @@ import unittest
 import pytest
 
 from agent_platform.memory.boundaries import (
+    MEMORY_BOUNDARIES,
     MemoryBoundaryPolicy,
+    MemoryLayer,
     MemorySourceDomain,
     MemorySourceReference,
-    MEMORY_BOUNDARIES,
-    MemoryLayer,
-    memory_boundary,
     durable_scope_value,
     is_durable_memory_layer,
+    memory_boundary,
 )
 from agent_platform.memory.service import MemoryCandidate, MemoryScope
 
@@ -199,8 +199,16 @@ class SessionMemoryBoundaryTests(unittest.IsolatedAsyncioTestCase):
             return self.drafts
 
         async def test_completed_turn_creates_candidate_not_active_memory(self):
-            from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
-            from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+            from agent_platform.memory.extraction import (
+                MemoryDraft,
+                MemoryExtractionService,
+                MemoryTurn,
+            )
+            from agent_platform.memory.service import (
+                InMemoryMemoryRepository,
+                MemoryPrincipal,
+                MemoryService,
+            )
             repository = InMemoryMemoryRepository()
             extractor = self.Extractor([MemoryDraft(scope=MemoryScope.USER, scope_id="user-a", content="prefers concise technical summaries", confidence=0.91)])
             service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
@@ -216,7 +224,11 @@ class SessionMemoryBoundaryTests(unittest.IsolatedAsyncioTestCase):
     @pytest.mark.asyncio
     async def test_incomplete_turn_is_rejected_before_extractor_or_write(self):
         from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
-        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        from agent_platform.memory.service import (
+            InMemoryMemoryRepository,
+            MemoryPrincipal,
+            MemoryService,
+        )
         repository = InMemoryMemoryRepository()
         extractor = self.Extractor([])
         service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
@@ -229,8 +241,16 @@ class SessionMemoryBoundaryTests(unittest.IsolatedAsyncioTestCase):
 
     @pytest.mark.asyncio
     async def test_session_source_reference_is_tenant_pinned_and_idempotent(self):
-        from agent_platform.memory.extraction import MemoryDraft, MemoryExtractionService, MemoryTurn
-        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        from agent_platform.memory.extraction import (
+            MemoryDraft,
+            MemoryExtractionService,
+            MemoryTurn,
+        )
+        from agent_platform.memory.service import (
+            InMemoryMemoryRepository,
+            MemoryPrincipal,
+            MemoryService,
+        )
         repository = InMemoryMemoryRepository()
         extractor = self.Extractor([MemoryDraft(scope=MemoryScope.USER, scope_id="user-a", content="prefers concise answers", confidence=0.9)])
         service = MemoryExtractionService(memory=MemoryService(repository), extractor=extractor)
@@ -245,7 +265,11 @@ class SessionMemoryBoundaryTests(unittest.IsolatedAsyncioTestCase):
     @pytest.mark.asyncio
     async def test_cross_tenant_source_reference_is_rejected_before_extraction(self):
         from agent_platform.memory.extraction import MemoryExtractionService, MemoryTurn
-        from agent_platform.memory.service import InMemoryMemoryRepository, MemoryPrincipal, MemoryService
+        from agent_platform.memory.service import (
+            InMemoryMemoryRepository,
+            MemoryPrincipal,
+            MemoryService,
+        )
         extractor = self.Extractor([])
         service = MemoryExtractionService(memory=MemoryService(InMemoryMemoryRepository()), extractor=extractor)
         principal = MemoryPrincipal(tenant_id="tenant-a", user_id="user-a")

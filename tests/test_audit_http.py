@@ -159,7 +159,7 @@ class AuditRequestMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             pass
         middleware = AuditRequestASGIMiddleware(
             app, sink=sink, resolve_actor=lambda principal: None,
-            resolve_instance_actor=lambda scope: AuditActor("instance-a", None),
+            resolve_null_actor_tenant=lambda scope: "instance-a",
         )
         await middleware(
             {"type": "http", "method": "GET", "path": "/api/platform/v1/office/state", "state": {}},

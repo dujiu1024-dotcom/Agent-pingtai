@@ -79,7 +79,10 @@ def create_prompt_registry_router(
         actor = _principal(request)
         if not await _allowed(authorize, actor, prompt_id, action):
             raise HTTPException(403, "prompt registry permission required")
-        return actor, tenant_prompt_key(actor.tenant_id, prompt_id)
+        # Note: PostgresPromptRegistry uses raw prompt_id (no tenant prefix).
+        # The tenant_prompt_key helper is retained for future global-registry scenarios
+        # but we pass the original prompt_id to match DB records.
+        return actor, prompt_id
 
     @router.get("/")
     async def list_prompts(request: Request, limit: int = Query(default=50, ge=1, le=200)):

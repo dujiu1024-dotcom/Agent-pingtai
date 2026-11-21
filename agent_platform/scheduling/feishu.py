@@ -150,6 +150,27 @@ class FeishuNotifier:
         self._token_expires_at = time.time() + max(int(data.get("expire") or 7200) - 60, 60)
         return self._token
 
+    async def bot_info(self) -> dict[str, Any]:
+        """读取机器人自身信息（open_id / 名称），用于群聊 @ 判定。"""
+        if not self.config.app_id:
+            return {}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            token = await self._tenant_token(client)
+            response = await client.get(
+                f"{self.config.base_url}/bot/v3/info",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            data = response.json()
+            if data.get("code") != 0:
+                raise RuntimeError(
+                    f"读取机器人信息失败：code={data.get('code')} msg={data.get('msg')}"
+                )
+            bot = data.get("bot") or {}
+            return {
+                "open_id": str(bot.get("open_id") or ""),
+                "app_name": str(bot.get("app_name") or ""),
+            }
+
     async def send_text(self, text: str) -> dict[str, Any]:
         """发送纯文本消息；返回值 {status, message}，status ∈ sent/skipped/failed。"""
         if not self.configured:

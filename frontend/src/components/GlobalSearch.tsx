@@ -1,72 +1,87 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
-import { pageRoutes } from '@/routes/route-config'
+import { ErrorState, LoadingState } from '@/components/States'
+import { apiClient } from '@/lib/api/api-client'
 
-export function GlobalSearch({
-  authEnabled,
-  capabilities,
-}: {
-  authEnabled: boolean
-  capabilities: string[]
-}) {
-  const [query, setQuery] = useState('')
-  const matches = useMemo(() => {
-    const value = query.trim().toLocaleLowerCase()
-    if (!value) return []
-    return pageRoutes
-      .filter(
-        (route) =>
-          !route.path.includes('/:') &&
-          (!route.authOnly || authEnabled) &&
-          (!route.capability || capabilities.includes(route.capability)),
-      )
-      .filter((route) =>
-        `${route.title} ${route.section} ${route.pageId}`
-          .toLocaleLowerCase()
-          .includes(value),
-      )
-      .slice(0, 8)
-  }, [query, authEnabled, capabilities])
+interface SearchItem {
+  type: string
+  id: string
+  title: string
+  subtitle: string
+  path: string
+}
+
+const typeLabels: Record<string, string> = {
+  agent: 'Agent',
+  task: '任务',
+  run: '运行',
+  approval: '审批',
+}
+
+export function GlobalSearch() {
+  const [term, setTerm] = useState('')
+  const query = useQuery({
+    queryKey: ['global-search', term],
+    queryFn: () =>
+      apiClient.get<{ items: SearchItem[]; count: number }>(
+        `/platform/v1/search?q=${encodeURIComponent(term)}&limit=30`,
+      ),
+    enabled: term.trim().length >= 2,
+    retry: false,
+  })
+  const items = query.data?.items ?? []
 
   return (
-    <section className="global-tool-page" aria-labelledby="global-search-title">
+    <section className="page-content">
       <div className="page-heading">
-        <p className="eyebrow">GLOBAL CAPABILITY</p>
-        <h1 id="global-search-title">全局搜索</h1>
-        <p>
-          当前提供已注册页面的本地入口检索。跨实体数据搜索 API 尚未在 #753
-          契约中证实。
-        </p>
+        <p className="eyebrow">搜索</p>
+        <h1>全局搜索</h1>
+        <p>按名称或 ID 检索 Agent、任务、运行与审批（至少 2 个字符）。</p>
       </div>
-      <label className="search-field">
-        <span>搜索页面与模块</span>
+      <label className="search-input">
+        <span aria-hidden="true">⌕</span>
         <input
+          value={term}
+          onChange={(event) => setTerm(event.target.value)}
+          placeholder="搜索 Agent、任务、Run、审批…"
+          aria-label="全局搜索关键词"
           autoFocus
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="输入页面名称、模块或 page_id"
         />
       </label>
-      {query.trim() ? (
-        matches.length ? (
-          <ul className="search-results">
-            {matches.map((route) => (
-              <li key={route.pageId}>
-                <Link to={route.path}>
-                  <strong>{route.title}</strong>
-                  <small>
-                    {route.section} · {route.pageId}
-                  </small>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">没有匹配的页面入口。</p>
-        )
-      ) : (
-        <p className="muted">输入关键词检索导航页面。</p>
+      {term.trim().length < 2 && (
+        <p className="detail-empty">输入至少 2 个字符开始搜索。</p>
+      )}
+      {term.trim().length >= 2 && query.isPending && <LoadingState />}
+      {query.isError && (
+        <ErrorState
+          description={
+            query.error instanceof Error ? query.error.message : '搜索失败'
+          }
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {!query.isPending && !query.isError && term.trim().length >= 2 && items.length === 0 && (
+        <p className="detail-empty">没有匹配结果。</p>
+      )}
+      {items.length > 0 && (
+        <ul className="search-results">
+          {items.map((item) => (
+            <li key={`${item.type}-${item.id}`}>
+              <Link className="search-result" to={item.path}>
+                <span className="search-result-type">
+                  {typeLabels[item.type] ?? item.type}
+                </span>
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.subtitle}</small>
+                </span>
+                <span aria-hidden="true">›</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   )

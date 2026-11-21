@@ -33,7 +33,7 @@ def test_policy_versions_are_immutable():
 def test_error_classification_is_conservative():
     assert classify_error(TransientRuntimeError()) is ErrorKind.TRANSIENT
     assert classify_error(TimeoutError()) is ErrorKind.TIMEOUT
-    assert classify_error(ValueError()) is ErrorKind.UNKNOWN
+    assert classify_error(ValueError()) is ErrorKind.VALIDATION
 
 
 @pytest.mark.asyncio

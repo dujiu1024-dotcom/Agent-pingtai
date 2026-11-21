@@ -281,7 +281,8 @@ class PromptExperimentPostgresRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_postgres_repository_rejects_non_finite_report_values(self):
         from agent_platform.observability.prompt_experiments import (
-            PostgresPromptExperimentRepository, PromptExperimentReport,
+            PostgresPromptExperimentRepository,
+            PromptExperimentReport,
         )
 
         bad = PromptExperimentReport(

@@ -55,6 +55,10 @@ class ConnectorProvider(Protocol):
 class ConnectorRepository(Protocol):
     async def create(self, connection: DataConnection, *, created_by: str) -> None: ...
     async def get(self, tenant_id: str, connection_id: str) -> DataConnection | None: ...
+    async def list(self, tenant_id: str) -> list[DataConnection]: ...
+    async def update_secret_ref(
+        self, *, tenant_id: str, connection_id: str, secret_ref: str,
+    ) -> bool: ...
     async def save_cursor(
         self, *, tenant_id: str, connection_id: str, expected_version: int,
         cursor: Mapping[str, Any] | None,
@@ -122,6 +126,23 @@ class InMemoryConnectorRepository:
         item = self.records.get((tenant_id, connection_id))
         return copy.deepcopy(item) if item else None
 
+    async def list(self, tenant_id: str) -> list[DataConnection]:
+        return [
+            copy.deepcopy(item) for (owner, _), item in sorted(self.records.items())
+            if owner == tenant_id
+        ]
+
+    async def update_secret_ref(
+        self, *, tenant_id: str, connection_id: str, secret_ref: str,
+    ) -> bool:
+        key = (tenant_id, connection_id)
+        item = self.records.get(key)
+        if item is None or item.status != "active":
+            return False
+        from dataclasses import replace
+        self.records[key] = replace(item, secret_ref=secret_ref, version=item.version + 1)
+        return True
+
     async def save_cursor(
         self, *, tenant_id: str, connection_id: str, expected_version: int,
         cursor: Mapping[str, Any] | None,
@@ -167,7 +188,7 @@ class DataConnectorService:
         self, *, repository: ConnectorRepository,
         providers: Mapping[str, ConnectorProvider], secrets: SecretResolver,
         sink: ConnectorSink, cleanup_queue: ConnectorCleanupQueue | None = None,
-        sync_queue: Any | None = None,
+        sync_queue: Any | None = None, secret_writer: Any | None = None,
     ) -> None:
         self.repository = repository
         self.providers = dict(providers)
@@ -175,6 +196,8 @@ class DataConnectorService:
         self.sink = sink
         self.cleanup_queue = cleanup_queue
         self.sync_queue = sync_queue
+        # 本地部署允许把凭据直接写入本地密钥库；写入后只返回引用。
+        self.secret_writer = secret_writer
 
     async def _resolve_provider_credential(
         self, connection: DataConnection, provider: ConnectorProvider,
@@ -186,6 +209,50 @@ class DataConnectorService:
                 tenant_id=connection.tenant_id, required_scopes=connection.scopes,
             )
         return await self.secrets.resolve(connection.secret_ref)
+
+    async def store_credential(
+        self, *, tenant_id: str, credential: str | Mapping[str, Any],
+    ) -> str:
+        if self.secret_writer is None:
+            raise ConnectorError("本地密钥库未配置，无法保存连接器凭据")
+        if isinstance(credential, Mapping):
+            return await self.secret_writer.store_json(
+                tenant_id=tenant_id, payload=credential, kind="connector",
+            )
+        if not isinstance(credential, str) or not credential.strip():
+            raise ConnectorError("凭据内容不能为空")
+        return await self.secret_writer.store(
+            tenant_id=tenant_id, secret=credential, kind="connector",
+        )
+
+    async def list_connections(self, *, tenant_id: str) -> list[DataConnection]:
+        return await self.repository.list(tenant_id)
+
+    async def rotate_credential(
+        self, *, tenant_id: str, connection_id: str,
+        credential: str | Mapping[str, Any],
+    ) -> str:
+        connection = await self.repository.get(tenant_id, connection_id)
+        if connection is None or connection.status != "active":
+            raise ConnectorError("connection is not active")
+        secret_ref = await self.store_credential(tenant_id=tenant_id, credential=credential)
+        if not await self.repository.update_secret_ref(
+            tenant_id=tenant_id, connection_id=connection_id, secret_ref=secret_ref,
+        ):
+            raise ConnectorError("connection is not active")
+        return secret_ref
+
+    async def sync_all_pages(
+        self, *, tenant_id: str, connection_id: str, max_pages: int = 20,
+    ) -> tuple[int, bool]:
+        """连续拉取直到没有下一页；返回 (写入条数, 是否仍有剩余)。"""
+        total = 0
+        for _ in range(max(1, max_pages)):
+            page = await self.sync_page(tenant_id=tenant_id, connection_id=connection_id)
+            total += len(page.items)
+            if not page.has_more:
+                return total, False
+        return total, True
 
     async def request_sync(self, *, tenant_id: str, connection_id: str) -> None:
         connection = await self.repository.get(tenant_id, connection_id)

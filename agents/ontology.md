@@ -1,9 +1,28 @@
-# FDE OPC 领域本体（Ontology）
+# FDE Agent 平台领域本体（Ontology）
 
-- 版本：v1.1
-- 更新：2026-11-11
+- 版本：v1.2
+- 更新：2026-11-20
 - 定位：所有 Agent 角色、数据模型、事件语义的集中式参照；代码层校验规则与提示词组装都以此为源
-- 引用：[公司宪法](../company/公司宪法.md)、[06 技术方案](../clients/002-FDE一人公司/06-技术方案.md)、[08 语义与记忆设计](../clients/002-FDE一人公司/08-语义与记忆设计.md)、[11 调度与财务层实现方案](../clients/002-FDE一人公司/11-调度与财务层实现方案.md)
+- 引用：[公司宪法](../company/公司宪法.md)、[06 技术方案](../clients/002-FDE一人公司/06-技术方案.md)
+
+---
+
+## 架构升级说明（v1.1 → v1.2）
+
+本项目经历了**两套 Agent 管理架构的迁移**，本文档与代码层以新架构为准：
+
+| | 老架构（OPC 一人公司蓝图） | 新架构（当前实装） |
+|---|---|---|
+| Agent 定义 | 硬编码在 `agents/<role>/ROLE.md` + `db.ROLE` 枚举 | 动态注册在 PostgreSQL `platform_registry_active` 表 |
+| 角色数量 | 11 个（幕僚长、审计、PM、规划师、秘书、教练、商机侦察、内容、财务、制作人） | 5 个（以 API `/api/platform/v1/registry/agent` 返回为准） |
+| 事件驱动 | 声明式「事件类型 → 角色」订阅模型 | 事件走 EventBus → Worker → 手动/人工 dispatch 给某个 agent |
+| 协作方式 | 黑板模型（共享 SQLite 状态表） | Agent 之间通过 `task_dispatch` 工具转派任务 |
+
+**单一事实源（SSOT）**：
+- Agent 角色清单与定义 → `platform_registry_active` 表（API `/api/platform/v1/registry/agent`）
+- 事件订阅配置 → 暂无自动订阅，当前事件驱动靠人工或 Worker 手动 dispatch
+
+**公司治理蓝图**（组织架构、宪法、理想角色分工）不在本文档维护，参见 `company/组织架构.md` 和 `company/公司宪法.md`。蓝图描述的是"理想组织形态"，Registry 描述的是"当前实装"，两者不一致不代表蓝图错了。
 
 ---
 
@@ -15,62 +34,36 @@
 |---|---|---|
 | FDE | Founder-Driven Execution，创始人驱动执行，一人公司模式 | 反例：多人协作的职能型公司 |
 | OPC | One-Person Company，一人公司 | 反例：有多个全职员工的初创团队 |
+| Agent（智能体） | Registry 中注册的可独立执行任务的角色实例，有 agent_id、name、description、instructions、tool_ids、skill_ids | 反例：硬编码在 ROLE.md 里但 Registry 不存在的角色定义 |
 | 项目（Project） | 客户签约或内部立项的、有明确目标和关闭条件的交付单元 | 反例："帮客户看看系统"——没有目标和关闭条件 |
 | 任务（Task） | 项目下可独立执行、有 owner 有截止、可验收的最小工作单元 | 反例："做一下客户的 AI 系统"——不可独立验收、无 owner |
-| 事件（Event） | 状态变化产生的信号，驱动 Agent 被唤醒 | 反例："每天早上 9 点我自己看看"——不是事件驱动 |
+| 事件（Event） | 状态变化产生的信号，由 EventBus 发布，Worker 可据此派活 | 反例："每天早上 9 点我自己看看"——不是事件驱动 |
 | 事实（Fact） | 有明确来源的陈述，可追溯到 S1-S4 | 反例："客户大概有 20 人"——无来源 |
-| 确认单 | 客户书面确认方案范围、验收指标的凭证，是规划师排期的唯一前置 | 反例："客户口头说可以，你先做着"——不是书面确认 |
-| 闸门（Gate） | 开工前的强制检查点，七项不齐全禁止写代码 | 反例："先写起来，需求边做边补" |
-| 审计（Audit） | 独立 Agent 对资料事实来源和红线的逐条核查 | 反例："反正没人会仔细看，过吧" |
-| 黑板（Blackboard） | 所有 Agent 共享的 SQLite 状态表集合，事件驱动协作的载体 | 反例：Agent A 发消息问 Agent B，B 回答后 A 再继续——对话式，不经过共享状态 |
-| 无人值守 | Agent 自动执行 L0/L1 级别任务，不触发人工确认 | 反例：发送客户报价邮件——L2 级别，必须人工确认 |
-| 事实台账 | 客户交付物附带的事实来源对照表 | 反例：交付文档里所有数字都没写出处 |
-| L0-L3 | 无人值守分级：L0 巡检 / L1 起草 / L2 对外 / L3 资金 | 反例：把 L2 的发送客户消息列为无人值守 |
-| 过期（Overdue） | 任务关闭日期已过但状态未关 | 反例：距离关闭日期还有 1 天——这是临期，不是过期 |
-| 阻塞（Blocked） | 任务有 owner 但无法推进，原因已登记 | 反例：owner 没分配——这是未认领，不是阻塞 |
 | 死信（Dead Letter） | Agent 调用连续失败的事件，入队不丢，等人工处理 | 反例：Agent 报错后静默丢弃事件 |
-| 身份（Identity） | 飞书凭据类型：bot（机器人 app）或 user（用户） | 反例：用 bot 凭据写 wiki 文档——bot 默认没有文档权限 |
+| 任务转派（dispatch） | Agent 通过 `task_dispatch` 工具把活派给 Registry 里的另一个 agent，等对方跑完把结果带回 | 反例：Agent A 发消息问 Agent B，B 回答后 A 再继续——对话式闲聊 |
+| Registry | PostgreSQL `platform_registry_*` 表集合，存放 Agent、Tool、Skill、Model 模板等运行时定义 | 反例：硬编码在 Python 文件里的 agent 列表 |
 | schema_version | 数据库表结构版本号，迁移脚本以此判断是否需要升级 | 反例：直接手动 `ALTER TABLE` 改结构，不记录版本 |
 
 ---
 
 ## 2. 实体定义（Entities）
 
-### 2.1 Agent 角色（11 个）
+### 2.1 Agent 角色（当前 Registry 实装 5 个）
 
-两层一共享 + 独立监督架构：
+**单一事实源**：`/api/platform/v1/registry/agent` 返回的 `platform_registry_active` 表。
 
-```
-          创始人
-           │
-    ┌──────┼──────┐
-    │      │      │
- 幕僚长  审计    (预留位)
-  │      │
-  ├─ 产品经理 PM
-  ├─ 规划师 Planner
-  ├─ 秘书 Secretary
-  ├─ 教练 Coach
-  ├─ 商机侦察 Scout
-  ├─ 内容 Content
-  ├─ HR
-  ├─ 财务 Finance
-  └─ 制作人 Producer
-```
+| agent_id | version | name | 定位 | 主要工具 |
+|---|---|---|---|---|
+| `finance` | v7 | 财务专员 | 收入/支出/账目/流水/记账/报表/预算管理 | task_dispatch、ledger_create、ledger_add_entry、ledger_query、ledger_report |
+| `hr` | v12 | HR | Agent 团队招聘负责人：招新/招聘/入职/角色分配/绩效；可直接创建/更新 Agent | registry_list_agents、registry_create_agent、registry_update_agent、task_dispatch |
+| `local-assistant` | v7 | 本地助手 | 老板的万能助理：能查账本、做报表、看团队、帮其他 agent 转派 | task_dispatch、ledger_create、ledger_query、ledger_report、registry_list_agents、registry_list_tools |
+| `ops` | v3 | 运维专员（服务器运维+记账） | 运维服务器 + 记账 | registry_list_agents、registry_list_tools、task_dispatch、ledger_create、ledger_add_entry、ledger_query |
+| `test-ops` | v5 | 系统运维负责人 | 系统监控、故障排查、报警处理、服务状态检查、环境维护 | task_dispatch |
 
-| 角色 | 定位 | 触发方式 | 独立直属 |
-|---|---|---|---|
-| Chief of Staff（幕僚长） | 关键事件判断与决策日志 | 事件驱动 | 创始人 |
-| Auditor（审计） | 独立监督，事实核查与红线检查 | 事件驱动 + 抽检 | **创始人，不受幕僚长管理** |
-| PM（产品经理） | 方案设计，拿到客户书面确认 | 项目签约 / 诊断完成 | 幕僚长 |
-| Planner（规划师） | WBS 拆解与排期 | **方案获得客户书面确认** | 幕僚长 |
-| Secretary（秘书） | 计划唯一入口，日程与提醒 | 任务创建 / 节点到达 / 逾期 | 幕僚长 |
-| Coach（教练） | 交付伴随，新工具新任务的指南与验收 | 教练事件触发 | 幕僚长 |
-| Scout（商机侦察） | 线索发现与初步筛选 | 线索源更新 | 幕僚长 |
-| Content（内容） | 案例沉淀、对外内容生产 | 阶段结束 / 复盘完成 | 幕僚长 |
-| HR（Agent 团队全权负责人） | **Agent 招聘/调整/提升**（新建/合并/下线/优化 ROLE.md/模型路由/触发事件）；传统人力为副业（外包协调、合同合规） | Agent 熔断 / 唤醒频率异常 / 业务线变更 / 季度盘点 / 合同到期 | 幕僚长 |
-| Finance（财务） | 接单审查、开票清单、回款跟踪、成本归集；A1 只起草 | `task_created`（kind=code）/ `invoice_overdue` | 幕僚长 |
-| Producer（制作人） | 目标 → 任务草案；不写库、不关任务 | 目标下达 | 幕僚长 |
+**漂移记录（2026-11-20 发现）**：
+
+1. ~~`ops` v2 和 `test-ops` v4 的 name 都叫"运维专员"，意图匹配时会产生歧义~~。**已治理（2026-11-20）**：ops → v3 改名"运维专员（服务器运维+记账）"，test-ops → v5 改名"系统运维负责人"。
+2. 老蓝图的 11 个角色（幕僚长、审计、PM、规划师、秘书、教练、商机侦察、内容、制作人）**均未在 Registry 注册**——这些是"理想组织形态"，当前未落地。蓝图未落地 ≠ 蓝图错了，两者分工在 §5.7 和 docs/registry.md §9.3 已如实标注。
 
 ### 2.2 核心实体
 
@@ -78,31 +71,20 @@
 |---|---|---|
 | Project | 交付单元 | 客户签约或内部立项，有目标、有关闭条件 |
 | Task | 最小工作单元 | 项目下可独立执行、有 owner、有截止、可验收 |
-| Event | 状态变化信号 | 驱动 Agent 被唤醒，有 dedup_key 防重 |
+| Event | 状态变化信号 | 由 EventBus 发布，Worker 可据此派活；有 dedup_key 防重 |
 | Fact | 有来源的陈述 | 可追溯到 S1-S4 |
-| Reminder | 提醒 | 事件引擎产出，按时段推送 |
-| Doc | 文档 | 本地路径 + 飞书 node_token 映射 |
-| AgentRun | Agent 运行记录 | 角色、任务、模型、token、产出路径 |
+| AgentRun | Agent 运行记录 | agent_id、任务、模型、token、产出路径 |
 | DeadLetter | 失败事件队列 | 连续失败的事件，不静默丢弃 |
-| Quote | 报价 | 金额、成本、毛利、付款条件、有效期；不计入 90h |
-| Contract | 合同 | 由报价转来，登记签署时间与付款条件 |
-| Invoice | 发票 | 开票号、金额、开票日、到期日、状态 |
-| Payment | 回款 | 对应发票的实际到账记录 |
-| Cost | 成本 | 按项目归集的人工与外部成本 |
-| Entity / Relation | 图谱占位 | 空表已建，T-0020 启用；ID 前缀见 2.3 |
-| Subscription | 事件订阅 | 事件类型 → 角色/动作，默认关闭 |
+| Agent | Registry 项 | agent_id、version、name、description、instructions、tool_ids、skill_ids |
 
 ### 2.3 实体 ID 规范
-
-图谱启用后所有实体统一前缀，避免与任务 ID 混淆：
 
 | 类型 | 前缀 | 示例 |
 |---|---|---|
 | 项目 | `proj:` | `proj:OPC-002` |
 | 任务 | `task:` | `task:T-0016` |
-| 角色 | `role:` | `role:finance` |
+| Agent | 无统一前缀 | 直接用 Registry 的 `agent_id`（如 `finance`、`hr`、`ops`、`test-ops`、`local-assistant`） |
 | 文档 | `doc:` | `doc:09-分项计划` |
-| 客户 | `client:` | `client:OPC` |
 | 事实 | `fact:` | `fact:F-0001` |
 
 ---
@@ -134,74 +116,40 @@
 | 值 | 允许 | 禁止 |
 |---|---|---|
 | `A0` 只读 | 读取全部资料 | 任何写入 |
-| `A1` 起草 | 写草稿、建日程、写提醒、写审计报告 | 对外发送、承诺 |
-| `A2` 对外 | 发送需人确认的对外消息、冻结文档 | 价格/工期/效果承诺 |
+| `A1` 起草 | 写草稿、建日程、写提醒 | 对外发送、承诺 |
+| `A2` 对外 | 发送需人确认的对外消息 | 价格/工期/效果承诺 |
 | `A3` 承诺 | — | **所有 Agent 都没有 A3**，仅创始人执行 |
 
-### 3.4 密级（Classification）
+### 3.4 事件类型（Event Type）
 
-| 值 | 含义 | 存储要求 |
+**说明**：以下事件类型保留自老蓝图，但**唤醒角色列标注的是当前实装状态**——绝大多数事件没有自动订阅机制，需人工或 Worker 手动 dispatch 给合适的 agent。
+
+| 事件类型 | 触发条件 | 当前唤醒方式 |
 |---|---|---|
-| `L1` 公开 | 对外可展示 | 任意位置 |
-| `L2` 内部 | 内部共享不外发 | 飞书普通节点 |
-| `L3` 敏感 | 限项目组可见 | 00/09 受限资料，标记责任人 |
-| `L4` 机密 | 仅限创始人可见 | 00/09 受限资料 + 额外权限，正文不同步 |
-
-### 3.5 无人值守分级
-
-| 级别 | 范围 | 可否无人值守 |
-|---|---|---|
-| L0 巡检 | tick 扫描、生成提醒、跑评测、检查同步 | ✅ 可以 |
-| L1 起草 | 简报、诊断初稿、WBS 草案、周报、内容草稿 | ✅ 可以，产出进待审队列 |
-| L2 对外 | 发送客户、报价、签约、关闭任务、发布内容 | ❌ 必须人工确认 |
-| L3 资金 | 收付款、合同变更 | ❌ 仅创始人执行 |
-
-### 3.6 事件类型（Event Type）
-
-| 事件类型 | 触发条件 | 唤醒角色 |
-|---|---|---|
-| `project_created` | 项目立项 | 幕僚长 |
-| `project_confirmed` | PM 方案获客户书面确认 | 规划师 |
-| `task_created` | 新任务入库 | 秘书（校验五要素） |
-| `task_due_soon` | 任务距开始 ≤1 天 / 距截止 ≤2 天 | 秘书 |
-| `task_overdue` | 任务已过截止日 | 秘书、幕僚长（超 3 天） |
-| `task_blocked` | 任务标记阻塞 | 幕僚长 |
-| `task_closed` | 任务关闭（done） | 秘书（验证证据）、审计 |
-| `task_canceled` | 任务作废（canceled，需写明原因） | 秘书、审计 |
-| `task_reopened` | 已完成/已作废任务重开（需写明原因） | 秘书、审计 |
-| `tasks_created` | 规划师产出任务清单 | 秘书（排日程）、教练（新任务指南） |
-| `milestone_hit` | 里程碑到达 | 幕僚长、审计 |
-| `milestone_deviation` | 里程碑偏离 | 幕僚长 |
-| `gate_blocked` | 开工闸门未过 | PM / 规划师（停手） |
-| `gate_confirmed` | 开工/商务闸门通过 | 规划师（排期草案） |
-| `gate_revoked` | 闸门被撤销 | PM / 规划师（停手） |
+| `project_created` | 项目立项 | 人工/控制台处理 |
+| `task_created` | 新任务入库 | 人工/控制台处理 |
+| `task_due_soon` | 任务距开始 ≤1 天 / 距截止 ≤2 天 | 定时巡检告警 |
+| `task_overdue` | 任务已过截止日 | 定时巡检告警 |
+| `task_blocked` | 任务标记阻塞 | 人工/控制台处理 |
+| `task_closed` | 任务关闭 | 无自动 agent 订阅 |
 | `agent_run` | Agent 调用完成 | 调度层（推进下一个 ready） |
-| `audit_flag` | 审计发现无来源信息 | 审计（复核） |
-| `check` | 定时巡检 | 秘书（按巡检结果分派） |
-| `sync_conflict` | 飞书同步冲突 | 秘书 / 人工 |
-| `doc_ready_review` | 文档对外发布前 | 审计 |
-| `contract_signed` | 合同签署 | PM / 财务 |
-| `invoice_overdue` | 发票到期未回款 | 财务（催款） |
-| `dependency_overdue` | 依赖清单缺料逾期未提供 | 秘书（催办）/ 创始人 |
-| `agent_circuit_break` | Agent 连续失败 3 次触发熔断 | HR（诊断 prompt/模型/边界） |
-| `agent_low_output` | Agent 被唤醒 ≥10 次/周但有效产出 < 3 条 | HR（诊断职责重叠/触发过宽） |
-| `agent_role_overlap` | 巡检发现两个 Agent ROLE.md 职责交叉 | HR（合并或划清边界） |
-| `agent_subscribe_flood` | 同一事件类型被 ≥3 个角色重复订阅 | HR（裁掉重复订阅） |
-| `quarterly_review` | 自然季度结束，触发全量盘点 | HR（能力矩阵 + 所有 Agent 体检）、幕僚长、审计 |
+| `invoice_overdue` | 发票到期未回款 | 人工 dispatch → finance |
+| `agent_circuit_break` | Agent 连续失败 3 次触发熔断 | **当前无自动订阅**（老蓝图写"HR"，但 HR 未接线自动订阅；需人工 dispatch → hr） |
+| `agent_low_output` | Agent 被唤醒 ≥10 次/周但有效产出 < 3 条 | **当前无自动订阅** |
+| `agent_role_overlap` | 巡检发现两个 Agent 职责交叉 | **当前无自动订阅**（已解决案例：ops v2 和 test-ops v4 同名运维专员，已治理） |
+| `agent_subscribe_flood` | 同一事件类型被 ≥3 个角色重复订阅 | **当前无自动订阅** |
+| `quarterly_review` | 自然季度结束，触发全量盘点 | **当前无自动订阅** |
 
-### 3.7 其他常量
+> 老蓝图的 23 类事件已精简为以上高频核心事件。如需完整清单见 v1.1 归档。
+
+### 3.5 其他常量
 
 | 常量 | 值 | 说明 |
 |---|---|---|
-| 时段窗口 | `09:00 – 23:00` | 窗口外的提醒事件只入队不推送 |
-| 提醒频率 | 同一任务每天 ≤1 次 | 防骚扰 |
-| 升级阈值 | 逾期 ≥3 天无更新 | 秘书升级幕僚长 |
-| 重复提醒阈值 | 同任务当日推送 ≥3 次 | 生成升级事件给幕僚长 |
-| 压缩阈值 | 每 5 轮或超 8k tokens | 工作记忆压缩 |
-| 嵌入阈值 | cos ≥ 0.3 | 向量检索召回阈值，上线后可调整 |
-| 缓冲比例 | 20% | 规划师排期默认缓冲 |
-| Agent 调用超时 | 180 秒 | 超时记失败 |
-| 熔断阈值 | 连续失败 3 次 | 暂停该角色并告警 |
+| Agent 调用超时 | 180 秒 | 超时记失败，进 dead_letter |
+| 熔断阈值 | 连续失败 3 次 | 暂停该 agent 并告警 |
+| 模型 | `AGENCY_MODEL`（环境变量） | 所有 agent 通用，可按 Registry 单独配置 `model_template_id` |
+| registry_list_agents 缓存 | 120 秒 | listener 侧意图匹配时缓存 agent 清单，避免每次请求 API |
 
 ---
 
@@ -210,27 +158,18 @@
 ```
 Project ──has──▶ Task ──generates──▶ Event
    │                  │
-   │ belongs_to       │ subscribed_by
+   │ belongs_to       │ dispatched_to
    ▼                  ▼
- Owner(Role)       EventType ──triggers──▶ Role
-                                              │
-                                              │ writes_to
-                                              ▼
-                                          Fact ──has_source──▶ SourceLevel(S1-S4)
+ Owner(agent_id)   Event ──dispatch──▶ Agent(agent_id)
 ```
-
-### 关系定义
 
 | 关系 | 含义 | 约束 |
 |---|---|---|
 | `Project has Task` | 项目包含任务 | Task 必须属于且仅属于一个 Project |
-| `Task has Owner` | 任务由某角色负责 | Owner 必须是 11 个角色之一，或"创始人" |
+| `Task has Owner` | 任务由某 agent 负责 | Owner 必须是 Registry 中存在的 `agent_id`，或"创始人"（human） |
 | `Task generates Event` | 任务状态变化产生事件 | dedup_key 唯一，同一任务同一日期不重复 |
-| `Role subscribes EventType` | 角色订阅某类事件 | 声明式配置，不硬编码在流程里 |
+| `Agent dispatches Agent` | Agent 通过 `task_dispatch` 转派任务 | 目标 agent 必须在 Registry 中注册 |
 | `Fact has SourceLevel` | 事实有来源等级 | 非法值拒绝写入 |
-| `Fact supersedes Fact` | 新事实覆盖旧事实 | 旧事实标记 superseded，不删除 |
-| `Doc belongs_to NodeToken` | 文档属于飞书知识库某节点 | node_token 必须在知识库中存在 |
-| `AgentRun produces Output` | Agent 运行产生产出物 | 产出物必须有本地路径，登记到 docs 表 |
 
 ---
 
@@ -243,19 +182,16 @@ Project ──has──▶ Task ──generates──▶ Event
 | 约束 | 规则 |
 |---|---|
 | 状态枚举 | `tasks.status` 仅允许 `todo/doing/blocked/review/done/closed` |
-| 进入 doing | 必须同时有：动作描述、owner、截止日期、完成标准、证据要求（五要素） |
 | 进入 closed | 必须有 evidence 字段非空，否则拒绝 |
 | blocked 退出 | 必须先清空 blocked_reason，再转回 doing |
-| code 类任务 | 创建前 `gate check` 必须通过，否则拒绝 |
 
-### 5.2 闸门（Gate）约束
+### 5.2 Agent 身份约束
 
-| 闸门 | 规则 |
+| 约束 | 规则 |
 |---|---|
-| 开工七项 | 目标、范围、验收标准、不做什么、技术边界、时间、确认人——缺一项不写正式代码 |
-| 确认单前置 | PM 的方案确认单 → 规划师排期；无确认单禁止排期 |
-| 审计放行 | 对外文档必须审计通过，否则禁止推送飞书 |
-| 口头不算 | 口头"你先做着"不算确认，必须有书面记录 |
+| Owner 合法性 | 任务 Owner 必须在 Registry 中存在，或为"创始人" |
+| 自派禁止 | Agent 不得用 `task_dispatch` 把活派给自己 |
+| 编造禁止 | Agent 不得编造工具执行结果、账本数据、文件路径 |
 
 ### 5.3 事实约束
 
@@ -263,44 +199,42 @@ Project ──has──▶ Task ──generates──▶ Event
 |---|---|
 | S4 标注 | S4 事实必须显式标注"假设，待核实"，否则拒绝入库 |
 | 来源可追溯 | 写入 facts 表必须有 source_ref（来源引用），无引用拒绝 |
-| 数字必查 | 交付物中的数字必须有 S1-S3 来源，无来源即审计违规 |
 | 冲突处理 | 新事实覆盖旧事实，旧事实标 `superseded`，不删除 |
-| 有效期 | 事实带有效期，过期自动标"待核实" |
 
-### 5.4 审计独立性约束
-
-| 约束 | 规则 |
-|---|---|
-| 直属创始人 | 审计角色不受幕僚长管理，审计结论只对创始人负责 |
-| 自审禁止 | 审计不得审计自己起草的文档，冲突时升级创始人 |
-| 绕过禁止 | 任何人不得以进度为由要求审计放行 |
-| 放行权 | 审计有权冻结文档、暂停对外发布（需报创始人） |
-
-### 5.5 时间与时窗约束
+### 5.4 时间与时窗约束
 
 | 约束 | 规则 |
 |---|---|
 | 时区 | 存储统一 ISO8601 UTC，展示层转本地时区 |
-| 推送窗口 | `09:00 – 23:00` 之外的事件只入队不推送 |
 | 提醒幂等 | `dedup_key = type + task_id + date`，重复触发结果不变 |
-| 写入时效 | Agent 获取新可复用信息，不晚于当前任务关闭前写入飞书，不得跨天 |
 
-### 5.6 ID 规则
+### 5.5 ID 规则
 
 | 类型 | 格式 | 示例 |
 |---|---|---|
 | 项目 | `OPC-` + 定长序号 | `OPC-001`、`OPC-002` |
 | 任务 | `T-` + 定长序号 | `T-0001`、`T-0042` |
 | 事实 | `F-` + 定长序号 | `F-0001` |
-| 事件 | `E-` + `<type>-` + `<id>` | `E-task_due_soon-T-0001` |
+| Agent | Registry `agent_id` | `finance`、`hr`、`ops`、`test-ops`、`local-assistant` |
 | 不允许 | ID 不复用，删除后永久废弃 | — |
 
-### 5.7 内容指纹
+### 5.6 内容指纹
 
 所有文本入库必须带 `content_hash`（SHA-256 前 16 位），用于：
 - 去重查重
 - 同步比对（推送飞书前比对，未变更不重复写）
 - 嵌入版本管理（`content_hash` 变化触发重嵌）
+
+### 5.7 老蓝图约束（当前 Registry 架构尚未接线）
+
+以下约束来自老蓝图（v1.1），描述的是"理想形态"。当前 Registry 架构没有对应的自动订阅机制，这些约束需要未来在事件驱动层落地后才生效：
+
+| 约束 | 蓝图描述 |
+|---|---|
+| 审计独立 | 审计角色直属创始人，不受业务角色管理；有权冻结文档、暂停发布 |
+| 闸门前置 | PM 方案确认单 → 规划师排期；无确认单禁止排期 |
+| 审计放行 | 对外文档必须审计通过，否则禁止推送 |
+| 确认单前置 | 客户书面确认是所有项目的起点 |
 
 ---
 
@@ -308,44 +242,41 @@ Project ──has──▶ Task ──generates──▶ Event
 
 ### 6.1 Agent 协作模型
 
-**黑板模型，不做直接对话。**
+**Registry + task_dispatch 模型。**
 
-所有 Agent 读写同一张 SQLite 看板（`tasks`、`events`、`facts`、`docs`），由声明式的「事件类型 → 角色」规则决定谁被唤醒。协作通道只有三条：
+所有 Agent 从 Registry 动态加载定义（instructions、tool_ids、skill_ids）。Agent 之间不直接对话，而是通过 `task_dispatch` 工具转派任务：
 
-| 通道 | 载体 | 说明 |
-|---|---|---|
-| 状态 | `tasks` 表 | 谁负责、到哪一步、卡在谁那里 |
-| 事件 | `events` 表 | 状态变化产生事件，订阅该事件的角色被唤醒 |
-| 产物 | 文件 + `docs` 表 | 交接物是文档，不是聊天记录 |
+```
+Agent A 接活
+  → registry_list_agents 查 Registry 看谁能做
+  → task_dispatch(agent_id="finance", prompt="...") 派给 B
+  → 等待 B 执行完成（最长 wait_seconds）
+  → B 把结果带回给 A
+  → A 整理回复
+```
 
-**缺信息时**：Agent 不允许去问另一个 Agent，只能产出"待补信息"事件，进创始人待办队列。
+飞书侧意图匹配（`listener.py`）会根据用户消息自动选择最合适的 agent（显式指定 > 关键词匹配 > bigram 描述相似度 > 默认）。
 
 ### 6.2 典型事件链
 
 ```
-PM 产出确认单
-  → Project.status = confirmed
-  → event: project_confirmed
-  → 唤醒 Planner
-  → Planner 产出 WBS 任务清单
-  → 新增 tasks
-  → event: tasks_created
-  → 唤醒 Secretary（排日程）、Coach（新任务指南）
+用户飞书发消息："帮我建个账本"
+  → listener.py 意图匹配（关键词"账本"命中 finance）
+  → finance 被唤起
+  → finance 调用 ledger_create 工具建账本
+  → 返回结果给用户
 ```
 
 ```
-任务到关闭日
-  → event: task_closed
-  → Secretary 验证 evidence
-    → 有 evidence：task.status = closed
-    → 无 evidence：退回 review，写"无关闭证据"
-  → Auditor 审计交付物
+ops v3 和 test-ops v5 职责有重叠（虽然名字已区分）
+  → hr 巡检发现 agent_role_overlap 事件
+  → hr 通过 registry_update_agent 合并或明确区分两个 agent 的职责
 ```
 
-### 6.3 事件生命周期
+### 6.3 EventBus 生命周期
 
 ```
-created → dedup 检查 → 时段过滤 → dispatched → delivered
+created → dedup 检查 → Worker 消费 → dispatched → delivered
                                         ↓
                                   dead_letter（连续失败 3 次）
 ```
@@ -353,7 +284,7 @@ created → dedup 检查 → 时段过滤 → dispatched → delivered
 | 阶段 | 操作 | 幂等 |
 |---|---|---|
 | `created` | 写入 events 表，`dedup_key` 唯一约束 | ✅ |
-| `dispatched` | 唤醒订阅角色，单次调用 ≤180 秒 | ❌（但超时不挂死） |
+| `dispatched` | Worker 派活给某个 agent，单次调用 ≤180 秒 | ❌（但超时不挂死） |
 | `delivered` | 成功后标记 `delivered_at` | ✅ |
 | `dead_letter` | 连续 3 次失败，入队等人工处理 | ✅ |
 
@@ -361,46 +292,21 @@ created → dedup 检查 → 时段过滤 → dispatched → delivered
 
 ## 7. 工作记忆结构
 
-Agent 每轮调用的上下文按以下固定顺序组装，**不做字符串拼接**：
+Agent 每轮调用的上下文按以下固定顺序组装（由 Registry 的 `instructions` + 注入片段合成）：
 
 | 顺序 | 内容 | 预算 | 可否裁剪 |
 |---|---|---|---|
-| 1 | 目标 + 约束 | 必带 | ❌ 永不裁剪 |
-| 2 | 未决问题（带责任人） | 必带 | ❌ 永不裁剪 |
-| 3 | 最近两轮产物摘要 | 必带 | ✅ 超预算时先减 |
-| 4 | 历史 digest（压缩后） | 必带 | ✅ 超预算时再压 |
-| 5 | 相关事实与案例（向量检索注入） | ≤8 条 | ✅ 阈值 0.3，低相关直接不注入 |
-
-总预算：8k tokens。超限先压 digest，再减产物，目标与未决问题永不裁剪。
+| 1 | 系统指令（Registry `instructions` 字段） | 必带 | ❌ 永不裁剪 |
+| 2 | 对话历史（最近 N 轮） | ≤16k tokens | ✅ 超预算时先压 |
+| 3 | 任务上下文（如果有 task_id） | 必带 | ❌ |
+| 4 | 相关事实与案例（向量检索注入） | ≤8 条 | ✅ 阈值 0.3，低相关直接不注入 |
 
 ---
 
-## 8. 模型注册表
-
-### 8.1 角色与模型路由
-
-| 配置 | 值 | 说明 |
-|---|---|---|
-| 默认模型 | `AGENCY_MODEL`（环境变量，当前 deepseek-v4-flash） | 所有角色通用，可按角色覆盖 |
-| 推理超时 | 180 秒 | 超时记失败，进 dead_letter |
-| 重试 | 429 退避重试 3 次 | 其余错误不重试 |
-| 成本控制 | 记录 tokens，单日超阈值告警 | 阈值待配置 |
-
-### 8.2 嵌入模型注册表
-
-| 字段 | 值 | 说明 |
-|---|---|---|
-| model | `bge-m3` | P0 默认 |
-| dim | 1024 | 输出维度 |
-| normalize | true | 已 L2 归一化，cos = 点积 |
-| 来源 | 本机 Ollama 0.32.5 `/api/embed` | 零成本、不出网 |
-| 兜底 | hash-tfidf（纯 Python） | 嵌入服务不可用时降级，语义能力弱但链路可跑 |
-
----
-
-## 9. 修订规则
+## 8. 修订规则
 
 1. 本文件修订须创始人书面批准。
 2. 版本号递增，更新日期同步。
-3. 修订后，所有 Agent 的 ROLE.md 中涉及对应实体/约束的部分须同步更新（手工或脚本）。
-4. 代码层引用枚举、常量、约束时，以本文件为准，禁止在代码中硬编码与本文件矛盾的字面值。
+3. Agent 角色表以 `platform_registry_active` 表为 SSOT，任何新增/删除/改名 agent 后须同步更新 §2.1。
+4. 代码层引用 agent_id 时，禁止硬编码与 Registry 不一致的字面值——可用 `registry_list_agents` 查询或从 SSOT 动态加载。
+5. 老蓝图约束（§5.7）在事件驱动层落地后须升级为硬约束。

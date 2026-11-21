@@ -68,13 +68,17 @@ EVENT_TYPE = (
     "agent_run", "audit_flag", "check", "sync_conflict",
     "doc_ready_review", "contract_signed", "invoice_overdue",
     "dependency_overdue",
+    # HR 专属（T-0032 / 2026-11-19）
+    "agent_circuit_break", "agent_low_output",
+    "agent_role_overlap", "agent_subscribe_flood",
+    "quarterly_review",
 )
 SYNC_STATUS = ("pending", "synced", "sync_lost", "conflict")
 
 # 角色注册表：与 agents/<role>/ROLE.md 一一对应，新增角色只需加目录 + 在此登记
 ROLE = (
     "chief-of-staff", "auditor", "pm", "planner", "secretary",
-    "coach", "scout", "content", "hr", "finance", "producer",
+    "coach", "scout", "content", "finance", "producer",
 )
 TASK_KIND = ("general", "code", "debt")
 GATE_TYPE = ("start", "finance")
@@ -716,6 +720,45 @@ MIGRATIONS = [
         """,
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_experiences_task ON experiences(task_id)",
         "CREATE INDEX IF NOT EXISTS idx_experiences_project ON experiences(project_id, id)",
+    ]),
+    (25, "HR 事件类型 + 订阅注册（T-0032）", [
+        # events / subscriptions 的 CHECK 约束引用 EVENT_TYPE；新增事件类型必须重建表。
+        f"""
+        CREATE TABLE events_v25 (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            type        TEXT NOT NULL CHECK (type IN {_in(EVENT_TYPE)}),
+            task_id     TEXT REFERENCES tasks(id),
+            payload     TEXT NOT NULL DEFAULT '{{}}',
+            dedup_key   TEXT NOT NULL UNIQUE,
+            created_at  TEXT NOT NULL,
+            delivered_at TEXT
+        )
+        """,
+        """
+        INSERT INTO events_v25(id, type, task_id, payload, dedup_key, created_at, delivered_at)
+        SELECT id, type, task_id, payload, dedup_key, created_at, delivered_at FROM events
+        """,
+        "DROP TABLE events",
+        "ALTER TABLE events_v25 RENAME TO events",
+        "CREATE INDEX idx_events_pending ON events(delivered_at, created_at)",
+        # subscriptions 同样重建以带上新事件类型
+        f"""
+        CREATE TABLE subscriptions_v25 (
+            event_type TEXT NOT NULL CHECK (event_type IN {_in(EVENT_TYPE)}),
+            target     TEXT NOT NULL,
+            action     TEXT NOT NULL,
+            enabled    INTEGER NOT NULL DEFAULT 0,
+            budget     INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (event_type, target, action)
+        )
+        """,
+        """
+        INSERT INTO subscriptions_v25(event_type, target, action, enabled, budget, created_at)
+        SELECT event_type, target, action, enabled, budget, created_at FROM subscriptions
+        """,
+        "DROP TABLE subscriptions",
+        "ALTER TABLE subscriptions_v25 RENAME TO subscriptions",
     ]),
 ]
 

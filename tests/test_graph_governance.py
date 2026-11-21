@@ -5,12 +5,12 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from agent_platform.graph.governance import (
+    GovernedGraphEntity,
+    GovernedGraphRelation,
     GraphEntityStatus,
     GraphGovernanceConflict,
     GraphGovernanceService,
     GraphInvalidationWorker,
-    GovernedGraphEntity,
-    GovernedGraphRelation,
     InMemoryGraphGovernanceRepository,
 )
 from agent_platform.graph.schema import default_graph_schema

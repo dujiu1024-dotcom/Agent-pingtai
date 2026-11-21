@@ -131,6 +131,35 @@ def create_blackboard_router(
         entries = await repository.list_entries(scope=scope, scope_id=scope_id, kinds=kind_values, limit=limit)
         return {"items": [serialize(entry) for entry in entries]}
 
+    @router.get("/entries/all")
+    async def list_all_entries(
+        request: Request,
+        scope: Scope | None = None,
+        scope_id: str | None = None,
+        kinds: str = "",
+        limit: int = 100,
+    ):
+        """列出当前 tenant 下的全部黑板条目，可按 scope/scope_id 可选过滤。"""
+        if not 1 <= limit <= 500:
+            raise HTTPException(400, "limit must be 1..500")
+        principal = await resolve_principal(request)
+        repository = await repository_for(principal)
+        kind_values = [item.strip() for item in kinds.split(",") if item.strip()]
+        allowed = {item.value for item in EntryKind}
+        if any(item not in allowed for item in kind_values):
+            raise HTTPException(400, "unknown Blackboard entry kind")
+        if scope is not None:
+            authorized_scope = scope_id or ""
+            if not await scope_is_authorized(principal, scope, authorized_scope, "read"):
+                raise HTTPException(403, "Blackboard scope access denied")
+        entries = await repository.list_all(
+            scope=scope,
+            scope_id=scope_id.strip() if scope_id and scope_id.strip() else None,
+            kinds=kind_values,
+            limit=limit,
+        )
+        return {"items": [serialize(entry) for entry in entries]}
+
     @router.post("/entries", status_code=201)
     async def propose_entry(request: Request):
         principal = await resolve_principal(request)

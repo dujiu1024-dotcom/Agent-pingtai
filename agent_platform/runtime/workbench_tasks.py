@@ -39,6 +39,14 @@ def _json_value(value: Any) -> Any:
 
 
 def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
+    started = row.get("started_at")
+    finished = row.get("finished_at")
+    duration_ms: int | None = None
+    if started and finished:
+        try:
+            duration_ms = int((finished - started).total_seconds() * 1000)
+        except Exception:
+            duration_ms = None
     return {
         "task_id": str(row["task_id"]),
         "run_id": str(row["run_id"]),
@@ -51,16 +59,18 @@ def _task_view(row: Mapping[str, Any]) -> dict[str, Any]:
         "status": row["status"],
         "priority": row.get("priority", 100),
         "retry_of_run_id": str(row["retry_of_run_id"]) if row.get("retry_of_run_id") else None,
+        "created_by": row.get("created_by"),
         "input": _json_value(row.get("input") or {}),
         "output": _json_value(row.get("output")),
         "usage": _json_value(row.get("usage") or {}),
         "trace_id": row.get("trace_id"),
+        "last_error": row.get("last_error"),
+        "duration_ms": duration_ms,
         "created_at": _json_value(row.get("created_at")),
         "updated_at": _json_value(row.get("updated_at")),
-        "started_at": _json_value(row.get("started_at")),
-        "finished_at": _json_value(row.get("finished_at")),
+        "started_at": _json_value(started),
+        "finished_at": _json_value(finished),
         "checkpoint_ref": row.get("checkpoint_ref"),
-        "last_error": row.get("last_error"),
         "registry_snapshot_digest": row.get("registry_snapshot_digest"),
         "dispatch_ready": bool(row.get("dispatch_ready", False)),
     }
@@ -178,6 +188,24 @@ class RegistryBackedTaskCenterService:
                 for item_id in skill_ids
             ]
         )
+        # 轻量 skill 自动展开其 tool_ids（本地部署模式下 skill ≈ tool 别名）
+        extra_tool_ids: list[str] = []
+        for skill in skills:
+            if skill is None:
+                continue
+            sdef = getattr(skill, "definition", None) or {}
+            if isinstance(sdef, dict) and sdef.get("mode") == "lightweight":
+                for tid in sdef.get("tool_ids", []):
+                    if tid not in tool_ids and tid not in extra_tool_ids:
+                        extra_tool_ids.append(tid)
+        if extra_tool_ids:
+            extra_tools = tuple(
+                await self.registry.resolve_active(
+                    tenant_id=self.tenant_id, kind="tool", item_id=item_id,
+                )
+                for item_id in extra_tool_ids
+            )
+            tools = tools + tuple(t for t in extra_tools if t is not None)
         workflow = None
         if workflow_id:
             workflow = await self.registry.resolve_active(
@@ -352,6 +380,12 @@ class RegistryBackedTaskCenterService:
         )
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
+        # 兜底：调用方没传 idempotency_key 时，用请求内容的 SHA256 自动生成。
+        # 这样网络重试、前端双击、飞书重投同一内容的重复提交都会被拦住。
+        # 加 "auto:" 前缀区分手动传的键，便于后续审计。
+        if idempotency_key is None:
+            idempotency_key = f"auto:{digest}"
+
         if idempotency_key is not None:
             existing = await self.run_store.get_task_by_idempotency(
                 tenant_id, actor_id, idempotency_key,
@@ -480,7 +514,7 @@ class RegistryBackedTaskCenterService:
         ):
             raise WorkbenchTaskError("idempotency_key must contain 1 to 150 characters")
         source = await self.run_store.get_task_record(
-            tenant_id, task_id, actor_id=actor_id,
+            tenant_id, task_id,
         )
         if source is None:
             return None
@@ -614,6 +648,8 @@ class RegistryLangGraphExecutorResolver:
         graph_factory: Callable[..., Any],
         run_context_resolver: Callable[[str], Any] | None = None,
         event_broker_resolver: Callable[[str], Any] | None = None,
+        trace_service_resolver: Callable[[str], Any] | None = None,
+        session_repository_resolver: Callable[[str], Any] | None = None,
     ) -> None:
         self.snapshots = snapshots
         self.lifecycle_resolver = lifecycle_resolver
@@ -621,6 +657,8 @@ class RegistryLangGraphExecutorResolver:
         self.graph_factory = graph_factory
         self.run_context_resolver = run_context_resolver
         self.event_broker_resolver = event_broker_resolver
+        self.trace_service_resolver = trace_service_resolver
+        self.session_repository_resolver = session_repository_resolver
 
     async def _resolve(self, callback: Callable[..., Any], *args: Any) -> Any:
         value = callback(*args)
@@ -675,12 +713,20 @@ class RegistryLangGraphExecutorResolver:
             item for item in snapshot.entries
             if item.get("kind") == "model_provider"
         ]
-        if (
-            len(providers) != 1
-            or providers[0].get("item_id") != provider_id
-            or providers[0].get("version") != provider_version
-        ):
-            raise ValueError("Run snapshot model provider does not match the pinned template")
+        # Primary provider must be present and version-matched in the snapshot.
+        # Additional fallback providers (from provider_fallbacks) are allowed
+        # — the snapshot integrity check only cares that the primary is there.
+        primary_provider = next(
+            (p for p in providers
+             if p.get("item_id") == provider_id and p.get("version") == provider_version),
+            None,
+        )
+        if primary_provider is None:
+            raise ValueError(
+                "Run snapshot model provider does not match the pinned template: "
+                f"expected {provider_id}@{provider_version}, got "
+                + ", ".join(f"{p.get('item_id')}@{p.get('version')}" for p in providers)
+            )
         snapshot_tools = {
             item.get("item_id") for item in snapshot.entries
             if item.get("kind") == "tool"
@@ -723,6 +769,16 @@ class RegistryLangGraphExecutorResolver:
         if self.event_broker_resolver is not None:
             event_broker = await self._resolve(self.event_broker_resolver, tenant_id)
 
+        trace_service = None
+        if self.trace_service_resolver is not None:
+            trace_service = await self._resolve(self.trace_service_resolver, tenant_id)
+
+        session_repository = None
+        if self.session_repository_resolver is not None:
+            session_repository = await self._resolve(
+                self.session_repository_resolver, tenant_id,
+            )
+
         def build_executor(compiled_graph: Any) -> LangGraphRunExecutor:
             return LangGraphRunExecutor(
                 graph=compiled_graph, lifecycle=lifecycle, worker_id=worker_id,
@@ -732,6 +788,8 @@ class RegistryLangGraphExecutorResolver:
                 required_tools=tuple(tool_ids),
                 run_context_service=run_context_service,
                 event_broker=event_broker,
+                trace_service=trace_service,
+                session_repository=session_repository,
             )
 
         if callable(getattr(graph, "__aenter__", None)) and callable(
@@ -755,6 +813,7 @@ class RunExecutionWorker:
         concurrency_limiter: Any,
         worker_pool_scope_id: str,
         queue_scope_resolver: Callable[[Mapping[str, Any]], str],
+        run_context_resolver: Callable[[str], Any] | None = None,
     ) -> None:
         if not worker_id.strip() or poll_interval <= 0:
             raise ValueError("worker_id and positive poll_interval are required")
@@ -776,6 +835,7 @@ class RunExecutionWorker:
         self.worker_pool_scope_id = worker_pool_scope_id
         self.queue_scope_resolver = queue_scope_resolver
         self.lease_seconds = lease_seconds
+        self.run_context_resolver = run_context_resolver
         self._stop = asyncio.Event()
         self._task: asyncio.Task[Any] | None = None
 
@@ -803,16 +863,56 @@ class RunExecutionWorker:
             raise ValueError("resolved executor must use the claiming worker_id")
         if resolved.lifecycle.store is not self.run_store:
             raise ValueError("resolved executor must share the worker RunStateStore")
+        # 防御降级：executor 没配置 session 持久化但 record 有 session_id 时跳过绑定。
+        if session_context is not None and getattr(resolved, "session_persistence", None) is None:
+            session_context = None
+        if self.run_context_resolver is not None:
+            # 首次执行前固化上下文快照，回放与故障恢复共用同一份持久化输入。
+            context_service = await self._resolve(self.run_context_resolver, tenant_id)
+            await context_service.ensure_initial(
+                tenant_id=tenant_id, run_id=run_id,
+                initial_context={
+                    "phase": "executing",
+                    "version": 1,
+                    "memory_snapshot_ref": f"memory:{run_id}",
+                },
+            )
+        # LangGraph executor 可能无限等待（模型/provider 无响应时）。
+        # 加硬超时让 worker 不被一个 Run 永久卡死，超时后返回 "timed_out"
+        # 由外层 run_store.save_failure 登记死信。
+        # 本地调试环境给 30s，够 LangGraph 完成一轮 tool-call + 模型推理。
+        _EXEC_TIMEOUT_SEC = 30
+
         if snapshot.status == RunStatus.QUEUED:
-            result = await resolved.execute(
-                tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
-                session_context=session_context,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    resolved.execute(
+                        tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
+                        session_context=session_context,
+                    ),
+                    timeout=_EXEC_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                await self.run_store.save_failure(
+                    tenant_id, run_id,
+                    error=f"executor timed out after {_EXEC_TIMEOUT_SEC}s in LangGraph.execute()",
+                )
+                return "timed_out"
         else:
-            result = await resolved.resume_claimed(
-                snapshot=snapshot, input=record.get("input") or {},
-                session_context=session_context,
-            )
+            try:
+                result = await asyncio.wait_for(
+                    resolved.resume_claimed(
+                        snapshot=snapshot, input=record.get("input") or {},
+                        session_context=session_context,
+                    ),
+                    timeout=_EXEC_TIMEOUT_SEC,
+                )
+            except asyncio.TimeoutError:
+                await self.run_store.save_failure(
+                    tenant_id, run_id,
+                    error=f"executor timed out after {_EXEC_TIMEOUT_SEC}s in LangGraph.resume()",
+                )
+                return "timed_out"
         current = await self.run_store.get(tenant_id, run_id)
         if current is not None and current.status == RunStatus.SUCCEEDED and result is not None:
             usage = result.get("usage", {}) if isinstance(result, Mapping) else {}
@@ -893,7 +993,14 @@ class RunExecutionWorker:
 
         async def process(snapshot: Any) -> str:
             tenant_id, run_id = snapshot.tenant_id, snapshot.run_id
-            record = await self.run_store.get_task_record(tenant_id, run_id)
+            # RunSnapshot 没有 task_id 字段，先通过 run_id 拿 run record，
+            # 里面有 task_id，再用 task_id 拿完整 task record
+            run_rec = await self.run_store.get_run_record(tenant_id, run_id)
+            if run_rec is None:
+                await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
+                return "skipped"
+            task_id = run_rec.get("task_id")
+            record = await self.run_store.get_task_record(tenant_id, str(task_id))
             if record is None:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
                 return "skipped"
@@ -919,7 +1026,8 @@ class RunExecutionWorker:
                             getattr(resolved, "__aexit__", None)
                         ):
                             async with resolved as executor:
-                                return await self._execute_claimed(snapshot, executor, record)
+                                result = await self._execute_claimed(snapshot, executor, record)
+                                return result
                         return await self._execute_claimed(snapshot, resolved, record)
 
                 return await self._with_heartbeat(snapshot, execute_claimed())
@@ -932,6 +1040,8 @@ class RunExecutionWorker:
                 current = await self.run_store.get(tenant_id, run_id)
                 return "cancelled" if current and current.status == RunStatus.CANCELLED else "skipped"
             except Exception as exc:
+                import traceback
+                traceback.print_exc(file=_sys.stderr)
                 lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
                 current = await self.run_store.get(tenant_id, run_id)
                 if current and current.status == RunStatus.CANCELLING:
@@ -956,24 +1066,63 @@ class RunExecutionWorker:
             finally:
                 await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
 
-        outcomes = await asyncio.gather(*(process(snapshot) for snapshot in claimed))
+        # 给整个 batch 套硬超时：哪怕 LangGraph 内部有同步阻塞，
+        # 这一层也能强制放弃，让 worker 循环继续下一轮 claim。
+        _BATCH_TIMEOUT_SEC = 45
+        try:
+            outcomes = await asyncio.wait_for(
+                asyncio.gather(
+                    *(process(snapshot) for snapshot in claimed),
+                    return_exceptions=True,
+                ),
+                timeout=_BATCH_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            # 整个 batch 超时——把所有 run 的 lease 先释放了再继续
+            for snap in claimed:
+                try:
+                    await self.run_store.release_lease(snap.tenant_id, snap.run_id, self.worker_id)
+                    await self.run_store.save_failure(
+                        snap.tenant_id, snap.run_id,
+                        error=f"batch timeout after {_BATCH_TIMEOUT_SEC}s",
+                    )
+                except Exception:
+                    pass
+            outcomes = ["timed_out"] * len(claimed)
+
         counts = {
             "claimed": len(claimed), "succeeded": 0, "failed": 0,
-            "cancelled": 0, "skipped": 0,
+            "cancelled": 0, "skipped": 0, "timed_out": 0,
         }
         for outcome in outcomes:
-            counts[outcome] += 1
+            if isinstance(outcome, Exception):
+                counts["failed"] += 1
+                continue
+            counts[outcome] = counts.get(outcome, 0) + 1
         return counts
 
     async def run_forever(self) -> None:
         self._stop.clear()
+        self._heartbeat_tick = 0
         while not self._stop.is_set():
             try:
                 await self.run_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 # A transient database outage must not terminate the worker process.
+                import sys as _sys
+                import traceback as _tb
+                _tb.print_exc(file=_sys.stderr)
+            # Heartbeat: every 10 loop iterations (~10s), update the most recently
+            # touched DB row so ops monitoring sees we're alive even when idle.
+            try:
+                self._heartbeat_tick += 1
+                if self._heartbeat_tick % 10 == 0:
+                    tick = getattr(self.run_store, "tick_worker_heartbeat", None)
+                    if callable(tick):
+                        await tick(self.worker_id)
+            except Exception:
                 pass
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_interval)

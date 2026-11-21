@@ -48,6 +48,7 @@ class EvaluationGovernanceTests(unittest.TestCase):
 
     def test_gate_decision_hash_is_deterministic_for_payload(self):
         import asyncio
+
         from agent_platform.observability.evaluation_governance import (
             EvaluationGovernanceService,
         )
@@ -82,6 +83,7 @@ class EvaluationGovernanceTests(unittest.TestCase):
 
     def test_missing_evidence_reference_blocks_gate(self):
         import asyncio
+
         from agent_platform.observability.evaluation_governance import EvaluationGovernanceService
 
         class Repository:

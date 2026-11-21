@@ -1,7 +1,10 @@
 import unittest
 
 from agent_platform.runtime.harness_baseline_gate import HarnessBaseline, evaluate_harness_baseline
-from agent_platform.runtime.harness_benchmark import HarnessBenchmarkObservation, HarnessBenchmarkReport
+from agent_platform.runtime.harness_benchmark import (
+    HarnessBenchmarkObservation,
+    HarnessBenchmarkReport,
+)
 
 
 def observation(*, passed=True, duration=100, quality=1.0, cost=0.001, skipped=False):

@@ -5,7 +5,13 @@ import unittest
 
 from fastapi.responses import StreamingResponse
 
-from agent_platform.streaming.sse import HEARTBEAT_FRAME, SSEEvent, encode_sse, iter_sse, sse_response
+from agent_platform.streaming.sse import (
+    HEARTBEAT_FRAME,
+    SSEEvent,
+    encode_sse,
+    iter_sse,
+    sse_response,
+)
 
 
 class SSEProtocolTests(unittest.IsolatedAsyncioTestCase):

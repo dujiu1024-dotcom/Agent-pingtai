@@ -37,8 +37,22 @@ class KnowledgeCollection:
     deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.tenant_id, bool) or not isinstance(self.tenant_id, str):
+            raise ValueError("tenant_id must be a non-empty string")
+        if isinstance(self.name, bool) or not isinstance(self.name, str):
+            raise ValueError("name must be a non-empty string")
+        if isinstance(self.description, bool) or not isinstance(self.description, str):
+            raise ValueError("description must be a string")
+        if self.project_id is not None and (
+            isinstance(self.project_id, bool) or not isinstance(self.project_id, str)
+        ):
+            raise ValueError("project_id must be a string or None")
+        if self.project_id is not None and not self.project_id.strip():
+            raise ValueError("project_id must not be blank")
         if not self.tenant_id.strip() or not self.name.strip():
             raise ValueError("tenant_id and collection name are required")
+        if isinstance(self.name, str) and len(self.name) > 200:
+            raise ValueError("name exceeds 200 characters")
 
 
 @dataclass(frozen=True)
@@ -58,8 +72,14 @@ class KnowledgeIndex:
         identity = (
             self.tenant_id, self.collection_id, self.index_name, self.embedding_model,
         )
-        if any(not isinstance(value, str) or not value.strip() for value in identity):
+        if any(isinstance(v, bool) or not isinstance(v, str) for v in identity):
+            raise ValueError("index identity fields must be non-boolean strings")
+        if any(not isinstance(v, str) or not v.strip() for v in identity):
             raise ValueError("index identity fields are required")
+        if isinstance(self.index_id, bool) or not isinstance(self.index_id, str) or not self.index_id.strip():
+            raise ValueError("index_id must be a non-empty string")
+        if isinstance(self.status, bool) or not isinstance(self.status, IndexStatus):
+            raise ValueError("status must be a valid IndexStatus")
         if (
             isinstance(self.dimensions, bool)
             or not isinstance(self.dimensions, int)
@@ -109,6 +129,8 @@ class InMemoryKnowledgeCatalog:
     async def list_collections(
         self, tenant_id: str, project_ids: frozenset[str], limit: int = 100,
     ) -> list[KnowledgeCollection]:
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            raise ValueError("limit must be an integer")
         if not 1 <= limit <= 500:
             raise ValueError("limit must be between 1 and 500")
         items = [

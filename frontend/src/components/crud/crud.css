@@ -1,0 +1,337 @@
+.crud-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.crud-error {
+  color: #c43d4b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.crud-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.crud-actions .text-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.crud-actions .text-link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.text-link--danger {
+  color: #c43d4b;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 27, 45, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  display: flex;
+  width: min(720px, 100%);
+  max-height: min(86vh, 860px);
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgba(20, 34, 60, 0.24);
+  overflow: hidden;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal-close {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: #f2f5fb;
+  color: #5b6885;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: #e6ecf8;
+}
+
+.modal-body {
+  flex: 1;
+  padding: 20px 22px;
+  overflow-y: auto;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+  background: #fafcff;
+}
+
+.modal-foot .crud-error {
+  margin-right: auto;
+  max-width: 55%;
+}
+
+.crud-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.crud-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.crud-field--wide {
+  grid-column: 1 / -1;
+}
+
+.crud-field > span:first-child {
+  color: #43506a;
+  font-weight: 600;
+}
+
+.crud-field input[type='text'],
+.crud-field input[type='number'],
+.crud-field select,
+.crud-field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fbfcff;
+  color: #17243a;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.crud-field textarea {
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.crud-field textarea.crud-json {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.crud-field input:focus,
+.crud-field select:focus,
+.crud-field textarea:focus {
+  outline: 2px solid rgba(53, 109, 243, 0.18);
+  border-color: var(--brand);
+}
+
+.crud-field input[readonly] {
+  background: #f1f4fa;
+  color: #6b7891;
+}
+
+.crud-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #43506a;
+  font-size: 13px;
+}
+
+.crud-checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brand);
+}
+
+.crud-required {
+  margin-left: 4px;
+  color: #c43d4b;
+  font-style: normal;
+}
+
+.crud-help {
+  color: #8b96a8;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.registry-badge {
+  display: inline-block;
+  margin: 2px 3px 2px 0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.registry-badge--tool {
+  background: #eef3ff;
+  color: #2d5bd4;
+  border: 1px solid #d4deff;
+}
+
+.registry-badge--skill {
+  background: #eafaf1;
+  color: #1f7a45;
+  border: 1px solid #c8ecd9;
+}
+
+.cell-empty {
+  color: #9aa4b8;
+  font-style: normal;
+}
+
+@media (max-width: 767px) {
+  .crud-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Filter bar */
+.crud-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.crud-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.crud-filter-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  min-width: 60px;
+}
+.crud-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.crud-filter-chip:hover {
+  border-color: var(--brand, #2456d8);
+  color: var(--brand, #2456d8);
+}
+.crud-filter-chip.active {
+  background: var(--brand, #2456d8);
+  border-color: var(--brand, #2456d8);
+  color: #fff;
+}
+.crud-filter-chip.active .crud-filter-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+.crud-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--bg-subtle, rgba(120, 120, 140, 0.12));
+  color: var(--muted);
+  border-radius: 8px;
+}
+
+/* Pagination */
+.crud-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.crud-pagination-info {
+  font-size: 13px;
+  color: var(--muted);
+}
+.crud-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.crud-page-btn {
+  min-width: 32px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.crud-page-btn:hover:not(:disabled):not(.active) {
+  border-color: var(--brand, #2456d8);
+  color: var(--brand, #2456d8);
+}
+.crud-page-btn.active {
+  background: var(--brand, #2456d8);
+  border-color: var(--brand, #2456d8);
+  color: #fff;
+  font-weight: 600;
+}
+.crud-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

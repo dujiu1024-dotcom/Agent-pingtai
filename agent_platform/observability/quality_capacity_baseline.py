@@ -17,7 +17,6 @@ from agent_platform.observability.agent_rag_evaluation import (
     score_case,
 )
 
-
 BASELINE_VERSION = "c21-04-v1"
 DEFAULT_INPUT_TOKENS = 120_000
 DEFAULT_OUTPUT_TOKENS = 24_000

@@ -1,7 +1,6 @@
 """S3-compatible durable object storage adapter (AWS S3 / MinIO)."""
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import inspect
 import re

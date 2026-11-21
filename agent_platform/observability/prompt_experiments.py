@@ -16,7 +16,9 @@ from uuid import uuid4
 
 from agent_platform.observability.evaluation import EvalCase, evaluate_case
 from agent_platform.observability.evaluation_governance import (
-    MetricDelta, RegressionComparison, compare_metric_reports,
+    MetricDelta,
+    RegressionComparison,
+    compare_metric_reports,
 )
 from agent_platform.observability.prompts import PromptVersion, tenant_prompt_key
 

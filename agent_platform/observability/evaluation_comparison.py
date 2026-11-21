@@ -200,6 +200,7 @@ class ReportLabPdfRenderer:
     def render(self, report: Mapping[str, Any]) -> bytes:
         try:
             from io import BytesIO
+
             from reportlab.lib import colors
             from reportlab.lib.pagesizes import landscape, letter
             from reportlab.lib.styles import getSampleStyleSheet

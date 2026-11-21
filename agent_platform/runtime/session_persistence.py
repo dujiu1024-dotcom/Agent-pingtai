@@ -134,7 +134,10 @@ class SessionRunPersistence:
                 "function": MessageRole.TOOL, "agent": MessageRole.AGENT,
             }
             role = role_aliases.get(str(role_value).lower())
-            if role is None or not isinstance(content, str) or not content.strip():
+            # 过滤 TOOL/FUNCTION：它们的 content 通常是原始 JSON，不应出现在用户对话中
+            if role is None or role == MessageRole.TOOL:
+                continue
+            if not isinstance(content, str) or not content.strip():
                 continue
             identity = str(source_id) if source_id else f"{index}:{role.value}:{content}"
             message_id = str(uuid5(
@@ -171,6 +174,8 @@ class SessionRunPersistence:
         if result is None:
             return None
         usage_data = result.get("usage") if isinstance(result, Mapping) else None
+
+        # 1. 优先从 messages 里找最后的 assistant 文本（LangGraph graph 输出形态）
         if isinstance(result, Mapping) and isinstance(result.get("messages"), (list, tuple)):
             for item in reversed(result["messages"]):
                 role = (item.get("role") or item.get("type")) if isinstance(item, Mapping) else (
@@ -181,6 +186,19 @@ class SessionRunPersistence:
                     if isinstance(candidate, str) and candidate.strip():
                         result = candidate
                         break
+
+        # 2. 从 dict 里提取可读的文本字段（local_runtime 等自定义执行器形态）
+        if isinstance(result, Mapping):
+            text_candidates = []
+            for key in ("output", "content", "result", "text", "message", "answer"):
+                value = result.get(key)
+                if isinstance(value, str) and value.strip():
+                    text_candidates.append(value.strip())
+            if text_candidates:
+                # 取最长的那个（通常是完整回复）
+                result = max(text_candidates, key=len)
+
+        # 3. 兜底：dict 里既没 messages 也没文本字段 → 序列化成 JSON（但尽量精简）
         content = result if isinstance(result, str) else json.dumps(
             _json_safe(result), ensure_ascii=False, sort_keys=True, default=str,
         )
@@ -248,5 +266,15 @@ class SessionRunPersistence:
             max_tokens=max_tokens, created_by=actor_id, run_id=run_id,
             last_message_id=messages[-1].message_id if messages else None,
         )
-        await self.repository.create_context_snapshot(snapshot)
+        try:
+            await self.repository.create_context_snapshot(snapshot)
+        except Exception as exc:
+            # UniqueViolation: 并发 run 共享同一 session + version 时会撞唯一约束。
+            # 另一个 run 已经写了 checkpoint，静默跳过即可，不影响本次执行结果。
+            msg = str(exc).lower()
+            if "unique" in msg or "duplicate" in msg or "version" in msg:
+                import sys as _sys
+                print(f"[SESSION] checkpoint skipped (duplicate version): session={session_id} version={snapshot.version} run={run_id}", file=_sys.stderr, flush=True)
+            else:
+                raise
         return snapshot

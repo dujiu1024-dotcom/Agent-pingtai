@@ -7,7 +7,11 @@ from agent_platform.connectors.base import (
     ConnectorAuthenticationError,
     SecretStoreConnectorAuthenticator,
 )
-from agent_platform.control_plane.data_connectors import DataConnection, DataConnectorService, InMemoryConnectorRepository
+from agent_platform.control_plane.data_connectors import (
+    DataConnection,
+    DataConnectorService,
+    InMemoryConnectorRepository,
+)
 from agent_platform.control_plane.http_connector_provider import (
     HTTPJSONConnectorProvider,
     JSONHTTPResponse,

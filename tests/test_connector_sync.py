@@ -32,6 +32,14 @@ class Secrets:
 class Sink:
     def __init__(self):
         self.items = []
+        self.upsert_calls = []
+
+    async def upsert_page(self, *, tenant_id, connection_id, items):
+        self.items.extend(items)
+        self.upsert_calls.append((tenant_id, connection_id, items))
+
+    async def revoke_connection(self, *, tenant_id, connection_id, disposition="retain"):
+        pass
 
 
 class AuditSink:
@@ -206,6 +214,7 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             queue=queue, resolve_service=resolve_service,
             worker_id="sync-worker", audit_sink=AuditSink(fail=True), lease_seconds=5,
         )
+        await service.request_sync(tenant_id="tenant-a", connection_id="drive-a")
         self.assertTrue(await worker.run_once())
         self.assertEqual(provider.calls, 0)
         self.assertEqual(queue.last_error, "runtimeerror")
@@ -223,6 +232,7 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             secret_ref="secret://tenant-a/drive-a", scopes=("files.read",),
         ))
         provider = Provider()
+        provider.fail_once = False  # 让 provider 第一次就成功，测试审计失败场景
         queue = Queue()
         service = DataConnectorService(
             repository=repo, providers={"drive": provider}, secrets=Secrets(),
@@ -236,6 +246,7 @@ class ConnectorSyncWorkerTests(unittest.IsolatedAsyncioTestCase):
             queue=queue, resolve_service=resolve_service,
             worker_id="sync-worker", audit_sink=FailSuccessAuditSink(), lease_seconds=5,
         )
+        await service.request_sync(tenant_id="tenant-a", connection_id="drive-a")
         self.assertTrue(await worker.run_once())
         self.assertEqual(provider.calls, 1)
         self.assertIsNone(queue.job)

@@ -56,6 +56,8 @@ class RegistryModelResolver:
         template_entry = self._find(
             snapshot.entries, kind="model_template", item_id=template_id,
         )
+        if template_entry is None:
+            raise ModelRegistryError(f"model template '{template_id}' not found in Run-pinned snapshot")
         template = template_entry.get("definition")
         if not isinstance(template, Mapping):
             raise ModelRegistryError("model template definition is invalid")
@@ -98,21 +100,22 @@ class RegistryModelResolver:
         tenant_id = getattr(snapshot, "tenant_id", None)
         if not isinstance(tenant_id, str) or not tenant_id.strip():
             raise ModelRegistryError("Run snapshot tenant_id is required for secret resolution")
-        if not isinstance(secret_ref, str):
-            raise ModelRegistryError("model provider must reference a host-managed secret")
-        secret = urlsplit(secret_ref)
-        secret_path = unquote(secret.path)
-        if (
-            secret.scheme != "secret" or secret.netloc != tenant_id
-            or not secret_path.strip("/")
-            or any(part in {".", ".."} for part in secret_path.split("/"))
-            or secret.username is not None or secret.password is not None
-            or secret.query or secret.fragment
-        ):
-            raise ModelRegistryError("model provider secret_ref must be scoped to the Run tenant")
-        api_key = await self.secrets.resolve(secret_ref)
-        if not isinstance(api_key, str) or not api_key.strip():
-            raise ModelRegistryError("model provider secret could not be resolved")
+        # secret_ref is optional — local providers (Ollama, etc.) have no API key.
+        api_key = ""
+        if isinstance(secret_ref, str) and secret_ref.strip():
+            secret = urlsplit(secret_ref)
+            secret_path = unquote(secret.path)
+            if (
+                secret.scheme != "secret" or secret.netloc != tenant_id
+                or not secret_path.strip("/")
+                or any(part in {".", ".."} for part in secret_path.split("/"))
+                or secret.username is not None or secret.password is not None
+                or secret.query or secret.fragment
+            ):
+                raise ModelRegistryError("model provider secret_ref must be scoped to the Run tenant")
+            api_key = await self.secrets.resolve(secret_ref)
+            if not isinstance(api_key, str) or not api_key.strip():
+                raise ModelRegistryError("model provider secret could not be resolved")
         context_window_tokens = template.get("context_window_tokens", 8192)
         if (
             not isinstance(context_window_tokens, int)

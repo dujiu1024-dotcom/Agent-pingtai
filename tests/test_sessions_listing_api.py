@@ -174,7 +174,9 @@ class SessionListingApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 202, response.text)
         payload = response.json()
-        self.assertIn("session:"+session.session_id+":user:", payload["source_ref"])
+        # source_ref 格式是 session://tenant/{assistant_message_id}@turn
+        self.assertTrue(payload["source_ref"].startswith("session://tenant-a/"))
+        self.assertIn("@1", payload["source_ref"])
         self.assertEqual(payload["items"][0]["status"], "candidate")
         self.assertEqual(len(extractor.turns), 1)
         self.assertEqual(extractor.turns[0].project_id, "project-a")

@@ -105,6 +105,8 @@ def classify_error(error: BaseException) -> ErrorKind:
         return ErrorKind.TIMEOUT
     if isinstance(error, (ConnectionError, OSError)):
         return ErrorKind.TRANSIENT
+    if isinstance(error, ValueError):
+        return ErrorKind.VALIDATION
     return ErrorKind.UNKNOWN
 
 

@@ -20,10 +20,13 @@ from typing import Any, Mapping, Protocol
 import yaml
 
 from agent_platform.control_plane.registry import (
-    RegistryError, RegistryNotFound, RegistryService, RegistryVersion,
+    RegistryNotFound,
+    RegistryService,
+    RegistryVersion,
 )
 from agent_platform.control_plane.skill_dependency_review import (
-    SkillDependencyReviewer, SkillDependencyReviewError,
+    SkillDependencyReviewer,
+    SkillDependencyReviewError,
 )
 
 

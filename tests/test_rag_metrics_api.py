@@ -9,7 +9,6 @@ from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.knowledge.contracts import KnowledgePrincipal, RetrievalHit
 from agent_platform.knowledge.rag import RAGService
 
-
 DATASET = {
     "dataset_id": "api-quality",
     "version": 1,

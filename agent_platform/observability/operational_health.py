@@ -8,7 +8,7 @@ from __future__ import annotations
 import inspect
 import math
 from collections.abc import Callable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 

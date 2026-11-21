@@ -224,6 +224,45 @@ class PostgresBlackboardRepository(BlackboardRepository):
             rows = await cursor.fetchall()
         return [self._to_entry(row) for row in rows]
 
+    async def list_all(
+        self,
+        *,
+        scope: Scope | None = None,
+        scope_id: str | None = None,
+        kinds: Sequence[str] = (),
+        limit: int = 100,
+    ) -> list[BlackboardEntry]:
+        if limit < 1 or limit > 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        query = """
+            SELECT * FROM (
+                SELECT DISTINCT ON (entry_id) *
+                FROM blackboard_entries
+                WHERE tenant_id = %s
+        """
+        params: list[Any] = [self.tenant_id]
+        if scope is not None:
+            query += " AND scope = %s"
+            params.append(scope.value)
+        if scope_id is not None and scope_id.strip():
+            query += " AND scope_id = %s"
+            params.append(scope_id.strip())
+        if kinds:
+            query += " AND kind = ANY(%s)"
+            params.append(list(kinds))
+        query += """
+                ORDER BY entry_id, version DESC
+            ) latest
+            ORDER BY created_at DESC
+            LIMIT %s
+        """
+        params.append(limit)
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(query, tuple(params))
+            rows = await cursor.fetchall()
+        return [self._to_entry(row) for row in rows]
+
     async def list_versions(self, entry_id: str) -> list[BlackboardEntry]:
         connection = await self._connection_factory()
         async with connection:

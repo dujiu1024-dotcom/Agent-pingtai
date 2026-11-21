@@ -70,6 +70,16 @@ DEFAULT_JOBS: tuple[JobDefinition, ...] = (
         "内容日历尚未迁移到新平台，默认停用", 3600, enabled=False,
     ),
     JobDefinition("selfcheck", "平台自检", "检查数据库连通性", 1800),
+    JobDefinition(
+        "connector_sync", "连接器同步",
+        "同步全部启用的数据连接器；也可创建 connector_sync:<连接ID> 单独调度", 3600,
+        enabled=False,
+    ),
+    JobDefinition(
+        "agent_health_check", "Agent 健康巡检",
+        "每小时巡检 Registry Agent 清单：职责重叠、连续失败、低产出；发现异常自动推 HR 通知",
+        3600, enabled=True,
+    ),
 )
 JOB_ORDER = {definition.job_id: index for index, definition in enumerate(DEFAULT_JOBS)}
 
@@ -129,9 +139,13 @@ class PostgresSchedulerService:
         notifier: Any | None = None,
         poll_seconds: int = 30,
         timezone_name: str = "Asia/Shanghai",
+        connector_sync: Callable[[str, str], Any] | None = None,
+        webhook_enqueue: Callable[[str, str, str, Mapping[str, Any]], Any] | None = None,
     ) -> None:
         self._connect = connection_factory
         self._notifier = notifier
+        self._connector_sync = connector_sync
+        self._webhook_enqueue = webhook_enqueue
         self._poll_seconds = max(int(poll_seconds), 5)
         self._tz = ZoneInfo(timezone_name)
         self._task: asyncio.Task[None] | None = None
@@ -222,7 +236,12 @@ class PostgresSchedulerService:
                 "SELECT * FROM platform_scheduled_jobs WHERE tenant_id=%s", (tenant_id,)
             )
             rows = await cursor.fetchall()
-        return sorted((_job_view(row) for row in rows), key=lambda item: JOB_ORDER.get(item["job_id"], 99))
+        return sorted(
+            (_job_view(row) for row in rows),
+            key=lambda item: (
+                JOB_ORDER.get(item["job_id"], 99), item["job_id"],
+            ),
+        )
 
     async def list_runs(self, tenant_id: str, limit: int = 50) -> list[dict[str, Any]]:
         limit = max(1, min(int(limit), 200))
@@ -242,17 +261,73 @@ class PostgresSchedulerService:
 
     # ---------- 操作 ----------
     async def set_enabled(self, tenant_id: str, job_id: str, enabled: bool) -> dict[str, Any]:
+        return await self.update_job(tenant_id, job_id, enabled=enabled)
+
+    async def update_job(
+        self, tenant_id: str, job_id: str, *,
+        enabled: bool | None = None, interval_seconds: int | None = None,
+    ) -> dict[str, Any]:
         await self.ensure_jobs(tenant_id)
+        if interval_seconds is not None:
+            interval_seconds = self._validate_interval(interval_seconds)
+        next_run = (
+            datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
+            if interval_seconds is not None else None
+        )
         async with self._connection() as connection:
             cursor = await connection.execute(
-                "UPDATE platform_scheduled_jobs SET enabled=%s, updated_at=now() "
+                "UPDATE platform_scheduled_jobs SET enabled=COALESCE(%s,enabled), "
+                "interval_seconds=COALESCE(%s,interval_seconds), "
+                "next_run_at=COALESCE(%s,next_run_at), updated_at=now() "
                 "WHERE tenant_id=%s AND job_id=%s RETURNING *",
-                (bool(enabled), tenant_id, job_id),
+                (enabled, interval_seconds, next_run, tenant_id, job_id),
             )
             row = await cursor.fetchone()
         if row is None:
             raise ScheduledJobNotFound(job_id)
         return _job_view(row)
+
+    @staticmethod
+    def _validate_interval(value: int) -> int:
+        seconds = int(value)
+        if seconds < 60 or seconds > 30 * 86400:
+            raise ValueError("interval_seconds 必须在 60 到 2592000 之间")
+        return seconds
+
+    @staticmethod
+    def _validate_job_id(job_id: str) -> str:
+        import re
+        value = (job_id or "").strip()
+        if not re.fullmatch(r"[a-z0-9_:-]{1,80}", value):
+            raise ValueError("job_id 只能包含小写字母、数字、下划线和冒号")
+        if value in JOB_ORDER or value == "connector_sync":
+            return value
+        if value.startswith("connector_sync:") and len(value) > len("connector_sync:"):
+            return value
+        raise ValueError("目前只支持内置作业或 connector_sync:<连接ID>")
+    async def create_job(
+        self, tenant_id: str, *, job_id: str, name: str, description: str = "",
+        interval_seconds: int = 3600, enabled: bool = True,
+    ) -> dict[str, Any]:
+        job_id = self._validate_job_id(job_id)
+        interval_seconds = self._validate_interval(interval_seconds)
+        title = (name or "").strip() or job_id
+        next_run = datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
+        async with self._connection() as connection:
+            cursor = await connection.execute(
+                "INSERT INTO platform_scheduled_jobs "
+                "(tenant_id, job_id, name, description, interval_seconds, enabled, next_run_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (tenant_id, job_id) DO UPDATE SET "
+                "name=EXCLUDED.name, description=EXCLUDED.description, "
+                "interval_seconds=EXCLUDED.interval_seconds, enabled=EXCLUDED.enabled, "
+                "next_run_at=EXCLUDED.next_run_at, updated_at=now() RETURNING *",
+                (
+                    tenant_id, job_id, title, description.strip(), interval_seconds,
+                    bool(enabled), next_run,
+                ),
+            )
+            return _job_view(await cursor.fetchone())
 
     # ---------- 事件订阅 ----------
     async def list_subscriptions(self, tenant_id: str) -> list[dict[str, Any]]:
@@ -376,11 +451,14 @@ class PostgresSchedulerService:
 
         started = datetime.now(timezone.utc)
         try:
-            handler = getattr(self, f"_job_{job_id}", None)
-            if handler is None:
-                status, message, detail = "skipped", f"未知作业类型：{job_id}", {}
+            if job_id == "connector_sync" or job_id.startswith("connector_sync:"):
+                status, message, detail = await self._job_connector_sync(tenant_id, job_id)
             else:
-                status, message, detail = await handler(tenant_id)
+                handler = getattr(self, f"_job_{job_id}", None)
+                if handler is None:
+                    status, message, detail = "skipped", f"未知作业类型：{job_id}", {}
+                else:
+                    status, message, detail = await handler(tenant_id)
         except Exception as exc:
             logger.exception("定时作业执行失败：%s", job_id)
             status = "failed"
@@ -685,11 +763,36 @@ class PostgresSchedulerService:
                 f"（Agent {row['agent_id']}），原因 {row.get('last_error') or '未记录'}",
                 failure_targets, fallback=fallback,
             )
+        webhook_events = 0
+        if self._webhook_enqueue is not None:
+            # Webhook 订阅由事件同步作业统一投递；event_id 稳定，重复入队会被唯一键去重。
+            for row in approvals:
+                try:
+                    await self._webhook_enqueue(
+                        tenant_id, f"approval.pending:{row['approval_id']}", "approval.pending",
+                        {"approval_id": str(row["approval_id"]), "run_id": str(row["run_id"]),
+                         "action": row["action"], "resource": row["resource"],
+                         "risk_level": row["risk_level"]},
+                    )
+                    webhook_events += 1
+                except Exception:
+                    logger.exception("Webhook 事件入队失败：approval %s", row["approval_id"])
+            for row in failed_runs:
+                try:
+                    await self._webhook_enqueue(
+                        tenant_id, f"run.failed:{row['run_id']}", "run.failed",
+                        {"run_id": str(row["run_id"]), "agent_id": row["agent_id"],
+                         "last_error": row.get("last_error")},
+                    )
+                    webhook_events += 1
+                except Exception:
+                    logger.exception("Webhook 事件入队失败：run %s", row["run_id"])
         return "succeeded", (
             f"待审批 {len(approvals)} 条 / 失败运行 {len(failed_runs)} 条，"
-            f"实际推送 {sent} 条"
+            f"实际推送 {sent} 条，Webhook 事件 {webhook_events} 条"
         ), {
             "approvals": len(approvals), "failed_runs": len(failed_runs), "sent": sent,
+            "webhook_events": webhook_events,
             "subscriptions": {
                 "approval.pending": len(approval_targets),
                 "task.failed": len(task_targets),
@@ -748,7 +851,141 @@ class PostgresSchedulerService:
     async def _job_content_due(self, tenant_id: str) -> tuple[str, str, dict[str, Any]]:
         return "skipped", "内容日历尚未迁移到新平台，本作业暂不执行", {}
 
+    async def _job_connector_sync(
+        self, tenant_id: str, job_id: str = "connector_sync",
+    ) -> tuple[str, str, dict[str, Any]]:
+        if self._connector_sync is None:
+            return "skipped", "连接器同步执行器未配置", {}
+        result = await self._connector_sync(tenant_id, job_id)
+        if isinstance(result, tuple) and len(result) == 3:
+            return result
+        return "succeeded", "连接器同步完成", {"result": result}
+
     async def _job_selfcheck(self, tenant_id: str) -> tuple[str, str, dict[str, Any]]:
         async with self._connection() as connection:
             await connection.execute("SELECT 1")
         return "succeeded", "数据库连通正常", {"database": "ok"}
+
+    async def _job_agent_health_check(self, tenant_id: str) -> tuple[str, str, dict[str, Any]]:
+        """Agent 健康巡检：职责重叠 / 连续失败 / 低产出 → 推 HR 飞书通知。"""
+        warnings: list[str] = []
+        detail: dict[str, Any] = {}
+
+        # --- 1. 职责重叠：多个已发布 Agent 同名 ---
+        async with self._connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT defn->>'name' AS name, COUNT(*) AS cnt,
+                       array_agg(item_id ORDER BY item_id) AS ids
+                FROM platform_registry_active r,
+                     platform_registry_versions v,
+                     jsonb_array_elements_text(
+                       CASE WHEN v.definition->>'name' IS NULL
+                         THEN jsonb_build_array(r.item_id)
+                         ELSE jsonb_build_object('name', v.definition->>'name')->>'name'
+                       END
+                     ) AS names(name)
+                WHERE r.tenant_id = %s AND r.kind = 'agent'
+                  AND v.kind = 'agent' AND v.status = 'published'
+                  AND v.item_id = r.item_id AND v.version = r.active_version
+                GROUP BY defn->>'name'
+                HAVING COUNT(*) > 1
+                """,
+                (tenant_id,),
+            )
+            # 上一条 SQL 可能过于复杂，用简单查询替代：
+            cursor = await connection.execute(
+                """
+                SELECT v.definition->>'name' AS name,
+                       r.item_id, r.active_version AS version
+                FROM platform_registry_active r
+                JOIN platform_registry_versions v
+                  ON v.tenant_id = r.tenant_id AND v.kind = r.kind
+                 AND v.item_id = r.item_id AND v.version = r.active_version
+                WHERE r.tenant_id = %s AND r.kind = 'agent' AND v.status = 'published'
+                ORDER BY name, r.item_id
+                """,
+                (tenant_id,),
+            )
+            agents = await cursor.fetchall()
+
+        name_groups: dict[str, list[str]] = {}
+        for row in agents:
+            name = row["name"] or "(未命名)"
+            name_groups.setdefault(name, []).append(row["item_id"])
+        for name, ids in name_groups.items():
+            if len(ids) > 1:
+                msg = f"⚠️ 多个 Agent 同名「{name}」：{'、'.join(ids)}，意图匹配会歧义，请 HR 处理"
+                warnings.append(msg)
+
+        # --- 2. 连续失败（最近 3 次 run 全失败且 worker_attempts >= 3） ---
+        async with self._connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT agent_id, COUNT(*) AS fail_count,
+                       MAX(worker_attempts) AS max_attempts
+                FROM platform_runs
+                WHERE tenant_id = %s AND status = 'failed'
+                  AND created_at > now() - interval '24 hours'
+                GROUP BY agent_id
+                HAVING COUNT(*) >= 3
+                ORDER BY fail_count DESC
+                """,
+                (tenant_id,),
+            )
+            failing = await cursor.fetchall()
+        for row in failing:
+            agent_id = row["agent_id"]
+            if agent_id is None:
+                continue
+            msg = (
+                f"⚠️ Agent「{agent_id}」过去 24 小时失败 {row['fail_count']} 次"
+                f"，最高重试 {row['max_attempts']} 次，可能已熔断，请 HR 排查"
+            )
+            warnings.append(msg)
+
+        # --- 3. 低产出（最近 7 天被调用 ≥10 次但成功产出 < 3 条） ---
+        async with self._connection() as connection:
+            cursor = await connection.execute(
+                """
+                SELECT agent_id,
+                       COUNT(*) AS total,
+                       COUNT(*) FILTER (WHERE status = 'succeeded') AS ok
+                FROM platform_runs
+                WHERE tenant_id = %s
+                  AND created_at > now() - interval '7 days'
+                GROUP BY agent_id
+                HAVING COUNT(*) >= 10
+                   AND COUNT(*) FILTER (WHERE status = 'succeeded') < 3
+                """,
+                (tenant_id,),
+            )
+            low_output = await cursor.fetchall()
+        for row in low_output:
+            agent_id = row["agent_id"]
+            if agent_id is None:
+                continue
+            msg = (
+                f"⚠️ Agent「{agent_id}」7 天内被调用 {row['total']} 次"
+                f"但仅成功 {row['ok']} 次，有效产出低，请 HR 评估"
+            )
+            warnings.append(msg)
+
+        detail = {
+            "registry_agents": len(agents),
+            "duplicate_names": sum(1 for ids in name_groups.values() if len(ids) > 1),
+            "failing_agents": len(failing),
+            "low_output_agents": len(low_output),
+        }
+
+        if not warnings:
+            return "succeeded", f"健康（{len(agents)} agent，无异常）", detail
+
+        # 推飞书通知给默认收件人（HR 可以转发给老板）
+        text = "【Agent 健康巡检】\n" + "\n".join(warnings) + (
+            "\n\n可在调度中心查看详情，或直接 task_dispatch 给 HR 处理。"
+        )
+        await self._notify(
+            tenant_id, f"agent_health_check:{tenant_id}", text,
+        )
+        return "succeeded", f"发现 {len(warnings)} 条告警，已推飞书", detail

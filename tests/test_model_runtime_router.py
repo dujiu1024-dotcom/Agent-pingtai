@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from agent_platform.models.registry_resolver import RegistryModelResolver
 from agent_platform.models.circuit_breaker import ModelCircuitBreaker
+from agent_platform.models.registry_resolver import RegistryModelResolver
 from agent_platform.models.runtime_router import (
     ModelRoutingError,
     ModelTransportError,

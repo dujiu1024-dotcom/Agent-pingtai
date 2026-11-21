@@ -18,8 +18,8 @@ from agent_platform.control_plane.sessions_assets import (
     FileAssetVersion,
     MessageRole,
     MessageTokenUsage,
-    SessionIsolationScope,
     SessionError,
+    SessionIsolationScope,
     SessionNotFound,
 )
 
@@ -559,17 +559,19 @@ class PostgresSessionRepository:
             raise SessionNotFound("file not found")
         if limit < 1 or limit > 500:
             raise ValueError("limit must be between 1 and 500")
-        query = """SELECT * FROM platform_file_assets
-                   WHERE tenant_id=%s AND owner_id=%s AND status <> 'deleted'"""
-        params: tuple[object, ...] = (self.tenant_id, owner_id)
+        query = """SELECT * FROM platform_file_assets WHERE tenant_id=%s AND status <> 'deleted'"""
+        params: list[object] = [self.tenant_id]
+        if owner_id.strip():
+            query += " AND owner_id=%s"
+            params.append(owner_id)
         if session_id:
             query += " AND session_id=%s"
-            params += (_uuid(session_id),)
+            params.append(_uuid(session_id))
         if project_id is not None:
             query += " AND project_id=%s"
-            params += (project_id,)
+            params.append(project_id)
         query += " ORDER BY created_at DESC,asset_id LIMIT %s"
-        params += (limit,)
+        params.append(limit)
         connection = await self._connection_factory()
         async with connection:
             cursor = await connection.execute(query, params)

@@ -4,7 +4,6 @@ import re
 import unittest
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_MAP = ROOT / "docs" / "frontend" / "page-map.md"
 ROUTE_CONTRACT = ROOT / "docs" / "frontend" / "route-contract.md"

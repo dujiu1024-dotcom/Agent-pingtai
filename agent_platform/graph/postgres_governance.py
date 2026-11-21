@@ -11,11 +11,11 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Sequence
 
 from agent_platform.graph.governance import (
+    GovernedGraphEntity,
+    GovernedGraphRelation,
     GraphEntityStatus,
     GraphGovernanceConflict,
     GraphInvalidationJob,
-    GovernedGraphEntity,
-    GovernedGraphRelation,
 )
 
 ConnectionFactory = Callable[[], Any]

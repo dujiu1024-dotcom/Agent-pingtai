@@ -19,7 +19,6 @@ from agent_platform.knowledge.evaluation_dataset import RAGEvaluationDataset
 from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 from agent_platform.knowledge.service import KnowledgeService
 
-
 _TOKENIZER = "unicode-word-v1"
 _TOKEN_PATTERN = re.compile(r"[^\W_]+(?:['’][^\W_]+)?", re.UNICODE)
 

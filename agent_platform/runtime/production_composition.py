@@ -43,6 +43,7 @@ def build_production_run_execution(
     poll_interval: float = 1.0,
     batch_size: int = 10,
     lease_seconds: int = 60,
+    run_context_resolver: Callable[..., Any] | None = None,
 ) -> ProductionRunExecution:
     """Build task API + durable execution worker from trusted, explicit ports.
 
@@ -88,6 +89,7 @@ def build_production_run_execution(
         concurrency_limiter=concurrency_limiter,
         worker_pool_scope_id=worker_pool_scope_id,
         queue_scope_resolver=queue_scope_resolver,
+        run_context_resolver=run_context_resolver,
     )
     return ProductionRunExecution(
         run_store=run_store,

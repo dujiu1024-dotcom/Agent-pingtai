@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol, Sequence
 
 from agent_platform.control_plane.skill_manifest import (
-    SkillManifest, parse_skill_document, validate_skill_bundle_paths,
+    SkillManifest,
+    parse_skill_document,
+    validate_skill_bundle_paths,
 )
 from agent_platform.sandbox.oci import SandboxResult
 
@@ -173,8 +175,8 @@ class SkillSandboxRuntime:
     @staticmethod
     def _inspect_archive(archive: bytes) -> tuple[str, ...]:
         import io
-        import zipfile
         import stat
+        import zipfile
         if not isinstance(archive, bytes) or not archive:
             raise SkillSandboxError("Skill bundle must be non-empty bytes")
         try:

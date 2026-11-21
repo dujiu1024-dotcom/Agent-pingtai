@@ -42,3 +42,6 @@ frontend/node_modules/
 frontend/dist/
 .git-sync.lock
 backups/
+
+# 测试运行报告
+frontend/playwright-report/

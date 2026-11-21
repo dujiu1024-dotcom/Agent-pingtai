@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务全局看板 · Agent 平台</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/console-asset/console.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <strong>Agent 平台 · 独立看板</strong>
+          <span>任务、运行与智能体工作状态</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="看板导航"></nav>
+      <div class="bar-meta">
+        <span class="who" id="identity">身份读取中…</span>
+        <span class="stamp" id="refreshStamp">最近刷新 —</span>
+        <button class="btn btn-sm" id="refreshBtn" type="button">立即刷新</button>
+      </div>
+    </header>
+
+    <main class="stack">
+      <div class="notice info" id="authNotice" style="display:none;">
+        <span>i</span>
+        <div><strong>当前未登录，无法读取任务数据</strong><br>请先打开 <a href="/app">现有工作台</a> 完成登录，再回到本页刷新。</div>
+      </div>
+
+      <section class="kpis" aria-label="任务总览">
+        <div class="panel kpi"><div class="label">任务总数</div><div class="value" id="kpiTotal">—</div><div class="foot">最近 200 条任务</div></div>
+        <div class="panel kpi"><div class="label">正在执行</div><div class="value info" id="kpiRunning">—</div><div class="foot">含正在取消</div></div>
+        <div class="panel kpi"><div class="label">等待执行</div><div class="value warn" id="kpiQueued">—</div><div class="foot">排队中</div></div>
+        <div class="panel kpi"><div class="label">已完成</div><div class="value ok" id="kpiSucceeded">—</div><div class="foot">执行成功</div></div>
+        <div class="panel kpi"><div class="label">失败</div><div class="value bad" id="kpiFailed">—</div><div class="foot">失败与超时</div></div>
+        <div class="panel kpi"><div class="label">待审批</div><div class="value idle" id="kpiApprovals">—</div><div class="foot">高风险操作</div></div>
+      </section>
+
+      <section class="panel" aria-label="任务清单">
+        <div class="panel-head">
+          <h2>任务清单</h2>
+          <span class="sub" id="taskSummary">正在读取任务…</span>
+        </div>
+        <div class="filters" id="taskFilters" role="group" aria-label="任务状态筛选">
+          <button class="filter active" data-filter="all" type="button">全部任务</button>
+          <button class="filter" data-filter="active" type="button">执行中</button>
+          <button class="filter" data-filter="queued" type="button">等待中</button>
+          <button class="filter" data-filter="succeeded" type="button">已完成</button>
+          <button class="filter" data-filter="failed" type="button">失败</button>
+          <button class="filter" data-filter="other" type="button">其他</button>
+        </div>
+        <div class="table-wrap tasks-table" style="padding:0 12px 14px;">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>任务编号</th>
+                <th>任务名称</th>
+                <th>执行智能体</th>
+                <th>所属项目</th>
+                <th>任务状态</th>
+                <th>运行编号（Run）</th>
+                <th>更新时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="taskTableBody">
+              <tr><td colspan="8" style="color:#6b7794;padding:26px 10px;">正在读取任务…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="task-cards" id="taskCards"></div>
+        <p class="fineprint">
+          任务（Task）与运行（Run）是两个不同实体：任务描述「要做什么」，运行是一次「具体执行记录」。
+          一个任务可能对应多次运行；运行编号为空表示任务尚未进入执行。
+          项目负责人、TL 与任务归属不能通过智能体名称推测，当前接口未提供时统一标注为「待接入」。
+        </p>
+      </section>
+
+      <div class="split">
+        <section class="panel" aria-label="各智能体工作状态" id="agents">
+          <div class="panel-head">
+            <h2>各智能体当前工作</h2>
+            <span class="sub" id="agentNote">注册状态与任务统计，在线状态待接入</span>
+          </div>
+          <div class="panel-body" id="agentList" style="padding-top:2px;"></div>
+        </section>
+
+        <section class="panel" aria-label="定时任务" id="scheduler">
+          <div class="panel-head">
+            <h2>定时任务</h2>
+            <span class="sub" id="schedulerNote">—</span>
+          </div>
+          <div class="panel-body" id="schedulerList" style="padding-top:2px;"></div>
+        </section>
+      </div>
+
+      <div class="split">
+        <section class="panel" aria-label="待审批事项">
+          <div class="panel-head">
+            <h2>待审批事项</h2>
+            <span class="sub" id="approvalNote">高风险操作需要人工审批</span>
+          </div>
+          <div class="panel-body" id="approvalList" style="padding-top:2px;"></div>
+        </section>
+
+        <section class="panel" aria-label="项目任务进度">
+          <div class="panel-head">
+            <h2>项目任务进度</h2>
+            <span class="sub">按项目汇总的进度数据</span>
+          </div>
+          <div class="panel-body">
+            <div class="empty-box" id="projectNote">
+              <strong>项目进度接口待接入</strong>
+              当前平台没有对外提供项目列表与项目归属接口，页面不会用智能体名称或任务数量代替项目进度。
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="footer">本页仅读取平台真实接口，不写入任何数据。接口未提供的数据会明确标注为「待接入」，不会推测。</div>
+    </main>
+  </div>
+
+  <dialog class="modal" id="taskDialog">
+    <div class="modal-head">
+      <h3 id="dialogTitle">任务详情</h3>
+      <button class="btn btn-sm close" id="dialogClose" type="button">关闭</button>
+    </div>
+    <div class="modal-body" id="dialogBody"></div>
+  </dialog>
+
+  <script src="/console-asset/common.js"></script>
+  <script src="/console-asset/tasks.js"></script>
+</body>
+</html>

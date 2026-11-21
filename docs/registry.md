@@ -1,9 +1,22 @@
 # 登记表｜Agent 平台（自动生成）
 
 > 本文件由 `python3 tools/gen_registry.py` 从现有源头生成，**不要手改**；
-> 校验是否过期：`python3 tools/gen_registry.py --check`（已接入 `tools/check_consistency.py`）。
+> 校验是否过期：`python3 tools/gen_registry.py --check`。
+> 本项目同时存在老蓝图（legacy db.ROLE）和新实装（Platform Registry PostgreSQL）两套 Agent 定义，SSOT 为新实装。详见 `agents/ontology.md` 架构升级说明。
 
-## 1. 角色注册表（`db.ROLE`）
+## 1. Agent 角色
+
+### 1.1 新实装（Platform Registry PostgreSQL）— SSOT
+
+| agent_id | version | name | 角色卡 `agents/<id>/ROLE.md` |
+|---|---|---|---|
+| `finance` | v7 | 财务专员 | ✓ |
+| `hr` | v12 | HR | ✓ |
+| `local-assistant` | v7 | 本地助手 | ✓ |
+| `ops` | v3 | 运维专员（服务器运维+记账） | ✓ |
+| `test-ops` | v5 | 系统运维负责人 | ✓ |
+
+### 1.2 老蓝图（legacy `db.ROLE`）— 理想形态，未全部落地
 
 | 角色 | 角色卡 `agents/<role>/ROLE.md` |
 |---|---|
@@ -15,17 +28,16 @@
 | `coach` | ✓ |
 | `scout` | ✓ |
 | `content` | ✓ |
-| `hr` | ✓ |
 | `finance` | ✓ |
 | `producer` | ✓ |
 
 ## 2. 本体（`agents/ontology.md`）
 
-- 版本：v1.1｜更新：2026-11-11
-- 2.1 角色（11）：Chief of Staff（幕僚长）、Auditor（审计）、PM（产品经理）、Planner（规划师）、Secretary（秘书）、Coach（教练）、Scout（商机侦察）、Content（内容）、HR、Finance（财务）、Producer（制作人）
-- 3.6 事件类型（23）：`agent_run`、`audit_flag`、`check`、`contract_signed`、`dependency_overdue`、`doc_ready_review`、`gate_blocked`、`gate_confirmed`、`gate_revoked`、`invoice_overdue`、`milestone_deviation`、`milestone_hit`、`project_confirmed`、`project_created`、`sync_conflict`、`task_blocked`、`task_canceled`、`task_closed`、`task_created`、`task_due_soon`、`task_overdue`、`task_reopened`、`tasks_created`
+- 版本：v1.2｜更新：2026-11-20
+- §2.1 角色（5）：`finance`、`hr`、`local-assistant`、`ops`、`test-ops`
+- 事件类型（13）：`agent_circuit_break`、`agent_low_output`、`agent_role_overlap`、`agent_run`、`agent_subscribe_flood`、`invoice_overdue`、`project_created`、`quarterly_review`、`task_blocked`、`task_closed`、`task_created`、`task_due_soon`、`task_overdue`
 
-## 3. 指令注册表（`feishu_commands.COMMAND_SPECS`）
+## 3. 指令注册表（`feishu_commands.COMMAND_SPECS`，legacy）
 
 | 指令 | 说明 |
 |---|---|
@@ -38,7 +50,7 @@
 | `/sync [--force]` | 推进一轮事件投递 |
 | `/help [--verbose]` | 看这份说明 |
 
-## 4. 模型限额（`agency/limits.json`）
+## 4. 模型限额（`agency/limits.json`，legacy）
 
 实测日期：2026-11-12
 口径：递进式实测得出（每次请求记录真实 prompt_tokens）；数值为保守值，宁慢勿 429
@@ -96,56 +108,42 @@
 | `users` | 6 | 0 |
 | `wm_session` | 13 | 1 |
 
-## 6. 交付导出清单（`agency.EXPORT_FILES` / `EXPORT_DIRS`）
+## 6. 交付导出清单（`LEGACY_EXPORT_FILES` / `EXPORT_DIRS`，legacy）
 
-文件（25）：`agency.py`、`db.py`、`memory.py`、`vectors.py`、`browser.py`、`gui.py`、`policy.py`、`probe.py`、`llm_local.py`、`ratelimit.py`、`feishu_bot.py`、`feishu_commands.py`、`intent.py`、`listener.py`、`console.py`、`boss.py`、`conversation.py`、`console.html`、`run-listener.sh`、`启动服务.command`、`README.md`、`CONSTITUTION.md`、`requirements-listener.txt`、`agency/config.json`、`agency/limits.json`
+文件（0）：
 
-目录（8）：`agents`、`company`、`templates`、`tools`、`tests`、`agency/apps`、`agency/policies`、`agency/plans`
+目录（0）：
 
-未入包（2）：`alerts.py`、`publisher.py`
+未入包（0）：无
 
 ## 7. 工具脚本（`tools/*.py`）
 
 | 脚本 | 用途（docstring 首行） |
 |---|---|
-| `tools/bench_vectors.py` | 向量检索基准：合成 N 条向量，测冷/热查询 P95。 |
 | `tools/check_consistency.py` | 结构校验 + 三方一致性检查（分项 13.3 / 13.4 / 16.3） |
 | `tools/coverage_report.py` | 用标准库 trace 跑全量测试并产出 coverage.json。 |
 | `tools/debt_check.py` | 技术债验收命令库（debt sync 生成的 done_when 都调用本文件） |
-| `tools/erd.py` | tools/erd.py — 从 SQLite 反推 ER 图（Mermaid） |
 | `tools/feishu_env.py` | 多维表格凭据按环境取：dev 没有独立表就拒绝，绝不写正式表。 |
 | `tools/gen_registry.py` | 登记表生成器：从现有源头汇总，不手写第二份真相。 |
-| `tools/migrate_fields.py` | 存量任务字段规范化迁移（分项 13.1 / 13.2 / 13.5） |
-| `tools/schedule_wbs.py` | WBS 完成时刻排程：按角色容量算出 200 条分项的完成时分，回写 DB / 04 / 09 / 飞书。 |
-| `tools/sync_plan.py` | 四处同步：DB → 04 / 09 / 飞书。默认只检查，--apply-* 才写。 |
 
 ## 8. 顶层模块（`*.py`）
 
 | 模块 | 用途 | 导出包 | 被这些模块引用 |
 |---|---|---|---|
-| `agency.py` | agency.py — 龍奕FDE工作室 · Agent 公司运行底座 | ✓ | `console` |
-| `alerts.py` | alerts.py — 本地告警（不依赖飞书） | ✗ | — |
-| `boss.py` | boss.py — 面向创始人的两种声音（系统通知 / 角色汇报） | ✓ | `agency`、`listener` |
-| `browser.py` | browser.py — 浏览器后端（P3 · T-0025）：OpenClaw browser 适配器。 | ✓ | `agency` |
-| `console.py` | console.py — 本地操作控制台（只绑 127.0.0.1，纯标准库） | ✓ | — |
-| `conversation.py` | conversation.py — 按 open_id 的多轮上下文与待确认意图（纯标准库） | ✓ | `listener` |
-| `db.py` | db.py — 底座表结构与迁移 | ✓ | `agency`、`console`、`conversation`、`feishu_commands`、`listener`、`memory`、`vectors` |
-| `feishu_bot.py` | feishu_bot.py — 飞书机器人（应用身份）最小客户端 | ✓ | `listener` |
-| `feishu_commands.py` | feishu_commands.py — 飞书指令路由（T-0021） | ✓ | `listener` |
-| `gui.py` | gui.py — 电脑操作层（P3 · T-0022）：应用注册表、会话、预检、只读感知。 | ✓ | `agency`、`browser`、`policy`、`probe` |
-| `intent.py` | intent.py — 意图识别唯一入口 | ✓ | `console`、`listener` |
-| `listener.py` | listener.py — 飞书长连接监听（P1） | ✓ | — |
-| `llm_local.py` | llm_local.py — 本地模型（P3 · T-0027）：Ollama 直连，不引 SDK。 | ✓ | `agency`、`policy` |
-| `memory.py` | memory.py — 结构化工作记忆（wm_session 六槽位） | ✓ | `agency` |
-| `policy.py` | policy.py — 策略层与模型选择器（P3 · T-0027）。 | ✓ | `agency` |
-| `probe.py` | probe.py — 探针能力包（P3 · T-0026）：未知应用的一次性可行性勘查。 | ✓ | `agency` |
-| `publisher.py` | 平台发布适配接口（空实现）。 | ✗ | — |
-| `ratelimit.py` | ratelimit.py — 按 endpoint 的本地限流（token 预算 + 请求速率 + 并发闸门） | ✓ | `agency` |
-| `vectors.py` | vectors.py — 嵌入与向量检索 | ✓ | `agency` |
 
-## 9. 一致性摘要（生成时计算）
+## 9. 一致性对账（生成时计算）
 
-- ✓ 角色：`ROLE` 11 个 ↔ `agents/*/ROLE.md` 11 个
-- ✓ 本体 2.1 角色 11 个 ↔ `ROLE` 11 个
-- ✓ 本体 3.6 事件 23 类 ↔ `EVENT_TYPE` 23 类
-- ✓ 被引用的顶层模块全部入导出包；未入包但无引用：alerts.py、publisher.py
+### 9.1 Platform Registry ↔ ontology §2.1
+
+- ✓ ontology §2.1 角色（5） ↔ Platform Registry agent（5）
+
+### 9.2 Platform Registry ↔ ROLE.md 目录
+
+- ✓ Platform Registry agent（5） ↔ ROLE.md 目录（14）；ROLE.md 有但 Platform 未注册：auditor、chief-of-staff、coach、content、planner、pm、producer、scout、secretary
+
+### 9.3 老蓝图（legacy db.ROLE）↔ ontology
+
+- ✗ 老蓝图（10） ↔ ontology 本体（5）；老蓝图有但 ontology 未记录：auditor、chief-of-staff、coach、content、planner、pm、producer、scout、secretary（蓝图与实装不一致不自动标红，蓝图描述理想形态）
+- 本体事件类型（13）类 ↔ 老蓝图 EVENT_TYPE（28）类
+
+- ✓ 被引用的顶层模块全部入导出包

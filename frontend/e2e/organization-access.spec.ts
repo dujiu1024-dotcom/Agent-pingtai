@@ -1,35 +1,69 @@
 import { expect, test } from '@playwright/test'
 
-test('organization route shows an explicit backend contract gap', async ({
-  page,
-}) => {
+const organizationPayload = {
+  items: [
+    {
+      section: 'tenants',
+      rows: [{ tenant_id: 'acme', display_name: 'Acme', status: 'active' }],
+      count: 1,
+    },
+    {
+      section: 'users',
+      rows: [{ user_id: 'u-1', email: 'owner@acme.test', status: 'active' }],
+      count: 1,
+    },
+    {
+      section: 'tenant_memberships',
+      rows: [{ tenant_id: 'acme', user_id: 'u-1', status: 'active' }],
+      count: 1,
+    },
+  ],
+}
+
+const accessPayload = {
+  items: [
+    {
+      section: 'roles',
+      rows: [{ role_id: 'owner', name: '所有者', is_system: true }],
+      count: 1,
+    },
+    {
+      section: 'role_bindings',
+      rows: [{ role_id: 'owner', subject_type: 'user', subject_id: 'u-1' }],
+      count: 1,
+    },
+    {
+      section: 'role_permissions',
+      rows: [{ role_id: 'owner', permission_key: 'platform.admin' }],
+      count: 1,
+    },
+  ],
+}
+
+test('organization route renders live admin data', async ({ page }) => {
+  await page.route('**/api/platform/v1/admin/organization', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(organizationPayload),
+    })
+  })
   await page.goto('/admin/organization')
   await expect(page.getByRole('heading', { name: '组织与成员' })).toBeVisible()
-  await expect(
-    page.getByText('此页面不会展示模拟组织、成员或权限数据'),
-  ).toBeVisible()
-  await expect(page.locator('.access-admin-card')).toHaveCount(3)
-  await expect(
-    page.getByText('组织 / 部门 schema 与树查询 API 未核实'),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /邀请成员|创建组织/ }),
-  ).toHaveCount(0)
+  await expect(page.getByText('owner@acme.test')).toBeVisible()
+  await expect(page.locator('.admin-section')).toHaveCount(3)
 })
 
-test('RBAC route documents missing permission and data-scope contracts', async ({
-  page,
-}) => {
+test('RBAC route renders live access-control data', async ({ page }) => {
+  await page.route('**/api/platform/v1/admin/access-control', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(accessPayload),
+    })
+  })
   await page.goto('/admin/access-control')
   await expect(page.getByRole('heading', { name: '角色与权限' })).toBeVisible()
-  await expect(page.locator('.access-admin-card')).toHaveCount(3)
-  await expect(
-    page.getByText('权限目录 schema、权限键与服务端 authorizer 未核实'),
-  ).toBeVisible()
-  await expect(
-    page.getByText('data_scope 枚举、策略继承和过滤语义未定义'),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('button', { name: /授权|保存策略|创建角色/ }),
-  ).toHaveCount(0)
+  await expect(page.getByText('platform.admin')).toBeVisible()
+  await expect(page.locator('.admin-section')).toHaveCount(3)
 })

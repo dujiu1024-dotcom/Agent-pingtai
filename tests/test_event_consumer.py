@@ -279,7 +279,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
 
         observer = Observer()
         transport = FakeTransport([
-            ("trace-1", {"event_id": "event-trace", "payload": '{"api_key":"must-not-be-traced"}'})
+            ("trace-1", {"event_id": "00000000-0000-0000-0000-000000000001", "payload": '{"api_key":"must-not-be-traced"}'})
         ])
         receipts = FakeReceipts()
 
@@ -292,7 +292,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["processed"], 1)
         name, input_data, metadata = observer.calls[0]
         self.assertEqual(name, "event.consume")
-        self.assertEqual(input_data, {"topic": "topic-a", "event_id": "event-trace"})
+        self.assertEqual(input_data, {"topic": "topic-a", "event_id": "00000000-0000-0000-0000-000000000001"})
         self.assertNotIn("payload", input_data)
         self.assertEqual(metadata["consumer"], "worker-a")
         self.assertEqual(observer.span.updates[0]["output"]["status"], "succeeded")
@@ -315,7 +315,7 @@ class RedisStreamsConsumerTests(unittest.IsolatedAsyncioTestCase):
 
         observer = Observer()
         transport = FakeTransport([
-            ("trace-2", {"event_id": "event-failure", "payload": "{}"})
+            ("trace-2", {"event_id": "00000000-0000-0000-0000-000000000009", "payload": "{}"})
         ])
 
         async def handler(event):

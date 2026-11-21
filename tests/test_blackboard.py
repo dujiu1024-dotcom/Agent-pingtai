@@ -9,8 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import agency  # noqa: E402
 import db as dbm  # noqa: E402
+
+import agency  # noqa: E402
 
 
 class LogEventDedupTest(unittest.TestCase):

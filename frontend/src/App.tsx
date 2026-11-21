@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -20,14 +20,15 @@ import {
   LogIn,
   Search,
   Settings,
-  UserRound,
   Users,
   Wallet,
   Workflow,
 } from 'lucide-react'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import avatarImage from '@/assets/avatar.png'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { InitializePage, LoginPage } from '@/components/AuthPages'
 import {
   EmptyState,
   ErrorState,
@@ -35,26 +36,26 @@ import {
   ModeRestrictedState,
   NotFoundState,
 } from '@/components/States'
-import { NotificationsPage } from '@/components/NotificationsPage'
-import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
-import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
-import {
-  TaskCommandCenter,
-  TaskDetailPage,
-  RunTracePage,
-} from '@/features/tasks/TaskCommandCenter'
-import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
-import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
-import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
-import { OfficeWorkspace } from '@/components/OfficeWorkspace'
+import { AuthProvider, useAuth } from '@/providers/AuthProvider'
 import { GenericListPage } from '@/components/GenericListPage'
-import { Dashboard } from '@/components/OperationsDashboard'
-import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
-import { StatusBoardPage } from '@/features/board/StatusBoardPage'
+import { CrudListPage } from '@/components/crud/CrudListPage'
+import { RegistryCatalogPage } from '@/components/crud/RegistryCatalogPage'
+import { registryConfigs } from '@/components/crud/registry-configs'
+import {
+  approvalConfig,
+  conversationConfig,
+  evaluationDatasetConfig,
+  evaluationRunConfig,
+  fileConfig,
+  schedulerJobConfig,
+  subscriptionConfig,
+  connectorConfig,
+  webhookConfig,
+} from '@/components/crud/resource-configs'
+import type { CrudConfig } from '@/components/crud/types'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
-  authRoutes,
   detailRoutes,
   findNavigationSection,
   findSubPage,
@@ -64,6 +65,39 @@ import {
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
+
+// 路由级代码分块：每个 feature 页面独立 chunk
+const Dashboard = lazy(() => import('@/components/OperationsDashboard').then((m) => ({ default: m.Dashboard })))
+const QuickStartPage = lazy(() => import('@/features/quickstart/QuickStartPage').then((m) => ({ default: m.QuickStartPage })))
+const StatusBoardPage = lazy(() => import('@/features/board/StatusBoardPage').then((m) => ({ default: m.StatusBoardPage })))
+const NotificationsPage = lazy(() => import('@/components/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
+const OfficeWorkspace = lazy(() => import('@/components/OfficeWorkspace').then((m) => ({ default: m.OfficeWorkspace })))
+const OrganizationAccessPage = lazy(() => import('@/components/OrganizationAccessPage').then((m) => ({ default: m.OrganizationAccessPage })))
+const SystemSettingsPage = lazy(() => import('@/components/SystemSettingsPage').then((m) => ({ default: m.SystemSettingsPage })))
+const DetailRoutePage = lazy(() => import('@/components/EntityDetailPage').then((m) => ({ default: m.DetailRoutePage })))
+
+const TaskCommandCenter = lazy(() => import('@/features/tasks/TaskCommandCenter').then((m) => ({ default: m.TaskCommandCenter })))
+const TaskDetailPage = lazy(() => import('@/features/tasks/TaskCommandCenter').then((m) => ({ default: m.TaskDetailPage })))
+const RunTracePage = lazy(() => import('@/features/tasks/TaskCommandCenter').then((m) => ({ default: m.RunTracePage })))
+const CostQualityCenter = lazy(() => import('@/features/quality-cost/CostQualityCenter').then((m) => ({ default: m.CostQualityCenter })))
+const KnowledgeWorkbench = lazy(() => import('@/features/knowledge/KnowledgeWorkbench').then((m) => ({ default: m.KnowledgeWorkbench })))
+const KnowledgeGraphPage = lazy(() => import('@/features/knowledge/KnowledgeGraphPage').then((m) => ({ default: m.KnowledgeGraphPage })))
+const AgentCollaborationCenter = lazy(() => import('@/features/collaboration/AgentCollaborationCenter').then((m) => ({ default: m.AgentCollaborationCenter })))
+const AgentDefinitionPage = lazy(() => import('@/features/agents/AgentDefinitionPage').then((m) => ({ default: m.AgentDefinitionPage })))
+const WorkflowDesignerPage = lazy(() => import('@/features/workflows/WorkflowDesignerPage').then((m) => ({ default: m.WorkflowDesignerPage })))
+const AlertsPage = lazy(() => import('@/features/alerts/AlertsPage').then((m) => ({ default: m.AlertsPage })))
+const BatchExecutionPage = lazy(() => import('@/features/batches/BatchExecutionPage').then((m) => ({ default: m.BatchExecutionPage })))
+const RunReplayPage = lazy(() => import('@/features/replay/RunReplayPage').then((m) => ({ default: m.RunReplayPage })))
+const RagPlaygroundPage = lazy(() => import('@/features/rag/RagPlaygroundPage').then((m) => ({ default: m.RagPlaygroundPage })))
+const ExtensionPublishersPage = lazy(() => import('@/features/extensions/ExtensionPublishersPage').then((m) => ({ default: m.ExtensionPublishersPage })))
+const PromptLifecyclePage = lazy(() => import('@/features/prompts/PromptLifecyclePage').then((m) => ({ default: m.PromptLifecyclePage })))
+const AuditCenterPage = lazy(() => import('@/features/audit/AuditCenterPage').then((m) => ({ default: m.AuditCenterPage })))
+const AuditEventDetailPage = lazy(() => import('@/features/audit/AuditEventDetailPage').then((m) => ({ default: m.AuditEventDetailPage })))
+const ApprovalDetailPage = lazy(() => import('@/features/approvals/ApprovalDetailPage').then((m) => ({ default: m.ApprovalDetailPage })))
+const MemoryGovernancePage = lazy(() => import('@/features/memories/MemoryGovernancePage').then((m) => ({ default: m.MemoryGovernancePage })))
+const EvaluationInsightsPage = lazy(() => import('@/features/evaluation/EvaluationInsightsPage').then((m) => ({ default: m.EvaluationInsightsPage })))
+
+const PageFallback = () => <LoadingState label="正在加载页面" />
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -111,7 +145,40 @@ function BootstrapGate() {
     )
   }
 
-  return <PlatformRouter config={config} />
+  return (
+    <AuthProvider enabled={config.auth.enabled}>
+      <PlatformRouter config={config} />
+    </AuthProvider>
+  )
+}
+
+function RequireSession({
+  enabled,
+  children,
+}: {
+  enabled: boolean
+  children: React.ReactNode
+}) {
+  const auth = useAuth()
+  const location = useLocation()
+  if (!enabled) return <>{children}</>
+  if (auth.status === 'loading') {
+    return (
+      <div className="bootstrap-screen">
+        <LoadingState label="正在校验登录状态" />
+      </div>
+    )
+  }
+  if (auth.status === 'anonymous') {
+    return (
+      <Navigate
+        to="/auth/login"
+        replace
+        state={{ from: location.pathname }}
+      />
+    )
+  }
+  return <>{children}</>
 }
 
 function PlatformRouter({ config }: { config: BootstrapConfig }) {
@@ -120,7 +187,15 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route element={<AppShell config={config} />}>
+          <Route path="/auth/login" element={<LoginPage />} />
+          <Route path="/auth/initialize" element={<InitializePage />} />
+          <Route
+            element={
+              <RequireSession enabled={config.auth.enabled}>
+                <AppShell config={config} />
+              </RequireSession>
+            }
+          >
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
@@ -137,24 +212,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                   <PageView
                     route={route}
                     authEnabled={config.auth.enabled}
-                    capabilities={config.capabilities}
                   />
-                }
-              />
-            ))}
-            {authRoutes.map((route) => (
-              <Route
-                key={route.pageId}
-                path={route.path}
-                element={
-                  config.auth.enabled ? (
-                    <AuthEntryPage route={route} />
-                  ) : (
-                    <ModeRestrictedState
-                      title="当前模式不提供身份入口"
-                      description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。"
-                    />
-                  )
                 }
               />
             ))}
@@ -167,6 +225,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
 }
 
 function AppShell({ config }: { config: BootstrapConfig }) {
+  const auth = useAuth()
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
@@ -183,38 +242,62 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   }, [navigate])
   useEffect(() => {
     const root = document.documentElement
+    const vars = [
+      '--ui-scale',
+      '--ui-canvas-width',
+      '--ui-canvas-height',
+      '--ui-dx',
+      '--ui-dy',
+      '--ui-side',
+      '--ui-offset',
+    ]
+    const clear = () => {
+      root.classList.remove('scaled-ui')
+      vars.forEach((name) => root.style.removeProperty(name))
+    }
     const apply = () => {
-      const raw = Math.min(window.innerWidth / 1536, window.innerHeight / 1024)
-      const scale = Number(Math.min(1.5, Math.max(0.7, raw)).toFixed(4))
-      if (window.innerWidth >= 1181) {
-        const offset = Math.max(0, (window.innerWidth / scale - 1536) / 2)
-        const side = Math.max(0, (window.innerWidth - 1536 * scale) / 2)
-        root.style.setProperty('--ui-scale', String(scale))
-        root.style.setProperty('--ui-offset', `${offset.toFixed(2)}px`)
-        root.style.setProperty('--ui-side', `${side.toFixed(2)}px`)
-        root.classList.add('scaled-ui')
-      } else {
-        root.classList.remove('scaled-ui')
-        root.style.removeProperty('--ui-scale')
-        root.style.removeProperty('--ui-offset')
-        root.style.removeProperty('--ui-side')
+      if (window.innerWidth < 1181) {
+        clear()
+        return
       }
+      const width = window.innerWidth
+      const height = window.innerHeight
+      let scale = height / 1024
+      let canvasWidth = Math.min(width / scale, 2600)
+      if (canvasWidth < 1536) {
+        scale = width / 1536
+        canvasWidth = 1536
+      }
+      const canvasHeight = Math.max(1024, height / scale)
+      root.style.setProperty('--ui-scale', scale.toFixed(4))
+      root.style.setProperty('--ui-canvas-width', `${canvasWidth.toFixed(2)}px`)
+      root.style.setProperty(
+        '--ui-canvas-height',
+        `${canvasHeight.toFixed(2)}px`,
+      )
+      root.style.setProperty(
+        '--ui-dx',
+        `${(canvasWidth - 1536).toFixed(2)}px`,
+      )
+      root.style.setProperty(
+        '--ui-dy',
+        `${(canvasHeight - 1024).toFixed(2)}px`,
+      )
+      root.style.setProperty('--ui-side', '0px')
+      root.style.setProperty('--ui-offset', '0px')
+      root.classList.add('scaled-ui')
     }
     apply()
     window.addEventListener('resize', apply)
     return () => {
       window.removeEventListener('resize', apply)
-      root.classList.remove('scaled-ui')
-      root.style.removeProperty('--ui-scale')
-      root.style.removeProperty('--ui-offset')
-      root.style.removeProperty('--ui-side')
+      clear()
     }
   }, [])
   const current = [
     ...pageRoutes,
     ...detailRoutes,
     ...globalRoutes,
-    ...authRoutes,
   ].find((route) => {
     if (route.path === location.pathname) return true
     const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
@@ -243,7 +326,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
         <Link
           className="brand"
           to="/workspace/overview"
-          aria-label="Agent 平台工作台"
+          aria-label="龍奕 FDE 工作室工作台"
         >
           <span className="brand-mark" aria-hidden="true">
             <svg width="24" height="24" viewBox="0 0 26 26">
@@ -259,7 +342,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
               />
             </svg>
           </span>
-          {!collapsed && <span className="brand-name">Agent 平台</span>}
+          {!collapsed && <span className="brand-name">龍奕 FDE 工作室</span>}
         </Link>
         <nav className="primary-navigation">
           {sections.map((item) => {
@@ -331,17 +414,52 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             <span className="mode-indicator">
               {config.auth.enabled ? '权限已启用' : '免登录'}
             </span>
-            {config.auth.enabled && (
-              <Link className="top-action auth-entry" to="/auth/login">
+            {config.auth.enabled && auth.session?.user && (
+              <span className="top-action auth-entry">
                 <LogIn size={14} strokeWidth={2} aria-hidden="true" />
-                登录
-              </Link>
+                {auth.session.user.display_name || auth.session.user.email}
+                <button
+                  className="text-link"
+                  type="button"
+                  onClick={() => void auth.signOut()}
+                >
+                  退出
+                </button>
+              </span>
             )}
-            <span className="avatar" aria-hidden="true">
-              <UserRound size={20} strokeWidth={1.8} />
-            </span>
+            <img
+              className="avatar"
+              src={avatarImage}
+              alt=""
+              aria-hidden="true"
+            />
           </div>
         </header>
+        <nav className="page-breadcrumb" aria-label="面包屑">
+          <Link to="/workspace/overview">首页</Link>
+          {section && (
+            <>
+              <span className="breadcrumb-sep">/</span>
+              <Link to={section.path}>{section.label}</Link>
+            </>
+          )}
+          {activePage && (
+            <>
+              <span className="breadcrumb-sep">/</span>
+              {current && current.path !== activePage.path ? (
+                <Link to={activePage.path}>{activePage.label}</Link>
+              ) : (
+                <span aria-current="page">{activePage.label}</span>
+              )}
+            </>
+          )}
+          {current && activePage && current.path !== activePage.path && (
+            <>
+              <span className="breadcrumb-sep">/</span>
+              <span aria-current="page">{current.title}</span>
+            </>
+          )}
+        </nav>
         {section && section.subpages.length > 1 && (
           <nav className="subnav" aria-label={`${section.label}子页面`}>
             {section.subpages.map((page) => (
@@ -366,63 +484,42 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   )
 }
 
+const CRUD_CONFIGS: Record<string, CrudConfig> = {
+  '/operations/approvals': approvalConfig,
+  '/operations/conversations': conversationConfig,
+  '/operations/files': fileConfig,
+  '/operations/evaluation/datasets': evaluationDatasetConfig,
+  '/operations/evaluation/runs': evaluationRunConfig,
+  '/admin/scheduler/jobs': schedulerJobConfig,
+  '/admin/scheduler/subscriptions': subscriptionConfig,
+  '/admin/connectors': connectorConfig,
+  '/admin/webhooks': webhookConfig,
+}
+
 function resolveApiPath(routePath: string): string | null {
   /** 前端路由 → 后端 API 路径映射；返回 null 表示此路由无 API 可接 */
   const map: Record<string, string> = {
-    // 运营
-    '/operations/approvals': '/platform/v1/approvals',
-    '/operations/memories': '/platform/v1/memories',
-    '/operations/conversations': '/platform/v1/sessions',
-    '/operations/files': '/platform/v1/files',
+    // 审计
     '/admin/audit': '/platform/v1/audit/identity-events',
-    // Registry 类 — 统一走 /platform/v1/registry/{kind}
-    '/admin/models/providers': '/platform/v1/registry/providers',
-    '/admin/models/templates': '/platform/v1/registry/models',
-    '/admin/models/routing': '/platform/v1/registry/routing-policies',
-    '/admin/tools': '/platform/v1/registry/tools',
-    '/admin/skills': '/platform/v1/registry/skills',
-    // 调度
-    '/admin/scheduler/jobs': '/platform/v1/scheduler/jobs',
-    '/admin/scheduler/subscriptions': '/platform/v1/scheduler/subscriptions',
-    // 评测（后端已补 list）
-    '/operations/evaluation/datasets':
-      '/platform/v1/observability/evaluations/datasets',
-    '/operations/evaluation/runs': '/platform/v1/observability/evaluations',
-    // Prompt（后端已补 list）
-    '/admin/prompts': '/platform/v1/prompts',
-    // Organization / RBAC / Settings（admin.py 新增）
+    // Organization / RBAC / Settings（admin.py 新增，仅只读）
     '/admin/organization': '/platform/v1/admin/organization',
     '/admin/access-control': '/platform/v1/admin/access-control',
-    '/admin/settings': '/platform/v1/admin/settings',
     // Metrics JSON
     '/admin/operations': '/platform/v1/observability/metrics/json',
   }
-  if (map[routePath]) return map[routePath]
-  // 详情路由（含 /:param）一律返回 null — 不降级为父级 list API
-  // 详情数据需要专门组件 + 单条 GET {id} 接口
-  if (routePath.includes('/:')) return null
-  // Auth 相关 — 不渲染的空壳
-  if (routePath.startsWith('/auth/')) return null
-  // Organization / RBAC / Settings — 后端无 API
-  if (
-    [
-      '/admin/organization',
-      '/admin/access-control',
-      '/admin/settings',
-    ].includes(routePath)
-  )
-    return null
-  return null
+  return map[routePath] ?? null
+}
+
+function Lazy({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<PageFallback />}>{children}</Suspense>
 }
 
 function PageView({
   route,
   authEnabled,
-  capabilities,
 }: {
   route: PageRoute
   authEnabled: boolean
-  capabilities: string[]
 }) {
   if (route.authOnly && !authEnabled) {
     return (
@@ -432,46 +529,66 @@ function PageView({
       />
     )
   }
-  if (route.path === '/workspace/overview') return <Dashboard />
-  if (route.path === '/workspace/quickstart') return <QuickStartPage />
-  if (route.path === '/workspace/status') return <StatusBoardPage />
-  if (route.path === '/search')
-    return (
-      <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
-    )
-  if (route.path === '/notifications') return <NotificationsPage />
-  if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/workspace/overview') return <Lazy><Dashboard /></Lazy>
+  if (route.path === '/workspace/quickstart') return <Lazy><QuickStartPage /></Lazy>
+  if (route.path === '/workspace/status') return <Lazy><StatusBoardPage /></Lazy>
+  if (route.path === '/search') return <GlobalSearch />
+  if (route.path === '/notifications') return <Lazy><NotificationsPage /></Lazy>
+  if (route.path === '/workspace/tasks') return <Lazy><TaskCommandCenter /></Lazy>
   if (
     route.path === '/workspace/collaboration' ||
     route.path === '/operations/blackboard/:entryId'
   )
-    return <AgentCollaborationCenter />
-  if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
-  if (route.path === '/workspace/office') return <OfficeWorkspace />
+    return <Lazy><AgentCollaborationCenter /></Lazy>
+  if (route.path === '/workspace/quality-cost') return <Lazy><CostQualityCenter /></Lazy>
+  if (route.path === '/workspace/office') return <Lazy><OfficeWorkspace /></Lazy>
+  if (route.path === '/admin/organization')
+    return <Lazy><OrganizationAccessPage page="organization" /></Lazy>
+  if (route.path === '/admin/access-control')
+    return <Lazy><OrganizationAccessPage page="rbac" /></Lazy>
+  if (route.path === '/admin/settings') return <Lazy><SystemSettingsPage /></Lazy>
+  if (route.path === '/operations/approvals/:approvalId')
+    return <Lazy><ApprovalDetailPage /></Lazy>
+  if (route.path === '/admin/audit/:eventId') return <Lazy><AuditEventDetailPage /></Lazy>
   if (
     route.path === '/operations/agents' ||
     route.path === '/operations/agents/:agentId' ||
     route.path === '/admin/agents' ||
     route.path === '/admin/agents/:agentId'
   )
-    return <AgentDefinitionPage />
+    return <Lazy><AgentDefinitionPage /></Lazy>
   if (
     route.path === '/admin/workflows' ||
     route.path === '/admin/workflows/:workflowId' ||
-    route.path === '/admin/workflows/:workflowId/edit' ||
-    route.path === '/operations/workflow-runs/:runId'
+    route.path === '/admin/workflows/:workflowId/edit'
   )
-    return <WorkflowDesignerPage />
+    return <Lazy><WorkflowDesignerPage /></Lazy>
   if (
     route.path === '/operations/knowledge-bases' ||
     route.path === '/operations/knowledge-bases/:collectionId' ||
     route.path === '/operations/documents/:documentId'
   )
-    return <KnowledgeWorkbench />
-  if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
-  if (route.path === '/operations/runs/:runId') return <RunTracePage />
+    return <Lazy><KnowledgeWorkbench /></Lazy>
+  if (route.path === '/operations/knowledge-graph') return <Lazy><KnowledgeGraphPage /></Lazy>
+  if (route.path === '/operations/rag-playground') return <Lazy><RagPlaygroundPage /></Lazy>
+  if (route.path === '/operations/batches') return <Lazy><BatchExecutionPage /></Lazy>
+  if (route.path === '/operations/replay') return <Lazy><RunReplayPage /></Lazy>
+  if (route.path === '/operations/alerts') return <Lazy><AlertsPage /></Lazy>
+  if (route.path === '/admin/extensions') return <Lazy><ExtensionPublishersPage /></Lazy>
+  if (route.path === '/admin/prompts') return <Lazy><PromptLifecyclePage /></Lazy>
+  if (route.path === '/admin/audit') return <Lazy><AuditCenterPage /></Lazy>
+  if (route.path === '/operations/memories') return <Lazy><MemoryGovernancePage /></Lazy>
+  if (route.path === '/operations/evaluation/insights') return <Lazy><EvaluationInsightsPage /></Lazy>
+  if (route.path === '/operations/tasks/:taskId') return <Lazy><TaskDetailPage /></Lazy>
+  if (route.path === '/operations/runs/:runId') return <Lazy><RunTracePage /></Lazy>
 
-  // 通用分支：后端有 API → GenericListPage，无 API → EmptyState
+  // 资源列表 → 通用 CRUD（列表内弹窗新建/编辑）
+  const crudConfig = CRUD_CONFIGS[route.path]
+  if (crudConfig) return <CrudListPage config={crudConfig} />
+  const registryConfig = registryConfigs[route.path]
+  if (registryConfig) return <RegistryCatalogPage config={registryConfig} />
+
+  // 通用分支：后端有 API → GenericListPage
   const apiPath = resolveApiPath(route.path)
   if (apiPath) {
     return (
@@ -483,6 +600,9 @@ function PageView({
       />
     )
   }
+
+  // 其余详情路由 → 通用详情页（逐个映射到真实 GET 接口）
+  if (route.path.includes('/:')) return <Lazy><DetailRoutePage path={route.path} /></Lazy>
 
   return (
     <section className="page-content">
@@ -496,27 +616,6 @@ function PageView({
       <EmptyState
         title="业务页面待模块接入"
         description={`路由已注册，但服务端未声明可调用的 API 路径。由 ${route.owner} 负责业务实现。`}
-      />
-    </section>
-  )
-}
-
-function AuthEntryPage({ route }: { route: PageRoute }) {
-  return (
-    <section className="page-content">
-      <div className="page-heading">
-        <p className="eyebrow">{route.pageId}</p>
-        <h1>{route.title}</h1>
-        <p>{route.description}</p>
-      </div>
-      <EmptyState
-        title="身份流程由认证模块提供"
-        description="本任务仅接入服务端权限模式与条件路由，不模拟登录、创建账号或管理员身份。"
-        action={
-          <Link className="text-link" to="/workspace/overview">
-            返回工作空间
-          </Link>
-        }
       />
     </section>
   )

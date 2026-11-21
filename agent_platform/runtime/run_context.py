@@ -297,8 +297,8 @@ class PostgresRunContextSnapshotStore:
                        VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                     (
                         snapshot.tenant_id, run_uuid, snapshot.revision, snapshot_uuid,
-                        self._jsonb(_json_copy(snapshot.context)),
-                        self._jsonb(_json_copy(list(snapshot.references))),
+                        self._jsonb(_json_copy(snapshot.context or {})),
+                        self._jsonb(_json_copy(list(snapshot.references or []))),
                         snapshot.digest,
                     ),
                 )

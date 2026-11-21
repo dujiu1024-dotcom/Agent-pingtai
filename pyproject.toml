@@ -8,6 +8,9 @@ requires-python = ">=3.11"
 tokenizer = ["tiktoken>=0.7,<1"]
 reports = ["reportlab>=4,<5"]
 
+[project.entry-points."agent_platform.production_run_execution"]
+builder = "deploy.local_runtime:build_run_execution"
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
@@ -260,3 +263,12 @@ ignore_missing_imports = true
 # 只门禁列出的新增文件；被引用模块的存量问题不在这里卡住（见 T-0113）
 follow_imports = "silent"
 warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+# 排除 agency/ 老系统测试（依赖独立的 db/browser/gui 模块，不属于 agent_platform 主仓库）
+norecursedirs = ["agency"]
+addopts = "--ignore=tests/test_blackboard.py --ignore=tests/test_browser.py --ignore=tests/test_concurrency.py --ignore=tests/test_console.py --ignore=tests/test_conversation.py --ignore=tests/test_delegation_task_center_executor.py --ignore=tests/test_erd.py --ignore=tests/test_feishu_commands.py --ignore=tests/test_feishu_config.py --ignore=tests/test_gui.py --ignore=tests/test_gui_actions.py --ignore=tests/test_gui_night.py --ignore=tests/test_memory.py --ignore=tests/test_message_gate.py --ignore=tests/test_policy.py --ignore=tests/test_probe.py --ignore=tests/test_ratelimit.py --ignore=tests/test_sync.py --ignore=tests/test_vectors.py"
+

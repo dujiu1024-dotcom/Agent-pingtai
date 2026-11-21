@@ -1,568 +1,468 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { EmptyState } from '@/components/States'
-import './agent-definition.css'
+import { ErrorState, LoadingState } from '@/components/States'
+import { apiClient } from '@/lib/api/api-client'
+import { resolveNames, useRegistryCaches } from '@/lib/registry-names'
+import { valueLabel } from '@/lib/i18n/labels'
 
-type DefinitionStatus = 'draft' | 'published' | 'disabled'
-type AgentDefinition = {
-  agent_id: string
+interface RegistryItem {
+  kind: string
+  item_id: string
+  version: number
+  definition: Record<string, unknown>
+  status: string
+  created_by: string
+  created_at: string
+  published_at: string | null
+}
+
+interface AgentDefinition {
   name: string
   description: string
   instructions: string
   model_template_ref: string
-  tool_refs: string[]
-  skill_refs: string[]
-  workflow_refs: string[]
-  input_schema: string
-  output_schema: string
-  status: DefinitionStatus
-  revision: number
-  updated_at: string
+  tool_refs: string
+  skill_refs: string
+  workflow_refs: string
 }
-type DefinitionVersion = {
-  version: number
-  created_at: string
-  definition: AgentDefinition
-}
-type DraftForm = Omit<AgentDefinition, 'revision' | 'updated_at'>
 
-const emptyDraft = (): DraftForm => ({
-  agent_id: '',
+const EMPTY: AgentDefinition = {
   name: '',
   description: '',
   instructions: '',
   model_template_ref: '',
-  tool_refs: [],
-  skill_refs: [],
-  workflow_refs: [],
-  input_schema: '{\n  "type": "object",\n  "properties": {}\n}',
-  output_schema: '{\n  "type": "object",\n  "properties": {}\n}',
-  status: 'draft',
-})
-const splitRefs = (value: string) =>
-  [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))]
-const refsText = (items: string[]) => items.join(', ')
-const prettyTime = (value: string) =>
-  value ? new Date(value).toLocaleString() : '—'
+  tool_refs: '',
+  skill_refs: '',
+  workflow_refs: '',
+}
 
-function parseSchema(value: string, label: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(value)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-      return label + ' 必须是 JSON object。'
-    return null
-  } catch {
-    return label + ' 不是有效 JSON。'
+function splitList(value: unknown): string {
+  if (Array.isArray(value)) return value.join(', ')
+  return typeof value === 'string' ? value : ''
+}
+
+function toDefinition(item: RegistryItem | undefined): AgentDefinition {
+  const definition = item?.definition ?? {}
+  return {
+    name: String(definition.name ?? ''),
+    description: String(definition.description ?? ''),
+    instructions: String(definition.instructions ?? ''),
+    model_template_ref: String(
+      definition.model_template_id ?? definition.model_template_ref ?? '',
+    ),
+    tool_refs: splitList(definition.tool_ids ?? definition.tool_refs),
+    skill_refs: splitList(definition.skill_ids ?? definition.skill_refs),
+    workflow_refs: splitList(definition.workflow_ids ?? definition.workflow_refs),
   }
 }
 
-function VersionDiff({
-  before,
-  after,
-}: {
-  before: AgentDefinition
-  after: AgentDefinition
-}) {
-  const fields: (keyof AgentDefinition)[] = [
-    'name',
-    'description',
-    'instructions',
-    'model_template_ref',
-    'tool_refs',
-    'skill_refs',
-    'workflow_refs',
-    'input_schema',
-    'output_schema',
-    'status',
-  ]
-  const changes = fields.filter(
-    (field) =>
-      JSON.stringify(before[field]) !== JSON.stringify(after[field]),
-  )
-  return changes.length ? (
-    <div className="agent-diff">
-      {changes.map((field) => (
-        <article key={field}>
-          <strong>{field}</strong>
-          <div className="agent-diff-columns">
-            <pre>{JSON.stringify(before[field], null, 2)}</pre>
-            <pre>{JSON.stringify(after[field], null, 2)}</pre>
-          </div>
-        </article>
-      ))}
-    </div>
-  ) : (
-    <p className="agent-muted">两个版本没有字段差异。</p>
-  )
+function toLists(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 export function AgentDefinitionPage() {
-  const { agentId: routeAgentId } = useParams()
-  const [definitions, setDefinitions] = useState<AgentDefinition[]>([])
-  const [versions, setVersions] = useState<Record<string, DefinitionVersion[]>>(
-    {},
-  )
-  const [selectedId, setSelectedId] = useState('')
-  const [form, setForm] = useState<DraftForm>(emptyDraft)
-  const [toolText, setToolText] = useState('')
-  const [skillText, setSkillText] = useState('')
-  const [workflowText, setWorkflowText] = useState('')
-  const [editing, setEditing] = useState(false)
-  const [showEditor, setShowEditor] = useState(false)
-  const [activeTab, setActiveTab] = useState<'definition' | 'versions'>(
-    'definition',
-  )
-  const [compareFrom, setCompareFrom] = useState('')
-  const [compareTo, setCompareTo] = useState('')
-  const [validationError, setValidationError] = useState('')
+  const { agentId } = useParams()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const listKey = ['registry', 'agent']
+  const [newItemId, setNewItemId] = useState('')
+  const [form, setForm] = useState<AgentDefinition>(EMPTY)
 
-  const selected = definitions.find((item) => item.agent_id === selectedId)
-  const history = versions[selectedId] ?? []
-  const versionBefore = history.find(
-    (item) => String(item.version) === compareFrom,
-  )
-  const versionAfter = history.find(
-    (item) => String(item.version) === compareTo,
-  )
-  const versionOptions = useMemo(
-    () => history.map((item) => item.version),
-    [history],
-  )
+  const list = useQuery({
+    queryKey: listKey,
+    queryFn: () =>
+      apiClient.get<{ items: RegistryItem[] }>('/platform/v1/registry/agent'),
+    retry: false,
+  })
+
+  const { toolNames, skillNames, workflowNames, modelTemplateNames } = useRegistryCaches()
+
+  const active = useQuery({
+    queryKey: ['registry', 'agent', agentId, 'active'],
+    queryFn: () =>
+      apiClient.get<RegistryItem>(
+        `/platform/v1/registry/agent/${agentId}/active`,
+      ),
+    enabled: Boolean(agentId),
+    retry: false,
+  })
+  const versions = useQuery({
+    queryKey: ['registry', 'agent', agentId, 'versions'],
+    queryFn: () =>
+      apiClient.get<{ items: RegistryItem[] }>(
+        `/platform/v1/registry/agent/${agentId}/versions`,
+      ),
+    enabled: Boolean(agentId),
+    retry: false,
+  })
 
   useEffect(() => {
-    if (routeAgentId) {
-      setSelectedId(routeAgentId)
-      setShowEditor(false)
+    if (!agentId) {
+      setForm(EMPTY)
+      return
     }
-  }, [routeAgentId])
+    if (active.data) setForm(toDefinition(active.data))
+  }, [agentId, active.data])
 
-  const beginCreate = () => {
-    setSelectedId('')
-    setForm(emptyDraft())
-    setToolText('')
-    setSkillText('')
-    setWorkflowText('')
-    setValidationError('')
-    setEditing(false)
-    setShowEditor(true)
-    setActiveTab('definition')
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: listKey })
+    void queryClient.invalidateQueries({
+      queryKey: ['registry', 'agent', agentId],
+    })
   }
 
-  const beginEdit = (item: AgentDefinition) => {
-    setSelectedId(item.agent_id)
-    setForm({
-      agent_id: item.agent_id,
-      name: item.name,
-      description: item.description,
-      instructions: item.instructions,
-      model_template_ref: item.model_template_ref,
-      tool_refs: item.tool_refs,
-      skill_refs: item.skill_refs,
-      workflow_refs: item.workflow_refs,
-      input_schema: item.input_schema,
-      output_schema: item.output_schema,
-      status: 'draft',
-    })
-    setToolText(refsText(item.tool_refs))
-    setSkillText(refsText(item.skill_refs))
-    setWorkflowText(refsText(item.workflow_refs))
-    setValidationError('')
-    setEditing(true)
-    setShowEditor(true)
-    setActiveTab('definition')
-  }
-
-  const saveLocalDraft = () => {
-    const id = form.agent_id.trim()
-    if (!id || !form.name.trim()) {
-      setValidationError('Agent ID 和名称为必填项。')
-      return
-    }
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(id)) {
-      setValidationError('Agent ID 格式无效，仅支持字母、数字及 . _ : -。')
-      return
-    }
-    const schemaError =
-      parseSchema(form.input_schema, '输入 Schema') ??
-      parseSchema(form.output_schema, '输出 Schema')
-    if (schemaError) {
-      setValidationError(schemaError)
-      return
-    }
-    const now = new Date().toISOString()
-    const next: AgentDefinition = {
-      ...form,
-      agent_id: id,
-      name: form.name.trim(),
-      tool_refs: splitRefs(toolText),
-      skill_refs: splitRefs(skillText),
-      workflow_refs: splitRefs(workflowText),
-      revision: (selected?.revision ?? 0) + 1,
-      updated_at: now,
-      status: 'draft',
-    }
-    setDefinitions((current) => {
-      const exists = current.some((item) => item.agent_id === id)
-      return exists
-        ? current.map((item) => (item.agent_id === id ? next : item))
-        : [...current, next]
-    })
-    setVersions((current) => {
-      const previous = current[id] ?? []
-      return {
-        ...current,
-        [id]: [
-          ...previous,
-          { version: next.revision, created_at: now, definition: next },
-        ],
+  const save = useMutation({
+    mutationFn: async (publish: boolean) => {
+      if (!agentId) throw new Error('缺少 Agent ID')
+      const definition = {
+        name: form.name || agentId,
+        description: form.description,
+        instructions: form.instructions,
+        model_template_id: form.model_template_ref,
+        tool_ids: toLists(form.tool_refs),
+        skill_ids: toLists(form.skill_refs),
+        workflow_ids: toLists(form.workflow_refs),
       }
-    })
-    setSelectedId(id)
-    setShowEditor(false)
-    setValidationError('')
-  }
+      const created = await apiClient.post<RegistryItem>(
+        `/platform/v1/registry/agent/${agentId}/versions`,
+        { definition },
+      )
+      if (publish) {
+        await apiClient.post(
+          `/platform/v1/registry/agent/${agentId}/versions/${created.version}/publish`,
+        )
+      }
+      return created
+    },
+    onSuccess: invalidate,
+  })
 
-  const startNewVersion = () => {
-    if (!selected) return
-    beginEdit(selected)
-  }
+  const publish = useMutation({
+    mutationFn: (version: number) =>
+      apiClient.post(
+        `/platform/v1/registry/agent/${agentId}/versions/${version}/publish`,
+      ),
+    onSuccess: invalidate,
+  })
+  const rollback = useMutation({
+    mutationFn: (version: number) =>
+      apiClient.post(
+        `/platform/v1/registry/agent/${agentId}/rollback/${version}`,
+      ),
+    onSuccess: invalidate,
+  })
+  const disable = useMutation({
+    mutationFn: () =>
+      apiClient.post(`/platform/v1/registry/agent/${agentId}/disable`),
+    onSuccess: invalidate,
+  })
 
-  const removeLocalDraft = () => {
-    if (!selected) return
-    setDefinitions((current) =>
-      current.filter((item) => item.agent_id !== selected.agent_id),
+  const mutationError = [save, publish, rollback, disable].find(
+    (item) => item.isError,
+  )?.error
+
+  if (!agentId) {
+    return (
+      <section className="page-content">
+        <div className="page-heading">
+          <p className="eyebrow">注册表</p>
+          <h1>Agent 定义</h1>
+          <p>Agent 定义由服务端 Registry 管理，保存即产生新版本，发布后才会生效。</p>
+        </div>
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const id = newItemId.trim()
+            if (!id) return
+            navigate(`/admin/agents/${id}`)
+          }}
+        >
+          <input
+            value={newItemId}
+            onChange={(event) => setNewItemId(event.target.value)}
+            placeholder="新 Agent ID，例如 support-agent"
+            aria-label="新 Agent ID"
+          />
+          <button className="button-primary" type="submit">
+            新建 Agent
+          </button>
+        </form>
+        {list.isPending && <LoadingState />}
+        {list.isError && (
+          <ErrorState
+            description={
+              list.error instanceof Error ? list.error.message : '加载失败'
+            }
+            onRetry={() => void list.refetch()}
+          />
+        )}
+        {list.data && list.data.items.length === 0 && (
+          <p className="detail-empty">当前租户还没有 Agent 定义。</p>
+        )}
+        {list.data && list.data.items.length > 0 && (
+          <div className="generic-table-wrap">
+            <table className="generic-table">
+              <thead>
+                <tr>
+                  <th>智能体标识</th>
+                  <th>名称</th>
+                  <th>工具</th>
+                  <th>技能包</th>
+                  <th>版本</th>
+                  <th>状态</th>
+                  <th>更新时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.data.items.map((item) => {
+                  const tools = (item.definition.tool_ids as string[]) ?? []
+                  const skills = (item.definition.skill_ids as string[]) ?? []
+                  return (
+                    <tr key={item.item_id}>
+                      <td>
+                        <Link to={`/admin/agents/${item.item_id}`}>
+                          {item.item_id}
+                        </Link>
+                      </td>
+                      <td>{String(item.definition.name ?? '—')}</td>
+                      <td>
+                        {tools.length > 0 ? (
+                          tools.map((t) => (
+                            <span key={t} className="registry-badge registry-badge--tool">
+                              {toolNames[t] ?? t}
+                            </span>
+                          ))
+                        ) : (
+                          <em className="cell-empty">—</em>
+                        )}
+                      </td>
+                      <td>
+                        {skills.length > 0 ? (
+                          skills.map((s) => (
+                            <span key={s} className="registry-badge registry-badge--skill">
+                              {skillNames[s] ?? s}
+                            </span>
+                          ))
+                        ) : (
+                          <em className="cell-empty">—</em>
+                        )}
+                      </td>
+                      <td>v{item.version}</td>
+                      <td>
+                        <span className={`registry-status registry-status--${item.status}`}>
+                          {valueLabel(item.status)}
+                        </span>
+                      </td>
+                      <td>{new Date(item.created_at).toLocaleString('zh-CN')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     )
-    setVersions((current) => {
-      const next = { ...current }
-      delete next[selected.agent_id]
-      return next
-    })
-    setSelectedId('')
-    setShowEditor(false)
-    setActiveTab('definition')
   }
-
-  const canUseDetail = !routeAgentId || Boolean(selected)
 
   return (
-    <section className="page-content agent-definition-page">
-      <div className="page-heading agent-definition-heading">
-        <div>
-          <p className="eyebrow">ADMINISTRATION / AGENT DEFINITION</p>
-          <h1>Agent 定义管理</h1>
-          <p>管理 Agent 指令、模型模板引用、工具与 Skill 白名单及 Workflow 关联。</p>
-        </div>
-        <button className="button-primary" type="button" onClick={beginCreate}>
-          新建 Agent
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">注册表 · Agent</p>
+        <h1>{active.data?.definition.name ? String(active.data.definition.name) : agentId}</h1>
+        <p>Agent ID：{agentId}</p>
+        {active.data && (
+          <small>
+            当前生效版本 v{active.data.version} · {valueLabel(active.data.status)}
+          </small>
+        )}
+      </div>
+
+      {active.isPending && <LoadingState />}
+      {active.isError && (
+        <ErrorState
+          title="Agent 尚未发布"
+          description={
+            active.error instanceof Error
+              ? active.error.message
+              : '该 Agent 还没有生效版本，保存并发布后即可使用。'
+          }
+        />
+      )}
+
+      <div className="editor-grid">
+        <label className="editor-field">
+          <span>名称</span>
+          <input
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+          />
+        </label>
+        <label className="editor-field">
+          <span>默认模型模板引用</span>
+          <input
+            value={form.model_template_ref}
+            onChange={(event) =>
+              setForm({ ...form, model_template_ref: event.target.value })
+            }
+            placeholder="model_template 的 item_id"
+          />
+          {form.model_template_ref && modelTemplateNames[form.model_template_ref] && (
+            <small className="field-hint">
+              中文名：{modelTemplateNames[form.model_template_ref]}
+            </small>
+          )}
+        </label>
+        <label className="editor-field editor-field--wide">
+          <span>描述</span>
+          <input
+            value={form.description}
+            onChange={(event) =>
+              setForm({ ...form, description: event.target.value })
+            }
+          />
+        </label>
+        <label className="editor-field editor-field--wide">
+          <span>指令（Instructions）</span>
+          <textarea
+            rows={6}
+            value={form.instructions}
+            onChange={(event) =>
+              setForm({ ...form, instructions: event.target.value })
+            }
+          />
+        </label>
+        <label className="editor-field editor-field--wide">
+          <span>工具引用（逗号分隔）</span>
+          <input
+            value={form.tool_refs}
+            onChange={(event) =>
+              setForm({ ...form, tool_refs: event.target.value })
+            }
+          />
+          {form.tool_refs && (
+            <small className="field-hint">
+              {toLists(form.tool_refs).map((id) => toolNames[id] ?? id).join('、')}
+            </small>
+          )}
+        </label>
+        <label className="editor-field editor-field--wide">
+          <span>Skill 引用（逗号分隔）</span>
+          <input
+            value={form.skill_refs}
+            onChange={(event) =>
+              setForm({ ...form, skill_refs: event.target.value })
+            }
+          />
+          {form.skill_refs && (
+            <small className="field-hint">
+              {toLists(form.skill_refs).map((id) => skillNames[id] ?? id).join('、')}
+            </small>
+          )}
+        </label>
+        <label className="editor-field editor-field--wide">
+          <span>工作流引用（逗号分隔）</span>
+          <input
+            value={form.workflow_refs}
+            onChange={(event) =>
+              setForm({ ...form, workflow_refs: event.target.value })
+            }
+          />
+          {form.workflow_refs && (
+            <small className="field-hint">
+              {toLists(form.workflow_refs).map((id) => workflowNames[id] ?? id).join('、')}
+            </small>
+          )}
+        </label>
+      </div>
+
+      <div className="detail-actions">
+        <button
+          className="button-primary"
+          type="button"
+          disabled={save.isPending}
+          onClick={() => save.mutate(true)}
+        >
+          保存并发布
         </button>
+        <button
+          className="button-secondary"
+          type="button"
+          disabled={save.isPending}
+          onClick={() => save.mutate(false)}
+        >
+          仅保存草稿
+        </button>
+        <button
+          className="button-secondary"
+          type="button"
+          disabled={disable.isPending}
+          onClick={() => disable.mutate()}
+        >
+          停用
+        </button>
+        {mutationError && (
+          <span className="auth-error" role="alert">
+            {mutationError instanceof Error ? mutationError.message : '操作失败'}
+          </span>
+        )}
       </div>
 
-      <div className="agent-definition-notice" role="note">
-        <strong>前端壳 / 本地草稿模式</strong>
-        <span>
-          当前列表从空数组开始。保存仅更新当前页面内存状态，不会写入服务端；Registry API、
-          ETag/revision 并发控制、权限审计与双模式 API 装配待后端补齐。
-        </span>
-      </div>
-
-      <div className="agent-definition-layout">
-        <aside className="agent-definition-list">
-          <div className="agent-section-heading">
-            <h2>Agent 定义</h2>
-            <span>{definitions.length}</span>
-          </div>
-          {definitions.length ? (
-            definitions.map((item) => (
-              <button
-                className={
-                  selectedId === item.agent_id
-                    ? 'agent-definition-list-item active'
-                    : 'agent-definition-list-item'
-                }
-                key={item.agent_id}
-                type="button"
-                onClick={() => {
-                  setSelectedId(item.agent_id)
-                  setShowEditor(false)
-                  setActiveTab('definition')
-                }}
-              >
-                <strong>{item.name}</strong>
-                <small>{item.agent_id}</small>
-                <span>{item.status === 'draft' ? '草稿' : item.status}</span>
-              </button>
-            ))
-          ) : (
-            <EmptyState
-              title="暂无 Agent 定义"
-              description="创建本地草稿以预览配置结构；服务端列表 API 接入后将在此显示租户内定义。"
-            />
-          )}
-        </aside>
-
-        <div className="agent-definition-detail">
-          {showEditor ? (
-            <section className="agent-definition-panel">
-              <div className="agent-section-heading">
-                <div>
-                  <h2>{editing ? '编辑定义草稿' : '新建 Agent 定义'}</h2>
-                  <p>字段结构以 Registry definition schema 为准。</p>
-                </div>
-                <button
-                  className="button-secondary"
-                  type="button"
-                  onClick={() => setShowEditor(false)}
-                >
-                  取消
-                </button>
-              </div>
-              <div className="agent-form-grid">
-                <label>
-                  Agent ID *
-                  <input
-                    value={form.agent_id}
-                    disabled={editing}
-                    onChange={(event) =>
-                      setForm({ ...form, agent_id: event.target.value })
-                    }
-                    placeholder="例如 support-agent"
-                  />
-                </label>
-                <label>
-                  名称 *
-                  <input
-                    value={form.name}
-                    onChange={(event) =>
-                      setForm({ ...form, name: event.target.value })
-                    }
-                    placeholder="Agent 显示名称"
-                  />
-                </label>
-                <label className="wide">
-                  描述
-                  <input
-                    value={form.description}
-                    onChange={(event) =>
-                      setForm({ ...form, description: event.target.value })
-                    }
-                    placeholder="用途与职责说明"
-                  />
-                </label>
-                <label className="wide">
-                  系统指令 / Instructions
-                  <textarea
-                    rows={8}
-                    value={form.instructions}
-                    onChange={(event) =>
-                      setForm({ ...form, instructions: event.target.value })
-                    }
-                    placeholder="定义 Agent 的目标、边界、输出要求与行为规范"
-                  />
-                </label>
-                <label className="wide">
-                  Model Template 引用
-                  <input
-                    value={form.model_template_ref}
-                    onChange={(event) =>
-                      setForm({ ...form, model_template_ref: event.target.value })
-                    }
-                    placeholder="model_template_ref（不填写密钥）"
-                  />
-                  <small>仅保存模板引用；密钥由服务端 secret reference 管理。</small>
-                </label>
-                <label className="wide">
-                  Tool 白名单引用
-                  <input
-                    value={toolText}
-                    onChange={(event) => setToolText(event.target.value)}
-                    placeholder="tool-a, tool-b"
-                  />
-                </label>
-                <label className="wide">
-                  Skill 白名单引用
-                  <input
-                    value={skillText}
-                    onChange={(event) => setSkillText(event.target.value)}
-                    placeholder="skill-a, skill-b"
-                  />
-                </label>
-                <label className="wide">
-                  关联 Workflow
-                  <input
-                    value={workflowText}
-                    onChange={(event) => setWorkflowText(event.target.value)}
-                    placeholder="workflow-id, workflow-id-2"
-                  />
-                </label>
-                <label>
-                  输入 Schema (JSON)
-                  <textarea
-                    rows={9}
-                    spellCheck={false}
-                    value={form.input_schema}
-                    onChange={(event) =>
-                      setForm({ ...form, input_schema: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  输出 Schema (JSON)
-                  <textarea
-                    rows={9}
-                    spellCheck={false}
-                    value={form.output_schema}
-                    onChange={(event) =>
-                      setForm({ ...form, output_schema: event.target.value })
-                    }
-                  />
-                </label>
-              </div>
-              {validationError && (
-                <p className="agent-form-error" role="alert">
-                  {validationError}
-                </p>
-              )}
-              <div className="agent-form-actions">
-                <button
-                  className="button-primary"
-                  type="button"
-                  onClick={saveLocalDraft}
-                >
-                  保存本地草稿
-                </button>
-                <span>本地校验仅检查必填字段与 JSON 格式，不替代服务端引用校验。</span>
-              </div>
-            </section>
-          ) : selected && canUseDetail ? (
-            <>
-              <section className="agent-definition-panel">
-                <div className="agent-detail-title">
-                  <div>
-                    <p className="eyebrow">{selected.agent_id}</p>
-                    <h2>{selected.name}</h2>
-                    <p>{selected.description || '暂无描述'}</p>
-                  </div>
-                  <span className="agent-status">{selected.status}</span>
-                </div>
-                <div className="agent-detail-actions">
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    onClick={() => beginEdit(selected)}
-                  >
-                    编辑草稿
-                  </button>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    disabled
-                    title="等待 Registry 发布 API"
-                  >
-                    发布（待 API）
-                  </button>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    disabled
-                    title="等待 Registry 停用 API"
-                  >
-                    停用（待 API）
-                  </button>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    disabled
-                    title="等待 Registry 回滚 API"
-                  >
-                    回滚（待 API）
-                  </button>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    onClick={removeLocalDraft}
-                    title="仅移除当前页面内存中的本地草稿，不会删除服务端资源"
-                  >
-                    移除本地草稿
-                  </button>
-                </div>
-                <div className="agent-detail-meta">
-                  <span>Revision {selected.revision}</span>
-                  <span>更新于 {prettyTime(selected.updated_at)}</span>
-                  <span>版本快照 {history.length}</span>
-                </div>
-                <div className="agent-detail-tabs">
-                  <button
-                    className={activeTab === 'definition' ? 'active' : ''}
-                    type="button"
-                    onClick={() => setActiveTab('definition')}
-                  >
-                    定义配置
-                  </button>
-                  <button
-                    className={activeTab === 'versions' ? 'active' : ''}
-                    type="button"
-                    onClick={() => setActiveTab('versions')}
-                  >
-                    指令与版本
-                  </button>
-                </div>
-                {activeTab === 'definition' ? (
-                  <div className="agent-detail-grid">
-                    <article><small>Model Template</small><strong>{selected.model_template_ref || '未绑定'}</strong></article>
-                    <article><small>Tools</small><strong>{selected.tool_refs.join(', ') || '未绑定'}</strong></article>
-                    <article><small>Skills</small><strong>{selected.skill_refs.join(', ') || '未绑定'}</strong></article>
-                    <article><small>Workflows</small><strong>{selected.workflow_refs.join(', ') || '未关联'}</strong></article>
-                    <article className="wide"><small>Instructions</small><pre>{selected.instructions || '暂无指令'}</pre></article>
-                    <article><small>Input Schema</small><pre>{selected.input_schema}</pre></article>
-                    <article><small>Output Schema</small><pre>{selected.output_schema}</pre></article>
-                  </div>
-                ) : (
-                  <div className="agent-version-workspace">
-                    <div className="agent-section-heading">
-                      <div><h3>版本快照</h3><p>本地草稿快照；服务端版本历史 API 待接入。</p></div>
-                      <button className="button-secondary" type="button" onClick={startNewVersion}>创建新草稿版本</button>
-                    </div>
-                    {history.length ? (
-                      <>
-                        <div className="agent-version-list">
-                          {history.map((item) => (
-                            <article key={item.version}>
-                              <strong>v{item.version}</strong>
-                              <span>{prettyTime(item.created_at)}</span>
-                              <small>draft · local</small>
-                            </article>
-                          ))}
-                        </div>
-                        {history.length > 1 && (
-                          <div className="agent-version-compare">
-                            <label>基准版本<select value={compareFrom} onChange={(event) => setCompareFrom(event.target.value)}><option value="">选择版本</option>{versionOptions.map((version) => <option key={version} value={version}>v{version}</option>)}</select></label>
-                            <label>目标版本<select value={compareTo} onChange={(event) => setCompareTo(event.target.value)}><option value="">选择版本</option>{versionOptions.map((version) => <option key={version} value={version}>v{version}</option>)}</select></label>
-                          </div>
-                        )}
-                        {versionBefore && versionAfter && <VersionDiff before={versionBefore.definition} after={versionAfter.definition} />}
-                      </>
-                    ) : (
-                      <EmptyState title="暂无版本快照" description="保存第一个本地草稿后会生成页面内版本快照。" />
+      <h2 className="detail-section-title">
+        版本历史（{versions.data?.items.length ?? 0}）
+      </h2>
+      {versions.data && versions.data.items.length === 0 && (
+        <p className="detail-empty">尚未保存任何版本。</p>
+      )}
+      {versions.data && versions.data.items.length > 0 && (
+        <div className="generic-table-wrap">
+          <table className="generic-table">
+            <thead>
+              <tr>
+                <th>版本</th>
+                <th>状态</th>
+                <th>创建时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...versions.data.items].reverse().map((item) => (
+                <tr key={item.version}>
+                  <td>v{item.version}</td>
+                  <td>{valueLabel(item.status)}</td>
+                  <td>{new Date(item.created_at).toLocaleString('zh-CN')}</td>
+                  <td className="cell-nowrap">
+                    {item.status !== 'published' && (
+                      <button
+                        className="text-link"
+                        type="button"
+                        onClick={() => publish.mutate(item.version)}
+                      >
+                        发布
+                      </button>
                     )}
-                  </div>
-                )}
-              </section>
-            </>
-          ) : routeAgentId ? (
-            <EmptyState
-              title="未找到该 Agent 定义"
-              description="当前本地列表为空。服务端详情 API 接入后可通过深链刷新加载定义。"
-              action={<Link className="text-link" to="/admin/agents">返回 Agent 定义列表</Link>}
-            />
-          ) : (
-            <EmptyState
-              title="选择或创建 Agent 定义"
-              description="Agent 定义与运行态分离。运行状态、Run Trace 和协作执行信息请前往 Agent 协作中心。"
-            />
-          )}
+                    {active.data && item.version !== active.data.version && (
+                      <button
+                        className="text-link"
+                        type="button"
+                        onClick={() => rollback.mutate(item.version)}
+                      >
+                        回滚到此版本
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
     </section>
   )
 }

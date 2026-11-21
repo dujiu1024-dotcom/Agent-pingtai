@@ -473,12 +473,14 @@ class InMemorySessionRepository:
     async def list_assets(self, tenant_id: str, owner_id: str, session_id: str | None = None, limit: int = 100, project_id: str | None = None) -> tuple[FileAsset, ...]:
         if not 1 <= limit <= 500:
             raise SessionError("limit must be between 1 and 500")
-        rows = [row for (tenant, _), row in self.assets.items()
-                if tenant == tenant_id and row.owner_id == owner_id
-                and (session_id is None or row.session_id == session_id)
-                and (project_id is None or row.project_id == project_id)
-                and row.status is not AssetStatus.DELETED]
-        return tuple(sorted(rows, key=lambda row: row.created_at, reverse=True)[:limit])
+        assets = [a for a in self.assets.values() if a.tenant_id == tenant_id and a.status is not AssetStatus.DELETED]
+        if owner_id.strip():
+            assets = [a for a in assets if a.owner_id == owner_id]
+        if session_id is not None:
+            assets = [a for a in assets if a.session_id == session_id]
+        if project_id is not None:
+            assets = [a for a in assets if a.project_id == project_id]
+        return tuple(sorted(assets, key=lambda row: row.created_at, reverse=True)[:limit])
 
     async def set_asset_status(self, tenant_id: str, asset_id: str, status: AssetStatus) -> None:
         key = (tenant_id, asset_id)

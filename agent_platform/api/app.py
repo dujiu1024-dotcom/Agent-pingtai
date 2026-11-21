@@ -12,6 +12,7 @@ from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
 from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
+from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
     API_V1_PREFIX,
@@ -19,26 +20,32 @@ from agent_platform.api.contract import (
     PublicApiContractASGIMiddleware,
     error_for_http_status,
 )
+from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
+from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.graph import create_graph_router
+from agent_platform.api.graph_extraction import create_graph_extraction_router
+from agent_platform.graph.knowledge_extraction import (
+    KnowledgeGraphExtractionService,
+    build_extractor_from_env,
+)
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
-from agent_platform.api.extension_publishers import create_extension_publisher_router
-from agent_platform.api.localization import create_locale_preferences_router
+from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
-from agent_platform.api.rag_playground import create_rag_playground_router
+from agent_platform.api.localization import create_locale_preferences_router
+from agent_platform.api.notifications import create_notifications_router
 from agent_platform.api.observability import create_observability_router
-from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.office import OfficeStateService, create_office_router
-from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
-from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
+from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.runs import create_runs_router
+from agent_platform.api.search import create_search_router
 from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
@@ -167,7 +174,8 @@ def create_platform_app(
     auth_enabled: bool = True,
     office_state_service: OfficeStateService | None = None,
     office_tenant_resolver: Any | None = None,
-    bootstrap_capabilities: Sequence[str] = (),
+    bootstrap_capabilities: Sequence[str] | None = None,
+    knowledge_catalog: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -211,6 +219,8 @@ def create_platform_app(
         version="1.0.0",
         description="Versioned tenant-scoped API. See docs/api-contract.md for the public contract.",
     )
+    app.state.auth_enabled = auth_enabled
+    app.state.api_version = API_V1_PREFIX  # "/api/platform/v1"
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -262,9 +272,71 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    app.include_router(create_identity_router(identity=identity))
+    app.include_router(create_identity_router(
+        identity=identity, connection_factory=connection_factory,
+    ))
+    auto_capabilities: set[str] = set()
+    if office_state_service is not None:
+        auto_capabilities.add("office")
+    if knowledge is not None:
+        auto_capabilities.add("knowledge")
+        auto_capabilities.add("knowledge-memory")
+        if knowledge_catalog is not None:
+            auto_capabilities.add("knowledge-catalog")
+    if memory is not None:
+        auto_capabilities.add("memory")
+    if rag is not None or rag_playground_resolver is not None:
+        auto_capabilities.add("rag")
+    if any(v is not None for v in (
+        registry_service_resolver, session_service_resolver, run_lifecycle_resolver,
+        task_service_resolver, blackboard_repository_resolver, graph_query_service_resolver,
+    )):
+        auto_capabilities.add("workbench")
+    if any(v is not None for v in (quota_service, quota_store, quota_reporting_store)):
+        auto_capabilities.add("quota")
+    if any(v is not None for v in (alert_store, operational_health_monitor)):
+        auto_capabilities.add("observability")
+    # 以下模块由参数对共同决定是否注册 router
+    if approval_service is not None and approval_authorizer is not None:
+        auto_capabilities.add("approvals")
+    if batch_service_resolver is not None:
+        auto_capabilities.add("batch")
+    if blackboard_repository_resolver is not None and blackboard_authorizer is not None:
+        auto_capabilities.add("blackboard")
+    if connector_service_resolver is not None and connector_authorizer is not None:
+        auto_capabilities.add("connectors")
+    if graph_query_service_resolver is not None and graph_read_authorizer is not None:
+        auto_capabilities.add("graph")
+    if webhook_admin_service is not None and webhook_admin_authorizer is not None:
+        auto_capabilities.add("webhooks")
+    if run_lifecycle_resolver is not None and run_authorizer is not None:
+        auto_capabilities.add("runs")
+    if run_replay_resolver is not None:
+        auto_capabilities.add("run-replay")
+    if session_service_resolver is not None and session_authorizer is not None:
+        auto_capabilities.add("sessions")
+    if registry_service_resolver is not None and registry_authorizer is not None:
+        auto_capabilities.add("registry")
+    if prompt_registry is not None and prompt_manage_authorizer is not None:
+        auto_capabilities.add("prompts")
+    if evaluation_repository is not None and evaluation_manage_authorizer is not None:
+        auto_capabilities.add("evaluation")
+    if publisher_key_registry is not None and publisher_key_authorizer is not None:
+        auto_capabilities.add("extensions")
+    if audit_reader is not None and audit_authorizer is not None:
+        auto_capabilities.add("audit")
+    if locale_preference_service is not None and locale_manage_authorizer is not None:
+        auto_capabilities.add("localization")
+    if connection_factory is not None:
+        auto_capabilities.add("admin")
+        auto_capabilities.add("notifications")
+        auto_capabilities.add("search")
+    # scheduler、board_page、console_pages 在 production.py 里单独挂载，
+    # 不由 create_platform_app 参数控制；在 production.py 里通过
+    # bootstrap_capabilities 显式注入。
+    final_capabilities = set(bootstrap_capabilities or ()) | auto_capabilities
     app.include_router(create_bootstrap_router(
-        auth_enabled=auth_enabled, capabilities=bootstrap_capabilities,
+        auth_enabled=auth_enabled, capabilities=sorted(final_capabilities),
     ))
     if office_state_service is not None:
         app.include_router(create_office_router(
@@ -325,6 +397,8 @@ def create_platform_app(
     if connection_factory is not None:
         from agent_platform.api.admin import create_admin_router
         app.include_router(create_admin_router(connection_factory=connection_factory))
+        app.include_router(create_notifications_router(connection_factory=connection_factory))
+        app.include_router(create_search_router(connection_factory=connection_factory))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
     ))
@@ -348,6 +422,12 @@ def create_platform_app(
         knowledge=knowledge,
         resolve_principal=IdentityContextResolver(identity_repository).knowledge,
     ))
+    if knowledge_catalog is not None:
+        app.include_router(create_knowledge_catalog_router(
+            catalog=knowledge_catalog,
+            knowledge=knowledge,
+            resolve_principal=IdentityContextResolver(identity_repository).knowledge,
+        ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
         if not rag_playground_embedding_models:
@@ -509,6 +589,8 @@ def create_platform_app(
         resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,
         authorize_task=task_authorizer,
+        connection_factory=connection_factory,
+        redis_client=redis,
     ))
     if batch_api_configured:
         app.include_router(create_batch_router(
@@ -534,6 +616,15 @@ def create_platform_app(
             resolve_knowledge_principal=graph_identity_context.knowledge,
             visualization_url=graph_visualization_url,
         ))
+        if connection_factory is not None:
+            app.include_router(create_graph_extraction_router(
+                service=KnowledgeGraphExtractionService(
+                    connection_factory=connection_factory,
+                    extractor=build_extractor_from_env(),
+                ),
+                resolve_principal=_principal_from_request,
+                authorize_read=graph_read_authorizer,
+            ))
     approvals_configured = any(value is not None for value in (approval_service, approval_authorizer))
     if approvals_configured:
         if approval_service is None or approval_authorizer is None:

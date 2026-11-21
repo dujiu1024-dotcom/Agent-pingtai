@@ -132,10 +132,12 @@ class LangGraphRunExecutorTests(unittest.IsolatedAsyncioTestCase):
   executor=LangGraphRunExecutor(graph=BlockingGraph(),lifecycle=self.manager,timeout_seconds=10)
   task=asyncio.create_task(executor.execute(tenant_id="tenant",run_id="cancelled",input={}))
   await started.wait()
+  # 先持久化 CANCELLING（显式取消路径），再取消 executor task
+  await self.manager.cancel("tenant","cancelled")
   task.cancel()
   with self.assertRaises(asyncio.CancelledError): await task
   self.assertTrue(cancelled.is_set())
-  self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.INTERRUPTED)
+  self.assertEqual((await self.store.get("tenant","cancelled")).status,RunStatus.CANCELLED)
 
  async def test_executor_pause_preserves_checkpoint_and_paused_status(self):
   started=asyncio.Event()

@@ -12,7 +12,6 @@ from enum import Enum
 from threading import RLock
 from typing import Any, Mapping
 
-
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_.-]{0,62}$")
 _BUILTIN_TYPES = frozenset({"document", "memory", "blackboard_entry", "user", "project"})
 
@@ -273,12 +272,21 @@ def _validate_same_tenant(actual: str, expected: str) -> None:
 
 def default_graph_schema(tenant_id: str) -> GraphSchema:
     """Return platform source mappings and minimal graph vocabulary for one tenant."""
+    described = (
+        PropertyDefinition("description", PropertyKind.STRING, max_length=2000),
+        PropertyDefinition("aliases", PropertyKind.STRING_LIST, max_length=200),
+    )
+    knowledge_types = ("concept", "person", "organization", "topic")
     entities = (
         EntityTypeDefinition("document", (PropertyDefinition("title", PropertyKind.STRING),)),
         EntityTypeDefinition("memory", (PropertyDefinition("memory_scope", PropertyKind.STRING),)),
         EntityTypeDefinition("blackboard_entry", (PropertyDefinition("entry_kind", PropertyKind.STRING),)),
         EntityTypeDefinition("user"),
         EntityTypeDefinition("project"),
+        EntityTypeDefinition("concept", described),
+        EntityTypeDefinition("person", described),
+        EntityTypeDefinition("organization", described),
+        EntityTypeDefinition("topic", described),
     )
     relations = (
         RelationTypeDefinition(
@@ -286,6 +294,10 @@ def default_graph_schema(tenant_id: str) -> GraphSchema:
             ("document", "memory", "blackboard_entry"),
         ),
         RelationTypeDefinition("member_of", ("user",), ("project",)),
+        RelationTypeDefinition(
+            "mentions", ("document", "memory", "blackboard_entry"), knowledge_types,
+        ),
+        RelationTypeDefinition("related_to", knowledge_types, knowledge_types),
     )
     mappings = (
         SourceTypeMapping(GraphSourceDomain.KNOWLEDGE, "document", "document"),

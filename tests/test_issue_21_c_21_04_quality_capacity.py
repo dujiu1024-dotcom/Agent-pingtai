@@ -13,7 +13,6 @@ from agent_platform.runtime.quality_capacity_baseline import (
     run_quality_capacity_benchmark,
 )
 
-
 CASES = (
     BenchmarkCase("answer-1", "What is the status?", ("ready",)),
     BenchmarkCase("rag-1", "Find the approved policy.", ("approved",), expected_document_ids=("doc-a",)),

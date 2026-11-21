@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 from agent_platform.api.replay import create_run_replay_router
 from agent_platform.identity.models import Principal
 from agent_platform.observability.run_trace import (
-    InMemoryRunTraceRepository, RunTraceEventType, RunTraceService,
+    InMemoryRunTraceRepository,
+    RunTraceEventType,
+    RunTraceService,
 )
 from agent_platform.runtime.lifecycle import InMemoryRunStateStore
 from agent_platform.runtime.replay import RunReplayService

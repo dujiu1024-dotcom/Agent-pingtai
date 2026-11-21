@@ -11,7 +11,6 @@ from agent_platform.security.audit import PostgresAuditWriter
 from agent_platform.security.audit_context import AuditActor
 from agent_platform.security.audit_http import AuditRequestASGIMiddleware
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

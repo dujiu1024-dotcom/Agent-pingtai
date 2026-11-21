@@ -46,12 +46,39 @@ class RunScopedModelClient:
         required_capabilities: Sequence[str] = (), data_level: str = "internal",
         fallback_template_ids: Sequence[str] = (),
         request_parameters: Mapping[str, Any] | None = None,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+        tool_choice: Any = None,
     ) -> RoutedModelResponse:
         snapshot = await self.snapshots.get(
             tenant_id=self.tenant_id, run_id=self.run_id,
         )
+        # Auto-discover fallback templates from the primary template's definition.
+        # template definition may have {"provider_fallbacks": [{"template_id": "ollama-template", ...}]}
+        auto_fallbacks: list[str] = []
+        try:
+            for entry in getattr(snapshot, "entries", []) or []:
+                kind = getattr(entry, "kind", None) or entry.get("kind") if isinstance(entry, dict) else None
+                item_id = getattr(entry, "item_id", None) or entry.get("item_id") if isinstance(entry, dict) else None
+                if kind == "model_template" and item_id == self.template_id:
+                    definition = getattr(entry, "definition", None) or entry.get("definition", {}) if isinstance(entry, dict) else getattr(entry, "definition", None)
+                    if isinstance(definition, str):
+                        import json as _json
+                        definition = _json.loads(definition)
+                    fb = definition.get("provider_fallbacks", []) if isinstance(definition, dict) else []
+                    for item in fb:
+                        tid = item.get("template_id") if isinstance(item, dict) else None
+                        if tid and tid not in auto_fallbacks:
+                            auto_fallbacks.append(tid)
+                    break
+        except Exception:
+            pass  # Never let snapshot parsing break the call path
+        # Merge: caller-supplied first (higher priority), then auto-discovered
+        merged_fallbacks: tuple[str, ...] = tuple(dict.fromkeys(
+            list(fallback_template_ids) + auto_fallbacks
+        ))
         from agent_platform.streaming.context import (
-            current_run_event_callback, current_token_callback,
+            current_run_event_callback,
+            current_token_callback,
         )
         token_callback = current_token_callback()
         event_callback = current_run_event_callback()
@@ -62,8 +89,9 @@ class RunScopedModelClient:
                 snapshot=snapshot, tenant_id=self.tenant_id, run_id=self.run_id,
                 template_id=self.template_id, messages=messages, request_id=request_id,
                 required_capabilities=required_capabilities, data_level=data_level,
-                fallback_template_ids=fallback_template_ids,
+                fallback_template_ids=merged_fallbacks,
                 request_parameters=request_parameters,
+                tools=tools, tool_choice=tool_choice,
                 on_token=token_callback,
             )
         except Exception as exc:

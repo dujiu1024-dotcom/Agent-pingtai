@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote
 
@@ -116,7 +117,7 @@ def create_sessions_router(
         return {"items": visible}
 
     @router.get("/files")
-    async def list_files(request: Request, session_id: str | None = None, limit: int = 100, project_id: str | None = None):
+    async def list_files(request: Request, session_id: str | None = None, limit: int = 100, project_id: str | None = None, all_visible: bool = True):
         principal = await resolve_principal(request)
         service = await resolve_service(principal)
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
@@ -127,11 +128,36 @@ def create_sessions_router(
         if project_id and not await authorize(principal, "project", project_id, "read"):
             raise HTTPException(403, "project file access denied")
         try:
+            # all_visible=True 时跳过 owner 过滤，列出 tenant 级全部文件
+            # （配合逐条 authorize 做最终可见性裁决）
             items = await service.repository.list_assets(
-                principal.tenant_id, principal.user_id, session_id, limit, project_id,
+                principal.tenant_id,
+                "" if all_visible else principal.user_id,
+                session_id, limit, project_id,
             )
         except (SessionError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
+
+        # 批量查 session_id → agent_id 映射
+        session_ids = {str(a.session_id) for a in items if a.session_id}
+        agent_map: dict[str, str] = {}
+        if session_ids:
+            try:
+                import psycopg
+                dsn = os.environ.get("DATABASE_URL", "")
+                if dsn:
+                    with psycopg.connect(dsn) as conn:
+                        cur = conn.cursor()
+                        cur.execute(
+                            "SELECT session_id::text, agent_id FROM platform_runs WHERE session_id = ANY(%s)",
+                            (list(session_ids),),
+                        )
+                        for sid, aid in cur.fetchall():
+                            if aid and sid:
+                                agent_map[sid] = aid
+            except Exception:
+                pass  # agent_id 关联失败不影响主流程
+
         visible = []
         for asset in items:
             if not await authorize(principal, "file", asset.asset_id, "read"):
@@ -144,11 +170,14 @@ def create_sessions_router(
                 principal, "project", asset.project_id, "read",
             ):
                 continue
+            sid = str(asset.session_id) if asset.session_id else None
             visible.append({
                     "asset_id": asset.asset_id, "filename": asset.filename,
                     "media_type": asset.media_type, "size_bytes": asset.size_bytes,
                     "status": asset.status.value, "session_id": asset.session_id,
                     "project_id": asset.project_id, "version": asset.version,
+                    "agent_id": agent_map.get(sid) if sid else None,
+                    "owner_id": asset.owner_id,
                     "created_at": asset.created_at.isoformat(),
                 })
         if audit_writer is not None:
@@ -629,6 +658,7 @@ def create_sessions_router(
             principal, "project", asset.project_id, "read",
         ):
             raise HTTPException(403, "linked project access denied")
+
         return {
             "asset_id": asset.asset_id, "filename": asset.filename,
             "media_type": asset.media_type, "size_bytes": asset.size_bytes,
@@ -670,12 +700,14 @@ def create_sessions_router(
             headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
         )
 
-    @router.get("/files/{asset_id}")
+    @router.get("/files/{asset_id}/content")
     async def download_file(asset_id: str, request: Request):
         principal, service = await context(request, "file", asset_id, "read")
         asset = await service.repository.get_asset(principal.tenant_id, asset_id)
         if asset is None:
             raise HTTPException(404, "file not found")
+        if asset.status.value == "deleted":
+            raise HTTPException(410, "file has been deleted")
         if asset.session_id and not await authorize(
             principal, "session", asset.session_id, "read",
         ):
@@ -961,3 +993,4 @@ def create_sessions_router(
         return Response(status_code=204)
 
     return router
+

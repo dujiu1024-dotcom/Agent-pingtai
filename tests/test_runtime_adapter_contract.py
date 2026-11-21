@@ -395,16 +395,24 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
 
 
     def test_media_reference_rejects_header_injection_and_unsafe_identifiers(self):
-        invalid = (
-            MediaInput("image", "asset\nX-Injected: yes", "image/png", 1, "a" * 64),
-            MediaInput("image", "asset-1", "image/png\r\nX-Injected: yes", 1, "a" * 64),
-            MediaInput("image", "asset-1", "image/png", 1, "a" * 64, "photo.png\r\nX-Test: yes"),
-            MediaInput("image", "asset-1", "image/png", 1, "a" * 64, ".."),
-            MediaInput("image", "asset with space", "image/png", 1, "a" * 64),
-        )
-        for item in invalid:
-            with self.subTest(item=item), self.assertRaises(ValueError):
-                _ = item
+        bad_args = [
+            ("asset\nX-Injected: yes", "image/png"),
+            ("asset-1", "image/png\r\nX-Injected: yes"),
+            ("asset-1", "image/png"),  # filename 注入在测试里单独验证
+            ("asset-1", "image/png"),  # .. 路径遍历
+            ("asset with space", "image/png"),
+        ]
+        # 构造调用必须在 assertRaises 上下文里，__post_init__ 会抛 ValueError
+        with self.assertRaises(ValueError):
+            MediaInput("image", "asset\nX-Injected: yes", "image/png", 1, "a" * 64)
+        with self.assertRaises(ValueError):
+            MediaInput("image", "asset-1", "image/png\r\nX-Injected: yes", 1, "a" * 64)
+        with self.assertRaises(ValueError):
+            MediaInput("image", "asset-1", "image/png", 1, "a" * 64, "photo.png\r\nX-Test: yes")
+        with self.assertRaises(ValueError):
+            MediaInput("image", "asset-1", "image/png", 1, "a" * 64, "..")
+        with self.assertRaises(ValueError):
+            MediaInput("image", "asset with space", "image/png", 1, "a" * 64)
 
     def test_media_reference_accepts_safe_unicode_filename_and_mime_parameters(self):
         item = MediaInput(

@@ -313,14 +313,12 @@ INTRO_GROUPS = (
     ("找客户的", ("scout",)),
     ("算钱的", ("finance",)),
     ("把关的", ("auditor",)),
-    ("招人的", ("hr",)),
     ("教方法的", ("coach",)),
     ("盯计划的", ("secretary",)),
 )
 
 
 ROLE_ALIASES = {
-    "hr": ["hr", "人事"],
     "pm": ["pm", "产品经理"],
     "finance": ["cfo", "财务"],
     "chief-of-staff": ["cos", "幕僚长"],

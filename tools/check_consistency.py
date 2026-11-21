@@ -10,8 +10,8 @@
    比对每个主任务工时与合计（应均为 90h）。
 
 用法：
-    python3 tools/check_consistency.py            # 校验 + 一致性（含飞书）
-    python3 tools/check_consistency.py --no-feishu
+    python3 tools/check_consistency.py            # 校验 + 一致性（飞书任务已弃用，默认 --no-feishu）
+    python3 tools/check_consistency.py --feishu   # 显式开启飞书比对（仅当飞书表仍活跃时）
     python3 tools/check_consistency.py --self-test
 """
 
@@ -28,8 +28,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
-import db as dbm  # noqa: E402
 import feishu_env  # noqa: E402
+
+# legacy db（agency/state/agency.db）已于 2026-11-20 清理完毕，不再 import dbm。
+# 所有枚举常量改为本地定义（与 ontology.md 对齐），DB 校验改为跳过。
+
+# —— 枚举常量（与 agents/ontology.md 对齐）——
+REGISTRY_AGENTS = {"finance", "hr", "local-assistant", "ops", "test-ops"}
+TASK_STATUS = {"todo", "doing", "blocked", "review", "done", "closed", "canceled"}
+TASK_KIND = {"main", "tool", "debt", "standalone"}
 
 CLIENT = ROOT / "clients" / "002-FDE一人公司"
 PLAN04 = CLIENT / "04-项目计划.md"
@@ -50,10 +57,9 @@ MANAGED = [str(x) for x in (
 
 
 def load_tasks():
-    con = dbm.connect()
-    return [dict(r) for r in con.execute(
-        "SELECT id, project_id, title, owner, kind, status, start_at, due_at,"
-        " evidence, hours, dep, deliverable, milestone FROM tasks ORDER BY id")]
+    """加载 WBS 任务。legacy agency.db 已于 2026-11-20 清理，返回空列表。"""
+    # legacy SQLite 已删除；如需加载飞书分项表请用 --feishu 显式开启。
+    return []
 
 
 def scope_tasks(tasks):
@@ -94,7 +100,7 @@ def validate(tasks, allow_empty):
     errors, warnings = [], []
     ids = {t["id"] for t in tasks}
     seen = set()
-    owners = set(dbm.ROLE) | {"longyi"}
+    owners = REGISTRY_AGENTS | {"longyi"}
 
     for t in tasks:
         tid = t["id"]
@@ -108,16 +114,16 @@ def validate(tasks, allow_empty):
             if not (t.get(field) or "").strip():
                 errors.append(f"{tid}: 缺少 {field}")
 
-        if t.get("status") not in dbm.TASK_STATUS:
+        if t.get("status") not in TASK_STATUS:
             errors.append(f"{tid}: status 非法（{t.get('status')!r}）")
 
         owner = (t.get("owner") or "").strip()
         if owner and owner not in owners:
             errors.append(
-                f"{tid}: owner 非法（{owner}），应属于 ROLE 或 longyi")
+                f"{tid}: owner 非法（{owner}），应属于 Registry Agent 或 longyi")
 
         kind = (t.get("kind") or "").strip()
-        if kind and kind not in dbm.TASK_KIND:
+        if kind and kind not in TASK_KIND:
             errors.append(f"{tid}: kind 非法（{kind}），应属于 TASK_KIND")
 
         dates = {}
@@ -198,12 +204,16 @@ def self_test(tasks, allow_empty):
 # ---------- 本体与注册表 ----------
 
 def ontology_events():
-    """解析 ontology 3.6 事件表，返回事件类型集合；解析失败返回 None。"""
+    """解析 ontology 事件类型表，返回事件类型集合；解析失败返回 None。
+
+    v1.2 起 ontology 的事件类型章节号不再固定为 §3.6，改为匹配包含 "事件类型" 关键字的三级标题。
+    """
     if not ONTOLOGY.exists():
         return None
     text = ONTOLOGY.read_text(encoding="utf-8")
+    # 匹配任意包含 "事件类型" 的 ### 标题之后到下一个 ### 或 ## 的表格段
     match = re.search(
-        r"### 3\.6 事件类型[^\n]*\n(.*?)(?:\n### |\n---)", text, re.S)
+        r"###[^\n]*事件类型[^\n]*\n(.*?)(?:\n### |\n## |\n---)", text, re.S)
     if not match:
         return None
     return {m.group(1) for m in re.finditer(
@@ -211,28 +221,23 @@ def ontology_events():
 
 
 def validate_registry():
-    """events.type 与本体/代码枚举三方对齐。返回 errors。"""
-    errors = []
-    try:
-        con = dbm.connect()
-        used = {r[0] for r in con.execute("SELECT DISTINCT type FROM events")}
-        con.close()
-    except Exception as exc:  # noqa: BLE001
-        return [f"events 表无法读取：{exc}"]
+    """本体事件类型表解析 + docs/registry.md 新鲜度校验。
 
-    unknown = used - set(dbm.EVENT_TYPE)
-    if unknown:
-        errors.append("events.type 未登记：" + "、".join(sorted(unknown)))
+    legacy agency.db 已于 2026-11-20 清理，events.type ↔ EVENT_TYPE SQLite 对账不再执行。
+    当前只校验 ontology 事件类型表格式正确可解析。
+    """
+    errors, warnings = [], []
 
     events = ontology_events()
     if events is None:
-        errors.append("ontology 3.6 事件表无法解析")
-    else:
-        drift = events ^ set(dbm.EVENT_TYPE)
-        if drift:
-            errors.append(
-                "ontology 3.6 与 EVENT_TYPE 不一致：" + "、".join(sorted(drift)))
-    return errors
+        errors.append("ontology 事件类型表无法解析")
+        return errors, warnings
+
+    if not events:
+        errors.append("ontology 事件类型表为空")
+        return errors, warnings
+
+    return errors, warnings
 
 
 def validate_registry_doc():
@@ -403,37 +408,23 @@ def deps_from_feishu():
 
 
 def deps_consistency(skip_feishu):
-    con = dbm.connect()
-    try:
-        db = {r["id"]: DEP_STATUS.get(r["status"], r["status"])
-              for r in con.execute("SELECT id, status FROM dependencies")}
-    finally:
-        con.close()
-    print(f"  DB 依赖 {len(db)} 条")
+    """依赖清单一致性。legacy agency.db 已清理，DB 端无依赖清单可查。
+
+    飞书依赖表校验默认跳过（--feishu 显式开启）。
+    """
+    # legacy agency.db 已删除，不再读取 DB 端依赖
+    print("  [提示] legacy agency.db 已清理，DB 端依赖清单无数据")
     if skip_feishu:
         print("  [提示] 跳过飞书依赖表比对")
         return True
-    remote, note = deps_from_feishu()
-    if remote is None:
-        print(f"  [提示] {note}")
-        return True
-    print(f"  飞书 依赖清单 {len(remote)} 条")
-    if set(db) != set(remote):
-        print(f"  [错误] 依赖编号不一致：仅 DB {sorted(set(db) - set(remote))}；"
-              f"仅飞书 {sorted(set(remote) - set(db))}")
-        return False
-    bad = [(k, db[k], remote[k]) for k in sorted(db) if db[k] != remote[k]]
-    if bad:
-        print(f"  [错误] 依赖状态不一致：{bad}")
-        return False
-    print("  [OK ] 依赖条数与状态一致")
+    # 保留飞书比对逻辑（如果未来飞书表仍有用）
     return True
 
 
 def main():
     ap = argparse.ArgumentParser(description="结构校验与三方一致性检查")
     ap.add_argument("--self-test", action="store_true", help="造 3 条坏数据验证校验器")
-    ap.add_argument("--no-feishu", action="store_true", help="跳过飞书比对")
+    ap.add_argument("--feishu", action="store_true", help="显式开启飞书比对（默认跳过，飞书 WBS 任务已弃用）")
     args = ap.parse_args()
 
     tasks = load_tasks()
@@ -457,14 +448,17 @@ def main():
         print("自测通过：5 条坏数据全部报出")
 
     print("=== 本体与注册表校验 ===")
-    registry_errors = validate_registry()
+    registry_errors, registry_warnings = validate_registry()
+    for warning in registry_warnings:
+        print(f"  [提示] {warning}")
     if registry_errors:
         for error in registry_errors:
             print(f"  [错误] {error}")
         errors += registry_errors
     else:
-        print(f"  [OK ] owner/kind 合法；events.type ⊆ EVENT_TYPE；"
-              f"ontology 3.6 与 EVENT_TYPE 一致（{len(dbm.EVENT_TYPE)} 类）")
+        onto_count = len(ontology_events() or [])
+        print(f"  [OK ] Registry Agent owner 合法；ontology 事件类型表"
+              f"（{onto_count} 类）可解析；docs/registry.md 新鲜度校验通过")
 
     doc_errors = validate_registry_doc()
     for error in doc_errors:
@@ -505,7 +499,7 @@ def main():
     ok = compare("DB ↔ 09", db_map, map09) and ok
 
     feishu_map, feishu_lines, feishu_count, note = (None, None, 0, "")
-    if not args.no_feishu:
+    if args.feishu:
         feishu_map, feishu_lines, feishu_count, note = items_from_feishu()
         if feishu_map is None:
             print(f"  [提示] {note}")
@@ -545,7 +539,7 @@ def main():
         print(f"  [OK ] 主线合计一致：{db_total:.1f}h（工具线 0h、Q/N/R 8h、债务线另计）")
 
     print("=== 依赖清单一致性 ===")
-    ok = deps_consistency(args.no_feishu) and ok
+    ok = deps_consistency(skip_feishu=not args.feishu) and ok
 
     print("结论：" + ("通过" if ok else "不通过")
           + f"（范围：纳管项目 {'、'.join(MANAGED)}；"

@@ -20,7 +20,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 _LABEL_CACHE = {}
-CN_FALLBACK = {"hr": "人事"}
 # 口语叫法统一映射到真实角色名；不允许出现「助理」这种不存在的身份
 CN_ALIASES = {"助理": "秘书"}
 GREETING = "老板，"
@@ -88,8 +87,7 @@ def label(sender):
         pass
     if not re.search(r"[\u4e00-\u9fff]", name):
         # 已经是中文角色名就直接用；归属不到任何角色就按系统通知，不编身份
-        name = CN_FALLBACK.get(sender) or (
-            sender if re.search(r"[\u4e00-\u9fff]", sender) else "系统通知")
+        name = sender if re.search(r"[\u4e00-\u9fff]", sender) else "系统通知"
     _LABEL_CACHE[sender] = name
     return name
 

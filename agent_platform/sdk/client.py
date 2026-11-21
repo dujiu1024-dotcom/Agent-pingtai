@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Callable, Generic, Iterator, Mapping, Protocol, TypeVar
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, unquote, urlsplit
+from urllib.parse import unquote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 

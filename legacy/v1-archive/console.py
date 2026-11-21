@@ -33,7 +33,6 @@ import db as dbm
 import intent
 
 ROOT = Path(__file__).resolve().parent
-HTML_PATH = ROOT / "console.html"
 BOARD_PATH = ROOT / "dashboard.html"
 MAX_BODY = 64 * 1024
 MAX_OUTPUT = 200_000
@@ -89,13 +88,6 @@ ROLE_MISSIONS = {
         "intent": ["finance", "invoice", "budget", "cost"],
         "verbs": ["账", "发票", "报税", "预算", "成本", "回款", "发票", "合同", "财务", "报价", "收款", "付款", "结算"],
         "nouns": ["账", "发票", "预算", "成本", "回款", "合同"],
-        "weight": 1.0,
-    },
-    "hr": {
-        "label": "HR",
-        "intent": ["hiring", "people", "meeting", "schedule"],
-        "verbs": ["面", "面试", "招聘", "入职", "离职", "请假", "会议", "日程", "候选人", "茶歇", "生日", "团建", "考勤"],
-        "nouns": ["人", "面试", "候选人", "入职", "会议", "日程", "考勤"],
         "weight": 1.0,
     },
     "planner": {
@@ -157,12 +149,6 @@ INTENT_BUNDLES = [
         # 只认真正的商机词：原先只要出现"客户"就触发，导致"和客户开会"被判成销售动作。
         "evidence": ["商机", "销售", "拓展", "获客", "线索"],
         "roles": ["scout", "pm", "producer"],
-    },
-    {
-        "key": "hr_event",
-        "label": "人员事务",
-        "evidence": ["面试", "候选人", "入职", "会议安排", "团建"],
-        "roles": ["hr", "secretary"],
     },
     {
         "key": "finance_cycle",
@@ -1265,11 +1251,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
         try:
             if path in ("/", "/index.html"):
-                if not HTML_PATH.exists():
-                    self._send(500, "缺少 console.html", "text/plain; charset=utf-8")
-                    return
-                self._send(200, HTML_PATH.read_text(encoding="utf-8"),
-                           "text/html; charset=utf-8")
+                # 3D 办公室页面已退役：旧系统只提供 API 与独立看板（/board）。
+                self._send(410, "3D 办公室页面已退役，请使用平台 /app/workspace/office；"
+                                "旧系统看板见 /board", "text/plain; charset=utf-8")
+                return
             elif path == "/api/state":
                 # ETag + 304：轮询时状态未变就不构建整包，也不重复传输
                 etag = state_etag()

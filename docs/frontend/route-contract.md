@@ -67,7 +67,7 @@
 - 深链/详情 ID/query 参数迁移规则；
 - 回滚路径。
 
-特殊注意：`/app?legacy=true` 的旧版回退跳转到 `/office`，不能将其误当作新 3D 办公室路由；`agent_platform/api/office.py` 的 state 路由目前未在 `create_platform_app` 中注册，且 handler 仍要求认证 Principal。
+特殊注意：旧版 3D 办公室已于 2026-11-19 退役，`/office`、`/app?legacy=true` 回退和 `/api/platform/v1/legacy/*` 均不再由平台提供；`/office` 返回 404，`/app?legacy=true` 直接返回平台 React 前端。3D 视图统一使用 `/app/workspace/office`。
 
 
 ## 9. 路由状态与唯一性约定
@@ -120,7 +120,7 @@
 5. Agent → Model：Agent Definition 页面引用 `modelTemplateId` 并跳转模板详情；Provider/Template/Routing Policy 是三个独立详情归属。
 6. Workflow：定义编辑 path 属 #749；运行态 path 属 #746；二者不可共用 `:id` 造成主责混淆，运行详情用 runId，定义详情用 workflowId。
 7. Evaluation：指标聚合页面跳转到 #750 的 Dataset/Evaluation Run/Case 事实详情；#747 不持有样本详情。
-8. 3D Office：Agent/Task/Run 点击事件只导航到其唯一详情页；`/app?legacy=true → /office` 是旧回退，不得重写为新办公室路由。
+8. 3D Office：Agent/Task/Run 点击事件只导航到其唯一详情页；`/app/workspace/office` 是平台唯一的 3D 办公室入口，旧 `/office` 已下线。
 9. 面包屑由 page_id 的路由元数据构造；详情标题加载失败时显示资源类型与稳定 ID，不阻断返回导航。
 
 ## 13. 双权限模式路由可见性与直达行为

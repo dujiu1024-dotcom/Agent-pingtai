@@ -52,14 +52,46 @@ def create_registry_router(
         repository_tenant = getattr(service.repository, "tenant_id", principal.tenant_id)
         if repository_tenant != principal.tenant_id:
             raise HTTPException(403, "registry repository tenant mismatch")
-        list_items = getattr(service.repository, "list_items", None)
-        if list_items is None:
+        list_items_fn = getattr(service.repository, "list_items", None)
+        if list_items_fn is None:
             raise HTTPException(501, "registry repository does not support item listing")
         try:
-            items = await list_items(principal.tenant_id, kind, limit=limit)
+            items = await list_items_fn(principal.tenant_id, kind, limit=limit)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        return {"items": [serialize(item) for item in items]}
+
+        # 给 tool / skill 加 used_by（哪些 agent 在用）
+        agent_usages: dict[str, list[str]] = {}
+        if kind in ("tool", "skill"):
+            field = "tool_ids" if kind == "tool" else "skill_ids"
+            _cf = getattr(service.repository, "_connection_factory", None)
+            if _cf is not None:
+                conn = await _cf()
+                try:
+                    cur = await conn.execute(
+                        f"""SELECT a.item_id AS agent_id, v.definition->%s AS refs
+                           FROM platform_registry_active a
+                           JOIN platform_registry_versions v ON v.tenant_id=a.tenant_id
+                             AND v.kind=a.kind AND v.item_id=a.item_id AND v.version=a.active_version
+                           WHERE a.tenant_id=%s AND a.kind='agent'""",
+                        (field, principal.tenant_id),
+                    )
+                    for row in await cur.fetchall():
+                        agent_id = row["agent_id"]
+                        refs = row["refs"] or []
+                        if isinstance(refs, list):
+                            for ref in refs:
+                                agent_usages.setdefault(ref, []).append(agent_id)
+                finally:
+                    await conn.close()  # type: ignore[union-attr]
+
+        result = []
+        for item in items:
+            data = serialize(item)
+            if kind in ("tool", "skill"):
+                data["used_by"] = sorted(set(agent_usages.get(item.item_id, [])))
+            result.append(data)
+        return {"items": result}
 
     @router.post("/{kind}/{item_id}/versions", status_code=201)
     async def create_version(kind: str, item_id: str, request: Request):

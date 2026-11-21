@@ -1,95 +1,184 @@
+import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+
+import { ErrorState, LoadingState } from '@/components/States'
+import { apiClient } from '@/lib/api/api-client'
+import { displayValue, fieldLabel } from '@/lib/i18n/labels'
 import './OrganizationAccessPage.css'
 
 type OrganizationAccessPageProps = {
   page: 'organization' | 'rbac'
 }
 
-const organizationAreas = [
-  {
-    title: '组织与部门树',
-    description: '组织、部门层级、父子关系和启停生命周期',
-    contract: '组织 / 部门 schema 与树查询 API 未核实',
-  },
-  {
-    title: '项目与成员归属',
-    description: '项目关联、成员归属、负责人和成员数量',
-    contract: '项目成员关系与数据范围 API 未核实',
-  },
-  {
-    title: '成员邀请与生命周期',
-    description: '邀请创建、过期、撤销、接受、停用和重新启用',
-    contract: '邀请状态机、幂等语义及审计事件未核实',
-  },
-]
+type AdminSection = {
+  section: string
+  rows: Array<Record<string, unknown>>
+  count: number
+}
 
-const accessAreas = [
-  {
-    title: '角色权限矩阵',
-    description: '角色与权限集合的绑定、预览和差异比较',
-    contract: '权限目录 schema、权限键与服务端 authorizer 未核实',
-  },
-  {
-    title: '资源与操作授权',
-    description: '菜单、页面、操作和 API 的服务端授权规则',
-    contract: 'resource/action 权限键空间和服务端 authorizer 未核实',
-  },
-  {
-    title: '数据范围策略',
-    description: '实例、组织、部门、项目和个人范围的策略配置',
-    contract: 'data_scope 枚举、策略继承和过滤语义未定义',
-  },
-]
+const PAGE_SIZE = 10
 
-const prerequisites = [
-  '由服务端 bootstrap 明确返回 auth.enabled 与组织 / RBAC capability。',
-  'auth.enabled=false 时隐藏组织、成员和 RBAC 入口，不创建默认组织、用户或角色。',
-  'auth.enabled=true 时使用服务端真实 schema、分页 cursor、状态机和错误码。',
-  '邀请、停用、角色变更和数据范围变更必须由服务端授权并写入 append-only 审计。',
-  '角色变更、成员停用和策略更新必须支持并发冲突检测，不能由前端隐藏按钮代替安全控制。',
-]
+/** 数据库主键/外键不直接展示，改为服务端返回的可读名称。 */
+const HIDDEN_COLUMNS = new Set([
+  'id',
+  'tenant_id',
+  'user_id',
+  'role_id',
+  'subject_id',
+  'resource_id',
+  'binding_id',
+  'section',
+])
 
-const notice =
-  '当前仓库尚无可证实的组织 / RBAC API 注册与响应 schema。为避免前端猜测字段、授权语义或写入路径，管理操作保持禁用，待后端契约确认后接通。'
+function renderCell(key: string, value: unknown): string {
+  return displayValue(key, value)
+}
+
+function SectionTable({ section }: { section: AdminSection }) {
+  const [page, setPage] = useState(1)
+  const columns = section.rows.length > 0
+    ? Object.keys(section.rows[0]).filter((column) => !HIDDEN_COLUMNS.has(column))
+    : []
+  if (columns.length === 0) return <p className="detail-empty">没有记录。</p>
+  const totalPages = Math.max(1, Math.ceil(section.rows.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const start = (currentPage - 1) * PAGE_SIZE
+  const visibleRows = section.rows.slice(start, start + PAGE_SIZE)
+  return (
+    <>
+      <div className="generic-table-wrap">
+        <table className="generic-table">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column}>{fieldLabel(column)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row, index) => (
+              <tr key={start + index}>
+                {columns.map((column) => (
+                  <td key={column}>{renderCell(column, row[column])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {section.rows.length > PAGE_SIZE && (
+        <nav className="admin-pagination" aria-label="分页">
+          <span>
+            第 {currentPage} / {totalPages} 页 · 共 {section.rows.length} 条
+          </span>
+          <div className="admin-pagination-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setPage(currentPage - 1)}
+              disabled={currentPage <= 1}
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => setPage(currentPage + 1)}
+              disabled={currentPage >= totalPages}
+            >
+              下一页
+            </button>
+          </div>
+        </nav>
+      )}
+    </>
+  )
+}
 
 export function OrganizationAccessPage({ page }: OrganizationAccessPageProps) {
   const organization = page === 'organization'
-  const areas = organization ? organizationAreas : accessAreas
+  const [activeTab, setActiveTab] = useState('')
+  const apiPath = organization
+    ? '/platform/v1/admin/organization'
+    : '/platform/v1/admin/access-control'
+  const query = useQuery({
+    queryKey: ['admin', page],
+    queryFn: () =>
+      apiClient.get<{ items: AdminSection[] }>(apiPath),
+    retry: false,
+  })
+  const sections = query.data?.items ?? []
 
   return (
-    <section className="access-admin">
-      <div className="access-admin-banner" role="status">
-        <span className="access-admin-status">后端契约待接入</span>
-        <div>
-          <strong>此页面不会展示模拟组织、成员或权限数据</strong>
-          <p>{notice}</p>
-        </div>
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">管理</p>
+        <h1>{organization ? '组织与成员' : '角色与权限'}</h1>
+        <p>
+          {organization
+            ? '当前租户的组织、成员与成员关系，数据来自服务端 admin API。'
+            : '当前租户的角色、绑定与权限键，数据来自服务端 admin API。'}
+        </p>
       </div>
-      <div className="access-admin-grid">
-        {areas.map((area) => (
-          <article className="access-admin-card" key={area.title}>
-            <div className="access-admin-card-heading">
-              <span className="access-admin-icon" aria-hidden="true">
-                {organization ? 'ORG' : 'ACL'}
-              </span>
-              <span className="access-admin-chip">待核实</span>
-            </div>
-            <h2>{area.title}</h2>
-            <p>{area.description}</p>
-            <div className="access-admin-contract">
-              <span>契约状态</span>
-              <strong>{area.contract}</strong>
-            </div>
-          </article>
-        ))}
-      </div>
-      <section className="access-admin-audit">
-        <h2>接入前置条件</h2>
-        <ul>
-          {prerequisites.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
+      {query.isPending && <LoadingState />}
+      {query.isError && (
+        <ErrorState
+          description={
+            query.error instanceof Error ? query.error.message : '加载失败'
+          }
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {!query.isPending && !query.isError && sections.length === 0 && (
+        <p className="detail-empty">当前租户暂无相关记录。</p>
+      )}
+      {(() => {
+        const tabs = (organization
+          ? [
+              { id: 'tenants', label: '租户' },
+              { id: 'users', label: '成员账号' },
+            ]
+          : [
+              { id: 'roles', label: '角色' },
+              { id: 'role_bindings', label: '角色绑定' },
+              { id: 'role_permissions', label: '角色权限' },
+            ]
+        )
+          .map((tab) => ({
+            ...tab,
+            data: sections.find((section) => section.section === tab.id),
+          }))
+          .filter((tab) => Boolean(tab.data))
+        if (tabs.length === 0) return null
+        const currentId = tabs.some((tab) => tab.id === activeTab)
+          ? activeTab
+          : tabs[0].id
+        const current = tabs.find((tab) => tab.id === currentId)?.data
+        return (
+          <>
+            <nav className="admin-tabs" role="tablist" aria-label="分区切换">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.id === currentId}
+                  className={tab.id === currentId ? 'admin-tab active' : 'admin-tab'}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                  <span className="admin-tab-count">{tab.data?.count ?? 0}</span>
+                </button>
+              ))}
+            </nav>
+            {current && (
+              <section className="admin-section">
+                <SectionTable section={current} />
+              </section>
+            )}
+          </>
+        )
+      })()}
     </section>
   )
 }

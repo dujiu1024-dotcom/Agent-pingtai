@@ -11,7 +11,6 @@ from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycle
 from agent_platform.workflows.blackboard_services import BlackboardMultiExpertServices
 from agent_platform.workflows.multi_expert import build_multi_expert_workflow
 
-
 TENANT = "tenant-s665"
 AGENT = "delivery-agent"
 TASK = "task-s665"

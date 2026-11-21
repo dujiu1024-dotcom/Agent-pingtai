@@ -6,9 +6,9 @@ PostgreSQL，让 3D 办公室继续可用且展示真实数据。
 """
 from __future__ import annotations
 
+import inspect
 import os
 from datetime import datetime
-import inspect
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -292,13 +292,22 @@ def create_office_router(*, service: OfficeStateService, resolve_tenant: Callabl
     @router.get("/state")
     async def state(request: Request):
         principal = getattr(request.state, "identity.principal", None)
+        tenant_id: str | None = None
         if isinstance(principal, Principal):
-            tenant_id = principal.tenant_id
+            # auth_enabled=False 时 middleware 会塞 tenant_id="default" 的哨兵 principal；
+            # 如果有显式 office_tenant_resolver，让 resolver 覆盖它
+            if principal.tenant_id == "default" and resolve_tenant is not None:
+                resolved = resolve_tenant(request)
+                if inspect.isawaitable(resolved):
+                    resolved = await resolved
+                tenant_id = resolved
+            else:
+                tenant_id = principal.tenant_id
         elif resolve_tenant is not None:
             tenant_id = resolve_tenant(request)
             if inspect.isawaitable(tenant_id):
                 tenant_id = await tenant_id
-        else:
+        if tenant_id is None:
             raise HTTPException(401, "authenticated user or instance tenant context required")
         if not isinstance(tenant_id, str) or not tenant_id.strip():
             raise HTTPException(503, "office instance tenant context is unavailable")

@@ -6,8 +6,8 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
-from agent_platform.identity.models import Principal
 from agent_platform.extensions.publishers import TrustedPublisherKeyRegistry
+from agent_platform.identity.models import Principal
 
 
 def create_extension_publisher_router(
@@ -22,7 +22,19 @@ def create_extension_publisher_router(
     )
 
     def principal(request: Request) -> Principal:
+        # 兼容两种注入方式：
+        #   a) request.state.identity.principal  （dict 或带属性的对象）
+        #   b) request.state.principal
+        actor = None
         actor = getattr(request.state, "identity.principal", None)
+        if actor is None:
+            identity = getattr(request.state, "identity", None)
+            if identity is not None:
+                actor = getattr(identity, "principal", None)
+                if actor is None and isinstance(identity, dict):
+                    actor = identity.get("principal")
+        if actor is None:
+            actor = getattr(request.state, "principal", None)
         if not isinstance(actor, Principal):
             raise HTTPException(401, "authenticated user required")
         return actor
@@ -85,7 +97,6 @@ def create_extension_publisher_router(
                 "expires_at": expires_at,
                 "created_by": actor.user_id,
             }
-            await audit(actor, extension_id, str(key_id), "rotate" if previous else "register", "requested")
             if previous:
                 key = await registry.rotate(**values, revoke_key_ids=tuple(previous))
             else:
@@ -111,7 +122,6 @@ def create_extension_publisher_router(
     async def revoke_key(extension_id: str, key_id: str, request: Request):
         actor = principal(request)
         await authorize(actor, extension_id, "publisher_key.revoke")
-        await audit(actor, extension_id, key_id, "revoke", "requested")
         try:
             revoked = await registry.revoke(
                 tenant_id=actor.tenant_id,

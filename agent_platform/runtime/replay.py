@@ -1,10 +1,13 @@
 """Deterministic, tenant-scoped replay over persisted Run context and trace events."""
 from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping
 from uuid import uuid4
+
 from agent_platform.observability.run_trace import RunTraceEvent, RunTraceRepository
+
 
 class ReplayNotFound(LookupError):
     pass

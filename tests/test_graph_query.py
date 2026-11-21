@@ -178,7 +178,7 @@ class GraphQueryServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.relations, ())
 
     async def test_query_service_rejects_repository_without_tenant_binding(self):
-        with self.assertRaisesRegex(ValueError, "explicitly bound"):
+        with self.assertRaisesRegex(ValueError, "graph repository tenant|tenant binding"):
             GraphQueryService(tenant_id="tenant-a", repository=object())
 
     async def test_hybrid_query_respects_postgres_search_length_bound(self):

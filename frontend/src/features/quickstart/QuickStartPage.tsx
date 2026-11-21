@@ -92,7 +92,7 @@ export function QuickStartPage() {
   const agentsQuery = useQuery({
     queryKey: ['quickstart', 'agents'],
     queryFn: () =>
-      apiClient.get<{ items?: AgentItem[] }>('/platform/v1/registry/agents'),
+      apiClient.get<{ items?: AgentItem[] }>('/platform/v1/registry/agent'),
     retry: false,
   })
   const recentQuery = useQuery({
@@ -144,14 +144,14 @@ export function QuickStartPage() {
   return (
     <section className="page-content quickstart">
       <div className="page-heading">
-        <p className="eyebrow">WORKSPACE / QUICK START</p>
+        <p className="eyebrow">工作空间 / 快速使用</p>
         <h1>快速使用</h1>
         <p>选一个 Agent，写下要做的事，提交后即可在任务中心跟踪结果。</p>
       </div>
 
       {capabilitiesQuery.isSuccess && !taskExecutionReady && (
         <div className="qs-banner qs-banner--warn" role="status">
-          当前实例未开启任务执行能力（task_execution=false），提交入口不可用。
+          当前实例未开启任务执行能力，提交入口不可用。
         </div>
       )}
 
@@ -206,7 +206,7 @@ export function QuickStartPage() {
             <span className="qs-step">2</span>
             <div>
               <h2>写清要做的事</h2>
-              <p>内容会以 message 字段提交给 Agent。</p>
+              <p>内容会作为消息提交给 Agent。</p>
             </div>
           </header>
           <textarea
@@ -224,7 +224,7 @@ export function QuickStartPage() {
             <span className="qs-step">3</span>
             <div>
               <h2>提交并跟踪</h2>
-              <p>提交后生成任务与 Run，可进入任务中心查看进度。</p>
+              <p>提交后生成任务与运行，可进入任务中心查看进度。</p>
             </div>
           </header>
           <button
@@ -321,7 +321,7 @@ export function QuickStartPage() {
         <Link className="qs-link" to="/admin/workflows">
           <Workflow size={18} strokeWidth={1.9} aria-hidden="true" />
           <span>
-            <strong>设计 Workflow</strong>
+            <strong>设计工作流</strong>
             <small>多步骤编排</small>
           </span>
         </Link>

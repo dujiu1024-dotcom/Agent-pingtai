@@ -42,6 +42,30 @@ def create_scheduler_router(*, service: Any) -> APIRouter:
             raise HTTPException(409, f"定时作业正在执行：{job_id}") from exc
         return result or {"job_id": job_id, "status": "skipped", "message": "作业未到执行时间"}
 
+    @router.post("/jobs", status_code=201)
+    async def create_job(request: Request):
+        principal = _principal(request)
+        try:
+            body = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "请求体必须是 JSON 对象") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "请求体必须是 JSON 对象")
+        enabled = body.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise HTTPException(400, "enabled 必须是布尔值")
+        try:
+            return await service.create_job(
+                principal.tenant_id,
+                job_id=str(body.get("job_id") or ""),
+                name=str(body.get("name") or ""),
+                description=str(body.get("description") or ""),
+                interval_seconds=body.get("interval_seconds", 3600),
+                enabled=enabled,
+            )
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @router.patch("/jobs/{job_id}")
     async def update_job(job_id: str, request: Request):
         principal = _principal(request)
@@ -49,12 +73,25 @@ def create_scheduler_router(*, service: Any) -> APIRouter:
             body = await request.json()
         except Exception as exc:
             raise HTTPException(400, "请求体必须是 JSON 对象") from exc
-        if not isinstance(body, dict) or not isinstance(body.get("enabled"), bool):
+        if not isinstance(body, dict):
+            raise HTTPException(400, "请求体必须是 JSON 对象")
+        enabled = body.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
             raise HTTPException(400, "enabled 必须是布尔值")
+        interval = body.get("interval_seconds")
+        if interval is not None and not isinstance(interval, int):
+            raise HTTPException(400, "interval_seconds 必须是整数")
+        if enabled is None and interval is None:
+            raise HTTPException(400, "至少需要提供 enabled 或 interval_seconds")
         try:
-            return await service.set_enabled(principal.tenant_id, job_id, body["enabled"])
+            return await service.update_job(
+                principal.tenant_id, job_id,
+                enabled=enabled, interval_seconds=interval,
+            )
         except ScheduledJobNotFound as exc:
             raise HTTPException(404, f"定时作业不存在：{job_id}") from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @router.get("/runs")
     async def list_runs(request: Request, limit: int = 50):

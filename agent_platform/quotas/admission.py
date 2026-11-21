@@ -4,6 +4,7 @@ limits. This scheduler provides FIFO-within-tenant, round-robin-across-tenant
 fairness among callers sharing one controller instance.
 """
 from __future__ import annotations
+
 import asyncio
 import math
 from collections import OrderedDict, deque
@@ -11,8 +12,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator
 from uuid import uuid4
+
 from agent_platform.quotas.concurrency import QuotaConcurrencyLimiter
 from agent_platform.quotas.service import BudgetExceeded, QuotaReservation
+
 
 @dataclass(frozen=True)
 class AdmissionKey:

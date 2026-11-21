@@ -102,7 +102,7 @@ class ExtensionManagerTests(unittest.IsolatedAsyncioTestCase):
         await self.manager.install(manifest, artifact=b"v1")
         with self.assertRaisesRegex(ValueError, "rollback artifacts"):
             await self.manager.upgrade(make_manifest("sample-extension", "2.0.0"), artifact=b"v2", previous_artifact=None)
-        with self.assertRaisesRegex(ValueError, "greater"):
+        with self.assertRaisesRegex(ValueError, "differ from installed|replacement version"):
             await self.manager.upgrade(manifest, artifact=b"v1b", previous_artifact=b"v1")
 
 

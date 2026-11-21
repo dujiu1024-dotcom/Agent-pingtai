@@ -15,9 +15,13 @@ from fastapi.responses import RedirectResponse
 
 from agent_platform.api.app import create_platform_app
 from agent_platform.api.graph import GraphAccessScope
-from agent_platform.api.scheduler import create_scheduler_router
 from agent_platform.api.office import OfficeStateService, create_office_router
+from agent_platform.api.scheduler import create_scheduler_router
+from agent_platform.approval.policy import RiskLevel
+from agent_platform.approval.postgres import PostgresAuditReader
+from agent_platform.approval.service import ApprovalService, PostgresApprovalRepository
 from agent_platform.batch.executor import BatchTemplate
+from agent_platform.observability.alert_store import PostgresAlertEventStore
 from agent_platform.batch.service import (
     BatchJobRunner,
     PostgresBatchRepository,
@@ -25,15 +29,30 @@ from agent_platform.batch.service import (
     await_task_terminal,
     recover_interrupted_batches,
 )
-from agent_platform.approval.policy import RiskLevel
-from agent_platform.approval.postgres import PostgresAuditReader
-from agent_platform.approval.service import ApprovalService, PostgresApprovalRepository
 from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
 from agent_platform.blackboard.replay import PostgresBlackboardEventReplay
 from agent_platform.contracts import Scope
-from agent_platform.control_plane.postgres import PostgresRegistryRepository, PostgresSessionRepository
+from agent_platform.connectors.providers import build_default_providers
+from agent_platform.control_plane.data_connectors import DataConnectorService
+from agent_platform.control_plane.postgres import (
+    PostgresRegistryRepository,
+    PostgresSessionRepository,
+)
+from agent_platform.control_plane.postgres_connectors import (
+    PostgresConnectorRepository,
+    PostgresConnectorSink,
+)
 from agent_platform.control_plane.registry import RegistryService
 from agent_platform.control_plane.sessions_assets import SessionAssetService
+from agent_platform.events.admin import WebhookSubscriptionService
+from agent_platform.events.outbox import OutboxRelay, PostgresOutboxStore
+from agent_platform.events.outbox_worker import OutboxRelayWorker
+from agent_platform.events.redis_streams import RedisStreamsTransport
+from agent_platform.events.webhook_replay import WebhookDeadLetterReplayService
+from agent_platform.events.webhook_worker import build_production_webhook_delivery_worker
+from agent_platform.events.webhooks import PostgresWebhookStore, WebhookPayload
+from agent_platform.extensions.postgres import PostgresTrustedPublisherKeyRepository
+from agent_platform.extensions.publishers import TrustedPublisherKeyRegistry
 from agent_platform.graph.governance import GraphGovernanceService
 from agent_platform.graph.postgres_governance import PostgresGraphGovernanceRepository
 from agent_platform.graph.postgres_repository import PostgresGraphRepository
@@ -41,6 +60,10 @@ from agent_platform.graph.query import GraphQueryService
 from agent_platform.graph.schema import default_graph_schema
 from agent_platform.identity.models import Principal, ResourceRef
 from agent_platform.identity.postgres import PostgresIdentityRepository
+from agent_platform.i18n.preferences import (
+    PostgresLocalePreferenceStore,
+    TenantLocalePreferenceService,
+)
 from agent_platform.identity.service import AuthorizationDenied, IdentityService
 from agent_platform.knowledge.ollama import (
     OllamaChatGenerator,
@@ -53,24 +76,38 @@ from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.postgres_repository import PostgresMemoryRepository
 from agent_platform.memory.service import MemoryService
-from agent_platform.observability.prompt_store import PostgresPromptRegistry
 from agent_platform.observability.evaluation_store import PostgresEvaluationRepository
 from agent_platform.observability.operational_health import OperationalHealthMonitor
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
+from agent_platform.observability.prompt_store import PostgresPromptRegistry
+from agent_platform.observability.run_trace import PostgresRunTraceRepository
 from agent_platform.production_config import ProductionSettings, load_production_settings
-from agent_platform.runtime.lifecycle import RunLifecycleManager
-from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
-from agent_platform.runtime.production_composition import (
-    ProductionRunExecution,
-    load_trusted_run_execution_builder,
-)
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
 from agent_platform.quotas.service import Budget, QuotaService
-from agent_platform.security.audit import PostgresAuditWriter, PostgresIdentityAuditReader
+from agent_platform.runtime.interventions import RunInterventionService
+from agent_platform.runtime.lifecycle import RunLifecycleManager
+from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
+from agent_platform.runtime.replay import RunReplayService
+from agent_platform.tools.idempotency import (
+    PostgresToolEffectStore,
+    ToolEffectReconciliationService,
+)
+from agent_platform.runtime.run_context import (
+    PostgresRunContextSnapshotStore,
+    RunContextSnapshotService,
+)
+from agent_platform.runtime.production_composition import (
+    ProductionRunExecution,
+    load_trusted_run_execution_builder,
+)
 from agent_platform.scheduling.feishu import FeishuNotifier, load_feishu_config
 from agent_platform.scheduling.service import PostgresSchedulerService
+from agent_platform.security.audit import PostgresAuditWriter, PostgresIdentityAuditReader
+from agent_platform.security.local_store import LocalSecretStore
+from agent_platform.web.board_page import create_board_page_router
+from agent_platform.web.console_pages import create_console_pages_router
 
 
 def _postgres_connection_factory(dsn: str) -> Callable[[], Any]:
@@ -149,6 +186,30 @@ def create_production_app(
     memory_service = MemoryService(PostgresMemoryRepository(connection_factory))
     run_store = PostgresRunStateStore(connection_factory)
     run_lifecycle = RunLifecycleManager(run_store)
+    run_trace_repository = PostgresRunTraceRepository(connection_factory=connection_factory)
+
+    # 回放需要同一租户下共享的上下文快照服务；快照在 Run 开始执行前写入。
+    run_context_services: dict[str, RunContextSnapshotService] = {}
+
+    def run_context_service_for(tenant_id: str) -> RunContextSnapshotService:
+        service = run_context_services.get(tenant_id)
+        if service is None:
+            service = RunContextSnapshotService(
+                tenant_id=tenant_id,
+                store=PostgresRunContextSnapshotStore(
+                    connection_factory=connection_factory,
+                ),
+            )
+            run_context_services[tenant_id] = service
+        return service
+
+    async def resolve_run_context_service(tenant_id: str) -> RunContextSnapshotService:
+        return run_context_service_for(tenant_id)
+
+    locale_preference_service = TenantLocalePreferenceService(
+        store=PostgresLocalePreferenceStore(connection_factory),
+    )
+
 
     # Quota decisions and usage reporting must share the same transactional
     # PostgreSQL store across API processes. Never fall back to in-memory state.
@@ -163,12 +224,14 @@ def create_production_app(
     quota_audit_writer = _QuotaAuditAdapter(audit_writer)
     prompt_registry = PostgresPromptRegistry(connection_factory)
     evaluation_repository = PostgresEvaluationRepository(connection_factory)
+    publisher_key_registry = TrustedPublisherKeyRegistry(
+        PostgresTrustedPublisherKeyRepository(connection_factory)
+    )
     metrics_exporter = PrometheusClientMetricsRecorder()
 
     # ------------------------------------------------------------------ observability wiring
-    import asyncio as _asyncio, os as _os, shutil as _shutil, ssl as _ssl
-    import urllib.request as _ur
-    from datetime import datetime as _dt, timezone as _tz
+    import os as _os
+    import shutil as _shutil
 
     class _InMemoryAlertStore:
         def __init__(self) -> None:
@@ -201,7 +264,7 @@ def create_production_app(
             self._open.pop(key, None)
             return True
 
-    alert_store: Any = _InMemoryAlertStore()
+    alert_store: Any = PostgresAlertEventStore(connection_factory)
 
     def _probe_fs_disk(path: str = ".") -> dict[str, float]:
         try:
@@ -357,6 +420,7 @@ def create_production_app(
             connection_factory=connection_factory,
             redis_client=redis_client,
             settings=configured,
+            run_context_resolver=resolve_run_context_service,
         )
         if not isinstance(run_execution, ProductionRunExecution):
             raise TypeError("run_execution_builder must return ProductionRunExecution")
@@ -471,6 +535,42 @@ def create_production_app(
         except AuthorizationDenied:
             return False
         return True
+
+    async def authorize_publisher_key(
+        principal: Any, _extension_id: str, _action: str,
+    ) -> bool:
+        # 发布者信任根属于租户级管理操作，沿用 tenant.manage 权限。
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key="tenant.manage",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    async def authorize_locale_manage(principal: Any) -> bool:
+        # 语言与地区偏好按租户生效，属于租户级管理操作。
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key="tenant.manage",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    # 回放会话保存在服务内存中，必须全进程共享同一个实例。
+    run_replay_service = RunReplayService(
+        lifecycle_store=run_store,
+        trace_repository=run_trace_repository,
+        resolve_context_service=resolve_run_context_service,
+    )
+
+    async def resolve_run_replay(principal: Any) -> RunReplayService:
+        return run_replay_service
 
     async def authorize_blackboard_scope(
         principal: Any, scope: Any, scope_id: str, action: str,
@@ -609,6 +709,129 @@ def create_production_app(
         or None
     )
 
+    # ---------------------------------------------------- 本地密钥库 / Webhook / 连接器
+    local_secret_store = LocalSecretStore(os.environ.get("LOCAL_SECRET_DIR"))
+    webhook_store = PostgresWebhookStore(connection_factory)
+    webhook_admin_service = WebhookSubscriptionService(
+        store=webhook_store, secrets=local_secret_store,
+    )
+
+    async def authorize_tenant_manage(principal: Any) -> bool:
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key="tenant.manage",
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    async def authorize_webhook_replay(tenant_id: str, actor_id: str) -> bool:
+        context = await identity_repository.get_authorization_context(
+            tenant_id=tenant_id, user_id=actor_id,
+        )
+        return bool(context and "tenant.manage" in context.tenant_permissions)
+
+    webhook_replay_service = WebhookDeadLetterReplayService(
+        store=webhook_store, audit=audit_writer, authorize=authorize_webhook_replay,
+    )
+    webhook_delivery_worker = build_production_webhook_delivery_worker(
+        store=webhook_store,
+        resolve_secret=local_secret_store.resolve_bytes,
+        audit_sink=audit_writer,
+    )
+
+    # Outbox relay: 保证平台事件（memory.extraction、blackboard 等）不会永远积压在
+    # platform_outbox 表。独立进程部署时由 agent_platform.worker 承担；这里把它合
+    # 并进 uvicorn lifespan，避免本地/单实例部署出现"有事件没人发"的静默问题。
+    outbox_relay_transport = RedisStreamsTransport(configured.redis_url)
+    outbox_relay = OutboxRelay(
+        store=PostgresOutboxStore(connection_factory=connection_factory),
+        transport=outbox_relay_transport,
+        audit_sink=audit_writer,
+    )
+    outbox_relay_worker = OutboxRelayWorker(
+        relay=outbox_relay, interval_seconds=1.0, batch_limit=100,
+    )
+
+    async def enqueue_webhook(
+        tenant_id: str, event_id: str, topic: str, body: Mapping[str, Any],
+    ) -> int:
+        # 订阅表要求 event_id 是 UUID；用稳定命名空间保证同一事件重复入队可去重。
+        from uuid import NAMESPACE_URL, uuid5
+        stable_id = str(uuid5(NAMESPACE_URL, f"{tenant_id}:{event_id}"))
+        return await webhook_store.enqueue(WebhookPayload(
+            tenant_id=tenant_id, event_id=stable_id, topic=topic, body=dict(body),
+        ))
+
+    connector_providers = build_default_providers()
+    connector_services: dict[str, DataConnectorService] = {}
+
+    def connector_service_for(tenant_id: str) -> DataConnectorService:
+        service = connector_services.get(tenant_id)
+        if service is None:
+            service = DataConnectorService(
+                repository=PostgresConnectorRepository(
+                    tenant_id=tenant_id, connection_factory=connection_factory,
+                ),
+                providers=connector_providers,
+                secrets=local_secret_store,
+                sink=PostgresConnectorSink(
+                    tenant_id=tenant_id, connection_factory=connection_factory,
+                ),
+                secret_writer=local_secret_store,
+            )
+            connector_services[tenant_id] = service
+        return service
+
+    async def resolve_connector_service(principal: Any) -> DataConnectorService:
+        return connector_service_for(principal.tenant_id)
+
+    async def authorize_connector(
+        principal: Any, _resource_type: str, _connection_id: str, action: str,
+    ) -> bool:
+        permission_key = "project.read" if action in {"read", "list"} else "tenant.manage"
+        try:
+            await identity_service.authorize(
+                principal=principal,
+                resource=ResourceRef("tenant", principal.tenant_id),
+                permission_key=permission_key,
+            )
+        except AuthorizationDenied:
+            return False
+        return True
+
+    async def run_connector_sync(
+        tenant_id: str, job_id: str,
+    ) -> tuple[str, str, dict[str, Any]]:
+        service = connector_service_for(tenant_id)
+        target = job_id.partition(":")[2] if ":" in job_id else ""
+        connections = await service.list_connections(tenant_id=tenant_id)
+        selected = [
+            connection for connection in connections
+            if connection.status == "active" and (not target or connection.connection_id == target)
+        ]
+        if target and not selected:
+            return "failed", f"连接器不存在或未启用：{target}", {"target": target}
+        if not selected:
+            return "succeeded", "没有启用的数据连接器", {"connections": 0}
+        synced = 0
+        failures: list[str] = []
+        for connection in selected:
+            try:
+                await service.sync_all_pages(
+                    tenant_id=tenant_id, connection_id=connection.connection_id,
+                )
+                synced += 1
+            except Exception as exc:
+                # 只保留错误类型，避免把凭据或数据内容写进作业历史。
+                failures.append(f"{connection.connection_id}:{type(exc).__name__}")
+        detail = {"connections": len(selected), "succeeded": synced, "failed": failures}
+        if failures:
+            return "failed", f"{synced}/{len(selected)} 个连接器同步成功", detail
+        return "succeeded", f"已同步 {synced} 个连接器", detail
+
     async def postgres_ready() -> bool:
         connection = await connection_factory()
         async with connection:
@@ -624,6 +847,19 @@ def create_production_app(
             row = await cursor.fetchone()
             return bool(row and row["ready"])
 
+    async def _resolve_run_interventions(principal):
+        return RunInterventionService(
+            tenant_id=principal.tenant_id,
+            connection_factory=connection_factory,
+        )
+
+    async def _resolve_tool_effects(principal):
+        return ToolEffectReconciliationService(
+            store=PostgresToolEffectStore(connection_factory=connection_factory),
+            authorize_operator=lambda *a, **kw: None,
+            audit_sink=None,
+        )
+
     app = create_platform_app(
         identity=identity_service,
         identity_repository=identity_repository,
@@ -633,6 +869,11 @@ def create_production_app(
         allowed_origins=configured.allowed_origins,
         run_lifecycle_resolver=resolve_run_lifecycle,
         run_authorizer=authorize_run,
+        run_intervention_resolver=_resolve_run_interventions,
+        tool_effect_reconciliation_resolver=_resolve_tool_effects,
+        run_replay_resolver=resolve_run_replay,
+        locale_preference_service=locale_preference_service,
+        locale_manage_authorizer=authorize_locale_manage,
         registry_service_resolver=resolve_registry,
         registry_authorizer=authorize_registry,
         session_service_resolver=resolve_sessions,
@@ -660,6 +901,15 @@ def create_production_app(
         quota_policy_service=quota_policy_service,
         quota_default_policy_authorizer=authorize_quota_default_policy,
         quota_policy_scope_authorizer=authorize_quota_policy_scope,
+        connector_service_resolver=resolve_connector_service,
+        connector_authorizer=authorize_connector,
+        webhook_admin_service=webhook_admin_service,
+        webhook_admin_authorizer=authorize_tenant_manage,
+        webhook_delivery_store=webhook_store,
+        webhook_delivery_authorizer=authorize_tenant_manage,
+        webhook_delivery_replay_service=webhook_replay_service,
+        webhook_delivery_worker=webhook_delivery_worker,
+        outbox_relay_worker=outbox_relay_worker,
         blackboard_repository_resolver=resolve_blackboard_repository,
         blackboard_authorizer=authorize_blackboard_scope,
         blackboard_event_replay_resolver=resolve_blackboard_event_replay,
@@ -677,12 +927,20 @@ def create_production_app(
         evaluation_repository=evaluation_repository,
         evaluation_manage_authorizer=authorize_eval_manage,
         evaluation_review_authorizer=authorize_eval_review,
+        publisher_key_registry=publisher_key_registry,
+        publisher_key_authorizer=authorize_publisher_key,
+        resource_audit_writer=audit_writer,
         connection_factory=connection_factory,
         readiness_checks={
             "postgres": postgres_ready,
             "redis": redis_client.ping,
             "quota_schema": quota_schema_ready,
         },
+        # 这些路由在 create_platform_app 返回后单独挂载，
+        # 不能被 auto_capabilities 推断，显式告知 bootstrap。
+        bootstrap_capabilities=(
+            "scheduler", "board", "console",
+        ),
     )
     app.state.production_settings = configured
     app.state.identity_repository = identity_repository
@@ -697,6 +955,33 @@ def create_production_app(
     app.state.quota_policy_service = quota_policy_service
     app.state.quota_reservation_worker = quota_reservation_worker
     app.state.quota_audit_writer = quota_audit_writer
+
+    async def ensure_run_trace_schema() -> None:
+        # 回放依赖持久化 trace 事件；本地部署首次启动时幂等建表。
+        await run_trace_repository.ensure_schema()
+
+    app.router.on_startup.append(ensure_run_trace_schema)
+
+    # 启动 RunExecutionWorker——没有它 queued Runs 永远不会被 claim
+    async def start_run_worker() -> None:
+        import sys as _sys
+        task_worker = getattr(run_execution, "task_worker", None)
+        print(f"[STARTUP] run_execution={run_execution is not None}, task_worker={task_worker is not None}", file=_sys.stderr, flush=True)
+        if task_worker is not None:
+            await task_worker.start()
+            import logging
+            logging.getLogger(__name__).info(
+                "RunExecutionWorker started (worker_id=%s)", getattr(task_worker, "worker_id", "?")
+            )
+
+    async def stop_run_worker() -> None:
+        task_worker = getattr(run_execution, "task_worker", None)
+        if task_worker is not None:
+            await task_worker.stop()
+
+    app.router.on_startup.append(start_run_worker)
+    app.router.on_shutdown.append(stop_run_worker)
+
     if close_redis_on_shutdown:
         async def close_production_resources() -> None:
             await redis_client.aclose()
@@ -714,6 +999,8 @@ def create_production_app(
     # SCHEDULER_ENABLED=false 时只保留管理接口，不启动后台调度循环。
     scheduler_service = PostgresSchedulerService(
         connection_factory, notifier=FeishuNotifier(load_feishu_config()),
+        connector_sync=run_connector_sync,
+        webhook_enqueue=enqueue_webhook,
     )
     app.include_router(create_scheduler_router(service=scheduler_service))
     app.state.scheduler_service = scheduler_service
@@ -747,11 +1034,47 @@ def create_production_app(
 
     app.router.on_startup.append(ensure_local_worker_budget)
 
-    # 老系统已停用；3D 办公室与运营看板以只读兼容桥的形式继续由新平台提供。
-    if configured.legacy_office_enabled:
-        from agent_platform.web.legacy_bridge import create_legacy_bridge_router
+    async def ensure_default_quota_policies() -> None:
+        """本地单用户模式补齐默认 quota policy。
 
-        app.include_router(create_legacy_bridge_router())
+        quota_policies 为空时 /quotas/policies/effective 返回空 limits，
+        前端看板和运行时 budget 决策都会受限。此处幂等写入 default scope +
+        本地 tenant 各一条宽松策略，线上部署由运维显式配置策略，不走此
+        本地兜底逻辑。
+        """
+        if not local_owner_email:
+            return
+        tenant_id = (local_tenant_id or "fde").strip()
+        conn = await connection_factory()
+        try:
+            async with conn:
+                await conn.execute(
+                    """INSERT INTO platform_quota_policies
+                       (policy_id, tenant_id, scope_type, scope_id, limits,
+                        priority, enabled, version, created_by)
+                       VALUES
+                        ('default-tenant-limits','','default','*',
+                         jsonb_build_object(
+                           'tokens',100000000,'cost_usd',1000,'concurrency',16,
+                           'requests',1000000,'tool_calls',5000000),
+                         100, true, 1, 'system'),
+                        (%s,%s,'tenant',%s,
+                         jsonb_build_object(
+                           'tokens',500000000,'cost_usd',5000,'concurrency',32,
+                           'requests',5000000,'tool_calls',20000000),
+                         50, true, 1, 'system')
+                       ON CONFLICT (scope_type, tenant_id, scope_id, policy_id)
+                       DO NOTHING""",
+                    (f"{tenant_id}-tenant-limits", tenant_id, tenant_id),
+                )
+        finally:
+            await conn.close()
+
+    app.router.on_startup.append(ensure_default_quota_policies)
+
+    # 运营看板由平台自身提供；旧系统页面与接口不再挂载。
+    app.include_router(create_board_page_router())
+    app.include_router(create_console_pages_router())
 
     @app.get("/", include_in_schema=False)
     async def root_redirect() -> RedirectResponse:
@@ -765,7 +1088,18 @@ def _production_app() -> FastAPI:
     if required_value not in {"true", "false", "1", "0", "yes", "no"}:
         raise RuntimeError("AGENT_PLATFORM_REQUIRE_RUN_EXECUTION must be a boolean")
     required = required_value in {"true", "1", "yes"}
-    builder = load_trusted_run_execution_builder(required=required)
+    builder = load_trusted_run_execution_builder(required=False)
+    if builder is None:
+        # Dev fallback: entry point not registered, try importing deploy package directly.
+        try:
+            from deploy.local_runtime import build_run_execution as _fallback
+            builder = _fallback
+        except ImportError:
+            if required:
+                raise RuntimeError(
+                    "AGENT_PLATFORM_REQUIRE_RUN_EXECUTION=true but neither entry point nor "
+                    "deploy.local_runtime.build_run_execution is available"
+                )
     return create_production_app(run_execution_builder=builder)
 
 

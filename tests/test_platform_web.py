@@ -1,39 +1,19 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
 from agent_platform.web.app import create_platform_web_router
 
-def test_platform_web_serves_independent_assets():
+
+def test_platform_web_serves_react_app_index():
     app = FastAPI()
     app.include_router(create_platform_web_router())
     client = TestClient(app)
+
     page = client.get("/app/")
     assert page.status_code == 200
     assert "Agent Platform" in page.text
     assert "console.py" not in page.text
-    assert client.get("/app/assets/app.js").status_code == 200
-    assert "workbench/capabilities" in client.get("/app/assets/app.js").text
-    assert client.get("/app/assets/style.css").status_code == 200
-
-def test_platform_web_serves_modular_legacy_console_assets_and_preloads_workbench_critical_resources():
-    app = FastAPI()
-    app.include_router(create_platform_web_router())
-    client = TestClient(app)
-
-    legacy = client.get("/app/assets/console.js")
-    config = client.get("/app/assets/console-config.js")
-    assert legacy.status_code == 200
-    assert config.status_code == 200
-    assert "from './console-config.js'" in legacy.text
-    assert "export const ROLE_META" in config.text
-    assert "await import('./console-config.js')" not in legacy.text
-
-    page = client.get("/app/")
-    assert 'rel="preload" href="/app/assets/style.css" as="style" fetchpriority="high"' in page.text
-    assert 'rel="preload" href="/app/assets/app.js" as="script" fetchpriority="high"' in page.text
-
-    legacy_page = client.get("/app/?legacy=1")
-    assert '<script type="module" src="/app/assets/console.js"></script>' in legacy_page.text
-    assert "<script>" not in legacy_page.text
+    assert page.headers["cache-control"] == "no-store"
 
 
 def test_platform_web_rejects_unknown_asset():
@@ -42,62 +22,23 @@ def test_platform_web_rejects_unknown_asset():
     assert TestClient(app).get("/app/assets/not-allowed.js").status_code == 404
 
 
-def test_platform_web_exposes_responsive_accessible_workbench_and_shared_api_transport():
-    app = FastAPI()
-    app.include_router(create_platform_web_router())
-    client = TestClient(app)
-
-    page = client.get("/app/")
-    assert 'name="viewport"' in page.text
-    assert 'aria-label="平台工作台导航"' in page.text
-    assert 'aria-current="page"' in page.text
-
-    styles = client.get("/app/assets/style.css").text
-    assert "@media(max-width:640px)" in styles
-    assert "@media(max-width:380px)" in styles
-    assert "focus-visible" in styles
-    assert "prefers-reduced-motion:reduce" in styles
-    assert "scroll-snap-type:x proximity" in styles
-
-    script = client.get("/app/assets/app.js").text
-    assert "async function request(path,opt={})" in script
-    assert 'credentials:"same-origin"' in script
-    assert 'h["X-CSRF-Token"]=csrf()' in script
-    assert 'request(API+"/files/"+encodeURIComponent(b.dataset.download))' in script
-    assert "workbench/capabilities" in script
-    assert "Capability visibility is presentation-only" in script
-    assert "async function upload(path,file){const r=await request(path" in script
-    assert 'b.setAttribute("aria-current","page")' in script
-
-
-def test_platform_web_can_explicitly_serve_legacy_console():
+def test_platform_web_ignores_legacy_console_query():
+    """旧控制台已下线：legacy=1 不再跳转旧页面，统一返回平台自身前端。"""
     app = FastAPI()
     app.include_router(create_platform_web_router())
     client = TestClient(app)
 
     response = client.get("/app/?legacy=1")
     assert response.status_code == 200
-    assert "FDE 工作室" in response.text
+    assert "FDE 工作室" not in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_platform_web_falls_back_when_new_index_is_not_deployed(tmp_path, monkeypatch):
+def test_platform_web_returns_service_unavailable_when_frontend_build_is_missing(
+        tmp_path, monkeypatch):
     from agent_platform.web import app as web_app
 
     monkeypatch.setattr(web_app, "STATIC", tmp_path)
-    app = FastAPI()
-    app.include_router(create_platform_web_router())
-
-    response = TestClient(app).get("/app/")
-    assert response.status_code == 200
-    assert "FDE 工作室" in response.text
-
-
-def test_platform_web_returns_service_unavailable_when_both_uis_are_missing(tmp_path, monkeypatch):
-    from agent_platform.web import app as web_app
-
-    monkeypatch.setattr(web_app, "STATIC", tmp_path)
-    monkeypatch.setattr(web_app, "LEGACY_CONSOLE", tmp_path / "console.html")
     app = FastAPI()
     app.include_router(create_platform_web_router())
 

@@ -33,41 +33,61 @@ def create_admin_router(*, connection_factory: Any) -> APIRouter:
 
     @router.get("/organization")
     async def list_organization(request: Request):
-        _principal(request)
+        principal = _principal(request)
+        tenant_id = principal.tenant_id
         tenants = await _query(
-            """SELECT tenant_id, display_name, status, created_at
-               FROM platform_tenants ORDER BY tenant_id"""
+            """SELECT display_name, status, created_at
+               FROM platform_tenants WHERE tenant_id=%s ORDER BY tenant_id""",
+            (tenant_id,),
         )
         users = await _query(
-            """SELECT user_id, email, display_name, status,
-                      created_at, updated_at, last_login_at
-               FROM platform_users ORDER BY created_at"""
-        )
-        memberships = await _query(
-            """SELECT tenant_id, user_id, status, joined_at
-               FROM platform_tenant_memberships ORDER BY tenant_id, joined_at"""
+            """SELECT display_name, email, status,
+                      last_login_at, created_at
+               FROM platform_users
+               WHERE user_id IN (
+                 SELECT user_id FROM platform_tenant_memberships WHERE tenant_id=%s
+               ) ORDER BY created_at""",
+            (tenant_id,),
         )
         return {"items": [
             {"section": "tenants", "rows": tenants, "count": len(tenants)},
             {"section": "users", "rows": users, "count": len(users)},
-            {"section": "tenant_memberships", "rows": memberships, "count": len(memberships)},
-        ], "count": len(tenants) + len(users) + len(memberships)}
+        ], "count": len(tenants) + len(users)}
 
     @router.get("/access-control")
     async def list_access_control(request: Request):
-        _principal(request)
+        principal = _principal(request)
+        tenant_id = principal.tenant_id
         roles = await _query(
-            """SELECT tenant_id, role_id, name, description, is_system, created_at
-               FROM platform_roles ORDER BY tenant_id, role_id"""
+            """SELECT name, description, is_system, created_at
+               FROM platform_roles WHERE tenant_id=%s ORDER BY role_id""",
+            (tenant_id,),
         )
         bindings = await _query(
-            """SELECT tenant_id, role_id, subject_type, subject_id,
-                      resource_type, resource_id, created_at, revoked_at
-               FROM platform_role_bindings ORDER BY role_id, subject_id"""
+            """SELECT r.name AS role_name,
+                      b.subject_type,
+                      COALESCE(NULLIF(u.display_name, ''), u.email, b.subject_id) AS subject,
+                      b.resource_type,
+                      CASE WHEN b.resource_type = 'tenant' THEN '当前租户'
+                           ELSE b.resource_id END AS resource,
+                      b.created_at, b.revoked_at
+               FROM platform_role_bindings b
+               LEFT JOIN platform_roles r
+                      ON r.tenant_id = b.tenant_id AND r.role_id = b.role_id
+               LEFT JOIN platform_users u
+                      ON b.subject_type = 'user' AND u.user_id::text = b.subject_id
+               WHERE b.tenant_id=%s
+               ORDER BY r.name, subject""",
+            (tenant_id,),
         )
         permissions = await _query(
-            """SELECT tenant_id, role_id, permission_key
-               FROM platform_role_permissions ORDER BY role_id, permission_key"""
+            """SELECT r.name AS role_name, p.permission_key
+               FROM platform_role_permissions p
+               LEFT JOIN platform_roles r
+                      ON r.tenant_id = p.tenant_id AND r.role_id = p.role_id
+               WHERE p.tenant_id=%s
+               ORDER BY r.name, p.permission_key""",
+            (tenant_id,),
         )
         return {"items": [
             {"section": "roles", "rows": roles, "count": len(roles)},
@@ -77,14 +97,17 @@ def create_admin_router(*, connection_factory: Any) -> APIRouter:
 
     @router.get("/settings")
     async def list_settings(request: Request):
-        _principal(request)
+        principal = _principal(request)
         quotas = await _query(
-            """SELECT tenant_id, scope_type, scope_id,
+            """SELECT scope_type, scope_id,
                       period_start, period_end,
                       hard_tokens, hard_cost_usd, hard_concurrency,
                       soft_tokens, soft_cost_usd, priority,
                       created_at, updated_at
-               FROM platform_quota_budgets ORDER BY tenant_id, scope_type"""
+               FROM platform_quota_budgets
+               WHERE tenant_id=%s
+               ORDER BY scope_type, scope_id""",
+            (principal.tenant_id,),
         )
         counts = await _query(
             """SELECT 'platform_tenants' AS table_name, COUNT(*) AS row_count FROM platform_tenants

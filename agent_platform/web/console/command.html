@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>指令中心 · Agent 平台</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/console-asset/console.css">
+</head>
+<body>
+  <div class="shell" style="padding-bottom:20px;">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <strong>Agent 平台 · 独立看板</strong>
+          <span>只说要做的事，平台负责组织执行</span>
+        </div>
+      </div>
+      <nav class="nav" aria-label="看板导航"></nav>
+      <div class="bar-meta">
+        <span class="who" id="identity">身份读取中…</span>
+        <span class="stamp" id="refreshStamp">最近刷新 —</span>
+      </div>
+    </header>
+
+    <main class="cmd-page">
+      <div class="notice warn hidden" id="capabilityNotice" style="margin-bottom:12px;">
+        <span>!</span>
+        <div><strong>当前部署未启用任务执行能力</strong><br>提交入口已关闭，不会进行模拟提交，也不会把未执行的任务显示为成功。</div>
+      </div>
+
+      <div class="cmd-shell">
+        <aside class="panel cmd-col sessions" aria-label="指令会话">
+          <div class="cmd-col-head">
+            <h2>指令会话</h2>
+            <span class="sub" id="sessionsCount">—</span>
+          </div>
+          <div class="session-tools">
+            <button class="btn btn-primary" id="newSessionBtn" type="button">新建指令</button>
+            <input class="input" id="sessionSearch" type="search" placeholder="搜索历史会话" aria-label="搜索历史会话">
+          </div>
+          <div class="session-list" id="sessionList">
+            <div style="color:#6b7794;font-size:12px;padding:10px;">正在读取会话…</div>
+          </div>
+        </aside>
+
+        <section class="panel cmd-col chat-col" aria-label="指令对话">
+          <div class="chat-head">
+            <div class="title" id="chatTitle">新指令</div>
+            <span class="tag muted" id="sessionStateTag">未关联会话</span>
+            <span class="meta" id="chatMeta">—</span>
+            <button class="btn btn-sm" id="configToggle" type="button" style="margin-left:auto;">任务配置</button>
+          </div>
+
+          <div class="chat-scroll" id="chatScroll">
+            <div class="empty-box" id="chatEmpty">
+              <strong>告诉我你要做什么</strong>
+              平台会整理任务信息、选择执行智能体并反馈结果。你不需要填写 Session、Run 或 Agent ID。
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="notice bad hidden" id="composerError" style="margin-bottom:8px;"></div>
+            <div class="chips" id="examples">
+              <button class="chip" type="button">帮我分析最近一周系统运行情况。</button>
+              <button class="chip" type="button">检查所有执行失败的任务并整理原因。</button>
+              <button class="chip" type="button">汇总今天所有智能体的工作进度。</button>
+              <button class="chip" type="button">帮我整理本周项目进展报告。</button>
+              <button class="chip" type="button">检查任务执行队列是否存在积压。</button>
+            </div>
+            <div class="composer-box">
+              <textarea class="textarea" id="commandInput" rows="2" placeholder="例如：帮我检查今天执行失败的任务，整理原因并给出处理建议。"></textarea>
+              <div class="composer-actions">
+                <button class="btn btn-primary" id="sendBtn" type="button">发送</button>
+                <span class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel cmd-col config-col" id="configCol" aria-label="任务配置">
+          <div class="cmd-col-head">
+            <h2>执行状态</h2>
+            <span class="sub" id="configStatusHint">—</span>
+          </div>
+          <div class="confirm-slot" id="confirmSlot"></div>
+
+          <div class="cmd-col-head">
+            <h2>任务配置</h2>
+            <span class="sub">可折叠</span>
+            <button class="btn btn-ghost btn-sm" id="configClose" type="button" style="margin-left:auto;">收起</button>
+          </div>
+          <div class="config-body">
+            <div class="field" id="agentField">
+              <label>执行智能体</label>
+              <div class="agent-pick" id="agentPick">
+                <div style="color:#6b7794;font-size:12px;">正在读取智能体…</div>
+              </div>
+              <span class="help">自动选择按「已发布且当前执行任务最少」的本地规则，不是智能路由；只展示注册表中的真实智能体，在线状态未接入。</span>
+            </div>
+
+            <div class="field">
+              <label for="projectInput">所属项目（可选）</label>
+              <input class="input" id="projectInput" type="text" placeholder="填写项目标识；留空表示不关联">
+              <span class="help">项目列表接口未接入，此处只能填写项目标识。</span>
+            </div>
+
+            <div class="field">
+              <label for="prioritySelect">任务优先级</label>
+              <select class="select" id="prioritySelect">
+                <option value="50">低</option>
+                <option value="100" selected>普通</option>
+                <option value="500">高</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>是否需要人工审批</label>
+              <div class="config-note">
+                由系统策略决定，页面无法预先确认。L2 外部或不可逆操作需要审批；L3 资金、安全与权限操作由有权限的人直接执行。
+              </div>
+            </div>
+
+            <div class="field">
+              <label>操作限制</label>
+              <div class="config-note">
+                点击「确认下达」只代表提交任务，不能代替正式审批。对话内容也不能作为审批凭据。
+              </div>
+            </div>
+
+            <details class="config-note">
+              <summary style="cursor:pointer;">开发者信息</summary>
+              <div style="margin-top:6px;line-height:1.7;">
+                提交接口：POST /api/platform/v1/workbench/tasks<br>
+                会话编号：<span class="mono" id="devSessionId">—</span><br>
+                当前智能体：<span class="mono" id="devAgentId">自动选择</span>
+              </div>
+            </details>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script src="/console-asset/common.js"></script>
+  <script src="/console-asset/command.js"></script>
+</body>
+</html>

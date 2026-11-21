@@ -16,7 +16,6 @@ from agent_platform.events.webhooks import (
     verify_signature,
 )
 
-
 SECRET = b"webhook-security-test-secret-32b"
 
 

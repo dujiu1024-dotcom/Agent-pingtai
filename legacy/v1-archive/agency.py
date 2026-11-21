@@ -2382,6 +2382,11 @@ NOTICE_LABELS = {
     "gate_confirmed": "闸门已确认",
     "gate_revoked": "闸门已关闭",
     "agent_run": "角色已产出",
+    "agent_circuit_break": "Agent 疑似熔断",
+    "agent_low_output": "Agent 低效产出",
+    "agent_role_overlap": "Agent 职责交叉",
+    "agent_subscribe_flood": "订阅泛滥",
+    "quarterly_review": "季度盘点",
 }
 
 
@@ -2521,7 +2526,26 @@ def sync_pending(now=None, sender=None, runner=None, dry_run=False, limit=None,
             else:
                 est = estimate_tokens(sub["target"])
                 task = tasks.get(ev["task_id"] or "")
-                if sub["action"] == "run" and not task and ev["type"] == "audit_flag":
+                # HR 专属事件 / 审计标记：没有绑定任务也能唤醒目标角色
+                HR_EVENT_TYPES = {
+                    "agent_circuit_break", "agent_low_output",
+                    "agent_role_overlap", "agent_subscribe_flood",
+                    "quarterly_review",
+                }
+                if sub["action"] == "run" and not task \
+                        and ev["type"] in HR_EVENT_TYPES:
+                    task = {
+                        "id": "EVENT:" + str(ev["id"]),
+                        "title": ev["type"],
+                        "owner": sub["target"],
+                        "project": "",
+                        "start": "", "due": "",
+                        "done_when": "", "deliverable": "",
+                    }
+                    note(f"[构造] #%d %s 无任务绑定，构造虚拟任务唤醒 %s"
+                         % (ev["id"], ev["type"], sub["target"]))
+                elif sub["action"] == "run" and not task \
+                        and ev["type"] == "audit_flag":
                     # 审计标记是信息型事件，没有任务可唤醒：归档，不产生死信
                     stats["delivered"] += 1
                     done.add(key)
@@ -4498,7 +4522,6 @@ ROUNDTABLE_KEYWORDS = [
     ("pm", ("交付", "项目", "排期", "进度", "需求", "验收", "方案", "流程")),
     ("producer", ("自动化", "工具", "系统", "代码", "技术", "开发", "上线", "架构")),
     ("auditor", ("审计", "风险", "合规", "来源", "质量", "复核")),
-    ("hr", ("招聘", "协作", "人效", "团队", "分工")),
 ]
 ROUNDTABLE_FILL = ("pm", "finance", "scout", "producer")
 ROUNDTABLE_SECTIONS = (
@@ -4832,7 +4855,6 @@ def _action_owner(line, roles):
         "producer": ("工具", "系统", "自动化", "代码", "技术", "开发"),
         "content": ("内容", "视频", "文案", "发布", "选题"),
         "auditor": ("审计", "复核", "风险", "合规"),
-        "hr": ("招聘", "分工", "人效", "团队"),
     }
     scores = {r: sum(1 for w in words.get(r, ()) if w in line) for r in roles}
     best = max(scores, key=lambda r: scores[r]) if scores else "pm"

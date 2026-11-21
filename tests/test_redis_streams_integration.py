@@ -13,6 +13,7 @@ if REDIS_URL:
 if DSN and REDIS_URL:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
+
     from agent_platform.events.outbox import PostgresOutboxStore
     from agent_platform.events.outbox_replay import PostgresOutboxReplayStore
 

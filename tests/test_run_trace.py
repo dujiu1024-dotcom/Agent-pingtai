@@ -100,6 +100,7 @@ class RunTraceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_blackboard_replay_import_is_idempotent_and_preserves_source_id(self):
         from datetime import datetime, timezone
+
         from agent_platform.contracts import Scope
 
         event = SimpleNamespace(
@@ -127,10 +128,12 @@ class RunTraceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_executor_emits_run_start_step_and_complete(self):
         import inspect
+
         from agent_platform.runtime.execution import LangGraphRunExecutor
         if "trace_service" not in inspect.signature(LangGraphRunExecutor.__init__).parameters:
             self.skipTest("LangGraphRunExecutor no longer injects trace_service; trace is now captured elsewhere")
         from types import SimpleNamespace
+
         from agent_platform.runtime.lifecycle import InMemoryRunStateStore, RunLifecycleManager
 
         class Graph:

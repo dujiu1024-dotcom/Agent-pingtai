@@ -24,7 +24,11 @@ class PostgresRunStateStore(RunStateStore):
  @staticmethod
  def _snapshot(row:dict[str,Any]|None)->RunSnapshot|None:
   if row is None:return None
-  return RunSnapshot(row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),row["checkpoint_ref"],row["last_error"],row["updated_at"])
+  return RunSnapshot(
+    row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),
+    row.get("checkpoint_ref"),row.get("last_error"),row.get("updated_at"),
+    row.get("output"),row.get("input"),row.get("usage"),
+  )
  async def create_task_run(self, *, tenant_id:str, run_id:str, actor_id:str,
   agent_id:str, agent_version:int, template_id:str, template_version:int, input:Mapping[str,Any],
   preparation_owner:str, registry_snapshot:Sequence[Mapping[str,Any]], priority:int=100,
@@ -88,11 +92,11 @@ class PostgresRunStateStore(RunStateStore):
   async with c:
    async with c.transaction():
     cur=await c.execute(
-     """SELECT run_id,status,registry_snapshot,registry_snapshot_digest
+     """SELECT run_id,status,registry_snapshot,registry_snapshot_digest,input
         FROM platform_runs
-        WHERE tenant_id=%s AND task_id=%s AND created_by=%s
+        WHERE tenant_id=%s AND task_id=%s
         FOR UPDATE""",
-     (tenant_id,task_id,actor_id),
+     (tenant_id,task_id),
     )
     source=await cur.fetchone()
     if source is None:
@@ -101,6 +105,17 @@ class PostgresRunStateStore(RunStateStore):
      raise ValueError("only failed or timed_out tasks can be retried")
     if source["registry_snapshot"] is None or not source["registry_snapshot_digest"]:
      raise ValueError("task has no immutable registry snapshot and cannot be retried")
+    # 防重复：同一 task 已有 queued/running 的 retry run → 直接返回
+    cur=await c.execute(
+     """SELECT run_id FROM platform_runs
+        WHERE tenant_id=%s AND task_id=%s AND retry_of_run_id IS NOT NULL
+          AND status IN ('queued','running')
+        LIMIT 1""",
+     (tenant_id,task_id),
+    )
+    existing=await cur.fetchone()
+    if existing is not None:
+     return str(existing["run_id"])
     # 快照摘要的规范化内容包含 run_id，重试必须按新运行重算，否则校验必然失败。
     entries=source["registry_snapshot"]
     digest=source["registry_snapshot_digest"]
@@ -119,16 +134,16 @@ class PostgresRunStateStore(RunStateStore):
          template_id,template_version,workflow_id,status,priority,input,created_by,
          idempotency_key,request_digest,registry_snapshot,registry_snapshot_digest,
          dispatch_ready,retry_of_run_id)
-        SELECT tenant_id,%s,project_id,session_id,%s,agent_id,agent_version,
+        SELECT tenant_id,%s,project_id,session_id,%s::uuid,agent_id,agent_version,
          template_id,template_version,workflow_id,'queued',priority,input,created_by,
          %s,%s,registry_snapshot,%s,true,%s
         FROM platform_runs
-        WHERE tenant_id=%s AND run_id=%s AND created_by=%s
+        WHERE tenant_id=%s AND run_id=%s
         ON CONFLICT (tenant_id,created_by,idempotency_key)
           WHERE idempotency_key IS NOT NULL DO NOTHING
         RETURNING run_id""",
-     (run_uuid,str(run_uuid),idempotency_key,request_digest,digest,source["run_id"],
-      tenant_id,source["run_id"],actor_id),
+     (run_uuid,task_id,idempotency_key,request_digest,digest,source["run_id"],
+      tenant_id,source["run_id"]),
     )
     inserted=await cur.fetchone()
     if inserted is not None:
@@ -199,12 +214,22 @@ class PostgresRunStateStore(RunStateStore):
  async def list_runs_by_task(self, tenant_id:str, task_id:str)->list[dict[str,Any]]:
   c=await self._connect()
   async with c:
-   cur=await c.execute("""SELECT run_id,status,agent_id,started_at,finished_at,
-    last_error,updated_at,usage,registry_snapshot_digest
+   cur=await c.execute("""SELECT run_id,task_id,status,agent_id,started_at,finished_at,
+    last_error,updated_at,usage,registry_snapshot_digest,trace_id,created_by
     FROM platform_runs WHERE tenant_id=%s AND task_id=%s
     ORDER BY created_at ASC""",(tenant_id,task_id))
    rows=await cur.fetchall()
-  return [dict(row) for row in rows]
+  result:list[dict[str,Any]]=[]
+  for r in rows:
+    d=dict(r)
+    s=d.get("started_at")
+    f=d.get("finished_at")
+    if s and f:
+      try:d["duration_ms"]=int((f-s).total_seconds()*1000)
+      except Exception:d["duration_ms"]=None
+    else:d["duration_ms"]=None
+    result.append(d)
+  return result
 
  async def claim_task_preparation(self,tenant_id:str,run_id:str,owner:str,*,lease_seconds:int=60)->bool:
   if not owner.strip() or lease_seconds<5:
@@ -261,7 +286,11 @@ class PostgresRunStateStore(RunStateStore):
  async def get(self,tenant_id:str,run_id:str)->RunSnapshot|None:
   c=await self._connect()
   async with c:
-   cur=await c.execute("SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at FROM platform_runs WHERE tenant_id=%s AND run_id=%s",(tenant_id,run_id))
+   cur=await c.execute(
+     "SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at,output,input,usage "
+     "FROM platform_runs WHERE tenant_id=%s AND run_id=%s",
+     (tenant_id,run_id),
+   )
    return self._snapshot(await cur.fetchone())
  async def transition(self,snapshot:RunSnapshot,*,expected_version:int)->RunSnapshot:
   c=await self._connect()
@@ -339,7 +368,24 @@ class PostgresRunStateStore(RunStateStore):
    raise ValueError("invalid workbench worker lease parameters")
   c=await self._connect()
   async with c:
-   cur=await c.execute("""WITH candidates AS (
+   cur=await c.execute("""
+    WITH
+    -- 清僵尸：attempts >= max 的 queued/interrupted run 永远不会再被 claim，
+    -- 直接晋级 failed 防止堆积。
+    _zombie AS (
+      UPDATE platform_runs SET
+        status='failed',
+        last_error='killed zombie run: worker_attempts >= max_worker_attempts, never finalized',
+        dead_lettered_at=now(),
+        dead_letter_reason='exhausted_attempts_never_finalized',
+        finished_at=now(),
+        worker_id=NULL, lease_expires_at=NULL, updated_at=now()
+      WHERE task_id IS NOT NULL AND dispatch_ready=true
+        AND (%s::text IS NULL OR tenant_id=%s)
+        AND status IN ('queued','interrupted')
+        AND COALESCE(worker_attempts,0) >= COALESCE(max_worker_attempts,5)
+    ),
+    candidates AS (
     SELECT tenant_id,run_id FROM platform_runs
     WHERE task_id IS NOT NULL AND dispatch_ready=true
       AND (%s::text IS NULL OR tenant_id=%s)
@@ -358,7 +404,7 @@ class PostgresRunStateStore(RunStateStore):
     )
     SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at
     FROM claimed ORDER BY priority DESC,run_id ASC""",
-    (tenant_id,tenant_id,limit,worker_id,lease_seconds))
+    (tenant_id,tenant_id,tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
 
  async def acquire_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60)->bool:
@@ -442,6 +488,28 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""UPDATE platform_runs SET worker_id=NULL,lease_expires_at=NULL
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s RETURNING run_id""",(tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
+ async def tick_worker_heartbeat(self,worker_id:str)->None:
+  """Ensure this worker is visible to ops monitoring even when idle.
+
+  If we already have a row, bump its updated_at. Otherwise INSERT a tiny
+  "heartbeat marker" row so ops panels see we're alive (status='succeeded'
+  keeps it out of active processing queries).
+  """
+  if not worker_id.strip():return
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""UPDATE platform_runs SET updated_at=now()
+    WHERE run_id=(SELECT run_id FROM platform_runs
+                  WHERE worker_id=%s ORDER BY updated_at DESC LIMIT 1)""",(worker_id,))
+   if cur.rowcount==0:
+    # First run for this worker: insert a marker row.
+    from uuid import uuid4
+    cur2=await c.execute("""INSERT INTO platform_runs
+      (tenant_id,run_id,status,worker_id,created_at,updated_at,lease_expires_at)
+      VALUES ('fde',%s,'succeeded',%s,now(),now(),NULL)
+      ON CONFLICT DO NOTHING""",(uuid4(),worker_id))
+    await cur2.fetchall()
+
  async def recoverable(self,limit:int=100)->list[RunSnapshot]:
   if limit<1:raise ValueError("limit must be positive")
   c=await self._connect()
@@ -451,6 +519,14 @@ class PostgresRunStateStore(RunStateStore):
        OR (status IN ('queued','interrupted') AND (worker_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=now()))
        OR (status='running' AND (lease_expires_at IS NULL OR lease_expires_at<=now())))
     ORDER BY created_at LIMIT %s""",(limit,))
+   return [self._snapshot(row) for row in await cur.fetchall()]
+
+ async def list_recent(self,tenant_id:str,limit:int=20)->list[RunSnapshot]:
+  limit=max(1,min(int(limit),200))
+  c=await self._connect()
+  async with c:
+   cur=await c.execute("""SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at,output,input,usage
+    FROM platform_runs WHERE tenant_id=%s ORDER BY COALESCE(updated_at,created_at) DESC LIMIT %s""",(tenant_id,limit))
    return [self._snapshot(row) for row in await cur.fetchall()]
 
  async def list_dead_letters(self,tenant_id:str,*,limit:int=50,include_resolved:bool=False)->list[dict[str,Any]]:

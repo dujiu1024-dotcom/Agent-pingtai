@@ -66,7 +66,7 @@ const featureLabels: Array<[key: string, label: string]> = [
   ['approvals', '审批'],
   ['evaluation_runs', '评测运行'],
   ['batch_execution', '批量执行'],
-  ['blackboard', 'Blackboard'],
+  ['blackboard', '协作黑板'],
   ['metrics', '指标导出'],
   ['audit', '审计'],
 ]
@@ -342,7 +342,7 @@ export function StatusBoardPage() {
     <section className="page-content status-board">
       <div className="page-heading board-heading">
         <div>
-          <p className="eyebrow">WORKSPACE / RUNTIME BOARD</p>
+          <p className="eyebrow">工作空间 / 运行看板</p>
           <h1>运行看板</h1>
           <p>服务状态与任务进展，一屏看完。</p>
         </div>
@@ -372,7 +372,7 @@ export function StatusBoardPage() {
         <article className="board-kpi">
           <span>运行中</span>
           <strong>{runningCount}</strong>
-          <small>正在执行的 Run</small>
+          <small>正在执行的运行</small>
         </article>
         <article className="board-kpi">
           <span>排队中</span>

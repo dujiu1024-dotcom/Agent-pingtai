@@ -7,8 +7,8 @@ from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
 from agent_platform.runtime.lifecycle import RunLifecycleManager
-from agent_platform.tools.idempotency import EffectConflict
 from agent_platform.streaming.sse import sse_response
+from agent_platform.tools.idempotency import EffectConflict
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 LifecycleResolver = Callable[[Principal], Awaitable[RunLifecycleManager]]
@@ -41,13 +41,77 @@ def create_runs_router(
         lifecycle = await resolve_lifecycle(principal)
         return principal, lifecycle
 
-    def serialize(run: Any) -> dict[str, Any]:
+    @router.get("")
+    @router.get("/")
+    async def list_runs(request: Request, limit: int = 20):
+        principal = await resolve_principal(request)
+        lifecycle = await resolve_lifecycle(principal)
+        snapshots = await lifecycle.list_recent(principal.tenant_id, limit=max(1, min(limit, 200)))
         return {
-            "run_id": run.run_id, "status": run.status.value,
-            "version": run.version, "checkpoint_ref": run.checkpoint_ref,
+            "items": [
+                {
+                    "run_id": s.run_id,
+                    "tenant_id": s.tenant_id,
+                    "status": s.status.value,
+                    "version": s.version,
+                    "checkpoint_ref": s.checkpoint_ref,
+                    "last_error": s.last_error,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                }
+                for s in snapshots
+            ]
+        }
+
+    def serialize(run: Any) -> dict[str, Any]:
+        started = getattr(run, "started_at", None)
+        finished = getattr(run, "finished_at", None)
+        duration_ms: int | None = None
+        if started and finished:
+            try:
+                duration_ms = int((finished - started).total_seconds() * 1000)
+            except Exception:
+                duration_ms = None
+        return {
+            "run_id": run.run_id,
+            "task_id": getattr(run, "task_id", None),
+            "agent_id": getattr(run, "agent_id", None),
+            "trace_id": getattr(run, "trace_id", None),
+            "status": run.status.value,
+            "version": run.version,
+            "checkpoint_ref": run.checkpoint_ref,
             "last_error": run.last_error,
+            "duration_ms": duration_ms,
+            "output": getattr(run, "output", None),
+            "input": getattr(run, "input", None),
+            "usage": getattr(run, "usage", None),
+            "created_at": (run.created_at.isoformat() if run.created_at else None) if hasattr(run, "created_at") else None,
+            "started_at": (run.started_at.isoformat() if run.started_at else None) if hasattr(run, "started_at") else None,
+            "finished_at": (run.finished_at.isoformat() if run.finished_at else None) if hasattr(run, "finished_at") else None,
             "updated_at": run.updated_at.isoformat() if run.updated_at else None,
         }
+
+    def _extract_output_text(raw: Any) -> str | None:
+        """从 run.output 里提取可直接渲染的纯文本。
+
+        三种形态都处理：
+          - None → None
+          - dict 含 "output" str → 取 inner
+          - dict 无 "output" 但本身就是 model response → 取 result / content
+          - str → 原样返回
+          - 其它 → None（避免前端渲染垃圾）
+        """
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            text = raw.strip()
+            return text or None
+        if isinstance(raw, dict):
+            for key in ("output", "content", "result", "text", "message"):
+                value = raw.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return None
+        return None
 
     @router.get("/{run_id}")
     async def get_run(run_id: str, request: Request):
@@ -83,6 +147,10 @@ def create_runs_router(
             result["model_call_usage"] = await ledger.list_model_calls(
                 tenant_id=principal.tenant_id, run_id=run_id, limit=200,
             )
+        # 派生 output_text：output 字段若为 {"output": "...markdown...", "usage": {...}}
+        # 或直接为字符串，提取出可直接渲染的纯文本。不动原 output 字段，加新字段。
+        raw_output = result.get("output")
+        result["output_text"] = _extract_output_text(raw_output)
         return result
 
     @router.post("/{run_id}/cancel")

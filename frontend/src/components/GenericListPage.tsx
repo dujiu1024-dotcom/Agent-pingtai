@@ -1,16 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { apiClient } from '@/lib/api'
+import {
+  displayValue,
+  fieldLabel,
+  localizedJson,
+} from '@/lib/i18n/labels'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
-
-const dt = (v?: string | number): string => {
-  if (!v) return '—'
-  try {
-    return new Date(String(v)).toLocaleString()
-  } catch {
-    return String(v)
-  }
-}
 
 function toList(raw: unknown): unknown[] {
   if (Array.isArray(raw)) return raw
@@ -25,27 +21,24 @@ function toList(raw: unknown): unknown[] {
   return []
 }
 
-function cell(v: unknown): ReactNode {
+function cell(key: string, v: unknown): ReactNode {
   if (v === null || v === undefined) return '—'
-  if (typeof v === 'boolean') return v ? '✓' : '—'
-  if (typeof v === 'number') return v
-  if (typeof v === 'string') {
-    // 时间戳检测
-    if (/^\d{4}-\d{2}-\d{2}[T ]/.test(v) || /\d{10,13}/.test(v)) {
-      const d = new Date(v)
-      if (!isNaN(d.getTime())) return dt(v)
-    }
-    return v.length > 80 ? v.slice(0, 80) + '…' : v
-  }
-  if (Array.isArray(v)) return v.join(', ')
+  if (Array.isArray(v)) return v.map((item) => displayValue(key, item)).join('、')
   if (typeof v === 'object') {
     try {
-      return <pre className="cell-json">{JSON.stringify(v, null, 2)}</pre>
+      const keys = Object.keys(v as Record<string, unknown>)
+      return (
+        <details className="cell-json-wrap">
+          <summary>{`展开详情（${keys.length} 个字段）`}</summary>
+          <pre className="cell-json">{localizedJson(v)}</pre>
+        </details>
+      )
     } catch {
       return '—'
     }
   }
-  return String(v)
+  const textValue = displayValue(key, v)
+  return textValue.length > 120 ? `${textValue.slice(0, 120)}…` : textValue
 }
 
 export interface GenericListPageProps {
@@ -99,9 +92,7 @@ export function GenericListPage(props: GenericListPageProps) {
       <div className="page-heading">
         <h1>{title}</h1>
         <p>{description}</p>
-        <small>
-          来源 <code>{apiPath}</code> · 返回 {rows.length} 条
-        </small>
+        <small>服务端数据 · 共 {rows.length} 条</small>
       </div>
       {rows.length === 0 ? (
         <EmptyState title={`暂无${title}`} description="服务端未返回记录。" />
@@ -111,7 +102,7 @@ export function GenericListPage(props: GenericListPageProps) {
             <thead>
               <tr>
                 {Object.keys(rows[0] as Record<string, unknown>).map((k) => (
-                  <th key={k}>{k}</th>
+                  <th key={k}>{fieldLabel(k)}</th>
                 ))}
               </tr>
             </thead>
@@ -119,7 +110,16 @@ export function GenericListPage(props: GenericListPageProps) {
               {rows.map((row, i) => (
                 <tr key={i}>
                   {Object.entries(row as Record<string, unknown>).map(([k, v]) => (
-                    <td key={k}>{cell(v)}</td>
+                    <td
+                      key={k}
+                      className={
+                        k.endsWith('_at') || k.endsWith('_id')
+                          ? 'cell-nowrap'
+                          : undefined
+                      }
+                    >
+                      {cell(k, v)}
+                    </td>
                   ))}
                 </tr>
               ))}

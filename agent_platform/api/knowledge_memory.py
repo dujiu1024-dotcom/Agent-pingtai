@@ -135,6 +135,7 @@ def create_knowledge_memory_router(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"collection_id": item.collection_id, "name": item.name,
+                "tenant_id": item.tenant_id,
                 "description": item.description, "project_id": item.project_id}
 
     @router.patch("/knowledge/collections/{collection_id}")
@@ -439,8 +440,9 @@ def create_knowledge_memory_router(
         document_ids: str | None = None, source_uri_prefix: str | None = None,
         title_contains: str | None = None, min_score: float | None = None,
     ):
-        from agent_platform.knowledge.retrieval import RetrievalFilters
         from time import monotonic
+
+        from agent_platform.knowledge.retrieval import RetrievalFilters
         principal=await resolve_knowledge_principal(request)
         try:
             filters=RetrievalFilters(

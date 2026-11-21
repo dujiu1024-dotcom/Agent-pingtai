@@ -1,15 +1,15 @@
 """Stable public HTTP API contract primitives and ASGI enforcement."""
 from __future__ import annotations
 
-import json
 import base64
 import hashlib
 import hmac
+import json
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import format_datetime
-from dataclasses import dataclass
 from typing import Any, Mapping
 from uuid import uuid4
 

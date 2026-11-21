@@ -5,7 +5,6 @@ truth for Blackboard state; this module links its event IDs into the Run timelin
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum

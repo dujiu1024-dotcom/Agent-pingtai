@@ -9,17 +9,31 @@ class SessionManagementApiTests(unittest.TestCase):
         try:
             from fastapi import FastAPI
             from fastapi.testclient import TestClient
+
             from agent_platform.api.sessions import create_sessions_router
             from agent_platform.control_plane.sessions_assets import (
-                AssetStatus, ContextWindowSnapshot, FileAsset, InMemoryObjectStorage,
-                InMemorySessionRepository, MessageRole, SessionAssetService,
+                AssetStatus,
+                ContextWindowSnapshot,
+                FileAsset,
+                InMemoryObjectStorage,
+                InMemorySessionRepository,
+                MessageRole,
+                SessionAssetService,
                 SessionNotFound,
             )
         except ImportError:
             self.skipTest("FastAPI is installed in the platform API test environment")
 
-        self.repository = InMemorySessionRepository()
-        self.service = SessionAssetService(self.repository, InMemoryObjectStorage())
+        self.FileAsset = FileAsset
+        self.SessionNotFound = SessionNotFound
+        self.AssetStatus = AssetStatus
+        self.ContextWindowSnapshot = ContextWindowSnapshot
+        self.MessageRole = MessageRole
+        self.InMemorySessionRepository = InMemorySessionRepository
+        self.SessionAssetService = SessionAssetService
+        self.InMemoryObjectStorage = InMemoryObjectStorage
+        self.repository = self.InMemorySessionRepository()
+        self.service = self.SessionAssetService(self.repository, self.InMemoryObjectStorage())
         self.principal = SimpleNamespace(tenant_id="tenant-a", user_id="user-a")
         self.denied_actions: set[str] = set()
 
@@ -51,11 +65,11 @@ class SessionManagementApiTests(unittest.TestCase):
     def test_detail_export_archive_restore_and_delete(self):
         import asyncio
         session = self._create_session()
-        asyncio.run(self.repository.create_asset(FileAsset(
+        asyncio.run(self.repository.create_asset(self.FileAsset(
             tenant_id="tenant-a", asset_id="asset-1", owner_id="user-a",
             object_key="tenant-a/asset-1/v1", filename="brief.txt",
             media_type="text/plain", size_bytes=12, sha256="abc123",
-            status=AssetStatus.AVAILABLE, session_id=session.session_id,
+            status=self.AssetStatus.AVAILABLE, session_id=session.session_id,
         )))
         asyncio.run(self.service.append_message(
             tenant_id="tenant-a", actor_id="user-a", session_id=session.session_id,
@@ -164,7 +178,7 @@ class SessionManagementApiTests(unittest.TestCase):
             self.client.delete(f"/api/platform/v1/sessions/{session.session_id}").status_code,
             204,
         )
-        with self.assertRaises(SessionNotFound):
+        with self.assertRaises(self.SessionNotFound):
             asyncio.run(self.service.upload_asset(
                 tenant_id="tenant-a", owner_id="user-a", filename="late.txt",
                 media_type="text/plain", content=b"must not attach",

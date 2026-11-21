@@ -27,10 +27,12 @@ _ALLOWED={
 class RunSnapshot:
  tenant_id:str; run_id:str; status:RunStatus; version:int
  checkpoint_ref:str|None=None; last_error:str|None=None; updated_at:datetime|None=None
+ output:Any=None; input:Any=None; usage:Any=None
 class RunStateStore(Protocol):
  async def get(self,tenant_id:str,run_id:str)->RunSnapshot|None: ...
  async def transition(self,snapshot:RunSnapshot,*,expected_version:int)->RunSnapshot: ...
  async def recoverable(self,limit:int=100)->list[RunSnapshot]: ...
+ async def list_recent(self,tenant_id:str,limit:int=20)->list[RunSnapshot]: ...
 class InMemoryRunStateStore:
  def __init__(self)->None: self._rows={}; self._lock=asyncio.Lock()
  async def create(self,tenant_id:str,run_id:str)->RunSnapshot:
@@ -57,6 +59,12 @@ class InMemoryRunStateStore:
  async def recoverable(self,limit:int=100)->list[RunSnapshot]:
   if limit<1: raise ValueError("limit must be positive")
   async with self._lock: return [r for r in self._rows.values() if r.status in {RunStatus.QUEUED,RunStatus.INTERRUPTED,RunStatus.PAUSED}][:limit]
+ async def list_recent(self,tenant_id:str,limit:int=20)->list[RunSnapshot]:
+  if limit<1: raise ValueError("limit must be positive")
+  async with self._lock:
+   rows=[r for r in self._rows.values() if not tenant_id or r.tenant_id==tenant_id]
+   rows.sort(key=lambda r: r.updated_at or datetime.min, reverse=True)
+   return rows[:limit]
 class ToolCallRegistry:
  """Tracks in-flight calls by tenant and Run; cancellation cannot cross tenant boundaries."""
  def __init__(self)->None: self._calls={}; self._lock=asyncio.Lock()
@@ -134,6 +142,8 @@ class RunLifecycleManager:
    tenant_id,run_id,RunStatus.INTERRUPTED,old.version,
    checkpoint_ref=old.checkpoint_ref,last_error="human resume requested",
   ),expected_version=old.version)
+ async def list_recent(self,tenant_id:str,limit:int=20)->list[RunSnapshot]:
+  return await self.store.list_recent(tenant_id,limit=limit)
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
@@ -199,19 +209,12 @@ class RunLifecycleManager:
     )
    raise
   except asyncio.CancelledError:
-   # Explicit Run cancellation first persists CANCELLING, then cancels this
-   # task. Finalize here so callers never observe a permanently CANCELLING Run.
+   # 如果是 WorkerLeaseLost 导致的内部取消，run_with_timeout 应该让状态保持 RUNNING
+   # 这样新 lease owner 才能 recover。只有显式取消（CANCELLING）才应该 finalize 为 CANCELLED。
    await self.tools.cancel_run(run_id,tenant_id=tenant_id)
    latest=await self.store.get(tenant_id,run_id)
-   if latest is not None and latest.status==RunStatus.RUNNING:
-    latest=await self.store.transition(
-     RunSnapshot(
-      tenant_id,run_id,RunStatus.CANCELLING,latest.version,
-      checkpoint_ref=latest.checkpoint_ref,
-     ),
-     expected_version=latest.version,
-    )
    if latest is not None and latest.status==RunStatus.CANCELLING:
+    # 显式取消路径：持久化了 CANCELLING，finalize 为 CANCELLED
     await self.finish(tenant_id,run_id,RunStatus.CANCELLED)
    raise
   finally:
