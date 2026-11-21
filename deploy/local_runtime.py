@@ -459,19 +459,37 @@ class _SnapshotRouter:
 def _build_model_router(
     *, connection_factory: Any, quota_service: Any, audit_writer: Any,
 ) -> OpenAICompatibleModelRouter:
-    # 本地部署按“平台代付、无单价”处理成本：价格卡显式为 0，
-    # 令牌额度仍然生效，避免把未知商业单价编造成真实成本。
+    # 价格卡：按模型厂商的公开/参考定价填入。本地 Ollama 模型成本为 0，
+    # 商业模型使用行业参考价，确保成本中心能展示非零的估算费用。
+    #
+    # 参考来源：Ciyuano 平台 SenseNova 参考价（¥2.0/¥8.0 ≈ $0.28/$1.11），
+    # 换算后按 $0.30 / $1.20 四舍五入；flash-lite 版本取一半。
     catalog = ModelPricingCatalog({
         "sensenova-6.8-flash-lite": PricingCard(
-            model_key="sensenova-6.8-flash-lite", version="local-0",
-            input_usd_per_million=Decimal("0"), output_usd_per_million=Decimal("0"),
+            model_key="sensenova-6.8-flash-lite", version="sn-ref-2025",
+            input_usd_per_million=Decimal("0.15"),
+            output_usd_per_million=Decimal("0.60"),
         ),
-        # tool_calls 缺失 fallback — 非 lite 版本 function calling 更稳
         "sensenova-6.8-flash": PricingCard(
-            model_key="sensenova-6.8-flash", version="local-0",
+            model_key="sensenova-6.8-flash", version="sn-ref-2025",
+            input_usd_per_million=Decimal("0.30"),
+            output_usd_per_million=Decimal("1.20"),
+        ),
+        # 本本地 Ollama / 自研模板：零成本（本地代跑，无厂商账单）。
+        # Catalog.get 会自动剥离 @数字 版本后缀匹配到此处。
+        "local-template": PricingCard(
+            model_key="local-template", version="local-0",
             input_usd_per_million=Decimal("0"), output_usd_per_million=Decimal("0"),
         ),
-        # Ollama fallback — 本地部署零成本，避免 cost estimator 找不到卡而拒单
+        "ollama-template": PricingCard(
+            model_key="ollama-template", version="local-0",
+            input_usd_per_million=Decimal("0"), output_usd_per_million=Decimal("0"),
+        ),
+        "sensenova-flash-template": PricingCard(
+            model_key="sensenova-flash-template", version="sn-ref-2025",
+            input_usd_per_million=Decimal("0.30"),
+            output_usd_per_million=Decimal("1.20"),
+        ),
         "lukey03/qwen3.5-9b-abliterated": PricingCard(
             model_key="lukey03/qwen3.5-9b-abliterated", version="ollama-0",
             input_usd_per_million=Decimal("0"), output_usd_per_million=Decimal("0"),
@@ -567,6 +585,7 @@ def _graph_factory(*, dsn: str):
         # LangGraph 只向单参数节点传 state；Run 身份从本次任务记录闭包获取。
         tenant_id = str(task_record.get("tenant_id") or "")
         run_id = str(task_record.get("run_id") or "")
+        agent_id = str(task_record.get("agent_id") or "")
         session_id = task_record.get("session_id")  # 用于 assistant 内部查 DB 历史
 
         @asynccontextmanager

@@ -247,8 +247,8 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
             "status": "rejected",
             "reason": "self_dispatch",
             "message": (
-                f"task_dispatch 不能派给自己（目标 agent '{agent_id}' 就是当前 agent）。"
-                f"请直接处理，或者派给其他 agent。"
+                "这个任务的目标就是你自己，不能派给自己。"
+                "请直接处理，或者转派给其他智能体。"
             ),
         }
 
@@ -270,6 +270,8 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
             raise ValueError(f"agent {agent_id} not found or not published")
         agent_version = int(row["active_version"])
         agent_def: dict[str, Any] = row["definition"] or {}
+        # 面向用户的文案统一用智能体中文名，不暴露内部 id
+        target_name = str(agent_def.get("name") or agent_id)
         template_id = agent_def.get("model_template_id") or "local-template"
         tool_ids: Sequence[str] = agent_def.get("tool_ids") or []
         skill_ids: Sequence[str] = agent_def.get("skill_ids") or []
@@ -358,6 +360,16 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
         #    actor_id = 交办方 agent；agent_id = 执行方 agent
         #    input = 原始 prompt
         actor_id = actor_agent_id or "task-dispatch-tool"
+        # 子任务归属父 Run 的发起人，否则任务看板按 created_by 过滤时会把派发出去的任务全部隐藏。
+        dispatcher = "task-dispatch-tool"
+        if parent_run_id:
+            cur = await conn.execute(
+                "SELECT created_by FROM platform_runs WHERE tenant_id=%s AND run_id=%s::uuid",
+                (tenant_id, parent_run_id),
+            )
+            parent_row = await cur.fetchone()
+            if parent_row and parent_row["created_by"]:
+                dispatcher = str(parent_row["created_by"])
         await conn.execute(
             """INSERT INTO platform_tasks
               (tenant_id, task_id, actor_id, agent_id, input, priority,
@@ -379,12 +391,12 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
                preparation_lease_expires_at, dispatch_ready, priority, version, updated_at)
                VALUES
               (%s, %s::uuid, %s::uuid, %s, %s, %s, %s,
-               'queued', %s::jsonb, 'task-dispatch-tool', NULL, %s::jsonb, %s,
+               'queued', %s::jsonb, %s, NULL, %s::jsonb, %s,
                NULL, %s::uuid, 'root', %s,
                now() + interval '30 seconds', true, 100, 1, now())""",
             (tenant_id, sub_run_id, sub_task_id, agent_id, agent_version, template_id, template_version,
              json.dumps({"prompt": prompt}),
-             snapshot_json, snapshot_digest,
+             dispatcher, snapshot_json, snapshot_digest,
              sub_run_id, preparation_owner),
         )
 
@@ -430,13 +442,14 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
                                 else:
                                     text = json.dumps(out, ensure_ascii=False)[:500]
                                 content = (
-                                    f"**[{agent_id}] 交办任务完成**（Run {sub_run_id[:8]}）\n\n{text}"
+                                    f"**【{target_name}】交办任务已完成**\n\n{text}"
                                 )
                                 break
                             elif st in ("failed", "timed_out", "cancelled"):
                                 err = row.get("last_error") or "未知错误"
+                                status_zh = {"failed": "执行失败", "timed_out": "执行超时", "cancelled": "已取消"}.get(st, "未完成")
                                 content = (
-                                    f"**[{agent_id}] 交办任务失败**（{st}，Run {sub_run_id[:8]}）\n\n{err}"
+                                    f"**【{target_name}】交办任务未完成**（{status_zh}）\n\n{err}"
                                 )
                                 break
                             else:
@@ -527,7 +540,7 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
         "run_id": sub_run_id,
         "agent_id": agent_id,
         "status": "queued",
-        "message": f"已转派给 {agent_id}，它正在处理中。稍后可查 Run {sub_run_id} 的结果。",
+        "message": f"已转派给「{target_name}」，正在处理中；完成后结果会自动回到这里。",
         "waited_seconds": wait_seconds,
     }
 
