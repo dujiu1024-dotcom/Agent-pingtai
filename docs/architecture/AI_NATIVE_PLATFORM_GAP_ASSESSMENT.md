@@ -1246,3 +1246,110 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | 已具备 | 容器基础加固、loopback 端口、digest pin、文件密钥、加密备份、校验器 | 保留现有安全契约并补网络/恢复端到端验收 |
 
 本轮只更新审查报告和 Issue 记录，没有修改产品代码。审查依据为 main 分支生产 Compose、部署/备份/灾备文档、脚本、Vault 适配器和部署测试源码；未连接真实云网络、MinIO 或生产备份目标，也未执行灾备恢复演练。
+
+
+## 28. 第十六轮：全平台目标能力映射、成熟度校准与最终审查结论
+
+### 28.1 最终审查基线与证据边界
+
+- 审查对象：`dujiu1024-dotcom/Agent-pingtai` 的 `main` 分支。
+- 本轮读取到的 main HEAD：`b622d5fc9eab1c79c28dcaa13367eec3c138679d`（2026-11-21T10:17:51Z）。
+- 递归 Tree API 返回 1,568 个路径；本轮结合前十五轮已读取的后端服务、API、迁移、前端页面、部署、测试与 CI 证据，重新对照 Issue #848 的战略目标与能力清单。
+- 审查报告维护在独立审查分支；产品代码基线始终是 main，不将审查分支上的文档提交误认为产品实现。
+- 本轮仍不能在当前执行环境 clone 仓库并运行完整测试矩阵，也没有真实企业云、模型供应商、对象存储、LDAP/SSO 或混合网络环境。因此“源码存在”“生产组合已接线”“集成测试通过”“生产可用”必须继续分开表述。
+
+### 28.2 全平台能力成熟度总矩阵
+
+成熟度含义：
+- **基础已具备**：核心领域机制和部分生产装配/测试存在，但端到端或生产验收未闭合。
+- **部分实现**：有服务、API、页面或契约，但缺少统一主链路、产品闭环或重要子能力。
+- **待验证**：发现设计/入口/局部实现，但证据不足以判定可运行。
+- **尚无实现证据**：本次全树路径与已读代码范围未发现有效实现；不等于证明所有隐藏路径均不存在。
+
+| Issue 目标域 | 当前成熟度 | 已确认的可复用基础 | 最终缺口/验收结论 |
+|---|---|---|---|
+| 多智能体协同执行 | 基础已具备 | LangGraph 多专家 workflow、Blackboard、并行专家、证据/冲突/裁决、持久化与回放测试 | 默认生产 Runtime 与多专家 Workflow 接线差距见第 19 节；真实业务任务质量、动态分配、失败隔离和人工接管需部署验收 |
+| Agent/Workflow/Tool/Skill 资产生命周期 | 部分实现 | Registry 多租户版本、发布/回滚、Run 固定快照、扩展发布者密钥注册 | 资产类型与版本契约并非全部统一；依赖安装、环境晋级、灰度、签名验证、撤销/清理和生态分发仍不完整 |
+| 任务、Run、调度与人工接管 | 基础已具备 | PostgreSQL 状态/租约、Checkpoint、暂停/恢复、Task Center、Intervention、Replay、Batch | Run Worker 身份重新授权缺口；独立 Run Worker 与 API 耦合、外部副作用补偿和端到端生产恢复仍待验收 |
+| 模型目录、路由与 Harness | 基础已具备 | Provider/Template Registry、Run Snapshot、Harness Adapter、MCP Provider、Strands 适配器和用量记录 | 真实供应商兼容矩阵、跨 Harness 同任务质量/成本基准、生产 fallback、真实 usage 账务分类仍需闭环 |
+| 工具、MCP、连接器和沙箱 | 基础已具备 | Tool Gateway、MCP、OCI sandbox、Connector Provider/Sync、审批与审计接口 | 默认 Runtime 绕过统一 Gateway 的路径问题；SQL Connector 未强制只读；MinIO 身份权限过大；厂商连接器覆盖不能由通用框架替代 |
+| 知识、RAG、Graph 与 Memory | 基础已具备 | 文档摄取、Embedding、混合检索、Rerank、ACL、Graph、Memory 生命周期/删除和版本化检索 | ACL、删除传播、索引维度、生产向量模型与真实语料质量需端到端验收；知识图谱与企业数据治理成熟度不等同于已有页面 |
+| 身份、租户、组织、策略和审批 | 基础已具备 | User/Tenant/Membership、Identity/API/Service Credential、资源范围授权、Approval、Audit | 数字员工独立组织身份未获证据；部门/团队级授权继承、SSO/企业目录、Worker 执行时身份复核、审计 DB 权限模型仍有缺口 |
+| 事件总线、Webhook 与开放 API | 基础已具备 | PostgreSQL Outbox、Redis Streams、Receipt、DLQ、Webhook 签名/投递/重放、Python SDK、扩展 manifest | 至少一次投递的外部副作用幂等责任未强制；SDK/API 覆盖面、OpenAPI 完整性、外部开发者自助接入和真实 webhook 生产演练未闭合 |
+| Evaluation、Prompt、观测和成本 | 基础已具备 | Trace、Metrics、Alerts、Evaluation Dataset/Runner/Governance、Prompt Registry、Quota/Budget | Prompt Evaluation Gate 默认生产装配缺失；成本来源标记偏差；开放式任务质量和业务价值评测仍不足 |
+| 前端工作台和产品中心 | 部分实现 | React 路由覆盖 Agent、协作、任务、审批、知识、RAG、Graph、Memory、评测、成本、告警、扩展发布等页面 | 路由存在不等于端到端产品完成；概览页明确是导航框架；Digital Employee、伙伴/开发者门户、商业市场与完整行业应用未见同等成熟产品路径 |
+| 企业部署、混合运行与灾备 | 部分实现 | 单节点生产 Compose、容器加固、健康检查、Secrets、加密备份、恢复脚本、RPO/RTO 策略 | 缺少仓库可验证的 egress 强制策略、MinIO 最小权限、异地复制/完整恢复演练、HA 拓扑和公共控制面断网自治证明 |
+| 生态开放与商业协作 | 部分实现 | 版本化 Registry、扩展发布者公钥注册/撤销、SDK、Webhook、扩展 manifest/权限声明 | 未形成完整资产市场、第三方代码安全安装/运行隔离、伙伴认证、开发者门户、商业许可/订阅/收益分配闭环 |
+
+### 28.3 八大统一引擎最终映射
+
+| 引擎 | 现有模块映射 | 结论 |
+|---|---|---|
+| 身份与组织引擎 | identity、tenant、membership、resource scope、service identity | 基础已具备；组织/部门/团队与数字员工组织身份仍需扩展 |
+| AI 资产引擎 | control_plane.registry、extensions、model/provider/template、prompt registry | 部分实现；缺完整供应链、环境发布和市场分发闭环 |
+| 任务与调度引擎 | runtime lifecycle、task center、scheduler、batch、interventions | 基础已具备；执行身份复核、独立 Worker、外部副作用补偿待补 |
+| 事件驱动引擎 | events/outbox、Redis Streams、receipt、webhook worker | 基础已具备；明确 at-least-once，消费副作用幂等和真实故障演练待补 |
+| 策略与审批引擎 | approval、policy、Tool Gateway、audit、quota | 基础已具备；Gateway 生产接线、审批 verifier 契约和执行身份持续复核存在缺口 |
+| 统一执行运行时 | LangGraph、Harness Adapter、Run Snapshot、MCP Gateway、Blackboard | 基础已具备；默认 Runtime 生产入口并非所有路径都统一受治理 |
+| 数据与知识引擎 | connectors、knowledge、RAG、memory、graph、object storage | 基础已具备；数据分类分级、端到端 ACL/删除、真实连接器覆盖与最小权限存储身份待补 |
+| 观测与计量引擎 | trace、metrics、alerts、evaluation、usage/quota | 基础已具备；成本口径、Prompt Gate、SLA 和业务价值指标未闭环 |
+
+### 28.4 统一资源模型与组织生态的最终判断
+
+- Tenant、User、Membership、Agent/Workflow/Tool/Skill 版本、Task/Run/Checkpoint、Approval/Audit、Knowledge/Memory、Connector/Event/Artifact 等语义在代码和迁移中均有不同程度体现；但不能据此宣称完整统一资源模型已经完成。
+- Run/Task/Approval/Artifact/Trace 之间存在部分持久化关联；应继续以复合租户键、跨租户引用校验、版本快照、删除生命周期和历史审计作为验收标准。
+- DigitalEmployee 不能等同于 Agent。当前已读资源模型、生产组合和前端路由中，没有足够证据证明数字员工已具有独立的组织身份、岗位/职责、负责人、授权包、绩效和调岗生命周期；列为待建设的产品域，而非简单补一个 Agent 字段。
+- Organization/Team 模型与身份/项目权限已有基础，但完整部门层级继承、团队共享/个人私有/企业共享/伙伴资产的统一可见性模型仍需端到端核验。
+- 扩展发布者密钥注册与撤销属于供应链信任的一部分，不等于完整 Marketplace。当前证据不足以证明第三方扩展具备受控下载、签名包校验、依赖锁定、隔离执行、升级回滚和收益结算。
+- 当前架构决策采用模块化单体是合理的，不应为追求“八大引擎”而拆成八个微服务；优先修复跨模块契约和生产装配。
+
+### 28.5 Copilot / Co-pilot / 受控自主三个阶段
+
+| 演进阶段 | 当前可复用基础 | 不能宣称已完成的部分 |
+|---|---|---|
+| AI 辅助人（Copilot） | 对话/会话、知识检索、RAG、Agent 运行、结构化输出、任务产物和 SDK | 真实企业语料质量、数据 ACL 全链路、跨 Provider 可靠性和全产品易用性尚未整体验收 |
+| 人机协同（Co-pilot + Agent） | 审批、暂停/恢复、人工补充上下文、任务接管、Run Replay、风险等级和审计 | 默认生产执行链路的统一 Gateway/审批接线存在差距；Worker 恢复身份和外部副作用补偿需补齐 |
+| 受控自主执行（Autonomous Agent） | Tool Gateway、Policy、Quota、短期 Run Token、沙箱、审批、幂等键和审计基础 | 不能证明所有 Runtime 路径均强制经过治理；缺统一执行身份复核、网络强制出口、最小权限凭据、端到端停止/恢复和生产演练 |
+
+结论：平台已有从 Copilot 走向 Co-pilot 的关键技术积木；受控自主执行目前只能判为**有基础但生产治理闭环未完成**，不应对外宣传为已具备全面自主执行能力。
+
+### 28.6 跨轮次去重后的研发优先级
+
+下表将前十五轮发现合并为可执行的能力主题，避免把同一根因重复计数。P0 代表上线/高风险执行前必须阻断的控制；P1 代表关键生产链路/安全治理缺口；P2 代表规模化、生态和运营成熟度提升。
+
+| 优先级 | 合并主题 | 覆盖的已发现问题 | 建议验收门槛 |
+|---|---|---|---|
+| P0 | 统一执行入口与工具治理 | 默认 Runtime 未统一接入多专家 Workflow / Supervised Tool Gateway；高风险动作可能绕过统一策略链路 | 所有生产 Run 使用同一可信 Runtime Builder；工具执行必须绑定 tenant/actor/run、版本快照、授权、风险、审批和审计；负向测试证明绕过失败 |
+| P0 | 数据访问最小权限与租户隔离 | SQL Connector 缺强制只读；Postgres runtime 角色隔离；MinIO Root 凭据复用；ACL/跨租户路径需持续验收 | DB/对象存储/Connector 身份最小权限；只读连接器不可写；跨租户 API/DB/向量/文件/事件/Worker 测试全通过 |
+| P0 | 生产身份与副作用安全 | Run Worker 缺统一执行时身份复核；审批 verifier 调用契约不一致；工具副作用 reconciliation resolver 装配失败 | 真实 PostgreSQL + Gateway + Worker 集成测试；身份撤销后 queued/resume/high-risk action 全拒绝；对账授权和审计正常写入 |
+| P1 | 发布与质量门禁 | Prompt Evaluation Gate 未注入默认生产组合；资产发布/回滚/灰度与评测证据未统一 | Prompt/Agent/Workflow/Skill 发布绑定同租户、精确版本和有效 Eval Evidence；缺 Gate 必须 fail closed 且可用 |
+| P1 | 异步执行与可靠副作用 | Run Worker 与 API 生命周期耦合；事件 at-least-once 需要 handler 幂等；恢复时副作用对账/补偿不完整 | API 与 Run Worker 可独立扩缩；崩溃窗口测试证明重复投递不会重复业务效果；明确补偿与人工接管路径 |
+| P1 | 网络出口与凭据隔离 | 代理环境变量非强制网络边界；MinIO Root 凭据注入 API/Worker | 防火墙/NetworkPolicy/egress gateway 可审查；旁路访问失败；应用容器不持有 Root 凭据 |
+| P1 | 生产部署和数据连续性 | 单节点 Compose、缺 HA/混合拓扑模板、真实 offsite/跨组件恢复未验收 | 目标部署拓扑 IaC、独立故障域、备份不可变副本、全平台恢复演练和实测 RPO/RTO |
+| P2 | 成本与质量运营 | Provider usage 成本来源标记偏差；Eval 指标偏确定性；缺业务价值归因 | Provider usage → ledger → report 端到端准确；真实任务评测与人工评分；部门/项目成本与 ROI 报表 |
+| P2 | 开放生态产品化 | 市场、开发者门户、伙伴认证、安装分发、商业许可/收益分配不足 | SDK/OpenAPI、签名资产包、依赖锁定、沙箱安装、伙伴认证和资产授权生命周期形成端到端产品 |
+| P2 | 数字员工与组织运营 | 缺数字员工独立组织身份、职责、主管、授权和绩效证据 | 人/数字员工统一组织模型；数字员工岗位、负责人、Agent/Workflow/Skill 绑定、授权、任务与绩效审计闭环 |
+| P2 | 混合控制平面自治 | 企业侧离线运行、公共控制面不可用时继续运行的可复现证明不足 | 断开公共侧网络，企业身份、任务、运行、知识、密钥和审计核心链路继续工作；恢复连接后安全同步许可/目录/版本 |
+
+### 28.7 推荐实施顺序与依赖
+
+1. **先修执行安全主链路（P0）**：统一 Runtime Builder → Tool Gateway → Policy/Approval → Audit；同步修复生产 Resolver 装配和 verifier 契约。
+2. **再做身份/数据边界（P0）**：PostgreSQL 分角色、MinIO bucket service account、Connector read-only、Worker execution authorization、跨租户测试。
+3. **补可靠执行（P1）**：独立 Run Worker、租约/取消/恢复、事件 handler 幂等注册、外部副作用对账/补偿。
+4. **补发布质量门禁（P1）**：Evaluation Gate 生产装配，建立 Agent/Workflow/Skill/Prompt 统一版本证据与环境晋级。
+5. **补企业生产交付（P1）**：网络 egress 强制策略、HA/IaC、offsite backup、完整 restore drill、混合控制面断网自治演练。
+6. **再做产品与生态扩展（P2）**：数字员工、开发者/伙伴门户、Marketplace、行业解决方案、价值运营和商业授权。
+
+### 28.8 最终结论
+
+当前代码已经形成一个有实质技术基础的企业 Agent 平台：具备多租户身份、版本化资产注册、LangGraph/Harness Runtime、Blackboard、多专家协作、工具/MCP、审批审计、知识与记忆、任务持久化、Outbox/Redis Streams、Webhook、Evaluation、观测计量及单节点生产部署等核心积木。
+
+但它**尚不能被判定为 Issue #848 所定义的完整 AI 原生企业基础设施平台已交付**。主要原因不是缺少某一个孤立模块，而是多个核心能力在默认生产组合、统一执行治理、最小权限、发布门禁、异步副作用、混合部署自治和生态产品化方面仍有未闭合链路。
+
+最重要的判断：
+- **可复用基础已经存在**：不建议推倒重写；保持模块化单体和渐进迁移。
+- **生产安全主链路尚未整体闭合**：优先解决 P0 执行治理、身份/审批/审计装配和数据最小权限。
+- **产品生态仍处于平台底座到完整产品之间**：Digital Employee、Marketplace、伙伴认证、许可商业化和企业价值分析需要独立规划。
+- **混合部署目标尚未被当前仓库工件证明**：单节点 Compose 不等于 Hybrid First；必须用断网自治和跨环境恢复演练验收。
+
+本轮为最终综合审查与报告校准，没有修改产品代码，没有关闭 Issue，没有合并审查 PR。报告仍保留“源码静态审查、未在本环境执行全量测试/真实生产演练”的限制；因此最终结论是**完成阶段性全仓库差距审查报告，生产验收仍待目标环境执行**。
