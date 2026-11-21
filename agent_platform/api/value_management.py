@@ -203,6 +203,22 @@ def create_value_management_router(
             "window_start": start.isoformat(), "window_end": end.isoformat(),
         }
 
+    @router.get("/metrics/{attribution_id}")
+    async def get_metrics(request: Request, attribution_id: str):
+        actor = principal(request)
+        service = await service_for(actor)
+        if not callable(getattr(service, "list_metrics", None)):
+            raise HTTPException(503, "value metrics repository is not configured")
+        try:
+            from uuid import UUID
+            UUID(attribution_id)
+            items = await service.list_metrics(
+                tenant_id=actor.tenant_id, attribution_id=attribution_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, "attribution_id must be a UUID") from exc
+        return {"tenant_id": actor.tenant_id, "attribution_id": attribution_id, "items": items}
+
     @router.get("/summary")
     async def summary(request: Request, start: datetime, end: datetime):
         actor = principal(request)
