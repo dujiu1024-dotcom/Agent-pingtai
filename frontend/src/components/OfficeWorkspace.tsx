@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { Html, OrbitControls } from '@react-three/drei'
 import type { Group } from 'three'
 import { useQuery } from '@tanstack/react-query'
@@ -252,7 +251,7 @@ export function OfficeWorkspace() {
   const floor = floors.find((item) => item.id === floorId) ?? floors[0]
   const visibleAgents = agents.filter((agent) => (!agent.floor_id || agent.floor_id === floorId)
     && `${agent.name} ${agent.agent_id} ${agent.desk_id ?? ''}`.toLowerCase().includes(search.toLowerCase()))
-  const sceneAgents = visibleAgents.filter((agent) => agent.x !== undefined && agent.z !== undefined)
+  const sceneAgents = visibleAgents.filter((agent) => agent.floor_id === floorId && agent.x !== undefined && agent.z !== undefined)
   const pendingEvents = data?.events?.pending
   const selected = agents.find((agent) => agent.agent_id === selectedAgent)
   const selectedDeskInfo = desks.find((desk) => desk.id === selectedDesk)
