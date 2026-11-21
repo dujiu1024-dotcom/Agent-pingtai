@@ -1,5 +1,6 @@
 import type {
   EventBusOptions,
+  EventBusPort,
   EventBusStatus,
   EventListener,
   PlatformEvent,
@@ -11,7 +12,7 @@ interface SseFrame {
   data: string[]
 }
 
-export class SseEventBus {
+export class SseEventBus implements EventBusPort {
   private readonly options: Required<
     Pick<
       EventBusOptions,
