@@ -117,10 +117,14 @@ def aggregate_value_costs(
     model_costs: dict[str, Decimal] = {}
     source_costs: dict[str, Decimal] = {}
     model_tokens: dict[str, dict[str, Any]] = {}
+    unpriced_models: set[str] = set()
     total_input = total_output = tool_calls = 0
     for event in selected.values():
-        model_costs[event.model_key] = model_costs.get(event.model_key, Decimal("0")) + event.cost_usd
-        source_costs[event.source] = source_costs.get(event.source, Decimal("0")) + event.cost_usd
+        if event.source == "estimated" and event.price_card_version is None:
+            unpriced_models.add(event.model_key)
+        else:
+            model_costs[event.model_key] = model_costs.get(event.model_key, Decimal("0")) + event.cost_usd
+            source_costs[event.source] = source_costs.get(event.source, Decimal("0")) + event.cost_usd
         tokens = model_tokens.setdefault(event.model_key, {
             "input_tokens": 0, "output_tokens": 0, "events": 0, "pricing_versions": [],
         })
@@ -168,7 +172,10 @@ def aggregate_value_costs(
     elif tool_calls == 0 and selected:
         tool_cost = Decimal("0")
 
-    model_total = sum(model_costs.values(), Decimal("0")) if selected else None
+    model_total = (
+        sum(model_costs.values(), Decimal("0"))
+        if selected and not unpriced_models else None
+    )
     total_cost = model_total + tool_cost if model_total is not None and tool_cost is not None else None
     return {
         "tenant_id": tenant_id,
@@ -182,7 +189,14 @@ def aggregate_value_costs(
         "model_cost_usd": str(model_total) if model_total is not None else None,
         "tool_cost_usd": str(tool_cost) if tool_cost is not None else None,
         "total_ai_cost_usd": str(total_cost) if total_cost is not None else None,
-        "model_cost_by_key_usd": {key: str(value) for key, value in sorted(model_costs.items())},
+        "model_cost_by_key_usd": {
+            key: None if key in unpriced_models else str(model_costs.get(key, Decimal("0")))
+            for key in sorted(set(model_costs) | unpriced_models)
+        },
+        "unpriced_model_events": sum(
+            1 for event in selected.values()
+            if event.source == "estimated" and event.price_card_version is None
+        ),
         "model_usage": {
             key: {**value, "pricing_versions": sorted(value["pricing_versions"])}
             for key, value in sorted(model_tokens.items())
@@ -198,7 +212,8 @@ def aggregate_value_costs(
         ),
         "cost_status": (
             "complete" if total_cost is not None
-            else "model_usage_missing" if model_total is None
+            else "model_usage_missing" if not selected
+            else "model_cost_incomplete" if unpriced_models
             else "tool_cost_missing"
         ),
         "usage_sources": sorted(source_costs),
