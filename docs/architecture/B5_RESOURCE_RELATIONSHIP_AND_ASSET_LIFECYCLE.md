@@ -10,7 +10,7 @@
 
 1. 当前已经存在 Tenant、User、TenantMembership、Organization、Team、Project、Workspace、Role/Permission/RoleBinding、ServiceAccount、AgentIdentity 等组织与身份基础表；组织成员关系目前以人类 User 为主。
 2. Agent 与 DigitalEmployee 不是同一实体。当前 `platform_agent_identities` 将 Agent 绑定到 ServiceAccount，用于机器身份认证；没有找到 DigitalEmployee 专属表、领域模块、API 或独立前端页面，无法证明已有数字员工岗位、主管、责任人、绩效、排班和员工生命周期模型。
-3. Agent/Workflow/Tool/Skill/Model Provider/Model Template 共享租户版本 Registry（定义 JSONB）；但数据库 CHECK 的 kind 集合与 Python Registry kind 集合不完全一致。Prompt 使用独立版本表，当前 Prompt 表没有 tenant_id，需作为资产租户边界的高优先级核查项。
+3. Agent/Workflow/Tool/Skill/Model Provider/Model Template 共享租户版本 Registry（定义 JSONB）；但 Python Registry 的 `_KINDS` 还包含 `routing_policy`，migration 011 的 kind CHECK 未包含该值，形成代码/DDL 合约不一致。Prompt 使用独立版本表，当前 Prompt 表没有 tenant_id，需作为资产租户边界的高优先级核查项。
 4. 生态扩展已有 Manifest、依赖版本锁、发布者公钥信任、租户安装状态、权限回调和安装/启用/升级/禁用/卸载流程；但当前表结构主要覆盖“某租户安装了什么”，不等于已经具备跨租户公共市场、伙伴组织、资产所有权、商业授权、分发范围和收益结算平台。
 5. 当前租户隔离较强的证据主要来自复合主键、复合外键、Repository tenant binding 和服务端授权；仍有多态引用或 JSON 引用未被数据库 FK 约束的边界，包括 RoleBinding 的 subject/resource、Session/File/Connector 的 project_id、Knowledge ACL/Collection 对 Document 的引用、Run registry_snapshot 等。
 6. 建议保留现有 Identity、Registry、Extension、ResourceScope 与版本化执行快照；补齐 DigitalEmployee 领域、组织/资源授权的引用完整性、资产可见性与发布者/所有权模型，不建议另起一套身份、资产或扩展 Registry。
@@ -283,6 +283,7 @@ flowchart TD
 | P1：数字员工无领域关系 | migration 001/005/011/028 全量核心关系中无 DigitalEmployee | 无岗位、组织/团队成员关系、责任人、Agent 固定版本、任务分配与绩效归属 | 新增独立 DigitalEmployee + membership/supervision/asset-binding/assignment 模型 |
 | P2：Registry 创建者无 FK | `platform_registry_versions.created_by` 是 text | 无法保证创建者存在或为该租户成员 | 增加 actor_type/actor_id 的受控主体引用；审计事件保留历史身份 |
 | P2：资产可见性字段缺失 | `platform_registry_versions` 无 owner_type/owner_id/visibility/license/publisher_id | 只能确认 tenant scope，不能完整表达 org/team/partner/public | 增加资产所有权与 ShareGrant/InstallGrant；平台公共目录与 Tenant Registry 分层 |
+| P1：Registry kind DDL 与 Python 不一致 | `agent_platform/control_plane/registry.py` 的 `_KINDS` 包含 `routing_policy`；`011_registry_sessions_assets.sql` CHECK 仅允许 agent/workflow/tool/skill/model_provider/model_template | Python 可接受的 routing_policy 写入会被 PostgreSQL CHECK 拒绝；InMemory adapter 可能掩盖生产差异 | 统一 kind 常量与迁移约束；增加真实 PostgreSQL contract test，覆盖所有合法 kind |
 | P2：InstalledExtension 缺结构化版本历史 | `platform_installed_extensions` 将 version 留在 manifest JSONB | 无法直接以数据库约束做版本索引、升级历史、回滚/授权追踪 | 增加 installed_version、digest、publisher、source、install_scope、grant snapshot 和 append-only install events |
 
 ## 7. 当前 API / 前端 / 测试证据
