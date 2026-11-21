@@ -107,6 +107,28 @@ jobs:
           tests.test_issue_755_c_dual_mode_integration
           -v
 
+  continuous-runtime-drill:
+    name: Continuous runtime HA DR evidence tests
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Ruff
+        run: python -m pip install ruff
+      - name: Run continuous runtime drill evidence tests
+        run: python -m unittest tests.test_continuous_runtime_drill -v
+      - name: Lint continuous runtime drill files
+        run: ruff check scripts/continuous_runtime_drill.py tests/test_continuous_runtime_drill.py
+
   test:
     needs: [changes, lint, typecheck]
     if: needs.changes.outputs.platform == 'true'

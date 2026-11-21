@@ -1,14 +1,40 @@
 {
   "schema_version": 1,
-  "required_components": ["config", "postgres", "redis", "objects"],
+  "required_components": [
+    "config",
+    "postgres",
+    "redis",
+    "objects"
+  ],
   "objectives": {
-    "postgres": {"rpo_seconds": 3600, "rto_seconds": 14400},
-    "redis": {"rpo_seconds": 21600, "rto_seconds": 3600},
-    "objects": {"rpo_seconds": 86400, "rto_seconds": 14400},
-    "config": {"rpo_seconds": 86400, "rto_seconds": 7200},
-    "full_platform": {"rpo_seconds": 86400, "rto_seconds": 28800},
-    "failover": {"rpo_seconds": 3600, "rto_seconds": 14400},
-    "failback": {"rpo_seconds": 3600, "rto_seconds": 14400}
+    "postgres": {
+      "rpo_seconds": 3600,
+      "rto_seconds": 14400
+    },
+    "redis": {
+      "rpo_seconds": 21600,
+      "rto_seconds": 3600
+    },
+    "objects": {
+      "rpo_seconds": 86400,
+      "rto_seconds": 14400
+    },
+    "config": {
+      "rpo_seconds": 86400,
+      "rto_seconds": 7200
+    },
+    "full_platform": {
+      "rpo_seconds": 86400,
+      "rto_seconds": 28800
+    },
+    "failover": {
+      "rpo_seconds": 3600,
+      "rto_seconds": 14400
+    },
+    "failback": {
+      "rpo_seconds": 3600,
+      "rto_seconds": 14400
+    }
   },
   "recovery_order": [
     "declare_and_contain",
@@ -27,11 +53,14 @@
     "tenant_authorization_smoke_tests_passed"
   ],
   "consistency_gates_by_scope": {
-    "postgres": ["postgres_restore_marker_verified"]
+    "postgres": [
+      "postgres_restore_marker_verified"
+    ]
   },
   "failover_gates": [
     "former_primary_fenced",
     "replication_or_backup_recovery_point_recorded",
     "routing_and_health_checks_validated"
-  ]
+  ],
+  "max_component_snapshot_skew_seconds": 86400
 }
