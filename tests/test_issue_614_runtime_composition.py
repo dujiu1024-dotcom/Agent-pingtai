@@ -25,6 +25,9 @@ class ClaimedTaskDisappearsStore(FakeRunStore):
         self.claim_args = (worker_id, limit, lease_seconds)
         return [SimpleNamespace(tenant_id="tenant-a", run_id="run-1")]
 
+    async def get_run_record(self, tenant_id, run_id):
+        return {"task_id": "task-1"}
+
     async def get_task_record(self, tenant_id, run_id):
         return None
 
@@ -85,7 +88,7 @@ class ProductionRunCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(runtime.task_worker._task)
 
     def test_rejects_lifecycle_using_a_different_run_store(self):
-        with self.assertRaisesRegex(ValueError, "same durable RunStateStore"):
+        with self.assertRaisesRegex(ValueError, "share one durable RunStateStore"):
             self.build(lifecycle=FakeLifecycle(FakeRunStore()))
 
     def test_rejects_missing_shared_quota_limiter(self):
@@ -120,7 +123,7 @@ class RunWorkerDispatchContractTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(counts, {
             "claimed": 1, "succeeded": 0, "failed": 0,
-            "cancelled": 0, "skipped": 1,
+            "cancelled": 0, "skipped": 1, "timed_out": 0,
         })
         self.assertEqual(store.claim_args, ("worker-test-2", 10, 60))
         self.assertEqual(store.released, [("tenant-a", "run-1", "worker-test-2")])
