@@ -21,7 +21,7 @@ interface AuthContextValue {
   status: AuthStatus
   session: SessionInfo | null
   error: string | null
-  refresh: () => Promise<void>
+  refresh: (sessionExpiresAt?: string) => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -39,7 +39,7 @@ export function AuthProvider({
   const [error, setError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (sessionExpiresAt?: string) => {
     if (!enabled) {
       setStatus('anonymous')
       setSession(null)
@@ -50,9 +50,16 @@ export function AuthProvider({
     setError(null)
     try {
       const result = await fetchSession()
-      setSession(result)
-      sessionRef.current = result
-      setStatus(result ? 'authenticated' : 'anonymous')
+      const nextSession = result
+        ? {
+            ...result,
+            expires_at:
+              result.expires_at ?? sessionExpiresAt ?? sessionRef.current?.expires_at,
+          }
+        : null
+      setSession(nextSession)
+      sessionRef.current = nextSession
+      setStatus(nextSession ? 'authenticated' : 'anonymous')
       if (!result) {
         queryClient.clear()
         apiClient.clearEtagCache()
