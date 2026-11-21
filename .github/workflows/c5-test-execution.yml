@@ -13,13 +13,17 @@ concurrency:
 
 jobs:
   backend-core:
-    name: Backend core tests + coverage (Python ${{ matrix.python-version }})
+    name: Backend tests + coverage (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        include:
+          - python-version: "3.11"
+            run-full-suite: true
+          - python-version: "3.12"
+            run-full-suite: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,11 +34,10 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install coverage ruff mypy
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt pytest
-      - name: Run focused and full unittest suites with coverage
+
+      - name: Run focused identity and tenant tests
         shell: bash
         run: |
-          set +e
-
           python -m unittest \
             tests.test_identity \
             tests.test_identity_api \
@@ -47,10 +50,13 @@ jobs:
             tests.test_platform_api_app \
             tests.test_issue_755_c_dual_mode_integration \
             -v
-          focused_status=$?
-          echo "Focused identity/tenant test exit code: ${focused_status}"
 
-          coverage run --branch --source=agent_platform -m unittest discover -s tests -t . -q
+      - name: Run full unittest suite with branch coverage (Python 3.11)
+        if: matrix.run-full-suite
+        shell: bash
+        run: |
+          set +e
+          coverage run --branch --source=agent_platform -m unittest discover -s tests -t . -v
           full_status=$?
           echo "Full unittest + coverage exit code: ${full_status}"
 
@@ -59,12 +65,12 @@ jobs:
           coverage xml -o coverage.xml
           xml_status=$?
 
-          if [ "${focused_status}" -ne 0 ] || [ "${full_status}" -ne 0 ] || [ "${report_status}" -ne 0 ] || [ "${xml_status}" -ne 0 ]; then
+          if [ "${full_status}" -ne 0 ] || [ "${report_status}" -ne 0 ] || [ "${xml_status}" -ne 0 ]; then
             exit 1
           fi
 
       - name: Upload backend coverage
-        if: always()
+        if: always() && matrix.run-full-suite
         uses: actions/upload-artifact@v4
         with:
           name: c5-backend-coverage-py${{ matrix.python-version }}
