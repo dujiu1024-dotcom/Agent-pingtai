@@ -214,7 +214,6 @@ known-first-party = ["agent_platform", "tests"]
 [tool.mypy]
 python_version = "3.11"
 files = [
-  "tools/schedule_wbs.py",
   "agent_platform/contracts.py",
   "agent_platform/approval/policy.py",
   "agent_platform/runtime/protocols.py",
