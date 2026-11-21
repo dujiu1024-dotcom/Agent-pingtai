@@ -61,8 +61,8 @@ export function LoginPage() {
     setSubmitting(true)
     setError(null)
     try {
-      await login({ tenantId, email, password })
-      await refresh()
+      const issued = await login({ tenantId, email, password })
+      await refresh(issued.expires_at)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '登录失败')
     } finally {
@@ -159,8 +159,8 @@ export function InitializePage() {
         displayName,
         password,
       })
-      await login({ tenantId, email, password })
-      await refresh()
+      const issued = await login({ tenantId, email, password })
+      await refresh(issued.expires_at)
       navigate('/workspace/overview', { replace: true })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '初始化失败')
