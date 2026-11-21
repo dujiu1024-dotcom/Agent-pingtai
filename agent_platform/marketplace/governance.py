@@ -63,7 +63,19 @@ class MarketplaceStore(Protocol):
     async def create(self, asset: MarketplaceAsset) -> None: ...
     async def get(self, tenant_id: str, asset_id: str, version: str) -> MarketplaceAsset | None: ...
     async def update(self, asset: MarketplaceAsset) -> None: ...
-    async def list_published(self, tenant_id: str | None, visibility: str | None = None) -> list[MarketplaceAsset]: ...
+    async def list_published(self, tenant_id: str | None, visibility: str | None = None) -> list[MarketplaceAsset]:
+        return sorted(
+            (
+                asset for asset in self.assets.values()
+                if asset.status == "published"
+                and (
+                    (tenant_id is not None and asset.tenant_id == tenant_id)
+                    or (tenant_id is None and asset.visibility == "public")
+                )
+                and (visibility is None or asset.visibility == visibility)
+            ),
+            key=lambda asset: (asset.asset_id, asset.tenant_id, asset.version),
+        )
     async def list_versions(self, tenant_id: str, asset_id: str) -> list[MarketplaceAsset]: ...
     async def add_rating(self, tenant_id: str, asset_id: str, version: str,
                          installation_id: str, user_id: str, score: int, comment: str) -> None: ...
@@ -269,7 +281,16 @@ class MarketplaceGovernance:
     async def catalog(self, *, tenant_id: str, visibility: str | None = None) -> list[MarketplaceAsset]:
         if visibility is not None and visibility not in _VISIBILITIES:
             raise ValueError("invalid asset visibility")
-        return await self.store.list_published(tenant_id, visibility)
+        if visibility == "public":
+            return await self.store.list_published(None, "public")
+        tenant_assets = await self.store.list_published(tenant_id, visibility)
+        if visibility is not None:
+            return tenant_assets
+        public_assets = await self.store.list_published(None, "public")
+        return sorted(
+            tenant_assets + public_assets,
+            key=lambda item: (item.asset_id, item.tenant_id, item.version),
+        )
 
     async def versions(self, *, tenant_id: str, asset_id: str) -> list[MarketplaceAsset]:
         return await self.store.list_versions(tenant_id, asset_id)
