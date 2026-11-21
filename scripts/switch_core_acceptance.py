@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import sys
 import unittest
-
 from dataclasses import dataclass
 from pathlib import Path
 
