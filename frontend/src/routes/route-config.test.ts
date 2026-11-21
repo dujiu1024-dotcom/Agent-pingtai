@@ -94,6 +94,27 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
+  it('keeps organization and RBAC entry points auth-only and resolves the legacy RBAC alias', () => {
+    const routes = getAllRoutes(true)
+    const organization = routes.find((route) => route.path === '/admin/organization')
+    const canonicalRbac = routes.find((route) => route.path === '/admin/access-control')
+    const legacyRbac = routes.find((route) => route.path === '/admin/rbac')
+
+    expect(organization?.authOnly).toBe(true)
+    expect(organization?.pageId).toBe('ADM-ORG')
+    expect(canonicalRbac?.authOnly).toBe(true)
+    expect(canonicalRbac?.pageId).toBe('ADM-RBAC')
+    expect(legacyRbac).toMatchObject({
+      pageId: 'ADM-RBAC-ALIAS',
+      authOnly: true,
+      owner: '#798',
+    })
+    expect(
+      matchRoutes(routes.map((route) => ({ path: route.path })), '/admin/rbac')?.[0].route.path,
+    ).toBe('/admin/rbac')
+    expect(getAllRoutes(false).some((route) => route.path === '/admin/rbac')).toBe(false)
+  })
+
   it('registers Knowledge collection and document deep links under #760', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     expect(matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0].params.collectionId).toBe('collection-123')
