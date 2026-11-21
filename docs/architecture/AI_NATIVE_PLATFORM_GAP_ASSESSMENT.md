@@ -882,3 +882,83 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P2 | 确定性 Eval 指标不足以代表开放式企业任务质量 | 真实语料/真实 Provider/人工评审组合评测，并建立按业务风险分层的门禁 |
 
 本轮只更新审查文档和 Issue 记录，没有修改产品代码；当前环境未运行本地或数据库测试。结论来自 main 分支静态代码路径与测试源码对照。
+
+
+## 22. 第十轮审查：多实例运行拓扑、健康就绪与持久化事件恢复（2026-11-21）
+
+本轮检查生产 Compose、ASGI startup/shutdown、RunExecutionWorker、独立 Outbox worker、readiness checks、Outbox 租约和 Secret Manager 生命周期。区分已有生产硬化设计与尚未形成可验收运行闭环的部分。
+
+### 22.1 P2：Run 执行 Worker 与 API 生命周期耦合，独立 Worker 服务并不承载 Run 执行
+
+证据：
+- deploy/production.compose.yaml 的 platform-api 默认启动 uvicorn，WEB_CONCURRENCY 默认 2；platform-worker 默认执行 python -m agent_platform.worker，并配置 WORKER_CONCURRENCY。
+- agent_platform/production.py:930-960 将 start_run_worker/stop_run_worker 注册到 FastAPI startup/shutdown；每个 API 进程在启动时从 run_execution.task_worker 启动 RunExecutionWorker。
+- agent_platform/worker.py:1-62 只装配 PostgresOutboxStore → RedisStreamsTransport → OutboxRelayWorker；未创建 RunExecutionWorker，也没有读取 WORKER_CONCURRENCY。
+- deploy/OPERATIONS.md 明确说明：独立 Worker 是 PostgreSQL Outbox 到 Redis Streams 的 relay；Workbench Task API 和 LangGraph Run worker 由可信 builder 装配并在 ASGI 进程中启动。
+- RunExecutionWorker.run_once() 对批次中的 claimed Runs 使用 asyncio.gather 并发处理，并通过共享 concurrency_limiter 取得 queue/worker_pool slot；RunStateStore 通过 claim/lease 防止同一 Run 被多个 Worker 同时执行。
+
+判断：
+- 这不是“没有 Run Worker”：RunExecutionWorker 存在，且生产 API 在 builder 提供 task_worker 时会启动它。
+- 但当前 Compose 的 platform-worker 并不是可独立扩缩的 Run 执行 Worker。Run 执行并发跟随 API 进程数和 WEB_CONCURRENCY，API 横向扩容同时扩大执行 Worker 数量，无法独立调整 API 与 Run 计算资源。
+- WORKER_CONCURRENCY 被写入独立 worker 环境，但默认 agent_platform.worker 没有读取该变量；它不是 Run 执行并发配置，也不能据此推断 Outbox relay 有多 worker 并发。
+- 对企业混合部署而言，Web/API 与长时模型执行具有不同资源、弹性和故障域。当前耦合增加了容量规划和独立升级难度。
+- 多实例 Run claim/lease 的数据库竞争逻辑存在，但本轮没有发现针对真实多 API 进程/多节点、滚动重启、worker 扩缩容和长任务租约的端到端生产验收证据。
+
+建议：
+1. 增加独立 Run Worker 入口，API 只负责提交/查询任务；API 和 Run Worker 使用相同的可信 runtime builder 契约与 tenant-bound repositories。
+2. 将 Run worker concurrency、batch size、lease/heartbeat、queue scope 配置独立于 WEB_CONCURRENCY；删除或落实当前未被默认 worker 消费的 WORKER_CONCURRENCY。
+3. 使用共享 PostgreSQL lease/claim 与分布式 quota slot 保证多 Worker 竞争安全；明确 worker drain、SIGTERM、长任务续租、崩溃恢复和滚动升级语义。
+4. 建立至少两个独立 Run Worker 实例的集成验收：同一 Run 不重复执行、不同 Run 并行、租约过期可接管、旧 Worker 失去 lease 后被取消、跨租户配额隔离。
+5. 增加 API 与 Worker 独立扩缩容和故障隔离演练，形成容量基线。
+
+### 22.2 P2：生产 Readiness 未检查 MinIO/Object Storage 运行时可用性
+
+证据：
+- deploy/production.compose.yaml 中 platform-api depends_on postgres、redis、minio，三者都要求 service_healthy 后才启动。
+- agent_platform/production.py 的 readiness_checks 只注册 postgres_ready、redis_client.ping、quota_schema_ready；没有 MinIO/S3 bucket 的运行时检查。
+- deploy/production.compose.yaml 的 MinIO 自身有健康检查，能约束初始 Compose 启动依赖；但 API 的 /health/ready 不会在 MinIO 后续不可用时反映对象存储故障。
+- agent_platform/api/health.py 对配置的 readiness checks 逐一执行，任一失败返回 503；未注册的依赖自然不参与 ready 判定。
+- tests/test_production_deployment_contract.py 验证 Compose 初始依赖与 readiness URL，但没有断言应用 readiness 必须检查对象存储。
+
+判断：
+- 如果对象存储是文件、知识附件或运行产物的关键依赖，MinIO 运行期间故障时 API 仍可能报告 ready，形成“健康探针绿、关键业务不可用”的误导。
+- Compose depends_on 只解决启动顺序与初始健康条件，不替代运行期依赖探测。
+- 当前结论是 readiness 覆盖不足，不代表对象存储没有自身健康检查或持久卷。
+
+建议：
+1. 将 S3/MinIO bucket 访问纳入 readiness 或单独的依赖健康状态；使用低成本、权限受限的 HEAD/读探针，避免每次探测写业务对象。
+2. 区分 critical 与 degraded 依赖：如果文件/知识核心功能依赖对象存储，应让 readiness 反映；若允许降级，应在健康响应明确标记并限制相关功能。
+3. 增加 MinIO 运行中断、凭据失效、bucket 不存在、恢复后的 readiness 转换测试。
+4. readiness 响应不得暴露 endpoint、凭据或底层异常内容。
+
+### 22.3 Outbox 与 Secret Lifecycle：已具备的可靠性机制及剩余验收
+
+正向证据：
+- PostgresOutboxStore.claim_batch() 使用 FOR UPDATE SKIP LOCKED、租约 token、lease_until、attempts、max_attempts、next_attempt_at、dead_lettered_at；多 relay 可竞争领取不同记录。
+- mark_published/mark_failed 均按 tenant_id + outbox_id + lease_token 更新，避免旧租约持有者覆盖新持有者状态。
+- OutboxRelay 明确采用 at-least-once：Redis publish 成功但 PostgreSQL 未确认时可能重复投递，注释要求消费者按 event_id 去重。
+- Redis Streams key 包含 tenant_id/topic；publish 不使用 MAXLEN trim，避免删除仍在 Pending Entries List 的消息；DLQ 采用事务 pipeline 同时写入 DLQ 并 ACK 源消息。
+- SecretManager 只在 metadata repository 保存 secret_ref/version/status；密钥材料存放在注入的 backend。轮换先激活新版本并撤销旧版本 metadata，再重试 backend 清理；backend 清理失败保留待重试状态。resolve 在 active backend material 缺失时 fail closed，不回退旧版本。
+- platform_secret_versions 有 (secret_ref, version) 主键和每个 secret_ref 仅一个 active 版本的唯一部分索引；ciphertext 表通过外键绑定版本。
+
+剩余验证边界：
+- Outbox 当前语义是 at-least-once，不是 exactly-once；外部消费者必须按 event_id 幂等。现有 tests/test_outbox_delivery_guarantee.py 主要检查 SQL 结构和参数，不等同于多进程崩溃窗口下的真实 Redis/PostgreSQL 故障注入。
+- 第 2 轮已经记录 Redis Streams 恢复集成测试的失败（claim 数量与恢复预期不符）。在修复并通过真实恢复演练前，不应宣称 Redis 全量丢失后的自动恢复已生产验收。
+- Secret Manager 的单元测试覆盖轮换、撤销失败重试、backend 清理失败，但本轮没有证明真实 Vault/KMS 后端的并发轮换、凭据轮换传播到所有 Worker、旧凭据立即失效和跨区域灾备。
+- Secret version 的版本号由读取最大版本后加一，再依赖数据库主键防止重复；并发写入会有一个请求因唯一键冲突失败，调用方需要具备可理解的冲突重试策略。当前未发现自动重新分配版本号的逻辑。
+
+建议：
+1. 对 Outbox 以真实 PostgreSQL + Redis 做 kill-after-publish、kill-before-mark、lease-expiry、双 Worker 并发和 consumer dedupe 故障注入。
+2. 将事件消费端的 tenant_id、event_id receipt 与业务副作用放入同一原子事务，或提供等效幂等机制。
+3. 对 Secret rotation 做并发冲突处理、Vault/KMS 故障重试和多进程缓存失效测试；证明已撤销版本不会被任何服务继续使用。
+4. 对外报告明确标注 Outbox at-least-once、备份非原子跨组件快照、真实 RPO/RTO 尚未测量。
+
+### 22.4 本轮新增优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P2 | Run Worker 与 API 进程生命周期耦合，Compose 独立 Worker 只负责 Outbox relay | Run Worker 独立部署/扩缩容；多实例 lease、drain、故障接管 E2E 通过 |
+| P2 | API readiness 未检查 MinIO/S3 运行期可用性 | MinIO 故障时 readiness/降级状态与业务能力一致 |
+| P2 | Outbox at-least-once 与 Secret rotation 仍缺真实多实例故障注入证据 | PostgreSQL+Redis/Vault 故障演练通过，重复消费可幂等，撤销传播可验证 |
+
+本轮只更新审查报告和 Issue 记录，没有修改产品代码；未在本环境运行容器或多实例故障测试。结论来自 main 分支静态代码、生产 Compose、运维文档和测试源码对照。
