@@ -9,6 +9,11 @@ from agent_platform.identity.models import Principal
 async def _resolve(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
+async def _authorize(value: Any) -> None:
+    result = await _resolve(value)
+    if result is False:
+        raise HTTPException(403, "permission denied")
+
 class InstallRequest(BaseModel):
     scope: str = Field(default="enterprise", pattern="^(enterprise|project|team)$")
     scope_id: str = Field(min_length=1, max_length=128)
@@ -46,7 +51,7 @@ def create_digital_employee_router(*, resolve_principal: Callable[[], Any],
         goal: str | None = Query(default=None, max_length=120),
         tags: list[str] = Query(default=[]), page: int = Query(default=1, ge=1),
         page_size: int = Query(default=20, ge=1, le=100), p: Principal = Depends(principal)):
-        await _resolve(authorize_read(p))
+        await _authorize(authorize_read(p))
         return await (await service_for(p)).search_employees(
             tenant_id=p.tenant_id, query=q, role=role, goal=goal, tags=tags,
             page=page, page_size=page_size)
@@ -60,7 +65,7 @@ def create_digital_employee_router(*, resolve_principal: Callable[[], Any],
     @router.post("/{employee_id}/install", status_code=201)
     async def install_employee(employee_id: str, body: InstallRequest,
         p: Principal = Depends(principal)):
-        await _resolve(authorize_install(p, body.scope))
+        await _authorize(authorize_install(p, body.scope))
         service = await service_for(p)
         employee = await service.get_employee(tenant_id=p.tenant_id, employee_id=employee_id)
         if employee is None or employee.get("status") != "published":
