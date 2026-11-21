@@ -16,7 +16,9 @@ line-length = 100
 target-version = "py310"
 # 存量文件暂不纳入，先只门禁新增/本轮改动文件
 include = [
+  "intent.py",
   "conversation.py",
+  "tools/schedule_wbs.py",
   "scripts/release_gate.py",
   "scripts/release_upgrade.py",
   "scripts/verify_platform_backups.py",
@@ -214,12 +216,15 @@ known-first-party = ["agent_platform", "tests"]
 [tool.mypy]
 python_version = "3.11"
 files = [
+  "intent.py",
+  "tools/schedule_wbs.py",
   "agent_platform/contracts.py",
   "agent_platform/approval/policy.py",
   "agent_platform/runtime/protocols.py",
   "agent_platform/blackboard/protocol.py",
   "agent_platform/tools/gateway.py",
   "agent_platform/observability/*.py",
+  "agent_platform/observability/run_trace.py",
   "agent_platform/sandbox/oci.py",
   "agent_platform/sandbox/lifecycle.py",
   "agent_platform/tools/gateway_mcp.py",
