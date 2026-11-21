@@ -124,7 +124,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
     await page.getByLabel('邮箱').fill('user@acme.test')
     await page.getByLabel('密码').fill('wrong-password')
     await page.getByRole('button', { name: '登录' }).click()
-    await expect(page.getByRole('alert')).toContainText(/invalid credentials|凭据|登录失败/)
+    await expect(page.getByRole('alert')).toContainText(/invalid credentials|status 401|凭据|登录失败/)
 
     await page.getByLabel('密码').fill('valid-password')
     await page.getByRole('button', { name: '登录' }).click()
