@@ -110,7 +110,7 @@ const params = (start: string, end: string, model?: string, runId?: string, proj
   if (agentId) search.set('agent_id', agentId)
   return search.toString()
 }
-const number = (value?: number) =>
+const number = (value?: number | null) =>
   value == null || !Number.isFinite(value) ? '—' : new Intl.NumberFormat().format(value)
 const usd = (value?: string) => {
   if (value == null || value === '') return '—'
