@@ -86,12 +86,17 @@ class EvaluationScheduleWorker:
         self, item: EvaluationSchedule, run_task: asyncio.Task[Any],
         lease_lost: asyncio.Event,
     ) -> None:
+        lease_store = self.lease_store
+        if lease_store is None:
+            lease_lost.set()
+            run_task.cancel()
+            return
         while not run_task.done():
             await asyncio.sleep(self.lease_seconds / 3)
             if run_task.done():
                 return
             try:
-                renewed = await self.lease_store.renew(
+                renewed = await lease_store.renew(
                     item, owner_id=self.owner_id, now=self.clock(),
                     lease_seconds=self.lease_seconds,
                 )
@@ -162,10 +167,14 @@ class EvaluationScheduleWorker:
                     heartbeat_task.cancel()
                     await asyncio.gather(heartbeat_task, return_exceptions=True)
                 if claimed:
-                    await self.lease_store.complete(
-                        item, owner_id=self.owner_id, now=self.clock(),
-                        succeeded=succeeded and not lease_lost.is_set(),
-                    )
+                    lease_store = self.lease_store
+                    if lease_store is None:
+                        self.last_error_types[item.schedule_id] = "LeaseStoreUnavailable"
+                    else:
+                        await lease_store.complete(
+                            item, owner_id=self.owner_id, now=self.clock(),
+                            succeeded=succeeded and not lease_lost.is_set(),
+                        )
                 self._in_flight.discard(item.schedule_id)
 
         outcomes = await asyncio.gather(*(execute(item) for item in due))
