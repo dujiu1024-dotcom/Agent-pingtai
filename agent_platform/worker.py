@@ -13,7 +13,6 @@ from typing import Any
 from agent_platform.events.outbox import OutboxRelay, PostgresOutboxStore
 from agent_platform.events.outbox_worker import OutboxRelayWorker
 from agent_platform.events.redis_streams import RedisStreamsTransport
-from agent_platform.production_config import load_production_settings
 from agent_platform.security.audit import PostgresAuditWriter
 
 logger = logging.getLogger("agent_platform.worker")
