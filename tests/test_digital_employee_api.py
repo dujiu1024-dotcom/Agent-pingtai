@@ -39,6 +39,17 @@ class DigitalEmployeeApiTests(unittest.TestCase):
     def test_role_goal_discovery_is_tenant_scoped(self):
         r=self.client.get("/api/platform/v1/digital-employees?role=sales&goal=forecast")
         self.assertEqual(r.status_code,200); self.assertEqual(r.json()["items"][0]["employee_id"],"sales-analyst")
+    def test_read_authorizer_false_is_forbidden(self):
+        app = FastAPI()
+        app.include_router(create_digital_employee_router(
+            resolve_principal=lambda: self.principal,
+            resolve_service=lambda principal: self.service,
+            authorize_read=lambda principal: False,
+            authorize_install=lambda principal, scope: True,
+        ))
+        response = TestClient(app).get("/api/platform/v1/digital-employees")
+        self.assertEqual(response.status_code, 403)
+
     def test_install_rejects_permissions_outside_declared_boundary(self):
         r=self.client.post("/api/platform/v1/digital-employees/sales-analyst/install",
             json={"scope_id":"enterprise-a","owner_id":"owner-a","agent_version":"agent@1",
