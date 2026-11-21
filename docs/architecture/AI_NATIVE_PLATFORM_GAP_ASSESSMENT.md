@@ -822,3 +822,63 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P2 | Connector 页写入与 cursor CAS 需要端到端重放/并发验证 | 并发同步、撤销竞态、sink 成功但 cursor CAS 失败时无重复业务副作用，且可恢复 |
 
 本轮只更新审查文档和 Issue 记录，没有修改产品代码；当前环境未执行数据库集成测试。结论来自 main 分支静态代码与现有测试源码对照。
+
+
+## 21. 第九轮审查：模型成本归因与 Evaluation 发布门禁接线（2026-11-21）
+
+本轮聚焦真实 Provider 用量进入统一账本后的来源标记，以及 Evaluation 结果是否实际接入 Prompt 发布路径。
+
+### 21.1 P2：Provider 返回的实际用量被统一记为 estimated，成本来源报表失真
+
+证据：
+- agent_platform/quotas/harness.py:174-226 在 inner Harness 成功返回后，调用 _reported_usage(result) 读取 Provider 返回的 input_tokens/output_tokens，并通过 estimate_actual_cost(request, result) 计算基于实际响应的成本。
+- 同一调用随后执行 quota_service.settle_run(...)，传入真实 input_tokens/output_tokens、实际响应计算出的 cost_usd 和 price_card_version，但没有传 source。
+- agent_platform/quotas/service.py:488-519 的 settle_run() 默认 source="estimated"，并将该值写入 UsageEvent。
+- agent_platform/quotas/usage_reporting.py:51-61 按 event.source 分别聚合 estimated、provider_reported、reconciled 成本，并计算 estimated_vs_provider_actual_variance_usd。
+- tests/test_quota_usage_reporting.py 覆盖了三种来源分类，但没有覆盖 QuotaEnforcedHarnessAdapter → QuotaService.settle_run 的端到端来源标记。
+
+判断：
+- Harness 已拿到 Provider 返回的实际 Token 数，但通过统一 Harness 结算的成本事件默认归类为 estimated。
+- 因而实际用量的 Token 计数可能正确，成本金额也可能由 Provider 返回 usage 计算，但报表的 provider_reported_cost_usd 会漏掉这些事件，estimated_cost_usd 会被高估，estimated_vs_provider_actual_variance_usd 也不能代表真实估算偏差。
+- 这是账务分类与运营报表语义错误，不等于金额必然算错；金额正确性仍取决于 estimate_actual_cost 使用的定价卡、模型 ID 和费率。
+- 建议：明确 Harness 返回的成本来源。若金额由可信 Pricing Catalog 对 Provider 实际 usage 计算，应至少区分 provider_usage_priced（或在当前枚举语义允许时使用 provider_reported）；如果金额只是估算，则不要把 Provider 实际账单口径与估算混为一谈。增加从 Harness adapter 到 Postgres usage ledger、再到 usage report 的端到端测试，断言 source、price_card_version、model/project/agent 归属和 variance。
+
+### 21.2 P1：生产 Prompt Registry 已挂载，但 Prompt Evaluation Gate 未注入
+
+证据：
+- agent_platform/api/prompts.py:53-76 的 create_prompt_registry_router() 支持 evaluate_gate；require_evaluation_gate() 在 evaluate_gate 为 None 时返回 HTTP 503。
+- agent_platform/api/prompts.py:235-315 的 activate、canary、rollback 路由均在修改 Registry 前调用 require_evaluation_gate()，要求返回 gate_passed=true 和有效 eval_run_id；否则阻止发布。
+- agent_platform/api/app.py:403-414 只要 prompt_registry 和 prompt_manage_authorizer 已配置就会挂载 Prompt Registry，并将 prompt_evaluation_gate 原样传给 evaluate_gate。
+- agent_platform/production.py 的 create_platform_app(...) 生产调用传入 prompt_registry 和 prompt_manage_authorizer，但没有传入 prompt_evaluation_gate。生产代码中也没有找到 prompt_evaluation_gate 的定义或赋值。
+- 因此，在当前默认生产组合下，Prompt Registry 页面/读写路由可以挂载，但 activate、canary、rollback 三个发布动作会因 evaluate_gate=None 返回 503。
+- tests/test_evaluation_rollout.py 测试的是 Model Eval 实验结果到 Prompt Lab rollout 的另一条链路；不能替代 Prompt Registry activate/canary/rollback 所依赖的 prompt_evaluation_gate。
+
+判断：
+- Prompt 发布门禁在 API 层有 fail-closed 设计，但生产 composition root 没有提供实现，导致门禁无法执行，发布动作被全部阻断。
+- 这比“门禁策略不够完善”更具体：当前默认生产配置下，门禁依赖缺失，实际表现为不可发布，而不是绕过门禁。
+- 本轮没有证据证明生产环境通过其他外部路由注入该参数；若部署方自行替换应用装配，需另行提供证据。按仓库默认生产入口审查，应判定为生产接线缺失。
+
+建议：
+1. 在生产组合根实现可信 prompt_evaluation_gate，按 tenant_id + prompt_id + version + action 查找该候选版本对应的 Evaluation 结果，不允许只返回任意已通过 eval_run_id。
+2. Gate 必须核对 Eval Run 所属租户、候选 Prompt 版本、数据集版本、评测模型/策略版本和报告内容摘要；过期或不匹配证据 fail closed。
+3. 将 Prompt 发布操作与 Evaluation evidence 引用写入同一审计链，确保 activate/canary/rollback 能回溯具体评测报告。
+4. 增加生产装配测试：验证 Prompt Registry 已挂载时 Gate 也必须被配置；对无 Gate、跨租户证据、错误 Prompt 版本、失败评测、旧评测报告均拒绝；正确证据允许发布。
+5. 增加 API E2E 覆盖 activate、canary、rollback 三种发布动作，避免仅测试 gate helper 或 rollout bridge。
+
+### 21.3 Evaluation 能力成熟度补充
+
+- Evaluation primitives、数据集/报告存储、阈值策略、对比服务、Prompt rollout bridge 均有代码和单元测试。
+- EvaluationGovernanceService 能生成带 policy snapshot、comparison、evidence_refs 和 SHA-256 的 gate evidence；但静态检查没有发现其在默认生产 Prompt 发布组合中的直接装配。它不能被视为已自动约束所有 Agent、Workflow、Skill、Tool 的发布。
+- Prompt Registry API 确实强制要求 Gate 返回有效 eval_run_id；这是正向的 fail-closed 设计，但当前生产未注入 Gate，形成上述发布阻塞。
+- 当前 EvalCase 的基础评分主要由 expected_terms、forbidden_terms、expected_document_ids 的确定性匹配计算。它适合可复现的回归检查，但不能单独代表开放式答案质量、事实准确性、工具执行正确性或企业真实业务成功率。生产验收仍需真实语料、真实 Provider、人工复核和版本化评测数据。
+- EvaluationRunService 的测试使用 FakeRunner；本轮没有证明默认生产入口已将 EvaluationRunService、真实模型执行器、持久化数据集和发布门禁串成完整端到端链路。
+
+### 21.4 本轮新增优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P1 | Prompt Registry 发布 Gate 未在默认生产组合根注入 | 默认生产配置下 Gate 可执行；三种发布动作按租户、Prompt 版本和 Eval Run 证据正确放行/拒绝 |
+| P2 | Harness 实际 Provider usage 成本事件默认标记 estimated | 端到端账本/报表来源分类正确，金额、价格卡版本和归属可追溯 |
+| P2 | 确定性 Eval 指标不足以代表开放式企业任务质量 | 真实语料/真实 Provider/人工评审组合评测，并建立按业务风险分层的门禁 |
+
+本轮只更新审查文档和 Issue 记录，没有修改产品代码；当前环境未运行本地或数据库测试。结论来自 main 分支静态代码路径与测试源码对照。
