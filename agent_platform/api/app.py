@@ -14,14 +14,14 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
-from agent_platform.api.digital_employees import (
-    create_digital_employee_router, create_team_template_router,
-)
 from agent_platform.api.contract import (
     API_V1_PREFIX,
     ApiV1CompatibilityMiddleware,
     PublicApiContractASGIMiddleware,
     error_for_http_status,
+)
+from agent_platform.api.digital_employees import (
+    create_digital_employee_router, create_team_template_router,
 )
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.extension_publishers import create_extension_publisher_router
