@@ -107,3 +107,18 @@ These items are not marked duplicates. Existing closure/archival may be valid; e
 - All 99 Issue comment threads fetched; #267 alone contains 607 comments.
 - Confirmed duplicate Issues: none from this pass. Potential overlaps are listed in F3.
 - Confirmed orphan Issues: none established solely from textual data. Parent-link candidates are listed in F2.
+
+## Reconciliation action — 2026-11-21
+
+Following the per-Issue review of F1, 19 Issues were reopened because their current body retained unchecked acceptance items or their latest evidence explicitly left production/field acceptance incomplete:
+
+- Core platform Issues: #8–#21 (14 Issues).
+- Execution evidence ledger: #267.
+- Production composition: #614.
+- Migration/switch acceptance: #665–#667.
+
+Each reopened Issue received a comment stating the specific unresolved acceptance boundary. Existing PRs cited by the historical comments were fetched directly and found merged; the old “PR open / CI queued” comments were stale. Merge status was therefore corrected in the assessment, but merged PRs were not treated as proof of full acceptance.
+
+Current inventory state after reopening: 30 open Issues and 69 closed Issues (99 total). This count includes the 11 originally open Issues (#848, #870, #881–#889) plus the 19 reopened Issues listed above.
+
+No PR was merged or closed in this reconciliation. No Issue was closed. Reopened Issues must remain open until their own remaining acceptance criteria are evidenced; field-only tasks should be split into linked follow-up Issues if they need independent ownership or scheduling.
