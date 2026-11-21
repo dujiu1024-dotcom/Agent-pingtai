@@ -35,6 +35,7 @@ from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.localization import create_locale_preferences_router
+from agent_platform.api.marketplace import create_marketplace_router
 from agent_platform.api.notifications import create_notifications_router
 from agent_platform.api.observability import create_observability_router
 from agent_platform.api.office import OfficeStateService, create_office_router
@@ -183,6 +184,8 @@ def create_platform_app(
     digital_employee_service_resolver: Any | None = None,
     digital_employee_read_authorizer: Any | None = None,
     digital_employee_install_authorizer: Any | None = None,
+    marketplace_service_resolver: Any | None = None,
+    marketplace_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -803,5 +806,18 @@ def create_platform_app(
             resolve_service=digital_employee_service_resolver,
             authorize_read=digital_employee_read_authorizer,
             authorize_install=digital_employee_install_authorizer,
+        ))
+    marketplace_configured = any(value is not None for value in (
+        marketplace_service_resolver, marketplace_authorizer,
+    ))
+    if marketplace_configured:
+        if marketplace_service_resolver is None or marketplace_authorizer is None:
+            raise ValueError(
+                "marketplace service resolver and authorizer must be configured together"
+            )
+        app.include_router(create_marketplace_router(
+            resolve_principal=_principal_from_request,
+            resolve_service=marketplace_service_resolver,
+            authorize=marketplace_authorizer,
         ))
     return app
