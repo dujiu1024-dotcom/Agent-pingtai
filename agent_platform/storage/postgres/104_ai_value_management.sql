@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS ai_value_attributions (
     roi NUMERIC(18,8),
     financial_status TEXT NOT NULL CHECK (financial_status IN ('estimated','financially_confirmed')),
     cost_source TEXT,
+    cost_basis TEXT NOT NULL DEFAULT 'estimated' CHECK (cost_basis IN ('estimated','settled')),
     business_evidence JSONB,
     attribution_version TEXT NOT NULL,
     actor_id TEXT NOT NULL,
@@ -46,7 +47,8 @@ CREATE TABLE IF NOT EXISTS ai_value_attributions (
       REFERENCES ai_value_baselines (tenant_id, process_id, role_id, version),
     CHECK (auto_completed + assisted_completed + human_takeovers + failed_units <= units_total),
     CHECK ((financial_status = 'estimated' AND (net_benefit IS NULL OR roi IS NULL))
-        OR financial_status = 'financially_confirmed')
+        OR (financial_status = 'financially_confirmed' AND cost_basis = 'settled'
+            AND ai_cost IS NOT NULL AND other_business_benefit IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS ix_ai_value_attributions_tenant_window
     ON ai_value_attributions (tenant_id, window_start, window_end);
