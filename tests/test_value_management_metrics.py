@@ -93,3 +93,23 @@ def test_invalid_cycle_baseline_is_rejected():
             actual_cycle_minutes_per_unit=Decimal("1"),
             baseline_throughput_per_hour=Decimal("1"), actual_throughput_per_hour=Decimal("1"),
         )
+
+
+def test_partial_tool_cost_evidence_does_not_claim_total_cost():
+    result = aggregate_value_costs(
+        [event("e1")], tenant_id="tenant-a", run_ids=["run-1"],
+        tool_cost_lines=[ToolCostLine("crm.lookup", 1, Decimal("0.1"), "estimated", "v2")],
+    )
+    assert result["tool_calls"] == 2
+    assert result["tool_cost_usd"] is None
+    assert result["total_ai_cost_usd"] is None
+    assert result["tool_cost_status"] == "partial_or_mismatched"
+
+
+def test_zero_tool_calls_have_no_unpriced_tool_cost_gap():
+    result = aggregate_value_costs(
+        [event("e1", tool_calls=0)], tenant_id="tenant-a", run_ids=["run-1"],
+    )
+    assert result["tool_cost_usd"] == "0"
+    assert result["total_ai_cost_usd"] == "0.25"
+    assert result["tool_cost_status"] == "not_applicable"
