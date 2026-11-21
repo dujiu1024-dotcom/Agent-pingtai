@@ -70,6 +70,12 @@ function queryErrorId(error: unknown) {
   return error instanceof ApiError ? error.requestId : undefined
 }
 
+function errorDescription(error: unknown) {
+  const message = error instanceof Error ? error.message : '请求失败'
+  const id = queryErrorId(error)
+  return id ? `${message} · request_id: ${id}` : message
+}
+
 function queryString(params: URLSearchParams) {
   const copy = new URLSearchParams(params)
   copy.sort()
@@ -140,16 +146,12 @@ export function OperationsCockpitExtension() {
   const daily = events.reduce<Record<string, number>>((result, event) => {
     const date = new Date(event.occurred_at)
     if (!Number.isNaN(date.getTime())) {
-      const key = date.toLocaleDateString()
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
       result[key] = (result[key] ?? 0) + Number(event.total_tokens ?? 0)
     }
     return result
   }, {})
-  const dailyRows = Object.entries(daily).sort((a, b) => {
-    const [am, ad, ay] = a[0].split('/').map(Number)
-    const [bm, bd, by] = b[0].split('/').map(Number)
-    return new Date(ay, am - 1, ad).getTime() - new Date(by, bm - 1, bd).getTime()
-  })
+  const dailyRows = Object.entries(daily).sort(([a], [b]) => a.localeCompare(b))
   const maxDaily = Math.max(1, ...dailyRows.map(([, value]) => value))
   const healthStatus = healthQuery.data?.status
   const updatedAt = usageQuery.dataUpdatedAt ? new Date(usageQuery.dataUpdatedAt).toLocaleString() : '尚未更新'
@@ -180,7 +182,7 @@ export function OperationsCockpitExtension() {
           <p>筛选当前授权范围内的用量与任务样本；聚合指标仅展示已由服务端 API 证实的数据。</p>
         </div>
         <div className="ops-cockpit-refresh">
-          <span>用量更新时间：{updatedAt}</span>
+          <span>用量更新时间：{updatedAt}{usageQuery.isStale ? ' · 数据可能过期' : ''}</span>
           <button type="button" className="button-secondary" onClick={refresh}><RefreshCw size={14} /> 刷新</button>
         </div>
       </header>
@@ -216,22 +218,22 @@ export function OperationsCockpitExtension() {
         <article className="ops-cockpit-panel ops-cockpit-wide">
           <header><h3><Activity size={17} /> Token 吞吐趋势</h3><span>{events.length ? `${events.length} 条用量事件` : '暂无数据'}</span></header>
           {usageQuery.isPending ? <LoadingState label="正在加载用量趋势" /> : usageQuery.isError ? <ErrorState title="用量趋势加载失败" description={`${usageQuery.error instanceof Error ? usageQuery.error.message : '请求失败'}${queryErrorId(usageQuery.error) ? ` · request_id: ${queryErrorId(usageQuery.error)}` : ''}`} onRetry={() => void usageQuery.refetch()} /> : dailyRows.length ? (
-            <div className="ops-cockpit-bars" role="img" aria-label="按本地日期聚合的 Token 用量趋势">
-              {dailyRows.map(([day, value]) => <Link key={day} to={`/workspace/tasks?from=${encodeURIComponent(new Date(day).toISOString())}&days=${days}`} title={`${day}：${value.toLocaleString()} tokens`}><span style={{ height: `${Math.max(5, value / maxDaily * 100)}%` }} /><small>{day}</small></Link>)}
+            <div className="ops-cockpit-bars" aria-label="按本地日期聚合的 Token 用量趋势">
+              {dailyRows.map(([day, value]) => <Link key={day} to={`/workspace/tasks?date=${encodeURIComponent(day)}&days=${days}`} title={`${day}：${value.toLocaleString()} tokens`}><span style={{ height: `${Math.max(5, value / maxDaily * 100)}%` }} /><small>{day}</small></Link>)}
             </div>
           ) : <EmptyState title="所选范围暂无用量事件" description="无数据不以 0 替代。" />}
         </article>
 
         <article className="ops-cockpit-panel">
           <header><h3><AlertTriangle size={17} /> 风险与告警</h3><Link to="/operations/alerts">告警中心 →</Link></header>
-          {alertsQuery.isPending ? <LoadingState label="正在加载告警" /> : alertsQuery.isError ? <ErrorState title="告警加载失败" description={alertsQuery.error instanceof Error ? alertsQuery.error.message : '请求失败'} onRetry={() => void alertsQuery.refetch()} /> : openAlerts.length ? (
+          {alertsQuery.isPending ? <LoadingState label="正在加载告警" /> : alertsQuery.isError ? <ErrorState title="告警加载失败" description={errorDescription(alertsQuery.error)} onRetry={() => void alertsQuery.refetch()} /> : openAlerts.length ? (
             <ul className="ops-cockpit-list">{openAlerts.slice(0, 5).map((alert) => <li key={alert.event_id}><span className={`ops-risk-dot severity-${alert.severity ?? 'unknown'}`} /><div><strong>{alert.description || alert.metric_name || '告警事件'}</strong><small>{alert.fired_at ? new Date(alert.fired_at).toLocaleString() : '发生时间未知'}</small></div><Link to="/operations/alerts">查看</Link></li>)}</ul>
           ) : <EmptyState title="暂无未关闭告警" description="当前 API 返回集合中没有 open/acknowledged 告警。" />}
         </article>
 
         <article className="ops-cockpit-panel">
           <header><h3><Gauge size={17} /> 组件健康</h3><Link to="/admin/operations">运维诊断 →</Link></header>
-          {healthQuery.isPending ? <LoadingState label="正在检查组件健康" /> : healthQuery.isError ? <ErrorState title="组件健康不可用" description={healthQuery.error instanceof Error ? healthQuery.error.message : '请求失败'} onRetry={() => void healthQuery.refetch()} /> : (
+          {healthQuery.isPending ? <LoadingState label="正在检查组件健康" /> : healthQuery.isError ? <ErrorState title="组件健康不可用" description={errorDescription(healthQuery.error)} onRetry={() => void healthQuery.refetch()} /> : (
             <div className="ops-health-summary"><span className={`ops-health-dot state-${healthStatus ?? 'unknown'}`} /><strong>{healthStatus ?? '未知状态'}</strong><small>来源：/observability/health/capacity</small></div>
           )}
           <p className="ops-api-gap">队列深度、worker 分项健康和逐组件状态尚无统一已注册契约；不以单一 capacity 状态推断。</p>
@@ -249,7 +251,7 @@ export function OperationsCockpitExtension() {
 
         <article className="ops-cockpit-panel">
           <header><h3>任务状态分布</h3><Link to={taskDrill}>任务明细 →</Link></header>
-          {taskQuery.isPending ? <LoadingState label="正在加载任务样本" /> : taskQuery.isError ? <ErrorState title="任务列表加载失败" description={taskQuery.error instanceof Error ? taskQuery.error.message : '请求失败'} onRetry={() => void taskQuery.refetch()} /> : Object.keys(taskStatuses).length ? <ul className="ops-task-distribution">{Object.entries(taskStatuses).sort((a,b) => b[1]-a[1]).map(([status,count]) => <li key={status}><Link to={`/workspace/tasks?status=${encodeURIComponent(status)}`}>{statusLabel[status] ?? status}</Link><strong>{count}</strong></li>)}</ul> : <EmptyState title="暂无任务样本" description="服务端没有返回任务记录。" />}
+          {taskQuery.isPending ? <LoadingState label="正在加载任务样本" /> : taskQuery.isError ? <ErrorState title="任务列表加载失败" description={errorDescription(taskQuery.error)} onRetry={() => void taskQuery.refetch()} /> : Object.keys(taskStatuses).length ? <ul className="ops-task-distribution">{Object.entries(taskStatuses).sort((a,b) => b[1]-a[1]).map(([status,count]) => <li key={status}><Link to={`/workspace/tasks?status=${encodeURIComponent(status)}`}>{statusLabel[status] ?? status}</Link><strong>{count}</strong></li>)}</ul> : <EmptyState title="暂无任务样本" description="服务端没有返回任务记录。" />}
           <p className="ops-api-gap">分布仅统计当前 workbench/tasks 响应样本，不代表全局队列或全量任务聚合。</p>
         </article>
       </div>
