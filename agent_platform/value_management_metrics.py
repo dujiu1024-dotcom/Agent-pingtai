@@ -163,9 +163,9 @@ def aggregate_value_costs(
             }
             for key, value in sorted(raw_breakdown.items())
         }
-        if tool_line_calls == tool_calls:
+        if tool_line_calls == tool_calls and (tool_lines or (tool_calls == 0 and selected)):
             tool_cost = sum((line.cost_usd for line in tool_lines), Decimal("0"))
-    elif tool_calls == 0:
+    elif tool_calls == 0 and selected:
         tool_cost = Decimal("0")
 
     model_total = sum(model_costs.values(), Decimal("0")) if selected else None
@@ -190,7 +190,8 @@ def aggregate_value_costs(
         "model_cost_by_source_usd": {key: str(value) for key, value in sorted(source_costs.items())},
         "tool_cost_by_key": tool_breakdown,
         "tool_cost_status": (
-            "not_applicable" if tool_lines is None and tool_calls == 0
+            "usage_missing" if not selected
+            else "not_applicable" if tool_calls == 0 and not tool_lines
             else "not_priced" if tool_lines is None or not tool_lines
             else "provided" if tool_line_calls == tool_calls
             else "partial_or_mismatched"
