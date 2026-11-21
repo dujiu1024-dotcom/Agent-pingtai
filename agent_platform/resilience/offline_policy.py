@@ -139,7 +139,9 @@ class OfflinePolicyEvaluator:
             return finish(OfflineDecision.DENY, "cached_authorization_scope_mismatch")
         if now < authorization.granted_at:
             return finish(OfflineDecision.DENY, "clock_before_authorization_issue")
-        cache_age = now - authorization.granted_at
+        if now < authorization.last_revocation_sync_at:
+            return finish(OfflineDecision.DENY, "clock_before_policy_sync")
+        cache_age = now - authorization.last_revocation_sync_at
         if cache_age > self.policy.authorization_cache_ttl_seconds:
             return finish(OfflineDecision.DENY, "authorization_cache_expired")
         if now > authorization.expires_at:
