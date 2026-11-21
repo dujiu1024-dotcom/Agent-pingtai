@@ -8,14 +8,14 @@
 
 ## 0. 重要结论与审查限制
 
-本报告基于基线 SHA 下可读取的仓库文件、架构文档、前端路由、生产 Compose 配置、CI 配置和指定测试源码形成。它不是完整的逐文件审计结论。
+本报告已完成第二轮源码核查：成功枚举 main 的递归文件树（1,568 个文件，其中 agent_platform/ 532、frontend/src/ 100、tests/ 489、PostgreSQL SQL migrations 127），并继续读取关键后端实现、API 路由、数据库迁移、前端页面和 GitHub Actions 失败日志。它仍不是完整的逐文件语义审计结论。
 
-本轮审查遇到以下客观限制：
+本轮仍存在以下客观限制：
 
-1. GitHub 仓库连接器提供单文件读取，但当前没有可用的仓库目录树枚举能力；仓库代码搜索索引状态为不可用（repository metadata: `is_code_search_indexed=false`）。
-2. 尝试在执行环境浅克隆仓库时，网络 DNS 无法解析 `github.com`，无法在本地执行全量测试、静态检查、前端构建或启动服务。
-3. 因无法完整枚举所有文件、迁移、路由和页面，也无法连接 PostgreSQL/Redis/模型服务，不能声称完成了 Issue 要求的全仓库逐项审查或运行验收。
-4. 以下“已具备/基础已具备”仅代表已读取源码中存在相应机制；是否在生产组合中完整接线、可运行和生产可用，仍需按报告中的验证要求补证。
+1. GitHub 仓库代码搜索索引不可用（repository metadata: is_code_search_indexed=false），但通过 Git Trees API 已成功枚举完整文件路径；因此不能再将“无法枚举目录树”作为当前限制。
+2. 尝试在执行环境浅克隆仓库时，网络 DNS 无法解析 github.com，无法在本地执行全量测试、静态检查、前端构建或启动服务。
+3. 已读取大量关键源码并检查了基线 SHA 对应的 CI 实际运行结果，但尚未逐一阅读全部 1,568 个文件，也没有本地 PostgreSQL/Redis/模型服务可供复现所有失败。
+4. 以下“已具备/基础已具备”仅代表源码中存在相应机制；是否在生产组合中完整接线、可运行和生产可用，仍需按报告中的验证要求补证。
 
 **因此，本报告应作为第一轮证据盘点和审查基线，不应据此关闭 Issue #848。** 需由具备完整仓库 checkout 和集成环境的审查人员继续完成剩余审计，并更新本报告。
 
@@ -40,7 +40,7 @@
 | CI | `.github/workflows/ci.yml` |
 | 测试源码 | `tests/test_platform_postgres_integration.py`、`tests/test_redis_streams_integration.py`、`tests/test_issue_755_c_dual_mode_integration.py` |
 
-本轮未能读取全部目录内容，因此表中列出的“未找到”不能解释为仓库不存在，只能解释为本轮未获得证据。
+已成功枚举全仓库文件路径，但尚未逐个读取全部文件内容。因此表中列出的“未找到”不能解释为仓库不存在，只能解释为本轮未获得实现证据。
 
 ### 成熟度定义
 
@@ -244,20 +244,18 @@ flowchart TB
 - `tests/test_issue_755_c_dual_mode_integration.py`：使用 FastAPI TestClient 的双模式集成测试，但 fixture 中使用内存知识/记忆仓库和 stub Redis，不是完整生产基础设施 E2E。
 - `frontend/package.json` 定义 build、lint、typecheck、Vitest、Playwright E2E 脚本。
 
-### 本轮实际执行结果
+### 本轮本地执行与 CI 证据
 
 | 检查 | 本轮结果 |
 |---|---|
+| 仓库递归文件树 | 已读取：1,568 个文件；未逐个读取全部文件内容 |
 | 仓库浅克隆 | 未完成：执行环境无法解析 github.com |
-| Python unittest | 未执行 |
-| PostgreSQL 集成测试 | 未执行：无可用 DSN/数据库 |
-| Redis Streams 集成测试 | 未执行：无可用 Redis |
-| Ruff / mypy | 未执行 |
-| 前端 build / lint / typecheck | 未执行 |
-| Vitest / Playwright | 未执行 |
+| 本地 Python unittest / PostgreSQL / Redis | 未执行：当前执行环境无仓库 checkout 和集成服务 |
+| Ruff / mypy / 前端 build / lint / typecheck / Vitest / Playwright | 本地未执行 |
+| GitHub Actions（基线 main） | 已读取实际运行记录，结果失败，详见第 14 节 |
 | 生产 Compose 启动验证 | 未执行 |
 
-不能将 CI 配置文件存在等同于最近一次 CI 全绿；需另行读取基线 SHA 对应的 workflow run 和 job 结果。
+不能将 CI 配置文件存在等同于最近一次 CI 全绿；本轮已读取基线 SHA 对应的实际 workflow run 和 job 结果。
 
 ## 10. P0/P1/P2 差距 Backlog（第一轮建议）
 
@@ -321,3 +319,70 @@ flowchart TB
 - 本轮无法执行完整测试与生产环境验证。
 
 **本报告完成的是第一轮证据盘点，不是 Issue #848 的最终交付。Issue 应保持 Open，直到全量代码审查、运行验证和正式差距清单全部完成。**
+
+
+## 14. 第二轮源码审查与 CI 实证结果（2026-11-21）
+
+### 14.1 审查范围进展
+
+本轮通过 Git Trees API 枚举了 main 的递归文件树：
+
+| 范围 | 文件数 |
+|---|---:|
+| 全仓库 | 1,568 |
+| agent_platform/ | 532 |
+| frontend/src/ | 100 |
+| tests/ | 489 |
+| docs/ | 237 |
+| agent_platform/storage/postgres/*.sql | 127 |
+| deploy/ | 14 |
+| .github/workflows/ | 10 |
+
+已进一步读取任务重试、运行时存储、知识检索/ACL、记忆 API、身份上下文、告警 Outbox、Prompt Registry、文件 API、前端知识工作台和记忆治理页面等实际实现。
+
+### 14.2 已确认的代码级问题
+
+| 优先级 | 文件/位置 | 代码证据与实际影响 | 判断 |
+|---|---|---|---|
+| P1 | agent_platform/runtime/workbench_tasks.py:529-536；agent_platform/runtime/postgres_lifecycle.py:85-162,164-177 | create_retry_task_run() 返回新 Run 的 run_id，但新记录仍保留源任务的 task_id；调用方随后把返回的 run_id 传给按 task_id 查询的 get_task_record()，因此读回为 None，retry_task() 返回 None。真实 PostgreSQL 测试 tests/test_platform_postgres_integration.py:654 因 retried["status"] 触发 NoneType 错误。 | **确认的任务重试链路缺陷**；重试接口无法可靠返回新任务记录。 |
+| P1 | agent_platform/observability/alert_store.py:55-75 | SQL 使用 (%s IS NULL OR event_id=%s)，可空参数在 IS NULL 上缺乏可推断类型；真实 PostgreSQL 返回 IndeterminateDatatype: could not determine data type of parameter $1。 | **确认的 PostgreSQL 参数类型缺陷**；告警投递领取在该查询路径失败。应显式转换为 event_id 对应的 UUID 类型。 |
+| P1 | agent_platform/storage/postgres/ | 当前有 127 个迁移文件，但只有 96 个唯一数字前缀；存在 25 组重复编号，包含 038（3 个）、041（3 个）、044（4 个）、079（3 个）等。 | **确认的迁移编号治理缺陷**；test_endpoint_directory_is_shared_and_deactivates 等多个 Gateway 集成用例在 setup 阶段因迁移序号不唯一而失败。需要建立唯一、单调、不可复用的迁移版本序列，并检查已部署数据库兼容性。 |
+| P1 | Redis Outbox 相关实现；tests/test_redis_streams_integration.py:324、tests/test_issue_18_a_18_03_redis_outbox_recovery_integration.py:146 | 真实 Redis 集成测试观察到 Outbox 恢复后 claim 数量为 2（预期 1），另一测试在删除 Stream 后恢复结果长度为 0（预期 1）。 | **可靠投递/恢复验收失败**；需进一步沿事件持久化、重放游标、幂等键和 claim 逻辑定位重复或漏恢复原因。 |
+| P1 | agent_platform/knowledge/postgres_repository.py:202-215；agent_platform/storage/postgres/098_knowledge_embeddings_bge_m3.sql:1-15 | 数据库迁移将 pgvector 列固定为 1024 维；集成测试却构造 1536 维向量并写入，PostgreSQL 报 expected 1024 dimensions, not 1536。KnowledgeService 在无显式 embedder 时还存在 1536 维默认值。 | **模型维度配置与测试/默认值不一致**；需统一以 embedding provider 的 dimensions 为唯一配置来源，并增加启动时 schema/config 校验。 |
+
+### 14.3 CI 失败中需要区分“产品缺陷”和“测试/契约漂移”
+
+基线 SHA 3fa0415b76aa06375859362e2e1bfa69a4094e16 的 GitHub Actions：
+
+- Platform Integration run：[44888729700](https://github.com/dujiu1024-dotcom/Agent-pingtai/actions/runs/44888729700)，最终 failure。
+  - Platform Integration / postgres-redis-integration：failure，114 项测试中 11 failures、10 errors、1 skipped。
+  - Identity focused tests (3.11/3.12)：均 failure。
+  - test (3.11/3.12)：因 workflow fail-fast 被 cancelled。
+- Release Gate run：[44888729744](https://github.com/dujiu1024-dotcom/Agent-pingtai/actions/runs/44888729744)，最终 failure。
+  - e2e-focused-unit：failure，48 项测试中 3 failures、1 error。
+  - e2e-security-integration：failure，49 项测试中 4 failures、1 error。
+  - production-release-evidence：skipped。
+- 依赖安全扫描及 security-unit 在此前读取的 CI 结果中通过；不能据此推导整条流水线通过。
+
+已确认的测试/契约漂移线索：
+
+1. tests/test_model_runtime_router.py:9 导入 ModelCircuitBreaker，但 agent_platform/models/circuit_breaker.py 实际定义的是 AsyncCircuitBreaker；导致整个测试模块 ImportError，模型路由相关用例未执行。
+2. tests/test_platform_api_app.py 的文件资产测试调用 GET /api/platform/v1/files/{asset_id}，而当前 API 实际提供 GET /files/{asset_id}/metadata、/versions 和版本下载路由，没有裸路径 GET；Identity focused tests 因 405 失败。需统一 API 契约与测试/调用方，不能把该失败误判为租户隔离逻辑失败。
+3. tests/test_knowledge_memory_api.py:32-38 的测试 principal resolver 对所有用户默认授予 project-a，而 :383-392 的断言又要求 user-b 看不到 project-a 记忆；该用例的 fixture 与预期矛盾，导致 memory scope 测试失败。应修正 fixture 后再判断生产隔离。
+4. tests/test_knowledge_memory_postgres_integration.py:150-215 的 chunk ACL 用例在没有 ACL 的 chunk 上断言非授权用户看不到任何 chunk；当前 list_visible_chunks() 明确允许 acl_enforced=false 的公开 chunk。需澄清预期是“未授权用户不能看到被限制 chunk”，还是“一个文档只要启用 chunk ACL 就必须对所有 chunk 默认拒绝”，再调整代码或测试。
+5. tests/test_release_gate_evidence.py 的旧 fixture 未提供当前 release validator 要求的 deployment preflight 证据；tests/test_release_acceptance_report.py 的 Markdown 转义断言与当前输出不一致。当前 CI 因此失败，但需要先更新 fixture/断言并确认生产校验规则是否符合 Issue 预期。
+6. Prompt audit 集成测试在迁移/测试过程中报告 platform_prompt_audit_events_action_check 约束冲突。迁移 079_prompt_audit_events.sql、083_prompt_variants.sql、084_prompt_rollouts.sql 分阶段修改 action allowlist；应在干净库和已有库分别验证迁移顺序、历史数据兼容和重复执行。
+7. test_intervention_timeline_and_checkpoint_gated_resume 报告测试对象为 list、缺少 record_event 方法；test_extraction_creates_candidates_without_auto_activation 返回 400；当前日志不足以判定是生产实现缺陷还是测试 fixture/接口契约漂移，暂列待定位。
+
+### 14.4 前端与 API 的具体差距证据
+
+- frontend/src/features/knowledge/KnowledgeWorkbench.tsx:403-405 明确说明服务端没有 ACL 列表查询接口，页面只能展示当前页面会话中已提交的授权记录；刷新页面后无法从服务端完整重建授权状态。这是知识治理中心的产品闭环缺口。
+- 同一页面提供文档 ACL 和切片 ACL 的授权/撤销交互，但未获得 ACL 列表读取 API，导致管理端无法进行完整的权限盘点、审计和授权差异对账。
+- frontend/src/features/memories/MemoryGovernancePage.tsx 已连接 candidates、memories、confirm、archive、conflict resolve、export 等 API；但应与后端身份上下文、项目成员关系一起做真实端到端权限验证，不能只凭页面存在认定治理闭环完成。
+
+### 14.5 本轮结论更新
+
+1. 仓库目录树清点已经完成，之前“不能枚举文件树”的限制已解除；完整逐文件语义审查仍未完成。
+2. 已发现至少两项明确的后端代码缺陷（任务重试读回、告警 SQL 参数类型），一项迁移编号治理缺陷，以及 Redis 恢复测试失败。
+3. CI 实际失败证据已补入；失败中同时包含产品代码问题、测试 fixture 错误和 API 契约漂移，必须逐项分类，不可简单将全部失败归为产品故障。
+4. Issue #848 仍未达到最终验收；本 PR 继续保持 Draft，不合并。下一步应围绕确认的 P1 缺陷建立独立修复 Issue/PR，并继续补齐全量能力映射与真实运行验收。
