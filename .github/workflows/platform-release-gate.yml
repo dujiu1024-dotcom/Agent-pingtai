@@ -22,7 +22,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Classify changed files
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch origin "$BASE_REF" --depth=1
+          python - <<'PY'
+          import os, subprocess
+          base = "origin/" + os.environ["BASE_REF"]
+          files = subprocess.check_output(["git", "diff", "--name-only", f"{base}...HEAD"], text=True).splitlines()
+          docs_only = bool(files) and all(path.startswith("docs/") or path.lower().endswith((".md", ".markdown", ".rst")) or path in {"LICENSE", "CHANGELOG", "CONTRIBUTING"} for path in files)
+          print("Changed files:", files)
+          print("Documentation-only:", docs_only)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"code={str(not docs_only).lower()}\\n")
+          PY
+
   e2e-security-integration:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -121,6 +154,8 @@ jobs:
             tests.test_platform_perf_smoke -v
 
   e2e-focused-unit:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
