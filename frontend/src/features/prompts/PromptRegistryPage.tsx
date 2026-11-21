@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -48,6 +48,7 @@ export function PromptRegistryPage() {
       apiClient.get<ListResponse<PromptSummary>>(
         '/platform/v1/prompts/?limit=200',
       ),
+    enabled: !promptId,
   })
 
   const versionsQuery = useQuery({
@@ -96,11 +97,6 @@ export function PromptRegistryPage() {
         currentVersion !== comparisonVersion,
     ),
   })
-
-  const selectedSummary = useMemo(
-    () => listQuery.data?.items.find((item) => item.prompt_id === promptId),
-    [listQuery.data, promptId],
-  )
 
   const createDraft = useMutation({
     mutationFn: () =>
