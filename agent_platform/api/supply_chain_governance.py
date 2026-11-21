@@ -50,10 +50,16 @@ def create_supply_chain_governance_router(
         service = await resolve_admission(principal)
         if service.policy.tenant_id != str(principal.tenant_id):
             raise HTTPException(403, "tenant policy scope mismatch")
+        context_resolver = getattr(request.app.state, "supply_chain_asset_context_resolver", None)
+        if context_resolver is None:
+            raise HTTPException(503, "trusted asset context resolver is not configured")
+        asset_context = await context_resolver(principal, trusted_report.artifact_id, trusted_report.version)
+        if asset_context is None:
+            raise HTTPException(404, "trusted asset context not found")
         result = await service.admit(
             trusted_report,
-            publisher_is_external=bool(payload.get("publisher_is_external", False)),
-            permissions=frozenset(str(item) for item in payload.get("permissions", [])),
+            publisher_is_external=bool(asset_context.get("publisher_is_external", True)),
+            permissions=frozenset(str(item) for item in asset_context.get("permissions", [])),
         )
         return {
             "tenant_id": result.tenant_id, "artifact_id": result.artifact_id,
