@@ -16,6 +16,7 @@ agency/state/*.log
 agency/state/*.jsonl
 agency/state/tasks.json
 agency/state/gates.json
+agency/state/listener.pending.json
 agency/state/backups/
 agency/state/backup-*/
 agency/state/gui/
@@ -45,3 +46,7 @@ backups/
 
 # 测试运行报告
 frontend/playwright-report/
+
+# 服务运行时数据
+deploy/service/logs/
+deploy/service/run/

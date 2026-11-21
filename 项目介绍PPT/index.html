@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 原生运行底座 · 渠道合作介绍</title>
+<style>
+  :root{
+    --bg:#0a0e1a; --panel:#131c2f; --panel2:#0f1728; --line:#243352;
+    --ink:#e8eefc; --muted:#8fa1c2; --accent:#4f8cff; --accent2:#35d0ba;
+    --gold:#ffb454; --ok:#3ecf8e; --purple:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Segoe UI",Roboto,sans-serif;
+    overflow:hidden;
+  }
+  .deck{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+  .slide{
+    display:none; width:min(1280px,96vw); height:min(760px,94vh);
+    background:linear-gradient(160deg,#0e1730 0%,#0a0e1a 100%);
+    border:1px solid var(--line); border-radius:22px;
+    padding:52px 60px; flex-direction:column; overflow:hidden;
+    box-shadow:0 30px 80px rgba(0,0,0,.45);
+  }
+  .slide.active{display:flex}
+  .eyebrow{color:var(--accent2);font-size:13px;letter-spacing:.22em;text-transform:uppercase;font-weight:600;margin-bottom:10px}
+  h1{font-size:52px;line-height:1.12;font-weight:700;letter-spacing:-.5px}
+  h2{font-size:38px;line-height:1.18;font-weight:700;margin-bottom:8px}
+  .lead{color:var(--muted);font-size:18px;line-height:1.65;max-width:1040px;margin-top:8px}
+  .lead b{color:var(--ink);font-weight:600}
+  .grid{display:grid;gap:18px;margin-top:24px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px 22px;transition:transform .2s}
+  .card:hover{transform:translateY(-2px)}
+  .card h3{font-size:16px;color:var(--accent);margin-bottom:8px;font-weight:600}
+  .card p,.card li{font-size:14px;color:var(--muted);line-height:1.6}
+  .card ul{list-style:none}
+  .card li{padding-left:16px;position:relative;margin-bottom:6px}
+  .card li::before{content:"";position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--accent2)}
+  .card li b{color:var(--ink)}
+  .bullets{margin-top:20px}
+  .bullets li{list-style:none;font-size:16.5px;color:var(--ink);line-height:1.55;padding:10px 0 10px 26px;position:relative;border-bottom:1px solid rgba(36,51,82,.5)}
+  .bullets li::before{content:"▸";position:absolute;left:2px;color:var(--accent2);font-weight:700}
+  .bullets li b{color:#fff}
+  table{width:100%;border-collapse:collapse;margin-top:20px;font-size:14px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+  th{color:var(--accent2);font-weight:600;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase}
+  td{color:var(--muted);line-height:1.5}
+  td:first-child{color:var(--ink);font-weight:600;white-space:nowrap}
+  .src{color:#6f80a0;font-size:12px;margin-top:auto;padding-top:14px;font-style:italic}
+  .imgwrap{flex:1;display:flex;gap:20px;margin-top:18px;align-items:center;min-height:0}
+  .imgwrap img{max-width:100%;max-height:100%;border-radius:12px;border:1px solid var(--line);object-fit:contain;background:#0a1020}
+  .shot{flex:1;display:flex;flex-direction:column;align-items:center;min-height:0;height:100%}
+  .shot img{max-height:80%}
+  .cap{color:var(--muted);font-size:12px;margin-top:10px;text-align:center;max-width:680px;line-height:1.5}
+  .flow{display:flex;align-items:stretch;gap:8px;margin-top:24px}
+  .step{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 12px;text-align:center}
+  .step .n{display:inline-block;width:28px;height:28px;line-height:28px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:700;margin-bottom:8px}
+  .step .t{font-size:14.5px;font-weight:600;color:var(--ink)}
+  .step .d{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+  .arrow{align-self:center;color:var(--accent2);font-size:18px;font-weight:700}
+  .layer{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:12px 18px;margin-top:10px}
+  .layer .ln{font-size:13px;color:var(--accent2);font-weight:700;width:110px;flex-shrink:0}
+  .layer .lc{font-size:13.5px;color:var(--muted);line-height:1.5}
+  .layer .lc b{color:var(--ink)}
+  .nav{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:12px;align-items:center;background:rgba(19,28,47,.9);border:1px solid var(--line);border-radius:30px;padding:8px 16px;backdrop-filter:blur(8px);z-index:9}
+  .nav button{background:none;border:none;color:var(--ink);font-size:18px;cursor:pointer;padding:4px 10px;border-radius:8px}
+  .nav button:hover{background:var(--line)}
+  .nav .pg{color:var(--muted);font-size:13px;min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;background:rgba(79,140,255,.14);color:var(--accent);border:1px solid rgba(79,140,255,.3);border-radius:20px;padding:3px 12px;font-size:12px;margin-right:8px;margin-bottom:6px}
+  .tag-gold{background:rgba(255,180,84,.14);color:var(--gold);border-color:rgba(255,180,84,.3)}
+  .tag-purple{background:rgba(167,139,250,.14);color:var(--purple);border-color:rgba(167,139,250,.3)}
+  .footer{position:absolute;bottom:24px;left:60px;right:60px;display:flex;justify-content:space-between;color:#5d6e8e;font-size:12px}
+  .big-num{font-size:42px;font-weight:700;color:var(--accent);line-height:1}
+  .stat{text-align:center;padding:18px}
+  .stat .lbl{font-size:13px;color:var(--muted);margin-top:6px}
+  .code{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:14px 18px;font-family:"SF Mono",Monaco,Consolas,monospace;font-size:13px;color:var(--accent2);margin-top:16px;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- 1 封面 -->
+  <section class="slide active" id="s1">
+    <div class="eyebrow">AI 原生运行底座 · 渠道合作</div>
+    <h1>一套底座<br>装上就是一个新产品</h1>
+    <p class="lead" style="font-size:20px;margin-top:28px;max-width:900px">
+      面向软件公司的 <b style="color:var(--accent)">AI 原生运行底座</b>。<br>
+      你们负责找客户、装平台、加行业 Agent，我们把底座能力全部打包好 —— 
+      <b style="color:var(--accent2)">多租户、身份权限、工作流、工具安全、可观测、配额</b>，开箱即用。
+    </p>
+    <div style="margin-top:36px">
+      <span class="tag">底层能力</span><span class="tag">迁移能力</span><span class="tag tag-gold">扩展能力</span><span class="tag tag-purple">渠道模式</span>
+    </div>
+    <div style="margin-top:32px;padding:20px 24px;background:var(--panel);border:1px solid var(--line);border-radius:12px;border-left:4px solid var(--gold)">
+      <div style="font-size:15px;color:var(--muted);line-height:1.6">
+        <b style="color:var(--gold)">公式很简单：</b>平台 + 行业 Agent = 客户要的解决方案<br>
+        <span style="font-size:14px">装上底座 + 加个「AI 调酒 Agent」 = AI 调酒师产品 &nbsp;|&nbsp; + 加个「AI 客服 Agent」 = AI 客服产品 &nbsp;|&nbsp; + 加个「AI 律师 Agent」 = AI 法律助手</span>
+      </div>
+    </div>
+    <div style="margin-top:24px;display:flex;gap:36px;justify-content:center;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+      <div style="text-align:center"><div style="font-size:26px;font-weight:700;color:var(--accent)">12+</div><div style="font-size:12px;color:var(--muted);margin-top:2px">能力域</div></div>
+      <div style="text-align:center"><div style="font-size:26px;font-weight:700;color:var(--accent)">103+</div><div style="font-size:12px;color:var(--muted);margin-top:2px">数据模型迁移</div></div>
+      <div style="text-align:center"><div style="font-size:26px;font-weight:700;color:var(--accent2)">3</div><div style="font-size:12px;color:var(--muted);margin-top:2px">部署形态</div></div>
+      <div style="text-align:center"><div style="font-size:26px;font-weight:700;color:var(--gold)">8</div><div style="font-size:12px;color:var(--muted);margin-top:2px">迁移阶段可回滚</div></div>
+    </div>
+    <div class="footer"><span>渠道合作介绍 · 2026-11</span><span>AI 原生运行底座</span></div>
+  </section>
+
+  <!-- 2 商业模式 -->
+  <section class="slide" id="s2">
+    <div class="eyebrow">商业模式</div>
+    <h2>你们交付解决方案，我们提供底座</h2>
+    <p class="lead">客户不为「AI」付费，客户为「能解决我问题的产品」付费。你们最懂行业客户，我们把平台底座打包好，你们装上、加个行业 Agent、贴自己的品牌，就是一个可交付的新产品线。</p>
+    <div class="grid g3" style="margin-top:28px">
+      <div class="card" style="border-color:var(--accent)">
+        <h3 style="color:var(--accent)">我们提供</h3>
+        <ul>
+          <li><b>AI 原生底座</b>：Agent 运行、工具安全、多租户、审计、配额</li>
+          <li><b>技术支持</b>：部署文档、SDK、迁移工具、灰度方案</li>
+          <li><b>底座升级</b>：持续更新，安全补丁、新功能</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:var(--gold)">
+        <h3 style="color:var(--gold)">你们负责</h3>
+        <ul>
+          <li><b>找客户</b>：你们的行业客户资源与关系</li>
+          <li><b>装平台</b>：私有部署 / 专有云 / SaaS 多种形态</li>
+          <li><b>加 Agent</b>：基于底座开发行业专属 Agent</li>
+          <li><b>做交付</b>：上线、培训、运维、续费</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:var(--purple)">
+        <h3 style="color:var(--purple)">客户得到</h3>
+        <ul>
+          <li><b>AI 原生产品</b>：贴你们的品牌、解决具体问题</li>
+          <li><b>企业级就绪</b>：权限、审计、隔离、可观测</li>
+          <li><b>可扩展</b>：后续加新 Agent、接新系统</li>
+        </ul>
+      </div>
+    </div>
+    <div style="margin-top:24px;text-align:center;font-size:17px;color:var(--muted)">
+      <b style="color:var(--ink)">你们卖解决方案的钱，我们收底座授权费</b> —— 你们不必从零造轮子，我们不必懂每个行业
+    </div>
+  </section>
+
+  <!-- 3 市场机会 -->
+  <section class="slide" id="s3">
+    <div class="eyebrow">为什么现在</div>
+    <h2>企业要 AI 落地，软件公司缺底座</h2>
+    <p class="lead">90% 的企业启动了 AI 转型，只有 10% 真正规模化。他们缺的不是模型，是<b>能跑生产、可审计、可扩展</b>的运行底座。软件公司有客户、有行业 know-how，但自研底座成本高、周期长、运维重 —— 这正是现成底座的机会。</p>
+    <div class="grid g4" style="margin-top:28px">
+      <div class="stat"><div class="big-num">90%</div><div class="lbl">企业已启动 AI 转型</div></div>
+      <div class="stat"><div class="big-num">25%</div><div class="lbl">取得切实成果</div></div>
+      <div class="stat"><div class="big-num">10%</div><div class="lbl">实现规模化</div></div>
+      <div class="stat"><div class="big-num" style="color:var(--gold)">12+</div><div class="lbl">个平台能力域已就绪</div></div>
+    </div>
+    <div class="grid g2" style="margin-top:20px">
+      <div class="card"><h3>企业侧痛点</h3><ul>
+        <li>想要 AI 产品，但<b>没能力自研底座</b>（多租户、权限、审计、工具安全）</li>
+        <li>买了模型 API，<b>跑不到生产</b>：没审批、没监控、没配额、出事没日志</li>
+        <li>怕数据泄露、怕成本失控、怕上线后没人运维</li>
+      </ul></div>
+      <div class="card"><h3>软件公司侧痛点</h3><ul>
+        <li>有客户、懂行业，但<b>自研 AI 底座</b>要 6–12 人月，还要持续维护</li>
+        <li>底座不是差异化，<b>行业 Agent 才是</b>，但没底座 Agent 跑不起来</li>
+        <li>需要<b>多租户、可私有部署、可灰度</b>的底座，不是 demo 框架</li>
+      </ul></div>
+    </div>
+  </section>
+  <!-- 4 一套底座 N 个产品 -->
+  <section class="slide" id="s4">
+    <div class="eyebrow">产品公式</div>
+    <h2>一套底座，装上就是 N 个产品</h2>
+    <p class="lead">底座是通用的，行业 Agent 是差异化的。你们不必每个客户从零开发，只要在底座上加一个行业 Agent，就是一个新产品。底座负责「跑得起来、安全、可运维」，Agent 负责「懂这个行业」。</p>
+    <div class="grid g4" style="margin-top:26px">
+      <div class="card" style="text-align:center"><div style="font-size:34px;margin-bottom:8px">🍸</div><h3 style="color:var(--gold)">AI 调酒师</h3><p>调酒 Agent<br>酒水知识库 + 推荐</p></div>
+      <div class="card" style="text-align:center"><div style="font-size:34px;margin-bottom:8px">🎧</div><h3 style="color:var(--accent)">AI 客服</h3><p>客服 Agent<br>工单 + 话术 + 派单</p></div>
+      <div class="card" style="text-align:center"><div style="font-size:34px;margin-bottom:8px">⚖️</div><h3 style="color:var(--accent)">AI 法律助手</h3><p>法律 Agent<br>合同 + 检索 + 起草</p></div>
+      <div class="card" style="text-align:center"><div style="font-size:34px;margin-bottom:8px">📊</div><h3 style="color:var(--accent)">AI 数据分析师</h3><p>分析 Agent<br>报表 + 异常解释</p></div>
+    </div>
+    <div style="margin-top:26px;padding:22px 26px;background:var(--panel);border:1px solid var(--line);border-radius:12px">
+      <div style="font-size:18px;color:var(--ink);text-align:center;font-weight:600">
+        AI 原生底座 <span style="color:var(--accent2)">＋</span> 行业 Agent <span style="color:var(--accent2)">＝</span> <span style="color:var(--gold)">客户要的解决方案</span>
+      </div>
+      <div style="font-size:14px;color:var(--muted);text-align:center;margin-top:8px">
+        底座一次开发 · Agent 按行业复制 —— 边际成本递减，交付速度递增
+      </div>
+    </div>
+    <div class="grid g2" style="margin-top:20px">
+      <div class="card"><h3>底座不绑定行业</h3><p>多租户、权限、工具安全、可观测、配额——这些和行业无关，任何 AI 产品都需要，我们做好，你们直接用。</p></div>
+      <div class="card"><h3>Agent 才是你们的护城河</h3><p>调酒、客服、法律、财务……行业 know-how 在 Agent 里，属于你们。底座是通用引擎，Agent 是差异化产品。</p></div>
+    </div>
+  </section>
+
+  <!-- 5 底层能力总览 -->
+  <section class="slide" id="s5">
+    <div class="eyebrow">底层能力 · 总览</div>
+    <h2>12+ 能力域，开箱即用</h2>
+    <p class="lead">这不是一个 demo 框架，是一套跑在生产、经过治理的 AI 原生运行底座。代码层已实现的能力域如下，每个都不是 PPT 概念，而是可运行、可测试的模块。</p>
+    <div class="grid g4" style="margin-top:24px">
+      <div class="card"><h3>多租户与身份</h3><p>租户隔离、RBAC、服务账号、资源范围、会话资产</p></div>
+      <div class="card"><h3>Agent 运行时</h3><p>Harness 适配层、上下文、工具执行、结构化输出</p></div>
+      <div class="card"><h3>工作流编排</h3><p>LangGraph 状态化流程、分支、人工介入、暂停恢复</p></div>
+      <div class="card"><h3>共享认知黑板</h3><p>Hybrid Blackboard：提案 / 证据 / 冲突 / 裁决</p></div>
+      <div class="card"><h3>工具安全网关</h3><p>MCP 网关、白名单、风险分级、审批绑定</p></div>
+      <div class="card"><h3>知识库与检索</h3><p>RAG、向量检索、切片、ACL、集合生命周期</p></div>
+      <div class="card"><h3>记忆与上下文</h3><p>版本化记忆、冲突消解、删除传播、作用域边界</p></div>
+      <div class="card"><h3>评测治理</h3><p>评测集、变体运行、人工评分、回归门禁</p></div>
+      <div class="card"><h3>配额与成本</h3><p>Token 预算、并发准入、成本分摊、预留租约</p></div>
+      <div class="card"><h3>可观测</h3><p>Langfuse 自托管、Trace、工具调用、成本追踪</p></div>
+      <div class="card"><h3>事件与可靠性</h3><p>Outbox、Redis Streams、重试、死信、幂等回执</p></div>
+      <div class="card" style="border-color:var(--gold)"><h3 style="color:var(--gold)">扩展机制</h3><p>Extension 包、生命周期、信任发布者、依赖图</p></div>
+    </div>
+  </section>
+
+  <!-- 6 技术栈分层 -->
+  <section class="slide" id="s6">
+    <div class="eyebrow">底层能力 · 架构分层</div>
+    <h2>清晰的分层，可私有部署</h2>
+    <p class="lead">从入口到存储逐层隔离职责，禁止 Agent 直接访问数据库、Redis 或任意网络。支持私有部署、专有云、SaaS 多形态。</p>
+    <div style="margin-top:18px">
+      <div class="layer"><span class="ln">入口层</span><span class="lc"><b>Web 控制台 / Public API v1 / SDK</b> → 身份认证、租户解析、RBAC、幂等、审计入口</span></div>
+      <div class="layer"><span class="ln">控制面</span><span class="lc"><b>Agent / Tool / Skill 注册</b> · 模型模板与策略 · 项目 / 任务 / Run / 审批 · 配额与成本</span></div>
+      <div class="layer"><span class="ln">编排层</span><span class="lc"><b>Orchestrator（LangGraph）</b> → Agent Runtime（Harness 适配层）→ 专家 Agent 执行</span></div>
+      <div class="layer" style="border-left-color:var(--accent2)"><span class="ln">共享认知</span><span class="lc"><b>Hybrid Blackboard</b>：事实 / 观点 / 证据 / 关系 / 版本 / 裁决，事件负责唤醒</span></div>
+      <div class="layer"><span class="ln">工具网关</span><span class="lc"><b>Supervised Tool Gateway</b>：MCP 白名单、风险分级、一次性审批、写前/结果审计</span></div>
+      <div class="layer"><span class="ln">存储层</span><span class="lc"><b>PostgreSQL + pgvector</b>（事实源）· <b>Redis Streams</b>（事件层，非事实源）</span></div>
+      <div class="layer"><span class="ln">可观测</span><span class="lc"><b>Langfuse（自托管）</b>：Trace、Generation、工具调用、成本；不记录明文密钥</span></div>
+    </div>
+    <div class="src">架构决策已冻结（智能体平台改造总设计 v1.1）；平台领域契约仅依赖 Python 标准库，可脱离 PostgreSQL / Redis / LLM 单测</div>
+  </section>
+
+  <!-- 7 多租户与身份 -->
+  <section class="slide" id="s7">
+    <div class="eyebrow">底层能力 · 01 多租户</div>
+    <h2>多租户与身份权限，卖给谁都是隔离的</h2>
+    <p class="lead">软件公司要卖给多个客户，最怕数据串。底座内建企业级身份与租户隔离，每个客户一个租户，数据、知识库、配额、审计全隔离。</p>
+    <div class="grid g2" style="margin-top:24px">
+      <div class="card"><h3>租户模型</h3><ul>
+        <li><b>租户 / 成员 / 组织 / 项目</b>边界清晰，资源按项目范围隔离</li>
+        <li>身份解析来自<b>可信控制面</b>，绝不信任请求头/参数里的 tenant_id</li>
+        <li>支持<b>服务账号</b>与凭证版本管理、撤销与恢复</li>
+      </ul></div>
+      <div class="card"><h3>权限与审计</h3><ul>
+        <li><b>RBAC</b> + 资源范围授权器，执行前校验当前租户/角色可访问性</li>
+        <li><b>追加写审计</b>（append-only），操作可追溯、不可篡改</li>
+        <li>主体删除台账，满足数据合规与被遗忘权</li>
+      </ul></div>
+      <div class="card"><h3>会话与资产</h3><ul>
+        <li>会话 / 对话上下文 / Run 快照分离，各管各的生命周期</li>
+        <li>文件资产版本化、处理作业可观测</li>
+      </ul></div>
+      <div class="card"><h3>对渠道的意义</h3><ul>
+        <li>一个部署服务多个客户，<b>成本摊薄</b></li>
+        <li>客户数据物理/逻辑隔离，<b>合规好过审</b></li>
+        <li>权限、审计现成，<b>不用自己造</b>企业级安全</li>
+      </ul></div>
+    </div>
+    <div class="src">能力来源：agent_platform/identity（租户、RBAC、服务账号、资源范围、安全）、storage/postgres 005/007/040 等迁移</div>
+  </section>
+
+  <!-- 8 Agent 运行时与多专家协作 -->
+  <section class="slide" id="s8">
+    <div class="eyebrow">底层能力 · 02 Agent 运行时</div>
+    <h2>Agent 运行时 + 多专家协作黑板</h2>
+    <p class="lead">单 Agent 处理简单任务，多专家协作处理复杂任务。底座两者都支持，行业 Agent 可以是单个，也可以是一支协作团队。</p>
+    <div class="grid g2" style="margin-top:24px">
+      <div class="card"><h3>Agent Runtime（Harness 适配层）</h3><ul>
+        <li>通过适配层接入<b>可替换的执行引擎</b>，不自研模型执行循环</li>
+        <li>已建 DeepSeek Harness 与 Strands Agents 适配器入口</li>
+        <li>同任务基准测试：统一比较通过率、延迟、Token、失败类型</li>
+        <li>结构化输出校验、上下文压缩、运行恢复、取消/超时</li>
+      </ul></div>
+      <div class="card"><h3>Hybrid Blackboard（多专家协作）</h3><ul>
+        <li>每条写入有<b>类型、作用域、来源、版本</b>，不是聊天记录</li>
+        <li>对象：Entry / Evidence / Claim / Challenge / Conflict / Decision</li>
+        <li>Agent 只能<b>提交提案</b>，不得覆盖他人条目，乐观并发控制</li>
+        <li>裁决记录<b>不可变</b>，撤销/修正产生新裁决，全程留痕</li>
+      </ul></div>
+      <div class="card"><h3>工作流编排（LangGraph）</h3><ul>
+        <li>只用于<b>显式流程</b>：状态持久化、分支、人工介入</li>
+        <li>多专家<b>并行汇聚</b>、证据冲突解决、审批中断与恢复</li>
+      </ul></div>
+      <div class="card"><h3>对渠道的意义</h3><ul>
+        <li>行业 Agent 可大可小：<b>单 Agent 起步</b>，复杂场景再加专家</li>
+        <li>协作过程<b>可审计</b>，企业客户最看重的可解释性</li>
+        <li>执行引擎可替换，<b>不被单一模型/框架锁死</b></li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- 9 工具安全与监督式自主 -->
+  <section class="slide" id="s9">
+    <div class="eyebrow">底层能力 · 03 工具安全</div>
+    <h2>工具安全网关 + 监督式自主</h2>
+    <p class="lead">企业客户最怕 AI 乱动生产系统、乱发消息、乱花钱。底座的工具网关让<b>每个副作用都可控、可审批、可审计</b>——这是 demo 框架和生产的分水岭。</p>
+    <div class="grid g2" style="margin-top:24px">
+      <div class="card"><h3>风险分级 L0–L3</h3><ul>
+        <li><b>L0</b> 只读分析：自动执行</li>
+        <li><b>L1</b> 内部可逆写入：自动执行并留痕</li>
+        <li><b>L2</b> 对外/不可逆（发消息、改数据）：<b>须人工审批</b></li>
+        <li><b>L3</b> 资金/签约/权限：<b>由人直接执行</b>，Agent 只准备</li>
+      </ul></div>
+      <div class="card"><h3>Gateway-only MCP</h3><ul>
+        <li>按 Run 创建 MCP Server，只暴露<b>可信白名单</b>工具</li>
+        <li>短期 Bearer Token 绑定 actor / 资源 URL / 过期 / 撤销</li>
+        <li>MCP Server 不直连业务系统，全部回到工具网关</li>
+      </ul></div>
+      <div class="card"><h3>审批绑定与幂等</h3><ul>
+        <li>L2 审批 ID 按<b>动作 SHA-256 摘要</b>绑定，参数变化即失效</li>
+        <li>风险级别来自<b>服务端可信注册表</b>，模型不能自声明</li>
+        <li>工具副作用<b>幂等键 + 对账</b>（tool_effect），防重复执行</li>
+      </ul></div>
+      <div class="card"><h3>对渠道的意义</h3><ul>
+        <li>企业安全评审<b>好过</b>：审批、审计、白名单现成</li>
+        <li>不会因为 AI 误操作赔客户损失</li>
+        <li>发消息、改数据、付款都<b>可控可撤</b></li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- 10 配额成本与可靠性 -->
+  <section class="slide" id="s10">
+    <div class="eyebrow">底层能力 · 04 运营治理</div>
+    <h2>配额成本、事件可靠性与可观测</h2>
+    <p class="lead">跑生产最怕成本失控、消息丢失、出事没日志。底座把这三件事都做成了能力，不是后补的脚本。</p>
+    <div class="grid g3" style="margin-top:24px">
+      <div class="card"><h3>配额与成本</h3><ul>
+        <li>Token 预算、上下文窗口预算分账</li>
+        <li><b>并发准入</b>与队列 worker 并发配额</li>
+        <li>预留租约、成本分摊、Run 预算血缘</li>
+        <li>模型定价目录，<b>成本可算清</b></li>
+      </ul></div>
+      <div class="card"><h3>事件可靠性</h3><ul>
+        <li>PostgreSQL <b>Outbox</b> 为事件事实源</li>
+        <li>Redis Streams 承载唤醒，消费组 + Pending 恢复</li>
+        <li>指数退避（2s 起、封顶 300s），默认 5 次进死信</li>
+        <li>消费<b>幂等回执</b>去重，不重复执行副作用</li>
+      </ul></div>
+      <div class="card"><h3>可观测</h3><ul>
+        <li>Langfuse <b>自托管</b>，可关闭/替换</li>
+        <li>Trace、Generation、工具调用全记录</li>
+        <li>成本与错误统计，Alert 事件 + 投递 Outbox</li>
+        <li><b>不记录明文密钥</b></li>
+      </ul></div>
+    </div>
+    <div class="grid g3" style="margin-top:18px">
+      <div class="card" style="border-color:var(--accent2)"><h3 style="color:var(--accent2)">对客户</h3><p>成本看得见、控得住，不会月底账单爆炸；出问题有日志可查，不是黑盒。</p></div>
+      <div class="card" style="border-color:var(--accent2)"><h3 style="color:var(--accent2)">对你们</h3><p>不用自己写监控、对账、限流——底座自带，省下大量运维开发。</p></div>
+      <div class="card" style="border-color:var(--accent2)"><h3 style="color:var(--accent2)">对企业</h3><p>审计、告警、SLA 有据可依，能过安全与合规评审。</p></div>
+    </div>
+    <div class="src">能力来源：agent_platform/quotas、events、observability、resilience；storage/postgres 配额/事件/审计相关迁移</div>
+  </section>
+  <!-- 11 扩展能力 -->
+  <section class="slide" id="s11">
+    <div class="eyebrow">扩展能力 · 核心</div>
+    <h2>Extension 机制：行业 Agent 插上就跑</h2>
+    <p class="lead">这是「平台 + 行业 Agent = 新产品」的技术保障。行业 Agent、工具、知识库打包成 Extension，声明式接入底座，<b>不改底座代码</b>，安全沙箱内运行。</p>
+    <div class="grid g2" style="margin-top:24px">
+      <div class="card"><h3>声明式 Manifest</h3><ul>
+        <li><b>extension_id + 语义化版本</b>（x.y.z），平台 API 兼容校验</li>
+        <li>声明<b>所需权限</b>（permissions）、<b>依赖</b>（精确版本锁定）</li>
+        <li>声明<b>入口点</b>，执行仍留在平台网关内，不越权</li>
+        <li>禁止自依赖、权限去重、依赖 ID 合法性校验</li>
+      </ul></div>
+      <div class="card"><h3>生命周期与安全</h3><ul>
+        <li><b>Extension 生命周期管理器</b>：安装、启用、停用、升级</li>
+        <li><b>依赖图</b>解析，避免循环与冲突</li>
+        <li><b>信任发布者密钥注册表</b>：只有可信来源可发布</li>
+        <li><b>OCI 运行时</b>隔离，扩展在沙箱内执行</li>
+      </ul></div>
+      <div class="card"><h3>Connector 连接器</h3><ul>
+        <li><b>Connector Catalog</b>：预置系统连接器目录</li>
+        <li>连接器同步作业、清理作业、worker 并发配额</li>
+        <li>知识库连接器同步、增量更新</li>
+      </ul></div>
+      <div class="card" style="border-color:var(--gold)"><h3 style="color:var(--gold)">对渠道的意义</h3><ul>
+        <li>行业 Agent 做成 Extension，<b>一个包复制到多个客户</b></li>
+        <li><b>不改底座</b>，升级底座不影响你们的行业包</li>
+        <li>权限、依赖、兼容性<b>底座帮你管</b>，不会装出问题</li>
+        <li>OCI 沙箱隔离，客户<b>安全评审好过</b></li>
+      </ul></div>
+    </div>
+    <div class="src">能力来源：agent_platform/extensions（manifest、manager、lifecycle、dependency_graph、publishers、oci_runtime）、connectors</div>
+  </section>
+
+  <!-- 12 迁移能力 一 -->
+  <section class="slide" id="s12">
+    <div class="eyebrow">迁移能力 · 01 系统迁移</div>
+    <h2>迁移能力（一）：把现有系统平滑迁上来</h2>
+    <p class="lead">企业已有业务在旧系统上，最怕「推倒重写」。底座用 <b>expand/contract</b> 渐进迁移 + <b>租户灰度切换</b>，新旧并行、可暂停可回滚，不中断业务。</p>
+    <div class="grid g2" style="margin-top:24px">
+      <div class="card"><h3>Expand / Contract 迁移编排</h3><ul>
+        <li>八个阶段状态机：<b>planned → expanded → dual_write → backfill → validated → cutover → contracted</b></li>
+        <li>每阶段<b>幂等</b>、可暂停、<b>可回滚</b>（rolled_back / failed）</li>
+        <li><b>SchemaCompatibility</b> 版本区间：reader/writer 兼容范围显式声明</li>
+        <li>迁移状态显式化，不靠"跑没跑成功"猜测</li>
+      </ul></div>
+      <div class="card"><h3>租户灰度切换（Cutover）</h3><ul>
+        <li><b>TenantCutoverPolicy</b>：按租户 allowlist + 流量百分比灰度</li>
+        <li>基于 <b>HMAC + salt</b> 确定性路由，同一租户稳定命中</li>
+        <li>租户标识由<b>认证后的解析器</b>提供，不信任请求头</li>
+        <li>API 与 Workflow 入口共用同一份路由策略</li>
+      </ul></div>
+      <div class="card"><h3>存量数据迁移</h3><ul>
+        <li>数据迁移<b>批次管理</b>与<b>staging 中转</b>表（022 / 049 迁移）</li>
+        <li>遗留身份<b>审计、迁移、撤销</b>工具（legacy_audit / legacy_migration）</li>
+        <li>Run 上下文快照、旧列 drop 的<b>有序演进</b></li>
+      </ul></div>
+      <div class="card" style="border-color:var(--accent2)"><h3 style="color:var(--accent2)">对渠道的意义</h3><ul>
+        <li>客户<b>不用停机换系统</b>，边跑边迁</li>
+        <li>按租户灰度，<b>出问题只影响灰度范围</b>，可秒回滚</li>
+        <li>旧数据、旧账号<b>有工具搬</b>，不是手工导</li>
+      </ul></div>
+    </div>
+    <div class="src">能力来源：agent_platform/deployment（migrations、backups）、switching（tenant cutover gateway）、identity/legacy_*、storage/postgres 022/049 等</div>
+  </section>
+
+  <!-- 13 迁移能力 二 -->
+  <section class="slide" id="s13">
+    <div class="eyebrow">迁移能力 · 02 部署与备份</div>
+    <h2>迁移能力（二）：可搬、可备份、可恢复</h2>
+    <p class="lead">软件公司要把底座装到不同客户的不同环境，最怕「装一次调一周」。底座强调可迁移、可备份、可恢复演练，让交付可复制。</p>
+    <div class="grid g2" style="margin-top:24px">
+      <div class="card"><h3>备份与恢复</h3><ul>
+        <li><b>Provider-neutral 备份策略</b>：全量 + 增量（full / incremental）</li>
+        <li><b>快照链</b>与<b>异地复制</b>（off-site replication）</li>
+        <li><b>恢复演练</b>状态机：planned → running → verified / failed</li>
+        <li>保留期与恢复目标（RPO/RTO）显式为时长</li>
+      </ul></div>
+      <div class="card"><h3>多种部署形态</h3><ul>
+        <li><b>私有部署</b>：装在客户自己的服务器 / 内网</li>
+        <li><b>专有云</b>：装在客户专属云环境</li>
+        <li><b>SaaS 多租户</b>：一套部署服务多客户</li>
+        <li>数据生命周期治理（064 / 066 / 071 迁移）</li>
+      </ul></div>
+      <div class="card"><h3>配置与密钥</h3><ul>
+        <li><b>Secret 版本化</b>、密文存储、撤销恢复（021/035/058/065）</li>
+        <li>模型模板唯一入口，<b>密钥只从环境/Secret 注入</b>，不入库不明文</li>
+      </ul></div>
+      <div class="card" style="border-color:var(--accent2)"><h3 style="color:var(--accent2)">对渠道的意义</h3><ul>
+        <li>不同客户环境<b>都能装</b>，形态随客户选</li>
+        <li>备份恢复<b>现成</b>，交付即带灾备能力</li>
+        <li>交付<b>可复制</b>：装底座 → 配租户 → 装 Extension → 上线</li>
+      </ul></div>
+    </div>
+    <div class="src">能力来源：agent_platform/deployment（backups、versioned）、configuration、models（模板）、storage/postgres 备份/密钥/生命周期迁移</div>
+  </section>
+
+  <!-- 14 迁移路径图 -->
+  <section class="slide" id="s14">
+    <div class="eyebrow">迁移能力 · 03 交付路径</div>
+    <h2>一个新客户的交付路径</h2>
+    <p class="lead">软件公司拿到一个新客户，从签约到上线，标准路径是可复制的。底座把每一步需要的工具都准备好了。</p>
+    <div class="flow">
+      <div class="step"><span class="n">1</span><div class="t">装底座</div><div class="d">选部署形态<br>私有/专有云/SaaS<br>初始化数据库</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">2</span><div class="t">建租户</div><div class="d">为客户建租户<br>配成员与 RBAC<br>数据隔离就绪</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">3</span><div class="t">接数据</div><div class="d">Connector 接客户系统<br>知识库导入<br>必要时灰度迁移旧系统</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">4</span><div class="t">装 Extension</div><div class="d">装行业 Agent 包<br>声明权限/依赖<br>沙箱隔离运行</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">5</span><div class="t">配审批</div><div class="d">按 L0-L3 配风险<br>高风险动作绑审批<br>配额与成本上限</div></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="n">6</span><div class="t">评测上线</div><div class="d">建评测集回归<br>接可观测<br>上线 + 培训 + 运维</div></div>
+    </div>
+    <div class="grid g3" style="margin-top:22px">
+      <div class="card"><h3>每步都有工具</h3><p>装底座有初始化、建租户有身份模块、接数据有 Connector、装 Extension 有生命周期、审批有网关、上线有评测和可观测。</p></div>
+      <div class="card"><h3>可灰度可回滚</h3><p>旧系统按租户灰度切，出问题只影响灰度范围；迁移分阶段，每阶段可暂停回滚。</p></div>
+      <div class="card"><h3>交付可复制</h3><p>下一个客户重复这条路径，越做越快。行业 Extension 包一次开发，多客户复用。</p></div>
+    </div>
+  </section>
+
+  <!-- 15 技术成熟度 -->
+  <section class="slide" id="s15">
+    <div class="eyebrow">技术成熟度</div>
+    <h2>这不是概念，是跑起来的代码</h2>
+    <p class="lead">底座的成熟度不看 PPT，看仓库。以下都是代码层已实现、有测试覆盖的能力，不是规划中的想法。</p>
+    <div class="grid g4" style="margin-top:24px">
+      <div class="stat"><div class="big-num">103+</div><div class="lbl">PostgreSQL 迁移脚本<br>数据模型持续演进</div></div>
+      <div class="stat"><div class="big-num">12+</div><div class="lbl">能力域模块<br>身份/运行时/网关/配额…</div></div>
+      <div class="stat"><div class="big-num" style="color:var(--gold)">30+</div><div class="lbl">架构契约文档<br>每个能力有边界说明</div></div>
+      <div class="stat"><div class="big-num" style="color:var(--accent2)">8</div><div class="lbl">迁移阶段状态机<br>可暂停可回滚</div></div>
+    </div>
+    <div class="grid g3" style="margin-top:22px">
+      <div class="card"><h3>依赖隔离</h3><p>领域契约<b>只依赖标准库</b>，可脱离 PostgreSQL / Redis / LLM 跑单测；平台依赖单独安装，缺组件给明确错误而非导入崩溃。</p></div>
+      <div class="card"><h3>渐进式演进</h3><p>不推倒重写，通过 Adapter 逐步替换运行底座；新旧并行期明确每类数据的唯一写入方，禁止双主写。</p></div>
+      <div class="card"><h3>可测试</h3><p>每个能力域有独立验收标准与集成测试：多专家协作、事件幂等、审批拦截、灰度路由、备份恢复。</p></div>
+    </div>
+    <div class="src">说明：上述为代码仓库现状盘点（agent_platform 模块与 storage/postgres 迁移）；功能完整度与生产就绪项以逐模块验收为准</div>
+  </section>
+
+  <!-- 16 实际界面 -->
+  <section class="slide" id="s16">
+    <div class="eyebrow">实际界面</div>
+    <h2>运行中的底座控制台（真实截图）</h2>
+    <p class="lead">装好的底座，客户看到的是这样一个可操作的控制台：Agent 在册、任务运行、成本、成功率、系统概览一目了然。你们可贴自己的品牌、按客户行业定制界面。</p>
+    <div class="imgwrap">
+      <div class="shot">
+        <img src="assets/shots/overview_wide.jpg" alt="底座控制台真实截图">
+        <div class="cap">底座控制台概览（真实运行界面）：左侧主导航（工作台 / 3D 办公室 / 任务中心 / 智能体协作 / 工作流 / 成本分摊 / 系统管理）；顶部为今日运行、总成本、成功率、平均耗时等实时指标；中央为系统概览趋势与最近动态。界面采用 3D 概念视觉背景。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 17 行动号召 -->
+  <section class="slide" id="s17">
+    <div class="eyebrow">下一步</div>
+    <h2>一起把它卖出去</h2>
+    <p class="lead" style="font-size:20px;margin-top:12px">你们有客户和行业 know-how，我们有跑得起来的 AI 原生底座。<br>装上就是新产品，交付可复制，企业级就绪 —— <b style="color:var(--gold)">老板，这笔账划算吗？</b></p>
+    <div class="grid g3" style="margin-top:30px">
+      <div class="card"><h3>为什么是现在</h3><p>企业 AI 落地需求爆发，缺的是可跑生产的底座。自研要 6–12 人月，买现成的<b>省时间、省成本、快交付</b>。</p></div>
+      <div class="card"><h3>为什么是我们</h3><p>底座<b>已在跑</b>：多租户、工具安全、配额、可观测、扩展、迁移，12+ 能力域，不是 demo，是生产级。</p></div>
+      <div class="card"><h3>怎么开始</h3><p>选一个你最有把握的行业场景 → 我们一起把行业 Agent 做成 Extension → <b>第一个客户跑通</b>，再复制。</p></div>
+    </div>
+    <div style="margin-top:30px;padding:20px 26px;background:var(--panel);border:1px solid var(--line);border-radius:12px;border-left:4px solid var(--gold)">
+      <div style="font-size:17px;color:var(--ink);font-weight:600">一句话总结</div>
+      <div style="font-size:15px;color:var(--muted);margin-top:6px;line-height:1.6">
+        一套<b style="color:var(--ink)">可私有部署、多租户、工具安全、可灰度迁移</b>的 AI 原生底座。<br>
+        你们加行业 Agent、找客户、做交付；我们提供底座、升级和技术支持。<br>
+        <b style="color:var(--gold)">平台 + 行业 Agent = 客户要的解决方案</b> —— 这门生意，能不能做？
+      </div>
+    </div>
+    <div style="margin-top:24px">
+      <span class="tag">底层能力</span><span class="tag">迁移能力</span><span class="tag tag-gold">扩展能力</span><span class="tag tag-purple">渠道共赢</span>
+    </div>
+    <div class="footer"><span>AI 原生运行底座 · 渠道合作</span><span>期待与您合作</span></div>
+  </section>
+
+</div>
+<div class="nav">
+  <button onclick="go(-1)">‹</button>
+  <span class="pg" id="pg">1 / 17</span>
+  <button onclick="go(1)">›</button>
+</div>
+<script>
+const slides=[...document.querySelectorAll('.slide')];
+let i=0;
+function show(){slides.forEach((s,k)=>s.classList.toggle('active',k===i));document.getElementById('pg').textContent=(i+1)+' / '+slides.length;}
+function go(d){i=Math.max(0,Math.min(slides.length-1,i+d));show();}
+document.addEventListener('keydown',e=>{
+  if(['ArrowRight','PageDown',' '].includes(e.key))go(1);
+  if(['ArrowLeft','PageUp'].includes(e.key))go(-1);
+  if(e.key==='Home'){i=0;show()} if(e.key==='End'){i=slides.length-1;show()}
+});
+show();
+</script>
+</body>
+</html>
