@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import inspect
 import json
+import os
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
@@ -24,6 +25,50 @@ from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus, Wor
 
 class WorkbenchTaskError(ValueError):
     """Invalid task request or Agent runtime configuration."""
+
+
+def _env_seconds(name: str, default: float, *, minimum: float = 1.0) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value >= minimum else default
+
+
+# 执行超时分三层，避免把所有任务拍成同一个固定值：
+#   1. 单任务显式声明 input.timeout_seconds（大任务自己说了算）
+#   2. 默认值 WORKBENCH_EXEC_TIMEOUT_SEC
+#   3. 硬上限 WORKBENCH_MAX_EXEC_TIMEOUT_SEC，防止误配永久占用 worker
+MIN_EXEC_TIMEOUT_SEC = 30.0
+DEFAULT_EXEC_TIMEOUT_SEC = _env_seconds("WORKBENCH_EXEC_TIMEOUT_SEC", 600, minimum=MIN_EXEC_TIMEOUT_SEC)
+MAX_EXEC_TIMEOUT_SEC = _env_seconds("WORKBENCH_MAX_EXEC_TIMEOUT_SEC", 3600, minimum=60)
+
+
+def resolve_exec_timeout(record: Mapping[str, Any] | None) -> float:
+    """按任务解析执行超时；显式值优先，并夹在 [30, 上限] 内。"""
+    if record:
+        for source in (record.get("input"), record):
+            if not isinstance(source, Mapping):
+                continue
+            raw = source.get("timeout_seconds")
+            if raw is None:
+                continue
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                return max(MIN_EXEC_TIMEOUT_SEC, min(value, MAX_EXEC_TIMEOUT_SEC))
+    return DEFAULT_EXEC_TIMEOUT_SEC
+
+
+def resolve_batch_timeout() -> float:
+    """批量兜底必须长于单任务上限，否则会先被批量超时掐断。"""
+    configured = _env_seconds("WORKBENCH_BATCH_TIMEOUT_SEC", 0, minimum=0)
+    return max(MAX_EXEC_TIMEOUT_SEC + 120, configured)
 
 
 def _json_value(value: Any) -> Any:
@@ -880,37 +925,41 @@ class RunExecutionWorker:
         # LangGraph executor 可能无限等待（模型/provider 无响应时）。
         # 加硬超时让 worker 不被一个 Run 永久卡死，超时后返回 "timed_out"
         # 由外层 run_store.save_failure 登记死信。
-        # 本地调试环境给 30s，够 LangGraph 完成一轮 tool-call + 模型推理。
-        _EXEC_TIMEOUT_SEC = 30
+        # 超时按任务区分：input.timeout_seconds > 默认值 > 硬上限。
+        exec_timeout = resolve_exec_timeout(record)
+        # timeout_seconds 只是调度元数据，不传给 LangGraph，避免混进模型上下文。
+        graph_input = record.get("input") or {}
+        if isinstance(graph_input, Mapping):
+            graph_input = {key: value for key, value in graph_input.items() if key != "timeout_seconds"}
 
         if snapshot.status == RunStatus.QUEUED:
             try:
                 result = await asyncio.wait_for(
                     resolved.execute(
-                        tenant_id=tenant_id, run_id=run_id, input=record.get("input") or {},
+                        tenant_id=tenant_id, run_id=run_id, input=graph_input,
                         session_context=session_context,
                     ),
-                    timeout=_EXEC_TIMEOUT_SEC,
+                    timeout=exec_timeout,
                 )
             except asyncio.TimeoutError:
                 await self.run_store.save_failure(
                     tenant_id, run_id,
-                    error=f"executor timed out after {_EXEC_TIMEOUT_SEC}s in LangGraph.execute()",
+                    error=f"执行超时：LangGraph.execute() 超过 {exec_timeout:g} 秒未返回",
                 )
                 return "timed_out"
         else:
             try:
                 result = await asyncio.wait_for(
                     resolved.resume_claimed(
-                        snapshot=snapshot, input=record.get("input") or {},
+                        snapshot=snapshot, input=graph_input,
                         session_context=session_context,
                     ),
-                    timeout=_EXEC_TIMEOUT_SEC,
+                    timeout=exec_timeout,
                 )
             except asyncio.TimeoutError:
                 await self.run_store.save_failure(
                     tenant_id, run_id,
-                    error=f"executor timed out after {_EXEC_TIMEOUT_SEC}s in LangGraph.resume()",
+                    error=f"执行超时：LangGraph.resume() 超过 {exec_timeout:g} 秒未返回",
                 )
                 return "timed_out"
         current = await self.run_store.get(tenant_id, run_id)
@@ -1068,7 +1117,8 @@ class RunExecutionWorker:
 
         # 给整个 batch 套硬超时：哪怕 LangGraph 内部有同步阻塞，
         # 这一层也能强制放弃，让 worker 循环继续下一轮 claim。
-        _BATCH_TIMEOUT_SEC = 45
+        # 批量兜底必须长于单任务上限，否则会先被批量掐断。
+        _BATCH_TIMEOUT_SEC = resolve_batch_timeout()
         try:
             outcomes = await asyncio.wait_for(
                 asyncio.gather(
