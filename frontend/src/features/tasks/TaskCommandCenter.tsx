@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, apiClient } from '@/lib/api'
@@ -434,7 +434,7 @@ export function TaskCommandCenter() {
                   const agentId = resolveAgentId(t)
                   const agentLabel = agentNameOf(agentId) ?? agentId ?? '—'
                   const runId = resolveRunId(t)
-                  const cells: Record<TaskListColumnKey, React.ReactNode> = {
+                  const cells: Record<TaskListColumnKey, ReactNode> = {
                     title: (
                       <>
                         <Link to={`/operations/tasks/${encodeURIComponent(t.task_id)}`}>
