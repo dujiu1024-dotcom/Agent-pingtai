@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Bot, CheckCircle2, Clock3, Workflow, Wallet, Play, Sparkles, Sun, Moon } from 'lucide-react'
+import { ArrowRight, Bot, Workflow, Wallet, Play, Sparkles, Sun, Moon } from 'lucide-react'
 import { apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { formatDuration, resolveAgentId, resolveTaskTitle, unwrapList } from '@/features/tasks/task-model'
