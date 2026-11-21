@@ -871,3 +871,6 @@ function Sparkline({
     </svg>
   )
 }
+
+// Stable feature name used by the dedicated operations dashboard route.
+export { Dashboard as OperationsDashboard }
