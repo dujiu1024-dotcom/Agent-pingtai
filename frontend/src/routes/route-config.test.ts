@@ -27,6 +27,13 @@ describe('route configuration', () => {
     ])
   })
 
+  it('registers the OperationsDashboard route with its owning issue', () => {
+    const route = getAllRoutes(false).find((item) => item.path === '/operations/dashboard')
+    expect(route?.pageId).toBe('OPS-DASHBOARD')
+    expect(route?.owner).toBe('#797')
+    expect(matchRoutes(getAllRoutes(false).map((item) => ({ path: item.path })), '/operations/dashboard')?.[0].route.path).toBe('/operations/dashboard')
+  })
+
   it('uses the frozen dashboard route as the default route target', () => {
     expect(
       getAllRoutes(false).find((route) => route.pageId === 'WS-OVERVIEW')?.path,
