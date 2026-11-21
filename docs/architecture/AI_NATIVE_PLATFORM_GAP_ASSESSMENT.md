@@ -1581,3 +1581,233 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 ### 30.12 本轮结论与验证状态
 
 七个中心均找到部分后端/数据/前端或测试基础，不应笼统判为未建设；但多数尚未形成完整产品化闭环。P0 集中在异步执行身份复核、审计 DB 权限和升级/恢复门禁；P1 集中在资产安全发布、组织治理、评测 Gate、成本账单对账和企业 HA/灾备；P2 集中在伙伴市场、数字员工、人工标注、部门资源成本和统一运维门户。本节为源码静态审查增量，没有执行本地测试、构建或真机验证；测试文件存在不代表通过。本节只完成 C1 产品中心 8～14，不代表 Issue #848 全部验收完成；Issue 保持 Open，PR 保持 Draft。
+
+
+## 31. C2 专项审查：八个新增产品中心
+
+### 31.1 审查范围、基线与方法
+
+本节严格对应 Issue #848 第三节“八个新增产品中心”清单，仅覆盖：企业系统集成、企业数据接入与数据治理、AI API 开放平台、AI 资产生命周期、安全执行与沙箱、AI 服务等级与可靠性、AI 人才与开发者生态、企业 AI 运营与价值分析。代码基线为审查时最新 main：`b622d5fc9eab1c79c28dcaa13367eec3c138679d`（2026-11-21）。按领域服务、API Router、生产装配、前端路由、迁移/测试和部署契约进行静态追踪。文件/路由/测试存在不等于端到端运行或生产验收。
+
+**任务性质说明：** Issue #848 明确是 Code Audit / Gap Assessment，禁止在本 Issue 内直接实现目标产品功能。因此本轮实现的是审查报告增量，不修改产品业务代码。当前会话没有仓库本地 checkout 和完整集成服务，未执行本地 pytest/前端构建；CI 以本轮 PR 提交触发的 GitHub Actions 为准。真实系统、外部 SaaS、真实服务器及真机验证均按调度要求跳过。
+
+### 31.2 八个中心成熟度总览
+
+| Issue 清单 | 产品中心 | 成熟度 | 核心结论 |
+|---|---|---|---|
+| C2-01 | 企业系统集成中心 | 部分实现 | 有租户范围 Connector 管理、凭据引用、有限 Provider、同步游标和撤销清理；尚非覆盖企业应用的完整集成平台 |
+| C2-02 | 企业数据接入与数据治理中心 | 部分实现 | 有知识文档摄取、连接器同步、解析/切块/索引、生命周期/删除/迁移治理；缺统一数据目录、元数据/血缘/质量和强制分类分级闭环 |
+| C2-03 | AI API 开放平台 | 基础已完成（API 契约基础）；部分实现（开放平台产品） | 有 v1 API、稳定错误、幂等/分页/版本/限流中间件和身份边界；缺开发者门户、API Key/应用订阅/产品化配额、完整 OpenAPI/SDK 交付与开发者运营 |
+| C2-04 | AI 资产生命周期管理中心 | 基础已完成（部分资产）；部分实现（统一生命周期） | Registry 有 Agent/Workflow/Tool/Skill/模型配置的版本、发布/停用和不可变快照；Prompt/Connector/知识资产统一导入导出、依赖图、环境晋级/回滚未形成统一闭环 |
+| C2-05 | AI 安全执行与沙箱中心 | 基础已完成（OCI 隔离组件）；待验证（生产运行链路） | OCI Runner 有镜像摘要固定、无网络/无主机挂载、只读根文件系统、能力裁剪和资源/超时限制；生产 Runtime 接线、文件/凭据/高风险动作审批的全链路证据不足 |
+| C2-06 | AI 服务等级与可靠性管理中心 | 部分实现 | 有容量/证书健康探针、指标、告警、重试/恢复等分散机制；缺正式 SLA/SLO、错误预算、自动熔断/多模型切换、故障复盘与影响分析产品闭环 |
+| C2-07 | AI 人才与开发者生态中心 | 部分实现（资产/发布者信任基础）；待验证（开发者产品） | 有 Registry、Extension Publisher Trust Key、Skill/Tool/MCP 管理入口；缺 SDK、开发者门户、伙伴工作区、认证/兼容测试和生态协作运营 |
+| C2-08 | 企业 AI 运营与价值分析中心 | 部分实现（AI 使用成本/质量）；尚未建设（业务价值分析） | 有成本质量页面、Usage Ledger/按模型/项目/Agent 统计及 CSV 导出；缺人工节省工时、流程周期、业务产出、收益归因与 ROI 口径 |
+
+### 31.3 C2-01 企业系统集成中心
+
+**代码证据与入口**
+
+- `agent_platform/control_plane/data_connectors.py`：`DataConnection` 保存 tenant、provider、secret_ref、scopes、cursor、version、last_synced_at、revoked_at、last_error、project_id；`DataConnectorService` 提供连接创建、凭据保存/轮换、分页同步、请求排队、撤销和清理任务。
+- `agent_platform/connectors/providers.py`：`PROVIDER_LABELS` 和 `build_default_providers()` 注册 PostgreSQL、MySQL、S3、飞书、Notion、通用 HTTP JSON Provider。Provider 通过分页游标获取数据；SQL Provider 使用受限 scope/table/query 解析，HTTP Provider 走通用 JSON 接口。
+- `agent_platform/api/connectors.py`：`create_connectors_router` 暴露 `/api/platform/v1/connectors`，含 Provider 列表、连接 CRUD 查询、创建、凭据轮换、同步和 revoke；请求要求 Principal、connector/project 授权并核对 repository tenant；密钥内容不通过连接视图返回。
+- `agent_platform/control_plane/postgres_connectors.py`：PostgreSQL Connector Repository/Sink 持久化连接和同步数据；`agent_platform/production.py` 建立按 tenant 缓存的 DataConnectorService、生产 Provider、同步/清理 Worker 接线。
+- 前端路由 `frontend/src/routes/route-config.ts` 注册 `/admin/connectors`（ADM-CONNECTORS），说明 PostgreSQL/MySQL/S3/飞书/Notion/HTTP 数据源配置与同步入口。已确认路由，不据此推断 UI 的所有操作均已运行验收。
+- 测试：`tests/test_connectors_api.py`、`tests/test_data_connectors.py`；前者用 FastAPI TestClient + 内存 Repository/Fake Provider 验证注册/撤销/授权，后者用 FakeProvider 验证分页同步、游标和撤销清理逻辑。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| 企业系统连接配置与凭据 | 基础已完成 | tenant/project 授权、secret_ref、轮换基础存在；OAuth 授权码/回调、凭据到期刷新和多凭据账户运营待验证 |
+| 连接器目录/适配对象 | 部分实现 | 当前明确 Provider 为 PostgreSQL、MySQL、S3、飞书、Notion、HTTP JSON；未见 ERP、CRM、OA、HR、MES、PLM、财务系统专用适配器清单 |
+| 数据同步/游标/状态 | 基础已完成 | 分页游标、last_synced_at、last_error、队列同步和本地有限页同步存在；增量变更捕获、全量/增量策略、schema drift 和冲突处理待验证 |
+| 消息队列/事件系统集成 | 部分实现 | 平台内部 Outbox/Redis Streams/Webhook 存在；尚未证明作为企业外部 MQ（Kafka/RabbitMQ 等）的通用源/目标 Connector |
+| 自定义连接器开发与发布 | 部分实现 | Provider Protocol 可扩展；缺 SDK/脚手架、Connector Manifest、兼容性认证、签名发布和伙伴分发流程 |
+| 连接器健康/运营监控 | 部分实现 | 有 status、last_error、sync cursor 等字段；连接延迟、吞吐、积压、限流、配额、健康探测与告警联动未形成统一运营台 |
+
+**风险与建议。** 通用 HTTP Provider 不等于完成任意 SaaS 系统适配；连接配置成功不代表业务语义映射和生产同步质量合格。P1 补齐 OAuth/增量同步/schema drift/连接器健康与重放验收；P2 建 Connector SDK/Manifest、ERP/CRM/OA 等优先系统适配和伙伴认证。保留现有 DataConnectorService/Provider/Sink，不再造第二套连接框架。
+
+### 31.4 C2-02 企业数据接入与数据治理中心
+
+**代码证据与入口**
+
+- `agent_platform/knowledge/service.py`：`KnowledgeService` 管理 Collection/Document、文档解析、清洗切块、Embedding、索引、检索与 Connector 增量同步；`sync_connector()` 使用 connector cursor 追踪变更，处理新增/更新/删除文档。
+- `agent_platform/knowledge/ingestion.py`：定义 DocumentParser/OCRProvider Protocol、PlainTextParser、HTMLParserAdapter、OptionalParserAdapter、OCRParserAdapter、ParserRegistry。模块明确说明默认不启用 OCR engine、网络调用或文档上传；OCR 依赖 Host 提供实现。
+- `agent_platform/knowledge/connectors.py`：定义 KnowledgeConnector、ConnectorDocument/ConnectorPage 等同步契约；与 Control Plane 的 DataConnector Provider 属于不同层次，需避免把两套接口视为统一数据目录。
+- `agent_platform/data_governance/lifecycle.py`：DataOwnership、RetentionPolicy、DeletionCoordinator、DeletionLedger、MigrationBatch/Repository 提供数据归属、保留策略、跨系统删除编排和迁移批次校验/切换/回滚机制。
+- `agent_platform/api/connectors.py`、知识库/目录 API 及前端 `/admin/connectors`、`/operations/knowledge-bases` 提供接入和知识库产品入口；`/operations/knowledge-graph` 是知识图谱入口，不等同企业数据目录/血缘中心。
+- 测试线索：`tests/test_data_connectors.py`、`tests/test_connectors_api.py`、`tests/test_data_lifecycle_governance.py`、`tests/test_data_lifecycle_audit_migration.py`、知识库服务/摄取/检索相关测试。当前只确认测试源码存在，本轮未执行。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| 多源接入/同步 | 基础已完成（限定源） | Connector 支持六类 Provider；未形成企业全系统数据源覆盖和统一连接器目录 |
+| 解析/清洗/结构化 | 部分实现 | 文本/HTML/可选解析器、切块与索引存在；OCR 默认未启用，PDF/Office/表格/邮件等解析覆盖及质量未验证 |
+| 数据目录/元数据 | 部分实现 | Knowledge Collection/Document 有基础元数据；缺跨业务数据资产目录、Owner、Schema、标签、敏感级别和发现检索统一面 |
+| 数据质量检查 | 部分实现 | 有解析校验、同步状态和图谱抽取置信度/冲突治理；缺通用质量规则、完整性/唯一性/及时性 SLA、质量评分和异常工单 |
+| 分类分级/敏感识别 | 待验证 | lifecycle 有 retention/ownership；未证实自动 PII/敏感数据识别、标签传播、字段级访问策略覆盖所有数据面 |
+| 数据血缘 | 部分实现 | Knowledge/Graph 有来源引用和血缘线索；缺 source→transform→dataset→embedding/index→Agent/Run 的统一可查询 lineage 图 |
+| 保留/删除/迁移 | 基础已完成（框架） | DeletionCoordinator/ledger 和 migration batch 有机制；所有外部系统、向量、缓存、日志、对象存储删除回执和一致性尚未实测 |
+| 数据接入运营 | 部分实现 | Connector last sync/error/status；缺目录治理工作流、质量告警、血缘影响分析、数据责任人和审批流程 |
+
+**风险与建议。** 数据接入不等于数据治理完成；Knowledge Index 不是企业数据资产目录；存在 RetentionPolicy 也不能证明所有存储副本均按策略删除。P0/P1：建立跨源数据分类/敏感标记和 tenant/project ACL 传递，验证删除传播；P1 建统一 Metadata/Lineage/Quality Contract；P2 建数据目录、质量工单和数据 Owner 治理工作台。保留 KnowledgeService、DataConnector、Lifecycle Governance 的分层边界，统一契约而不是合并成单体。
+
+### 31.5 C2-03 AI API 开放平台
+
+**代码证据与入口**
+
+- `agent_platform/api/contract.py`：定义 `API_V1_PREFIX=/api/platform/v1`、支持版本、稳定错误结构、分页上限、租户/查询绑定的 HMAC cursor、幂等键格式/作用域、弃用与 Sunset Header、请求 ID 和限流 Key。
+- `PublicApiContractASGIMiddleware`：按 IP/credential/route 维度限流；`ApiV1CompatibilityMiddleware` 负责版本兼容契约。该模块提供公共 HTTP API 的协议底座，不自动等于完整开发者平台。
+- `agent_platform/api/app.py`：`create_platform_app` 装配身份中间件、API contract middleware 和各业务 Router；业务 API 以 `/api/platform/v1` 为主。生产组合根 `agent_platform/production.py` 负责连接生产服务。
+- `agent_platform/api/public_contract.py` 提供另一组 API 版本/错误响应契约辅助代码；与 `api/contract.py` 存在职责重叠，需明确统一权威实现及迁移策略。
+- 已有 API 路由覆盖 Connectors、Registry、Knowledge、Runs、Sessions、Webhooks、Graph、Quotas、Evaluation 等业务能力；身份认证依赖 Identity/Service Identity middleware。
+- 本轮未取得专用 Developer Portal、API Application/Consumer、API Key 签发/轮换/撤销、OAuth Client/Scope 管理、SDK 包发布、OpenAPI 文档站和开发者沙箱的完整证据。FastAPI 生成 OpenAPI schema（如启用）不能替代版本化 API 产品、SDK 与支持承诺。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| Agent/Workflow/知识/任务/会话 API | 基础已完成 | 多个真实业务 Router 存在；各 API 的外部稳定性、覆盖率、契约兼容测试需逐域验收 |
+| Webhook | 基础已完成 | 订阅、签名、投递、重试、死信/回放已有机制；开发者自助订阅/事件 Schema 文档待补 |
+| API 版本/错误/分页/幂等 | 基础已完成 | v1 契约、cursor、Idempotency-Key 和兼容中间件存在；`public_contract.py` 与 `contract.py` 双套契约需要归并 |
+| 认证/权限/限流 | 部分实现 | Identity/Service Identity 与限流中间件存在；面向外部应用的 API Key 生命周期、OAuth scope、按应用配额和账单未证实 |
+| OpenAPI/SDK/示例 | 待验证 | 本轮未找到可验收的 OpenAPI 文档站、Python/TypeScript SDK 发布物、版本兼容矩阵与示例工程 |
+| 开发者门户/调用分析 | 尚未找到有效产品证据 | 无专属开发者注册、应用管理、密钥管理、回调测试、用量分析和支持工单入口证据 |
+
+**风险与建议。** API First 的代码底座已有，但 API 可访问不等于 API 对外可运营。P1 建立统一 OpenAPI 生成/校验与契约测试，补 API Client/Scope/Key/Quota 生命周期和审计；P2 发布 SDK、开发者门户、沙箱凭据和开发者调用分析。先合并两套 API contract helper 的职责，再扩展产品面。
+
+### 31.6 C2-04 AI 资产生命周期管理中心
+
+**代码证据与入口**
+
+- `agent_platform/control_plane/registry.py`：Registry 支持 agent、workflow、tool、skill、model_provider、model_template、routing_policy 类型；定义 draft/published/disabled/deprecated 状态，版本化 Definition，敏感凭据禁止明文写入资产定义。
+- `agent_platform/api/registry.py`：`create_registry_router` 提供租户授权下的资产列表、创建版本、读取、publish、disable 等 API；Repository tenant 必须与 Principal tenant 匹配。
+- `tests/test_registry_service.py` 验证创建、发布、active resolve 与不可变快照；`tests/test_registry_listing_api.py` 使用内存 Repository 验证列表和 tenant scope。前端 `frontend/src/components/crud/RegistryCatalogPage.tsx` 对接 Registry API，路由提供资产目录入口。
+- Prompt 使用独立 Prompt Registry/Experiment/Rollout；Connector 有独立连接生命周期；Extension Publisher Trust Key 有独立注册/轮换/撤销；Knowledge Collection/Index 有独立版本和治理语义。当前并非全部统一纳入一个 Asset Lifecycle API。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| Agent/Workflow/Skill/Tool/模型资产注册 | 基础已完成 | Registry 覆盖列出的类型及租户授权；模型实例/凭据/供应商目录的全生命周期需与 Model Admin 对齐 |
+| 统一版本/发布/停用 | 基础已完成（Registry 范围） | 版本不可变、active snapshot、publish/disable 存在；跨 Prompt/Connector/Knowledge 的统一发布记录未证实 |
+| 依赖关系/兼容性 | 部分实现 | Definition 可以引用其他资产；未见统一依赖锁、语义版本约束、循环依赖检测和升级影响分析 |
+| 环境晋级/回滚 | 部分实现 | Prompt rollout 和部署 rollout 有独立机制；Registry 全资产跨 dev/test/prod 晋级、审批、回滚和审计未形成统一链路 |
+| 导入/导出/备份迁移 | 待验证 | 未发现统一资产包 manifest、签名导入导出、冲突处理、跨租户迁移和 dry-run |
+| 内部共享/外部授权 | 部分实现 | tenant scope 与 Publisher Key 有基础；部门/团队/企业/伙伴/公共共享策略和授权撤销传播未统一 |
+
+**风险与建议。** 当前是多套专用 Registry/Lifecycle 并存，不能把资产目录 CRUD 当成完整 ALM。P1 建立统一 Asset Manifest、依赖锁、签名/扫描、环境晋级与撤销协议；P2 补跨租户导入导出、伙伴分发、兼容性矩阵和版本差异 UI。优先整合元数据/生命周期契约，保留各资产专用运行存储。
+
+### 31.7 C2-05 AI 安全执行与沙箱中心
+
+**代码证据与入口**
+
+- `agent_platform/sandbox/oci.py`：`OciSandboxConfig` 要求镜像 digest 固定；Docker 模式要求 user namespace remap 已验证；支持 memory/cpu/pids/tmpfs/timeout/output/stdin 上限。
+- `OciSandboxRunner.build_command()` 使用 `--network=none`、无主机挂载、只读根文件系统、drop capabilities、no-new-privileges、资源限制等容器参数；`run()` 通过 timeout 终止超时进程并限制输出。
+- `tests/test_sandbox_oci.py` 验证镜像必须 digest pin、禁止凭据环境变量、资源参数和隔离命令约束；属于配置/命令构造层测试，不等于真实 Docker/Podman 运行隔离验证。
+- `agent_platform/production.py` 当前已读生产组装路径没有明确展示 OciSandboxRunner 的注入/实例化。未能证明所有 Agent Tool/Code Execution/Connector 调用均经过该 Runner。
+- 相关策略审批、Identity、SecretStore、Tool Effect 审计等机制可复用，但不等于沙箱内文件、网络出口、凭据代理和高风险业务动作已统一闭环。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| 代码执行隔离 | 基础已完成（OCI 组件） | OCI 命令具备强隔离参数；真实 runtime 启动、宿主机配置、userns、seccomp/AppArmor 等部署验证未执行 |
+| 网络/文件隔离 | 基础已完成（命令契约） | network none、无主机挂载、只读 rootfs；受控文件交换、临时工作区、出口代理与数据防泄漏流程待补 |
+| CPU/内存/PID/时限限制 | 基础已完成 | 配置校验与命令参数存在；并发配额、租户级资源池和运行时强制审计待验证 |
+| 凭据托管/最小权限 | 部分实现 | SecretRef/SecretStore 基础存在；凭据是否能在沙箱外按单次 Tool 授权注入且不暴露给代码执行需验收 |
+| 高风险操作确认/审批 | 部分实现 | Policy/Approval 可复用；未证实所有高风险 Tool 副作用强制绑定审批 ID、范围/额度/时效并在执行瞬间复核 |
+| 异常终止/执行审计 | 部分实现 | Timeout/kill 和工具审计基础存在；强制停止传播、残留进程/容器清理、审计产物和故障取证未整体验收 |
+
+**风险与建议。** 安全沙箱是安全边界，不能以单元测试验证命令参数替代真实容器安全验收。P0 先确认 Runner 被生产执行路径强制调用、凭据不进入不可信进程、失败时 fail closed；P1 在隔离 CI 环境进行逃逸/网络/文件/资源故障注入；P2 建沙箱策略模板和运维工作台。真机/真实服务器测试按调度要求跳过，本轮不宣称已验收隔离强度。
+
+### 31.8 C2-06 AI 服务等级与可靠性管理中心
+
+**代码证据与入口**
+
+- `agent_platform/observability/operational_health.py`：`OperationalHealthMonitor` 使用 host-supplied capacity probes 和 certificate-expiry probes，按 warning/critical 阈值生成健康状态。
+- `agent_platform/observability/alerts.py`、`alert_policy.py`、`alert_store.py`、`alert_dispatch.py`、`alert_worker.py` 提供阈值告警、抑制/摘要、持久化、投递和 Worker；前端 `/operations/alerts` 有告警入口。
+- `agent_platform/runtime/` 的生命周期/重试/恢复机制、Outbox/Streams 的 pending reclaim、Webhook 重试、模型路由等可作为可靠性积木；C1 已审查 Run/Trace、Alert、Deployment/Backup 机制。
+- `tests/test_operational_health.py` 使用合成 capacity/certificate probes 验证阈值；Alert、Worker、Run lifecycle、Outbox 等测试覆盖局部组件。未发现专门的 SLA/SLO 产品页面或明确的 SLO 目标/错误预算领域模型。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| 可用率/任务成功率/响应时间 SLA | 待验证 | 有健康/指标/Trace 基础；未发现 SLA 合同、SLO 目标、测量窗口、错误预算与违约报告闭环 |
+| 并发/容量/健康探测 | 基础已完成（探针机制） | 容量与证书探针存在；模型 Provider、数据库连接池、队列、租户并发等覆盖和自动扩缩容策略待验证 |
+| 超时/重试/恢复 | 部分实现 | 多个执行组件具备局部 timeout/retry/reclaim；缺统一可靠性策略、退避预算、重试风暴保护和跨组件恢复策略 |
+| 熔断/降级/备用模型切换 | 待验证 | 有模型路由和 Provider 抽象；本轮未找到可验证的统一 Circuit Breaker、故障探测、备用模型自动切换与质量/成本门槛 |
+| 故障复盘/影响分析 | 部分实现 | Trace、Alert、Audit 可提供证据；缺 Incident/Impact/Timeline/RCA/ActionItem 统一模型和复盘流程 |
+| SLA 报表/客户承诺 | 尚未建设（当前证据范围） | 未发现按租户/服务套餐计算 SLI/SLO、可用率月报、赔付/例外和服务承诺管理页面 |
+
+**风险与建议。** 有健康探针和告警不等于有 SLA；重试机制也不等于自动恢复可靠性。P1 定义统一 SLI/SLO（可用率、成功率、延迟分位、队列时延、恢复时间）和错误预算；P1 补 Provider 熔断/降级与备用模型策略并在模拟故障下验证；P2 建 Incident/RCA/影响分析与租户级 SLA 报表。
+
+### 31.9 C2-07 AI 人才与开发者生态中心
+
+**代码证据与入口**
+
+- `agent_platform/control_plane/registry.py` 与 `api/registry.py` 为 Agent/Workflow/Tool/Skill/Model 配置提供资产注册/发布基础；`frontend/src/components/crud/RegistryCatalogPage.tsx` 提供内部资产目录 UI。
+- `agent_platform/extensions/publishers.py` 的 `TrustedPublisherKeyRegistry` 支持 Publisher Key 注册、轮换、撤销和解析；`agent_platform/api/extension_publishers.py` 提供受授权的 Publisher Key API 并记录审计。
+- 前端 `/admin/extensions` 路由描述为扩展发布者公钥登记/轮换/撤销；`/admin/tools`、`/admin/skills`、`/admin/connectors` 提供内部工具/技能/连接器管理入口。
+- 本轮未找到完整 Developer Portal、伙伴租户工作区、SDK 仓库/发布流程、认证考试/徽章、开发者应用注册、贡献协作/收益结算页面的可运行证据。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| SDK/开发工具包 | 待验证 | 有内部 API/Provider/Registry 扩展点；未找到稳定的 Python/TypeScript SDK、CLI、脚手架和版本兼容承诺 |
+| 插件/Connector/Skill 规范 | 部分实现 | Registry kind、Provider Protocol、Extension trust key 有基础；缺统一 Manifest、权限声明、事件契约和兼容性规范 |
+| 文档/示例/模板 | 部分实现 | 仓库文档和内置模板存在；缺面向外部开发者的版本化文档站、教程、示例仓库和变更日志 |
+| 伙伴开发空间 | 尚未找到有效产品证据 | 未发现伙伴组织/开发者团队、沙箱租户、应用凭据、协作权限与提交审核工作台 |
+| 组件认证/兼容测试 | 部分实现 | Publisher Key 信任和 Registry 发布基础；缺自动兼容矩阵、漏洞扫描结果、签名包审核和认证状态管理 |
+| 扩展市场/生态运营 | 部分实现 | 内部 Registry/Extensions 页面存在；伙伴发现、评分、安装、维护者支持和收益结算未闭环 |
+
+**风险与建议。** 发布者公钥管理解决供应链身份的一部分，不等于开发者生态平台。P1 定义 Connector/Tool/Skill/Extension Manifest、权限声明和签名验证；P2 建开发者门户、SDK/CLI、伙伴工作区、认证兼容测试和资产市场运营。优先复用 Registry/Publisher Trust，不另建并行市场。
+
+### 31.10 C2-08 企业 AI 运营与价值分析中心
+
+**代码证据与入口**
+
+- `agent_platform/quotas/usage_reporting.py`：`build_usage_report()` 对 UsageEvent 按 model/project/agent 等维度聚合；模型成本数据区分 estimated、provider_reported、reconciled 等来源，tool_calls/runtime_ms/storage_bytes 作为资源用量，不应直接视为货币成本。
+- `agent_platform/observability/cost.py` 提供显式模型价格卡；`agent_platform/quotas/run_ledger.py`、`token_estimator.py`、`pricing.py` 提供执行用量与价格计算基础。
+- 前端 `frontend/src/features/quality-cost/CostQualityCenter.tsx` 对接 `/api/platform/v1/quotas/usage.csv`；路由 `/workspace/quality-cost` 是成本/质量聚合入口。该页面可支持 AI 用量与成本运营，不等同业务价值分析中心。
+- `tests/test_quota_usage_reporting.py`、`tests/test_quota_usage_reporting_api.py`、`tests/test_issue_26_a_26_02_metric_accuracy.py` 为使用量报告/计量准确性测试线索；本轮未执行。
+
+| 目标子功能 | 判断 | 现状边界/缺口 |
+|---|---|---|
+| 部门/团队使用情况 | 部分实现 | Usage 可按 project/agent/model 聚合；部门组织映射、活跃用户、使用深度和授权用户分母未完整验证 |
+| 自动化任务量/Agent 产出 | 部分实现 | Run/Task 计数与 Trace 可用作基础；需定义有效完成任务、重复/失败/人工接管和业务价值口径 |
+| 人工替代工时 | 尚未建设（当前证据范围） | 未发现人工基线工时、节省工时系数、审批/复核时间和置信区间模型 |
+| 流程周期/效率变化 | 尚未建设（当前证据范围） | 未发现跨业务系统 Case/Activity 周期指标、自动化前后对照与归因分析 |
+| 成本收益/ROI | 部分实现（成本侧）；尚未建设（收益侧） | AI Token/模型/资源成本有基础；缺收益项、收益归因、基线/对照组、ROI/回收期和财务核验 |
+| 活跃度/Agent 投入产出 | 部分实现 | 运行和成本维度存在；缺 Agent 生命周期投入、维护/人工监督成本、用户满意度、业务产出质量和综合评分 |
+
+**风险与建议。** Token/模型成本可计量不代表企业 AI 产生了业务收益；把任务数量或推理次数当成“替代人工”会夸大 ROI。P1 建统一 ValueEvent/KPI/BusinessOutcome 定义，接入业务系统的前后周期/质量/成本指标；P2 建部门/Agent 价值看板，显示基线、实际值、归因方法、置信区间和人工复核，不以单一自动化次数推断节省工时。
+
+### 31.11 C2 跨中心端到端断点
+
+| 链路 | 已有基础 | 未闭合点 | 可验收标准 |
+|---|---|---|---|
+| 企业系统→Connector→数据治理→Knowledge/Graph | DataConnector、Provider、Knowledge Sync、Graph Extraction、Lifecycle Governance | Schema 映射、分类/ACL 传播、质量规则、统一血缘与删除回执 | 同一 tenant 的数据源同步、索引、图谱、更新/删除均能追踪来源版本、权限和删除状态 |
+| API Consumer→认证→配额→业务 API→Webhook | API v1 Contract、Identity/Service Identity、Rate Limiter、业务 Routers、Webhook | API Key/应用授权、Scope、计费配额、SDK/契约兼容和外部开发者门户 | 第三方应用申请授权，最小 Scope 调用、限流/配额、幂等重试、Webhook 验签并可审计 |
+| Asset→依赖→Sandbox→Evaluation→Release | Registry、Publisher Trust、Sandbox OCI、Evaluation/Approval | 统一 Manifest、运行时强制沙箱、发布门禁和环境回滚 | 未签名/权限超界/依赖不兼容资产拒绝执行；评测/审批通过后发布且可回滚 |
+| SLA/SLO→告警→故障处理→复盘 | Operational Health、Metrics、Alert、Trace、Run/Backup | SLO/错误预算、自动降级/熔断、Incident/RCA | 注入 Provider/队列故障，验证 SLI 变化、熔断/切换、恢复和复盘记录 |
+| AI 使用成本→业务结果→ROI | Usage Ledger、CostQualityCenter、Run/Task Trace | 业务基线、价值事件、节省工时和收益归因 | 对一个业务流程建立上线前基线/上线后指标，成本与收益可追溯且人工复核 |
+
+### 31.12 C2 研发差距 Backlog（去重）
+
+| ID | 优先级 | 任务 | 依赖 | 验收标准 |
+|---|---|---|---|---|
+| C2-01-01 | P1 | Connector OAuth/凭据刷新、增量同步、Schema Drift 与连接健康 | DataConnector、SecretStore、Worker、Alert | OAuth 过期可安全刷新；增量游标/删除同步可恢复；schema 变更进入告警/人工处理 |
+| C2-01-02 | P2 | 企业应用 Connector SDK/Manifest 与 ERP/CRM/OA/HR/MES 适配 | Registry、Publisher Trust、DataConnector | 至少两类真实系统通过认证测试；权限声明/签名/版本兼容可验证 |
+| C2-02-01 | P0 | 数据分类/敏感识别与 ACL 标签跨存储传播 | Identity、Knowledge、Connector、Graph、Storage | 敏感标签/租户权限在 DB/向量/文件/缓存/导出/日志传播；跨租户负向测试通过 |
+| C2-02-02 | P1 | 统一数据目录、元数据、质量规则和端到端血缘 | Connector、Knowledge、Graph、Lifecycle | source→transform→index→Agent/Run lineage 可查询；质量失败有责任人/告警 |
+| C2-02-03 | P1 | 数据删除/保留策略跨系统执行与证据报告 | Lifecycle Governance、各 Storage Adapter | 删除协调器收齐所有系统回执；失败可重试/人工接管；保留策略有审计证据 |
+| C2-03-01 | P1 | API Consumer/Key/Scope/Quota 生命周期与统一 OpenAPI 契约 | Identity、Service Identity、Quota、API Contract | 第三方应用可申请/轮换/撤销凭据；Scope/租户隔离/限流/计量负向测试通过 |
+| C2-03-02 | P2 | Developer Portal、SDK、示例和 API 版本支持策略 | API Contract、Registry、Webhook | SDK 与 OpenAPI 自动一致；示例可运行；弃用/Sunset 和兼容性报告可验证 |
+| C2-04-01 | P1 | 统一 Asset Manifest、依赖锁、签名扫描与环境晋级 | Registry、Prompt、Connector、Knowledge、Publisher Trust | 所有资产有版本/依赖/权限/签名元数据；不兼容或未授权资产不能晋级/执行 |
+| C2-04-02 | P2 | 资产导入导出、跨租户共享、回滚与生命周期门户 | Identity、Registry、Deployment、Audit | dry-run 可报告冲突；导入后版本/权限完整；撤销和回滚可审计 |
+| C2-05-01 | P0 | OCI Sandbox 接入所有不可信代码/工具执行路径 | Runtime Harness、Tool Registry、SecretStore、Approval | 生产执行必须经过 fail-closed Sandbox；沙箱内无平台凭据/宿主挂载/网络；超限强制终止 |
+| C2-05-02 | P1 | 沙箱策略模板、资源配额、文件交换和安全事件审计 | Sandbox、Quota、Audit、Storage | 每次执行记录镜像摘要/策略/资源/退出原因；文件交换扫描且租户隔离 |
+| C2-06-01 | P1 | 统一 SLI/SLO、错误预算和租户级 SLA 报表 | Metrics、Trace、Alert、Tenant、Quota | 可计算成功率/可用率/延迟分位/队列时延；预算耗尽触发告警和报告 |
+| C2-06-02 | P1 | Provider 熔断、降级、备用模型与自动恢复策略 | Model Router、Runtime、Evaluation、Quota | 故障注入触发熔断/备用路由；质量/成本门槛生效；恢复后逐步回切并审计 |
+| C2-06-03 | P2 | Incident/RCA/影响分析与故障复盘中心 | Alert、Trace、Audit、Deployment | 一次故障自动关联受影响租户/Run/任务/成本，复盘行动项有责任人与关闭证据 |
+| C2-07-01 | P1 | Connector/Tool/Skill/Extension 统一开发规范与兼容认证 | Registry、Publisher Trust、Sandbox、Evaluation | Manifest、权限声明、签名、兼容性和安全扫描形成发布门禁 |
+| C2-07-02 | P2 | 开发者/伙伴门户、SDK/CLI、沙箱空间和生态运营 | API Consumer、Registry、Organization | 伙伴能注册、开发、测试、提交审核、发布和维护资产，权限与审计闭环 |
+| C2-08-01 | P1 | 企业 AI Value Event/KPI 与业务系统结果采集 | Connector、Events、Usage Ledger、Graph | 至少一个业务流程具备上线前基线、上线后指标、成本和结果的可追溯关联 |
+| C2-08-02 | P2 | 工时节省、流程效率、ROI 和 Agent 投入产出分析 | ValueEvent、SLO、Cost、Organization | ROI 口径/假设/置信区间公开；人工复核；可按部门/Agent/流程追溯并导出 |
+
+### 31.13 C2 结论与验证状态
+
+八个中心均有可复用技术积木，但成熟度差异明显：系统集成、数据治理和资产生命周期已有可用的局部后端链路；API 开放平台有较成熟的协议底座但缺开发者产品；沙箱具备强隔离命令构造机制但生产接线和真实隔离未验收；SLA 可靠性与运营价值仍主要是基础监控/成本数据，缺服务承诺和业务收益闭环；人才生态缺完整开发者运营平台。
+
+本轮新增的是 C2 审查文档，不修改产品业务代码。测试路径用于证明测试设计覆盖，不代表测试在本轮运行通过。未执行本地 pytest、前端构建或真实 Provider/OCI/数据库集成；真机和外部资源验证按要求跳过。CI 结果必须以 C2 PR 对应 commit 的 GitHub Actions 状态回填。C2 只完成八个新增产品中心，不代表 Issue #848 全部验收完成；Issue 保持 Open，PR 保持 Draft，不合并。
