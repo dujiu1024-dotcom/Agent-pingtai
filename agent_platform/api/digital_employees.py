@@ -57,7 +57,7 @@ def create_digital_employee_router(*, resolve_principal: Callable[[], Any],
             page=page, page_size=page_size)
     @router.get("/{employee_id}")
     async def employee_detail(employee_id: str, p: Principal = Depends(principal)):
-        await _resolve(authorize_read(p))
+        await _authorize(authorize_read(p))
         result = await (await service_for(p)).get_employee(
             tenant_id=p.tenant_id, employee_id=employee_id)
         if result is None: raise HTTPException(404, "digital employee not found")
@@ -96,12 +96,12 @@ def create_team_template_router(*, resolve_principal: Callable[[], Any],
         goal: str | None = Query(default=None, max_length=120),
         page: int = Query(default=1, ge=1), page_size: int = Query(default=20, ge=1, le=100),
         p: Principal = Depends(principal)):
-        await _resolve(authorize_read(p))
+        await _authorize(authorize_read(p))
         return await (await service_for(p)).search_team_templates(
             tenant_id=p.tenant_id, query=q, goal=goal, page=page, page_size=page_size)
     @router.get("/{template_id}")
     async def template_detail(template_id: str, p: Principal = Depends(principal)):
-        await _resolve(authorize_read(p))
+        await _authorize(authorize_read(p))
         result = await (await service_for(p)).get_team_template(
             tenant_id=p.tenant_id, template_id=template_id)
         if result is None: raise HTTPException(404, "team template not found")
@@ -109,7 +109,7 @@ def create_team_template_router(*, resolve_principal: Callable[[], Any],
     @router.post("/{template_id}/install", status_code=201)
     async def install_template(template_id: str, body: TeamInstallRequest,
         p: Principal = Depends(principal)):
-        await _resolve(authorize_install(p, body.scope))
+        await _authorize(authorize_install(p, body.scope))
         service = await service_for(p)
         template = await service.get_team_template(tenant_id=p.tenant_id, template_id=template_id)
         if template is None or template.get("status") != "published":
