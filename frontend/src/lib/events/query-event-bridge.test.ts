@@ -2,8 +2,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 
 import { connectQueryEvents } from './query-event-bridge'
-import type { SseEventBus } from './event-bus'
-import type { EventListener, PlatformEvent } from './types'
+import type { EventBusPort, EventListener, PlatformEvent } from './types'
 
 const event: PlatformEvent<{ status: string }> = {
   event_id: 'evt-1',
@@ -22,7 +21,7 @@ function createTestBus() {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-  } as unknown as SseEventBus
+  } satisfies EventBusPort
   return {
     bus,
     emit: (item: PlatformEvent) => {
