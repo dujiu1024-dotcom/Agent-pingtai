@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from agent_platform.identity.models import Principal
 
+
 async def _resolve(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
