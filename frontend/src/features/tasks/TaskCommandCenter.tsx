@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, apiClient } from '@/lib/api'
@@ -168,6 +168,7 @@ function Card({
       {desc && <p>{desc}</p>}
       <small>
         {resolveProjectLabel(t)} · {agentLabel}
+        {t.created_by && <> · 由 {String(t.created_by).slice(0, 8)}</>}
       </small>
       {t.last_error && (
         <p className="task-blocked">错误：{t.last_error}</p>
@@ -718,7 +719,7 @@ export function TaskDetailPage() {
               key={r.run_id}
               to={`/operations/runs/${encodeURIComponent(r.run_id)}`}
             >
-              {r.run_id} · {valueLabel(r.status)} · {dt(r.started_at)} ·{' '}
+              {r.run_id} · {valueLabel(r.status)} · {dt(r.started_at ?? undefined)} ·{' '}
               {formatDuration(r.duration_ms)} → 追踪
             </Link>
           ))
@@ -942,6 +943,8 @@ export function RunTracePage() {
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [manualCallId, setManualCallId] = useState('')
   const [extraCallIds, setExtraCallIds] = useState<string[]>([])
+  const [eventPage, setEventPage] = useState(0)
+  const EVENT_PAGE_SIZE = 10
   const rq = useQuery({
     queryKey: ['run', runId],
     queryFn: () =>
@@ -970,6 +973,8 @@ export function RunTracePage() {
     () => sortEvents(eq.data ?? []) as RawRunEvent[],
     [eq.data],
   )
+  // 切换运行时回到第一页事件
+  useEffect(() => setEventPage(0), [runId])
   const pendingInterventions = useMemo(
     () => (iq.data ?? []).filter(isPendingDecision),
     [iq.data],
@@ -1049,18 +1054,115 @@ export function RunTracePage() {
       </section>
     )
   const r = rq.data
+  const durationText = (ms: number) =>
+    !Number.isFinite(ms) || ms < 0
+      ? '—'
+      : ms < 1000
+        ? `${Math.round(ms)} 毫秒`
+        : ms < 60000
+          ? `${(ms / 1000).toFixed(1)} 秒`
+          : `${Math.floor(ms / 60000)} 分 ${Math.round((ms % 60000) / 1000)} 秒`
+  const runDurationMs =
+    typeof r.duration_ms === 'number'
+      ? r.duration_ms
+      : Date.parse(String(r.updated_at ?? r.finished_at ?? '')) -
+        Date.parse(String(r.created_at ?? r.started_at ?? ''))
+  const eventTotalPages = Math.max(1, Math.ceil(events.length / EVENT_PAGE_SIZE))
+  const eventCurrentPage = Math.min(eventPage, eventTotalPages - 1)
+  const visibleEvents = events.slice(
+    eventCurrentPage * EVENT_PAGE_SIZE,
+    (eventCurrentPage + 1) * EVENT_PAGE_SIZE,
+  )
   return (
     <section className="page-content task-detail">
       <button className="button-link" onClick={() => nav(-1)}>
         ← 返回
       </button>
-      <div className="page-heading">
-        <p className="eyebrow">运行追踪 / {r.run_id}</p>
+      <div className="page-heading run-page-heading">
+        <p className="eyebrow">运行追踪 · {r.run_id.slice(0, 8)}</p>
         <h1>运行执行时间线</h1>
-        <p>
-          {valueLabel(r.status)} · 追踪 ID {r.trace_id ?? '未提供'}
-        </p>
+        <div className="run-heading-meta">
+          <span className={`run-chip s-${r.status}`}>{valueLabel(r.status)}</span>
+          <span>开始 {dt(r.created_at ?? r.started_at ?? undefined)}</span>
+          <span>更新 {dt(r.updated_at ?? r.finished_at ?? undefined)}</span>
+          <span>耗时 {durationText(runDurationMs)}</span>
+          <span>{events.length} 条事件</span>
+        </div>
       </div>
+      <section className="task-detail-panel">
+        <div className="run-controls-head">
+          <h2>事件时间线</h2>
+          <span>按发生顺序 · 每页 {EVENT_PAGE_SIZE} 条</span>
+        </div>
+        {eq.isPending ? (
+          <LoadingState />
+        ) : eq.isError ? (
+          <ErrorState
+            description={mutErr(eq.error)}
+            onRetry={() => void eq.refetch()}
+          />
+        ) : events.length ? (
+          <>
+            <ol className="run-timeline">
+              {visibleEvents.map((e, index) => {
+                const et = eventTypeOf(e)
+                const payload = payloadOf(e)
+                const from = typeof payload?.from_status === 'string' ? payload.from_status : ''
+                const to = typeof payload?.to_status === 'string' ? payload.to_status : ''
+                const globalIndex = eventCurrentPage * EVENT_PAGE_SIZE + index
+                const previous = Date.parse(String(events[globalIndex - 1]?.occurred_at ?? ''))
+                const current = Date.parse(String(e.occurred_at ?? ''))
+                const delta = Number.isFinite(previous) && Number.isFinite(current) && current >= previous ? current - previous : NaN
+                return (
+                  <li key={e.event_id} data-event-type={et}>
+                    <span className="run-tl-dot" aria-hidden="true" />
+                    <div className="run-tl-body">
+                      <div className="run-tl-head">
+                        <strong className="run-tl-type">{eventLabel(et)}</strong>
+                        <span className="run-tl-time-group">
+                          <time>{dt(e.occurred_at)}</time>
+                          {Number.isFinite(delta) && <span className="run-tl-delta">+{durationText(delta)}</span>}
+                        </span>
+                      </div>
+                      {from && to ? (
+                        <p className="run-tl-flow">
+                          <span className={`run-chip s-${from}`}>{valueLabel(from)}</span>
+                          <span className="run-tl-arrow">→</span>
+                          <span className={`run-chip s-${to}`}>{valueLabel(to)}</span>
+                        </p>
+                      ) : (
+                        <p>{e.summary ?? '无摘要'}</p>
+                      )}
+                      <small className="run-tl-meta">
+                        {e.sequence != null && <>#{e.sequence} · </>}
+                        {e.actor ?? e.actor_id ?? e.source ?? '未知来源'}
+                      </small>
+                      {e.payload != null && (
+                        <details className="run-tl-payload">
+                          <summary>事件载荷</summary>
+                          <pre>{localizedJson(e.payload)}</pre>
+                        </details>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ol>
+            {events.length > EVENT_PAGE_SIZE && (
+              <div className="run-pagination">
+                <button className="button-secondary" type="button" disabled={eventCurrentPage === 0} onClick={() => setEventPage(page => Math.max(0, page - 1))}>← 上一页</button>
+                <span>第 {eventCurrentPage + 1} / {eventTotalPages} 页 · 共 {events.length} 条</span>
+                <button className="button-secondary" type="button" disabled={eventCurrentPage + 1 >= eventTotalPages} onClick={() => setEventPage(page => page + 1)}>下一页 →</button>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState
+            title="暂无执行事件"
+            description="服务端没有返回运行事件。"
+          />
+        )}
+      </section>
       <section className="task-detail-panel run-controls">
         <div className="run-controls-head">
           <h2>运行控制</h2>
@@ -1260,51 +1362,6 @@ export function RunTracePage() {
           <EmptyState
             title="未找到工具副作用"
             description="这些调用 ID 在该运行下没有副作用记录。"
-          />
-        )}
-      </section>
-      <section className="task-detail-panel">
-        <h2>事件时间线</h2>
-        {eq.isPending ? (
-          <LoadingState />
-        ) : eq.isError ? (
-          <ErrorState
-            description={mutErr(eq.error)}
-            onRetry={() => void eq.refetch()}
-          />
-        ) : events.length ? (
-          <ol className="run-timeline">
-            {events.map((e) => {
-              const et = eventTypeOf(e)
-              return (
-                <li key={e.event_id} data-event-type={et}>
-                  <span className="run-tl-dot" aria-hidden="true" />
-                  <div className="run-tl-body">
-                    <div className="run-tl-head">
-                      <strong className="run-tl-type">{eventLabel(et)}</strong>
-                      <time>{dt(e.occurred_at)}</time>
-                    </div>
-                    <p>{e.summary ?? '无摘要'}</p>
-                    <small className="run-tl-meta">
-                      #{e.sequence ?? '—'} ·{' '}
-                      {e.actor ?? e.actor_id ?? e.source ?? '未知来源'} ·{' '}
-                      trace {e.trace_id ?? r.trace_id ?? '—'}
-                    </small>
-                    {e.payload != null && (
-                      <details className="run-tl-payload">
-                        <summary>事件载荷</summary>
-                        <pre>{localizedJson(e.payload)}</pre>
-                      </details>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-          </ol>
-        ) : (
-          <EmptyState
-            title="暂无执行事件"
-            description="服务端没有返回运行事件。"
           />
         )}
       </section>

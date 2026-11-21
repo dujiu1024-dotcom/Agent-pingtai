@@ -1,26 +1,15 @@
 name: zombie-run-pruner
 
-# Cancel stuck in_progress workflow runs automatically.
-# This prevents squash-merged branches from leaking zombie runs that
-# block CI queue capacity indefinitely.
-#
-# Triggers: every 15 minutes + manual dispatch + workflow_run (after any PR CI finishes)
+# Periodically cancel only genuinely orphaned or stale workflow runs.
+# Open PR branches are always protected from age-based cancellation.
+# This workflow is deliberately schedule/manual only: workflow_run fan-out
+# caused one extra runner job for every completed CI workflow.
 
 on:
   schedule:
-    # Every 15 minutes
-    - cron: '*/15 * * * *'
+    # Every 30 minutes; cleanup is maintenance, not part of the PR critical path.
+    - cron: '*/30 * * * *'
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - ci
-      - dependency-audit
-      - dependency-security
-      - harness-benchmark-poc
-      - platform-release-gate
-      - quality-capacity-baseline
-      - security-focused
-    types: [completed]
 
 concurrency:
   group: zombie-run-pruner
@@ -28,64 +17,69 @@ concurrency:
 
 jobs:
   prune:
-    # Don't run recursively from our own schedule/dispatch
-    if: github.event.workflow_run.workflow_name != 'zombie-run-pruner' || github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
     permissions:
       actions: write
       contents: read
 
     steps:
-      - name: Find & cancel zombie runs
+      - name: Checkout repository for remote branch checks
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Find and cancel orphaned workflow runs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MAX_AGE_MINUTES: 30
+          MAX_AGE_MINUTES: 120
           REPO: ${{ github.repository }}
         run: |
           set -u
 
-          echo "🧟 Scanning for zombie in_progress runs (>${MAX_AGE_MINUTES}min old, or deleted branch)..."
+          echo "Scanning in-progress workflow runs (age threshold: ${MAX_AGE_MINUTES}m)..."
 
-          # Collect open PR head branches — their runs are NOT zombies
-          pr_branches=$(gh pr list --state open \
+          # A live PR is authoritative: never cancel its runs based on age.
+          pr_branches=$(gh pr list --state open --limit 1000 \
             --repo "$REPO" --json headRefName -q '.[].headRefName' 2>/dev/null || true)
 
           cutoff_epoch=$(( $(date +%s) - MAX_AGE_MINUTES * 60 ))
           canceled=0
           kept=0
 
-          # Iterate all in_progress runs
           while IFS='|' read -r run_id name branch created; do
             [ -z "$run_id" ] && continue
 
-            # main/master never pruned
-            case "$branch" in main|master) continue ;; esac
+            case "$branch" in
+              main|master) kept=$((kept + 1)); continue ;;
+            esac
+
+            # Critical safety invariant: open PR branches are never pruned,
+            # even when a legitimate integration test exceeds the age limit.
+            if printf '%s\n' "$pr_branches" | grep -Fxq "$branch"; then
+              kept=$((kept + 1))
+              continue
+            fi
 
             reason=""
 
-            # Signal 1: branch deleted (not in open PRs, not a remote branch)
-            if ! echo "$pr_branches" | grep -Fxq "$branch"; then
-              if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
-                reason="branch deleted"
-              fi
-            fi
-
-            # Signal 2: age > MAX_AGE_MINUTES
-            if [ -z "$reason" ]; then
+            # A run whose branch no longer exists and has no open PR is orphaned.
+            if ! git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+              reason="branch deleted"
+            else
               ts="${created%Z}"
-              run_epoch=$(date -d "$ts" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "$ts" +%s 2>/dev/null || echo 0)
+              run_epoch=$(date -d "$ts" +%s 2>/dev/null || echo 0)
               if [ "$run_epoch" -gt 0 ] && [ "$run_epoch" -lt "$cutoff_epoch" ]; then
                 run_age=$(( ( $(date +%s) - run_epoch ) / 60 ))
-                reason="age ${run_age}m > ${MAX_AGE_MINUTES}m"
+                reason="stale run age ${run_age}m > ${MAX_AGE_MINUTES}m"
               fi
             fi
 
             if [ -n "$reason" ]; then
               if gh run cancel "$run_id" --repo "$REPO" 2>/dev/null; then
-                echo "  ✅ canceled #$run_id  $name  $branch  ($reason)"
+                echo "Canceled #$run_id  $name  $branch  ($reason)"
                 canceled=$((canceled + 1))
               else
-                echo "  ⚠️  skip  #$run_id  $name"
+                echo "Could not cancel #$run_id  $name"
               fi
             else
               kept=$((kept + 1))
@@ -94,9 +88,4 @@ jobs:
             --json databaseId,name,headBranch,createdAt \
             -q '.[] | "\(.databaseId)|\(.name)|\(.headBranch)|\(.createdAt)"' 2>/dev/null || true)
 
-          echo ""
-          if [ $canceled -eq 0 ]; then
-            echo "✅ All clear — $kept active runs, no zombies."
-          else
-            echo "🏁 Canceled=$canceled  Kept=$kept"
-          fi
+          echo "Cleanup complete: canceled=$canceled kept=$kept"

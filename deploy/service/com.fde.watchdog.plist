@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FDE 看门狗 - macOS launchd 配置
+  独立进程，负责 health check + 异常恢复
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fde.watchdog</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/longyi/FDE工程/deploy/service</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/longyi/FDE工程/deploy/service/watchdog.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>FDE_WATCHDOG_INTERVAL</key>
+        <string>30</string>
+        <key>FDE_WATCHDOG_THRESHOLD</key>
+        <string>3</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/longyi/FDE工程/deploy/service/logs/watchdog.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/longyi/FDE工程/deploy/service/logs/watchdog.stderr.log</string>
+
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>
