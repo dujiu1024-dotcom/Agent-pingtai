@@ -526,8 +526,6 @@ export const detailRoutes: PageRoute[] = [
     entityIdParam: 'eventId',
     owner: '#751',
   },
-]
-
   {
     path: '/admin/prompts/:promptId',
     pageId: 'ADM-PROMPT-DETAIL',
