@@ -1811,3 +1811,151 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 八个中心均有可复用技术积木，但成熟度差异明显：系统集成、数据治理和资产生命周期已有可用的局部后端链路；API 开放平台有较成熟的协议底座但缺开发者产品；沙箱具备强隔离命令构造机制但生产接线和真实隔离未验收；SLA 可靠性与运营价值仍主要是基础监控/成本数据，缺服务承诺和业务收益闭环；人才生态缺完整开发者运营平台。
 
 本轮新增的是 C2 审查文档，不修改产品业务代码。测试路径用于证明测试设计覆盖，不代表测试在本轮运行通过。未执行本地 pytest、前端构建或真实 Provider/OCI/数据库集成；真机和外部资源验证按要求跳过。CI 结果必须以 C2 PR 对应 commit 的 GitHub Actions 状态回填。C2 只完成八个新增产品中心，不代表 Issue #848 全部验收完成；Issue 保持 Open，PR 保持 Draft，不合并。
+
+## 32. C3 开放生态资产治理与商业协作审查
+
+### 32.1 审查范围与判定口径
+
+本节只审查 C3：**资产标准、版本兼容、信任边界、伙伴机制、许可授权**。代码基线沿用本报告记录的 `main` 基线 `b622d5fc9eab1c79c28dcaa13367eec3c138679d`；本次增量基于 C2 审查分支 `audit/issue-848-c2-eight-centers` 上已记录的同一代码快照开展，不把 C2 分支新增审查文档误认为产品实现。检查了 Extension Manifest/Package/Runtime/Publisher Trust、通用 Registry、对应 API、生产组装线索、前端路由和测试。未执行本地测试或真实外部伙伴/许可服务联调；真机及外部资源按要求跳过。
+
+成熟度继续采用 Issue #848 的六级口径。特别区分：
+- **资产可描述**：能校验一个 manifest 或 definition；
+- **资产可运行**：安装、签名验证、依赖解析和隔离调用链真实接通；
+- **资产可治理**：租户/伙伴边界、审批、撤销、审计、兼容升级能形成闭环；
+- **资产可商业化**：许可主体、授权范围、订阅/计量、到期/撤销、离线宽限和结算有明确模型与可验证执行。
+
+### 32.2 总体成熟度
+
+| C3 能力 | 成熟度 | 代码证据 | 核心结论 |
+|---|---|---|---|
+| Extension 资产描述与包安全 | 基础已完成 | `agent_platform/extensions/manifest.py`、`package.py`、`oci_runtime.py` | 有声明式 Manifest、精确依赖 pin、签名校验和安全 ZIP 检查；仅覆盖 Extension 子系统，未形成全资产统一标准 |
+| Agent/Workflow/Skill/Tool 等统一资产标准 | 部分实现 | `control_plane/registry.py`、`api/registry.py` | 有类型、版本、不可变快照和租户作用域；与 Extension Manifest、Prompt、Connector 等专用模型并存 |
+| 版本兼容和依赖治理 | 部分实现 | `manifest.py`、`manager.py`、`lifecycle.py` | Extension 具备精确版本依赖、循环依赖/安装计划和升级回滚；平台 API 兼容仅支持精确版本相等，缺兼容范围与跨资产矩阵 |
+| 发布者身份与供应链信任 | 基础已完成（Extension 范围） | `extensions/publishers.py`、`extensions/postgres.py`、`api/extension_publishers.py`、`oci_runtime.py` | 发布者公钥注册/轮换/撤销、租户/扩展绑定、有效期和签名验证存在；不代表所有 Registry 资产都经过该信任链 |
+| 伙伴组织/工作区/认证/协作 | 尚未找到有效端到端证据 | 前端 `route-config.ts` 与 Registry/Publisher API | 找到内部资产和发布者密钥管理入口；未找到伙伴组织入驻、沙箱工作区、应用协作、认证/评级、提交审核与伙伴生命周期闭环 |
+| 许可/订阅/授权/商业权益 | 尚未找到有效实现证据 | 当前检查的 Registry、Publisher、Extension 生命周期与 API | 有权限授权回调、租户作用域和配额基础，但未见资产许可合同、License Grant/Entitlement、套餐/席位/用量权益、到期/宽限/离线激活或收益分配闭环 |
+
+### 32.3 资产标准：多套局部标准，尚无统一生态契约
+
+**已存在的 Extension 标准。**
+- `agent_platform/extensions/manifest.py` 的 `ExtensionManifest` 定义 `extension_id/version/platform_api/permissions/dependencies/entrypoint/dependency_versions`；Extension ID、SemVer 字面格式、权限标识、依赖唯一性、自依赖和安全相对入口均有校验。
+- `dependency_versions` 必须与 `dependencies` 一一对应，并要求每个依赖精确 pin 到 `x.y.z`；这避免浮动依赖，但没有表达版本范围、可替代依赖或平台能力特性。
+- `agent_platform/extensions/package.py` 对 ZIP 路径穿越、符号链接/特殊文件、重复/大小写冲突路径、加密条目、文件数、解压体积和压缩比进行拒绝；签名摘要与解压内容可绑定。
+- `agent_platform/extensions/oci_runtime.py` 以平台控制的发布者公钥验证签名，归档内容不提供可信公钥；运行入口交给 OCI Sandbox Runner。
+
+**通用 Registry 标准。**
+- `agent_platform/control_plane/registry.py` 的 `_KINDS` 当前包括 agent、workflow、tool、skill、model_provider、model_template、routing_policy；`RegistryVersion` 记录 tenant/kind/item/version/definition/status/actor/time。
+- Definition 递归拒绝明文密钥类字段；版本创建、发布、active resolve、disable、rollback（回滚产生新版本）和快照不可变机制存在。
+- `agent_platform/api/registry.py` 提供租户授权下的版本创建/发布/回滚/差异/读取/禁用/active API；前端 `RegistryCatalogPage.tsx` 是内部目录入口。
+
+**缺口。** Extension Manifest 与通用 Registry Definition 是两种并行的资产描述契约；Prompt、Connector、Knowledge 又各有专用生命周期。未见统一的跨资产 `AssetManifest`/包格式，能够共同描述 owner/publisher、租户可见性、许可条款、权限声明、依赖、平台能力、数据分类、来源、签名、SBOM、漏洞扫描、兼容范围、升级策略和撤销状态。Registry 中的引用字段不等于可解析依赖图，不能据此推断跨资产依赖闭环已完成。
+
+**判断：部分实现。** 保留 Extension Manifest 与专用领域模型作为执行/领域层实现；向上抽取统一生态元数据和发布契约，不应把所有资产强行改成同一种运行时格式。
+
+### 32.4 版本兼容：局部严格，跨产品兼容性不足
+
+- Extension Manifest 的 `version` 与 `platform_api` 都校验为三段 SemVer 数字格式；`validate_platform_compatibility()` 当前使用 `manifest.platform_api == platform_api_version` 精确相等判断。因此它不是 SemVer 范围兼容（例如 `^1.2`），平台小版本升级也可能要求扩展同步重发。
+- Extension 的每个依赖必须精确版本 pin；`extensions/lifecycle.py` 与 `manager.py` 提供安装计划、依赖顺序、依赖缺失/冲突检查、升级版本递增校验和回滚补偿。该机制覆盖 Extension 依赖，不覆盖 Agent/Workflow/Skill/Tool/Prompt/Connector/Knowledge 的统一依赖锁。
+- `ExtensionLifecycleManager.upgrade()` 检查替换版本高于已安装版本、校验平台 API 兼容、依赖计划、权限和审计，再执行 Runtime 升级；失败时尝试用旧 artifact 补偿。
+- 通用 Registry 版本号为按资产递增的整数版本；definition 可引用其他资产 ID/版本，但没有证据证明它会在发布时构建完整依赖锁、做循环/范围兼容检查或给出影响面报告。
+- Registry 的 rollback 会以历史 Definition 创建新版本；这属于资产定义回退，不等于运行环境/数据库 Schema/外部依赖的原子回滚。
+
+**关键缺口。**
+1. 统一平台 API 能力版本和兼容策略（major/minor/patch、弃用窗口、最低/最高支持版本）。
+2. 跨资产依赖图、lockfile、传递依赖解析、冲突报告、循环依赖、升级影响分析。
+3. 兼容性矩阵与自动认证测试：平台版本 × Runtime 版本 × Asset 类型 × Provider/Tool API × 数据 Schema。
+4. dev/test/prod 环境晋级时固定资产 digest、依赖锁和配置快照；升级前 dry-run，失败后可验证回滚。
+5. 对已发布资产的 breaking change、撤回/安全禁用和消费者通知建立策略。
+
+**判断：部分实现。** Extension 子系统的版本治理有较强基础；平台全资产兼容性仍未形成统一可验收能力。
+
+### 32.5 信任边界：发布者信任链存在，但覆盖范围与执行门禁待验证
+
+**正向证据。**
+- `TrustedPublisherKeyRegistry` 强制注入持久化 Repository，不提供生产内存 fallback；校验 tenant、extension、publisher、key ID、PEM 公钥、有效期。
+- `PostgresTrustedPublisherKeyRepository` 使用 `(tenant_id, extension_id, key_id)` 作用域持久化公钥；轮换在同一事务中插入新 key 并撤销旧 key；撤销记录 actor。
+- `create_extension_publisher_router()` 从认证 Principal 读取 tenant/user，调用管理授权器，并要求 Audit Writer；注册、轮换、撤销动作写审计。
+- `SandboxedExtensionRuntime._trusted_key()` 在安装和每次调用时重新解析平台可信 key，检查 extension/tenant 绑定、key ID、not-before、expiry 和 revoked；密钥撤销对已安装包的后续调用可生效。
+- `verify_extension_signature()` 使用 Ed25519 detached signature 验证包摘要；ZIP 安全检查避免常见路径穿越/符号链接/压缩炸弹风险；运行时按 manifest permissions 逐项授权，审计请求/成功/失败/超时，并调用 Sandbox Runner。
+
+**边界与风险。**
+- 上述签名链主要由 Extension Runtime 使用；通用 Registry 的 Agent/Workflow/Skill/Tool Definition 发布 API 没有在该路由中强制验证发布者签名或 provenance。不能把 Extension 已签名等同于全平台资产供应链可信。
+- Publisher Key 的管理 API 以租户内授权回调管理密钥，未见平台级伙伴身份、组织证明、双人复核、密钥托管/硬件保护、发布审批、密钥泄露响应和全局撤销分发策略。
+- Extension manifest permissions 的逐项授权存在，但权限字符串的权威目录、风险等级、敏感能力分级、用户授权提示和版本升级权限差异确认未形成统一证据。
+- `SandboxedExtensionRuntime` 的存在不证明生产所有扩展调用都必经该 Runtime；本轮没有真实生产部署/执行链路验证。C2 对沙箱接线的待验证结论仍然有效。
+- 审计 API 在审计写失败时返回 503，避免成功响应但无审计；仍需核验管理操作和运行事件的事务/补偿一致性及审计不可篡改留存。
+
+**判断：基础已完成（Extension 局部）；全资产信任治理部分实现/待验证。** P0 应将签名、来源证明、权限审查和撤销门禁纳入所有可分发资产的统一发布/安装/执行路径，并以负向测试证明绕过路径不可用。
+
+### 32.6 伙伴机制：具备发布者密钥管理，不具备伙伴经营闭环证据
+
+当前可复用的组织能力是 Identity Principal/Tenant、Registry 资产目录和 Publisher Trust Key。前端 `frontend/src/routes/route-config.ts` 存在 `/admin/extensions`（扩展发布者公钥管理）、`/admin/tools`、`/admin/skills`、`/admin/connectors` 等内部管理入口；没有发现可验证的独立伙伴工作区或外部开发者门户入口。
+
+未找到有效代码证据证明以下能力已经形成端到端流程：
+- 伙伴主体入驻：企业/组织验证、合作协议、联系人、伙伴类型（ISV/集成商/渠道/行业专家）和状态生命周期；
+- 伙伴工作区：成员邀请、角色、项目、测试租户、沙箱凭据、配额、提交队列和审计；
+- 伙伴资产运营：资产提交、审核、签名、兼容测试、灰度发布、下架、版本维护、漏洞响应与消费者通知；
+- 认证体系：开发者/伙伴认证、组件安全等级、兼容认证、有效期和撤销；
+- 商业协作：客户线索/项目报备、交付责任、联合支持、服务等级、续约与争议处理；
+- 结算分配：合同/订单/订阅关联、分成规则、账单、发票、对账和退款。
+
+**判断：尚未建设（伙伴产品闭环）。** 不建议另造一套组织系统；应复用 Identity/Organization，将 Partner、PartnerMembership、PartnerAgreement、PartnerWorkspace、PartnerAssetSubmission 等作为生态领域对象，并与资产发布审批和许可订单关联。
+
+### 32.7 许可授权：技术权限和资源配额不等于商业 License
+
+当前代码中可确认的是：
+- Registry API 通过 Principal、租户绑定 Repository 和 Authorizer 控制资产读写/发布权限。
+- Extension Runtime 通过 manifest permission 回调决定具体扩展权限，并对调用主体做 tenant 匹配。
+- 平台 Quota/Usage 能力（本报告 C1/C2 章节）可用于运行量和成本计量。
+- Publisher Trust Key 记录发布者公钥有效期/撤销状态；该有效期是签名密钥信任期限，不是软件/资产商业许可证。
+
+本轮检查的上述核心模块未见下列商业许可模型或可运行证据：
+- License/Entitlement 主体、资产/产品/版本、租户/实例/环境、席位/调用量/功能范围和地域等授权维度；
+- 订阅计划、订单、合同、付款状态、续费、退款、试用和权益变更；
+- 许可证签名、离线激活文件、机器/实例绑定、吊销列表、时钟回拨防护、离线宽限和公共控制平面不可用时的本地授权缓存；
+- 许可证校验点（安装/启用/运行/调用/扩容）与审计、宽限策略、超限降级及恢复；
+- 伙伴销售归属、渠道折扣、分润、服务费和财务对账。
+
+因此不能把 RBAC/Policy、API Rate Limit、Quota、Publisher Key expiry 解释成商业 License。混合部署目标要求企业断网后已授权核心能力可继续运行，许可校验必须采用可离线验证、可审计、可过期/撤销且不依赖公共控制平面实时可用的设计；本轮没有找到这样的实现证据。
+
+**判断：尚未建设（商业许可与伙伴结算）；权限/配额基础可复用。** 许可系统应作为独立商业权益域，与 Identity/Quota/Registry/Deployment 对接，不能混用授权策略与计量配额字段。
+
+### 32.8 跨领域关键断点与建议架构
+
+| 生命周期环节 | 已有能力 | 断点 | 建议的统一约束 |
+|---|---|---|---|
+| 创建/打包 | Extension Manifest、通用 Registry Definition、Prompt/Connector 等专用模型 | 元数据字段和包格式不统一 | 定义 Asset Manifest v1，包含 asset type/id/version/digest/owner/publisher/visibility/license/permissions/dependencies/platform compatibility/provenance |
+| 提交/签名 | Extension Ed25519 签名、Publisher Key Registry | 非 Extension 资产未证实强制签名；来源/构建证明缺失 | 所有外部分发资产签名；CI 生成 SBOM、构建来源证明、扫描摘要并纳入签名声明 |
+| 兼容/依赖 | Extension exact pins 和安装计划 | 跨资产依赖图和兼容矩阵缺失 | 生成不可变 lockfile；对 API/Runtime/Schema/权限做兼容测试与影响分析 |
+| 审核/发布 | Registry publish、Extension 授权/审计 | 伙伴审核、双人审批、风险策略、自动安全门禁缺失 | 发布状态机：draft→submitted→scanning→review→approved→published→deprecated/revoked |
+| 安装/运行 | Extension tenant-bound key lookup、permission check、OCI Sandbox | 全资产门禁与生产强制接线未证实 | 安装与每次执行校验 tenant、license、signature、permission、compatibility、revocation |
+| 商业授权 | Quota/Usage 和租户权限 | License/Entitlement、订阅/订单、离线授权、分润缺失 | License Grant 签名离线验证；运行量由 Quota 计量，商业权益由 Entitlement 判定 |
+| 伙伴经营 | Publisher Key、内部 Registry 页面 | Partner Workspace、客户项目/交付、认证、支持和结算缺失 | 复用 Organization/Identity；建立伙伴关系、合同、项目、提交、服务和结算领域对象 |
+
+### 32.9 C3 研发差距 Backlog（只列本项）
+
+| ID | 优先级 | 任务 | 依赖 | 验收标准 |
+|---|---|---|---|---|
+| C3-01 | P1 | 建立跨资产 Asset Manifest/Package 标准及 schema 版本策略 | Registry、Extension Manifest、Prompt/Connector/Knowledge | Agent/Workflow/Skill/Tool/Connector/Prompt/Extension 均可表达 owner、publisher、visibility、license、permissions、dependencies、digest、compatibility；Schema 可演进且旧包有明确迁移策略 |
+| C3-02 | P0 | 建立全资产签名、来源证明和信任策略门禁 | Publisher Trust、Registry Publish、Sandbox、Audit | 任一外部资产缺签名/来源证明/可信发布者/权限声明/扫描证明均拒绝发布或安装；密钥撤销后已安装资产无法继续执行；负向测试覆盖跨租户和伪造发布者 |
+| C3-03 | P1 | 统一版本兼容、依赖锁和兼容认证矩阵 | Asset Manifest、Runtime/API version、Evaluation | 支持 SemVer 兼容范围与精确锁定；发布前解析传递依赖、冲突和循环；对平台/API/Runtime/Schema 组合自动认证；升级影响报告可复现 |
+| C3-04 | P1 | 建立伙伴主体、工作区和资产提交审核流程 | Identity/Organization、Registry、Publisher Trust | 伙伴组织可入驻、验证、邀请成员、获得隔离测试空间、提交签名资产、查看审核状态；撤销伙伴后其凭据/发布权限/未发布提交同步失效 |
+| C3-05 | P1 | 建立 License/Entitlement/Subscription 核心权益模型 | Tenant、Registry、Quota、Deployment、Audit | 支持资产/产品/租户/实例/环境/席位/用量权益；授权可签名、审计、续期、撤销和宽限；配额只计量，权益服务判定能否使用 |
+| C3-06 | P1 | 混合部署离线许可证验证与撤销同步 | License Grant、企业运行平面、公共控制平面 | 断网/公共控制平面不可用时，已授权能力在有效期/宽限内持续运行；过期/撤销按明确策略处理；防时钟回拨、实例克隆和重放；本地校验无需回传企业业务数据 |
+| C3-07 | P2 | 伙伴认证、商业项目、收益分配和结算运营 | Partner Workspace、License/Order、Usage Ledger | 支持伙伴等级/证书、客户项目报备、联合交付责任、订阅分成、账单对账和退款；财务结果可追溯到订单/资产/使用记录 |
+
+### 32.10 风险排序
+
+- **P0 供应链信任边界不统一：** Extension 有签名信任链，但通用 Registry 资产发布/安装未证明受同等门禁约束。外部资产若绕过签名、来源和权限审查，可能将恶意或越权定义引入企业运行面。
+- **P1 商业许可缺失：** 混合部署下没有可验证的离线 License/Entitlement，可能导致公共控制平面断连时误停合法企业服务，或授权范围无法被强制执行。
+- **P1 版本兼容碎片化：** Extension exact API version 与其他 Registry 版本并存，缺少跨资产依赖锁和兼容矩阵，升级容易出现运行时不兼容。
+- **P1 伙伴边界缺失：** Publisher Key 不是伙伴身份；缺少伙伴租户、工作区和提交审核流程，无法明确合作方责任、客户资产归属和权限撤销。
+- **P2 商业运营缺口：** 伙伴认证、订单、分润和服务支持未形成数据闭环，生态难以规模化经营。
+
+### 32.11 C3 结论与验证状态
+
+C3 的现状不是“没有生态基础”：Extension 已有较完整的声明式 Manifest、依赖精确 pin、包安全检查、Ed25519 签名、公钥信任注册/轮换/撤销、租户绑定、权限检查、审计和 OCI 执行适配；通用 Registry 也有租户作用域、不可变版本、发布/停用/回滚和内部目录入口。
+
+但这些能力尚未组成企业级开放生态的统一治理与商业闭环。最关键的差距是：**Extension 安全标准没有覆盖所有可分发资产；版本兼容没有跨资产统一契约；伙伴身份与商业 License/Entitlement 尚未找到有效实现证据。** 应先统一资产发布与供应链门禁，再建设伙伴协作和商业权益；保留现有 Extension Runtime/Publisher Trust、Registry、Identity、Quota 作为底座，避免重复建设。
+
+本轮仅新增 C3 审查文档，不修改产品业务代码。测试文件 `tests/test_extension_publishers.py`、`tests/test_extension_package.py`、`tests/test_registry_service.py` 为代码中已有的覆盖线索，本轮未执行本地 pytest；不宣称测试通过。CI 结果以本次 PR commit 对应 GitHub Actions 为准。未执行真实伙伴入驻、外部签名服务、许可证服务器或离线设备验证；真机和外部资源按调度要求跳过。C3 仅完成开放生态资产治理与商业协作审查，不代表 Issue #848 全部验收完成；Issue 保持 Open，PR 不合并。
