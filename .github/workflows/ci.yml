@@ -50,6 +50,7 @@ jobs:
           -v
 
   test:
+    needs: [lint, typecheck]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
