@@ -64,7 +64,7 @@ class MarketplaceGovernanceTests(unittest.IsolatedAsyncioTestCase):
         await self.submit()
         await self.service.review(tenant_id="tenant-a", asset_id="sales-assistant",
             version="1.0.0", reviewer_id="reviewer-a", approved=True, reason="reviewed")
-        async def unsafe(**kwargs): return {"passed": True, "network_disabled": False, "host_mounts": True}
+        async def unsafe(**kwargs): return {"passed": True, "network_disabled": False, "host_mounts": True, "credentials_injected": False}
         self.service.sandbox_trial = unsafe
         with self.assertRaises(MarketplaceGateError):
             await self.service.trial(tenant_id="tenant-a", asset_id="sales-assistant",
