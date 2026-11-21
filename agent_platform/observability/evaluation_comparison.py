@@ -47,7 +47,7 @@ class EvaluationComparisonReport(TypedDict):
 class EvaluationComparisonRepository(Protocol):
     async def list_variant_runs(self, *, tenant_id: str, dataset_id: str,
                                 dataset_version: int, limit: int) -> list[dict[str, Any]]: ...
-    async def save_variant_report(self, *, tenant_id: str, report: Mapping[str, object]) -> str: ...
+    async def save_variant_report(self, *, tenant_id: str, report: EvaluationComparisonReport) -> str: ...
     async def load_variant_report(self, *, tenant_id: str, report_id: str) -> dict[str, Any]: ...
 
 
@@ -168,7 +168,7 @@ class EvaluationComparisonService:
                 "eval_run_id": item["eval_run_id"], "model_key": item["model_key"],
                 "delta_to_recommended": deltas,
             })
-        report = {
+        report: EvaluationComparisonReport = {
             "report_id": str(uuid4()), "tenant_id": tenant_id,
             "dataset_id": dataset_id, "dataset_version": dataset_version,
             "variant_count": len(variants), "metric_names": metric_names,
@@ -296,7 +296,7 @@ class PostgresEvaluationComparisonRepository:
             rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
-    async def save_variant_report(self, *, tenant_id: str, report: Mapping[str, object]) -> str:
+    async def save_variant_report(self, *, tenant_id: str, report: EvaluationComparisonReport) -> str:
         payload = json.dumps(dict(report), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         connection = await self._connect()
         async with connection:
