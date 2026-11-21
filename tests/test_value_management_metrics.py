@@ -122,3 +122,16 @@ def test_empty_usage_ledger_does_not_infer_zero_model_or_tool_cost():
     assert result["total_ai_cost_usd"] is None
     assert result["cost_status"] == "model_usage_missing"
     assert result["tool_cost_status"] == "usage_missing"
+
+
+def test_estimated_model_cost_without_price_card_is_unknown_not_zero():
+    result = aggregate_value_costs(
+        [event("unpriced", source="estimated", cost="0", model="unknown-model")],
+        tenant_id="tenant-a", run_ids=["run-1"],
+        tool_cost_lines=[],
+    )
+    assert result["model_cost_usd"] is None
+    assert result["model_cost_by_key_usd"]["unknown-model"] is None
+    assert result["unpriced_model_events"] == 1
+    assert result["total_ai_cost_usd"] is None
+    assert result["cost_status"] == "model_cost_incomplete"
