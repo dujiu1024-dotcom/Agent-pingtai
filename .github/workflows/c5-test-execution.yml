@@ -52,7 +52,8 @@ jobs:
             -v
 
       - name: Run full unittest suite with branch coverage (Python 3.11)
-        if: matrix.run-full-suite
+        # Run the full suite even when focused checks fail; keep the job failed via the focused step.
+        if: always() && matrix.run-full-suite
         shell: bash
         run: |
           set +e
