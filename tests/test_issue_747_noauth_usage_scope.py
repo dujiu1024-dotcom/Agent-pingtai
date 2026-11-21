@@ -74,6 +74,37 @@ class NoAuthUsageScopeTests(unittest.TestCase):
             ["event-user-a", "event-user-b"],
         )
 
+    def test_project_and_agent_are_explicit_analytics_filters(self):
+        store = TenantUsageStore()
+        app = FastAPI()
+        app.include_router(create_quota_reporting_router(quota_store=store))
+
+        @app.middleware("http")
+        async def no_auth_identity(request, call_next):
+            request.state.identity = type("Identity", (), {
+                "principal": Principal(
+                    user_id="anon", tenant_id="default", session_id="no-auth",
+                    email="", display_name="Anonymous",
+                )
+            })()
+            setattr(request.state, "identity.authenticated", False)
+            return await call_next(request)
+
+        response = TestClient(app).get(
+            "/api/platform/v1/quotas/usage/summary",
+            params={
+                "start": "2026-11-16T00:00:00+00:00",
+                "end": "2026-11-18T00:00:00+00:00",
+                "project_id": "project-b",
+                "agent_id": "agent-b",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["events"], 1)
+        self.assertEqual(body["by_project"]["project-b"]["events"], 1)
+        self.assertEqual(body["by_agent"]["agent-b"]["events"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
