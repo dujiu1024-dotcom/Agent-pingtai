@@ -88,6 +88,27 @@ class EnterpriseAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sandbox.calls[0]["network_isolated"])
         self.assertEqual(result.sandbox_id, "sandbox-trial-1")
 
+    async def test_trial_must_pass_before_activation(self):
+        service = EnterpriseAdmissionOrchestrator(policy=policy(), approvals=Approval(),
+                                                   sandbox=Sandbox(), audit=Audit())
+        trial = await service.admit(report(score=25), publisher_is_external=True,
+                                    permissions=frozenset())
+        passed = await service.complete_trial(trial, sandbox_passed=True,
+                                              evidence_digest="sha256:trial-pass")
+        failed = await service.complete_trial(trial, sandbox_passed=False,
+                                              evidence_digest="sha256:trial-fail")
+        self.assertEqual(passed.state, LifecycleState.ACTIVE)
+        self.assertEqual(failed.state, LifecycleState.QUARANTINED)
+
+    async def test_trial_completion_rejects_non_trial_state(self):
+        service = EnterpriseAdmissionOrchestrator(policy=policy(), approvals=Approval(),
+                                                   sandbox=Sandbox(), audit=Audit())
+        active = await service.admit(report(), publisher_is_external=False,
+                                     permissions=frozenset())
+        with self.assertRaises(ValueError):
+            await service.complete_trial(active, sandbox_passed=True,
+                                         evidence_digest="sha256:invalid")
+
     async def test_pending_or_rejected_approval_prevents_sandbox(self):
         for status, expected in ((ApprovalStatus.PENDING, LifecycleState.PENDING_APPROVAL),
                                  (ApprovalStatus.REJECTED, LifecycleState.REJECTED)):
