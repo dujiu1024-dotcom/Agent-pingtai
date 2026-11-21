@@ -15,6 +15,7 @@ CORE_SUITES = (
     "tests.test_event_consumer",
     "tests.test_outbox_worker",
     "tests.test_alert_notifications",
+    "tests.test_issue_665_s_665_01_e2e",
 )
 
 
