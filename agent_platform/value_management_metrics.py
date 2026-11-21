@@ -132,13 +132,14 @@ def aggregate_value_costs(
     tool_lines = tuple(tool_cost_lines) if tool_cost_lines is not None else None
     tool_cost: Decimal | None = None
     tool_breakdown: dict[str, dict[str, Any]] | None = None
-    if tool_lines is not None and (tool_lines or tool_calls == 0):
-        tool_cost = Decimal("0")
-        tool_breakdown = {}
+    tool_line_calls = 0
+    if tool_lines is not None:
+        raw_breakdown: dict[str, dict[str, Any]] = {}
         for line in tool_lines:
             if not isinstance(line, ToolCostLine):
                 raise TypeError("tool_cost_lines must contain ToolCostLine instances")
-            item = tool_breakdown.setdefault(line.tool_key, {
+            tool_line_calls += line.call_count
+            item = raw_breakdown.setdefault(line.tool_key, {
                 "calls": 0, "cost_usd": Decimal("0"), "sources": {}, "pricing_versions": [],
                 "evidence_refs": [],
             })
@@ -156,8 +157,12 @@ def aggregate_value_costs(
                 "pricing_versions": sorted(value["pricing_versions"]),
                 "evidence_refs": sorted(value["evidence_refs"]),
             }
-            for key, value in sorted(tool_breakdown.items())
+            for key, value in sorted(raw_breakdown.items())
         }
+        if tool_line_calls == tool_calls:
+            tool_cost = sum((line.cost_usd for line in tool_lines), Decimal("0"))
+    elif tool_calls == 0:
+        tool_cost = Decimal("0")
 
     model_total = sum(model_costs.values(), Decimal("0")) if selected else None
     total_cost = model_total + tool_cost if model_total is not None and tool_cost is not None else None
@@ -178,7 +183,10 @@ def aggregate_value_costs(
         "model_cost_by_source_usd": {key: str(value) for key, value in sorted(source_costs.items())},
         "tool_cost_by_key": tool_breakdown,
         "tool_cost_status": (
-            "provided" if tool_lines else "not_applicable" if tool_calls == 0 else "not_priced"
+            "not_applicable" if tool_lines is None and tool_calls == 0
+            else "not_priced" if tool_lines is None or not tool_lines
+            else "provided" if tool_line_calls == tool_calls
+            else "partial_or_mismatched"
         ),
         "cost_status": (
             "complete" if total_cost is not None
