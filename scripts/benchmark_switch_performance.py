@@ -332,6 +332,19 @@ async def async_main(args: argparse.Namespace) -> dict[str, Any]:
         result["platform_redis_queue"] = await run_redis_queue_probe(
             redis_url, workers=args.workers, operations=args.workers * args.operations,
         )
+    postgres = result["platform_postgres_pool"]
+    if postgres.get("status") == "measured":
+        sqlite_run = result["legacy_sqlite"]["run_lifecycle_transaction"]["ops_per_second"]
+        sqlite_blackboard = result["legacy_sqlite"]["blackboard_write_read"]["ops_per_second"]
+        postgres_run = postgres["metrics"]["run_lifecycle_transaction"]["ops_per_second"]
+        postgres_blackboard = postgres["metrics"]["blackboard_write_read"]["ops_per_second"]
+        result["comparison"]["diagnostic_only"] = {
+            "postgres_vs_sqlite_run_throughput_ratio": round(postgres_run / sqlite_run, 4)
+            if sqlite_run else None,
+            "postgres_vs_sqlite_blackboard_qps_ratio": round(postgres_blackboard / sqlite_blackboard, 4)
+            if sqlite_blackboard else None,
+            "note": "Diagnostic only: CI container storage profiles are not production parity evidence.",
+        }
     return result
 
 
