@@ -4,6 +4,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { initializePlatform, login } from '@/lib/auth/session'
 import { useAuth } from '@/providers/AuthProvider'
+import { LoadingState } from '@/components/States'
 
 function AuthLayout({
   title,
@@ -48,6 +49,7 @@ export function LoginPage() {
   if (!enabled) {
     return <Navigate to="/workspace/overview" replace />
   }
+  if (status === 'loading') return <div className="bootstrap-screen"><LoadingState label="正在校验登录会话" /></div>
   if (status === 'authenticated') {
     const from = (location.state as { from?: string } | null)?.from
     return <Navigate to={from || '/workspace/overview'} replace />
@@ -135,6 +137,7 @@ export function InitializePage() {
   if (!enabled) {
     return <Navigate to="/workspace/overview" replace />
   }
+  if (status === 'loading') return <div className="bootstrap-screen"><LoadingState label="正在校验登录会话" /></div>
   if (status === 'authenticated') {
     return <Navigate to="/workspace/overview" replace />
   }
