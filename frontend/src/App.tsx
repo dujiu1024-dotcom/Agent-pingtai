@@ -90,7 +90,7 @@ const BatchExecutionPage = lazy(() => import('@/features/batches/BatchExecutionP
 const RunReplayPage = lazy(() => import('@/features/replay/RunReplayPage').then((m) => ({ default: m.RunReplayPage })))
 const RagPlaygroundPage = lazy(() => import('@/features/rag/RagPlaygroundPage').then((m) => ({ default: m.RagPlaygroundPage })))
 const ExtensionPublishersPage = lazy(() => import('@/features/extensions/ExtensionPublishersPage').then((m) => ({ default: m.ExtensionPublishersPage })))
-const PromptLifecyclePage = lazy(() => import('@/features/prompts/PromptLifecyclePage').then((m) => ({ default: m.PromptLifecyclePage })))
+const PromptRegistryPage = lazy(() => import('@/features/prompts/PromptRegistryPage').then((m) => ({ default: m.PromptRegistryPage })))
 const AuditCenterPage = lazy(() => import('@/features/audit/AuditCenterPage').then((m) => ({ default: m.AuditCenterPage })))
 const AuditEventDetailPage = lazy(() => import('@/features/audit/AuditEventDetailPage').then((m) => ({ default: m.AuditEventDetailPage })))
 const ApprovalDetailPage = lazy(() => import('@/features/approvals/ApprovalDetailPage').then((m) => ({ default: m.ApprovalDetailPage })))
@@ -212,6 +212,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                   <PageView
                     route={route}
                     authEnabled={config.auth.enabled}
+                    capabilities={config.capabilities}
                   />
                 }
               />
@@ -517,10 +518,20 @@ function Lazy({ children }: { children: React.ReactNode }) {
 function PageView({
   route,
   authEnabled,
+  capabilities,
 }: {
   route: PageRoute
   authEnabled: boolean
+  capabilities: string[]
 }) {
+  if (route.capability && !capabilities.includes(route.capability)) {
+    return (
+      <ModeRestrictedState
+        title="当前实例未启用此能力"
+        description={`服务端启动配置未声明 ${route.capability}，此入口不会尝试调用对应 API。`}
+      />
+    )
+  }
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -575,7 +586,7 @@ function PageView({
   if (route.path === '/operations/replay') return <Lazy><RunReplayPage /></Lazy>
   if (route.path === '/operations/alerts') return <Lazy><AlertsPage /></Lazy>
   if (route.path === '/admin/extensions') return <Lazy><ExtensionPublishersPage /></Lazy>
-  if (route.path === '/admin/prompts') return <Lazy><PromptLifecyclePage /></Lazy>
+  if (route.path === '/admin/prompts' || route.path === '/admin/prompts/:promptId') return <Lazy><PromptRegistryPage /></Lazy>
   if (route.path === '/admin/audit') return <Lazy><AuditCenterPage /></Lazy>
   if (route.path === '/operations/memories') return <Lazy><MemoryGovernancePage /></Lazy>
   if (route.path === '/operations/evaluation/insights') return <Lazy><EvaluationInsightsPage /></Lazy>
