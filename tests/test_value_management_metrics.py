@@ -13,12 +13,12 @@ from agent_platform.value_management_metrics import (
 
 def event(event_id, run_id="run-1", *, tenant="tenant-a", model="model-x",
           source="estimated", input_tokens=100, output_tokens=50,
-          cost="0.25", tool_calls=2):
+          cost="0.25", tool_calls=2, price_card_version="price-v1"):
     return UsageEvent(
         event_id=event_id, tenant_id=tenant, run_id=run_id, model_key=model,
         input_tokens=input_tokens, output_tokens=output_tokens,
         cost_usd=Decimal(cost), occurred_at=datetime(2026, 11, 22, tzinfo=timezone.utc),
-        tool_calls=tool_calls, source=source,
+        tool_calls=tool_calls, source=source, price_card_version=price_card_version,
     )
 
 
@@ -126,7 +126,7 @@ def test_empty_usage_ledger_does_not_infer_zero_model_or_tool_cost():
 
 def test_estimated_model_cost_without_price_card_is_unknown_not_zero():
     result = aggregate_value_costs(
-        [event("unpriced", source="estimated", cost="0", model="unknown-model")],
+        [event("unpriced", source="estimated", cost="0", model="unknown-model", price_card_version=None)],
         tenant_id="tenant-a", run_ids=["run-1"],
         tool_cost_lines=[],
     )
