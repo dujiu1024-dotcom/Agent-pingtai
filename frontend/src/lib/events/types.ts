@@ -27,3 +27,7 @@ export interface EventBusOptions {
 }
 
 export type EventListener = (event: PlatformEvent) => void
+
+export interface EventBusPort {
+  subscribe(listener: EventListener): () => void
+}
