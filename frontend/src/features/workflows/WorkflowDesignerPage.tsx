@@ -101,6 +101,7 @@ export function WorkflowDesignerPage() {
   const listKey = ['registry', 'workflow']
   const [newItemId, setNewItemId] = useState('')
   const [form, setForm] = useState<WorkflowDefinition>(EMPTY)
+  const [compareVersion, setCompareVersion] = useState<number | null>(null)
 
   const list = useQuery({
     queryKey: listKey,
@@ -124,6 +125,15 @@ export function WorkflowDesignerPage() {
         `/platform/v1/registry/workflow/${workflowId}/versions`,
       ),
     enabled: Boolean(workflowId),
+    retry: false,
+  })
+
+  const diff = useQuery({
+    queryKey: ['registry', 'workflow', workflowId, 'diff', compareVersion, active.data?.version],
+    queryFn: () => apiClient.get<Record<string, unknown>>(
+      `/platform/v1/registry/workflow/${workflowId}/diff/${compareVersion}/${active.data?.version}`,
+    ),
+    enabled: Boolean(workflowId && compareVersion && active.data && compareVersion !== active.data.version),
     retry: false,
   })
 
@@ -402,13 +412,18 @@ export function WorkflowDesignerPage() {
                       </button>
                     )}
                     {active.data && item.version !== active.data.version && (
-                      <button
-                        className="text-link"
-                        type="button"
-                        onClick={() => rollback.mutate(item.version)}
-                      >
-                        回滚到此版本
-                      </button>
+                      <>
+                        <button className="text-link" type="button" onClick={() => setCompareVersion(item.version)}>
+                          与当前版本比较
+                        </button>
+                        <button
+                          className="text-link"
+                          type="button"
+                          onClick={() => rollback.mutate(item.version)}
+                        >
+                          回滚到此版本
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
