@@ -48,6 +48,8 @@ jobs:
         run: pnpm typecheck
       - name: Production build
         run: pnpm build
+      - name: Parallel rollout artifact build
+        run: pnpm exec vite build --mode parallel
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
       - name: Core UI E2E (desktop and tablet)
