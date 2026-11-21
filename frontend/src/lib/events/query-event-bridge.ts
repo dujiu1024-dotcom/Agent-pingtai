@@ -1,7 +1,6 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 
-import type { SseEventBus } from './event-bus'
-import type { PlatformEvent } from './types'
+import type { EventBusPort, PlatformEvent } from './types'
 
 export interface EventQueryBinding {
   queryKey: QueryKey | ((event: PlatformEvent) => QueryKey)
@@ -15,7 +14,7 @@ export type EventQueryRoute =
   | EventQueryBinding
 
 export function connectQueryEvents(
-  bus: SseEventBus,
+  bus: EventBusPort,
   queryClient: QueryClient,
   routes: Record<string, EventQueryRoute>,
 ): () => void {
