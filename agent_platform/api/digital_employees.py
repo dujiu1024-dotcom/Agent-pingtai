@@ -124,7 +124,7 @@ def create_team_template_router(*, resolve_principal: Callable[[], Any],
             if employee_id not in member_ids:
                 raise HTTPException(422, "permission config references an unknown template member")
             employee = await service.get_employee(tenant_id=p.tenant_id, employee_id=employee_id)
-            if employee is None or not set(permissions).issubset(
+            if employee is None or employee.get("status") != "published" or not set(permissions).issubset(
                 set(employee.get("permission_declarations", []))):
                 raise HTTPException(422, "team member permissions exceed declared capability boundary")
         return await service.install_team_template(tenant_id=p.tenant_id,
