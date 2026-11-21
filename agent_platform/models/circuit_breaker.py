@@ -135,3 +135,19 @@ class AsyncCircuitBreaker:
             }
             for k, v in self._states.items()
         }
+
+class ModelCircuitBreaker(AsyncCircuitBreaker):
+    """Backward-compatible name and timeout argument for model routing callers."""
+
+    def __init__(
+        self,
+        *,
+        failure_threshold: int = 3,
+        reset_timeout_seconds: float = 30.0,
+        half_open_max_calls: int = 1,
+    ) -> None:
+        super().__init__(
+            failure_threshold=failure_threshold,
+            recovery_timeout_seconds=reset_timeout_seconds,
+            half_open_max_calls=half_open_max_calls,
+        )
