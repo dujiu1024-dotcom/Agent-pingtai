@@ -2,11 +2,12 @@
 """Run the core platform journeys and fail on test failures or error-level logs."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 import logging
 import sys
 import unittest
+
+from dataclasses import dataclass
+from pathlib import Path
 
 
 _REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
