@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 const bootstrapUrl = '**/api/platform/v1/bootstrap'
+const appPath = (path: string) => `/app${path}`
 
 async function stubBootstrap(page: Page, authEnabled: boolean) {
   await page.route(bootstrapUrl, async (route) => {
@@ -22,11 +23,11 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
     page,
   }) => {
     await stubBootstrap(page, false)
-    await page.goto('/auth/login')
+    await page.goto(appPath('/auth/login'))
     await expect(page).toHaveURL(/\/workspace\/overview$/)
     await expect(page.getByText('免登录模式')).toBeVisible()
 
-    await page.goto('/auth/initialize')
+    await page.goto(appPath('/auth/initialize'))
     await expect(page).toHaveURL(/\/workspace\/overview$/)
     await expect(
       page.getByRole('heading', { name: '运营驾驶舱' }),
@@ -92,7 +93,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
       })
     })
 
-    await page.goto('/auth/initialize')
+    await page.goto(appPath('/auth/initialize'))
     await page.getByLabel('租户 ID').fill('acme')
     await page.getByLabel('租户名称').fill('Acme')
     await page.getByLabel('管理员邮箱').fill('owner@acme.test')
@@ -132,7 +133,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
       })
     })
 
-    await page.goto('/auth/initialize')
+    await page.goto(appPath('/auth/initialize'))
     await page.getByLabel('租户 ID').fill('acme')
     await page.getByLabel('租户名称').fill('Acme')
     await page.getByLabel('管理员邮箱').fill('owner@acme.test')
@@ -192,7 +193,7 @@ test.describe('Issue #809 identity entry and #752 cutover gate', () => {
       })
     })
 
-    await page.goto('/operations/runs/run-cutover')
+    await page.goto(appPath('/operations/runs/run-cutover'))
     await expect(page).toHaveURL(/\/auth\/login$/)
     await page.getByLabel('租户 ID').fill('acme')
     await page.getByLabel('邮箱').fill('user@acme.test')
