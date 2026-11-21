@@ -12,63 +12,7 @@
 
 逻辑平面不等于必须部署成三个独立集群。控制平面可采用 SaaS、私有化或混合形态；企业运行平面优先部署在客户 VPC、私有云或本地环境；生态平面可由平台公共服务承载，也可由企业内部生态门户承载。
 
-~~~mermaid
-flowchart TB
-  subgraph CP["控制平面｜统一治理中心（平台管理信任域）"]
-    IAM["身份 / 组织 / 租户 / RBAC-ABAC"]
-    ASSET["AI 资产注册 / 版本 / 发布"]
-    MODEL["模型目录 / 模板 / 路由策略"]
-    POLICY["策略决策 / 风险分级 / 审批 / 配额"]
-    RELEASE["签名配置快照 / 发布 / 漂移检测"]
-    CPAUDIT["治理操作审计 / 计量汇总"]
-  end
-  subgraph RP["企业运行平面｜执行引擎 + Runtime（客户数据与执行信任域）"]
-    EDGE["企业入口：API Gateway / SSO / OpenAPI"]
-    TASK["Task / Session / Run API"]
-    ORCH["工作流与多 Agent 协作编排"]
-    RUNTIME["Agent Runtime / Harness Adapter"]
-    GATEWAY["Supervised Tool Gateway / MCP"]
-    CONTEXT["Context Builder：知识 / 记忆 / 黑板"]
-    PG[("PostgreSQL：业务事实 / Run / Outbox")]
-    VECTOR[("pgvector：向量索引（PostgreSQL 扩展）")]
-    REDIS[("Redis Streams：事件传输 / 唤醒")]
-    OBS["Trace / Metrics / 审计记录"]
-    LOCALMODEL["本地模型 / 企业模型代理"]
-  end
-  subgraph EP["生态平面｜多智能体协作生态 + OpenAPI（默认不可信边界）"]
-    DEV["企业内部开发者 / 外部伙伴"]
-    SDK["OpenAPI / SDK / CLI / Webhook"]
-    CATALOG["生态目录 / 发布者 / 兼容矩阵"]
-    SUPPLY["CI / SBOM / 漏洞与许可证检查 / 签名"]
-    PACK["Agent / Workflow / Skill / Tool / Connector 制品"]
-    EXTAPI["外部 MCP / SaaS / 行业 API"]
-    MODELPROVIDER["外部模型供应商"]
-  end
-  IAM --> POLICY
-  ASSET --> RELEASE
-  MODEL --> RELEASE
-  POLICY --> RELEASE
-  RELEASE -->|"签名策略、资产版本、配置快照"| EDGE
-  EDGE --> TASK --> ORCH --> RUNTIME
-  ORCH <-->|"任务分派 / 共享上下文 / 结果汇聚"| CONTEXT
-  RUNTIME <--> CONTEXT
-  CONTEXT <--> PG
-  CONTEXT <--> VECTOR
-  ORCH -->|"Outbox 事件"| PG
-  PG -->|"Relay 发布"| REDIS
-  RUNTIME --> GATEWAY
-  GATEWAY -->|"授权后调用"| EXTAPI
-  RUNTIME --> LOCALMODEL
-  RUNTIME -->|"可选外部 Provider"| MODELPROVIDER
-  RUNTIME --> OBS
-  GATEWAY --> OBS
-  PG -->|"最小化健康、用量、版本回执"| CPAUDIT
-  DEV --> SDK --> CATALOG
-  DEV --> SUPPLY --> PACK --> CATALOG
-  CATALOG -->|"经审核、租户管理员安装"| ASSET
-  CATALOG -->|"只分发公开契约与制品"| SDK
-  EXTAPI -->|"仅经 Gateway"| GATEWAY
-~~~
+
 
 ### 1.1 平面边界矩阵
 
