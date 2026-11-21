@@ -134,29 +134,104 @@ async def run_postgres_pool_probe(dsn: str, *, workers: int, operations: int) ->
         open=False, timeout=30,
     )
     await pool.open(wait=True)
-    samples: list[float] = []
+    schema = f"s665_bench_{uuid4().hex[:12]}"
+    schema_created = False
     semaphore = asyncio.Semaphore(workers)
-    async def probe() -> None:
+    pool_wait_samples: list[float] = []
+
+    async def measure_run(index: int) -> float:
         async with semaphore:
             started = time.perf_counter()
+            wait_started = time.perf_counter()
             async with pool.connection() as connection:
-                await connection.execute("SELECT 1")
-            samples.append((time.perf_counter() - started) * 1000)
+                pool_wait_samples.append((time.perf_counter() - wait_started) * 1000)
+                async with connection.transaction():
+                    await connection.execute(
+                        f'INSERT INTO "{schema}".runs(run_id,status,payload) VALUES (%s,%s,%s)',
+                        (index, "queued", "{}"),
+                    )
+                    await connection.execute(
+                        f'UPDATE "{schema}".runs SET status=%s WHERE run_id=%s',
+                        ("succeeded", index),
+                    )
+                    cursor = await connection.execute(
+                        f'SELECT status FROM "{schema}".runs WHERE run_id=%s', (index,),
+                    )
+                    row = await cursor.fetchone()
+                    if row is None or row[0] != "succeeded":
+                        raise RuntimeError(f"PostgreSQL Run benchmark failed to persist operation {index}")
+            return (time.perf_counter() - started) * 1000
+
+    async def measure_blackboard(index: int) -> float:
+        async with semaphore:
+            started = time.perf_counter()
+            wait_started = time.perf_counter()
+            async with pool.connection() as connection:
+                pool_wait_samples.append((time.perf_counter() - wait_started) * 1000)
+                async with connection.transaction():
+                    await connection.execute(
+                        f'INSERT INTO "{schema}".blackboard(entry_id,scope_id,content) VALUES (%s,%s,%s)',
+                        (index, "benchmark", "{}"),
+                    )
+                    cursor = await connection.execute(
+                        f'SELECT content FROM "{schema}".blackboard WHERE entry_id=%s', (index,),
+                    )
+                    row = await cursor.fetchone()
+                    if row is None or row[0] != "{}":
+                        raise RuntimeError(
+                            f"PostgreSQL Blackboard benchmark failed to persist operation {index}"
+                        )
+            return (time.perf_counter() - started) * 1000
+
     try:
-        started = time.perf_counter()
-        await asyncio.gather(*(probe() for _ in range(operations)))
-        elapsed = time.perf_counter() - started
-        stats = pool.get_stats()
+        async with pool.connection() as connection:
+            await connection.execute(f'CREATE SCHEMA "{schema}"')
+            await connection.execute(
+                f'CREATE TABLE "{schema}".runs '
+                "(run_id BIGINT PRIMARY KEY, status TEXT NOT NULL, payload TEXT NOT NULL)"
+            )
+            await connection.execute(
+                f'CREATE TABLE "{schema}".blackboard '
+                "(entry_id BIGINT PRIMARY KEY, scope_id TEXT NOT NULL, content TEXT NOT NULL)"
+            )
+        schema_created = True
+
+        run_started = time.perf_counter()
+        run_samples = await asyncio.gather(*(measure_run(index) for index in range(operations)))
+        run_elapsed = time.perf_counter() - run_started
+
+        blackboard_started = time.perf_counter()
+        blackboard_samples = await asyncio.gather(
+            *(measure_blackboard(index) for index in range(operations))
+        )
+        blackboard_elapsed = time.perf_counter() - blackboard_started
+
+        wait_summary = _summary(
+            pool_wait_samples, len(pool_wait_samples),
+            max(run_elapsed + blackboard_elapsed, 0.000001),
+        )["latency_ms"]
         return {
             "status": "measured",
-            "backend": "postgres_connection_pool_select_probe",
+            "backend": "postgres_run_and_blackboard_transaction_probe",
             "pool_max_size": max(1, min(workers, 32)),
             "workers": workers,
-            "metrics": _summary(samples, operations, elapsed),
-            "pool_stats": stats,
-            "notes": ["SELECT 1 checkout+query latency; not a full Run transaction benchmark."],
+            "metrics": {
+                "run_lifecycle_transaction": _summary(run_samples, operations, run_elapsed),
+                "blackboard_write_read": _summary(
+                    blackboard_samples, operations, blackboard_elapsed,
+                ),
+                "pool_wait_latency_ms": wait_summary,
+            },
+            "pool_stats": pool.get_stats(),
+            "notes": [
+                "Isolated synthetic tables execute the same insert/update/read transaction shape as the SQLite baseline.",
+                "This measures PostgreSQL storage and pool pressure, not the full platform repositories or LLM execution.",
+            ],
         }
     finally:
+        if schema_created:
+            async with pool.connection() as connection:
+                await connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
         await pool.close()
 
 
