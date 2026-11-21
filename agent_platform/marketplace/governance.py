@@ -76,7 +76,7 @@ class MarketplaceStore(Protocol):
             ),
             key=lambda asset: (asset.asset_id, asset.tenant_id, asset.version),
         )
-    async def list_versions(self, tenant_id: str, asset_id: str) -> list[MarketplaceAsset]: ...
+    async def list_versions(self, tenant_id: str | None, asset_id: str) -> list[MarketplaceAsset]: ...
     async def add_rating(self, tenant_id: str, asset_id: str, version: str,
                          installation_id: str, user_id: str, score: int, comment: str) -> None: ...
     async def ratings(self, tenant_id: str, asset_id: str, version: str) -> list[Mapping[str, Any]]: ...
@@ -109,10 +109,18 @@ class InMemoryMarketplaceStore:
                        and (visibility is None or a.visibility == visibility)),
                       key=lambda a: (a.asset_id, a.version))
 
-    async def list_versions(self, tenant_id: str, asset_id: str) -> list[MarketplaceAsset]:
-        return sorted((a for a in self.assets.values()
-                       if a.tenant_id == tenant_id and a.asset_id == asset_id),
-                      key=lambda a: tuple(int(x) for x in a.version.split(".")))
+    async def list_versions(self, tenant_id: str | None, asset_id: str) -> list[MarketplaceAsset]:
+        return sorted(
+            (
+                asset for asset in self.assets.values()
+                if asset.asset_id == asset_id
+                and (
+                    (tenant_id is not None and asset.tenant_id == tenant_id)
+                    or (tenant_id is None and asset.visibility == "public" and asset.status == "published")
+                )
+            ),
+            key=lambda asset: tuple(int(part) for part in asset.version.split(".")),
+        )
 
     async def add_rating(self, tenant_id: str, asset_id: str, version: str,
                          installation_id: str, user_id: str, score: int, comment: str) -> None:
@@ -293,7 +301,12 @@ class MarketplaceGovernance:
         )
 
     async def versions(self, *, tenant_id: str, asset_id: str) -> list[MarketplaceAsset]:
-        return await self.store.list_versions(tenant_id, asset_id)
+        tenant_versions = await self.store.list_versions(tenant_id, asset_id)
+        public_versions = await self.store.list_versions(None, asset_id)
+        return sorted(
+            { (item.tenant_id, item.version): item for item in tenant_versions + public_versions }.values(),
+            key=lambda item: (tuple(int(part) for part in item.version.split(".")), item.tenant_id),
+        )
 
     async def _required(self, tenant_id: str, asset_id: str, version: str) -> MarketplaceAsset:
         item = await self.store.get(tenant_id, asset_id, version)
