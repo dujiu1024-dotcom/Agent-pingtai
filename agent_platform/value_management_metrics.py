@@ -82,8 +82,8 @@ class ToolCostLine:
             raise ValueError("tool_key and pricing_version are required")
         if self.source in {"provider_reported", "reconciled"} and not (self.evidence_ref or "").strip():
             raise ValueError("provider-reported or reconciled tool cost requires evidence_ref")
-        if isinstance(self.call_count, bool) or not isinstance(self.call_count, int) or self.call_count < 0:
-            raise ValueError("tool call_count must be a non-negative integer")
+        if isinstance(self.call_count, bool) or not isinstance(self.call_count, int) or self.call_count < 1:
+            raise ValueError("tool cost call_count must be a positive integer")
         _decimal(self.cost_usd, "tool cost")
         if self.source not in {"estimated", "provider_reported", "reconciled"}:
             raise ValueError("tool cost source must be estimated, provider_reported or reconciled")
@@ -116,15 +116,19 @@ def aggregate_value_costs(
 
     model_costs: dict[str, Decimal] = {}
     source_costs: dict[str, Decimal] = {}
-    model_tokens: dict[str, dict[str, int]] = {}
+    model_tokens: dict[str, dict[str, Any]] = {}
     total_input = total_output = tool_calls = 0
     for event in selected.values():
         model_costs[event.model_key] = model_costs.get(event.model_key, Decimal("0")) + event.cost_usd
         source_costs[event.source] = source_costs.get(event.source, Decimal("0")) + event.cost_usd
-        tokens = model_tokens.setdefault(event.model_key, {"input_tokens": 0, "output_tokens": 0, "events": 0})
+        tokens = model_tokens.setdefault(event.model_key, {
+            "input_tokens": 0, "output_tokens": 0, "events": 0, "pricing_versions": [],
+        })
         tokens["input_tokens"] += event.input_tokens
         tokens["output_tokens"] += event.output_tokens
         tokens["events"] += 1
+        if event.price_card_version and event.price_card_version not in tokens["pricing_versions"]:
+            tokens["pricing_versions"].append(event.price_card_version)
         total_input += event.input_tokens
         total_output += event.output_tokens
         tool_calls += event.tool_calls
@@ -179,7 +183,10 @@ def aggregate_value_costs(
         "tool_cost_usd": str(tool_cost) if tool_cost is not None else None,
         "total_ai_cost_usd": str(total_cost) if total_cost is not None else None,
         "model_cost_by_key_usd": {key: str(value) for key, value in sorted(model_costs.items())},
-        "model_usage": {key: value for key, value in sorted(model_tokens.items())},
+        "model_usage": {
+            key: {**value, "pricing_versions": sorted(value["pricing_versions"])}
+            for key, value in sorted(model_tokens.items())
+        },
         "model_cost_by_source_usd": {key: str(value) for key, value in sorted(source_costs.items())},
         "tool_cost_by_key": tool_breakdown,
         "tool_cost_status": (
