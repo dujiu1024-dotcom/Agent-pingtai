@@ -88,7 +88,15 @@ export function AuthProvider({
     if (!enabled || !session?.expires_at) return
     const remaining = Date.parse(session.expires_at) - Date.now()
     if (!Number.isFinite(remaining)) return
-    const timer = window.setTimeout(() => void refresh(), Math.max(0, remaining))
+    const timer = window.setTimeout(() => {
+      const current = sessionRef.current
+      if (current) {
+        const activeSession = { ...current, expires_at: undefined }
+        sessionRef.current = activeSession
+        setSession(activeSession)
+      }
+      void refresh()
+    }, Math.max(0, remaining))
     return () => window.clearTimeout(timer)
   }, [enabled, refresh, session?.expires_at])
 
