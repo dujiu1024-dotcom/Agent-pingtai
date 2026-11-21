@@ -145,6 +145,12 @@ class MarketplaceGovernance:
             raise ValueError("required marketplace submission fields are missing")
         if visibility not in _VISIBILITIES:
             raise ValueError("invalid asset visibility")
+        if not _SEMVER.fullmatch(version):
+            raise ValueError("asset version must be semantic x.y.z")
+        if not _DIGEST.fullmatch(digest):
+            raise ValueError("asset digest must be lowercase SHA-256")
+        if asset_kind not in _ASSET_KINDS:
+            raise ValueError("unsupported marketplace asset kind")
         # Verify all external evidence before creating a reviewable version.
         signature_ok = await _call(self.verify_signature, tenant_id=tenant_id,
             publisher_id=publisher_id, asset_id=asset_id, version=version,
