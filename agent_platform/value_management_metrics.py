@@ -84,7 +84,7 @@ class ToolCostLine:
             raise ValueError("provider-reported or reconciled tool cost requires evidence_ref")
         if isinstance(self.call_count, bool) or not isinstance(self.call_count, int) or self.call_count < 1:
             raise ValueError("tool cost call_count must be a positive integer")
-        _decimal(self.cost_usd, "tool cost")
+        object.__setattr__(self, "cost_usd", _decimal(self.cost_usd, "tool cost"))
         if self.source not in {"estimated", "provider_reported", "reconciled"}:
             raise ValueError("tool cost source must be estimated, provider_reported or reconciled")
 
@@ -181,6 +181,7 @@ def aggregate_value_costs(
         "tenant_id": tenant_id,
         "run_ids": list(requested),
         "usage_event_count": len(selected),
+        "usage_event_ids": sorted(selected),
         "missing_run_ids": sorted(requested_set - {event.run_id for event in selected.values()}),
         "input_tokens": total_input,
         "output_tokens": total_output,
