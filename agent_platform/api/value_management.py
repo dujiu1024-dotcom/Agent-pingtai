@@ -168,23 +168,22 @@ def create_value_management_router(
             source_metadata = body.get("source_metadata") or {}
             if not isinstance(source_metadata, dict):
                 raise ValueError("source_metadata must be a JSON object")
-            snapshot_id = await service.save_metrics(
-                tenant_id=actor.tenant_id, attribution_id=attribution_id,
-                process_id=process_id, role_id=role_id, window_start=start,
-                window_end=end, metrics=metric, run_ids=run_ids,
-                cost_breakdown=costs, metric_version=metric_version,
-                source_metadata=source_metadata, actor_id=actor.user_id,
-            )
+            try:
+                snapshot_id = await service.save_metrics(
+                    tenant_id=actor.tenant_id, attribution_id=attribution_id,
+                    process_id=process_id, role_id=role_id, window_start=start,
+                    window_end=end, metrics=metric, run_ids=run_ids,
+                    cost_breakdown=costs, metric_version=metric_version,
+                    source_metadata=source_metadata, actor_id=actor.user_id,
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "attribution not found for authenticated tenant") from exc
         except HTTPException:
             raise
         except KeyError as exc:
             raise HTTPException(400, f"missing required field: {exc.args[0]}") from exc
         except (ValueError, TypeError, ArithmeticError) as exc:
             raise HTTPException(400, str(exc)) from exc
-        except Exception as exc:
-            if exc.__class__.__name__ == "KeyError":
-                raise HTTPException(404, "attribution not found for authenticated tenant") from exc
-            raise
         return {
             "id": snapshot_id, "attribution_id": attribution_id,
             "metrics": {
