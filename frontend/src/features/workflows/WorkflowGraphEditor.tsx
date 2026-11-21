@@ -104,3 +104,5 @@ export function WorkflowGraphEditor({ nodes, edges, onNodesChange, onEdgesChange
     <div className="workflow-graph-validation"><strong>本地结构校验</strong><span>{errors.length ? `${errors.length} 项问题` : '结构检查通过；不代表服务端 Schema 校验或 LangGraph 编译通过'}</span>{errors.length > 0 && <ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul>}</div>
   </section>
 }
+
+import './workflow-graph-editor.css'
