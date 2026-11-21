@@ -813,6 +813,12 @@ export function getVisibleNavigation(
   return groups
 }
 
+export function getWorkspaceViewMode(pathname: string): 'home' | 'office' {
+  return pathname === '/workspace/office' || pathname.startsWith('/workspace/office/')
+    ? 'office'
+    : 'home'
+}
+
 export function getAuthFallbackPath(authEnabled: boolean): string {
   return authEnabled ? '/auth/login' : '/workspace/overview'
 }
