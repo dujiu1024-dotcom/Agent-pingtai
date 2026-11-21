@@ -21,6 +21,16 @@ type UsageEvent = {
   input_tokens: number
   output_tokens: number
   total_tokens: number
+  cached_tokens?: number | null
+  reasoning_tokens?: number | null
+  currency?: string
+  cost_basis?: string
+  pricing_version?: string
+  estimate_or_settled?: string
+  first_token_ms?: number | null
+  latency_ms?: number | null
+  status?: string
+  error_code?: string
   cost_usd: string
   project_id?: string | null
   agent_id?: string | null
@@ -30,6 +40,12 @@ type UsageEvent = {
 }
 type UsageSummary = {
   events: number
+  request_count?: number
+  success_rate?: number
+  error_rate?: number
+  p50_latency_ms?: number
+  p95_latency_ms?: number
+  first_token_ms_p50?: number
   input_tokens: number
   output_tokens: number
   total_tokens: number
@@ -84,9 +100,12 @@ const defaultStart = () => {
 const today = () => dateInput(new Date())
 const isoStart = (value: string) => new Date(value + 'T00:00:00').toISOString()
 const isoEnd = (value: string) => new Date(value + 'T23:59:59.999').toISOString()
-const params = (start: string, end: string, model?: string) => {
+const params = (start: string, end: string, model?: string, runId?: string, projectId?: string, agentId?: string) => {
   const search = new URLSearchParams({ start: isoStart(start), end: isoEnd(end) })
   if (model) search.set('model_key', model)
+  if (runId) search.set('run_id', runId)
+  if (projectId) search.set('project_id', projectId)
+  if (agentId) search.set('agent_id', agentId)
   return search.toString()
 }
 const number = (value?: number) =>
@@ -129,6 +148,9 @@ export function CostQualityCenter() {
   const [start, setStart] = useState(defaultStart)
   const [end, setEnd] = useState(today)
   const [model, setModel] = useState('')
+  const [runId, setRunId] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [agentId, setAgentId] = useState('')
   const [datasetId, setDatasetId] = useState('')
   const [submittedDataset, setSubmittedDataset] = useState('')
   const [tab, setTab] = useState<'cost' | 'quality' | 'quota'>('cost')
@@ -144,18 +166,18 @@ export function CostQualityCenter() {
   const [usagePageSize, setUsagePageSize] = useState(20)
 
   // 时间范围/模型变化时重置页码
-  useEffect(() => { setUsagePage(1) }, [start, end, model])
+  useEffect(() => { setUsagePage(1) }, [start, end, model, runId, projectId, agentId])
 
   const rangeValid = Boolean(start && end && start <= end)
-  const query = params(start, end, model || undefined)
+  const query = params(start, end, model || undefined, runId || undefined, projectId || undefined, agentId || undefined)
   const summary = useQuery({
-    queryKey: ['quality-cost', 'summary', start, end, model],
+    queryKey: ['quality-cost', 'summary', start, end, model, runId, projectId, agentId],
     queryFn: () => apiClient.get<UsageSummary>(`/platform/v1/quotas/usage/summary?${query}`),
     enabled: rangeValid,
     refetchInterval: 30_000,
   })
   const usage = useQuery({
-    queryKey: ['quality-cost', 'usage', start, end, model],
+    queryKey: ['quality-cost', 'usage', start, end, model, runId, projectId, agentId],
     queryFn: () => apiClient.get<ListResponse<UsageEvent>>(`/platform/v1/quotas/usage?${query}&limit=1000`),
     enabled: rangeValid,
     refetchInterval: 30_000,
@@ -217,6 +239,9 @@ export function CostQualityCenter() {
         limit: '10000',
       })
       if (model) search.set('model_key', model)
+      if (runId) search.set('run_id', runId)
+      if (projectId) search.set('project_id', projectId)
+      if (agentId) search.set('agent_id', agentId)
       // 与 apiClient 相同：同源 Cookie 会话随请求发送。
       const response = await fetch(`/api/platform/v1/quotas/usage.csv?${search.toString()}`, {
         method: 'GET',
@@ -330,7 +355,7 @@ export function CostQualityCenter() {
 
       <nav className="panel-tabs" role="tablist" aria-label="成本与质量分区">
         {([
-          ['cost', '成本', summary.data?.events ?? events.length],
+          ['cost', '成本', summary.data?.request_count ?? summary.data?.events ?? events.length],
           ['quality', '质量', reportItems.length],
           ['quota', '配额策略', budgetRows.length],
         ] as const).map(([id, label, count]) => (
@@ -354,6 +379,9 @@ export function CostQualityCenter() {
         <label>开始日期<input type="date" value={start} max={end || undefined} onChange={(event) => setStart(event.target.value)} /></label>
         <label>结束日期<input type="date" value={end} min={start || undefined} max={today()} onChange={(event) => setEnd(event.target.value)} /></label>
         <label>模型<select value={model} onChange={(event) => setModel(event.target.value)}><option value="">全部模型</option>{modelOptions.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
+        <label>Run ID<input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="全部 Run" /></label>
+        <label>Project ID<input value={projectId} onChange={(event) => setProjectId(event.target.value)} placeholder="全部项目" /></label>
+        <label>Agent ID<input value={agentId} onChange={(event) => setAgentId(event.target.value)} placeholder="全部 Agent" /></label>
         <span className="cq-refresh-note">数据自动刷新 · 30 秒</span>
       </div>
       {!rangeValid && <p className="cq-inline-error" role="alert">日期范围无效，请确认开始日期不晚于结束日期。</p>}
@@ -364,11 +392,15 @@ export function CostQualityCenter() {
         <>
           <div className="cq-metrics">
             <Metric label="总 Token" value={number(summary.data.total_tokens)} hint={`输入 ${number(summary.data.input_tokens)} · 输出 ${number(summary.data.output_tokens)}`} />
-            <Metric label="账本事件" value={number(summary.data.events)} hint="按事件计数，不等同于请求数" />
+            <Metric label="请求/账本事件" value={number(summary.data.request_count ?? summary.data.events)} hint={summary.data.request_count == null ? "当前接口仅提供账本事件数" : "服务端请求计数"} />
             <Metric label="估算费用" value={usd(summary.data.estimated_cost_usd)} hint="来源：平台估算" />
             <Metric label="供应商报告费用" value={usd(summary.data.provider_reported_cost_usd)} hint="来源：供应商报告" />
             <Metric label="已对账事件费用" value={usd(summary.data.reconciled_event_cost_usd)} hint="来源：已对账" />
             <Metric label="估算与供应商差额" value={usd(summary.data.estimated_vs_provider_actual_variance_usd)} hint="供应商报告费用 − 平台估算费用" />
+            <Metric label="成功率" value={summary.data.success_rate == null ? '—' : (summary.data.success_rate * 100).toFixed(2) + '%'} hint="仅显示服务端提供值" />
+            <Metric label="错误率" value={summary.data.error_rate == null ? '—' : (summary.data.error_rate * 100).toFixed(2) + '%'} hint="仅显示服务端提供值" />
+            <Metric label="P50 / P95 延迟" value={summary.data.p50_latency_ms == null && summary.data.p95_latency_ms == null ? '—' : number(summary.data.p50_latency_ms) + ' / ' + number(summary.data.p95_latency_ms) + ' ms'} hint="服务端未提供时不推算" />
+            <Metric label="首 Token P50" value={summary.data.first_token_ms_p50 == null ? '—' : number(summary.data.first_token_ms_p50) + ' ms'} hint="仅显示服务端提供值" />
           </div>
           <div className="cq-panels">
             <section className="cq-panel">
@@ -388,7 +420,7 @@ export function CostQualityCenter() {
             <header><div><h2>用量明细</h2><p>事件来源、运行、模型和成本均来自服务端账本</p></div><span>{number(events.length)} 条</span></header>
             {usage.isPending ? <LoadingState label="正在加载用量明细" /> : usage.isError ? <ErrorState title="用量明细加载失败" description={errorText(usage.error)} onRetry={() => void usage.refetch()} /> : events.length ? (
               <>
-                <div className="cq-table-wrap"><table className="cq-table"><thead><tr><th>发生时间</th><th>模型</th><th>运行</th><th>输入 Token</th><th>输出 Token</th><th>费用（美元）</th><th>来源</th></tr></thead><tbody>{events.slice((usagePage - 1) * usagePageSize, usagePage * usagePageSize).map((event) => <tr key={event.event_id}><td>{event.occurred_at ? formatDateTime(event.occurred_at) : '—'}</td><td>{event.model_key || '—'}</td><td>{event.run_id || '—'}</td><td>{number(event.input_tokens)}</td><td>{number(event.output_tokens)}</td><td>{usd(event.cost_usd)}</td><td>{valueLabel(event.source)}</td></tr>)}</tbody></table></div>
+                <div className="cq-table-wrap"><table className="cq-table"><thead><tr><th>发生时间</th><th>模型</th><th>运行</th><th>输入 Token</th><th>输出 Token</th><th>缓存 Token</th><th>推理 Token</th><th>费用（美元）</th><th>计价口径</th><th>状态/错误</th><th>来源</th></tr></thead><tbody>{events.slice((usagePage - 1) * usagePageSize, usagePage * usagePageSize).map((event) => <tr key={event.event_id}><td>{event.occurred_at ? formatDateTime(event.occurred_at) : '—'}</td><td>{event.model_key || '—'}</td><td>{event.run_id || '—'}</td><td>{number(event.input_tokens)}</td><td>{number(event.output_tokens)}</td><td>{number(event.cached_tokens)}</td><td>{number(event.reasoning_tokens)}</td><td>{usd(event.cost_usd)}</td><td>{event.cost_basis ? valueLabel(event.cost_basis) : 'USD · ' + valueLabel(event.source)}{event.pricing_version ? ' · ' + event.pricing_version : ''}</td><td>{event.status ? valueLabel(event.status) : '—'}{event.error_code ? ' / ' + event.error_code : ''}</td><td>{valueLabel(event.source)}</td></tr>)}</tbody></table></div>
                 <Pagination total={events.length} page={usagePage} pageSize={usagePageSize} onPageChange={setUsagePage} onPageSizeChange={(n) => { setUsagePageSize(n); setUsagePage(1) }} />
               </>
             ) : <EmptyState title="暂无用量事件" description="此时间范围没有服务端账本记录；不会以 0 元代替缺失价格。" />}
