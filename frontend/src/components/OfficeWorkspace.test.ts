@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { normalizeOfficeAgents, shouldUseOffice2DFallback } from './OfficeWorkspace'
 
 describe('normalizeOfficeAgents', () => {
-  it('preserves live status, floor and workstation coordinates from the Office snapshot', () => {
+  it('preserves live status and leaves placement unset without trusted coordinates', () => {
     const agents = normalizeOfficeAgents({
       agents: [{
         agent_id: 'agent-1',
