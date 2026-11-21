@@ -135,3 +135,16 @@ class ValueManagementMetricsTests(TestCase):
         self.assertEqual(result["unpriced_model_events"], 1)
         self.assertIsNone(result["total_ai_cost_usd"])
         self.assertEqual(result["cost_status"], "model_cost_incomplete")
+
+
+    def test_truncated_usage_does_not_claim_complete_costs(self):
+        result = aggregate_value_costs(
+            [event("e1")], tenant_id="tenant-a", run_ids=["run-1"],
+            tool_cost_lines=[ToolCostLine("crm.lookup", 2, Decimal("0.1"), "estimated", "v2")],
+            usage_truncated=True,
+        )
+        self.assertTrue(result["usage_truncated"])
+        self.assertIsNone(result["model_cost_usd"])
+        self.assertIsNone(result["tool_cost_usd"])
+        self.assertIsNone(result["total_ai_cost_usd"])
+        self.assertEqual(result["cost_status"], "usage_truncated")
