@@ -1002,3 +1002,45 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P2 | 现有 API Fake 测试未覆盖真实 Service/Production Resolver 组合 | 测试真实服务注入、授权拒绝、审计失败原子性、成功/重复对账和跨租户边界 |
 
 本轮只更新审查报告和 Issue 记录，没有修改产品代码；未在本环境运行 PostgreSQL 测试。结论来自 main 分支生产组合根、服务实现、API 路由和测试源码对照。
+
+
+## 24. 第十二轮：审计不可篡改边界与生产数据库角色隔离
+
+### 24.1 P1：审计表的 append-only 防护与生产数据库账号权限模型冲突
+
+证据：
+- `agent_platform/storage/postgres/011_audit_append_only.sql` 创建审计表 UPDATE/DELETE 行级拒绝触发器，以及 TRUNCATE 语句级拒绝触发器，并对 PUBLIC 撤销 UPDATE、DELETE、TRUNCATE。
+- 该 migration 的注释明确写明前提：runtime DB role 不得拥有审计表，也不得拥有 DDL/TRIGGER 权限；migration ownership 必须与 runtime 分离。
+- `deploy/production.compose.yaml` 中 platform-api、platform-worker 和 PostgreSQL 服务都使用同一组 `POSTGRES_USER` / `POSTGRES_DB` 配置；API 和 Worker 通过该账号连接 PostgreSQL，PostgreSQL 官方镜像初始化该账号作为数据库初始化超级用户。
+- `agent_platform/production_config.py` 在未显式设置 `AGENT_PLATFORM_DSN` 或 `DATABASE_URL` 时，直接使用 `POSTGRES_USER` 和密码文件构造应用 DSN。
+- Compose 没有定义独立的 runtime 最小权限账号、migration owner 账号或审计写入专用角色；也没有在启动/部署验收中验证应用连接角色不是表 owner/superuser。
+- PostgreSQL 的表 owner / superuser 能绕过普通对象权限限制，能够修改触发器或表结构；因此仅靠触发器和 REVOKE PUBLIC 不能对当前高权限应用账号形成有效的不可篡改边界。
+
+判断：
+- 仓库确实实现了 append-only 触发器，不能说“没有审计防篡改代码”。
+- 但生产部署默认将应用运行账号与 PostgreSQL 初始化账号复用，和 migration 注释要求的角色隔离前提冲突；不能据此宣称生产审计账本对应用运行身份不可篡改。
+- 本轮确认的是数据库权限模型层面的设计缺口，不代表已通过生产环境尝试删除审计记录；实际权限仍应以部署时数据库角色与对象 owner 查询结果复核。
+
+建议：
+1. 拆分 migration owner、API runtime、Worker runtime、audit writer/read-only reader 数据库角色；API/Worker 不得是 superuser，不得拥有审计表或审计 schema。
+2. 运行时角色只授予业务表所需 DML；审计写入角色只允许 INSERT，审计读取角色只允许 SELECT；撤销不必要的 CREATE、ALTER、TRIGGER、TRUNCATE 权限。
+3. 将角色初始化与权限 GRANT/REVOKE 纳入版本化部署脚本，禁止应用启动时自动以初始化超级用户身份运行。
+4. 增加部署验收 SQL：检查 `current_user`、`rolsuper`、`pg_class.relowner`、审计表 ACL、触发器状态；若 runtime 是 superuser 或审计表 owner，Release Gate 必须失败。
+5. 对更高等级的审计不可抵赖要求，定期将审计事件摘要/签名或 WAL 证据导出到独立权限域、不可变对象存储或外部 SIEM，避免同一数据库管理员能够同时改写业务库与审计库。
+
+### 24.2 本轮核查的正向能力与边界
+
+- `PostgresAuditWriter` 写入前执行递归 key/value 脱敏；审计 Reader 按 tenant_id 查询并限制返回条数。
+- `SecretManager` 采用 secret reference + version metadata，支持 active/revoked 状态、backend revoke 和 pending revocation retry；不将 secret value 写入 metadata repository。
+- `redact_payload` 和 `SecretRedactionFilter` 提供结构化敏感字段、Bearer/API key 模式与已注册精确 secret 的脱敏。
+- 这些实现证明存在审计写入、密钥版本生命周期和脱敏基础能力，但不能替代数据库角色隔离、外部不可变审计副本、日志过滤器在所有进程/handler 的实际安装证明，以及密钥轮换/撤销端到端演练。
+
+### 24.3 本轮优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P1 | API/Worker 默认复用 PostgreSQL 初始化账号，破坏 append-only migration 的最小权限前提 | 运行时角色非 superuser、非审计表 owner；migration owner 独立；Release Gate 验证 ACL/owner/trigger |
+| P2 | 审计不可抵赖与跨权限域备份缺少部署证据 | 外部不可变副本/签名摘要、恢复演练与独立审计访问验证 |
+| P2 | Secret redaction 的全进程安装覆盖未由本轮证据证明 | API、Worker、子进程和第三方 handler 的日志脱敏集成测试及 canary secret 验收 |
+
+本轮只更新审查报告和 Issue 记录，没有修改产品代码；未连接实际部署数据库验证角色权限。结论来自 main 分支 migration、生产 Compose 和 DSN 组合逻辑的静态对照。
