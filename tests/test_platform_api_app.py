@@ -131,10 +131,11 @@ class PlatformApiCompositionTests(unittest.TestCase):
 
     def test_auth_enabled_requires_identity_dependencies(self):
         # identity_repository 是任何模式下都必传的参数（被所有 router 引用）
-        with self.assertRaises(TypeError):
+        with self.assertRaisesRegex(ValueError, "requires identity service"):
             create_platform_app(
                 auth_enabled=True,
                 identity=None,
+                identity_repository=None,
                 knowledge=self.knowledge,
                 memory=self.memory,
                 redis=FakeRedis(),
@@ -800,19 +801,18 @@ class PlatformApiCompositionTests(unittest.TestCase):
         # capabilities 是 list 不是 dict
         self.assertIn("office", bootstrap.json()["capabilities"])
 
-    def test_office_no_auth_requires_explicit_instance_tenant(self):
-        # identity_repository 现在必传（任何 auth 模式都要）
-        with self.assertRaisesRegex(ValueError, "provide identity_repository"):
-            create_platform_app(
-                identity=None,
-                identity_repository=None,
-                knowledge=self.knowledge,
-                memory=self.memory,
-                redis=FakeRedis(),
-                allowed_origins=("https://console.example.com",),
-                auth_enabled=False,
-                office_state_service=object(),
-            )
+    def test_identity_repository_is_not_required_for_no_auth_composition(self):
+        app = create_platform_app(
+            identity=None,
+            identity_repository=None,
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            auth_enabled=False,
+        )
+        self.assertFalse(app.state.auth_enabled)
+
 
 
     def test_no_auth_integration_matrix_proves_public_core_and_marks_unwired_routes(self):
