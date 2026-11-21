@@ -13,12 +13,15 @@ class BusinessTransactionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.repo = InMemoryTransactionRepository()
         self.calls = []
+        self.fail_notify = True
         async def create(payload):
             self.calls.append(("create", payload.get("value")))
             return {"external_id": "erp-42"}
         async def notify(payload):
             self.calls.append(("notify", payload.get("value")))
-            raise RuntimeError("CRM unavailable")
+            if self.fail_notify:
+                raise RuntimeError("CRM unavailable")
+            return {"notified": True}
         async def compensate(payload):
             self.calls.append(("compensate", payload["step_output"]["external_id"]))
             return {"reversed": True}
@@ -115,15 +118,16 @@ class BusinessTransactionTests(unittest.IsolatedAsyncioTestCase):
                 risk_check=reject, payload={"value": 7})
         async def approve(tx, step_id):
             return True
+        self.fail_notify = False
         recovered = await self.engine.recover_step(
             tenant_id="tenant-a", transaction_id=result.transaction_id,
-            step=TransactionStep("erp", "erp.create"), actor_id="operator",
+            step=TransactionStep("crm", "crm.notify"), actor_id="operator",
             risk_check=approve, payload={"value": 7})
         self.assertEqual(recovered.status, TransactionStatus.PARTIAL)
         with self.assertRaises(Exception):
             await self.engine.recover_step(
                 tenant_id="tenant-a", transaction_id=result.transaction_id,
-                step=TransactionStep("erp", "erp.create"), actor_id="operator",
+                step=TransactionStep("crm", "crm.notify"), actor_id="operator",
                 risk_check=approve, payload={"value": 7})
 
     async def test_tenant_scoped_lookup_and_audit(self):
