@@ -27,12 +27,15 @@ class PostgresAIValueRepository:
             await connection.execute(
                 """INSERT INTO ai_value_baselines
                 (tenant_id,process_id,role_id,version,manual_minutes_per_unit,
-                 labor_cost_per_hour,quality_rate,sample_size,source,owner_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 labor_cost_per_hour,quality_rate,sample_size,source,owner_id,
+                 historical_business_volume,volume_period_start,volume_period_end,volume_source)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (tenant_id,process_id,role_id,version) DO NOTHING""",
                 (baseline.tenant_id, baseline.process_id, baseline.role_id, baseline.version,
                  baseline.manual_minutes_per_unit, baseline.labor_cost_per_hour,
-                 baseline.quality_rate, baseline.sample_size, baseline.source, baseline.owner_id),
+                 baseline.quality_rate, baseline.sample_size, baseline.source, baseline.owner_id,
+                 baseline.historical_business_volume, baseline.volume_period_start,
+                 baseline.volume_period_end, baseline.volume_source),
             )
             cursor = await connection.execute(
                 """SELECT * FROM ai_value_baselines
@@ -42,7 +45,11 @@ class PostgresAIValueRepository:
             row = await cursor.fetchone()
         if row is None:
             raise RuntimeError("baseline persistence failed")
-        if row["owner_id"] != baseline.owner_id or row["source"] != baseline.source:
+        if (row["owner_id"] != baseline.owner_id or row["source"] != baseline.source
+                or row["historical_business_volume"] != baseline.historical_business_volume
+                or row["volume_period_start"] != baseline.volume_period_start
+                or row["volume_period_end"] != baseline.volume_period_end
+                or row["volume_source"] != baseline.volume_source):
             raise ValueError("baseline version is immutable; create a new version")
         return baseline
 
@@ -65,6 +72,9 @@ class PostgresAIValueRepository:
             labor_cost_per_hour=Decimal(row["labor_cost_per_hour"]),
             quality_rate=Decimal(row["quality_rate"]), sample_size=row["sample_size"],
             source=row["source"], owner_id=row["owner_id"], version=row["version"],
+            historical_business_volume=row["historical_business_volume"],
+            volume_period_start=row["volume_period_start"], volume_period_end=row["volume_period_end"],
+            volume_source=row["volume_source"],
         )
 
     async def save_attribution(
