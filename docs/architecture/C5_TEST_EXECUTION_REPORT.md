@@ -10,8 +10,8 @@
 - Node 版本：仓库 `.nvmrc` 声明 `20.19.0`。
 - Python 矩阵：3.11、3.12。
 - 前端构建命令：`cd frontend && npm install --no-package-lock && npm run build`。
-- 后端核心测试：身份/租户授权专项 unittest，以及 `python -m unittest discover -s tests -t . -q` 全量测试。
-- 覆盖率：`coverage run --branch --source=agent_platform -m unittest discover -s tests -t . -q`，输出终端报告及 `coverage.xml` artifact。
+- 后端核心测试：Python 3.11/3.12 均执行身份/租户授权专项 unittest；全量 unittest + 分支覆盖率仅在 Python 3.11 执行一次，避免两个版本重复消耗一小时 runner。
+- 覆盖率：Python 3.11 执行 `coverage run --branch --source=agent_platform -m unittest discover -s tests -t . -v`，逐测试输出进度并生成终端报告及 `coverage.xml` artifact。
 
 ## 2. 执行环境与真实结果
 
@@ -61,13 +61,13 @@ Node `20.19.0`、npm `10.8.2`，依赖安装成功；`npm run build` 在 TypeScr
 
 依赖安装另报告 16 项 npm audit 漏洞（8 moderate、6 high、2 critical）；本次构建工作流不执行依赖升级。
 
-## 3. 修正后的测试执行策略
+### 2.4 第二轮执行（Run `44908490647`）\n\n- Python 3.11 与 3.12 的专项测试均执行 79 项：失败 1 项、跳过 2 项；失败仍为上述文件资产租户隔离用例（HTTP 405，预期 200）。\n- 两个版本随后进入全量测试，但均运行至 60 分钟 job timeout 被 GitHub Actions 取消。\n- 取消时未生成 `.coverage` 或 `coverage.xml`；artifact 列表为空，不能报告覆盖率数值。\n- 前端 `npm run build` 本轮通过。\n- 全量测试在 `-q` 模式下没有逐用例进度，因此本轮无法从日志确认具体耗时测试。\n\n## 3. 修正后的测试执行策略
 
 工作流文件：`.github/workflows/c5-test-execution.yml`
 
-- Python 3.11 / 3.12 分别执行专项测试与全量测试。
+- Python 3.11 / 3.12 均执行专项测试；全量测试与覆盖率只在 Python 3.11 执行一次，避免重复运行相同的长耗时套件。\n- 全量 unittest 改为 `-v`，逐用例输出进度，以便下次超时能定位最后执行的测试。
 - 专项测试失败后仍继续执行全量 unittest。
-- 全量测试结束后仍生成 coverage summary 和 `coverage.xml`，即使测试本身失败也尽量保留覆盖率证据。
+- 全量测试结束后生成 coverage summary 和 `coverage.xml`；如果 60 分钟内未完成，按真实超时失败记录，不填报覆盖率。
 - 上传步骤使用 `if: always()`，找不到覆盖率文件时发出 warning，不伪装成成功产物。
 - 最终根据专项测试、全量测试、覆盖率报告和 XML 生成状态汇总退出码；任一失败则 job 失败。
 - 前端构建继续独立执行，保留真实 TypeScript 错误日志。
@@ -85,6 +85,6 @@ Node `20.19.0`、npm `10.8.2`，依赖安装成功；`npm run build` 在 TypeScr
 
 - 首轮真实 CI 已证明当前分支存在后端 API 测试失败和前端 TypeScript 构建失败。
 - 首轮覆盖率缺失的直接原因是专项测试失败后，全量测试步骤被跳过。
-- 已修正工作流控制流，等待 PR 更新后的第二轮 CI 验证。
+- 第二轮 run `44908490647` 已超时，未生成覆盖率；工作流现已调整为 Python 3.11 单次全量覆盖率 + 逐用例日志，Python 3.12 保留专项兼容验证，等待新一轮 CI。
 - 在第二轮 CI 完成前，最终状态仍为失败/待复验；不得填写通过率、覆盖率百分比或声称交付验收通过。
 - 本 PR 不合并；业务代码中的 405 与 TypeScript 问题应作为独立缺陷修复，不在 C5 WP-E 的测试执行记录任务中越界修改。
