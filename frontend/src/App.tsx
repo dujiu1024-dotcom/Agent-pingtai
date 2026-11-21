@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -28,6 +28,8 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import avatarImage from '@/assets/avatar.png'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { GlobalSearchDialog } from '@/components/GlobalSearchDialog'
+import { NotificationPopover } from '@/components/NotificationPopover'
 import { InitializePage, LoginPage } from '@/components/AuthPages'
 import {
   EmptyState,
@@ -230,16 +232,21 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
   const navigate = useNavigate()
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const closeSearch = useCallback(() => setSearchOpen(false), [])
+  const closeNotifications = useCallback(() => setNotificationsOpen(false), [])
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        navigate('/search')
+        setNotificationsOpen(false)
+        setSearchOpen(true)
       }
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [navigate])
+  }, [])
   useEffect(() => {
     const root = document.documentElement
     const vars = [
@@ -392,9 +399,13 @@ function AppShell({ config }: { config: BootstrapConfig }) {
 
       <main className="main-content">
         <header className="topbar">
-          <Link
+          <button
             className="global-search"
-            to="/search"
+            type="button"
+            onClick={() => {
+              setNotificationsOpen(false)
+              setSearchOpen(true)
+            }}
             aria-label="打开全局搜索"
           >
             <Search size={16} strokeWidth={2} aria-hidden="true" />
@@ -402,22 +413,30 @@ function AppShell({ config }: { config: BootstrapConfig }) {
               搜索 Agent、任务、文档…
             </span>
             <kbd>Ctrl K</kbd>
-          </Link>
+          </button>
           <div className="top-actions">
-            <Link
-              className="icon-button"
-              to="/notifications"
-              aria-label="打开通知中心"
-            >
-              <Bell size={18} strokeWidth={1.9} />
-            </Link>
+            <div className="notification-anchor">
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="打开通知"
+                aria-expanded={notificationsOpen}
+                onClick={() => {
+                  setSearchOpen(false)
+                  setNotificationsOpen((open) => !open)
+                }}
+              >
+                <Bell size={18} strokeWidth={1.9} />
+              </button>
+              {notificationsOpen && <NotificationPopover onClose={closeNotifications} />}
+            </div>
             <span className="mode-indicator">
               {config.auth.enabled ? '权限已启用' : '免登录'}
             </span>
-            {config.auth.enabled && auth.session?.user && (
+            {config.auth.enabled && auth.status === 'authenticated' && auth.session && (
               <span className="top-action auth-entry">
                 <LogIn size={14} strokeWidth={2} aria-hidden="true" />
-                {auth.session.user.display_name || auth.session.user.email}
+                {auth.session.user?.display_name || auth.session.user?.email || auth.session.principal_type}
                 <button
                   className="text-link"
                   type="button"
@@ -435,6 +454,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             />
           </div>
         </header>
+        {searchOpen && <GlobalSearchDialog onClose={closeSearch} />}
         <nav className="page-breadcrumb" aria-label="面包屑">
           <Link to="/workspace/overview">首页</Link>
           {section && (
