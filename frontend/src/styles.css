@@ -5758,3 +5758,224 @@ html.scaled-ui .main-content {
   font-size: 12px;
   cursor: pointer;
 }
+
+
+/* L3-T08 global search and notification interaction surfaces */
+.global-search {
+  display: flex;
+  min-width: min(420px, 48vw);
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.global-search:hover,
+.icon-button:hover {
+  border-color: #b9c9ed;
+  color: var(--brand);
+}
+.global-search-placeholder {
+  flex: 1;
+}
+.global-search kbd,
+.global-dialog-input kbd {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #f7f8fb;
+  font-size: 10px;
+}
+.notification-anchor {
+  position: relative;
+  display: flex;
+}
+.notification-anchor .icon-button {
+  position: relative;
+}
+.notification-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(390px, calc(100vw - 28px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 16px 44px rgb(20 35 65 / 16%);
+  color: #26344b;
+}
+.notification-popover-header,
+.notification-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+}
+.notification-popover-header {
+  border-bottom: 1px solid var(--border);
+}
+.notification-popover-header > div {
+  display: grid;
+  gap: 3px;
+}
+.notification-popover-header small,
+.notification-popover-item small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.notification-popover-content {
+  max-height: 380px;
+  overflow: auto;
+  padding: 4px 0;
+}
+.notification-popover-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f2f6;
+}
+.notification-popover-item:hover,
+.global-search-result:hover {
+  background: #f7f9fe;
+}
+.notification-popover-item .notification-body {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.notification-popover-item .notification-body strong {
+  font-size: 12px;
+}
+.notification-popover-item .notification-body small {
+  overflow-wrap: anywhere;
+}
+.notification-popover-footer {
+  justify-content: center;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--brand);
+}
+.global-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(14vh, 110px) 18px 24px;
+  background: rgb(15 24 42 / 48%);
+}
+.global-dialog {
+  width: min(680px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgb(10 20 40 / 28%);
+}
+.global-dialog-heading,
+.global-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+.global-dialog-heading {
+  border-bottom: 1px solid var(--border);
+}
+.global-dialog-heading h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.global-dialog-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 18px;
+  padding: 0 12px;
+  min-height: 48px;
+  border: 1px solid #b8c9f1;
+  border-radius: 8px;
+  color: var(--brand);
+}
+.global-dialog-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #17243a;
+  font: inherit;
+}
+.global-dialog-results {
+  max-height: min(52vh, 460px);
+  overflow: auto;
+  padding: 0 10px 8px;
+}
+.global-search-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 10px;
+  border-radius: 7px;
+}
+.global-search-result > span:nth-child(2) {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+.global-search-result strong {
+  font-size: 13px;
+}
+.global-search-result small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.global-dialog-footer {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+}
+.global-dialog-footer a {
+  color: var(--brand);
+  font-weight: 650;
+}
+.global-dialog button:focus-visible,
+.global-dialog input:focus-visible,
+.notification-popover button:focus-visible,
+.global-search:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+@media (max-width: 620px) {
+  .global-search {
+    min-width: 0;
+    flex: 1;
+  }
+  .global-search-placeholder {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .topbar {
+    gap: 8px;
+  }
+  .top-actions {
+    gap: 8px;
+  }
+  .global-dialog-footer {
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
