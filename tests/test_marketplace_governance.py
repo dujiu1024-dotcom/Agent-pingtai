@@ -16,7 +16,7 @@ class MarketplaceGovernanceTests(unittest.IsolatedAsyncioTestCase):
         async def trial(**kwargs):
             self.calls.append(("trial", kwargs))
             return {"passed": True, "network_disabled": True, "host_mounts": False,
-                    "output_digest": "a" * 64}
+                    "credentials_injected": False, "output_digest": "a" * 64}
         self.service = MarketplaceGovernance(
             store=self.store, verify_signature=yes, verify_provenance=yes,
             scan_package=yes, evaluate_asset=yes, sandbox_trial=trial,
