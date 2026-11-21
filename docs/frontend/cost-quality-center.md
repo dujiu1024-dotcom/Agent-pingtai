@@ -58,6 +58,7 @@ The capacity health endpoint is dependency-injected and may return 503 when no m
 - Cost-by-Agent and cost-by-Project use existing `build_usage_report` aggregates. No per-agent/project amount is synthesized by the browser.
 - Evaluation history retains server-returned metric fields and links to the existing Evaluation Run detail route for sample/evidence drill-down. Dataset/sample CRUD remains owned by #750; this Issue does not create a parallel evaluation dataset manager.
 - The UI does not calculate RAG Recall@K, citation coverage, precision/recall or regression scores from case text. These are displayed only when returned by the evaluation report / run detail API.
+- Task-type filtering and a stable model-key → model-template relation are not present in the verified usage API contract. The UI does not guess task type from Run metadata or treat a provider/model string as a template ID; those two drill-downs remain backend/registry-contract gaps.
 
 ### Dual-mode verification
 - Added API regression tests using the no-auth `anon/default` principal. With no explicit project/agent filter, events from different project/agent dimensions are both returned; an explicitly supplied Project+Agent filter narrows the analytics result only.
