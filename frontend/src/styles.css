@@ -5866,3 +5866,11 @@ html.scaled-ui .main-content {
     transition: none;
   }
 }
+
+/* Issue #818: explicit home / office view mode switch */
+.app-shell[data-v='home'] .workspace-view-switch a[aria-current='page'],
+.app-shell[data-v='office'] .workspace-view-switch a[aria-current='page'] { color:var(--brand); background:#edf2ff; font-weight:650; }
+.workspace-view-switch { display:flex; align-items:center; gap:3px; padding:3px; border:1px solid var(--border); border-radius:9px; background:#fff; }
+.workspace-view-switch a { display:inline-flex; align-items:center; min-height:30px; padding:0 10px; border-radius:6px; color:#66748a; font-size:11px; white-space:nowrap; }
+.workspace-view-switch a:hover { color:var(--brand); background:#f5f7ff; }
+@media(max-width:760px) { .workspace-view-switch { display:none; } }
