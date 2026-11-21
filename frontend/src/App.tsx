@@ -176,7 +176,7 @@ function RequireSession({
       <Navigate
         to="/auth/login"
         replace
-        state={{ from: location.pathname }}
+        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
       />
     )
   }
