@@ -15,9 +15,36 @@ export interface SessionInfo {
   user?: SessionUser
 }
 
+export function parseSessionInfo(value: unknown): SessionInfo {
+  if (!value || typeof value !== 'object') {
+    throw new Error('会话响应格式无效')
+  }
+  const payload = value as Record<string, unknown>
+  if (
+    typeof payload.tenant_id !== 'string' ||
+    !payload.tenant_id ||
+    (payload.principal_type !== 'user' && payload.principal_type !== 'service_account')
+  ) {
+    throw new Error('会话响应缺少有效的租户或主体信息')
+  }
+  if (payload.user !== undefined) {
+    const user = payload.user as Record<string, unknown> | null
+    if (
+      !user ||
+      typeof user.user_id !== 'string' ||
+      typeof user.email !== 'string' ||
+      typeof user.display_name !== 'string'
+    ) {
+      throw new Error('会话用户信息格式无效')
+    }
+  }
+  return value as SessionInfo
+}
+
 export async function fetchSession(): Promise<SessionInfo | null> {
   try {
-    return await authClient.get<SessionInfo>('/auth/me', { etag: false })
+    const result = await authClient.get<unknown>('/auth/me', { etag: false })
+    return parseSessionInfo(result)
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) return null
     throw error
