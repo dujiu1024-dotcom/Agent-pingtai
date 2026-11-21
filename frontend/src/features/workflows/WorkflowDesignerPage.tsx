@@ -165,8 +165,9 @@ export function WorkflowDesignerPage() {
           className="inline-form"
           onSubmit={(event) => {
             event.preventDefault()
-            const id = newItemId.trim()
-            if (!id) return
+            const input = newItemId.trim()
+            const id = input || `workflow-${Date.now()}`
+            setNewItemId('')
             navigate(`/admin/workflows/${id}/edit`)
           }}
         >

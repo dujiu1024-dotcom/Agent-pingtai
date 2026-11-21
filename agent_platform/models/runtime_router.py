@@ -901,4 +901,5 @@ class OpenAICompatibleModelRouter:
                 provider_id=config.provider_id, provider_version=config.provider_version,
                 usage=dict(usage), fallback_used=index > 0,
             )
-        raise ModelRoutingError("all pinned model routes failed") from last_error
+        cause = f"{type(last_error).__name__}: {last_error}" if last_error else "未知原因"
+        raise ModelRoutingError(f"模型路由失败：所有候选线路都不可用（{cause[:400]}）") from last_error
