@@ -700,6 +700,7 @@ def create_sessions_router(
             headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
         )
 
+    @router.get("/files/{asset_id}")
     @router.get("/files/{asset_id}/content")
     async def download_file(asset_id: str, request: Request):
         principal, service = await context(request, "file", asset_id, "read")
