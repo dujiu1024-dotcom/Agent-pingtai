@@ -157,6 +157,14 @@ def test_rpo_rto_and_reviewer_are_mandatory(tmp_path: Path) -> None:
     assert "independent reviewer sign-off missing" in failures
 
 
+def test_environment_topology_version_and_fault_scenario_are_required(tmp_path: Path) -> None:
+    record = make_record()
+    record.pop("topology")
+    result = run_record(tmp_path, record)
+    assert result.returncode == 1
+    assert "topology must describe the exercised environment" in json.loads(result.stdout)["failures"]
+
+
 def test_naive_timestamps_are_rejected(tmp_path: Path) -> None:
     record = make_record()
     record["incident_declared_at"] = "2026-01-01T12:00:00"
