@@ -6,7 +6,7 @@
 - `auth.enabled=false`：AuthProvider 不调用 `/auth/me`，不创建匿名 principal，不显示登录/初始化/用户菜单；登录和初始化深链重定向到默认驾驶舱。
 - `auth.enabled=true`：AuthProvider 读取 `/auth/me`；401 视为未登录并跳转登录页；登录成功后重新读取会话，登出后清理服务端 Query 缓存和 ETag validators。
 - 会话在页面重新获得焦点/可见时重新校验；临时网络错误不直接销毁已确认会话，服务端 401 才清空会话。
-- API 返回的 session 字段以当前前端已确认的 `tenant_id`、`principal_type`、`user.user_id`、`user.email`、`user.display_name` 为准。当前没有可验证的 session expiry/CSRF 状态响应字段，故不推测字段或在客户端自行计时；CSRF 仍由统一 API Client 从服务端 cookie 读取并提交。
+- API 返回的 session 字段以当前前端已确认的 `tenant_id`、`principal_type`、`user_id`、`email`、`display_name`（`/auth/me` 顶层字段），以及 service-account 分支的 `service_account_id`、`agent_id` 为准。`POST /auth/login` 响应提供 `expires_at` 与 `csrf_header: X-CSRF-Token`；`/auth/me` 当前不返回 expiry，前端仅保留本次登录响应中的过期时间并在到期时向服务端复核，不把它持久化为身份凭据。CSRF 令牌由服务端 `__Host-platform_csrf` cookie 提供，统一 API Client 读取后提交 `X-CSRF-Token`。
 
 ## 搜索与通知
 
