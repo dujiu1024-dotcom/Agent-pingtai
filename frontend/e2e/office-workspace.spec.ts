@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 
 test('Office 3D scene maps live Agent state and floor metadata', async ({ page }) => {
-  await page.route('**/platform/v1/bootstrap', (route) => route.fulfill({
+  await page.route('**/api/platform/v1/bootstrap', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
-    body: JSON.stringify({ ok: true, data: { auth: { enabled: false }, capabilities: [] } }),
+    body: JSON.stringify({ auth: { enabled: false }, version: 'e2e', capabilities: [] }),
   }))
-  await page.route('**/platform/v1/office/state', (route) => route.fulfill({
+  await page.route('**/api/platform/v1/office/state', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ ok: true, data: {
       floors: [
