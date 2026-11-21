@@ -129,3 +129,45 @@ class PostgresAIValueRepository:
             "financially_confirmed_count": row["financially_confirmed_count"],
             "estimated_count": row["estimated_count"],
         } for row in rows]
+
+
+    async def save_metrics(
+        self, *, tenant_id: str, attribution_id: str, process_id: str, role_id: str,
+        window_start: datetime, window_end: datetime, metrics: Any,
+        run_ids: list[str], cost_breakdown: dict[str, Any], metric_version: str,
+        source_metadata: dict[str, Any], actor_id: str,
+    ) -> str:
+        """Persist one immutable metrics snapshot, guarded by attribution tenant ownership."""
+        from uuid import UUID
+
+        if window_start.tzinfo is None or window_end.tzinfo is None or window_end <= window_start:
+            raise ValueError("metrics window must be ordered and timezone-aware")
+        if not metric_version or not run_ids or any(not item for item in run_ids):
+            raise ValueError("metric_version and non-empty run_ids are required")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """INSERT INTO ai_value_metric_snapshots
+                (tenant_id,attribution_id,process_id,role_id,window_start,window_end,
+                 completed_units,baseline_cycle_minutes_per_unit,actual_cycle_minutes_per_unit,
+                 cycle_time_delta_minutes_per_unit,cycle_time_reduction_rate,cycle_minutes_saved,
+                 baseline_throughput_per_hour,actual_throughput_per_hour,throughput_delta_per_hour,
+                 throughput_change_rate,run_ids,cost_breakdown,metric_version,source_metadata,actor_id)
+                SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s
+                FROM ai_value_attributions a
+                WHERE a.id=%s AND a.tenant_id=%s AND a.process_id=%s AND a.role_id=%s
+                RETURNING id""",
+                (tenant_id,UUID(attribution_id),process_id,role_id,window_start,window_end,
+                 metrics.completed_units,metrics.baseline_cycle_minutes_per_unit,
+                 metrics.actual_cycle_minutes_per_unit,metrics.cycle_time_delta_minutes_per_unit,
+                 metrics.cycle_time_reduction_rate,metrics.cycle_minutes_saved,
+                 metrics.baseline_throughput_per_hour,metrics.actual_throughput_per_hour,
+                 metrics.throughput_delta_per_hour,metrics.throughput_change_rate,run_ids,
+                 json.dumps(cost_breakdown,ensure_ascii=False),metric_version,
+                 json.dumps(source_metadata,ensure_ascii=False),actor_id,
+                 UUID(attribution_id),tenant_id,process_id,role_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise KeyError("attribution not found for authenticated tenant")
+        return str(row["id"])
