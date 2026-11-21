@@ -60,6 +60,7 @@ import {
   findSubPage,
   globalRoutes,
   getAuthFallbackPath,
+  getWorkspaceViewMode,
   pageRoutes,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
@@ -322,6 +323,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const effectivePath = current?.parentPath ?? location.pathname
   const section = findNavigationSection(effectivePath)
   const activePage = findSubPage(section, effectivePath)
+  const viewMode = getWorkspaceViewMode(location.pathname)
   // 六个一级入口；工作流与平台管理共用入口，原有管理路由保持可直达。
   const primaryNavigation = [
     { id: 'home', label: '工作台', path: '/workspace/overview', Icon: Home, sections: ['home'] },
@@ -333,7 +335,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   ]
 
   return (
-    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
+    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'} data-v={viewMode}>
       <aside className="sidebar" aria-label="主导航">
         <Link
           className="brand"
@@ -426,6 +428,10 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             <kbd>Ctrl K</kbd>
           </form>
           <div className="top-actions">
+            <nav className="workspace-view-switch" aria-label="主视图切换" data-view={viewMode}>
+              <Link to="/workspace/overview" className={viewMode === 'home' ? 'active' : undefined} aria-current={viewMode === 'home' ? 'page' : undefined}>工作台</Link>
+              <Link to="/workspace/office" className={viewMode === 'office' ? 'active' : undefined} aria-current={viewMode === 'office' ? 'page' : undefined}>3D 办公室</Link>
+            </nav>
             <Link
               className="icon-button"
               to="/notifications"
