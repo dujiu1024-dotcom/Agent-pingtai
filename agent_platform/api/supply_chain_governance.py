@@ -5,10 +5,12 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
-from agent_platform.supply_chain.governance import (
-    EnterpriseAdmissionOrchestrator, RuntimeGovernanceMonitor, RuntimeObservation,
-)
 from agent_platform.supply_chain.admission import Severity
+from agent_platform.supply_chain.governance import (
+    EnterpriseAdmissionOrchestrator,
+    RuntimeGovernanceMonitor,
+    RuntimeObservation,
+)
 
 PrincipalResolver = Callable[[Request], Awaitable[Any]]
 AdmissionResolver = Callable[[Any], Awaitable[EnterpriseAdmissionOrchestrator]]
