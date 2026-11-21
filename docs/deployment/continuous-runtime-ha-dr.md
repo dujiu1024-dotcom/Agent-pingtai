@@ -36,7 +36,7 @@ The artifacts are not an atomic distributed snapshot. The shared checkpoint ID a
 
 ## Evidence record
 
-Create a JSON record outside the protected system and keep it with the drill artifacts. The validator requires timezone-aware `last_known_good_write_at`, `incident_declared_at` and `traffic_resumed_at`; RPO is incident declaration minus last known good write, RTO is traffic resumed minus incident declaration.
+Create a JSON record outside the protected system and keep it with the drill artifacts. Record the exercised environment, topology, platform version and fault-injection scenario. The validator requires timezone-aware `last_known_good_write_at`, `incident_declared_at` and `traffic_resumed_at`; RPO is incident declaration minus last known good write, RTO is traffic resumed minus incident declaration.
 
 It also requires:
 - four component backups (config, PostgreSQL, Redis, objects), each with artifact name, 64-character SHA-256, manifest reference, UTC timestamp, shared `checkpoint_id` and successful restore verification;
