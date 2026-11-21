@@ -172,17 +172,22 @@ function Desk({ desk, selected, occupied, onSelect }: { desk: DeskLayout; select
   return (
     <group position={[desk.x, 0, desk.z]} onClick={(event) => { event.stopPropagation(); onSelect(desk.id) }}
       onPointerOver={(event) => { event.stopPropagation(); setHovered(true) }} onPointerOut={() => setHovered(false)}>
-      <mesh position={[0, 0.58, 0]} castShadow receiveShadow><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} roughness={0.72} /></mesh>
-      {([[-0.55, -0.27], [0.55, -0.27], [-0.55, 0.27], [0.55, 0.27]] as const).map(([dx, dz]) => (
-        <mesh key={`${dx}-${dz}`} position={[dx, 0.29, dz]}><boxGeometry args={[0.07, 0.55, 0.07]} /><meshStandardMaterial color="#9aa9c2" /></mesh>
-      ))}
-      <mesh position={[0, 0.91, -0.17]} castShadow><boxGeometry args={[0.62, 0.42, 0.07]} /><meshStandardMaterial color="#243654" roughness={0.35} /></mesh>
-      <mesh position={[0, 0.91, -0.125]}><boxGeometry args={[0.53, 0.32, 0.018]} /><meshStandardMaterial color="#b9d0ff" emissive="#4779dc" emissiveIntensity={0.14} /></mesh>
-      <mesh position={[0, 0.07, 0.78]} castShadow><boxGeometry args={[0.66, 0.12, 0.62]} /><meshStandardMaterial color={occupied ? '#2f6af0' : '#c8d2e2'} /></mesh>
-      <mesh position={[0, 0.39, 1.02]} castShadow><boxGeometry args={[0.66, 0.55, 0.1]} /><meshStandardMaterial color={occupied ? '#8eabed' : '#d8e0ec'} /></mesh>
       <Detailed distances={[0, 18, 34]}>
-        <mesh position={[0, 0.58, 0]} castShadow receiveShadow><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} roughness={0.72} /></mesh>
-        <mesh position={[0, 0.58, 0]}><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} /></mesh>
+        <group>
+          <mesh position={[0, 0.58, 0]} castShadow receiveShadow><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} roughness={0.72} /></mesh>
+          {([[-0.55, -0.27], [0.55, -0.27], [-0.55, 0.27], [0.55, 0.27]] as const).map(([dx, dz]) => (
+            <mesh key={`${dx}-${dz}`} position={[dx, 0.29, dz]}><boxGeometry args={[0.07, 0.55, 0.07]} /><meshStandardMaterial color="#9aa9c2" /></mesh>
+          ))}
+          <mesh position={[0, 0.91, -0.17]} castShadow><boxGeometry args={[0.62, 0.42, 0.07]} /><meshStandardMaterial color="#243654" roughness={0.35} /></mesh>
+          <mesh position={[0, 0.91, -0.125]}><boxGeometry args={[0.53, 0.32, 0.018]} /><meshStandardMaterial color="#b9d0ff" emissive="#4779dc" emissiveIntensity={0.14} /></mesh>
+          <mesh position={[0, 0.07, 0.78]} castShadow><boxGeometry args={[0.66, 0.12, 0.62]} /><meshStandardMaterial color={occupied ? '#2f6af0' : '#c8d2e2'} /></mesh>
+          <mesh position={[0, 0.39, 1.02]} castShadow><boxGeometry args={[0.66, 0.55, 0.1]} /><meshStandardMaterial color={occupied ? '#8eabed' : '#d8e0ec'} /></mesh>
+        </group>
+        <group>
+          <mesh position={[0, 0.58, 0]}><boxGeometry args={[1.35, 0.12, 0.82]} /><meshStandardMaterial color={surface} /></mesh>
+          <mesh position={[0, 0.91, -0.17]}><boxGeometry args={[0.62, 0.42, 0.07]} /><meshStandardMaterial color="#243654" /></mesh>
+          <mesh position={[0, 0.12, 0.78]}><boxGeometry args={[0.66, 0.18, 0.62]} /><meshStandardMaterial color={occupied ? '#2f6af0' : '#c8d2e2'} /></mesh>
+        </group>
         <mesh position={[0, 0.58, 0]}><boxGeometry args={[1.2, 0.1, 0.7]} /><meshStandardMaterial color={surface} /></mesh>
       </Detailed>
       {selected && <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.82, 0.94, 32]} /><meshBasicMaterial color="#2f6af0" /></mesh>}
