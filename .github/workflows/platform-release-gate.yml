@@ -50,7 +50,7 @@ jobs:
           print("Changed files:", files)
           print("Documentation-only:", docs_only)
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"code={str(not docs_only).lower()}\\n")
+              output.write(f"code={str(not docs_only).lower()}\n")
           PY
 
   e2e-security-integration:
