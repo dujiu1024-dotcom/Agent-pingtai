@@ -30,6 +30,15 @@ class ReleaseGateEvidenceTests(unittest.TestCase):
                 for name in REQUIRED_CHECKS
             },
         }
+        self.document["checks"]["deployment_preflight"].update({
+            "preflight_passed": True,
+            "environment_verified": True,
+            "configuration_validated": True,
+            "dependencies_healthy": True,
+            "change_window_approved": True,
+            "rollback_ready": True,
+            "artifact_digest": "sha256:" + "b" * 64,
+        })
         self.document["checks"]["migration"].update({
             "preflight_passed": True,
             "compatibility_window_confirmed": True,
