@@ -29,7 +29,7 @@ class FallbackTransport:
     def __init__(self):
         self.calls = []
 
-    async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+    async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
         self.calls.append((config.provider_id, config.model_id))
         if config.provider_id == "primary":
             raise ModelTransportError("offline")
@@ -310,7 +310,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
         class MissingUsageTransport:
             def __init__(self):
                 self.calls = 0
-            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 self.calls += 1
                 return {"choices": [{"message": {"content": "billable response"}}]}
 
@@ -333,7 +333,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_boolean_token_usage_is_rejected(self):
         class BooleanUsageTransport:
-            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 return {
                     "choices": [{"message": {"content": "answer"}}],
                     "usage": {"prompt_tokens": True, "completion_tokens": 2},
@@ -540,7 +540,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.calls = []
 
-            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 self.calls.append((config.provider_id, config.model_id))
                 return {
                     "choices": [{"message": {"content": "budget answer"}}],
@@ -603,7 +603,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.calls = []
 
-            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 self.calls.append((config.model_id, dict(config.parameters), dict(request_parameters)))
                 return {
                     "choices": [{"message": {"content": "ok"}}],
@@ -674,7 +674,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             def __init__(self):
                 self.messages = None
 
-            async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+            async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 self.messages = tuple(messages)
                 return {
                     "choices": [{"message": {"content": "done"}}],
@@ -845,7 +845,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 self.streamed = False
 
             async def complete(self, *, config, messages, request_parameters,
-                               timeout_seconds, on_token=None):
+                               timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 self.streamed = on_token is not None
                 if on_token is not None:
                     await on_token("first")
@@ -884,7 +884,7 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
                 self.calls = 0
 
             async def complete(self, *, config, messages, request_parameters,
-                               timeout_seconds, on_token=None):
+                               timeout_seconds, tools=None, tool_choice=None, on_token=None):
                 self.calls += 1
                 if on_token is not None:
                     await on_token("already-visible")
