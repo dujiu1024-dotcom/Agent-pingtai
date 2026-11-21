@@ -121,3 +121,22 @@ class MarketplaceGovernanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_semver_requires_three_numeric_components(self):
         with self.assertRaises(ValueError):
             await self.submit(version="1.2.")
+
+    async def test_public_catalog_crosses_tenants_but_private_assets_do_not(self):
+        await self.submit()
+        await self.service.review(tenant_id="tenant-a", asset_id="sales-assistant",
+            version="1.0.0", reviewer_id="reviewer-a", approved=True, reason="reviewed")
+        await self.service.trial(tenant_id="tenant-a", asset_id="sales-assistant",
+            version="1.0.0", actor_id="reviewer-a", trial_config={})
+        await self.service.publish(tenant_id="tenant-a", asset_id="sales-assistant",
+            version="1.0.0", actor_id="reviewer-a")
+        await self.submit(asset_id="private-playbook", visibility="private")
+        await self.service.review(tenant_id="tenant-a", asset_id="private-playbook",
+            version="1.0.0", reviewer_id="reviewer-a", approved=True, reason="reviewed")
+        await self.service.trial(tenant_id="tenant-a", asset_id="private-playbook",
+            version="1.0.0", actor_id="reviewer-a", trial_config={})
+        await self.service.publish(tenant_id="tenant-a", asset_id="private-playbook",
+            version="1.0.0", actor_id="reviewer-a")
+        foreign_catalog = await self.service.catalog(tenant_id="tenant-b")
+        self.assertEqual([asset.asset_id for asset in foreign_catalog], ["sales-assistant"])
+        self.assertEqual(await self.service.catalog(tenant_id="tenant-b", visibility="private"), [])
