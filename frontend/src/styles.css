@@ -5758,3 +5758,111 @@ html.scaled-ui .main-content {
   font-size: 12px;
   cursor: pointer;
 }
+
+
+/* Round 3 · L3-T02 shell navigation and top bar */
+.primary-navigation {
+  gap: 7px;
+}
+.nav-item {
+  min-height: 46px;
+  border-radius: 10px;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+.nav-item:hover {
+  background: rgba(47, 106, 240, 0.08);
+  color: #2f6af0;
+}
+.nav-item.active,
+.nav-item[aria-current="page"] {
+  background: linear-gradient(90deg, #3d7bff, #2f6af0);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(47, 106, 240, 0.22);
+}
+.nav-item.active .nav-icon,
+.nav-item[aria-current="page"] .nav-icon {
+  color: #fff;
+}
+.top-search {
+  display: flex;
+  width: min(390px, 48vw);
+  height: 42px;
+  align-items: center;
+  gap: 10px;
+  margin-left: 18px;
+  padding: 0 15px;
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 24px -12px rgba(50, 80, 170, 0.24);
+}
+.top-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #1c2540;
+  font: inherit;
+  font-size: 13px;
+}
+.top-search input::placeholder,
+.top-search kbd {
+  color: #7b86a3;
+}
+.top-search kbd {
+  flex: 0 0 auto;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.avatar-button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.avatar-button .avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.shell-toast {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 9px 16px;
+  border-radius: 20px;
+  background: #1c2540;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(20, 34, 70, 0.2);
+  font-size: 13px;
+}
+@media (max-width: 767px) {
+  .top-search {
+    width: min(100%, 390px);
+    margin-left: 0;
+  }
+  .top-search kbd {
+    display: none;
+  }
+  .avatar-button {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-item {
+    transition: none;
+  }
+}
