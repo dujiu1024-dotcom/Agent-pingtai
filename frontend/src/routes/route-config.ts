@@ -299,6 +299,15 @@ export const pageRoutes: PageRoute[] = [
     authOnly: true,
   },
   {
+    path: '/admin/rbac',
+    pageId: 'ADM-RBAC-ALIAS',
+    title: '角色与权限（兼容入口）',
+    section: '平台管理',
+    description: '兼容旧 RBAC 地址，重定向至 /admin/access-control。',
+    owner: '#798',
+    authOnly: true,
+  },
+  {
     path: '/admin/extensions',
     pageId: 'ADM-EXTENSIONS',
     title: '扩展发布者',
