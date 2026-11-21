@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable
 
 from agent_platform.quotas.service import UsageEvent
 
@@ -75,10 +75,13 @@ class ToolCostLine:
     cost_usd: Decimal
     source: str
     pricing_version: str
+    evidence_ref: str | None = None
 
     def __post_init__(self) -> None:
         if not self.tool_key.strip() or not self.pricing_version.strip():
             raise ValueError("tool_key and pricing_version are required")
+        if self.source in {"provider_reported", "reconciled"} and not (self.evidence_ref or "").strip():
+            raise ValueError("provider-reported or reconciled tool cost requires evidence_ref")
         if isinstance(self.call_count, bool) or not isinstance(self.call_count, int) or self.call_count < 0:
             raise ValueError("tool call_count must be a non-negative integer")
         _decimal(self.cost_usd, "tool cost")
@@ -137,17 +140,21 @@ def aggregate_value_costs(
                 raise TypeError("tool_cost_lines must contain ToolCostLine instances")
             item = tool_breakdown.setdefault(line.tool_key, {
                 "calls": 0, "cost_usd": Decimal("0"), "sources": {}, "pricing_versions": [],
+                "evidence_refs": [],
             })
             item["calls"] += line.call_count
             item["cost_usd"] += line.cost_usd
             item["sources"][line.source] = item["sources"].get(line.source, Decimal("0")) + line.cost_usd
             if line.pricing_version not in item["pricing_versions"]:
                 item["pricing_versions"].append(line.pricing_version)
+            if line.evidence_ref and line.evidence_ref not in item["evidence_refs"]:
+                item["evidence_refs"].append(line.evidence_ref)
         tool_breakdown = {
             key: {
                 "calls": value["calls"], "cost_usd": str(value["cost_usd"]),
                 "sources": {k: str(v) for k, v in sorted(value["sources"].items())},
                 "pricing_versions": sorted(value["pricing_versions"]),
+                "evidence_refs": sorted(value["evidence_refs"]),
             }
             for key, value in sorted(tool_breakdown.items())
         }
