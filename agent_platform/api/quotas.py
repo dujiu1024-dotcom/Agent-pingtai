@@ -36,17 +36,26 @@ def create_quota_reporting_router(
         return principal
 
     async def rows(principal: Principal, start: datetime, end: datetime,
-                   run_id: str | None, model_key: str | None, limit: int):
+                   run_id: str | None, model_key: str | None, limit: int,
+                   project_id: str | None = None, agent_id: str | None = None):
         if start.tzinfo is None or end.tzinfo is None or end <= start:
             raise HTTPException(400, "start and end must be ordered timezone-aware timestamps")
         if end - start > timedelta(days=366):
             raise HTTPException(400, "report range cannot exceed 366 days")
         if not 1 <= limit <= 10000:
             raise HTTPException(400, "limit must be between 1 and 10000")
-        return await quota_store.list_usage(
+        events = await quota_store.list_usage(
             principal.tenant_id, start, end,
             run_id=run_id, model_key=model_key, limit=limit,
         )
+        # Project/Agent are analytics dimensions, not authorization predicates.
+        # In auth.enabled=false the anon principal still receives the complete
+        # tenant ledger unless an explicit user-selected business filter is sent.
+        if project_id:
+            events = [event for event in events if event.project_id == project_id]
+        if agent_id:
+            events = [event for event in events if event.agent_id == agent_id]
+        return events
 
     @router.post("/budgets", status_code=201)
     async def configure_budget(request: Request):
@@ -182,9 +191,10 @@ def create_quota_reporting_router(
     @router.get("/usage")
     async def usage_report(request: Request, start: datetime, end: datetime,
                            run_id: str | None = None, model_key: str | None = None,
+                           project_id: str | None = None, agent_id: str | None = None,
                            limit: int = 1000):
         principal = actor(request)
-        events = await rows(principal, start, end, run_id, model_key, limit)
+        events = await rows(principal, start, end, run_id, model_key, limit, project_id, agent_id)
         return {"tenant_id": principal.tenant_id, "items": [{
             "event_id": event.event_id, "run_id": event.run_id,
             "model_key": event.model_key, "input_tokens": event.input_tokens,
@@ -199,6 +209,7 @@ def create_quota_reporting_router(
     @router.get("/usage/summary")
     async def usage_summary(request: Request, start: datetime, end: datetime,
                             run_id: str | None = None, model_key: str | None = None,
+                            project_id: str | None = None, agent_id: str | None = None,
                             limit: int = 10000):
         """Return tenant-isolated totals and cost variance, grouped by attribution."""
         principal = actor(request)
@@ -213,6 +224,7 @@ def create_quota_reporting_router(
     @router.get("/usage.csv", response_class=PlainTextResponse)
     async def usage_csv(request: Request, start: datetime, end: datetime,
                         run_id: str | None = None, model_key: str | None = None,
+                        project_id: str | None = None, agent_id: str | None = None,
                         limit: int = 10000):
         principal = actor(request)
         events = await rows(principal, start, end, run_id, model_key, limit)
