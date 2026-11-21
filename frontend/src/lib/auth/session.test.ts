@@ -8,11 +8,9 @@ describe('parseSessionInfo', () => {
       parseSessionInfo({
         tenant_id: 'tenant-1',
         principal_type: 'user',
-        user: {
-          user_id: 'user-1',
-          email: 'user@example.test',
-          display_name: 'User One',
-        },
+        user_id: 'user-1',
+        email: 'user@example.test',
+        display_name: 'User One',
       }),
     ).toEqual({
       tenant_id: 'tenant-1',
@@ -30,6 +28,8 @@ describe('parseSessionInfo', () => {
       parseSessionInfo({
         tenant_id: 'tenant-1',
         principal_type: 'service_account',
+        service_account_id: 'sa-1',
+        agent_id: 'agent-1',
       }).principal_type,
     ).toBe('service_account')
   })
@@ -43,7 +43,7 @@ describe('parseSessionInfo', () => {
       parseSessionInfo({
         tenant_id: 'tenant-1',
         principal_type: 'user',
-        user: { user_id: 'user-1' },
+        user_id: 'user-1',
       }),
     ).toThrow('用户信息')
   })
