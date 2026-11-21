@@ -42,6 +42,10 @@ def make_record() -> dict:
     }
     return {
         "exercise_id": "DR-CONTINUITY-001",
+        "environment": "isolated-ci-test-environment",
+        "topology": "single-node service fixtures with isolated test database",
+        "platform_version": "test-build",
+        "fault_injection_scenario": "simulated restore and worker lease takeover evidence",
         "incident_declared_at": incident.isoformat(),
         "last_known_good_write_at": (incident - timedelta(minutes=20)).isoformat(),
         "traffic_resumed_at": (incident + timedelta(hours=2)).isoformat(),
