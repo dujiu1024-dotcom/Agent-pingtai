@@ -142,3 +142,21 @@ No PR was merged or closed in this reconciliation. No Issue was closed. Reopened
 所有 Issue 均增加开发前查重、唯一实现 owner、子任务拆分规则、PR/commit/CI/现场证据要求，并链接 #884、#267 和 D4 Backlog。正文中已有的显式交叉引用被保留并列出作为关联线索，不据此自动扩大实施范围。
 
 本轮只修改 Issue 正文治理段落及本报告；没有删除、合并或关闭任何 Issue，也没有更改现有 Issue 状态。库存搜索结果仍为 30 open / 69 closed / 99 total（若后续有新 Issue 创建，需在下一轮盘点中纳入）。
+
+
+## 2026-11-22 Final cleanup reconciliation
+
+### Scope cleanup result
+
+- Current inventory remains 99 Issues. After reopening closed-but-incomplete scopes, the live snapshot is **62 open / 37 closed**.
+- Reopened partial/incomplete frontend scopes: #742–#750, #752, #755, #758, #759, #762, #797, #798, #801–#809, #812–#818. Reasons are recorded in each Issue body and are based on PR merge status, not historical comments.
+- Kept completed/archived scopes closed, including #753 (page-map document and route-invariant tests), #751, #756, #757, #760, #761, #763, #810, #811, plus historical parent/archival Issues #2–#7, #71–#85, #262, #517, #520–#528.
+- Refreshed #267: 43 previously stale PR references were confirmed merged; 45 old status lines were corrected. A further CI refresh distinguishes merged code from CI failure/cancellation (e.g. #591, #612, #765/#792/#795/#796). Merged code is not counted as complete when CI or field evidence is missing.
+- Updated domain Issues #8–#21 to list completed implementation slices and keep only remaining implementation/CI/field acceptance. Updated #614 and #665–#667 with the same distinction.
+- Updated closed archive/work-package Issues to point to the single active source of truth (#267/#884 and their successor domain Issues), preventing old work packages from becoming parallel implementation entry points.
+
+### Non-negotiable interpretation
+
+A PR that is closed with `merged=false` is **not** a delivery. A merged PR removes only the exact code/test slice it contains from redevelopment; it does not close an entire parent Issue. CI failure/cancellation and missing staging/production evidence remain explicit outstanding acceptance work. Original requirement text is retained as traceability and is not itself an active coding instruction once its implementation is recorded as merged.
+
+No Issues were deleted and no PR was merged by this cleanup.
