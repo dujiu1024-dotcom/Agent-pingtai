@@ -19,6 +19,14 @@ export interface NavigationGroup {
 
 export const pageRoutes: PageRoute[] = [
   {
+    path: '/operations/business-management',
+    pageId: 'OPS-BUSINESS-HUB',
+    title: '业务管理中心',
+    section: '智能体运营',
+    description: '知识、记忆、会话、文件、审批与评测的统一入口和跨域引用路径。',
+    owner: '#750',
+  },
+  {
     path: '/workspace/overview',
     pageId: 'WS-OVERVIEW',
     title: '运营驾驶舱',
