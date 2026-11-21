@@ -13,6 +13,8 @@ export interface SessionInfo {
   tenant_id: string
   principal_type: 'user' | 'service_account'
   user?: SessionUser
+  /** Present only when the identity API publishes authoritative grants. */
+  permissions?: string[]
 }
 
 export async function fetchSession(): Promise<SessionInfo | null> {
