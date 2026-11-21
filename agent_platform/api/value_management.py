@@ -44,6 +44,8 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
         service = await service_for(actor)
         try:
             body = await request.json()
+            if isinstance(body.get("historical_business_volume"), bool):
+                raise ValueError("historical_business_volume must be an integer, not a boolean")
             baseline = HumanBaseline(
                 tenant_id=actor.tenant_id, process_id=str(body["process_id"]),
                 role_id=str(body["role_id"]), manual_minutes_per_unit=Decimal(str(body["manual_minutes_per_unit"])),
