@@ -84,6 +84,14 @@ export function AuthProvider({
     }
   }, [enabled, refresh])
 
+  useEffect(() => {
+    if (!enabled || !session?.expires_at) return
+    const remaining = Date.parse(session.expires_at) - Date.now()
+    if (!Number.isFinite(remaining)) return
+    const timer = window.setTimeout(() => void refresh(), Math.max(0, remaining))
+    return () => window.clearTimeout(timer)
+  }, [enabled, refresh, session?.expires_at])
+
   const signOut = useCallback(async () => {
     await logoutRequest()
     queryClient.clear()
