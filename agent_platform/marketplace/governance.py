@@ -63,19 +63,7 @@ class MarketplaceStore(Protocol):
     async def create(self, asset: MarketplaceAsset) -> None: ...
     async def get(self, tenant_id: str, asset_id: str, version: str) -> MarketplaceAsset | None: ...
     async def update(self, asset: MarketplaceAsset) -> None: ...
-    async def list_published(self, tenant_id: str | None, visibility: str | None = None) -> list[MarketplaceAsset]:
-        return sorted(
-            (
-                asset for asset in self.assets.values()
-                if asset.status == "published"
-                and (
-                    (tenant_id is not None and asset.tenant_id == tenant_id)
-                    or (tenant_id is None and asset.visibility == "public")
-                )
-                and (visibility is None or asset.visibility == visibility)
-            ),
-            key=lambda asset: (asset.asset_id, asset.tenant_id, asset.version),
-        )
+    async def list_published(self, tenant_id: str | None, visibility: str | None = None) -> list[MarketplaceAsset]: ...
     async def list_versions(self, tenant_id: str | None, asset_id: str) -> list[MarketplaceAsset]: ...
     async def add_rating(self, tenant_id: str, asset_id: str, version: str,
                          installation_id: str, user_id: str, score: int, comment: str) -> None: ...
@@ -84,6 +72,7 @@ class MarketplaceStore(Protocol):
 
 class InMemoryMarketplaceStore:
     """Test adapter only; production must supply a durable tenant-bound store."""
+
     def __init__(self) -> None:
         self.assets: dict[tuple[str, str, str], MarketplaceAsset] = {}
         self._ratings: dict[tuple[str, str, str], list[Mapping[str, Any]]] = {}
@@ -103,11 +92,19 @@ class InMemoryMarketplaceStore:
             raise LookupError("marketplace asset version not found")
         self.assets[key] = asset
 
-    async def list_published(self, tenant_id: str, visibility: str | None = None) -> list[MarketplaceAsset]:
-        return sorted((a for a in self.assets.values()
-                       if a.tenant_id == tenant_id and a.status == "published"
-                       and (visibility is None or a.visibility == visibility)),
-                      key=lambda a: (a.asset_id, a.version))
+    async def list_published(self, tenant_id: str | None, visibility: str | None = None) -> list[MarketplaceAsset]:
+        return sorted(
+            (
+                asset for asset in self.assets.values()
+                if asset.status == "published"
+                and (
+                    (tenant_id is not None and asset.tenant_id == tenant_id)
+                    or (tenant_id is None and asset.visibility == "public")
+                )
+                and (visibility is None or asset.visibility == visibility)
+            ),
+            key=lambda asset: (asset.asset_id, asset.tenant_id, asset.version),
+        )
 
     async def list_versions(self, tenant_id: str | None, asset_id: str) -> list[MarketplaceAsset]:
         return sorted(
