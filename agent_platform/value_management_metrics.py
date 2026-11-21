@@ -129,7 +129,7 @@ def aggregate_value_costs(
     tool_lines = tuple(tool_cost_lines) if tool_cost_lines is not None else None
     tool_cost: Decimal | None = None
     tool_breakdown: dict[str, dict[str, Any]] | None = None
-    if tool_lines is not None:
+    if tool_lines is not None and (tool_lines or tool_calls == 0):
         tool_cost = Decimal("0")
         tool_breakdown = {}
         for line in tool_lines:
@@ -170,7 +170,9 @@ def aggregate_value_costs(
         "model_usage": {key: value for key, value in sorted(model_tokens.items())},
         "model_cost_by_source_usd": {key: str(value) for key, value in sorted(source_costs.items())},
         "tool_cost_by_key": tool_breakdown,
-        "tool_cost_status": "provided" if tool_lines is not None else "not_priced",
+        "tool_cost_status": (
+            "provided" if tool_lines else "not_applicable" if tool_calls == 0 else "not_priced"
+        ),
         "cost_status": (
             "complete" if total_cost is not None
             else "model_usage_missing" if model_total is None
