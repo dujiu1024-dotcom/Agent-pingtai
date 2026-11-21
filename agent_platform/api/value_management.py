@@ -82,6 +82,8 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
                 other_business_benefit=(Decimal(str(body["other_business_benefit"])) if body.get("other_business_benefit") is not None else None),
                 ai_cost=(Decimal(str(body["ai_cost"])) if body.get("ai_cost") is not None else None),
                 attribution_version=str(body.get("attribution_version", "1")),
+                cost_is_settled=body.get("cost_is_settled") is True,
+                business_benefit_confirmed=body.get("business_benefit_confirmed") is True,
             )
             record = await service.save_attribution(
                 tenant_id=actor.tenant_id, process_id=baseline.process_id, role_id=baseline.role_id,
@@ -89,6 +91,7 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
                 window_start=datetime.fromisoformat(body["window_start"]),
                 window_end=datetime.fromisoformat(body["window_end"]), contribution=contribution, result=result,
                 cost_source=body.get("cost_source"), business_evidence=body.get("business_evidence"),
+                cost_basis=result.cost_basis,
             )
         except HTTPException:
             raise
@@ -99,7 +102,7 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
                 "ai_cost": str(result.ai_cost) if result.ai_cost is not None else None,
                 "net_benefit": str(result.net_benefit) if result.net_benefit is not None else None,
                 "roi": str(result.roi) if result.roi is not None else None,
-                "financial_status": result.financial_status,
+                "financial_status": result.financial_status, "cost_basis": result.cost_basis,
                 "attribution_version": result.attribution_version}
 
     @router.get("/summary")
