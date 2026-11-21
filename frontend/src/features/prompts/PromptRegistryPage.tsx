@@ -98,6 +98,21 @@ export function PromptRegistryPage() {
     ),
   })
 
+  const gateVersion = selectedVersion ?? currentVersion
+  const gateQuery = useQuery({
+    queryKey: ['prompt-evaluation-gate', promptId, gateVersion],
+    queryFn: () =>
+      apiClient.get<{
+        status: 'passed' | 'not_recorded'
+        eval_run_id: string | null
+        action: string | null
+      }>(
+        promptPath(promptId!) + '/evaluation-gate?version=' + gateVersion,
+      ),
+    enabled: Boolean(promptId && gateVersion),
+    retry: false,
+  })
+
   const createDraft = useMutation({
     mutationFn: () =>
       apiClient.post<PromptVersion>(
@@ -406,13 +421,24 @@ export function PromptRegistryPage() {
           </section>
 
           <section className="prompt-gate-note">
-            <strong>评测 Gate</strong>
-            <p>
-              Prompt 的激活、灰度与回滚由服务端评测 Gate 强制校验；本页面不提供绕过 Gate 的操作。
-            </p>
-            <p>
-              当前 main 分支未提供 Gate 结果读取接口，因此前端不会根据激活状态或审计记录推断评测通过/失败。
-            </p>
+            <strong>评测 Gate · v{gateVersion ?? '—'}</strong>
+            {gateQuery.isPending && gateVersion && <p>正在读取服务端评测记录…</p>}
+            {gateQuery.data?.status === 'passed' && (
+              <p>
+                已找到服务端通过记录（{gateQuery.data.action}），评测运行：{gateQuery.data.eval_run_id}。
+              </p>
+            )}
+            {gateQuery.data?.status === 'not_recorded' && (
+              <p>未找到该版本的通过记录；这不代表评测失败，发布操作仍由服务端 Gate 强制校验。</p>
+            )}
+            {gateQuery.isError && (
+              <p>
+                {gateQuery.error instanceof Error ? gateQuery.error.message : String(gateQuery.error)}
+                。当前后端可能尚未开放 Gate 结果读取接口；不会据此推断评测通过或失败。
+              </p>
+            )}
+            {!gateVersion && <p>暂无版本可查询评测记录。</p>}
+            <p>本页面不提供绕过 Gate 的发布操作。</p>
           </section>
         </div>
       </div>
