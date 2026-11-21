@@ -161,13 +161,16 @@ def create_value_management_router(
             if raw_tool_lines is not None and len(tool_lines) != len(raw_tool_lines):
                 raise ValueError("each tool_cost_line must be a JSON object")
             events = []
+            usage_truncated = False
             for run_id in run_ids:
-                events.extend(await usage_store.list_usage(
+                run_events = await usage_store.list_usage(
                     actor.tenant_id, start, end, run_id=run_id, limit=10000,
-                ))
+                )
+                usage_truncated = usage_truncated or len(run_events) >= 10000
+                events.extend(run_events)
             costs = aggregate_value_costs(
                 events, tenant_id=actor.tenant_id, run_ids=run_ids,
-                tool_cost_lines=tool_lines,
+                tool_cost_lines=tool_lines, usage_truncated=usage_truncated,
             )
             process_id = str(body["process_id"])
             role_id = str(body["role_id"])
