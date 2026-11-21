@@ -38,7 +38,7 @@ jobs:
           git fetch origin "$BASE_REF" --depth=1
           python - <<'PY'
           import os, subprocess
-          files = subprocess.check_output(["git", "diff", "--name-only", f"{base}...HEAD"], text=True).splitlines()
+          files = subprocess.check_output(["git", "diff", "--name-only", "FETCH_HEAD...HEAD"], text=True).splitlines()
           docs_only = bool(files) and all(path.startswith("docs/") or path.lower().endswith((".md", ".markdown", ".rst")) or path in {"LICENSE", "CHANGELOG", "CONTRIBUTING"} for path in files)
           print("Changed files:", files)
           print("Documentation-only:", docs_only)
