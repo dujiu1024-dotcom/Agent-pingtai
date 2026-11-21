@@ -86,6 +86,7 @@ class ValueResult:
     roi: Decimal | None
     financial_status: str
     attribution_version: str
+    cost_basis: str
 
 
 def calculate_value(
@@ -95,6 +96,8 @@ def calculate_value(
     other_business_benefit: Decimal | None = None,
     ai_cost: Decimal | None = None,
     attribution_version: str = "1",
+    cost_is_settled: bool = False,
+    business_benefit_confirmed: bool = False,
 ) -> ValueResult:
     """Calculate conservative labor savings and evidence-gated financial ROI."""
     if not attribution_version:
@@ -113,11 +116,12 @@ def calculate_value(
     else:
         net = labor + benefit - cost
         roi = None if cost == 0 else net / cost
-        status = "financially_confirmed"
+        status = ("financially_confirmed" if cost_is_settled and business_benefit_confirmed else "estimated")
     return ValueResult(
         eligible_baseline_minutes=eligible, actual_human_minutes=actual,
         rework_minutes=rework, saved_minutes=saved, saved_hours=saved / Decimal("60"),
         labor_savings=labor, other_business_benefit=benefit, ai_cost=cost,
         net_benefit=net, roi=roi, financial_status=status,
         attribution_version=attribution_version,
+        cost_basis=("settled" if cost_is_settled else "estimated"),
     )
