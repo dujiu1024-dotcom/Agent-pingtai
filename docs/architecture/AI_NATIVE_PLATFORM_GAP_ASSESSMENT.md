@@ -1154,3 +1154,95 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | 已具备 | Durable Run lease heartbeat、checkpoint resume、Connector Sync lease retry | 增加身份撤销和多实例争抢的端到端覆盖 |
 
 本轮只更新审查报告和 Issue 记录，没有修改产品代码。源码审查覆盖 Outbox、Redis Streams Consumer/Receipt、Durable Run Worker、生产 Run execution composition、Connector Sync Worker 及对应测试；PostgreSQL/Redis 集成测试未在本环境执行。
+
+
+## 27. 第十五轮：生产部署、网络边界、密钥与灾备能力
+
+### 27.1 正向证据：仓库已有可运行的单机生产 Compose 基线和较完整的容器加固
+
+核对 `deploy/production.compose.yaml`、`deploy/.env.production.example`、`deploy/OPERATIONS.md` 与部署测试：
+- API、Worker、PostgreSQL、Redis、MinIO 均配置资源上限、healthcheck、restart policy；API/Worker 使用非 root UID、read-only root filesystem、cap_drop ALL、no-new-privileges、tmpfs 限制。
+- PostgreSQL/Redis/MinIO/API host ports 默认仅绑定 127.0.0.1；Worker 不发布 host port；服务通过私有 Compose bridge 网络通信。
+- 应用镜像要求 digest pinning；生产 env 文件权限 0600；DB/Redis/MinIO 密码通过 file-mounted Compose secrets，而非直接写入容器环境变量。
+- 应用出站配置要求 managed proxy URL 和 EGRESS_ALLOWED_HOSTS；示例配置明确写出仅设置代理变量不构成网络强制边界，防火墙/安全组必须拒绝应用工作负载直连 Internet。
+- 部署 runbook 区分基础设施 Compose 与完整生产应用 Compose；生产 ASGI、Worker 入口默认明确；Run execution builder 缺失时按默认配置启动失败，不把基础设施健康误报为应用完整部署。
+- PostgreSQL backup 使用 pg_dump custom format；Redis RDB、MinIO 对象镜像、配置归档均 age 加密，并生成 SHA-256 sidecar + JSON manifest；提供校验、解密格式检查和独立 PostgreSQL 备份恢复集成测试。
+- DR policy 定义了恢复顺序、RPO/RTO 目标和恢复一致性 gates；备份完整性校验器拒绝缺失/损坏 sidecar、manifest 和不安全归档路径。
+
+### 27.2 P1/P2：出站代理变量不是网络强制控制，仓库没有提供可验证的防绕过网络策略
+
+证据：
+- Compose 将 HTTP_PROXY/HTTPS_PROXY 与 EGRESS_ALLOWED_HOSTS 注入 API、Worker 和 Alert Dispatcher。
+- `deploy/.env.production.example` 明确声明代理环境变量本身不是网络强制边界，并要求 firewall/security group deny direct Internet egress。
+- 仓库的生产 Compose 只定义单一 bridge network；没有看到 egress gateway、NetworkPolicy、主机防火墙规则或云安全组 IaC 来落实“禁止直连 Internet”。
+- 当前 `tests/test_production_deployment_contract.py` 验证代理变量和 allowlist 被注入，但没有启动网络隔离环境验证绕过代理的直接 TCP/UDP 出站被拒绝。
+
+判断：
+- 这是 P1 安全控制落地/验收缺口：平台把网络强制边界作为生产前提，但仓库未提供可复现的 enforcement artifact 或 release gate。不能据此断言实际部署网络一定允许直连；实际防火墙/安全组由仓库外配置决定。
+建议：
+1. 提供可审查的部署 IaC（云安全组、Kubernetes NetworkPolicy 或主机 nftables）落实应用 workload 默认拒绝出站，仅允许代理和明确内部依赖。
+2. 加入部署验收：从 API/Worker 容器尝试直连非 allowlist 外网、DNS/IPv6/UDP 旁路，均必须失败；经代理访问批准 host 成功。
+3. 将 EGRESS_ALLOWED_HOSTS 与代理侧策略做一致性校验，避免应用环境变量只是声明而不 enforce。
+
+### 27.3 P1：MinIO Root 凭据被 API/Worker 复用，缺少最小权限对象存储身份
+
+证据：
+- Compose 使用 `MINIO_ROOT_USER` + `MINIO_ROOT_PASSWORD_FILE` 启动 MinIO root credential。
+- platform-api 与 platform-worker 均将同一 `MINIO_ROOT_USER`、root password file 作为 `OBJECT_STORAGE_ACCESS_KEY` / secret key，未见独立的 bucket-scoped service account。
+- 生产 Compose 没有对象存储初始化 job、policy provisioning 或单独的只读/读写身份；API 和 Worker 共用 root credential，任一应用进程凭据泄漏即可获得 MinIO 管理级权限，而非仅目标 bucket 所需权限。
+- 与第 24 节 PostgreSQL runtime 使用高权限账号的问题类似，这是生产身份分权不足，但对象存储范围是独立的，不重复计算为同一个缺陷。
+
+建议：
+1. MinIO root credential 仅用于初始化/管理任务，不挂载到 API/Worker。
+2. 建立专用 bucket-scoped service account / policy，按 API、Worker、备份任务分权；备份身份只读源 bucket、写入独立备份目标。
+3. 增加生产启动检查，拒绝将 root identity 配置为应用对象存储身份；轮换 root 凭据并审计旧凭据撤销。
+
+### 27.4 P2：备份脚本具备加密和完整性验证，但没有自动异地复制与跨组件一致性快照
+
+证据：
+- `deploy/backup-policy.json` 定义 PostgreSQL 每小时、Redis 每 6 小时、对象存储每日、配置每日备份；PostgreSQL 35 天、对象/配置 90 天保留。
+- `scripts/backup_platform.sh` 逐组件执行 PostgreSQL、Redis、对象、配置备份并应用本地目录 retention；脚本本身没有将产物上传到独立 off-site account / region，也没有跨组件共同 checkpoint。
+- `scripts/backup_object_storage.sh` 使用 `mc mirror` 备份当前对象状态，不保留历史对象版本；policy 也明确版本保留/复制需另行启用。
+- `deploy/OPERATIONS.md` 明确 PostgreSQL 与对象备份独立运行、不形成原子跨组件快照；需停 API/Worker 和全部 writers 后按维护窗口备份，再一起恢复。
+- `docs/deployment/backup-disaster-recovery.md` 明确 BackupCoordinator 的生产 adapter、持久化 catalog、off-site replication、durable scheduler、restore adapter 均由外部基础设施实现；模块本身不执行云快照/调度/恢复。
+- `agent_platform/deployment/backups.py` 的 BackupCoordinator 支持 offsite_required 与 replicate_offsite callback，但测试用内存 BackupCatalog 和 fake callback；不是生产持久化目录或真实异地复制证据。
+- `deploy/disaster-recovery-policy.json` 有 RPO/RTO 目标与 failover/failback gates，但当前脚本 `restore_platform.sh` 仅按序调用组件恢复脚本，不会 provision infra、停止服务、提升副本或执行 failover。
+
+判断：
+- 代码具备加密、校验、备份和单数据库隔离恢复基础；不应描述为“没有备份能力”。
+- 但 policy 中的 RPO/RTO 是目标，不是已测量的实际结果；未见真实异地复制、自动化跨组件一致性快照、持久化备份 catalog、自动调度/故障切换与完整平台恢复演练证据。
+- 这属于 P2 灾备成熟度差距；若企业业务要求单区域故障下可恢复，应在上线前提升优先级。
+
+建议：
+1. 将 PostgreSQL、对象存储、配置、加密身份/密钥的备份复制到独立账号/区域，并配置 object lock/不可变保留。
+2. 引入持久化备份 catalog、durable scheduler/lease、失败告警和最近成功备份 SLA。
+3. 设计跨组件一致性点：暂停写入或使用版本化对象与数据库 checkpoint，记录共同恢复点与引用校验。
+4. 在隔离环境定期执行全平台恢复，记录真实 RPO/RTO、租户隔离 smoke test、Outbox reconcile、对象引用一致性与 failover/failback 证据。
+
+### 27.5 P2：当前仓库生产部署是单机 Compose 参考拓扑，不能据此认定混合部署/高可用能力已经交付
+
+证据：
+- `deploy/production.compose.yaml` 只定义单个 API service、单个 Worker service 和单组 PostgreSQL/Redis/MinIO named volumes，使用单一 bridge network；没有副本集、跨主机调度、负载均衡、数据库 HA、Redis HA 或对象存储分布式部署配置。
+- `deploy/OPERATIONS.md` 将该组合描述为 initial repository-owned production composition slice，并明确 live Provider、Vault、checkpoint、多进程和生产执行证据仍需部署验证。
+- 当前测试验证 Compose YAML 的安全契约、健康检查、资源限制和端口绑定；不构成多节点故障切换、横向扩缩容或混合云部署验收。
+
+判断：
+- 该 Compose 可作为单节点/单环境部署基线，不代表平台已经具备企业私有云、公有云、边缘节点混合部署的交付模板。
+- 本轮没有证据证明产品代码无法部署到其他环境；结论仅限仓库当前提供的部署工件和验证证据不足。
+
+建议：
+1. 明确支持的拓扑矩阵：单机开发、单节点生产、企业 Kubernetes/私有云、公有云托管依赖、混合部署控制面/执行面。
+2. 为目标生产拓扑提供 IaC、HA 依赖配置、证书/密钥接入、网络策略、备份与灾备自动化。
+3. 为 API/Worker 多副本、数据库主从切换、Redis 恢复、对象存储故障分别建立故障注入和恢复演练。
+
+### 27.6 本轮优先级汇总
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P1 | Egress 代理仅通过环境变量配置，缺仓库内可审查的网络强制策略与旁路测试 | API/Worker 不能绕过代理直连外网；仅 allowlist 域名经代理可达 |
+| P1 | API/Worker 复用 MinIO root credential | 应用使用 bucket-scoped 最小权限身份；root credential 不进入应用容器 |
+| P2 | 备份缺少真实异地复制、跨组件一致性恢复点和全平台恢复演练 | 独立区域/账号备份、持久化 catalog、恢复演练记录真实 RPO/RTO |
+| P2 | 当前部署工件仅覆盖单节点 Compose，混合部署/HA 未形成可验收交付模板 | 至少提供目标拓扑 IaC、HA 依赖、网络/密钥策略和故障演练 |
+| 已具备 | 容器基础加固、loopback 端口、digest pin、文件密钥、加密备份、校验器 | 保留现有安全契约并补网络/恢复端到端验收 |
+
+本轮只更新审查报告和 Issue 记录，没有修改产品代码。审查依据为 main 分支生产 Compose、部署/备份/灾备文档、脚本、Vault 适配器和部署测试源码；未连接真实云网络、MinIO 或生产备份目标，也未执行灾备恢复演练。
