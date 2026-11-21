@@ -90,7 +90,9 @@ export class WebSocketEventBus implements EventBusPort {
       this.attempt = 0
       this.setStatus('connected')
       if (this.lastEventId) {
-        socket.send(JSON.stringify({ type: 'resume', last_event_id: this.lastEventId }))
+        socket.send(
+          JSON.stringify({ type: 'resume', last_event_id: this.lastEventId }),
+        )
       }
     }
     socket.onmessage = (message) => {
@@ -131,7 +133,13 @@ export class WebSocketEventBus implements EventBusPort {
     if (previous !== undefined && event.sequence <= previous) return
 
     this.seenEventIds.add(event.event_id)
+    this.latestSequence.delete(event.entity_id)
     this.latestSequence.set(event.entity_id, event.sequence)
+    while (this.latestSequence.size > this.options.maxRememberedEvents) {
+      const oldestEntity = this.latestSequence.keys().next().value
+      if (oldestEntity === undefined) break
+      this.latestSequence.delete(oldestEntity)
+    }
     this.lastEventId = event.event_id
     while (this.seenEventIds.size > this.options.maxRememberedEvents) {
       const oldest = this.seenEventIds.values().next().value
