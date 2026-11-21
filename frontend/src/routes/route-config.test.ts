@@ -7,6 +7,7 @@ import {
   getAllRoutes,
   getAuthFallbackPath,
   getVisibleNavigation,
+  getWorkspaceViewMode,
   globalRoutes,
   isCanonicalRouteSetValid,
   pageRoutes,
@@ -26,6 +27,12 @@ describe('route configuration', () => {
       'administration',
       'global',
     ])
+  })
+
+  it('maps workspace routes to the home or office view mode', () => {
+    expect(getWorkspaceViewMode('/workspace/overview')).toBe('home')
+    expect(getWorkspaceViewMode('/workspace/office')).toBe('office')
+    expect(getWorkspaceViewMode('/workspace/office/scene')).toBe('office')
   })
 
   it('redirects auth entry routes to the workspace when auth is disabled', () => {
