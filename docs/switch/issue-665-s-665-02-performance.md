@@ -24,13 +24,13 @@ python scripts/benchmark_switch_performance.py --workers 8 --operations 100
 ```
 
 - PostgreSQL: bounded `psycopg_pool.AsyncConnectionPool` checkout + `SELECT 1` under concurrent load; reports pool stats and checkout/query latency.
-- Redis: publishes a unique event to a namespaced Redis Stream, reads it through a consumer group, ACKs it, and records publish-to-consumer-ACK latency. The probe uses a unique tenant/stream prefix and does not flush shared keys.
+- Redis: concurrently publishes unique events to a namespaced Redis Stream, reads them through a consumer group with up to the configured worker count, ACKs each event, and records publish-to-consumer-ACK p50/p95/p99/max latency plus observed messages/second. The probe uses a unique tenant/stream prefix and does not flush shared keys.
 
 ## Evidence interpretation
 
 The SQLite baseline is executable without services and uses a temporary database. It is not a production snapshot and does not represent LLM/model execution.
 
-The PostgreSQL probe is a connection-pool pressure probe, not a full Run transaction or Blackboard repository benchmark. Redis is a real transport probe only when an explicit URL is supplied. CI must not claim these external probes ran merely because the script was tested.
+The PostgreSQL probe is a connection-pool pressure probe, not a full Run transaction or Blackboard repository benchmark. Redis is a concurrent queue probe only when an explicit URL is supplied; its throughput is queue publish/read/ACK throughput, not complete Run execution QPS. CI must not claim these external probes ran merely because the script was tested.
 
 No platform-vs-SQLite performance parity conclusion is possible unless PostgreSQL and Redis probes are run against an explicitly provisioned, isolated benchmark environment and their results are retained. Missing services are reported as `not_run`; no mock timings are generated. No production server, external resource, or real credential is requested by this change.
 
