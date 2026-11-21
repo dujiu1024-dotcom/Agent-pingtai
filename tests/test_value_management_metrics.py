@@ -68,11 +68,12 @@ def test_usage_costs_aggregate_by_model_and_source_without_fake_tool_prices():
 def test_tool_costs_are_counted_only_when_explicitly_supplied():
     result = aggregate_value_costs(
         [event("e1")], tenant_id="tenant-a", run_ids=["run-1"],
-        tool_cost_lines=[ToolCostLine("crm.lookup", 2, Decimal("0.1"), "reconciled", "v2")],
+        tool_cost_lines=[ToolCostLine("crm.lookup", 2, Decimal("0.1"), "reconciled", "v2", "invoice-line-1")],
     )
     assert result["tool_cost_usd"] == "0.1"
     assert result["total_ai_cost_usd"] == "0.35"
     assert result["tool_cost_by_key"]["crm.lookup"]["pricing_versions"] == ["v2"]
+    assert result["tool_cost_by_key"]["crm.lookup"]["evidence_refs"] == ["invoice-line-1"]
 
 
 def test_usage_tenant_mismatch_is_rejected():
