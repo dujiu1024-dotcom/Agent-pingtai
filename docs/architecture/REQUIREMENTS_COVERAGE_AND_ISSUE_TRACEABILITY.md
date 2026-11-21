@@ -160,3 +160,35 @@ D5 交付记录明确保留 A5 证据矩阵未定位项、C4 未完整阅读路�
 2. 更新 D4 Backlog 第 12 节追踪矩阵，逐项列出 §14 的 Workbench retry、迁移编号、Redis Outbox、pgvector 维度和 API/ACL 契约问题；不能只映射到宽泛的 CI 基线任务。
 3. 对 #848 报告第 14、19–27 节之外的所有具体发现继续按相同方法逐项映射。
 4. #884 的全量 Issue 正文、评论、父子关系、重复项、孤儿项和关闭依据审计仍未完成；本节不是全量审计完成声明。
+
+
+## 2026-11-21 最终核对补充：覆盖与已合入范围
+
+### 1. 需求覆盖结论
+
+- #848 已包含项目战略、混合部署、企业内外部共建、Copilot→Co-pilot→受控自主执行、六大产品/技术能力域、八大统一引擎、统一资源模型、数字员工组织关系、十四个产品中心/扩展能力以及控制平面目标；因此它可以作为目标需求基线。
+- 但“目标基线已写入 #848”不等于“所有原子需求都已逐项映射到唯一实施 Issue”。本矩阵仍是阶段一代表性原子项（18 项左右）和补漏记录，不是完整的全量 Requirement ID 矩阵。企业实例/Tenant/Organization/Department/Team/Project/Partner 的 ADR、跨域 API/事件契约、每个产品中心的验收条目仍需要逐项对照。
+- 后续全量 Issue inventory 已独立完成：99 个 Issue 正文和评论线程已读取；这修正了本文开头“未逐条读取全部 Issue”的阶段一历史说明。但“读完 99 个 Issue”仍不等于“所有战略需求均已映射”，两项工作不可混为一谈。
+- 当前结论：**需求主题有战略主入口，重点缺口有领域 Issue 承接；全量原子需求覆盖尚不能判定 100% 完整。** 不应对外宣称“所有需求均已覆盖”。
+
+### 2. 已合入代码从待开发范围移出（保留需求与证据）
+
+以下范围已由 PR 合入 main，不应再创建重复实现；但当前 PR head 的 CI 结果并非全绿，因此只标记为“代码已合入、验收未闭环”，不将整个领域 Issue 关闭：
+
+| 领域 Issue | 已合入 PR | 已合入范围 | 当前 CI 结论 | 剩余工作 |
+|---|---|---|---|---|
+| #10 | #610/#613/#616 | RAG 接入/ACL 前置过滤/来源与检索链路追踪验收代码 | ci、platform-release-gate failure | 共享 CI 基线、真实 PG/pgvector/Provider/语料、其余 ACL/fixture 契约 |
+| #11 | #630 | 记忆提取拒绝聊天原文/整轮原文沉淀 | ci、platform-release-gate failure | 记忆生命周期、权限、持久化和删除闭环 |
+| #12 | #619 | Repository-owned production composition root | ci、platform-release-gate、harness-benchmark-poc、quality-capacity-baseline failure | Gateway/Approval/真实模型执行及生产验收 |
+| #14 | #615 | Workbench A-14-01 主流程自动化验收测试 | ci、platform-release-gate、harness-benchmark-poc、quality-capacity-baseline failure | 真实服务与浏览器/设备验收 |
+| #17 | #675 | 生产 Quota services 接线及 A-17-03 验收实现 | ci、platform-release-gate、harness-benchmark-poc、quality-capacity-baseline failure | 多实例、Worker、告警、账单对账 |
+| #18 | #721 | SQLite→PostgreSQL 迁移导入器 | ci cancelled；platform-release-gate、harness-benchmark-poc、quality-capacity-baseline failure | staging 全量迁移、零差异、回滚、历史 migration 兼容 |
+
+上述 PR 的安全与依赖检查为 success；CI/release-gate 失败或取消，不可写成“自动化验收通过”。相应需求定义和历史验收证据继续保留，待开发范围仅保留明确缺口。
+
+### 3. 台账口径修正
+
+- #267 原子台账的勾选框表示核验工作/条目登记，不代表功能完成；以每项状态字段和代码、测试、PR、CI、现场证据为准。
+- #267 已新增上述 PR 的最新 merge/CI 复核；未逐项核验的任务不擅自移除。
+- #9、#13、#15、#16、#19、#20、#21、#614、#665–#667 等仍需逐原子项刷新 PR/代码/CI/现场证据。PR 合并只能证明代码合入，不证明端到端 DoD 完成。
+- 本次仅将已确认合入的代码范围从“重复开发”中排除；没有删除目标需求基线，没有把 CI 失败的任务标为完成。
