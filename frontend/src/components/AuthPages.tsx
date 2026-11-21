@@ -113,7 +113,7 @@ export function LoginPage() {
         </label>
         {(error || sessionError) && (
           <p className="auth-error" role="alert">
-            {error}
+            {error || sessionError}
           </p>
         )}
         <button className="button-primary" type="submit" disabled={submitting}>
