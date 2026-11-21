@@ -19,7 +19,6 @@ import {
   ListTodo,
   LogIn,
   Search,
-  Settings,
   Users,
   Wallet,
   Workflow,
@@ -59,8 +58,8 @@ import {
   detailRoutes,
   findNavigationSection,
   findSubPage,
-  getNavigationSections,
   globalRoutes,
+  getAuthFallbackPath,
   pageRoutes,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
@@ -189,11 +188,11 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
         <Routes>
           <Route
             path="/auth/login"
-            element={config.auth.enabled ? <LoginPage /> : <Navigate to="/workspace/overview" replace />}
+            element={config.auth.enabled ? <LoginPage /> : <Navigate to={getAuthFallbackPath(false)} replace />}
           />
           <Route
             path="/auth/initialize"
-            element={config.auth.enabled ? <InitializePage /> : <Navigate to="/workspace/overview" replace />}
+            element={config.auth.enabled ? <InitializePage /> : <Navigate to={getAuthFallbackPath(false)} replace />}
           />
           <Route
             element={
@@ -256,7 +255,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [navigate])
+  }, [])
   useEffect(() => {
     const root = document.documentElement
     const vars = [
@@ -320,10 +319,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
     return pattern.test(location.pathname)
   })
-  const sections = getNavigationSections(
-    config.auth.enabled,
-    config.capabilities,
-  )
   const effectivePath = current?.parentPath ?? location.pathname
   const section = findNavigationSection(effectivePath)
   const activePage = findSubPage(section, effectivePath)
