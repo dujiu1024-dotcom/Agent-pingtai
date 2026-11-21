@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ErrorState, LoadingState } from '@/components/States'
 import { apiClient } from '@/lib/api/api-client'
 import { valueLabel } from '@/lib/i18n/labels'
+import { WorkflowGraphEditor, type WorkflowEdge, type WorkflowNode } from './WorkflowGraphEditor'
 import './workflow-designer.css'
 
 const WORKFLOW_LABELS: Record<string, string> = {
@@ -49,6 +50,15 @@ function toDefinition(item: RegistryItem | undefined): WorkflowDefinition {
     description: String(definition.description ?? ''),
     nodes: pretty(definition.nodes),
     edges: pretty(definition.edges),
+  }
+}
+
+function safeArray<T>(value: string): T[] {
+  try {
+    const parsed: unknown = JSON.parse(value || '[]')
+    return Array.isArray(parsed) ? parsed as T[] : []
+  } catch {
+    return []
   }
 }
 
@@ -255,7 +265,14 @@ export function WorkflowDesignerPage() {
         />
       )}
 
-      <div className="editor-grid">
+      <WorkflowGraphEditor
+        nodes={safeArray<WorkflowNode>(form.nodes)}
+        edges={safeArray<WorkflowEdge>(form.edges)}
+        onNodesChange={(nodes) => setForm((current) => ({ ...current, nodes: pretty(nodes) }))}
+        onEdgesChange={(edges) => setForm((current) => ({ ...current, edges: pretty(edges) }))}
+      />
+
+      <details className="workflow-advanced-json"><summary>高级 JSON 定义（可选）</summary><div className="editor-grid">
         <label className="editor-field">
           <span>名称</span>
           <input
@@ -293,6 +310,8 @@ export function WorkflowDesignerPage() {
           />
         </label>
       </div>
+
+      </div></details>
 
       <div className="detail-actions">
         <button
