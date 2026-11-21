@@ -163,6 +163,34 @@ class TrustedBuilderDiscoveryTests(unittest.TestCase):
 
 
 class ProductionEntrypointWiringTests(unittest.TestCase):
+    def test_api_role_can_disable_in_process_run_worker(self):
+        import os
+        import asyncio
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from agent_platform.production import create_production_app
+        from agent_platform.production_config import ProductionSettings
+
+        settings = ProductionSettings(
+            postgres_dsn="postgresql://platform@db/platform",
+            redis_url="redis://redis:6379/0",
+            allowed_origins=("https://platform.example.com",),
+        )
+        with patch.dict(os.environ, {"AGENT_PLATFORM_RUN_WORKER_ENABLED": "false"}), patch(
+            "agent_platform.production.create_platform_app", return_value=FastAPI()
+        ):
+            app = create_production_app(
+                settings=settings,
+                connection_factory=lambda: None,
+                redis_client=SimpleNamespace(ping=lambda: True),
+            )
+        start_worker = next(
+            callback for callback in app.router.on_startup
+            if getattr(callback, "__name__", "") == "start_run_worker"
+        )
+        asyncio.run(start_worker())
+
     def test_production_root_installs_builder_runtime_into_api_and_worker_slots(self):
         import importlib
         import os
