@@ -24,10 +24,6 @@ from agent_platform.api.evaluation_rollout import create_evaluation_rollout_rout
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.graph import create_graph_router
 from agent_platform.api.graph_extraction import create_graph_extraction_router
-from agent_platform.graph.knowledge_extraction import (
-    KnowledgeGraphExtractionService,
-    build_extractor_from_env,
-)
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
@@ -51,6 +47,10 @@ from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
+from agent_platform.graph.knowledge_extraction import (
+    KnowledgeGraphExtractionService,
+    build_extractor_from_env,
+)
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
