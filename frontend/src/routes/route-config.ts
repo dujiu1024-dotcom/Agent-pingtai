@@ -813,6 +813,10 @@ export function getVisibleNavigation(
   return groups
 }
 
+export function getAuthFallbackPath(authEnabled: boolean): string {
+  return authEnabled ? '/auth/login' : '/workspace/overview'
+}
+
 export function getAllRoutes(authEnabled: boolean): PageRoute[] {
   return [
     ...pageRoutes,
