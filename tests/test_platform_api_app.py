@@ -90,6 +90,45 @@ class PlatformApiCompositionTests(unittest.TestCase):
         # auth_enabled=False 时 /auth/me 存在但不强制认证，返回空
         self.assertIn(client.get("/auth/me").status_code, (200, 401, 404))
 
+    def test_auth_mode_reads_environment_and_defaults_to_no_auth(self):
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {}, clear=True):
+            app = create_platform_app(
+                identity=None, identity_repository=None,
+                knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+            )
+        self.assertFalse(app.state.auth_enabled)
+        paths = set(app.openapi()["paths"])
+        self.assertNotIn("/auth/login", paths)
+        self.assertNotIn("/api/platform/v1/knowledge/documents", paths)
+        response = TestClient(app, base_url="https://testserver").get(
+            "/api/platform/v1/bootstrap"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["auth"], {"enabled": False})
+
+    def test_auth_mode_environment_override_and_invalid_value_fail_closed(self):
+        import os
+        from unittest.mock import patch
+
+        args = dict(
+            identity=None, identity_repository=None,
+            knowledge=self.knowledge, memory=self.memory, redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+        )
+        with patch.dict(os.environ, {"AUTH_ENABLED": "true"}):
+            with self.assertRaisesRegex(ValueError, "requires identity service"):
+                create_platform_app(**args)
+        with patch.dict(os.environ, {"AUTH_ENABLED": "not-a-bool"}):
+            with self.assertRaisesRegex(ValueError, "AUTH_ENABLED"):
+                create_platform_app(**args)
+        with patch.dict(os.environ, {"AUTH_ENABLED": "off"}):
+            app = create_platform_app(**args)
+        self.assertFalse(app.state.auth_enabled)
+
     def test_auth_enabled_requires_identity_dependencies(self):
         # identity_repository 是任何模式下都必传的参数（被所有 router 引用）
         with self.assertRaises(TypeError):
