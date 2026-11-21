@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -132,7 +132,7 @@ def create_value_management_router(
             end = datetime.fromisoformat(str(body["window_end"]))
             if start.tzinfo is None or end.tzinfo is None or end <= start:
                 raise ValueError("metrics window must be ordered and timezone-aware")
-            if end - start > __import__("datetime").timedelta(days=366):
+            if end - start > timedelta(days=366):
                 raise ValueError("metrics window cannot exceed 366 days")
             completed_units = body["completed_units"]
             if isinstance(completed_units, bool) or not isinstance(completed_units, int):
