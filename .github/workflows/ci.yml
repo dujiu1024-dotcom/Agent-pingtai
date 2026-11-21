@@ -84,7 +84,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-          cache: pip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -117,7 +116,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-          cache: pip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
