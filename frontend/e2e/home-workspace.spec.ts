@@ -29,7 +29,7 @@ test('Home workspace renders API-backed task, popular Agent and activity panels'
     ] }),
   }))
 
-  await page.goto('/')
+  await page.goto('/app/')
   await expect(page.getByRole('heading', { name: '欢迎回来！' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '任务列表' })).toBeVisible()
   await expect(page.getByText('正在运行的任务')).toBeVisible()
