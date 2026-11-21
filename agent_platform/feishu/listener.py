@@ -29,6 +29,7 @@ import threading
 import time
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -54,13 +55,17 @@ AGENT_KEYWORDS = AGENT_KEYWORDS_RAW if AGENT_KEYWORDS_RAW.strip() else (
     "local-assistant:老板,助理,万能,帮我,转派,任务,查账本,做报表,看团队,万能助理"
 )
 TASK_POLL_SECONDS = 3
-TASK_TIMEOUT_SECONDS = 180
+# 长任务可能执行十几分钟，回传等待上限必须跟着执行超时走。
+try:
+    TASK_TIMEOUT_SECONDS = int(os.environ.get("FEISHU_TASK_TIMEOUT_SECONDS", "1200"))
+except (TypeError, ValueError):
+    TASK_TIMEOUT_SECONDS = 1200
 
 HELP_TEXT = (
     "FDE 平台飞书指令：\n"
     "直接发消息 → 自动识别意图并交给对应智能体\n"
     "/agents 列出可用智能体\n"
-    "/agent <id> <内容> 指定智能体\n"
+    "/agent <名称> <内容> 指定智能体\n"
     "/status 平台状态与任务概览\n"
     "/brief 今日运营简报\n"
     "/run <内容> 提交任务并回传结果\n"
@@ -73,6 +78,48 @@ _SEEN: OrderedDict[str, float] = OrderedDict()
 _SEEN_LOCK = threading.Lock()
 _SEEN_MAX = 500
 _SEEN_TTL = 300
+
+# pending 恢复只做一次
+_resume_started = False
+
+# --- pending 任务持久化 ---
+# listener 重启后，之前未汇报完成的任务需要继续轮询并回飞书。
+# 格式: { "task_id": { "message_id": str, "created_at": timestamp } }
+_PENDING_PATH = Path(__file__).resolve().parents[3] / "agency" / "state" / "listener.pending.json"
+_PENDING_LOCK = threading.Lock()
+
+
+def _load_pending() -> dict[str, dict[str, Any]]:
+    try:
+        if _PENDING_PATH.exists():
+            return json.loads(_PENDING_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        logger.exception("读取 pending 任务文件失败")
+    return {}
+
+
+def _save_pending(pending: dict[str, dict[str, Any]]) -> None:
+    try:
+        _PENDING_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _PENDING_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(pending, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(_PENDING_PATH)
+    except Exception:
+        logger.exception("保存 pending 任务文件失败")
+
+
+def _pending_add(task_id: str, message_id: str) -> None:
+    with _PENDING_LOCK:
+        pending = _load_pending()
+        pending[task_id] = {"message_id": message_id, "created_at": time.time()}
+        _save_pending(pending)
+
+
+def _pending_remove(task_id: str) -> None:
+    with _PENDING_LOCK:
+        pending = _load_pending()
+        pending.pop(task_id, None)
+        _save_pending(pending)
 
 
 def _first_time(message_id: str) -> bool:
@@ -289,6 +336,21 @@ def _mention_fields(message: Any) -> tuple[set[str], set[str]]:
     return open_ids, names
 
 
+def _task_title(task: dict[str, Any]) -> str:
+    """任务展示名：取输入里的任务描述，替代裸 task_id。"""
+    raw = task.get("input")
+    if isinstance(raw, dict):
+        for key in ("prompt", "task", "title", "query", "message", "content", "instruction"):
+            value = raw.get(key)
+            if isinstance(value, str) and value.strip():
+                cleaned = value.strip().replace("\n", " ")
+                return cleaned[:40] + ("…" if len(cleaned) > 40 else "")
+    if isinstance(raw, str) and raw.strip():
+        cleaned = raw.strip().replace("\n", " ")
+        return cleaned[:40] + ("…" if len(cleaned) > 40 else "")
+    return "未命名任务"
+
+
 def _result_text(task: dict[str, Any]) -> str:
     output = task.get("output")
     if isinstance(output, dict):
@@ -343,14 +405,13 @@ class FeishuCommandService:
                 await self._reply(message_id, "未识别指令。\n\n" + HELP_TEXT)
         except Exception as exc:  # 单条指令失败不影响长连接
             logger.exception("处理飞书消息失败：%s", text[:80])
-            await self._reply(message_id, f"处理失败：{type(exc).__name__}: {exc}")
+            await self._reply(message_id, f"处理失败：{exc}")
 
     async def _agents_text(self) -> str:
         agents = await self._router.available(refresh=True)
         if not agents:
             return "注册表里还没有可用的智能体。"
-        lines = [f"- {item['agent_id']}（{item['name']}）：{item['description'][:60]}"
-                 for item in agents]
+        lines = [f"- {item['name']}：{item['description'][:60]}" for item in agents]
         return "可用智能体：\n" + "\n".join(lines)
 
     async def _run(self, prompt: str, message_id: str) -> None:
@@ -365,32 +426,34 @@ class FeishuCommandService:
         task_id = str(task.get("task_id") or "")
         await self._reply(
             message_id,
-            f"已交给 {agent_name}（{reason}），任务 {task_id} 执行完成后回传结果。",
+            f"已交给 {agent_name}（{reason}），处理完成后会把结果发回这里。",
         )
-        threading.Thread(
-            target=lambda: asyncio.run(self._await_result(task_id, message_id)),
-            daemon=True,
-        ).start()
+        _pending_add(task_id, message_id)
+        asyncio.create_task(self._await_result(task_id, message_id))
 
     async def _await_result(self, task_id: str, message_id: str) -> None:
         deadline = time.time() + TASK_TIMEOUT_SECONDS
-        while time.time() < deadline:
-            await asyncio.sleep(TASK_POLL_SECONDS)
-            try:
-                task = await self._platform.task(task_id)
-            except Exception:
-                continue
-            status = task.get("status")
-            if status == "succeeded":
-                await self._reply(
-                    message_id, f"任务 {task_id} 已完成：\n{_result_text(task)}",
-                )
-                return
-            if status in {"failed", "cancelled"}:
-                error = task.get("last_error") or "未记录原因"
-                await self._reply(message_id, f"任务 {task_id} {status}：{error}")
-                return
-        await self._reply(message_id, f"任务 {task_id} 仍在执行，稍后可在工作台查看。")
+        try:
+            while time.time() < deadline:
+                await asyncio.sleep(TASK_POLL_SECONDS)
+                try:
+                    task = await self._platform.task(task_id)
+                except Exception:
+                    continue
+                status = task.get("status")
+                if status == "succeeded":
+                    await self._reply(
+                        message_id, f"处理完成，结果如下：\n{_result_text(task)}",
+                    )
+                    return
+                if status in {"failed", "cancelled"}:
+                    error = task.get("last_error") or "未记录原因"
+                    status_zh = "执行失败" if status == "failed" else "已取消"
+                    await self._reply(message_id, f"处理未完成（{status_zh}）：{error}")
+                    return
+            await self._reply(message_id, "任务还在执行中，完成后会在这里回复你。")
+        finally:
+            _pending_remove(task_id)
 
     async def _status_text(self) -> str:
         health = await self._platform.health()
@@ -401,8 +464,11 @@ class FeishuCommandService:
         pending = sum(1 for item in approvals if item.get("status") == "pending")
         jobs = await self._platform.scheduler_jobs()
         enabled = sum(1 for item in jobs if item.get("enabled"))
+        health_zh = {"ok": "正常", "healthy": "正常", "degraded": "降级", "error": "异常"}.get(
+            str(health.get("status") or "").lower(), "未知"
+        )
         return (
-            f"平台状态：{health.get('status')}\n"
+            f"平台状态：{health_zh}\n"
             f"任务：在办 {active}，失败 {failed}\n"
             f"待审批：{pending}\n"
             f"定时作业：{enabled}/{len(jobs)} 启用"
@@ -440,7 +506,7 @@ class FeishuCommandService:
             except ValueError:
                 continue
             if moment >= cutoff:
-                failures.append(f"- {item.get('task_id')}：{item.get('last_error') or '未记录'}")
+                failures.append(f"- {_task_title(item)}：{item.get('last_error') or '未记录'}")
         approvals = await self._platform.approvals()
         pending = [item for item in approvals if item.get("status") == "pending"]
         lines = [f"待审批 {len(pending)} 条", f"近 24 小时失败任务 {len(failures)} 条"]
@@ -495,6 +561,26 @@ def build_listener() -> Any:
     logger.info("机器人身份 open_id=%s name=%s", _mask_id(bot_open_id), bot_name)
 
     def on_message(data: P2ImMessageReceiveV1) -> None:
+        global _resume_started
+        # 首次收到消息时，恢复 pending 任务的回传轮询（loop 此时已存活）
+        if not _resume_started:
+            _resume_started = True
+            try:
+                pending = _load_pending()
+                if pending:
+                    logger.info("恢复 %d 条 pending 任务的回传", len(pending))
+                    for tsk_id, info in list(pending.items()):
+                        msg_id = str(info.get("message_id") or "")
+                        if not msg_id:
+                            _pending_remove(tsk_id)
+                            continue
+                        if time.time() - float(info.get("created_at") or 0) > 600:
+                            _pending_remove(tsk_id)
+                            continue
+                        asyncio.create_task(service._await_result(tsk_id, msg_id))
+            except Exception:
+                logger.exception("恢复 pending 任务失败")
+
         event = data.event
         if event is None or event.message is None:
             return
@@ -509,16 +595,13 @@ def build_listener() -> Any:
             if not _mentions_bot(message, bot_open_id, bot_name):
                 return
         if message.message_type != "text":
-            asyncio.run(service._reply(str(message.message_id), "暂只支持文本消息，发送 /help 查看用法。"))
+            asyncio.create_task(service._reply(str(message.message_id), "暂只支持文本消息，发送 /help 查看用法。"))
             return
         text = _clean_text(message.content)
         if not text:
-            asyncio.run(service._reply(str(message.message_id), HELP_TEXT))
+            asyncio.create_task(service._reply(str(message.message_id), HELP_TEXT))
             return
-        threading.Thread(
-            target=lambda: asyncio.run(service.handle(text, str(message.message_id))),
-            daemon=True,
-        ).start()
+        asyncio.create_task(service.handle(text, str(message.message_id)))
 
     handler = (
         lark.EventDispatcherHandler.builder("", "")
@@ -557,7 +640,11 @@ def main() -> None:
         asyncio.run(check())
         return
     logger.info("启动飞书长连接监听，平台 %s", PLATFORM_BASE_URL)
-    build_listener().start()
+    pending = _load_pending()
+    if pending:
+        logger.info("发现 %d 条待回传的 pending 任务，启动后自动恢复轮询", len(pending))
+    client = build_listener()
+    client.start()
 
 
 if __name__ == "__main__":
