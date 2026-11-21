@@ -83,7 +83,7 @@ def create_marketplace_router(*, resolve_principal: Callable[[], Any],
 
     @router.post("/submissions", status_code=201)
     async def submit(body: Submission, p: Principal = Depends(principal)):
-        await permit(p, "marketplace.submit", body.asset_id)
+        await permit(p, f"marketplace.submit:{body.publisher_id}", body.asset_id)
         try:
             return await (await service(p)).submit(**body.model_dump(),
                 tenant_id=p.tenant_id, actor_id=p.user_id)
