@@ -113,3 +113,12 @@ def test_zero_tool_calls_have_no_unpriced_tool_cost_gap():
     assert result["tool_cost_usd"] == "0"
     assert result["total_ai_cost_usd"] == "0.25"
     assert result["tool_cost_status"] == "not_applicable"
+
+
+def test_empty_usage_ledger_does_not_infer_zero_model_or_tool_cost():
+    result = aggregate_value_costs([], tenant_id="tenant-a", run_ids=["run-1"])
+    assert result["model_cost_usd"] is None
+    assert result["tool_cost_usd"] is None
+    assert result["total_ai_cost_usd"] is None
+    assert result["cost_status"] == "model_usage_missing"
+    assert result["tool_cost_status"] == "usage_missing"
