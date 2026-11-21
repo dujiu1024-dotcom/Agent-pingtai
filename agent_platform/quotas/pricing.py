@@ -63,7 +63,12 @@ class PricingFeed:
 
 
 class ModelPricingCatalog:
-    """Immutable snapshot: unknown models never receive an invented zero price."""
+    """Immutable snapshot: unknown models never receive an invented zero price.
+
+    ``get`` first does an exact lookup; if that misses, it strips trailing
+    numeric version suffixes (``@10``, ``@1``, ``-template@1``, ...) until an
+    entry matches, so versioned local/model-router identifiers still resolve.
+    """
 
     def __init__(self, cards: Mapping[str, PricingCard]) -> None:
         copied = dict(cards)
@@ -73,7 +78,19 @@ class ModelPricingCatalog:
         self._cards = MappingProxyType(copied)
 
     def get(self, model_key: str) -> PricingCard | None:
-        return self._cards.get(model_key)
+        if model_key in self._cards:
+            return self._cards[model_key]
+        # Fallback: strip trailing numeric version suffixes like @10, @1, ...
+        import re as _re
+        stripped = model_key
+        while True:
+            next_stripped, n = _re.subn(r"[@._-]\d+$", "", stripped)
+            if n == 0 or next_stripped == stripped or not next_stripped:
+                break
+            if next_stripped in self._cards:
+                return self._cards[next_stripped]
+            stripped = next_stripped
+        return None
 
     def estimate(
         self, model_key: str, *, input_tokens: int, output_tokens: int

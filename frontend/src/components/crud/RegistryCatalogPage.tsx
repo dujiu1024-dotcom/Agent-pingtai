@@ -7,7 +7,6 @@ import { apiClient } from '@/lib/api/api-client'
 import {
   resolveNames,
   useRegistryCaches,
-  type RegistryNameRow,
 } from '@/lib/registry-names'
 import { valueLabel, formatDateTime } from '@/lib/i18n/labels'
 import { Modal } from './Modal'
