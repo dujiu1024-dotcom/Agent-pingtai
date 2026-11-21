@@ -86,6 +86,10 @@ def validate_record(record: dict[str, Any], policy: dict[str, Any]) -> dict[str,
     measured_rto = round((resumed - incident).total_seconds(), 3)
     objective = policy["objectives"]["full_platform"]
     failures: list[str] = []
+    for field in ("environment", "topology", "platform_version", "fault_injection_scenario"):
+        value = record.get(field)
+        if not isinstance(value, str) or not value.strip():
+            failures.append(f"{field} must describe the exercised environment")
 
     backups = record.get("component_backups")
     if not isinstance(backups, dict):
