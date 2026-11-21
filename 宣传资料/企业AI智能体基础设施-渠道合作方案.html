@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#091426">
+<title>企业 AI 智能体基础设施｜渠道合作方案</title>
+<style>
+:root{--bg:#081426;--panel:#101f35;--panel2:#142943;--line:rgba(177,203,235,.17);--text:#f2f6fc;--muted:#a9b8cc;--blue:#69a7ff;--cyan:#67e0d0;--gold:#f2c879;--green:#75d6a2;--red:#ff9c9c}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 82% 15%,rgba(42,111,191,.22),transparent 34%),radial-gradient(ellipse at 10% 88%,rgba(33,167,157,.12),transparent 35%),linear-gradient(135deg,#081426,#0b1a2d 55%,#091526)}
+.deck{position:relative;width:100%;height:100%;isolation:isolate}.slide{display:none;position:absolute;inset:0;padding:clamp(28px,5.2vw,82px) clamp(26px,7vw,112px) 90px;overflow:auto;animation:enter .32s ease}.slide.active{display:flex;flex-direction:column}.slide:after{content:"";position:absolute;right:7%;top:12%;width:34vw;height:34vw;max-width:440px;max-height:440px;border:1px solid rgba(105,167,255,.1);border-radius:50%;box-shadow:0 0 0 34px rgba(105,167,255,.025),0 0 0 72px rgba(105,167,255,.018);pointer-events:none;z-index:-1}
+@keyframes enter{from{opacity:.25;transform:translateY(9px)}to{opacity:1;transform:none}}
+.eyebrow{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--cyan);font-weight:700;margin-bottom:18px}.kicker{color:var(--blue);font-size:13px;letter-spacing:.12em;font-weight:700}
+h1{font-size:clamp(42px,6.6vw,88px);line-height:1.12;letter-spacing:-.045em;margin:0 0 24px;max-width:1050px}h2{font-size:clamp(30px,4vw,52px);line-height:1.18;letter-spacing:-.03em;margin:0 0 16px;max-width:1050px}h3{font-size:19px;margin:0 0 10px}p{color:var(--muted);font-size:clamp(15px,1.35vw,19px);line-height:1.72;margin:0}.lead{font-size:clamp(19px,2vw,26px);line-height:1.6;max-width:850px;color:#d8e4f3}.sub{font-size:14px;color:var(--muted);line-height:1.6}.accent{color:var(--cyan)}.blue{color:var(--blue)}.gold{color:var(--gold)}.green{color:var(--green)}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:clamp(24px,4vh,44px);gap:20px}.section-no{font-size:12px;color:#7188a5;letter-spacing:.16em}.grid{display:grid;gap:14px}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.card{background:linear-gradient(145deg,rgba(20,41,67,.88),rgba(13,29,49,.86));border:1px solid var(--line);border-radius:17px;padding:22px;min-width:0}.card p{font-size:14px;line-height:1.65}.card .num{font-size:30px;font-weight:750;color:var(--blue);margin-bottom:10px}.icon{width:38px;height:38px;border:1px solid rgba(103,224,208,.3);background:rgba(103,224,208,.08);border-radius:11px;display:grid;place-items:center;color:var(--cyan);font-size:19px;margin-bottom:16px}.tag{display:inline-flex;border:1px solid rgba(105,167,255,.28);border-radius:999px;padding:6px 11px;font-size:12px;color:#bcd6f5;margin:4px 5px 4px 0}.rule{height:1px;background:var(--line);margin:18px 0}.bigline{font-size:clamp(23px,3vw,38px);line-height:1.42;font-weight:650;max-width:960px}.muted{color:var(--muted)}.footnote{font-size:11px;color:#7188a5;line-height:1.5;margin-top:auto;padding-top:20px}.pill{font-size:11px;color:var(--cyan);border:1px solid rgba(103,224,208,.3);border-radius:6px;padding:4px 7px;display:inline-block;margin-bottom:12px}
+.hero{justify-content:center}.hero .eyebrow{margin-bottom:26px}.hero .lead{margin:0 0 32px}.hero-meta{display:flex;gap:10px;flex-wrap:wrap}.hero-meta span{font-size:12px;color:#b8c9dd;border:1px solid var(--line);padding:8px 12px;border-radius:999px}
+.quote{border-left:3px solid var(--cyan);padding:10px 0 10px 22px;font-size:clamp(21px,2.5vw,34px);line-height:1.45;font-weight:650;max-width:900px}
+.flow{display:flex;align-items:stretch;gap:9px;margin-top:24px}.flow .step{flex:1;background:rgba(20,41,67,.88);border:1px solid var(--line);border-radius:13px;padding:17px 13px;text-align:center}.flow .step strong{display:block;font-size:15px;margin-bottom:7px}.flow .step small{color:var(--muted);font-size:11px;line-height:1.45}.flow .arrow{align-self:center;color:var(--cyan);font-size:21px}
+.arch{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:12px;align-items:stretch;margin-top:16px}.archcol{display:flex;flex-direction:column;gap:10px}.archbox{background:rgba(20,41,67,.84);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}.archbox strong{display:block;font-size:14px;margin-bottom:5px}.archbox small{color:var(--muted);font-size:11px;line-height:1.4}.archbox.core{border-color:rgba(103,224,208,.42);background:linear-gradient(135deg,rgba(25,77,89,.48),rgba(18,44,67,.9))}
+.metric{font-size:clamp(26px,3.3vw,44px);font-weight:750;letter-spacing:-.04em;color:var(--cyan)}.metric-label{font-size:13px;color:var(--muted);margin-top:7px}
+.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}.phase{border-top:2px solid var(--blue);padding-top:15px}.phase:nth-child(2){border-color:var(--cyan)}.phase:nth-child(3){border-color:var(--gold)}.phase:nth-child(4){border-color:#b69bff}.phase b{font-size:13px}.phase p{font-size:13px;margin-top:8px}
+.partner{display:grid;grid-template-columns:1fr 56px 1fr;align-items:center;gap:12px;margin:20px 0}.partnerbox{border:1px solid var(--line);border-radius:16px;padding:22px;background:rgba(20,41,67,.8)}.partnerbox h3{font-size:20px}.plus{font-size:30px;text-align:center;color:var(--cyan)}
+.ask{background:linear-gradient(130deg,rgba(27,75,112,.55),rgba(18,46,67,.8));border:1px solid rgba(103,224,208,.35);border-radius:18px;padding:25px;margin-top:20px}
+.nav{position:fixed;z-index:10;left:0;right:0;bottom:0;height:64px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;background:rgba(5,14,27,.82);backdrop-filter:blur(14px);border-top:1px solid var(--line)}.nav-left,.nav-right{display:flex;align-items:center;gap:12px}.brand{font-size:11px;color:#849ab5;letter-spacing:.08em}.nav button{background:#142943;border:1px solid var(--line);color:#e8f1fc;border-radius:9px;padding:9px 14px;font-size:12px;cursor:pointer}.nav button:hover{border-color:var(--blue)}.nav button:disabled{opacity:.35;cursor:default}.count{font-size:12px;color:#a9b8cc;min-width:52px;text-align:center}.progress{position:fixed;z-index:11;bottom:63px;left:0;height:2px;background:var(--cyan);width:0;transition:width .25s}.dots{display:flex;gap:5px}.dots i{width:5px;height:5px;border-radius:50%;background:#526781}.dots i.on{background:var(--cyan);width:15px;border-radius:5px}
+@media(max-width:850px){.slide{padding:28px 24px 88px}.g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.arch{grid-template-columns:1fr}.archcol{display:grid;grid-template-columns:repeat(2,1fr)}.flow{flex-wrap:wrap}.flow .step{min-width:42%}.flow .arrow{display:none}.timeline{grid-template-columns:repeat(2,1fr)}.partner{grid-template-columns:1fr}.plus{line-height:.5}.nav{padding:0 12px}.brand{display:none}}
+@media(max-width:520px){.g2,.g3,.g4{grid-template-columns:1fr}.slide{padding:24px 19px 86px}.card{padding:17px}.timeline{grid-template-columns:1fr 1fr}.nav button{padding:8px 10px}.dots{display:none}}
+@media print{html,body{height:auto;overflow:visible;background:#081426;-webkit-print-color-adjust:exact;print-color-adjust:exact}.deck{height:auto}.slide,.slide.active{display:flex!important;position:relative;min-height:100vh;page-break-after:always;overflow:hidden}.nav,.progress{display:none}}
+</style>
+</head>
+<body>
+<div class="deck">
+<section class="slide hero active">
+<div class="eyebrow">ENTERPRISE AI INFRASTRUCTURE · CHANNEL PARTNERSHIP</div>
+<div class="kicker">企业级智能体协作与运营平台</div>
+<h1>让 AI 从一个工具<br><span class="accent">成为企业的基础能力</span></h1>
+<p class="lead">面向企业独立部署、面向多部门协同、面向真实业务流程的智能体平台。与渠道伙伴共同建设可复制、可持续升级的企业 AI 基础设施市场。</p>
+<div class="hero-meta"><span>独立部署</span><span>多租户与部门隔离</span><span>多智能体协作</span><span>可治理、可扩展</span></div>
+<div class="footnote">渠道合作交流方案｜产品能力与建设路线说明</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">01 / THE SHIFT</div><h2>企业 AI 的下一步，不只是“接入一个大模型”</h2></div><div class="section-no">01 — 12</div></div>
+<p class="lead">企业真正需要的，是把模型能力接进组织、流程、工具和管理体系，让 AI 能够持续参与工作，而不是停留在问答窗口。</p>
+<div class="grid g3" style="margin-top:28px">
+<div class="card"><div class="icon">01</div><h3>从个人使用走向组织使用</h3><p>个人会用 AI，不等于企业已经拥有 AI 能力。企业需要统一管理入口、角色、权限、知识和运行过程。</p></div>
+<div class="card"><div class="icon">02</div><h3>从单点助手走向流程协作</h3><p>复杂工作需要拆解、分工、并行处理、结果汇总、复核与交付，不是一次对话就能完成。</p></div>
+<div class="card"><div class="icon">03</div><h3>从模型体验走向业务治理</h3><p>企业必须关注数据边界、工具权限、人工审批、成本、过程追踪和责任归属。</p></div>
+</div>
+<div class="rule"></div><div class="quote">企业缺的不是又一个 AI 聊天入口，而是一套能把 AI 安全、稳定地组织起来的底座。</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">02 / THE PROBLEM</div><h2>企业落地 AI，常常卡在四个地方</h2></div><div class="section-no">02 — 12</div></div>
+<div class="grid g2">
+<div class="card"><div class="num">01</div><h3>工具分散，能力难复用</h3><p>不同团队各自采购、试用和搭建，模型、提示词、知识与工具散落在不同系统里，难以形成组织资产。</p></div>
+<div class="card"><div class="num">02</div><h3>数据敏感，难以放心使用</h3><p>企业不希望业务资料、内部知识和运行数据失去控制，需要部署边界清晰、租户与部门权限可管理。</p></div>
+<div class="card"><div class="num">03</div><h3>流程复杂，单 Agent 不够用</h3><p>研发、运营、客服、分析等任务往往涉及多角色、多步骤、多工具和反复确认。</p></div>
+<div class="card"><div class="num">04</div><h3>缺少治理，难以规模推广</h3><p>没有审批、审计、运行记录、成本统计和评测机制，试点容易，规模化却难。</p></div>
+</div>
+<p class="footnote">这四类问题构成平台产品化的切入点；实际需求需在客户调研与试点中逐一验证。</p>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">03 / OUR POSITION</div><h2>我们提供的不是一个 Agent，而是一套 Agent 平台</h2></div><div class="section-no">03 — 12</div></div>
+<p class="lead">统一管理智能体、模型、工具、知识、工作流、任务、运行与审批，让企业能够按业务需要组合 AI 能力。</p>
+<div class="grid g3" style="margin-top:26px">
+<div class="card"><div class="icon">◈</div><h3>智能体管理</h3><p>角色定义、能力配置、协作关系、版本与运行管理。</p></div>
+<div class="card"><div class="icon">⌘</div><h3>工作流编排</h3><p>任务拆解、流程节点、分支、暂停、人工介入与恢复。</p></div>
+<div class="card"><div class="icon">◎</div><h3>模型治理</h3><p>模型模板、供应商适配、参数策略、密钥注入与成本约束。</p></div>
+<div class="card"><div class="icon">⛭</div><h3>工具连接</h3><p>通过统一工具网关接入业务系统，控制可发现、可调用的能力范围。</p></div>
+<div class="card"><div class="icon">▤</div><h3>知识与记忆</h3><p>知识资料检索、来源引用、跨任务记忆与上下文管理。</p></div>
+<div class="card"><div class="icon">◉</div><h3>运行与治理</h3><p>任务状态、执行轨迹、审批、审计、评测和成本可观测。</p></div>
+</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">04 / HOW IT WORKS</div><h2>让多个专业智能体，像一个团队一样工作</h2></div><div class="section-no">04 — 12</div></div>
+<p class="lead">以复杂任务为例：平台将工作拆解给不同专家，围绕共享事实、证据和决策协作，最后形成可追踪的结果。</p>
+<div class="flow">
+<div class="step"><strong>业务任务</strong><small>目标、约束、验收标准</small></div><div class="arrow">→</div>
+<div class="step"><strong>任务编排</strong><small>拆解、分派、流程控制</small></div><div class="arrow">→</div>
+<div class="step"><strong>专家并行</strong><small>分析、检索、执行、复核</small></div><div class="arrow">→</div>
+<div class="step"><strong>共享黑板</strong><small>事实、证据、质疑、冲突</small></div><div class="arrow">→</div>
+<div class="step"><strong>汇总交付</strong><small>裁决、审批、结果与留痕</small></div>
+</div>
+<div class="grid g3" style="margin-top:22px">
+<div class="card"><h3>不是简单群聊</h3><p>协作信息有类型、来源、作用域和版本，重要结论关联证据。</p></div>
+<div class="card"><h3>不是无边界自治</h3><p>智能体按授权执行；高风险动作进入人工审批，关键权限由人掌握。</p></div>
+<div class="card"><h3>不是一次性黑盒</h3><p>任务、运行、工具调用和决策过程可追踪，为复盘与持续改进提供依据。</p></div>
+</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">05 / ENTERPRISE READY</div><h2>企业部署的关键：数据边界清楚，管理边界清楚</h2></div><div class="section-no">05 — 12</div></div>
+<div class="grid g2" style="align-items:start">
+<div>
+<div class="card" style="margin-bottom:13px"><span class="pill">部署模式</span><h3>每家企业拥有独立部署实例</h3><p>平台部署在企业指定的云环境、私有云或本地基础设施中。企业对自己的运行环境、数据存储和运维策略拥有控制权。</p></div>
+<div class="card"><span class="pill">组织模式</span><h3>一个企业实例，承载多个部门空间</h3><p>在同一企业部署实例内，通过租户、组织、成员、角色与资源授权，支持不同部门或业务单元按边界使用平台。</p></div>
+</div>
+<div class="card">
+<h3 style="margin-bottom:15px">逻辑隔离示意</h3>
+<div class="archcol">
+<div class="archbox core"><strong>企业独立部署实例</strong><small>企业基础设施与平台控制面</small></div>
+<div class="archbox"><strong>身份认证 · 组织 · 角色权限</strong><small>统一身份入口与授权策略</small></div>
+<div class="archcol" style="display:grid;grid-template-columns:repeat(3,1fr)">
+<div class="archbox"><strong>研发部门</strong><small>项目 / 知识 / 运行</small></div><div class="archbox"><strong>运营部门</strong><small>项目 / 知识 / 运行</small></div><div class="archbox"><strong>业务部门</strong><small>项目 / 知识 / 运行</small></div>
+</div>
+<div class="archbox core"><strong>租户与资源级数据隔离</strong><small>访问控制、审计与数据范围校验</small></div>
+</div>
+</div>
+</div>
+<p class="footnote">说明：多租户是平台内部的逻辑隔离与管理机制，不等同于每个部门都拥有独立物理数据库。具体隔离强度、网络边界、备份和密钥策略可按企业安全要求设计并验收。</p>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">06 / TRUST & CONTROL</div><h2>让 AI 有能力做事，也让企业知道它做了什么</h2></div><div class="section-no">06 — 12</div></div>
+<div class="grid g4">
+<div class="card"><div class="icon">01</div><h3>身份与权限</h3><p>租户、成员、角色和资源授权，权限由服务端可信上下文控制。</p></div>
+<div class="card"><div class="icon">02</div><h3>工具网关</h3><p>工具白名单、参数校验、资源授权，避免 Agent 任意直连业务系统。</p></div>
+<div class="card"><div class="icon">03</div><h3>人工审批</h3><p>高影响外部动作须审批；资金、安全与权限类动作保留人工执行。</p></div>
+<div class="card"><div class="icon">04</div><h3>运行审计</h3><p>关联租户、操作者、运行、工具、资源与执行结果，便于追责复盘。</p></div>
+</div>
+<div class="rule"></div>
+<div class="grid g2">
+<div><div class="metric">默认监督</div><div class="metric-label">低风险任务可按策略自动执行，高风险动作进入审批</div></div>
+<div><div class="metric">可追踪</div><div class="metric-label">运行轨迹、工具调用、成本与失败信息逐步纳入观测体系</div></div>
+</div>
+<p class="footnote">安全能力按架构设计、代码实现、集成测试和生产验收分层推进；不能将设计目标直接视为已完成的生产合规认证。</p>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">07 / PLATFORM ARCHITECTURE</div><h2>开放架构，避免被单一模型或单一运行引擎锁定</h2></div><div class="section-no">07 — 12</div></div>
+<div class="arch">
+<div class="archcol">
+<div class="archbox"><strong>企业入口</strong><small>Web / API / CLI</small></div>
+<div class="archbox"><strong>身份与控制面</strong><small>租户、组织、权限、审批</small></div>
+<div class="archbox"><strong>平台管理</strong><small>Agent / Skill / Tool / Model</small></div>
+</div>
+<div class="archcol">
+<div class="archbox core"><strong>工作流编排 · LangGraph</strong><small>有状态流程、分支、暂停与恢复</small></div>
+<div class="archbox core"><strong>Agent Runtime · Harness Adapter</strong><small>运行引擎可替换，模型供应商可适配</small></div>
+<div class="archbox core"><strong>多专家协作 · Hybrid Blackboard</strong><small>共享事实、证据、质疑、冲突与裁决</small></div>
+<div class="archbox"><strong>工具网关 · MCP</strong><small>授权发现、调用校验、审批与审计</small></div>
+</div>
+<div class="archcol">
+<div class="archbox"><strong>PostgreSQL</strong><small>业务状态与持久化主数据</small></div>
+<div class="archbox"><strong>pgvector</strong><small>语义检索能力</small></div>
+<div class="archbox"><strong>Redis Streams</strong><small>事件分发与异步唤醒</small></div>
+<div class="archbox"><strong>可观测与评测</strong><small>Trace、成本、质量与错误</small></div>
+</div>
+</div>
+<div class="rule"></div><p class="sub">架构原则：控制面管身份与策略，编排层管流程，运行时管单次执行，黑板管协作认知，工具网关管外部副作用，持久化层保存业务事实。</p>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">08 / BUSINESS VALUE</div><h2>平台价值，不止是节省几次提问的时间</h2></div><div class="section-no">08 — 12</div></div>
+<div class="grid g3">
+<div class="card"><div class="metric">复用</div><h3>把 AI 能力沉淀为组织资产</h3><p>Agent、工作流、提示模板、工具连接和知识配置可以按规范管理与复用，减少重复建设。</p></div>
+<div class="card"><div class="metric">协同</div><h3>让跨角色任务形成闭环</h3><p>将复杂工作拆解、分工、复核和交付，帮助团队把 AI 从个人助手带入协作流程。</p></div>
+<div class="card"><div class="metric">治理</div><h3>让使用过程可管理</h3><p>通过权限、审批、审计、运行追踪和成本观测，降低企业规模化使用的管理难度。</p></div>
+<div class="card"><div class="metric">适配</div><h3>按企业环境灵活部署</h3><p>独立部署，模型与运行引擎通过适配层接入，减少对单一供应商的绑定。</p></div>
+<div class="card"><div class="metric">扩展</div><h3>从部门试点逐步扩展</h3><p>可从一个部门、一个场景开始，逐步沉淀标准方案并扩展到更多部门。</p></div>
+<div class="card"><div class="metric">持续</div><h3>形成长期升级与服务空间</h3><p>平台能力随客户场景持续迭代，带来部署、集成、培训、运维和增值服务机会。</p></div>
+</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">09 / CHANNEL OPPORTUNITY</div><h2>渠道伙伴带来企业市场，平台团队持续创造产品价值</h2></div><div class="section-no">09 — 12</div></div>
+<div class="partner">
+<div class="partnerbox"><span class="pill">渠道合作方</span><h3>把企业资源转化为落地机会</h3><p>企业客户触达、行业关系、需求引荐、商务推进、试点组织、区域推广与生态合作。</p></div>
+<div class="plus">+</div>
+<div class="partnerbox"><span class="pill">平台研发方</span><h3>把产品能力转化为交付成果</h3><p>产品研发、技术路线、部署实施、系统集成、技术培训、版本升级与产品支持。</p></div>
+</div>
+<div class="card" style="text-align:center;padding:24px">
+<div class="kicker">JOINT GO-TO-MARKET</div>
+<div class="bigline" style="margin:10px auto">联合拓展客户 · 联合打磨场景 · 联合形成行业方案</div>
+<p>渠道负责市场连接，平台负责技术产品化；以客户项目验证价值，再把可复用能力沉淀为标准产品。</p>
+</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">10 / COOPERATION MODEL</div><h2>合作不是一次性采购，而是共同经营一个增长飞轮</h2></div><div class="section-no">10 — 12</div></div>
+<div class="flow">
+<div class="step"><strong>企业资源导入</strong><small>渠道识别客户与场景</small></div><div class="arrow">→</div>
+<div class="step"><strong>联合需求诊断</strong><small>选择高价值试点</small></div><div class="arrow">→</div>
+<div class="step"><strong>部署与交付</strong><small>形成可验证成果</small></div><div class="arrow">→</div>
+<div class="step"><strong>案例与标准化</strong><small>沉淀行业方案</small></div><div class="arrow">→</div>
+<div class="step"><strong>复制与扩张</strong><small>进入更多企业与部门</small></div>
+</div>
+<div class="grid g3" style="margin-top:25px">
+<div class="card"><h3>研发共建</h3><p>围绕双方认可的路线投入研发资源，优先建设企业客户反复需要的共性能力。</p></div>
+<div class="card"><h3>市场共拓</h3><p>建立联合拜访、需求评估、试点推进和行业推广机制，明确线索与客户归属规则。</p></div>
+<div class="card"><h3>收益共创</h3><p>按项目约定部署实施、订阅服务、集成开发和运维支持等收入的合作与分配方式。</p></div>
+</div>
+<p class="footnote">具体研发投入、知识产权、客户归属、报价体系、交付责任与收益分配，建议通过合作协议和项目附件逐项约定。</p>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">11 / ROADMAP</div><h2>先跑通真实客户，再把能力做深、做稳、做成标准</h2></div><div class="section-no">11 — 12</div></div>
+<div class="timeline">
+<div class="phase"><b>阶段一｜联合验证</b><p>确定目标行业与首批企业；梳理场景、数据边界和部署要求；选择 1–2 个可验收试点。</p></div>
+<div class="phase"><b>阶段二｜产品打磨</b><p>围绕试点补齐核心流程、权限、工具接入、运行观测、安装部署与交付文档。</p></div>
+<div class="phase"><b>阶段三｜方案标准化</b><p>沉淀行业模板、实施手册、演示环境、培训材料和标准报价模型。</p></div>
+<div class="phase"><b>阶段四｜规模推广</b><p>复制到更多企业与部门，建立版本迭代、客户成功、运维支持和生态合作体系。</p></div>
+</div>
+<div class="rule"></div>
+<div class="grid g2">
+<div class="card"><h3>首批试点建议</h3><p>优先选择流程明确、重复性高、资料可控、结果容易验收的场景，例如研发协作、知识问答、项目运营或内部流程辅助。</p></div>
+<div class="card"><h3>每个试点都要验收</h3><p>以任务完成质量、人工节省时间、流程周期、错误率、使用频次、成本和用户反馈衡量，不用“接入了模型”作为成功标准。</p></div>
+</div>
+</section>
+
+<section class="slide">
+<div class="header"><div><div class="eyebrow">12 / THE PROPOSAL</div><h2>我们希望与您一起，把平台做成企业愿意长期使用的基础设施</h2></div><div class="section-no">12 — 12</div></div>
+<p class="lead">这不是单纯推广一款软件，而是共同建立企业 AI 能力的交付与运营体系。</p>
+<div class="ask">
+<div class="grid g3">
+<div><div class="metric">资源</div><h3>企业客户与场景</h3><p>引入有明确需求的企业资源，推动试点与真实使用。</p></div>
+<div><div class="metric">投入</div><h3>产品研发共建</h3><p>支持关键共性能力升级，让平台更适合企业级交付。</p></div>
+<div><div class="metric">市场</div><h3>联合推广与复制</h3><p>共同打造标杆案例、行业方案和持续服务体系。</p></div>
+</div>
+<div class="rule"></div>
+<div class="quote">以真实企业需求驱动产品升级，以成熟产品能力拓展企业市场。</div>
+</div>
+<div style="margin-top:24px"><div class="kicker">建议下一步</div><p style="margin-top:8px">共同选定首批目标企业与试点场景，安排一次产品演示和技术交流，形成试点范围、投入计划与合作机制草案。</p></div>
+<div class="footnote">企业 AI 智能体协作与运营平台｜渠道合作交流材料</div>
+</section>
+</div>
+<div class="progress" id="progress"></div>
+<nav class="nav" aria-label="演示导航">
+<div class="nav-left"><span class="brand">ENTERPRISE AI PLATFORM</span><div class="dots" id="dots"></div></div>
+<div class="nav-right"><button id="prev" type="button">← 上一页</button><span class="count" id="count">01 / 12</span><button id="next" type="button">下一页 →</button><button id="print" type="button">打印 / PDF</button></div>
+</nav>
+<script>
+(()=>{const slides=[...document.querySelectorAll('.slide')],dots=document.getElementById('dots'),count=document.getElementById('count'),progress=document.getElementById('progress');let index=0;slides.forEach((_,i)=>{const d=document.createElement('i');if(!i)d.className='on';dots.appendChild(d)});const indicators=[...dots.children];function show(n){index=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,i)=>s.classList.toggle('active',i===index));indicators.forEach((d,i)=>d.classList.toggle('on',i===index));count.textContent=String(index+1).padStart(2,'0')+' / '+String(slides.length).padStart(2,'0');progress.style.width=((index+1)/slides.length*100)+'%';document.getElementById('prev').disabled=index===0;document.getElementById('next').disabled=index===slides.length-1}document.getElementById('prev').addEventListener('click',()=>show(index-1));document.getElementById('next').addEventListener('click',()=>show(index+1));document.getElementById('print').addEventListener('click',()=>window.print());document.addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();show(index+1)}if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();show(index-1)}if(e.key==='Home')show(0);if(e.key==='End')show(slides.length-1)});let startX=null;document.addEventListener('touchstart',e=>{startX=e.changedTouches[0].clientX},{passive:true});document.addEventListener('touchend',e=>{if(startX===null)return;const dx=e.changedTouches[0].clientX-startX;if(Math.abs(dx)>65)show(index+(dx<0?1:-1));startX=null},{passive:true});show(0)})();
+</script>
+</body>
+</html>
