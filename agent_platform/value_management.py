@@ -7,6 +7,7 @@ are eligible. Missing financial evidence remains unknown (None), never zero.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -33,6 +34,10 @@ class HumanBaseline:
     source: str
     owner_id: str
     version: str = "1"
+    historical_business_volume: int | None = None
+    volume_period_start: date | None = None
+    volume_period_end: date | None = None
+    volume_source: str | None = None
 
     def __post_init__(self) -> None:
         if not all((self.tenant_id, self.process_id, self.role_id, self.source, self.owner_id, self.version)):
@@ -43,6 +48,19 @@ class HumanBaseline:
             raise ValueError("quality_rate must be between 0 and 1")
         if self.sample_size < 1:
             raise ValueError("sample_size must be positive")
+        volume_fields = (self.historical_business_volume, self.volume_period_start,
+                         self.volume_period_end, self.volume_source)
+        if any(value is not None for value in volume_fields):
+            if any(value is None for value in volume_fields):
+                raise ValueError("historical business volume requires value, period and source")
+            if (not isinstance(self.historical_business_volume, int)
+                    or isinstance(self.historical_business_volume, bool)
+                    or self.historical_business_volume < 0):
+                raise ValueError("historical_business_volume must be a non-negative integer")
+            if self.volume_period_end <= self.volume_period_start:
+                raise ValueError("volume period end must be after start")
+            if not isinstance(self.volume_source, str) or not self.volume_source.strip():
+                raise ValueError("volume_source is required when historical volume is supplied")
 
 
 @dataclass(frozen=True)
