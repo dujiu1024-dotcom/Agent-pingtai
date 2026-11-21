@@ -380,7 +380,9 @@ export function TaskCommandCenter() {
                   {column.label}
                 </label>
               ))}
-              <button type="button" onClick={() => set('columns', '')}>恢复默认列</button>
+              <button type="button" onClick={() => set('columns', '')}>
+                恢复默认列
+              </button>
             </div>
           </details>
         )}
@@ -425,7 +427,9 @@ export function TaskCommandCenter() {
               <thead>
                 <tr>
                   {visibleColumns.map((key) => (
-                    <th key={key}>{TASK_LIST_COLUMNS.find((column) => column.key === key)?.label}</th>
+                    <th key={key}>
+                      {TASK_LIST_COLUMNS.find((column) => column.key === key)?.label}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -443,18 +447,45 @@ export function TaskCommandCenter() {
                         <small>{t.task_id}</small>
                       </>
                     ),
-                    status: <span className={`status-badge ${statusBadgeClass(t.status)}`}>{valueLabel(t.status)}</span>,
-                    priority: priority[String(t.priority ?? '')] ?? t.priority ?? '—',
+                    status: (
+                      <span className={`status-badge ${statusBadgeClass(t.status)}`}>
+                        {valueLabel(t.status)}
+                      </span>
+                    ),
+                    priority:
+                      priority[String(t.priority ?? '')] ?? t.priority ?? '—',
                     project: resolveProjectLabel(t),
                     agent: agentLabel,
                     creator: t.created_by ?? '—',
                     created: dt(t.created_at),
                     updated: dt(t.updated_at),
                     duration: formatDuration(t.duration_ms),
-                    run: runId ? <Link to={`/operations/runs/${encodeURIComponent(runId)}`}>{String(runId).slice(-8)}</Link> : '—',
-                    trace: t.trace_id ? <Link to={`/operations/runs/${encodeURIComponent(runId ?? '')}`}>{t.trace_id}</Link> : '—',
+                    run: runId ? (
+                      <Link to={`/operations/runs/${encodeURIComponent(runId)}`}>
+                        {String(runId).slice(-8)}
+                      </Link>
+                    ) : (
+                      '—'
+                    ),
+                    trace: t.trace_id ? (
+                      runId ? (
+                        <Link to={`/operations/runs/${encodeURIComponent(runId)}`}>
+                          {t.trace_id}
+                        </Link>
+                      ) : (
+                        t.trace_id
+                      )
+                    ) : (
+                      '—'
+                    ),
                   }
-                  return <tr key={t.task_id}>{visibleColumns.map((key) => <td key={key}>{cells[key]}</td>)}</tr>
+                  return (
+                    <tr key={t.task_id}>
+                      {visibleColumns.map((key) => (
+                        <td key={key}>{cells[key]}</td>
+                      ))}
+                    </tr>
+                  )
                 })}
               </tbody>
             </table>
