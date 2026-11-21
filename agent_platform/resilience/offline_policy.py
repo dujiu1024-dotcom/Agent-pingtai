@@ -114,17 +114,23 @@ class OfflinePolicyEvaluator:
                 "decision": decision.value,
                 "reason": reason,
                 "at": now,
-                "policy_version": authorization.policy_version if authorization else None,
+                "policy_version": (
+                    authorization.policy_version if authorization else None
+                ),
                 "revocation_delay_seconds": delay,
                 "license_grace_remaining_seconds": grace_remaining,
                 "offline": True,
             }
             if self.policy.require_local_audit and not local_audit_available:
-                return OfflineResult(OfflineDecision.DENY, "local_audit_unavailable", delay, grace_remaining)
+                return OfflineResult(
+                    OfflineDecision.DENY, "local_audit_unavailable", delay, grace_remaining
+                )
             try:
                 self._audit_writer(event)
             except Exception:
-                return OfflineResult(OfflineDecision.DENY, "local_audit_write_failed", delay, grace_remaining)
+                return OfflineResult(
+                    OfflineDecision.DENY, "local_audit_write_failed", delay, grace_remaining
+                )
             return OfflineResult(decision, reason, delay, grace_remaining)
 
         if self.policy.require_local_audit and not local_audit_available:
@@ -133,7 +139,11 @@ class OfflinePolicyEvaluator:
             return finish(OfflineDecision.DENY, "no_cached_authorization")
         if not authorization.snapshot_verified:
             return finish(OfflineDecision.DENY, "authorization_snapshot_unverified")
-        if (authorization.subject_id, authorization.resource_id, authorization.action) != (
+        if (
+            authorization.subject_id,
+            authorization.resource_id,
+            authorization.action,
+        ) != (
             subject_id, resource_id, action
         ):
             return finish(OfflineDecision.DENY, "cached_authorization_scope_mismatch")
@@ -151,11 +161,15 @@ class OfflinePolicyEvaluator:
             return finish(OfflineDecision.DENY, "revocation_sync_stale")
 
         if license_state is None or not license_state.snapshot_verified:
-            return finish(OfflineDecision.DENY, "license_snapshot_missing_or_unverified")
+            return finish(
+                OfflineDecision.DENY, "license_snapshot_missing_or_unverified"
+            )
         if not license_state.license_id:
             return finish(OfflineDecision.DENY, "license_identity_missing")
         if now > license_state.expires_at:
-            grace_remaining = max(0, license_state.expires_at + self.policy.license_grace_seconds - now)
+            grace_remaining = max(
+                0, license_state.expires_at + self.policy.license_grace_seconds - now
+            )
             if grace_remaining == 0:
                 return finish(OfflineDecision.DENY, "license_grace_expired")
             if action not in (OfflineAction.READ, OfflineAction.RESUMABLE_INTERNAL):
@@ -164,5 +178,7 @@ class OfflinePolicyEvaluator:
 
         if action in (OfflineAction.EXTERNAL_SIDE_EFFECT, OfflineAction.ADMINISTRATION,
                       OfflineAction.SECURITY_SENSITIVE):
-            return finish(OfflineDecision.PAUSE, "control_plane_required_for_sensitive_action")
+            return finish(
+                OfflineDecision.PAUSE, "control_plane_required_for_sensitive_action"
+            )
         return finish(OfflineDecision.ALLOW, "cached_grant_within_offline_bounds")
