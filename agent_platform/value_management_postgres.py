@@ -155,7 +155,7 @@ class PostgresAIValueRepository:
                  throughput_change_rate,run_ids,cost_breakdown,metric_version,source_metadata,actor_id)
                 SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s
                 FROM ai_value_attributions a
-                WHERE a.id=%s AND a.tenant_id=%s AND a.process_id=%s AND a.role_id=%s
+                WHERE a.id=%s AND a.tenant_id=%s AND a.process_id=%s AND a.role_id=%s AND %s <= a.units_total
                 RETURNING id""",
                 (tenant_id,UUID(attribution_id),process_id,role_id,window_start,window_end,
                  metrics.completed_units,metrics.baseline_cycle_minutes_per_unit,
@@ -165,7 +165,7 @@ class PostgresAIValueRepository:
                  metrics.throughput_delta_per_hour,metrics.throughput_change_rate,run_ids,
                  json.dumps(cost_breakdown,ensure_ascii=False),metric_version,
                  json.dumps(source_metadata,ensure_ascii=False),actor_id,
-                 UUID(attribution_id),tenant_id,process_id,role_id),
+                 UUID(attribution_id),tenant_id,process_id,role_id,metrics.completed_units),
             )
             row = await cursor.fetchone()
         if row is None:
