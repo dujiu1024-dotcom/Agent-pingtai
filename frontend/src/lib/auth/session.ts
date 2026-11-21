@@ -10,7 +10,7 @@ export interface SessionInfo {
   email?: string
   display_name?: string
   service_account_id?: string
-  agent_id?: string
+  agent_id?: string | null
   /** Supplied by POST /auth/login; /auth/me does not currently expose expiry. */
   expires_at?: string
 }
@@ -43,7 +43,7 @@ export function parseSessionInfo(value: unknown): SessionInfo {
   }
   if (payload.principal_type === 'service_account' && (
     typeof payload.service_account_id !== 'string' ||
-    typeof payload.agent_id !== 'string'
+    (payload.agent_id !== undefined && payload.agent_id !== null && typeof payload.agent_id !== 'string')
   )) {
     throw new Error('服务账号会话信息格式无效')
   }
