@@ -1044,3 +1044,52 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | P2 | Secret redaction 的全进程安装覆盖未由本轮证据证明 | API、Worker、子进程和第三方 handler 的日志脱敏集成测试及 canary secret 验收 |
 
 本轮只更新审查报告和 Issue 记录，没有修改产品代码；未连接实际部署数据库验证角色权限。结论来自 main 分支 migration、生产 Compose 和 DSN 组合逻辑的静态对照。
+
+
+## 25. 第十三轮：身份撤销、机器身份与 No-auth 部署边界
+
+### 25.1 正向证据：人类会话/API Credential/Service Credential 均在请求时重新校验生命周期状态
+
+本轮核对到以下实现，需作为现有能力保留：
+- `IdentityService.authenticate()` 通过 token hash 查询会话，并检查 revoked_at、expires_at、user_status、membership_status；随后调用 `touch_session()` 再次确认会话、用户、租户成员关系仍有效。
+- `PostgresIdentityRepository.touch_session()` 的 SQL 同时要求 session 未撤销且未过期、user active、tenant membership active、tenant active。因此用户停用、成员关系暂停或租户暂停后，下一次会话认证会失败，而不是仅依赖 JWT/本地缓存 TTL。
+- API Credential 认证同样检查 revoked_at、expires_at、用户状态、成员关系和租户状态；`touch_api_credential()` 在数据库中再次验证并更新时间。
+- Service Credential 的 repository 查询关联 service account 与 active tenant；认证检查 credential 撤销/过期、service account 状态和 Agent Identity 状态；`authorize()` 每次通过数据库重新验证 scope、RBAC binding、service account、tenant、Agent identity。
+- `ResourceScopeAuthorizer` 对 principal tenant 与目标 resource tenant 不匹配直接拒绝，并分别将人类/API Credential 和 ServicePrincipal 导向对应的身份服务。
+- `tests/test_service_identity_authorization_integration.py` 覆盖 Agent Identity 在认证后被禁用、principal-agent 不匹配，以及跨租户复用本地 ID 时拒绝授权。该 PostgreSQL 测试需要 `AGENT_PLATFORM_TEST_DSN`，本轮未执行。
+
+### 25.2 P2：No-auth 模式是全平台身份与 CSRF 旁路，必须由部署策略显式禁止误用于生产
+
+证据：
+- `IdentityASGIMiddleware` 在 `auth_enabled=False` 时跳过身份认证与 CSRF 检查，并为每个请求注入 `user_id='anon'`、`tenant_id='default'` 的 Principal。
+- `IdentityService.authorize()` 对该 anon Principal 直接返回成功；`IdentityContextResolver` 对 Knowledge/Memory 返回全量管理权限的匿名 Principal。
+- `tests/test_issue_755_d_noauth_middleware_smoke.py` 明确测试无凭证访问多个 API namespace 成功，并测试无 Cookie/CSRF 的 POST /connectors 也成功。这是测试刻意验证的双模式行为，不是测试意外。
+- `create_platform_app(..., auth_enabled: bool = True)` 默认开启认证；当前 `production.py` 的 `create_production_app()` 调用没有传入 `auth_enabled`，因此当前生产组合根使用默认 True。未发现本轮证据证明当前默认 production entrypoint 会关闭认证。
+- 但 No-auth 是公开的应用装配选项，且它不仅跳过 HTTP middleware，还会被下游 RBAC 和 Knowledge/Memory principal resolver 视为全权匿名身份。若其他部署入口误将其设为 False 对应的 `auth_enabled=False`，其效果是全 API namespace 的匿名读写，不只是本地健康检查或只读 Demo。
+
+判断：
+- 当前默认 production composition 的认证默认值是安全的；不应将 No-auth 双模式能力本身误报为当前生产已暴露的漏洞。
+- 仓库仍缺少本轮可见的生产环境硬性防误配门禁：没有看到 production profile 对 `auth_enabled=False` 的启动拒绝，也没有 Release Gate 对 bootstrap 返回的 `auth.enabled` 执行必须为 true 的断言。
+- 这是一项 P2 部署配置风险；生产默认值为 true 是积极证据，但不能替代对所有部署入口、Helm/Compose/外部工厂的配置约束。
+
+建议：
+1. 在 production profile / production composition root 明确固定 `auth_enabled=True`，禁止由通用环境变量静默关闭；确需 No-auth 的开发/演示入口应使用独立命令和独立网络边界。
+2. Release Gate 对生产启动后的 `/api/platform/v1/bootstrap` 断言 `auth.enabled == true`；若为 false，部署验收失败。
+3. 对 No-auth 入口限制绑定 loopback 或隔离演示网络，并禁用敏感业务路由；不能仅依赖 CORS，因为非浏览器客户端不受 CORS 约束。
+4. 保留现有双模式测试，同时增加 production composition regression test，证明生产 app 永远以认证开启的方式装配。
+
+### 25.3 本轮尚未证明的边界
+
+- 已有代码支持人类会话、API Credential、Service Credential 的撤销后重新校验；但仍需真实多实例环境验证数据库状态变更到下一次请求的生效延迟，以及长时间运行中的 Run/Worker 是否在每个高风险副作用点重新授权。
+- 本轮没有发现可据以断言“用户禁用后已认证会话仍可继续发起新请求”的代码证据；会话认证 SQL 明确检查 user/membership/tenant 状态。
+- 仍需进一步检查 Worker 接收任务时及执行工具副作用前是否重新检查 tenant、Agent、service identity 状态；这将纳入第十四轮异步任务与事件链路审查。
+
+### 25.4 本轮优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P2 | No-auth 全 API 旁路缺少生产 profile 硬性防误配门禁 | 生产组合根强制 auth_enabled=true，Release Gate 校验 bootstrap capability |
+| P2 | 长运行任务对身份撤销的执行时重新授权覆盖尚未证明 | Worker 在领取、恢复和每次高风险副作用前重新验证租户/Agent/机器身份状态 |
+| 已具备 | 会话/API Credential/Service Credential 请求时生命周期校验 | 保留当前数据库状态复核及跨租户机器身份测试，补多实例撤销生效测试 |
+
+本轮只更新审查报告和 Issue 记录，没有修改产品代码；未运行 PostgreSQL 集成测试。结论来自 main 分支身份服务、数据库查询、ASGI middleware、应用组合根和对应测试源码对照。
