@@ -213,7 +213,14 @@ def aggregate_value_costs(
             key: {**value, "pricing_versions": sorted(value["pricing_versions"])}
             for key, value in sorted(model_tokens.items())
         },
-        "model_cost_by_source_usd": {key: str(value) for key, value in sorted(source_costs.items())},
+        "model_cost_by_source_usd": (
+            {key: str(value) for key, value in sorted(source_costs.items())}
+            if not unpriced_models and not usage_truncated else None
+        ),
+        "partial_model_cost_by_source_usd": (
+            {key: str(value) for key, value in sorted(source_costs.items())}
+            if unpriced_models or usage_truncated else None
+        ),
         "tool_cost_by_key": tool_breakdown,
         "tool_cost_status": (
             "usage_missing" if not selected
