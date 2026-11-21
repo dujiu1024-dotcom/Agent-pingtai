@@ -251,9 +251,9 @@ export function TaskCommandCenter() {
     const bValue = sortKey === 'updated_at' ? b.updated_at
       : sortKey === 'duration_ms' ? b.duration_ms
       : b.created_at
-    const primary = typeof aValue === 'number' && typeof bValue === 'number'
-      ? aValue - bValue
-      : (Date.parse(String(aValue ?? '')) || 0) - (Date.parse(String(bValue ?? '')) || 0)
+    const primary = typeof aValue === 'number' || typeof bValue === 'number'
+      ? Number(aValue ?? 0) - Number(bValue ?? 0)
+      : String(aValue ?? '').localeCompare(String(bValue ?? ''))
     return primary * sortDirection || a.task_id.localeCompare(b.task_id)
   })
   // 分页：从 URL 读取，非法值回退默认
