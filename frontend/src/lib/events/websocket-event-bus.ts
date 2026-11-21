@@ -54,6 +54,10 @@ export class WebSocketEventBus implements EventBusPort {
     return this.status
   }
 
+  getLastEventId(): string | undefined {
+    return this.lastEventId
+  }
+
   start(): void {
     if (this.running) return
     this.running = true
