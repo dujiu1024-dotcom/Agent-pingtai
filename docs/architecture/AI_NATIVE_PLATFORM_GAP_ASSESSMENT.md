@@ -1093,3 +1093,64 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 | 已具备 | 会话/API Credential/Service Credential 请求时生命周期校验 | 保留当前数据库状态复核及跨租户机器身份测试，补多实例撤销生效测试 |
 
 本轮只更新审查报告和 Issue 记录，没有修改产品代码；未运行 PostgreSQL 集成测试。结论来自 main 分支身份服务、数据库查询、ASGI middleware、应用组合根和对应测试源码对照。
+
+
+## 26. 第十四轮：异步任务、Outbox/Redis Streams 与 Worker 恢复链路
+
+### 26.1 正向证据：事件投递具备可恢复的至少一次语义和持久化去重
+
+本轮确认：
+- PostgreSQL Outbox 通过 `FOR UPDATE SKIP LOCKED` 原子领取批次，使用 lease_token/lease_until 防止并发 Worker 同时确认同一条记录；发布失败采用指数退避，达到 max_attempts 后进入 dead-letter 状态。
+- Outbox relay 先记录审计意图再发布 Redis；发布成功但 PostgreSQL 确认失败时允许重复投递，并明确依赖消费者按 event_id 去重。
+- Redis Streams 不在发布时执行 MAXLEN 裁剪，避免删除仍处于 Pending Entries List 的消息；提供基于所有 Consumer Group 已确认边界的安全裁剪。
+- Consumer 先 claim_pending 再读取新消息；PostgreSQL receipt 以 (tenant_id, consumer_name, event_id) 唯一身份竞争领取，带 lease 和 retry backoff；处理成功后先完成 receipt 再 ACK Redis。失败保持消息 pending 或进入 DLQ，DLQ 写入与源消息 ACK 在 Redis transaction pipeline 中执行。
+- `tests/test_postgres_redis_worker_recovery_integration.py` 包含 Worker 崩溃后过期 receipt + Redis pending message 恢复、并发 receipt claim 单一胜者、handler 暂时失败后重试成功等真实 PostgreSQL+Redis 集成测试（需要 AGENT_PLATFORM_TEST_DSN 与 AGENT_PLATFORM_TEST_REDIS_URL，本轮未运行）。
+- Durable Run Worker 使用 PostgreSQL lease、heartbeat；失去 lease 会取消执行协程；中断 Run 使用 checkpoint resume 而不是从头执行；测试覆盖 lease 丢失取消执行和 checkpoint 恢复。
+- Connector Sync Worker 使用 PostgreSQL lease、过期 processing job 重新领取、退避重试；处理前检查连接是否 active，撤销清理有独立 job 类型。
+
+### 26.2 P2：Durable Run Worker 未在领取/恢复执行时重新验证发起人的身份与当前授权状态
+
+证据：
+- `RunExecutionWorker.run_once()` 领取 Run 后读取 run record/task record，再通过 executor_resolver 构建执行器并调用 `_execute_claimed()`；该路径没有调用 `task_authorizer`，也没有调用 IdentityService/ResourceScopeAuthorizer。
+- `RunExecutionWorker._execute_claimed()` 从持久化 task record 读取 `created_by`、`session_id`，将二者作为 session_context 传给 executor；它们是任务创建时持久化的身份标识，不是当前会话凭证，也不构成当前身份仍有效的证明。
+- `build_production_run_execution()` 将 `task_authorizer` 注入 API task service 和 ProductionRunExecution 对象，但构造 `RunExecutionWorker` 时没有把授权器传给 Worker；Worker 构造参数也没有授权器/主体状态检查端口。
+- `RegistryLangGraphExecutorResolver`（位于 `runtime/workbench_tasks.py`）验证 tenant/run identity、不可变 registry snapshot、Agent/Template/Provider/Tool/Skill/Workflow 版本一致性；这是执行配置完整性保护，不等同于重新验证 created_by 用户、Tenant membership、Service Account 或 Agent Identity 当前状态。
+- Session persistence 的 `begin_run()` 检查 session.status == active，但没有在此处检查 session 所属用户当前 status、tenant membership status 或 tenant.status；因此不能将 Session active 等同于用户/租户授权仍有效。
+
+判断：
+- 已确认的是 Worker 执行路径没有显式的主体身份/权限重新授权接口；不能据此断言所有生产 resolver 都必然不做任何额外检查，因为 resolver、graph factory 和工具执行器由部署注入。
+- 对已经入队、等待重试或中断恢复的 Run，如果用户被禁用、成员关系被撤销、租户被暂停或 Agent Identity 被禁用，仓库的 Worker 公共执行路径没有统一的强制复核点。是否有部署扩展补充该检查需通过具体生产 builder 继续验证。
+- 这属于 P2 安全与治理缺口，尤其影响长任务、延迟任务、重试任务和人工恢复任务；不将其定性为已证实的跨租户越权漏洞。
+
+建议：
+1. 为 RunExecutionWorker 增加必需的 execution_authorizer / principal_status_resolver，基于 task record 的 tenant_id、created_by、agent_id、service identity 重新验证 user、membership、tenant、Agent/Service Account 状态和本次 Run 所需权限。
+2. 在领取后、checkpoint resume 前、每次高风险工具副作用前执行授权复核；拒绝后将 Run 转为明确的 cancelled/permission_revoked 状态并审计原因。
+3. 若产品策略允许用户停用后继续既有任务，应将该策略显式建模为不可伪造的执行授权快照、有效期和撤销策略，而不是默认信任 created_by 字段。
+4. 增加真实 PostgreSQL 集成测试：Run 入队后分别禁用 user、暂停 membership、暂停 tenant、禁用 Agent Identity，再由 Worker 领取/恢复，验证在执行模型调用和工具副作用前按策略拒绝或取消。
+
+### 26.3 P2：Consumer 侧的事件幂等依赖 Handler 自身遵守契约，通用 Consumer 无法保证外部副作用恰好一次
+
+证据：
+- `RedisStreamsConsumer` 在 Handler 完成后才完成 PostgreSQL receipt；如果 Handler 已产生外部副作用、但 Worker 在 receipt complete 前崩溃，消息会在 lease 过期后重新执行。
+- 仓库提供 `IdempotentEventHandler` 与 `event_idempotency_key()`，但 Consumer 的 handler 参数仍是普通 callable；Consumer 没有强制所有 Handler 必须实现 IdempotentEventHandler，也无法替任意外部 API 建立原子幂等事务。
+- 现有 consumer 单元测试验证 receipt、pending、retry、DLQ 状态转换；集成测试验证 worker restart 和 handler retry，但没有证明每个生产 Handler 的外部副作用均使用稳定幂等键。
+
+判断：
+- 这是至少一次投递模型的固有边界和生产 Handler 接线验收缺口，不是 Outbox/Consumer 本身丢消息的已确认缺陷。
+- 业务副作用若未使用下游幂等键/Inbox 事务，仍可能在“副作用成功、receipt 未完成”的崩溃窗口重复执行。
+
+建议：
+1. 生产事件 Handler 注册必须声明幂等策略（Inbox transaction、下游 idempotency key 或可恢复 reconciliation），不满足策略的 handler 不允许进入生产注册表。
+2. 对每个产生外部副作用的事件类型做 crash-after-effect-before-receipt-complete 集成测试，断言最终只有一个业务效果。
+3. 明确业务语义是 at-least-once + idempotent effect，而不是笼统宣传 exactly-once。
+
+### 26.4 本轮结论与优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P2 | Run Worker 缺少统一的执行时主体身份/权限复核接口 | 用户、成员关系、租户、Agent/Service Identity 状态撤销后，排队/恢复 Run 在模型调用和高风险副作用前按策略被拒绝 |
+| P2 | 生产事件 Handler 幂等性依赖约定，Consumer 无法强制 | 所有副作用 Handler 注册幂等策略并通过崩溃窗口集成测试 |
+| 已具备 | Outbox/Redis Streams 至少一次投递、receipt 去重、lease 恢复、DLQ | 保留当前持久化 lease/receipt 机制，补齐生产运行指标和真实部署演练 |
+| 已具备 | Durable Run lease heartbeat、checkpoint resume、Connector Sync lease retry | 增加身份撤销和多实例争抢的端到端覆盖 |
+
+本轮只更新审查报告和 Issue 记录，没有修改产品代码。源码审查覆盖 Outbox、Redis Streams Consumer/Receipt、Durable Run Worker、生产 Run execution composition、Connector Sync Worker 及对应测试；PostgreSQL/Redis 集成测试未在本环境执行。
