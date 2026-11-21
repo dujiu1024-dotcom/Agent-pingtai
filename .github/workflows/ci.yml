@@ -16,7 +16,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Classify changed files
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch origin "$BASE_REF" --depth=1
+          python - <<'PY'
+          import os, subprocess
+          base = "origin/" + os.environ["BASE_REF"]
+          files = subprocess.check_output(["git", "diff", "--name-only", f"{base}...HEAD"], text=True).splitlines()
+          docs_only = bool(files) and all(path.startswith("docs/") or path.lower().endswith((".md", ".markdown", ".rst")) or path in {"LICENSE", "CHANGELOG", "CONTRIBUTING"} for path in files)
+          print("Changed files:", files)
+          print("Documentation-only:", docs_only)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"code={str(not docs_only).lower()}\\n")
+          PY
+
   identity-focused:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Identity focused tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -50,7 +83,8 @@ jobs:
           -v
 
   test:
-    needs: [lint, typecheck]
+    needs: [changes, lint, typecheck]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -73,6 +107,8 @@ jobs:
         run: python -m unittest discover -s tests -t . -q
 
   lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Lint
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -88,6 +124,8 @@ jobs:
         run: ruff check .
 
   typecheck:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Type check
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -103,6 +141,8 @@ jobs:
         run: mypy
 
   platform-integration:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Platform Integration
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     uses: ./.github/workflows/platform-integration.yml
