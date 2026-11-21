@@ -28,6 +28,14 @@ export const pageRoutes: PageRoute[] = [
     owner: '#744',
   },
   {
+    path: '/operations/dashboard',
+    pageId: 'OPS-DASHBOARD',
+    title: '运营驾驶舱',
+    section: '智能体运营',
+    description: 'OperationsDashboard 真实 API 驾驶舱入口。',
+    owner: '#797',
+  },
+  {
     path: '/workspace/quickstart',
     pageId: 'WS-QUICKSTART',
     title: '快速使用',
