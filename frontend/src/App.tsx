@@ -67,7 +67,7 @@ import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 
 // 路由级代码分块：每个 feature 页面独立 chunk
-const Dashboard = lazy(() => import('@/components/OperationsDashboard').then((m) => ({ default: m.Dashboard })))
+const Dashboard = lazy(() => import('@/features/dashboard/Dashboard').then((m) => ({ default: m.Dashboard })))
 const QuickStartPage = lazy(() => import('@/features/quickstart/QuickStartPage').then((m) => ({ default: m.QuickStartPage })))
 const StatusBoardPage = lazy(() => import('@/features/board/StatusBoardPage').then((m) => ({ default: m.StatusBoardPage })))
 const NotificationsPage = lazy(() => import('@/components/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
