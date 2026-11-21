@@ -17,12 +17,72 @@ permissions:
 
 concurrency:
   group: platform-release-gate-${{ github.event.pull_request.number || github.ref }}
-  # Cancel stale runs for the same branch/PR so squash-merged branches don't
-  # leave zombie runners blocking new CI indefinitely.
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Classify changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.filter.outputs.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Detect platform code changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            echo "platform=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          if printf '%s\n' "$changed" | grep -Eq '^(agent_platform/|tests/|scripts/|frontend/|requirements[^/]*\.txt$|pyproject\.toml$|mypy\.ini$|ruff\.toml$|Dockerfile|docker/|deploy/|compose[^/]*\.ya?ml$)'; then
+            echo "platform=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "platform=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  docs-validation:
+    name: Docs and workflow validation
+    needs: changes
+    if: needs.changes.outputs.platform != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate changed documentation and configuration files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import subprocess
+          from pathlib import Path
+          import os
+
+          base = os.environ["BASE_SHA"]
+          head = os.environ["HEAD_SHA"]
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base}...{head}"], text=True
+          ).splitlines()
+          for name in changed:
+              path = Path(name)
+              if not path.is_file() or path.stat().st_size == 0:
+                  raise SystemExit(f"changed file is missing or empty: {name}")
+              path.read_bytes().decode("utf-8")
+          print(f"validated {len(changed)} changed UTF-8 files")
+          PY
+      - name: Validate workflow YAML syntax
+        run: ruby -e 'require "yaml"; ARGV.each { |file| YAML.load_file(file) }' .github/workflows/ci.yml .github/workflows/platform-release-gate.yml
+
   e2e-security-integration:
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     services:
@@ -73,7 +133,7 @@ jobs:
             tests.test_release_gate_evidence \
             tests.test_identity_api \
             tests.test_identity_http \
-            tests.test_knowledge_memory_api \\
+            tests.test_knowledge_memory_api \
             tests.test_knowledge_acl_propagation \
             tests.test_memory_boundaries \
             tests.test_graph_governance \
@@ -112,7 +172,7 @@ jobs:
             tests.test_session_assets \
             tests.test_issue_20_a_20_02_webhook_security_reliability \
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
-            tests.test_issue_22_a_22_05_graph_storage_benchmark \\
+            tests.test_issue_22_a_22_05_graph_storage_benchmark \
             tests.test_platform_perf_smoke -v
       - name: Static checks
         run: |
@@ -120,6 +180,8 @@ jobs:
           mypy
 
   e2e-focused-unit:
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -144,6 +206,7 @@ jobs:
 
   production-release-evidence:
     needs:
+      - changes
       - e2e-security-integration
       - e2e-focused-unit
     if: github.event_name == 'workflow_dispatch'
