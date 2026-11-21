@@ -147,6 +147,10 @@ jobs:
           assert report["legacy_sqlite"]["run_lifecycle_transaction"]["operations"] == 800
           assert report["legacy_sqlite"]["blackboard_write_read"]["operations"] == 800
           assert report["platform_postgres_pool"]["status"] == "measured", report["platform_postgres_pool"]
+          postgres_metrics = report["platform_postgres_pool"]["metrics"]
+          assert postgres_metrics["run_lifecycle_transaction"]["operations"] == 800
+          assert postgres_metrics["blackboard_write_read"]["operations"] == 800
+          assert postgres_metrics["pool_wait_latency_ms"]["p95"] >= 0
           assert report["platform_redis_queue"]["status"] == "measured", report["platform_redis_queue"]
           assert report["platform_redis_queue"]["metrics"]["messages"] == 800
           print("SWITCH_BENCHMARK=MEASURED (ephemeral CI PostgreSQL/Redis + synthetic SQLite baseline)")
