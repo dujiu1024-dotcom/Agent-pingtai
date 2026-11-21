@@ -21,7 +21,6 @@ class InstallRequest(BaseModel):
     supervisor_id: str | None = Field(default=None, max_length=128)
     agent_version: str = Field(min_length=1, max_length=128)
     permissions: list[str] = Field(default_factory=list, max_length=100)
-    approved_by: str | None = Field(default=None, max_length=128)
 
 class TeamInstallRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
@@ -76,7 +75,7 @@ def create_digital_employee_router(*, resolve_principal: Callable[[], Any],
         return await service.install_employee(tenant_id=p.tenant_id, employee_id=employee_id,
             scope=body.scope, scope_id=body.scope_id, owner_id=body.owner_id,
             supervisor_id=body.supervisor_id, agent_version=body.agent_version,
-            permissions=sorted(requested), approved_by=body.approved_by, actor_id=p.user_id)
+            permissions=sorted(requested), actor_id=p.user_id)
     return router
 
 def create_team_template_router(*, resolve_principal: Callable[[], Any],
