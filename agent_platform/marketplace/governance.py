@@ -197,7 +197,7 @@ class MarketplaceGovernance:
             network_enabled=False, host_mounts=False, credentials_injected=False)
         if not isinstance(evidence, Mapping) or evidence.get("passed") is not True:
             raise MarketplaceGateError("isolated sandbox trial did not pass")
-        if evidence.get("network_disabled") is not True or evidence.get("host_mounts") is not False:
+        if (evidence.get("network_disabled") is not True\n                or evidence.get("host_mounts") is not False\n                or evidence.get("credentials_injected") is not False):
             raise MarketplaceGateError("sandbox isolation evidence is incomplete")
         updated = replace(asset, trial_status="passed", trial_evidence=dict(evidence))
         await self.store.update(updated)
