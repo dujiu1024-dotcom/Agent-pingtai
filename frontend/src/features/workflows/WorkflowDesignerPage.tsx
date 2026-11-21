@@ -121,6 +121,7 @@ export function WorkflowDesignerPage() {
   const save = useMutation({
     mutationFn: async (publish: boolean) => {
       if (!workflowId) throw new Error('缺少工作流 ID')
+      if (publish) throw new Error('当前后端仅提供 Registry 发布接口，未提供 LangGraph StateGraph 编译/诊断 API；为避免发布未编译定义，请先保存草稿。此版本不会伪报编译成功。')
       const definition = {
         name: form.name || workflowId,
         description: form.description,
@@ -309,8 +310,6 @@ export function WorkflowDesignerPage() {
             }
           />
         </label>
-      </div>
-
       </div></details>
 
       <div className="detail-actions">
@@ -318,9 +317,9 @@ export function WorkflowDesignerPage() {
           className="button-primary"
           type="button"
           disabled={save.isPending}
-          onClick={() => save.mutate(true)}
+          disabled\n          title="后端尚无 LangGraph 编译与诊断 API"\n          onClick={() => save.mutate(true)}
         >
-          保存并发布
+          编译发布（后端接口待接入）
         </button>
         <button
           className="button-secondary"
@@ -373,7 +372,7 @@ export function WorkflowDesignerPage() {
                       <button
                         className="text-link"
                         type="button"
-                        onClick={() => publish.mutate(item.version)}
+                        disabled\n                        title="后端尚无 LangGraph 编译与诊断 API"\n                        onClick={() => publish.mutate(item.version)}
                       >
                         发布
                       </button>
