@@ -176,6 +176,24 @@ class EnterpriseAdmissionOrchestrator:
         await self._audit("supply_chain.admission_activated", result, report.evidence_digest)
         return result
 
+    async def complete_trial(self, result: AdmissionLifecycleResult, *, sandbox_passed: bool,
+                            evidence_digest: str) -> AdmissionLifecycleResult:
+        if result.tenant_id != self.policy.tenant_id:
+            raise PermissionError("trial result tenant does not match policy tenant")
+        if result.state is not LifecycleState.TRIAL or not result.sandbox_id:
+            raise ValueError("only an active sandbox trial can be completed")
+        state = LifecycleState.ACTIVE if sandbox_passed else LifecycleState.QUARANTINED
+        completed = AdmissionLifecycleResult(
+            result.tenant_id, result.artifact_id, result.version, state,
+            result.risk_level, result.approval, result.sandbox_id,
+            "sandbox trial passed" if sandbox_passed else "sandbox trial failed; asset remains quarantined",
+        )
+        await self._audit(
+            "supply_chain.trial_passed" if sandbox_passed else "supply_chain.trial_failed",
+            completed, evidence_digest,
+        )
+        return completed
+
     async def _audit(self, event_type: str, result: AdmissionLifecycleResult, evidence_digest: str) -> None:
         await self.audit.append(tenant_id=result.tenant_id, event_type=event_type, payload={
             "artifact_id": result.artifact_id, "version": result.version,
