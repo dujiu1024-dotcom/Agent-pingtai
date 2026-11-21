@@ -16,7 +16,6 @@ line-length = 100
 target-version = "py310"
 # 存量文件暂不纳入，先只门禁新增/本轮改动文件
 include = [
-  "intent.py",
   "conversation.py",
   "tools/schedule_wbs.py",
   "scripts/release_gate.py",
