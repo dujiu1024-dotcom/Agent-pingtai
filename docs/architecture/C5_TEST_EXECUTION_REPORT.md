@@ -61,7 +61,15 @@ Node `20.19.0`、npm `10.8.2`，依赖安装成功；`npm run build` 在 TypeScr
 
 依赖安装另报告 16 项 npm audit 漏洞（8 moderate、6 high、2 critical）；本次构建工作流不执行依赖升级。
 
-### 2.4 第二轮执行（Run `44908490647`）\n\n- Python 3.11 与 3.12 的专项测试均执行 79 项：失败 1 项、跳过 2 项；失败仍为上述文件资产租户隔离用例（HTTP 405，预期 200）。\n- 两个版本随后进入全量测试，但均运行至 60 分钟 job timeout 被 GitHub Actions 取消。\n- 取消时未生成 `.coverage` 或 `coverage.xml`；artifact 列表为空，不能报告覆盖率数值。\n- 前端 `npm run build` 本轮通过。\n- 全量测试在 `-q` 模式下没有逐用例进度，因此本轮无法从日志确认具体耗时测试。\n\n### 2.5 第三轮执行（Run `44913833152`）
+### 2.4 第二轮执行（Run `44908490647`）
+
+- Python 3.11 与 3.12 的专项测试均执行 79 项：失败 1 项、跳过 2 项；失败仍为上述文件资产租户隔离用例（HTTP 405，预期 200）。
+- 两个版本随后进入全量测试，但均运行至 60 分钟 job timeout 被 GitHub Actions 取消。
+- 取消时未生成 `.coverage` 或 `coverage.xml`；artifact 列表为空，不能报告覆盖率数值。
+- 前端 `npm run build` 本轮通过。
+- 全量测试在 `-q` 模式下没有逐用例进度，因此本轮无法从日志确认具体耗时测试。
+
+### 2.5 第三轮执行（Run `44913833152`）
 
 - Python 3.11 与 3.12 专项测试均执行 79 项：失败 1 项、跳过 2 项；失败仍为文件资产租户隔离用例，HTTP 405，预期 200。
 - 因专项测试步骤失败，全量测试步骤被 GitHub Actions 跳过；不是全量测试超时。
@@ -72,7 +80,8 @@ Node `20.19.0`、npm `10.8.2`，依赖安装成功；`npm run build` 在 TypeScr
 
 工作流文件：`.github/workflows/c5-test-execution.yml`
 
-- Python 3.11 / 3.12 均执行专项测试；全量测试与覆盖率只在 Python 3.11 执行一次，避免重复运行相同的长耗时套件。\n- 全量 unittest 改为 `-v`，逐用例输出进度，以便下次超时能定位最后执行的测试。
+- Python 3.11 / 3.12 均执行专项测试；全量测试与覆盖率只在 Python 3.11 执行一次，避免重复运行相同的长耗时套件。
+- 全量 unittest 改为 `-v`，逐用例输出进度，以便下次超时能定位最后执行的测试。
 - 全量测试步骤使用 `if: always() && matrix.run-full-suite`，专项测试失败后仍继续执行 Python 3.11 全量 unittest 和覆盖率采集；专项测试失败仍保留为 job failure。
 - 全量测试结束后生成 coverage summary 和 `coverage.xml`；如果 60 分钟内未完成，按真实超时失败记录，不填报覆盖率。
 - 上传步骤使用 `if: always()`，找不到覆盖率文件时发出 warning，不伪装成成功产物。
