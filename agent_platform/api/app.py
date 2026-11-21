@@ -785,5 +785,6 @@ def create_platform_app(
         app.include_router(create_value_management_router(
             service_resolver=value_management_resolver,
             authorize_manage=value_management_authorizer,
+            usage_store=quota_reporting_store or quota_store,
         ))
     return app
