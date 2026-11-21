@@ -49,6 +49,7 @@ export function AuthProvider({
     if (!sessionRef.current) setStatus('loading')
     setError(null)
     try {
+      const previousSession = sessionRef.current
       const result = await fetchSession()
       const nextSession = result
         ? {
@@ -60,7 +61,7 @@ export function AuthProvider({
       setSession(nextSession)
       sessionRef.current = nextSession
       setStatus(nextSession ? 'authenticated' : 'anonymous')
-      if (!result) {
+      if (!result || (!previousSession && nextSession)) {
         queryClient.clear()
         apiClient.clearEtagCache()
       }
