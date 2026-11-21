@@ -97,8 +97,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             await self.knowledge.search(
                 principal=outsider, query="retention", query_vector=None, limit=5,
-            ), [],
-        )
+            ), [],        )
         self.assertTrue(await self.knowledge.revoke_document_access(
             self.tenant_id, document.document_id, "user", "reader", "read",
         ))
@@ -119,7 +118,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.knowledge.save_document(doc,[chunk])
         await self.knowledge.save_embeddings(
             tenant_id=self.tenant_id, chunks=[chunk],
-            vectors=[[1.0] + [0.0] * 1535],
+            vectors=[[1.0] + [0.0] * 1023],
         )
         # A document can have multiple immutable versions. Deletion must
         # tombstone every version and remove all derived chunks/vectors.
@@ -133,7 +132,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.knowledge.save_document(newer, [newer_chunk])
         await self.knowledge.save_embeddings(
             tenant_id=self.tenant_id, chunks=[newer_chunk],
-            vectors=[[0.0, 1.0] + [0.0] * 1534],
+            vectors=[[0.0, 1.0] + [0.0] * 1022],
         )
         async with await self.connect() as conn:
             await conn.execute(
@@ -197,8 +196,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 KnowledgePrincipal(tenant_id=self.tenant_id, user_id="denied"),
                 document.document_id, 1,
             ), [],
-        )
-        visible_chunks = await self.knowledge.list_visible_chunks(
+        )        visible_chunks = await self.knowledge.list_visible_chunks(
             KnowledgePrincipal(tenant_id=self.tenant_id, user_id="permitted"),
             document.document_id, 1,
         )
@@ -273,7 +271,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             end_offset=34,
         )
         await self.knowledge.save_document(document, [chunk])
-        query_vector = [1.0] + [0.0] * 1535
+        query_vector = [1.0] + [0.0] * 1023
         await self.knowledge.save_embeddings(
             tenant_id=self.tenant_id, chunks=[chunk], vectors=[query_vector],
         )
@@ -297,8 +295,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             query="no lexical match", query_vector=query_vector, limit=5,
         )), 1)
         self.assertFalse(await self.knowledge.delete_document(
-            other_tenant, document.document_id,
-        ))
+            other_tenant, document.document_id,        ))
         self.assertIsNotNone(await self.knowledge.get_document(
             self.tenant_id, document.document_id,
         ))
@@ -397,8 +394,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         retrieval = MemoryRetrievalService(self.memory)
         historical = await retrieval.search(
             principal=principal,
-            query=MemoryRetrievalQuery(as_of=original.updated_at + timedelta(microseconds=1)),
-        )
+            query=MemoryRetrievalQuery(as_of=original.updated_at + timedelta(microseconds=1)),        )
         current = await retrieval.search(principal=principal)
         self.assertEqual(historical[0].citation.source_ref, "conversation:original")
         self.assertEqual(historical[0].citation.version, original.version)
