@@ -19,8 +19,10 @@ BEGIN
                  AND volume_period_end IS NULL
                  AND volume_source IS NULL)
                 OR
-                (historical_business_volume >= 0
+                (historical_business_volume IS NOT NULL
+                 AND historical_business_volume >= 0
                  AND volume_period_start IS NOT NULL
+                 AND volume_period_end IS NOT NULL
                  AND volume_period_end > volume_period_start
                  AND volume_source IS NOT NULL
                  AND length(btrim(volume_source)) > 0)
