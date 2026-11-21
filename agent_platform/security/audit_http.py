@@ -33,7 +33,7 @@ class AuditRequestASGIMiddleware:
         self.resolve_actor = resolve_actor
         self.resolve_null_actor_tenant = resolve_null_actor_tenant
 
-    async def _actor(self, principal: Any) -> AuditActor | None:
+    async def _actor(self, principal: Any) -> AuditActor:
         result = self.resolve_actor(principal)
         if inspect.isawaitable(result):
             result = await result
@@ -42,7 +42,7 @@ class AuditRequestASGIMiddleware:
                 "authenticated principal could not be resolved to an audit actor"
             )
         if not isinstance(result, AuditActor):
-            raise TypeError("resolve_actor must return AuditActor or None")
+            raise TypeError("resolve_actor must return AuditActor")
         return result
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:

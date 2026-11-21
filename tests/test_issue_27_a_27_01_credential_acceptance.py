@@ -171,6 +171,21 @@ class CredentialAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("sensitive-oauth-token", repr(self.repository.records))
         self.assertEqual(record.secret_ref, next(iter(self.secret_metadata.rows))[0])
 
+    async def test_missing_grant_is_denied_and_audited_before_secret_read(self):
+        record = await self._create_and_grant()
+        self.repository.grants.clear()
+        with self.assertRaises(PermissionError):
+            await self.service.resolve(
+                tenant_id="tenant-a",
+                credential_id=record.credential_id,
+                consumer_type="agent",
+                consumer_id="agent-1",
+                required_scopes=("drive.read",),
+                actor_id="runtime-worker",
+            )
+        self.assertEqual(self.http.calls[-1][0], "POST")
+        self.assertEqual(self.audit.events[-1]["outcome"], "denied")
+
     async def test_runtime_plaintext_release_fails_closed_when_resolve_audit_fails(self):
         record = await self._create_and_grant()
         self.audit.fail_resolve = True

@@ -67,6 +67,26 @@ class AuditBoundaryTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(calls, [])
 
+    async def test_authenticated_actor_resolver_none_fails_closed(self):
+        async def app(scope, receive, send):
+            raise AssertionError("application must not run without an audit actor")
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(_message):
+            pass
+
+        middleware = AuditRequestASGIMiddleware(
+            app, sink=object(), resolve_actor=lambda _principal: None,
+        )
+        with self.assertRaisesRegex(RuntimeError, "could not be resolved"):
+            await middleware(
+                {"type": "http", "method": "GET", "path": "/api/private",
+                 "state": {"identity.principal": object()}},
+                receive, send,
+            )
+
     async def test_completion_audit_failure_is_visible_and_does_not_retry_handler(self):
         calls = []
 
