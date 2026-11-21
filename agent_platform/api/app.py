@@ -50,6 +50,7 @@ from agent_platform.api.sessions import create_sessions_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
+from agent_platform.api.value_management import create_value_management_router
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
@@ -176,6 +177,8 @@ def create_platform_app(
     office_tenant_resolver: Any | None = None,
     bootstrap_capabilities: Sequence[str] | None = None,
     knowledge_catalog: Any | None = None,
+    value_management_resolver: Any | None = None,
+    value_management_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -772,5 +775,15 @@ def create_platform_app(
             service=locale_preference_service,
             authorize_manage=locale_manage_authorizer,
             audit_writer=resource_audit_writer,
+        ))
+    value_management_configured = any(value is not None for value in (
+        value_management_resolver, value_management_authorizer,
+    ))
+    if value_management_configured:
+        if value_management_resolver is None or value_management_authorizer is None:
+            raise ValueError("AI value management resolver and authorizer must be configured together")
+        app.include_router(create_value_management_router(
+            service_resolver=value_management_resolver,
+            authorize_manage=value_management_authorizer,
         ))
     return app
