@@ -123,5 +123,5 @@ def calculate_value(
         labor_savings=labor, other_business_benefit=benefit, ai_cost=cost,
         net_benefit=net, roi=roi, financial_status=status,
         attribution_version=attribution_version,
-        cost_basis=("settled" if cost_is_settled else "estimated"),
+        cost_basis=("settled" if cost_is_settled and cost is not None else "estimated"),
     )
