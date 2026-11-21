@@ -756,3 +756,69 @@ extensions 模块已实现相对完整的扩展包专用生命周期：manifest 
 同时确认 Memory Extraction 有两条入口，其中 session 专用入口具备服务端轮次验证；通用 `/memories/extract` 则与 extraction service 契约不兼容，且旧 API 测试使用过期的 conversation source_ref。
 
 本轮仅更新审查报告和 Issue 记录，没有修改产品代码；未在本环境运行测试，因此结论基于 main 分支静态代码路径与测试断言对照。
+
+
+## 20. 第八轮审查：审批消费契约与企业数据连接器安全边界（2026-11-21）
+
+本轮检查 PostgreSQL-backed approval verifier、Gateway 执行调用契约、审批记录的 Run 绑定，以及 PostgreSQL/MySQL connector 的 SQL 执行边界。区分明确接口缺陷与依赖部署配置的安全风险。
+
+### 20.1 P1：PostgresApprovalVerifier 与 SupervisedToolGateway 的 consume 契约不兼容
+
+证据：
+- agent_platform/tools/gateway.py:27-33 的 ApprovalVerifier.consume() Protocol 声明 tenant_id、approval_id、action_digest、policy_version，没有 run_id。
+- agent_platform/tools/gateway.py:310-320 的 SupervisedToolGateway.execute() 实际调用 consume 时额外传入 run_id=run_id。
+- agent_platform/approval/postgres.py:10-34 的 PostgresApprovalVerifier.consume() 实现只接受 tenant_id、approval_id、action_digest、policy_version，同样没有 run_id。
+- tests/test_tool_gateway.py:30-49 的 FakeApprovalVerifier 却接受 run_id，因此单元测试 mock 与真实 PostgreSQL verifier 的接口不一致。
+- ApprovalRecord 和 ApprovalService.approved_action_hash()（agent_platform/approval/service.py）明确把 approval 绑定到 run_id；tests/test_approval_execution_binding.py 覆盖跨 Run 拒绝。
+
+判断：
+- 当 Gateway 对 external/irreversible 工具携带 approval_id 进入消费分支时，传给 PostgresApprovalVerifier 的 run_id 会触发 Python unexpected keyword argument TypeError。
+- 这会使 PostgreSQL 持久化审批验证器无法按 Gateway 当前调用方式完成审批消费。它不是审批拒绝，而是执行时接口异常。
+- 即使只给 verifier 增加 run_id 参数，当前 SQL 也没有 AND run_id=%s，仍未在数据库原子 UPDATE 中绑定 Run；需同时增加 Run 条件（并明确 run_id 为 NULL 的兼容策略）。
+- 当前可见的 Gateway 单元测试使用 FakeApprovalVerifier，未覆盖真实 PostgresApprovalVerifier 与 Gateway 的组合，因此测试没有发现此契约错位。
+
+建议：
+1. 统一 Protocol、Postgres 实现和 Gateway 调用签名，强制 run_id 为必填（如果审批允许无 Run，则拆分明确的调用契约，不允许隐式忽略）。
+2. 在 UPDATE platform_approvals 中增加 tenant_id + approval_id + run_id + action_hash + policy_version + approved status + expires_at 的原子匹配。
+3. 增加真实 PostgreSQL 集成测试：同租户同动作不同 Run 的审批不能互相消费；过期、撤销、重复消费只能失败；正确 Run 只允许一次成功。
+4. 增加 Gateway + PostgresApprovalVerifier 的集成测试，避免只用宽松 Fake 隐藏签名漂移。
+
+### 20.2 P1：PostgreSQL/MySQL Connector 的 query scope 可执行任意 SQL，连接器层没有只读强制
+
+证据：
+- agent_platform/connectors/providers.py:120-178 的 PostgreSQL provider 对 query: scope 仅 strip 末尾分号，按需拼接 LIMIT/OFFSET，然后直接 connection.execute(sql, params)；未检查语句类型、未设置只读事务。
+- agent_platform/connectors/providers.py:194-252 的 MySQL provider 对 query: scope 同样直接执行 SQL；没有只读事务或语句类型限制。
+- DataConnectorService.create_connection() 只校验 scope 字符串非空、长度不超过 128，不验证 query 是只读 SQL。
+- Connector API 允许有权限的管理员创建 connection 并提交 scopes；Secret Manager 负责解析凭据。
+- provider 文档和错误提示将其定位为数据源读取/同步，但安全边界实际依赖配置人员为数据库账号提供只读权限。
+
+判断：
+- 这是可确认的代码级安全边界缺口：连接器本身没有强制只读。
+- 若配置的数据库账号具有写权限，query scope 可尝试执行写 SQL 或其他数据库语句；实际影响取决于驱动、数据库权限、语句及数据库配置，不能据此断言所有环境都可成功写入。
+- LIMIT/OFFSET 字符串拼接不是 SQL 只读控制，也不能作为语句安全边界。
+- 与之前第 14 节发现的 PostgreSQL connector 风险一致；本轮补充 MySQL 同类路径，并将风险提升为跨两个 SQL provider 的一致性问题。
+
+建议：
+1. 优先在数据库层使用只读专用账号，并在连接器创建/健康检查时验证其权限；这应作为强制部署条件，而不是仅文档建议。
+2. PostgreSQL 使用只读事务（如 READ ONLY transaction），并将 query scope 限制为单条 SELECT/受控只读语句；拒绝多语句、DDL、DML、CALL/DO、COPY 等。
+3. MySQL 使用只读事务/只读账号，并对查询语句做可靠解析或采用结构化 table/column/filter 查询 DSL；不要用简单正则声称可安全解析 SQL。
+4. 增加真实 PostgreSQL/MySQL 集成测试，使用具备写权限的测试账号证明 connector 仍无法写入；再使用只读账号验证合法读取。
+5. 若业务确实需要写入外部系统，应走 Tool Gateway 的风险分级、资源授权、审批、幂等和审计路径，不应复用数据同步 Connector 的 query scope。
+
+### 20.3 已验证的安全正向设计与测试边界
+
+- Connector API 对 connection、project 分别执行授权；Service 从 tenant-scoped repository 读取连接；secret_ref 必须以当前 tenant 的 secret://{tenant_id}/ 开头。
+- tests/test_connectors_api.py 覆盖 tenant header 不能访问另一租户 connection、项目权限拒绝 sync/revoke、明文 secret reference 拒绝。
+- DataConnectorService.sync_page() 检查同步期间连接是否被撤销、version 是否变化，并使用 cursor compare-and-swap；Sink 侧需要幂等 upsert 以容忍页重放。
+- MCP Gateway bridge 固定 tenant/actor/run/agent 上下文；每次 call 检查 live Run authorization，执行 JSON Schema、可信资源解析，再交给 SupervisedToolGateway；HTTP host 对非 loopback bind 要求显式 transport security。
+- 上述正向实现说明平台已有安全基座，但不能抵消默认 local_runtime 绕过 Gateway 的第 19 节问题，也不能弥补 PostgresApprovalVerifier 的签名错位。
+
+### 20.4 本轮新增优先级
+
+| 优先级 | 差距 | 验收标准 |
+|---|---|---|
+| P1 | PostgresApprovalVerifier 缺少 Gateway 所需 run_id 参数，SQL 也未 Run-bind | 真实 PG Gateway 集成测试通过；跨 Run、重复消费和过期审批均拒绝 |
+| P1 | PostgreSQL/MySQL Connector query scope 未强制只读 | 写权限 DB 账号下写操作仍被拒绝；合法 SELECT 可正常同步 |
+| P2 | Connector 页写入与 cursor CAS 需要端到端重放/并发验证 | 并发同步、撤销竞态、sink 成功但 cursor CAS 失败时无重复业务副作用，且可恢复 |
+
+本轮只更新审查文档和 Issue 记录，没有修改产品代码；当前环境未执行数据库集成测试。结论来自 main 分支静态代码与现有测试源码对照。
