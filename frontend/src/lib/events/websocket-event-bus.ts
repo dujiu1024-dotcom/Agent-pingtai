@@ -123,10 +123,13 @@ export class WebSocketEventBus implements EventBusPort {
     const event = value as Partial<PlatformEvent>
     if (
       typeof event.event_id !== 'string' ||
+      event.event_id.length === 0 ||
       typeof event.type !== 'string' ||
+      event.type.length === 0 ||
       typeof event.entity_id !== 'string' ||
-      typeof event.version !== 'number' ||
-      typeof event.sequence !== 'number' ||
+      event.entity_id.length === 0 ||
+      !Number.isFinite(event.version) ||
+      !Number.isFinite(event.sequence) ||
       typeof event.occurred_at !== 'string' ||
       !('payload' in event)
     ) {
