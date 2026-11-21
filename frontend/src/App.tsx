@@ -90,6 +90,7 @@ const BatchExecutionPage = lazy(() => import('@/features/batches/BatchExecutionP
 const RunReplayPage = lazy(() => import('@/features/replay/RunReplayPage').then((m) => ({ default: m.RunReplayPage })))
 const RagPlaygroundPage = lazy(() => import('@/features/rag/RagPlaygroundPage').then((m) => ({ default: m.RagPlaygroundPage })))
 const ExtensionPublishersPage = lazy(() => import('@/features/extensions/ExtensionPublishersPage').then((m) => ({ default: m.ExtensionPublishersPage })))
+const ToolSkillResourcePage = lazy(() => import('@/features/resources/ToolSkillResourcePage').then((m) => ({ default: m.ToolSkillResourcePage })))
 const PromptLifecyclePage = lazy(() => import('@/features/prompts/PromptLifecyclePage').then((m) => ({ default: m.PromptLifecyclePage })))
 const AuditCenterPage = lazy(() => import('@/features/audit/AuditCenterPage').then((m) => ({ default: m.AuditCenterPage })))
 const AuditEventDetailPage = lazy(() => import('@/features/audit/AuditEventDetailPage').then((m) => ({ default: m.AuditEventDetailPage })))
@@ -575,6 +576,8 @@ function PageView({
   if (route.path === '/operations/replay') return <Lazy><RunReplayPage /></Lazy>
   if (route.path === '/operations/alerts') return <Lazy><AlertsPage /></Lazy>
   if (route.path === '/admin/extensions') return <Lazy><ExtensionPublishersPage /></Lazy>
+  if (route.path === '/admin/tools/:toolId') return <Lazy><ToolSkillResourcePage kind="tool" /></Lazy>
+  if (route.path === '/admin/skills/:skillId') return <Lazy><ToolSkillResourcePage kind="skill" /></Lazy>
   if (route.path === '/admin/prompts') return <Lazy><PromptLifecyclePage /></Lazy>
   if (route.path === '/admin/audit') return <Lazy><AuditCenterPage /></Lazy>
   if (route.path === '/operations/memories') return <Lazy><MemoryGovernancePage /></Lazy>
