@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Protocol
 
-_SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9]*)\Z")
+_SEMVER = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 _DIGEST = re.compile(r"[a-f0-9]{64}\Z")
 _ASSET_KINDS = {"digital_employee", "team_template", "solution", "extension", "skill"}
 _VISIBILITIES = {"private", "team", "enterprise", "partner", "public"}
@@ -197,7 +197,11 @@ class MarketplaceGovernance:
             network_enabled=False, host_mounts=False, credentials_injected=False)
         if not isinstance(evidence, Mapping) or evidence.get("passed") is not True:
             raise MarketplaceGateError("isolated sandbox trial did not pass")
-        if (evidence.get("network_disabled") is not True\n                or evidence.get("host_mounts") is not False\n                or evidence.get("credentials_injected") is not False):
+        if (
+            evidence.get("network_disabled") is not True
+            or evidence.get("host_mounts") is not False
+            or evidence.get("credentials_injected") is not False
+        ):
             raise MarketplaceGateError("sandbox isolation evidence is incomplete")
         updated = replace(asset, trial_status="passed", trial_evidence=dict(evidence))
         await self.store.update(updated)
