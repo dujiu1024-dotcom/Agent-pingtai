@@ -32,11 +32,13 @@ import { InitializePage, LoginPage } from '@/components/AuthPages'
 import {
   EmptyState,
   ErrorState,
+  ForbiddenState,
   LoadingState,
   ModeRestrictedState,
   NotFoundState,
 } from '@/components/States'
 import { AuthProvider, useAuth } from '@/providers/AuthProvider'
+import { canAccess } from '@/auth/authorization'
 import { GenericListPage } from '@/components/GenericListPage'
 import { CrudListPage } from '@/components/crud/CrudListPage'
 import { RegistryCatalogPage } from '@/components/crud/RegistryCatalogPage'
@@ -306,6 +308,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const sections = getNavigationSections(
     config.auth.enabled,
     config.capabilities,
+    auth.session?.permissions,
   )
   const effectivePath = current?.parentPath ?? location.pathname
   const section = findNavigationSection(effectivePath)
@@ -521,6 +524,7 @@ function PageView({
   route: PageRoute
   authEnabled: boolean
 }) {
+  const auth = useAuth()
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -528,6 +532,9 @@ function PageView({
         description="当前服务端 auth.enabled=false，组织、成员与 RBAC 管理不适用。"
       />
     )
+  }
+  if (route.permission && !canAccess(authEnabled, auth.session, [route.permission])) {
+    return <ForbiddenState />
   }
   if (route.path === '/workspace/overview') return <Lazy><Dashboard /></Lazy>
   if (route.path === '/workspace/quickstart') return <Lazy><QuickStartPage /></Lazy>
