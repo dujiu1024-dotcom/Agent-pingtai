@@ -27,7 +27,7 @@ class CatalogService:
 
 class DigitalEmployeeApiTests(unittest.TestCase):
     def setUp(self):
-        self.principal=Principal(user_id="user-a",tenant_id="tenant-a")
+        self.principal=Principal(user_id="user-a",tenant_id="tenant-a",session_id="session-a",email="user@example.test",display_name="User")
         self.service=CatalogService(); self.app=FastAPI()
         common=dict(resolve_principal=lambda:self.principal,
             resolve_service=lambda principal:self.service,
