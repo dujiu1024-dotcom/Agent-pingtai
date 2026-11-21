@@ -10,6 +10,7 @@ import {
 
 const bootstrapUrl = '**/api/platform/v1/bootstrap'
 const businessRoutes = [...pageRoutes, ...detailRoutes, ...globalRoutes]
+const appPath = (path: string) => `/app${path}`
 
 async function stubBootstrap(
   page: Page,
@@ -57,21 +58,21 @@ test.describe('Issue #752 dual-mode full-site browser smoke', () => {
     await stubBootstrap(page, false)
 
     for (const route of businessRoutes) {
-      await page.goto(concretePath(route.path))
+      await page.goto(appPath(concretePath(route.path)))
       await expect(
         page.getByRole('heading', { level: 1, name: route.title }),
         `route should load in auth=false: ${route.path}`,
       ).toBeVisible()
     }
 
-    await page.goto('/workspace/overview')
+    await page.goto(appPath('/workspace/overview'))
     await expect(page.getByText('免登录模式')).toBeVisible()
     await expect(
       page.getByRole('link', { name: '登录', exact: true }),
     ).toHaveCount(0)
 
     for (const route of authRoutes) {
-      await page.goto(route.path)
+      await page.goto(appPath(route.path))
       await expect(
         page.getByRole('heading', { level: 1, name: '运营驾驶舱' }),
         `identity route should redirect in auth=false: ${route.path}`,
@@ -87,11 +88,11 @@ test.describe('Issue #752 dual-mode full-site browser smoke', () => {
       await route.fulfill({ status: 401, body: '{}' })
     })
 
-    await page.goto('/auth/login')
+    await page.goto(appPath('/auth/login'))
     await expect(
-      page.getByRole('heading', { level: 1, name: '登录 Agent 平台' }),
+      page.getByRole('heading', { level: 1, name: '登录龍奕 FDE 工作室' }),
     ).toBeVisible()
-    await page.goto('/auth/initialize')
+    await page.goto(appPath('/auth/initialize'))
     await expect(
       page.getByRole('heading', { level: 1, name: '初始化平台管理员' }),
     ).toBeVisible()
@@ -100,14 +101,14 @@ test.describe('Issue #752 dual-mode full-site browser smoke', () => {
     await stubSession(page)
 
     for (const route of businessRoutes) {
-      await page.goto(concretePath(route.path))
+      await page.goto(appPath(concretePath(route.path)))
       await expect(
         page.getByRole('heading', { level: 1, name: route.title }),
         `route should load in auth=true: ${route.path}`,
       ).toBeVisible()
     }
 
-    await page.goto('/workspace/overview')
+    await page.goto(appPath('/workspace/overview'))
     await expect(page.getByText('权限模式')).toBeVisible()
     await expect(page.getByText('Owner')).toBeVisible()
   })
@@ -116,7 +117,7 @@ test.describe('Issue #752 dual-mode full-site browser smoke', () => {
     for (const authEnabled of [false, true]) {
       await stubBootstrap(page, authEnabled)
       if (authEnabled) await stubSession(page)
-      await page.goto('/operations/runs/run-752-e2e')
+      await page.goto(appPath('/operations/runs/run-752-e2e'))
       await expect(
         page.getByRole('heading', { level: 1, name: 'Run Trace 详情' }),
       ).toBeVisible()
@@ -137,7 +138,7 @@ test.describe('Issue #752 dual-mode full-site browser smoke', () => {
         body: JSON.stringify({ detail: 'bootstrap unavailable' }),
       })
     })
-    await page.goto('/workspace/overview')
+    await page.goto(appPath('/workspace/overview'))
     await expect(
       page.getByRole('heading', { name: '无法读取服务端启动配置' }),
     ).toBeVisible()
