@@ -297,15 +297,16 @@ def create_platform_app(
     auto_capabilities: set[str] = set()
     if office_state_service is not None:
         auto_capabilities.add("office")
-    if knowledge is not None:
-        auto_capabilities.add("knowledge")
-        auto_capabilities.add("knowledge-memory")
-        if knowledge_catalog is not None:
-            auto_capabilities.add("knowledge-catalog")
-    if memory is not None:
-        auto_capabilities.add("memory")
-    if rag is not None or rag_playground_resolver is not None:
-        auto_capabilities.add("rag")
+    if identity_repository is not None:
+        if knowledge is not None:
+            auto_capabilities.add("knowledge")
+            auto_capabilities.add("knowledge-memory")
+            if knowledge_catalog is not None:
+                auto_capabilities.add("knowledge-catalog")
+        if memory is not None:
+            auto_capabilities.add("memory")
+        if rag is not None or rag_playground_resolver is not None:
+            auto_capabilities.add("rag")
     if any(v is not None for v in (
         registry_service_resolver, session_service_resolver, run_lifecycle_resolver,
         task_service_resolver, blackboard_repository_resolver, graph_query_service_resolver,
