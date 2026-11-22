@@ -11,7 +11,6 @@ from agent_platform.control_plane.sessions_assets import (
 )
 from agent_platform.identity.models import AuthorizationContext, Principal
 from agent_platform.identity.service import AuthenticationError
-from agent_platform.knowledge.catalog import InMemoryKnowledgeCatalog
 from agent_platform.knowledge.repository import InMemoryKnowledgeRepository
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
@@ -155,7 +154,6 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.identity.authenticate = patched_authenticate
         self.addCleanup(lambda: setattr(self.identity, 'authenticate', original_auth))
 
-        catalog = InMemoryKnowledgeCatalog()
         app = create_platform_app(auth_enabled=True, identity=self.identity,
             identity_repository=FakeIdentityRepository(),
             knowledge=self.knowledge,
@@ -464,6 +462,47 @@ class PlatformApiCompositionTests(unittest.TestCase):
         )
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(evaluations.listed[0]["tenant_id"], "tenant-a")
+
+    def test_tool_skill_evaluation_dependencies_must_be_paired(self):
+        with self.assertRaisesRegex(ValueError, "Tool/MCP checker"):
+            create_platform_app(
+                auth_enabled=True,
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                tool_mcp_checker_resolver=object(),
+            )
+
+    def test_tool_skill_evaluation_routes_support_local_no_auth_principal(self):
+        from agent_platform.identity.models import Principal
+
+        app = create_platform_app(
+            auth_enabled=False,
+            identity=None,
+            identity_repository=None,
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            local_principal_resolver=lambda: Principal(
+                user_id="local-user", tenant_id="tenant-local",
+                session_id="local-session", email="local@example.test",
+                display_name="Local User",
+            ),
+            registry_service_resolver=lambda principal: object(),
+            registry_authorizer=lambda *args: True,
+            tool_skill_evaluation_authorizer=lambda *args: True,
+            tool_mcp_checker_resolver=lambda principal: object(),
+            skill_dependency_reviewer_resolver=lambda principal: object(),
+            resource_audit_writer=object(),
+        )
+        routes = {route.path for route in app.routes}
+        self.assertIn("/api/platform/v1/tools/{item_id}/test-connection", routes)
+        self.assertIn("/api/platform/v1/skills/{item_id}/evaluate", routes)
+        self.assertFalse(app.state.auth_enabled)
 
     def test_observability_evaluation_dependencies_must_be_paired(self):
         with self.assertRaisesRegex(ValueError, "evaluation services and evaluation manager authorizer"):

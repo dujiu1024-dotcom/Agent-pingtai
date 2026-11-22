@@ -40,6 +40,7 @@ from agent_platform.api.registry import create_registry_router
 from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
+from agent_platform.api.tool_skill_evaluation import create_tool_skill_evaluation_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
@@ -87,6 +88,9 @@ def create_platform_app(
     session_service_resolver: Any | None = None,
     registry_authorizer: Any | None = None,
     workflow_compiler_resolver: Any | None = None,
+    tool_mcp_checker_resolver: Any | None = None,
+    skill_dependency_reviewer_resolver: Any | None = None,
+    tool_skill_evaluation_authorizer: Any | None = None,
     session_authorizer: Any | None = None,
     connector_service_resolver: Any | None = None,
     connector_authorizer: Any | None = None,
@@ -437,6 +441,28 @@ def create_platform_app(
             resolve_compiler=workflow_compiler_resolver,
             authorize=registry_authorizer,
         ))
+    tool_skill_evaluation_configured = any(value is not None for value in (
+        tool_mcp_checker_resolver, skill_dependency_reviewer_resolver,
+        tool_skill_evaluation_authorizer,
+    ))
+    if tool_skill_evaluation_configured:
+        if any(value is None for value in (
+            registry_service_resolver, registry_authorizer,
+            tool_mcp_checker_resolver, skill_dependency_reviewer_resolver,
+            tool_skill_evaluation_authorizer, resource_audit_writer,
+        )):
+            raise ValueError(
+                "Tool/MCP checker, Skill reviewer, resource/version authorizers, registry resolver and audit writer must be configured together"
+            )
+        app.include_router(create_tool_skill_evaluation_router(
+            resolve_principal=_principal_from_request,
+            resolve_registry=registry_service_resolver,
+            authorize=registry_authorizer,
+            authorize_version=tool_skill_evaluation_authorizer,
+            resolve_mcp_checker=tool_mcp_checker_resolver,
+            resolve_skill_reviewer=skill_dependency_reviewer_resolver,
+            audit_writer=resource_audit_writer,
+        ))
     if sessions_configured:
         if session_service_resolver is None or session_authorizer is None:
             raise ValueError("session service resolver and authorizer must be configured together")
@@ -544,6 +570,8 @@ def create_platform_app(
             "sessions": sessions_configured,
             "registry": registry_configured,
             "agent_management": registry_configured,
+            "tool_connection_test": tool_skill_evaluation_configured,
+            "skill_compatibility_evaluation": tool_skill_evaluation_configured,
             "task_execution": task_center_configured,
             "graph": graph_configured,
             "graph_annotation": graph_governance_resolver is not None,
