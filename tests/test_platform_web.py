@@ -13,9 +13,10 @@ def _client() -> TestClient:
 def test_platform_web_serves_react_app_index_by_default():
     response = _client().get("/app/")
     assert response.status_code == 200
-    assert "Agent Platform" in response.text
+    assert '<div id="root"></div>' in response.text
     assert "console.py" not in response.text
-    assert "FDE 工作室" not in response.text
+    assert 'id="legacy-console-fallback"' in response.text
+    assert 'href="/app/?legacy=1"' in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
