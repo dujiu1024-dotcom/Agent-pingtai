@@ -9,11 +9,11 @@ from scripts.validate_migrations import validate_migrations
 
 
 class ValidateMigrationsTests(unittest.TestCase):
-    def setUp(self):
+    def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.directory = Path(self.temp.name)
 
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.temp.cleanup()
 
     def add_migration(self, name: str, content: str = "SELECT 1;") -> Path:
@@ -62,6 +62,11 @@ class ValidateMigrationsTests(unittest.TestCase):
             validate_migrations(self.directory / "missing")
         report = validate_migrations(self.directory)
         self.assertIn("no_migrations", {item["code"] for item in report["issues"]})
+
+    def test_rejects_non_three_digit_migration_prefix(self):
+        (self.directory / "1000_too_many_digits.sql").write_text("SELECT 1;", encoding="utf-8")
+        report = validate_migrations(self.directory)
+        self.assertIn("invalid_filename", {item["code"] for item in report["issues"]})
 
     def test_reports_invalid_migration_filename(self):
         (self.directory / "README.sql").write_text("SELECT 1;", encoding="utf-8")

@@ -18,6 +18,7 @@ target-version = "py310"
 include = [
   "scripts/release_gate.py",
   "scripts/release_upgrade.py",
+  "scripts/validate_migrations.py",
   "scripts/verify_platform_backups.py",
   "scripts/run_platform_backup.py",
   "scripts/disaster_recovery.py",
@@ -199,6 +200,7 @@ include = [
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_848_l4_t09_evidence_matrix.py",
+  "tests/test_validate_migrations.py",
 ]
 
 [tool.ruff.lint]
