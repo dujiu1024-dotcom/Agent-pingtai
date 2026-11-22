@@ -42,3 +42,30 @@ The capacity health endpoint is dependency-injected and may return 503 when no m
 - Source and API contract inspection completed from the PR base branch.
 - No local repository checkout or browser runner was available in this connector-only execution; local pnpm lint/typecheck/build and browser tests were not executed.
 - GitHub Actions on the final PR head are the CI source of truth. Real provider, production database, live model billing, and device validation are not claimed.
+
+
+## L3-T17 completion increment (Issue #747)
+
+### Usage filters and attribution
+- Usage summary, ledger and CSV export now accept `run_id`, `project_id`, and `agent_id` in addition to time range and `model_key`.
+- Project and Agent are explicit business-analysis filters. They are not silently derived from the current user's department or membership.
+- Summary exposes the existing server-side `by_project` and `by_agent` aggregates. Selecting a row applies that dimension to summary, ledger and CSV export; the CSV endpoint re-evaluates the request on the server.
+- The quota reporting API remains tenant-scoped. It does not apply user/department predicates to usage reads. In `auth.enabled=false`, the middleware's `anon` principal therefore reads the full default-instance tenant ledger; only explicit user-selected business filters narrow the result. In `auth.enabled=true`, the API continues to require the authenticated principal and uses the tenant boundary supplied by identity. This endpoint currently does not implement finer per-user/department data scopes; do not interpret a Project/Agent filter as access control.
+
+### Optional fields and non-fabrication
+- UI can display cached/reasoning token splits, currency/cost basis/pricing version, estimate/settled state, status/error code, P50/P95 and first-token latency only if the response supplies those fields.
+- Current quota usage ledger provides USD `cost_usd`, `source`, `price_card_version`, token input/output, runtime and attribution IDs. It does not provide cached/reasoning tokens, latency percentiles, TTFT, request success/error rates, pricing currency metadata or settled-state contract. Corresponding fields remain “—” rather than being derived from unrelated counters.
+- Cost-by-Agent and cost-by-Project use existing `build_usage_report` aggregates. No per-agent/project amount is synthesized by the browser.
+- Evaluation history retains server-returned metric fields and links to the existing Evaluation Run detail route for sample/evidence drill-down. Dataset/sample CRUD remains owned by #750; this Issue does not create a parallel evaluation dataset manager.
+- The UI does not calculate RAG Recall@K, citation coverage, precision/recall or regression scores from case text. These are displayed only when returned by the evaluation report / run detail API.
+- Task-type filtering and a stable model-key → model-template relation are not present in the verified usage API contract. The UI does not guess task type from Run metadata or treat a provider/model string as a template ID; those two drill-downs remain backend/registry-contract gaps.
+
+### Dual-mode verification
+- Added API regression tests using the no-auth `anon/default` principal. With no explicit project/agent filter, events from different project/agent dimensions are both returned; an explicitly supplied Project+Agent filter narrows the analytics result only.
+- This proves the quota reporting route does not silently apply user/department membership filtering in no-auth mode. The authenticated path still requires a principal and is tenant-bounded by the existing API.
+- CSV export uses the same server-side filters and authenticated request context; no client-side export of a previously fetched unscoped data array.
+
+### Validation boundary
+- Focused regression test added at `tests/test_issue_747_noauth_usage_scope.py`.
+- CI is required to execute Python tests, frontend lint/typecheck/build and integration checks. No local checkout/runtime was available through this execution surface.
+- Real device, production billing/provider and external-resource validation are skipped as requested.
