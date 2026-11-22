@@ -7,24 +7,8 @@ import {
   Outlet,
   Route,
   Routes,
-  useLocation,
   useNavigate,
 } from 'react-router-dom'
-import {
-  Bell,
-  Building2,
-  ChevronsLeft,
-  ChevronsRight,
-  Home,
-  ListTodo,
-  LogIn,
-  Search,
-  Settings,
-  UserRound,
-  Users,
-  Wallet,
-  Workflow,
-} from 'lucide-react'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -36,6 +20,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
@@ -43,23 +28,11 @@ import {
   TaskDetailPage,
   RunTracePage,
 } from '@/features/tasks/TaskCommandCenter'
-import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
-import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
-import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
-import { OfficeWorkspace } from '@/components/OfficeWorkspace'
-import { GenericListPage } from '@/components/GenericListPage'
-import { Dashboard } from '@/components/OperationsDashboard'
-import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
-import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
-import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
   authRoutes,
   detailRoutes,
-  findNavigationSection,
-  findSubPage,
-  getNavigationSections,
   globalRoutes,
   pageRoutes,
 } from '@/routes/route-config'
@@ -121,7 +94,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route element={<AppShell config={config} />}>
+          <Route element={<AppShell />}>
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
@@ -135,7 +108,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                 key={route.pageId}
                 path={route.path}
                 element={
-                  <PageView
+                  <RouteGuard
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
@@ -167,11 +140,11 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
   )
 }
 
-function AppShell({ config }: { config: BootstrapConfig }) {
+function AppShell() {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
-  const location = useLocation()
   const navigate = useNavigate()
+  const [toast, setToast] = useState('')
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -182,241 +155,107 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [navigate])
-  useEffect(() => {
-    const root = document.documentElement
-    const apply = () => {
-      const raw = Math.min(window.innerWidth / 1536, window.innerHeight / 1024)
-      const scale = Number(Math.min(1.5, Math.max(0.7, raw)).toFixed(4))
-      if (window.innerWidth >= 1181) {
-        const offset = Math.max(0, (window.innerWidth / scale - 1536) / 2)
-        const side = Math.max(0, (window.innerWidth - 1536 * scale) / 2)
-        root.style.setProperty('--ui-scale', String(scale))
-        root.style.setProperty('--ui-offset', `${offset.toFixed(2)}px`)
-        root.style.setProperty('--ui-side', `${side.toFixed(2)}px`)
-        root.classList.add('scaled-ui')
-      } else {
-        root.classList.remove('scaled-ui')
-        root.style.removeProperty('--ui-scale')
-        root.style.removeProperty('--ui-offset')
-        root.style.removeProperty('--ui-side')
-      }
-    }
-    apply()
-    window.addEventListener('resize', apply)
-    return () => {
-      window.removeEventListener('resize', apply)
-      root.classList.remove('scaled-ui')
-      root.style.removeProperty('--ui-scale')
-      root.style.removeProperty('--ui-offset')
-      root.style.removeProperty('--ui-side')
-    }
-  }, [])
-  const current = [
-    ...pageRoutes,
-    ...detailRoutes,
-    ...globalRoutes,
-    ...authRoutes,
-  ].find((route) => {
-    if (route.path === location.pathname) return true
-    const pattern = new RegExp(`^${route.path.replace(/:[^/]+/g, '[^/]+')}/?$`)
-    return pattern.test(location.pathname)
-  })
-  const sections = getNavigationSections(
-    config.auth.enabled,
-    config.capabilities,
-  )
-  const effectivePath = current?.parentPath ?? location.pathname
-  const section = findNavigationSection(effectivePath)
-  const activePage = findSubPage(section, effectivePath)
-  const navIcons: Record<string, typeof Home> = {
-    home: Home,
-    office: Building2,
-    tasks: ListTodo,
-    collaboration: Users,
-    workflow: Workflow,
-    cost: Wallet,
-    administration: Settings,
+
+  const showToast = (message: string) => {
+    setToast(message)
+    window.setTimeout(() => setToast(''), 1700)
   }
+
+  const navigation = [
+    { path: '/workspace/overview', title: '工作台', icon: '⌂', view: 'home' },
+    { path: '/workspace/office', title: '3D 办公室', icon: '▣', view: 'office' },
+    { path: '/workspace/tasks', title: '任务中心', icon: '☰' },
+    { path: '/workspace/collaboration', title: 'Agent 协作', icon: '⚇' },
+    { path: '/admin/workflows', title: 'Workflow', icon: '⌘' },
+    { path: '/workspace/quality-cost', title: '成本分摊', icon: '¥' },
+    { path: '/admin/settings', title: '系统管理', icon: '⚙' },
+  ]
 
   return (
     <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
-        <Link
-          className="brand"
-          to="/workspace/overview"
-          aria-label="Agent 平台工作台"
-        >
-          <span className="brand-mark" aria-hidden="true">
-            <svg width="24" height="24" viewBox="0 0 26 26">
-              <defs>
-                <linearGradient id="brand-gradient" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stopColor="#6aa4ff" />
-                  <stop offset="1" stopColor="#6d4af0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M13 1 25 24h-6l-6-12-6 12H1z"
-                fill="url(#brand-gradient)"
-              />
-            </svg>
-          </span>
-          {!collapsed && <span className="brand-name">Agent 平台</span>}
+        <Link className="brand" to="/workspace/overview" aria-label="Agent 平台工作台">
+          <span className="brand-mark" aria-hidden="true">A</span>
+          {!collapsed && <span>Agent 平台</span>}
         </Link>
-        <nav className="primary-navigation">
-          {sections.map((item) => {
-            const Icon = navIcons[item.id] ?? Home
-            return (
-              <Link
-                key={item.id}
-                to={item.path}
-                title={collapsed ? item.label : undefined}
-                className={
-                  section?.id === item.id ? 'nav-item active' : 'nav-item'
-                }
-                aria-current={section?.id === item.id ? 'page' : undefined}
-              >
-                <span className="nav-icon" aria-hidden="true">
-                  <Icon size={18} strokeWidth={1.9} />
-                </span>
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            )
-          })}
+        <nav className="prototype-navigation" aria-label="全局导航">
+          {navigation.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              title={collapsed ? item.title : undefined}
+              data-v={item.view}
+              end={
+                item.path === '/workspace/overview' ||
+                item.path === '/workspace/office'
+              }
+              className={({ isActive }) =>
+                isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+              }
+            >
+              <i aria-hidden="true">{item.icon}</i>
+              {!collapsed && <span>{item.title}</span>}
+            </NavLink>
+          ))}
+          <button
+            className="prototype-nav-item collapse-nav-item"
+            type="button"
+            aria-label={collapsed ? '展开侧边栏' : '收起侧边栏'}
+            aria-expanded={!collapsed}
+            onClick={() => {
+              toggleSidebar()
+              showToast(collapsed ? '已展开侧边栏（演示）' : '已收起侧边栏（演示）')
+            }}
+          >
+            <i aria-hidden="true">{collapsed ? '»' : '«'}</i>
+            {!collapsed && <span>收起侧边栏</span>}
+          </button>
         </nav>
-        <button
-          className="collapse-button"
-          type="button"
-          onClick={toggleSidebar}
-          aria-label={collapsed ? '展开导航' : '折叠导航'}
-          aria-expanded={!collapsed}
-        >
-          <span className="nav-icon" aria-hidden="true">
-            {collapsed ? (
-              <ChevronsRight size={17} />
-            ) : (
-              <ChevronsLeft size={17} />
-            )}
-          </span>
-          {!collapsed && <span>收起侧边栏</span>}
-        </button>
-        {!collapsed && (
-          <div className="sidebar-footer">
-            <span>模式由服务端启动配置决定</span>
-            <strong>{config.auth.enabled ? '权限模式' : '免登录模式'}</strong>
-            <small>版本 {config.version}</small>
-          </div>
-        )}
       </aside>
 
       <main className="main-content">
-        <header className="topbar">
-          <Link
-            className="global-search"
-            to="/search"
-            aria-label="打开全局搜索"
+        <header className="topbar" aria-label="顶部工具栏">
+          <form
+            className="top-search"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              navigate('/search')
+            }}
           >
-            <Search size={16} strokeWidth={2} aria-hidden="true" />
-            <span className="global-search-placeholder">
-              搜索 Agent、任务、文档…
-            </span>
-            <kbd>Ctrl K</kbd>
-          </Link>
+            <span className="top-search-icon" aria-hidden="true">⌕</span>
+            <input
+              aria-label="搜索 Agent、任务、文档"
+              placeholder="搜索 Agent、任务、文档…"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') event.currentTarget.blur()
+              }}
+            />
+            <kbd>Ctrl + K</kbd>
+          </form>
           <div className="top-actions">
-            <Link
-              className="icon-button"
-              to="/notifications"
-              aria-label="打开通知中心"
-            >
-              <Bell size={18} strokeWidth={1.9} />
+            <Link className="top-icon-button notification-button" to="/notifications" aria-label="通知">
+              <span aria-hidden="true">🔔</span>
+              <i aria-hidden="true" />
             </Link>
-            <span className="mode-indicator">
-              {config.auth.enabled ? '权限已启用' : '免登录'}
-            </span>
-            {config.auth.enabled && (
-              <Link className="top-action auth-entry" to="/auth/login">
-                <LogIn size={14} strokeWidth={2} aria-hidden="true" />
-                登录
-              </Link>
-            )}
-            <span className="avatar" aria-hidden="true">
-              <UserRound size={20} strokeWidth={1.8} />
-            </span>
+            <button className="top-icon-button" type="button" aria-label="主题" onClick={() => showToast('主题切换待接入')}>
+              ☼
+            </button>
+            <button className="user-avatar" type="button" aria-label="用户账户" onClick={() => showToast('用户菜单待接入')}>
+              A
+            </button>
           </div>
         </header>
-        {section && section.subpages.length > 1 && (
-          <nav className="subnav" aria-label={`${section.label}子页面`}>
-            {section.subpages.map((page) => (
-              <NavLink
-                key={page.path}
-                to={page.path}
-                end
-                className={
-                  activePage?.path === page.path
-                    ? 'subnav-item active'
-                    : 'subnav-item'
-                }
-              >
-                {page.label}
-              </NavLink>
-            ))}
-          </nav>
-        )}
         <Outlet />
       </main>
+      <div className={toast ? 'prototype-toast visible' : 'prototype-toast'} role="status" aria-live="polite">
+        {toast}
+      </div>
     </div>
   )
 }
 
-function resolveApiPath(routePath: string): string | null {
-  /** 前端路由 → 后端 API 路径映射；返回 null 表示此路由无 API 可接 */
-  const map: Record<string, string> = {
-    // 运营
-    '/operations/approvals': '/platform/v1/approvals',
-    '/operations/memories': '/platform/v1/memories',
-    '/operations/conversations': '/platform/v1/sessions',
-    '/operations/files': '/platform/v1/files',
-    '/admin/audit': '/platform/v1/audit/identity-events',
-    // Registry 类 — 统一走 /platform/v1/registry/{kind}
-    '/admin/models/providers': '/platform/v1/registry/providers',
-    '/admin/models/templates': '/platform/v1/registry/models',
-    '/admin/models/routing': '/platform/v1/registry/routing-policies',
-    '/admin/tools': '/platform/v1/registry/tools',
-    '/admin/skills': '/platform/v1/registry/skills',
-    // 调度
-    '/admin/scheduler/jobs': '/platform/v1/scheduler/jobs',
-    '/admin/scheduler/subscriptions': '/platform/v1/scheduler/subscriptions',
-    // 评测（后端已补 list）
-    '/operations/evaluation/datasets':
-      '/platform/v1/observability/evaluations/datasets',
-    '/operations/evaluation/runs': '/platform/v1/observability/evaluations',
-    // Prompt（后端已补 list）
-    '/admin/prompts': '/platform/v1/prompts',
-    // Organization / RBAC / Settings（admin.py 新增）
-    '/admin/organization': '/platform/v1/admin/organization',
-    '/admin/access-control': '/platform/v1/admin/access-control',
-    '/admin/settings': '/platform/v1/admin/settings',
-    // Metrics JSON
-    '/admin/operations': '/platform/v1/observability/metrics/json',
-  }
-  if (map[routePath]) return map[routePath]
-  // 详情路由（含 /:param）一律返回 null — 不降级为父级 list API
-  // 详情数据需要专门组件 + 单条 GET {id} 接口
-  if (routePath.includes('/:')) return null
-  // Auth 相关 — 不渲染的空壳
-  if (routePath.startsWith('/auth/')) return null
-  // Organization / RBAC / Settings — 后端无 API
-  if (
-    [
-      '/admin/organization',
-      '/admin/access-control',
-      '/admin/settings',
-    ].includes(routePath)
-  )
-    return null
-  return null
-}
-
-function PageView({
+function RouteGuard({
   route,
   authEnabled,
   capabilities,
@@ -433,59 +272,25 @@ function PageView({
       />
     )
   }
+  if (route.capability && !capabilities.includes(route.capability))
+    return (
+      <ModeRestrictedState
+        title="此功能未启用"
+        description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
+      />
+    )
   if (route.path === '/workspace/overview') return <Dashboard />
-  if (route.path === '/workspace/quickstart') return <QuickStartPage />
-  if (route.path === '/workspace/status') return <StatusBoardPage />
+  if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
-  if (
-    route.path === '/workspace/collaboration' ||
-    route.path === '/operations/blackboard/:entryId'
-  )
-    return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
-  if (route.path === '/workspace/office') return <OfficeWorkspace />
-  if (
-    route.path === '/operations/agents' ||
-    route.path === '/operations/agents/:agentId' ||
-    route.path === '/admin/agents' ||
-    route.path === '/admin/agents/:agentId'
-  )
-    return <AgentDefinitionPage />
-  if (
-    route.path === '/admin/workflows' ||
-    route.path === '/admin/workflows/:workflowId' ||
-    route.path === '/admin/workflows/:workflowId/edit' ||
-    route.path === '/operations/workflow-runs/:runId'
-  )
-    return <WorkflowDesignerPage />
-  if (
-    route.path === '/operations/knowledge-bases' ||
-    route.path === '/operations/knowledge-bases/:collectionId' ||
-    route.path === '/operations/documents/:documentId'
-  )
-    return <KnowledgeWorkbench />
+  if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
-  if (route.path.startsWith('/admin/models/')) return <ModelsManagementPage />
-
-  // 通用分支：后端有 API → GenericListPage，无 API → EmptyState
-  const apiPath = resolveApiPath(route.path)
-  if (apiPath) {
-    return (
-      <GenericListPage
-        title={route.title}
-        description={route.description}
-        apiPath={apiPath}
-        queryKey={route.path}
-      />
-    )
-  }
-
   return (
     <section className="page-content">
       <div className="page-heading">
@@ -497,7 +302,59 @@ function PageView({
       </div>
       <EmptyState
         title="业务页面待模块接入"
-        description={`路由已注册，但服务端未声明可调用的 API 路径。由 ${route.owner} 负责业务实现。`}
+        description={`路由与深链已注册。此页面由 ${route.owner} 负责业务实现；本任务不伪造尚未确认的 API、实体数据或操作。`}
+      />
+    </section>
+  )
+}
+
+function Dashboard() {
+  const shortcuts = [
+    {
+      title: '任务指挥中心',
+      description: '任务队列与执行状态',
+      to: '/workspace/tasks',
+    },
+    {
+      title: 'Agent 协作中心',
+      description: 'Agent 与 Workflow 运行态',
+      to: '/workspace/collaboration',
+    },
+    {
+      title: '成本与质量',
+      description: '用量、质量与评测聚合',
+      to: '/workspace/quality-cost',
+    },
+    {
+      title: '3D 数字办公室',
+      description: '沉浸式办公室入口',
+      to: '/workspace/office',
+    },
+  ]
+  return (
+    <section className="page-content dashboard-page">
+      <div className="dashboard-hero">
+        <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
+        <h1>运营驾驶舱</h1>
+        <p>
+          统一进入工作空间、智能体运营与平台管理。业务指标将在对应模块 API
+          接入后展示。
+        </p>
+      </div>
+      <div className="shortcut-grid">
+        {shortcuts.map((item) => (
+          <Link className="shortcut-card" to={item.to} key={item.to}>
+            <strong>{item.title}</strong>
+            <span>{item.description}</span>
+            <span className="shortcut-arrow" aria-hidden="true">
+              →
+            </span>
+          </Link>
+        ))}
+      </div>
+      <EmptyState
+        title="驾驶舱数据尚未接入"
+        description="当前只提供稳定导航和页面框架，不使用静态假指标替代服务端数据。"
       />
     </section>
   )

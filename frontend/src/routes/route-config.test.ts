@@ -33,6 +33,15 @@ describe('route configuration', () => {
     ).toBe('/workspace/overview')
   })
 
+  it('registers home and office as the two prototype main views', () => {
+    const mainPaths = pageRoutes.map((route) => route.path)
+    expect(mainPaths).toContain('/workspace/overview')
+    expect(mainPaths).toContain('/workspace/office')
+    expect(mainPaths.indexOf('/workspace/overview')).toBeLessThan(
+      mainPaths.indexOf('/workspace/office'),
+    )
+  })
+
   it('keeps Agent collaboration reachable in no-auth mode', () => {
     const visiblePaths = getVisibleNavigation(false).flatMap((group) =>
       group.items.map((item) => item.path),
