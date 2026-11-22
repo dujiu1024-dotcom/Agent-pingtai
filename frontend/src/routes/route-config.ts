@@ -586,7 +586,7 @@ export const navigationSections: NavigationSection[] = [
   },
   {
     id: 'workflow',
-    label: 'Workflow',
+    label: '工作流与系统管理',
     icon: '⌘',
     path: '/admin/workflows',
     subpages: [
@@ -596,6 +596,19 @@ export const navigationSections: NavigationSection[] = [
         path: '/admin/prompts',
         capability: 'prompt_management',
       },
+      { label: 'Agent 定义', path: '/admin/agents' },
+      { label: '模型供应商', path: '/admin/models/providers' },
+      { label: '模型模板', path: '/admin/models/templates' },
+      { label: '模型路由', path: '/admin/models/routing' },
+      { label: '工具与 MCP', path: '/admin/tools' },
+      { label: 'Skills', path: '/admin/skills' },
+      { label: '组织与成员', path: '/admin/organization', authOnly: true },
+      { label: '角色与权限', path: '/admin/access-control', authOnly: true },
+      { label: '系统设置', path: '/admin/settings' },
+      { label: '审计中心', path: '/admin/audit' },
+      { label: '调度任务', path: '/admin/scheduler/jobs' },
+      { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
+      { label: '系统运维', path: '/admin/operations' },
     ],
   },
   {
@@ -609,36 +622,15 @@ export const navigationSections: NavigationSection[] = [
       { label: '评测运行', path: '/operations/evaluation/runs' },
     ],
   },
-  {
-    id: 'administration',
-    label: '系统管理',
-    icon: '⚙',
-    path: '/admin/agents',
-    subpages: [
-      { label: 'Agent 定义', path: '/admin/agents' },
-      { label: '模型供应商', path: '/admin/models/providers' },
-      { label: '模型模板', path: '/admin/models/templates' },
-      { label: '模型路由', path: '/admin/models/routing' },
-      { label: '工具与 MCP', path: '/admin/tools' },
-      { label: 'Skills', path: '/admin/skills' },
-      {
-        label: '组织与成员',
-        path: '/admin/organization',
-        authOnly: true,
-      },
-      {
-        label: '角色与权限',
-        path: '/admin/access-control',
-        authOnly: true,
-      },
-      { label: '系统设置', path: '/admin/settings' },
-      { label: '审计中心', path: '/admin/audit' },
-      { label: '调度任务', path: '/admin/scheduler/jobs' },
-      { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
-      { label: '系统运维', path: '/admin/operations' },
-    ],
-  },
+
 ]
+
+export function getWorkspaceViewMode(pathname: string): 'home' | 'office' {
+  return pathname === '/workspace/office' ||
+    pathname.startsWith('/workspace/office/')
+    ? 'office'
+    : 'home'
+}
 
 export function getNavigationSections(
   authEnabled: boolean,
