@@ -22,7 +22,8 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
-import { AgentRuntimeDetail, AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
+import { AgentRuntimeDetail } from '@/features/agents/AgentRuntimePage'
+import { AgentRuntimeList } from '@/features/agents/AgentRuntimeList'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import {
