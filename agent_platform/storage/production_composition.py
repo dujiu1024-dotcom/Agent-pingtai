@@ -14,6 +14,12 @@ from agent_platform.control_plane.connector_workers import (
     PostgresConnectorSyncQueue,
 )
 from agent_platform.control_plane.data_connectors import DataConnectorService
+from agent_platform.control_plane.file_processing import (
+    FileProcessingWorker,
+    PostgresFileProcessingQueue,
+)
+from agent_platform.control_plane.sessions_assets import ObjectStorage, SessionRepository
+from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.security.clamav import ClamAVScanner
 from agent_platform.storage.object_storage import S3ObjectStorage
 
@@ -26,6 +32,8 @@ class ProductionAssetConnectorRuntime:
     scanner: ClamAVScanner
     connector_queue: PostgresConnectorSyncQueue
     connector_worker: "ManagedConnectorWorker"
+    file_processing_queue: PostgresFileProcessingQueue
+    file_processing_worker: FileProcessingWorker
 
 
 class ManagedConnectorWorker:
@@ -48,7 +56,12 @@ class ManagedConnectorWorker:
     async def run(self) -> None:
         """Run until cancelled; one failed job must not terminate the worker."""
         while not self._stop.is_set():
-            processed = await self.worker.process_once()
+            try:
+                processed = await self.worker.process_once()
+            except Exception:
+                # Database/network failures must not silently kill the managed
+                # worker; back off before reconnecting through the factory.
+                processed = False
             if not processed:
                 try:
                     await asyncio.wait_for(
@@ -77,6 +90,8 @@ def build_production_asset_connector_runtime(
     bucket: str,
     connection_factory: Callable[[], Any],
     connector_service: DataConnectorService,
+    file_repository_for_tenant: Callable[[str], SessionRepository],
+    knowledge_for_tenant: Callable[[str], KnowledgeService],
     worker_id: str,
     clamav_host: str,
     clamav_port: int = 3310,
@@ -102,6 +117,10 @@ def build_production_asset_connector_runtime(
         raise ValueError("PostgreSQL connection factory is required")
     if connector_service is None:
         raise ValueError("production DataConnectorService is required")
+    if not callable(file_repository_for_tenant):
+        raise ValueError("tenant-scoped PostgreSQL file repository resolver is required")
+    if not callable(knowledge_for_tenant):
+        raise ValueError("tenant-scoped KnowledgeService resolver is required")
     if not worker_id.strip():
         raise ValueError("connector worker id is required")
 
@@ -126,6 +145,20 @@ def build_production_asset_connector_runtime(
         worker_id=worker_id,
         lease_seconds=connector_lease_seconds,
     )
+    file_queue = PostgresFileProcessingQueue(connection_factory=connection_factory)
+
+    def storage_for_tenant(_tenant_id: str) -> ObjectStorage:
+        # Object keys are tenant-prefixed and the S3 adapter validates the prefix.
+        return storage
+
+    file_worker = FileProcessingWorker(
+        queue=file_queue,
+        worker_id=worker_id,
+        repository_for_tenant=file_repository_for_tenant,
+        storage_for_tenant=storage_for_tenant,
+        scanner=scanner,
+        knowledge_for_tenant=knowledge_for_tenant,
+    )
     return ProductionAssetConnectorRuntime(
         object_storage=storage,
         scanner=scanner,
@@ -134,4 +167,6 @@ def build_production_asset_connector_runtime(
             worker=worker,
             poll_interval_seconds=connector_poll_interval_seconds,
         ),
+        file_processing_queue=file_queue,
+        file_processing_worker=file_worker,
     )
