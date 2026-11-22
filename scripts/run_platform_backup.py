@@ -159,12 +159,47 @@ def run_backup_set(
     }
 
 
-def main(argv: list[str] | None = None) -> int:
+def validate_backup_dir_argument(value: str) -> Path:
+    """Validate a CLI backup directory without creating or modifying anything."""
+    if not value or not value.strip():
+        raise ValueError("--backup-dir must not be empty")
+    path = Path(value).expanduser()
+    if path.is_symlink():
+        raise ValueError("backup directory must not be a symlink")
+    if path.exists() and not path.is_dir():
+        raise ValueError("backup directory must be a directory")
+    parent = path if path.exists() else path.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if parent.is_symlink() or not parent.is_dir():
+        raise ValueError("backup directory parent must be a non-symlink directory")
+    return path
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backup-dir", type=Path, default=Path("backups"))
-    args = parser.parse_args(argv)
+    parser.add_argument("--backup-dir", default="backups")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate arguments and print the backup plan without executing backup commands",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     try:
-        result = run_backup_set(args.backup_dir)
+        backup_dir = validate_backup_dir_argument(args.backup_dir)
+        if args.dry_run:
+            result = {
+                "status": "dry-run",
+                "backup_dir": str(backup_dir),
+                "components": [item[0] for item in _COMPONENTS],
+                "execution": "no backup commands executed; no files or directories created",
+            }
+        else:
+            result = run_backup_set(backup_dir)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "blocked", "error": str(exc)}, ensure_ascii=False),
               file=sys.stderr)
