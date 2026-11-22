@@ -364,7 +364,7 @@ function RouteGuard({
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/operations/agents') return <AgentRuntimeList />
-  if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
+  if (route.path === '/operations/agents/:agentId') return <AgentDefinitionPage />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/admin/ops') return <SystemOpsPage />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
