@@ -150,7 +150,7 @@ class SkillDependencyReviewer:
             )
             if (
                 len(requested_tools) != len(raw_tools)
-                or len(set(requested_tools)) != len(requested_tools)
+                or len({tool.casefold() for tool in requested_tools}) != len(requested_tools)
             ):
                 findings.append("invalid_tool_allowlist")
             for tool in requested_tools:
