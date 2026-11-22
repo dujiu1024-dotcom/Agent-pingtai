@@ -222,17 +222,6 @@ class PostgresCredentialRepository:
     def __init__(self, connection_factory: Any) -> None:
         self._connect = connection_factory
 
-    async def create(self, record: CredentialRecord) -> None:
-        connection = await self._connect()
-        async with connection:
-            await connection.execute(
-                """INSERT INTO platform_credentials
-                   (credential_id,tenant_id,name,credential_type,secret_ref,scopes,created_by,created_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (record.credential_id, record.tenant_id, record.name, record.credential_type,
-                 record.secret_ref, list(record.scopes), record.created_by, record.created_at),
-            )
-
     @staticmethod
     async def _write_audit(
         connection: Any, audit: Any, *, tenant_id: str, actor_id: str,
@@ -347,25 +336,6 @@ class PostgresCredentialRepository:
             row = await cursor.fetchone()
         return self._record(row) if row else None
 
-    async def grant(self, grant: CredentialGrant) -> None:
-        connection = await self._connect()
-        async with connection:
-            await connection.execute(
-                """INSERT INTO platform_credential_grants
-                   (tenant_id,credential_id,consumer_type,consumer_id,scopes,granted_by,created_at)
-                   SELECT %s,%s,%s,%s,%s,%s,%s
-                   WHERE EXISTS (
-                     SELECT 1 FROM platform_credentials
-                     WHERE tenant_id=%s AND credential_id=%s AND revoked_at IS NULL
-                   )
-                   ON CONFLICT (tenant_id,credential_id,consumer_type,consumer_id)
-                   DO UPDATE SET scopes=EXCLUDED.scopes,granted_by=EXCLUDED.granted_by,
-                                 created_at=EXCLUDED.created_at""",
-                (grant.tenant_id, grant.credential_id, grant.consumer_type, grant.consumer_id,
-                 list(grant.scopes), grant.granted_by, grant.created_at,
-                 grant.tenant_id, grant.credential_id),
-            )
-
     async def get_grant(self, *, tenant_id: str, credential_id: str,
                         consumer_type: str, consumer_id: str) -> CredentialGrant | None:
         connection = await self._connect()
@@ -388,32 +358,3 @@ class PostgresCredentialRepository:
             created_at=row["created_at"],
         )
 
-    async def revoke_grant(self, *, tenant_id: str, credential_id: str,
-                           consumer_type: str, consumer_id: str) -> None:
-        connection = await self._connect()
-        async with connection:
-            await connection.execute(
-                """DELETE FROM platform_credential_grants
-                   WHERE tenant_id=%s AND credential_id=%s
-                     AND consumer_type=%s AND consumer_id=%s""",
-                (tenant_id, credential_id, consumer_type, consumer_id),
-            )
-
-    async def revoke(self, *, tenant_id: str, credential_id: str) -> bool:
-        connection = await self._connect()
-        async with connection:
-            async with connection.transaction():
-                cursor = await connection.execute(
-                    """UPDATE platform_credentials SET revoked_at=now()
-                       WHERE tenant_id=%s AND credential_id=%s AND revoked_at IS NULL
-                       RETURNING credential_id""",
-                    (tenant_id, credential_id),
-                )
-                if await cursor.fetchone() is None:
-                    return False
-                await connection.execute(
-                    """DELETE FROM platform_credential_grants
-                       WHERE tenant_id=%s AND credential_id=%s""",
-                    (tenant_id, credential_id),
-                )
-        return True
