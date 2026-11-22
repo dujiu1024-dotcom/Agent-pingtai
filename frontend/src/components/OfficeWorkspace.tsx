@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import { Canvas } from '@react-three/fiber'
@@ -14,9 +14,14 @@ type OfficeAgent = {
   status: AgentStatus
   floor_id?: string
   desk_id?: string
+  task_id?: string
+  task_title?: string
+  run_id?: string
+  model_template?: string
+  last_active_at?: string
 }
 type RegistryAgent = { item_id: string; floor_id?: string; desk_id?: string; definition?: { name?: string; description?: string; floor_id?: string; desk_id?: string } }
-type OfficeTask = { task_id: string; agent_id?: string; status?: string; updated_at?: string; created_at?: string }
+type OfficeTask = { task_id: string; title?: string; prompt?: string; agent_id?: string; run_id?: string; model_template?: string; status?: string; updated_at?: string; created_at?: string }
 const TASKS_API = '/platform/v1/workbench/tasks'
 const AGENTS_API = '/platform/v1/registry/agent'
 const listFrom = <T,>(value: unknown): T[] => {
@@ -65,7 +70,9 @@ const zones = [
   { id: 'studio', name: '团队工作室', subtitle: 'TEAM STUDIO', x: 1.1, z: -3.8, width: 7.2, depth: 4.5 },
   { id: 'meeting', name: '协作会议区', subtitle: 'MEETING HUB', x: -6.1, z: 3.2, width: 5.4, depth: 4.7 },
   { id: 'knowledge', name: '知识中心', subtitle: 'KNOWLEDGE', x: 1.1, z: 3.2, width: 3.5, depth: 4.7 },
+  { id: 'archive', name: '档案与知识中心', subtitle: 'ARCHIVE / KNOWLEDGE', x: 1.1, z: 3.2, width: 3.5, depth: 4.7 },
   { id: 'ops', name: '运营中枢', subtitle: 'OPS CENTER', x: 5.8, z: 3.2, width: 2.5, depth: 4.7 },
+  { id: 'private', name: '独立办公室', subtitle: 'PRIVATE OFFICES', x: 5.8, z: -3.8, width: 2.5, depth: 4.5 },
 ]
 
 const desks = Array.from({ length: 21 }, (_, index) => ({
@@ -172,7 +179,7 @@ function OfficeDecorations() {
   </>
 }
 
-function OfficeScene({ selectedDesk, onSelectDesk }: { selectedDesk: string | null; onSelectDesk: (id: string) => void }) {
+function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone }: { selectedDesk: string | null; onSelectDesk: (id: string) => void; selectedZone: string | null; onSelectZone: (id: string) => void }) {
   return (
     <>
       <color attach="background" args={['#aebbd8']} />
@@ -187,10 +194,10 @@ function OfficeScene({ selectedDesk, onSelectDesk }: { selectedDesk: string | nu
         </mesh>
         <gridHelper args={[21, 21, '#c1cde0', '#d4ddeb']} position={[0, 0.012, 0]} />
         {zones.map((zone) => (
-          <group key={zone.id} position={[zone.x, 0.025, zone.z]}>
+          <group key={zone.id} position={[zone.x, 0.025, zone.z]} onClick={(event) => { event.stopPropagation(); onSelectZone(zone.id) }}>
             <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
               <planeGeometry args={[zone.width, zone.depth]} />
-              <meshStandardMaterial color="#f4f7fc" roughness={0.95} />
+              <meshStandardMaterial color={selectedZone === zone.id ? '#e6edff' : '#f4f7fc'} roughness={0.95} />
             </mesh>
             <mesh position={[0, 0.035, -zone.depth / 2 + 0.12]}>
               <boxGeometry args={[zone.width, 0.06, 0.12]} />
@@ -219,7 +226,10 @@ export function OfficeWorkspace() {
   const [floorId, setFloorId] = useState(floors[1].id)
   const [view, setView] = useState<'space' | 'top'>('space')
   const [selectedDesk, setSelectedDesk] = useState<string | null>(null)
+  const [selectedZone, setSelectedZone] = useState<string | null>(null)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [use2D, setUse2D] = useState(false)
   const floor = useMemo(() => floors.find((item) => item.id === floorId) ?? floors[1], [floorId])
   const agentsQuery = useQuery({
     queryKey: ['workspace', 'office', 'agents'],
@@ -243,6 +253,11 @@ export function OfficeWorkspace() {
       status: latestTask ? taskStatus(latestTask.status) : 'unknown',
       floor_id: agent.floor_id || agent.definition?.floor_id,
       desk_id: agent.desk_id || agent.definition?.desk_id,
+      task_id: latestTask?.task_id,
+      task_title: latestTask?.title || latestTask?.prompt,
+      run_id: latestTask?.run_id,
+      model_template: latestTask?.model_template,
+      last_active_at: latestTask?.updated_at || latestTask?.created_at,
     }
   }), [agentsQuery.data, tasksQuery.data])
   const visibleAgents = agents.filter((agent) => (!agent.floor_id || agent.floor_id === floorId) &&
@@ -251,6 +266,14 @@ export function OfficeWorkspace() {
   const activeAgents = visibleAgents.filter((agent) => ['running', 'collaborating', 'waiting_approval', 'queued'].includes(agent.status)).length
   const dataUnavailable = agentsQuery.isError || tasksQuery.isError
   const selectedDeskAgent = visibleAgents.find((agent) => agent.desk_id === selectedDesk)
+  const selectedAgent = agents.find((agent) => agent.agent_id === selectedAgentId)
+  const selectedZoneDetails = zones.find((zone) => zone.id === selectedZone)
+  useEffect(() => {
+    const updateFallback = () => setUse2D(window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches)
+    updateFallback()
+    window.addEventListener('resize', updateFallback)
+    return () => window.removeEventListener('resize', updateFallback)
+  }, [])
 
   return (
     <main className="office-workspace">
@@ -258,7 +281,7 @@ export function OfficeWorkspace() {
         <div className="office-brand"><span className="office-brand-mark">A</span><span><strong>AGENT OFFICE</strong><small>智能体数字办公空间</small></span></div>
         <div className="office-floor-tabs" role="group" aria-label="楼层导航">
           {floors.map((item) => <button key={item.id} className={item.id === floorId ? 'office-floor-tab active' : 'office-floor-tab'}
-            onClick={() => { setFloorId(item.id); setSelectedDesk(null) }} aria-pressed={item.id === floorId}>
+            onClick={() => { setFloorId(item.id); setSelectedDesk(null); setSelectedAgentId(null); setSelectedZone(null) }} aria-pressed={item.id === floorId}>
             <strong>{item.label}</strong><span>{item.name}</span>
           </button>)}
         </div>
@@ -266,6 +289,7 @@ export function OfficeWorkspace() {
           <span className={`office-sync-state ${dataUnavailable ? 'is-error' : ''}`}><i />{agentsQuery.isLoading || tasksQuery.isLoading ? '正在同步' : dataUnavailable ? '部分数据不可用' : '数据已同步'}</span>
           <button className={view === 'space' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('space')}>空间视角</button>
           <button className={view === 'top' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('top')}>俯视图</button>
+          <button className={use2D ? 'office-view-button active' : 'office-view-button'} onClick={() => setUse2D((value) => !value)} aria-pressed={use2D}>2D 列表</button>
         </div>
       </header>
 
@@ -276,12 +300,15 @@ export function OfficeWorkspace() {
 
       <section className="office-main-grid">
         <div className="office-viewport">
-          <div className="office-viewport-caption"><span><i /> 3D SPACE</span><span>拖拽旋转 · 滚轮缩放 · 点击工位查看</span></div>
-          <div className={view === 'top' ? 'office-canvas office-canvas-top' : 'office-canvas'}>
-            <Canvas key={view} shadows dpr={[1, 1.6]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
-              <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} />
+          <div className="office-viewport-caption"><span><i /> {use2D ? '2D ACCESSIBLE MAP' : '3D SPACE'}</span><span>{use2D ? '键盘选择工位与 Agent' : '拖拽旋转 · 滚轮缩放 · 点击工位或区域查看'}</span></div>
+          {use2D ? <div className="office-2d-map" aria-label="办公室二维空间地图">
+            <div className="office-2d-zones">{zones.map((zone) => <button type="button" key={zone.id} className={selectedZone === zone.id ? 'office-2d-zone selected' : 'office-2d-zone'} onClick={() => setSelectedZone(zone.id)}><strong>{zone.name}</strong><small>{zone.subtitle}</small></button>)}</div>
+            <div className="office-2d-desks">{desks.map((desk) => <button type="button" key={desk.id} className={selectedDesk === desk.id ? 'office-2d-desk selected' : 'office-2d-desk'} onClick={() => setSelectedDesk(desk.id)}>{desk.id.toUpperCase()}</button>)}</div>
+          </div> : <div className={view === 'top' ? 'office-canvas office-canvas-top' : 'office-canvas'}>
+            <Canvas key={view} shadows dpr={[1, 1.5]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
+              <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} selectedZone={selectedZone} onSelectZone={setSelectedZone} />
             </Canvas>
-          </div>
+          </div>}
           <div className="office-map-legend"><span><i className="legend-desk" />标准工位</span><span><i className="legend-selected" />已选工位</span><span><i className="legend-agent" />Agent 状态</span><small>状态由 Agent Registry 与任务执行记录推导；未提供的状态显示为未知</small></div>
         </div>
 
@@ -291,15 +318,15 @@ export function OfficeWorkspace() {
           <div className="office-inspector-section"><div className="office-section-heading">楼层概览 <span>OVERVIEW</span></div>
             <div className="office-floor-overview"><div><strong>21</strong><span>工位</span></div><div><strong>05</strong><span>功能区域</span></div><div><strong>{visibleAgents.length.toString().padStart(2, '0')}</strong><span>Registry Agent</span></div></div>
           </div>
-          <div className="office-inspector-section"><div className="office-section-heading">功能区域 <span>5 ZONES</span></div>
-            <div className="office-zone-list">{zones.map((zone) => <div className="office-zone-row" key={zone.id}><span className="office-zone-dot" /><span><strong>{zone.name}</strong><small>{zone.subtitle}</small></span><span className="office-zone-count">—</span></div>)}</div>
+          <div className="office-inspector-section"><div className="office-section-heading">功能区域 <span>{zones.length} ZONES</span></div>
+            <div className="office-zone-list">{zones.map((zone) => <button type="button" className={selectedZone === zone.id ? 'office-zone-row selected' : 'office-zone-row'} key={zone.id} onClick={() => setSelectedZone(zone.id)}><span className="office-zone-dot" /><span><strong>{zone.name}</strong><small>{zone.subtitle}</small></span><span className="office-zone-count">查看</span></button>)}</div>
           </div>
           <div className="office-inspector-section office-agent-section"><div className="office-section-heading">Agent 状态 <span>{agentsQuery.isLoading ? '同步中' : `${visibleAgents.length} AGENTS`}</span></div>
-            {agentsQuery.isLoading || tasksQuery.isLoading ? <div className="office-no-agents"><span>⌁</span><strong>正在读取 Agent Registry</strong><p>正在同步服务端 Agent 定义与任务执行记录。</p></div> : dataUnavailable ? <div className="office-no-agents"><span>!</span><strong>实时数据暂不可用</strong><p>无法完整读取 Agent Registry 或任务执行记录，请检查服务端 API。</p></div> : visibleAgents.length ? visibleAgents.map((agent) => <div className="office-agent-row" key={agent.agent_id}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></div>) :
+            {agentsQuery.isLoading || tasksQuery.isLoading ? <div className="office-no-agents"><span>⌁</span><strong>正在读取 Agent Registry</strong><p>正在同步服务端 Agent 定义与任务执行记录。</p></div> : dataUnavailable ? <div className="office-no-agents"><span>!</span><strong>实时数据暂不可用</strong><p>无法完整读取 Agent Registry 或任务执行记录，请检查服务端 API。</p></div> : visibleAgents.length ? visibleAgents.map((agent) => <button type="button" className={selectedAgentId === agent.agent_id ? 'office-agent-row selected' : 'office-agent-row'} key={agent.agent_id} onClick={() => setSelectedAgentId(agent.agent_id)}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></button>) :
               <div className="office-no-agents"><span>⌁</span><strong>暂无匹配的 Agent</strong><p>当前 Registry 没有匹配的 Agent，或搜索条件没有结果。</p></div>}
           </div>
-          <div className="office-selected-desk">{selectedDesk ? <><span>当前选中工位</span><strong>{selectedDesk.toUpperCase()}</strong><small>{selectedDeskAgent ? `Agent：${selectedDeskAgent.name} · ${statusLabels[selectedDeskAgent.status]}` : '尚未关联 Agent 数据'}</small></> : <><span>工位详情</span><strong>选择一个工位</strong><small>点击 3D 场景中的桌面查看详情</small></>}</div>
-          <p className="office-api-note">状态数据：服务端 Agent Registry + Workbench Tasks API，按 60 秒 / 30 秒轮询；无任务状态的 Agent 标记为未知，不生成模拟遥测。</p>
+          <div className="office-selected-desk">{selectedAgent ? <><span>Agent 详情</span><strong>{selectedAgent.name}</strong><small>{selectedAgent.role}</small><small>状态：{statusLabels[selectedAgent.status]}</small><small>工位：{selectedAgent.desk_id || '未分配'}</small><small>任务：{selectedAgent.task_title || selectedAgent.task_id || '无关联任务'}</small><small>Run：{selectedAgent.run_id || '—'}</small><small>模型模板：{selectedAgent.model_template || '—'}</small><small>最近活动：{selectedAgent.last_active_at || '—'}</small><button type="button" className="office-clear-selection" onClick={() => setSelectedAgentId(null)}>关闭 Agent 详情</button></> : selectedDesk ? <><span>当前选中工位</span><strong>{selectedDesk.toUpperCase()}</strong><small>{selectedDeskAgent ? `Agent：${selectedDeskAgent.name} · ${statusLabels[selectedDeskAgent.status]}` : '尚未关联 Agent 数据'}</small></> : selectedZoneDetails ? <><span>区域详情</span><strong>{selectedZoneDetails.name}</strong><small>{selectedZoneDetails.subtitle}</small><small>当前楼层：{floor.name}</small></> : <><span>工位详情</span><strong>选择一个工位或区域</strong><small>点击 3D 场景、区域列表或二维地图查看详情</small></>}</div>
+          <p className="office-api-note">状态数据：服务端 Agent Registry + Workbench Tasks API，按 60 秒 / 30 秒轮询；无任务状态的 Agent 标记为未知。仅展示服务端明确提供的 Agent 工位映射，不根据 ID 推断坐标。</p>
         </aside>
       </section>
     </main>
