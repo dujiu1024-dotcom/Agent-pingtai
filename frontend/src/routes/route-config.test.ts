@@ -138,4 +138,19 @@ describe('route configuration', () => {
         .params.providerId,
     ).toBe('provider-7')
   })
+
+  it('wires the files workspace route and assigns list/detail ownership to #802', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
+    const fileDetailRoute = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
+
+    expect(filesRoute?.owner).toBe('#802')
+    expect(filesRoute?.authOnly).toBeUndefined()
+    expect(fileDetailRoute?.owner).toBe('#802')
+    expect(fileDetailRoute?.authOnly).toBeUndefined()
+    expect(
+      matchRoutes(routeObjects, '/operations/files/asset-123')?.[0].params.fileId,
+    ).toBe('asset-123')
+  })
+
 })
