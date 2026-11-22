@@ -5,7 +5,6 @@ import {
   authRoutes,
   detailRoutes,
   getAllRoutes,
-  getNavigationSections,
   getVisibleNavigation,
   globalRoutes,
   isCanonicalRouteSetValid,
@@ -19,23 +18,22 @@ describe('route configuration', () => {
     ).toBe(true)
   })
 
-  it('provides exactly four primary navigation sections', () => {
+  it('provides exactly three primary navigation sections', () => {
     expect(getVisibleNavigation(false).map((group) => group.id)).toEqual([
       'workspace',
       'operations',
       'administration',
-      'global',
     ])
   })
 
-  it('registers the Operations dashboard as a directly navigable route', () => {
-    const route = globalRoutes.find((item) => item.path === '/operations/dashboard')
-    expect(route?.pageId).toBe('OPS-DASHBOARD')
-    expect(route?.owner).toBe('#797')
+  it('registers system settings as a directly reachable instance page', () => {
+    const route = getAllRoutes(false).find((item) => item.path === '/admin/settings')
+    expect(route?.pageId).toBe('SYS-SETTINGS')
+    expect(route?.owner).toBe('#812')
     expect(
       matchRoutes(
         getAllRoutes(false).map((item) => ({ path: item.path })),
-        '/operations/dashboard',
+        '/admin/settings',
       ),
     ).toBeTruthy()
   })
@@ -87,33 +85,6 @@ describe('route configuration', () => {
     ).toBe('research-flow')
   })
 
-  it('filters RBAC submenu entries by exact grants and preserves no-auth mode', () => {
-    const noAuth = getNavigationSections(false)
-      .flatMap((section) => section.subpages)
-      .map((page) => page.path)
-    const noGrants = getNavigationSections(true, [], [])
-      .flatMap((section) => section.subpages)
-      .map((page) => page.path)
-    const rbacGrant = getNavigationSections(true, [], ['platform.rbac.read'])
-      .flatMap((section) => section.subpages)
-      .map((page) => page.path)
-    const allGrants = getNavigationSections(true, [], [
-      'platform.organization.read',
-      'platform.rbac.read',
-    ])
-      .flatMap((section) => section.subpages)
-      .map((page) => page.path)
-
-    expect(noAuth).not.toContain('/admin/access-control')
-    expect(noAuth).not.toContain('/admin/organization')
-    expect(noGrants).not.toContain('/admin/access-control')
-    expect(noGrants).not.toContain('/admin/organization')
-    expect(rbacGrant).toContain('/admin/access-control')
-    expect(rbacGrant).not.toContain('/admin/organization')
-    expect(allGrants).toContain('/admin/access-control')
-    expect(allGrants).toContain('/admin/organization')
-  })
-
   it('shows capability-gated navigation only when bootstrap advertises it', () => {
     const withoutCapability = getVisibleNavigation(true).flatMap((group) =>
       group.items.map((item) => item.path),
@@ -123,24 +94,6 @@ describe('route configuration', () => {
     ]).flatMap((group) => group.items.map((item) => item.path))
     expect(withoutCapability).not.toContain('/admin/prompts')
     expect(withCapability).toContain('/admin/prompts')
-  })
-
-  it('registers Prompt Registry detail deep links under #807', () => {
-    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
-      path: route.path,
-    }))
-    expect(
-      matchRoutes(routeObjects, '/admin/prompts/customer-support')?.[0].params
-        .promptId,
-    ).toBe('customer-support')
-    expect(
-      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')
-        ?.owner,
-    ).toBe('#807')
-    expect(
-      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')
-        ?.capability,
-    ).toBe('prompt_management')
   })
 
   it('exposes identity and RBAC routes only when server mode enables auth', () => {

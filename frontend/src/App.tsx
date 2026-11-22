@@ -24,6 +24,7 @@ import { NotificationsPage } from '@/components/NotificationsPage'
 import { SystemOpsPage } from '@/features/operations/SystemOpsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -115,6 +116,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
+                    version={config.version}
                   />
                 }
               />
@@ -288,10 +290,12 @@ function PageView({
   route,
   authEnabled,
   capabilities,
+  version,
 }: {
   route: PageRoute
   authEnabled: boolean
   capabilities: string[]
+  version: string
 }) {
   if (route.authOnly && !authEnabled) {
     return (
@@ -309,6 +313,7 @@ function PageView({
       />
     )
   if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />

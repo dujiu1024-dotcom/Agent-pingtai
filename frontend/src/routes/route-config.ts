@@ -247,7 +247,7 @@ export const pageRoutes: PageRoute[] = [
     title: '系统设置',
     section: '平台管理',
     description: '实例级系统配置入口。',
-    owner: '#751',
+    owner: '#812',
   },
   {
     path: '/operations/blackboard/:entryId',
