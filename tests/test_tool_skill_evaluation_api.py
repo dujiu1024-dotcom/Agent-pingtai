@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -189,6 +190,59 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
         self.assertEqual(self.probe_calls, [])
+
+    def test_timeout_auth_and_inventory_mismatch_have_stable_codes(self):
+        self._publish("tool", "error-codes", {"allowlist": ["read"]})
+
+        class SlowSession(Session):
+            async def ping(self):
+                await asyncio.sleep(0.02)
+                return True
+
+        class AuthenticationError(Exception):
+            pass
+
+        class AuthSession(Session):
+            async def ping(self):
+                raise AuthenticationError("invalid credentials")
+
+        def client_for(session, timeout=0.5):
+            app = FastAPI()
+            app.add_middleware(ApiV1CompatibilityMiddleware)
+            app.include_router(create_tool_skill_evaluation_router(
+                resolve_principal=lambda request: Principal(
+                    user_id="user-a", tenant_id="tenant-a", session_id="s",
+                    email="user@example.test", display_name="User",
+                ),
+                resolve_registry=lambda actor: self.registry,
+                authorize=lambda *args: True,
+                resolve_mcp_checker=lambda actor: MCPHealthChecker(
+                    store=InMemoryMCPHealthStore(),
+                    session_factory=lambda tenant, server: session,
+                    timeout_seconds=timeout,
+                ),
+                resolve_skill_reviewer=lambda actor: None,
+                audit_writer=Audit(),
+            ))
+            return TestClient(app)
+
+        timeout_result = client_for(SlowSession(["read"]), timeout=0.001).post(
+            "/api/v1/tools/error-codes/test-connection", json={"version": 2},
+        )
+        self.assertEqual(timeout_result.status_code, 200)
+        self.assertEqual(timeout_result.json()["error_code"], "probe_timeout")
+
+        auth_result = client_for(AuthSession(["read"])).post(
+            "/api/v1/tools/error-codes/test-connection", json={"version": 2},
+        )
+        self.assertEqual(auth_result.status_code, 200)
+        self.assertEqual(auth_result.json()["error_code"], "authentication_failed")
+
+        mismatch_result = client_for(Session(["write"])).post(
+            "/api/v1/tools/error-codes/test-connection", json={"version": 2},
+        )
+        self.assertEqual(mismatch_result.status_code, 200)
+        self.assertEqual(mismatch_result.json()["error_code"], "tool_inventory_mismatch")
 
     def test_secret_bearing_probe_exception_is_not_returned_or_audited(self):
         self._publish("tool", "safe-error", {"allowlist": ["read"]})
