@@ -263,8 +263,9 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'SYS-SETTINGS',
     title: '系统设置',
     section: '平台管理',
-    description: '实例级系统配置入口。',
-    owner: '#751',
+    description: '查看服务端启动配置、租户配额与平台资源统计；只读且仅权限模式开放。',
+    owner: '#812',
+    authOnly: true,
   },
   {
     path: '/operations/blackboard/:entryId',

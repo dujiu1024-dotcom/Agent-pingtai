@@ -20,6 +20,7 @@ import {
   ListTodo,
   LogIn,
   Search,
+  Settings,
   UserRound,
   Users,
   Wallet,
@@ -29,7 +30,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
-import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
+import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
   EmptyState,
   ErrorState,
@@ -40,7 +41,6 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
-import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -51,7 +51,6 @@ import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
-import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import { Dashboard } from '@/components/OperationsDashboard'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
@@ -63,13 +62,11 @@ import {
   findNavigationSection,
   findSubPage,
   getNavigationSections,
-  getWorkspaceViewMode,
   globalRoutes,
   pageRoutes,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
-import { AdminInitPage, LoginPage } from '@/features/auth/AuthPages'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -144,6 +141,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
+                    version={config.version}
                   />
                 }
               />
@@ -156,7 +154,10 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                   config.auth.enabled ? (
                     <AuthEntryPage route={route} />
                   ) : (
-                    <Navigate to="/workspace/overview" replace />
+                    <ModeRestrictedState
+                      title="当前模式不提供身份入口"
+                      description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。"
+                    />
                   )
                 }
               />
@@ -237,13 +238,11 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     collaboration: Users,
     workflow: Workflow,
     cost: Wallet,
+    administration: Settings,
   }
 
   return (
-    <div
-      className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}
-      data-v={getWorkspaceViewMode(location.pathname)}
-    >
+    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
         <Link
           className="brand"
@@ -347,11 +346,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             </span>
           </div>
         </header>
-        {collapsed && (
-          <div className="sidebar-collapsed-hint" role="status">
-            已收起侧边栏（演示）
-          </div>
-        )}
         {section && section.subpages.length > 1 && (
           <nav className="subnav" aria-label={`${section.label}子页面`}>
             {section.subpages.map((page) => (
@@ -403,7 +397,6 @@ function resolveApiPath(routePath: string): string | null {
     // Organization / RBAC / Settings（admin.py 新增）
     '/admin/organization': '/platform/v1/admin/organization',
     '/admin/access-control': '/platform/v1/admin/access-control',
-    '/admin/settings': '/platform/v1/admin/settings',
     // Metrics JSON
     '/admin/operations': '/platform/v1/observability/metrics/json',
   }
@@ -418,7 +411,6 @@ function resolveApiPath(routePath: string): string | null {
     [
       '/admin/organization',
       '/admin/access-control',
-      '/admin/settings',
     ].includes(routePath)
   )
     return null
@@ -429,10 +421,12 @@ function PageView({
   route,
   authEnabled,
   capabilities,
+  version,
 }: {
   route: PageRoute
   authEnabled: boolean
   capabilities: string[]
+  version: string
 }) {
   if (route.capability && !capabilities.includes(route.capability)) {
     return (
@@ -468,15 +462,7 @@ function PageView({
       />
     )
   }
-  if (route.path === '/admin/access-control') {
-    return <Navigate to="/admin/rbac" replace />
-  }
-  if (route.path === '/admin/organization') {
-    return <OrganizationAccessPage page="organization" />
-  }
-  if (route.path === '/admin/rbac') {
-    return <OrganizationAccessPage page="rbac" />
-  }
+  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
@@ -492,7 +478,6 @@ function PageView({
   )
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
-  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (
     route.path === '/operations/agents' ||
@@ -516,7 +501,6 @@ function PageView({
     return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
-  if (route.path.startsWith('/admin/models/')) return <ModelsManagementPage />
 
   // 通用分支：后端有 API → GenericListPage，无 API → EmptyState
   const apiPath = resolveApiPath(route.path)
@@ -549,9 +533,24 @@ function PageView({
 }
 
 function AuthEntryPage({ route }: { route: PageRoute }) {
-  if (route.path === '/auth/login') return <LoginPage />
-  if (route.path === '/auth/initialize') return <AdminInitPage />
-  return <NotFoundState />
+  return (
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">{route.pageId}</p>
+        <h1>{route.title}</h1>
+        <p>{route.description}</p>
+      </div>
+      <EmptyState
+        title="身份流程由认证模块提供"
+        description="本任务仅接入服务端权限模式与条件路由，不模拟登录、创建账号或管理员身份。"
+        action={
+          <Link className="text-link" to="/workspace/overview">
+            返回工作空间
+          </Link>
+        }
+      />
+    </section>
+  )
 }
 
 export default function App() {
