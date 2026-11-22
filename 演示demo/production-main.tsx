@@ -184,7 +184,7 @@ function responseForCollection(items: JsonRecord[], url: URL): Response {
 async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = input instanceof Request ? input : undefined
   const url = new URL(request?.url ?? String(input), window.location.origin)
-  const path = url.pathname.replace(/^\\/api(?=\\/)/, '').replace(/\\/$/, '') || '/'
+  const path = url.pathname.replace(/^\/api(?=\/)/, '').replace(/\/$/, '') || '/'
   const method = (init?.method ?? request?.method ?? 'GET').toUpperCase()
 
   if (path.endsWith('/platform/v1/bootstrap')) {
@@ -204,7 +204,7 @@ async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
   }
 
   const items = demoCollections[collectionPath]
-  const suffix = path.slice(collectionPath.length).replace(/^\\//, '')
+  const suffix = path.slice(collectionPath.length).replace(/^\//, '')
   const itemId = suffix ? decodeURIComponent(suffix.split('/')[0]) : ''
   if (method === 'GET') {
     if (!itemId) return responseForCollection(items, url)
