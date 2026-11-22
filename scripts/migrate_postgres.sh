@@ -30,6 +30,68 @@ files=("$MIGRATION_DIR"/*.sql)
 declare -A seen_versions=()
 last_version=0
 known_names=()
+# These duplicate numeric prefixes predate the immutable migration ledger.
+# Keep their exact historical filenames/checksums; never permit new reuse.
+legacy_duplicate_names=(
+  "104_ai_value_management.sql"
+  "104_knowledge_embedding_dimensions_1024.sql"
+  "011_audit_append_only.sql"
+  "011_registry_sessions_assets.sql"
+  "021_alert_delivery_outbox.sql"
+  "021_secret_versions.sql"
+  "025_asset_connector_workers.sql"
+  "025_workbench_task_execution.sql"
+  "037_alert_delivery_outbox.sql"
+  "037_queue_worker_concurrency_quotas.sql"
+  "038_queue_worker_concurrency_quotas.sql"
+  "038_queue_worker_quota_scopes.sql"
+  "038_tool_effect_reconciliation.sql"
+  "040_subject_deletion_ledger.sql"
+  "040_tool_effect_reconciliation.sql"
+  "041_queue_worker_concurrency_quotas.sql"
+  "041_subject_deletion_ledger.sql"
+  "041_tool_effect_reconciliation.sql"
+  "042_quota_reservation_leases.sql"
+  "042_root_run_quota_attribution.sql"
+  "044_file_asset_versions.sql"
+  "044_model_pricing_catalog.sql"
+  "044_quota_context_window_budget.sql"
+  "044_workbench_task_priority.sql"
+  "045_file_processing_observability.sql"
+  "045_workbench_task_priority.sql"
+  "046_connector_sync_jobs.sql"
+  "046_workbench_task_retry.sql"
+  "048_resource_project_scope.sql"
+  "048_run_context_snapshots.sql"
+  "049_data_migration_staging.sql"
+  "049_run_model_call_budget_ledger.sql"
+  "050_quota_reservation_groups.sql"
+  "050_run_budget_lineage.sql"
+  "058_platform_credentials.sql"
+  "058_run_context_snapshots.sql"
+  "060_quota_reservation_leases.sql"
+  "060_run_context_snapshots.sql"
+  "071_data_lifecycle_audit.sql"
+  "071_hierarchical_quota_policies.sql"
+  "076_alert_operations_reliability.sql"
+  "076_webhook_secret_revocations.sql"
+  "077_outbox_delivery_dead_letter.sql"
+  "077_public_api_idempotency.sql"
+  "077_webhook_secret_revocation_leases.sql"
+  "079_blackboard_event_delivery.sql"
+  "079_knowledge_collections.sql"
+  "079_prompt_audit_events.sql"
+  "082_graph_storage.sql"
+  "082_session_conversation_context.sql"
+  "090_evaluation_schedule_leases.sql"
+  "090_graph_storage.sql"
+  "091_graph_extraction_candidates.sql"
+  "091_graph_extraction_jobs.sql"
+  "094_eval_variant_reports.sql"
+  "094_eval_variant_runs.sql"
+  "095_graph_candidate_file_source.sql"
+  "095_graph_governance_persistence.sql"
+)
 for file in "${files[@]}"; do
   name="$(basename "$file")"
   [[ "$name" =~ ^([0-9]{3})_[A-Za-z0-9_]+\.sql$ ]] || {
@@ -38,8 +100,17 @@ for file in "${files[@]}"; do
   }
   version="${BASH_REMATCH[1]}"
   if [[ -n "${seen_versions[$version]:-}" ]]; then
-    echo "duplicate migration version $version: $name and ${seen_versions[$version]}" >&2
-    exit 2
+    previous="${seen_versions[$version]}"
+    previous_is_legacy=false
+    current_is_legacy=false
+    for legacy_name in "${legacy_duplicate_names[@]}"; do
+      [[ "$legacy_name" == "$previous" ]] && previous_is_legacy=true
+      [[ "$legacy_name" == "$name" ]] && current_is_legacy=true
+    done
+    if [[ "$previous_is_legacy" != true || "$current_is_legacy" != true ]]; then
+      echo "duplicate migration version $version: $name and $previous" >&2
+      exit 2
+    fi
   fi
   if ((10#$version <= last_version)); then
     echo "migration versions must be strictly increasing: $name" >&2
