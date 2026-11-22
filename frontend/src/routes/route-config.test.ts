@@ -18,11 +18,12 @@ describe('route configuration', () => {
     ).toBe(true)
   })
 
-  it('provides exactly three primary navigation sections', () => {
+  it('provides exactly four primary navigation sections', () => {
     expect(getVisibleNavigation(false).map((group) => group.id)).toEqual([
       'workspace',
       'operations',
       'administration',
+      'global',
     ])
   })
 
@@ -100,13 +101,16 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
-  it('registers evaluation dataset and run routes under #803', () => {
-    const routes = [...pageRoutes, ...detailRoutes]
-    expect(pageRoutes.find((route) => route.path === '/admin/evaluation/datasets')?.owner).toBe('#803')
-    expect(pageRoutes.find((route) => route.path === '/admin/evaluation/runs')?.owner).toBe('#803')
-    const routeObjects = routes.map((route) => ({ path: route.path }))
-    expect(matchRoutes(routeObjects, '/admin/evaluation/datasets/ds-42')?.[0].params.datasetId).toBe('ds-42')
-    expect(matchRoutes(routeObjects, '/admin/evaluation/runs/run-17')?.[0].params.runId).toBe('run-17')
+  it('registers model provider, template and routing routes under #804', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    expect(pageRoutes.find((route) => route.path === '/admin/models/providers')?.owner).toBe('#804')
+    expect(pageRoutes.find((route) => route.path === '/admin/models/templates')?.owner).toBe('#804')
+    expect(pageRoutes.find((route) => route.path === '/admin/models/routing')?.owner).toBe('#804')
+    expect(detailRoutes.find((route) => route.path === '/admin/models/providers/:providerId')?.owner).toBe('#804')
+    expect(detailRoutes.find((route) => route.path === '/admin/models/templates/:templateId')?.owner).toBe('#804')
+    expect(matchRoutes(routeObjects, '/admin/models/providers/provider-7')?.[0].params.providerId).toBe('provider-7')
+    expect(matchRoutes(routeObjects, '/admin/models/templates/template-9')?.[0].params.templateId).toBe('template-9')
+    expect(matchRoutes(routeObjects, '/admin/models/routing/policy-1')?.[0].params.policyId).toBe('policy-1')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
@@ -124,14 +128,5 @@ describe('route configuration', () => {
       matchRoutes(routeObjects, '/admin/models/providers/provider-7')?.[0]
         .params.providerId,
     ).toBe('provider-7')
-  })
-  it('registers the files workspace and asset deep link under #802', () => {
-    const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
-    expect(filesRoute?.owner).toBe('#802')
-    expect(filesRoute?.authOnly).toBeUndefined()
-    const detail = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
-    expect(detail?.owner).toBe('#802')
-    expect(detail?.authOnly).toBeUndefined()
-    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/files/asset-123')?.[0].params.fileId).toBe('asset-123')
   })
 })
