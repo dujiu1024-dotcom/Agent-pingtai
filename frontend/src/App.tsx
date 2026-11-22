@@ -40,6 +40,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { SessionsWorkspace } from '@/features/sessions/SessionsWorkspace'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -460,6 +461,7 @@ function PageView({
       />
     )
   }
+  if (route.path === '/operations/sessions' || route.path === '/operations/sessions/:sessionId') return <SessionsWorkspace />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
