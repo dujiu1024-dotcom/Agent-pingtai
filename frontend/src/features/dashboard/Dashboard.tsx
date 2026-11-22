@@ -2,12 +2,12 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
-import './dashboard.css'
-
 import { apiClient } from '@/lib/api'
 import { unwrapList } from '@/features/tasks/task-model'
 import { OperationsCockpitExtension } from '@/components/OperationsCockpitExtension'
 import type { TaskRecord } from '@/features/tasks/task-model'
+
+import './dashboard.css'
 
 type AnyRecord = Record<string, unknown>
 type TrendPoint = {
@@ -328,8 +328,7 @@ export function Dashboard() {
   ]
 
   return (
-    <>
-      <section className="page-content dashboard-page dashboard-redesign">
+    <section className="page-content dashboard-page dashboard-redesign">
       <div className="dashboard-heading">
         <div>
           <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
@@ -433,8 +432,7 @@ export function Dashboard() {
           ? '任务接口请求失败；请检查服务状态。'
           : '仅展示后端已返回的指标；缺少成本或耗时字段时显示“暂无数据”，不填充演示值。'}
       </p>
-      </section>
       <OperationsCockpitExtension />
-    </>
+    </section>
   )
 }
