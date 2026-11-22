@@ -10,6 +10,9 @@ import {
   isCanonicalRouteSetValid,
   navigationSections,
   pageRoutes,
+  getRouteBreadcrumbs,
+  getAuthEntryRedirect,
+  getNavigationSections,
 } from './route-config'
 
 describe('route configuration', () => {
@@ -329,5 +332,37 @@ describe('admin page mounting', () => {
     const { resolveAdminPage } = await import('../App')
     expect(resolveAdminPage('/admin/tools', false)).toBeNull()
     expect(resolveAdminPage('/admin/organization', false)).toBeNull()
+  })
+})
+
+describe('Issue #818 unified shell navigation', () => {
+  it('derives sidebar links from the canonical navigation map', () => {
+    const paths = getNavigationSections(false).flatMap((section) => [section.path, ...section.subpages.map((page) => page.path)])
+    expect(paths).toContain('/workspace/office')
+    expect(paths).toContain('/admin/tools')
+    expect(paths).not.toContain('/admin/settings')
+  })
+
+  it('filters auth-only and capability-gated navigation', () => {
+    const noAuth = getNavigationSections(false).flatMap((section) => section.subpages.map((page) => page.path))
+    const withCapability = getNavigationSections(true, ['prompt_management']).flatMap((section) => section.subpages.map((page) => page.path))
+    expect(noAuth).not.toContain('/admin/organization')
+    expect(noAuth).not.toContain('/admin/access-control')
+    expect(withCapability).toContain('/admin/prompts')
+  })
+
+  it('redirects disabled-auth entry routes to the workbench', () => {
+    expect(getAuthEntryRedirect(false)).toBe('/workspace/overview')
+    expect(getAuthEntryRedirect(true)).toBeNull()
+  })
+
+  it('builds list and nested detail breadcrumbs', () => {
+    expect(getRouteBreadcrumbs('/admin/tools').map((item) => item.label)).toEqual(['系统管理', '工具与 MCP'])
+    expect(getRouteBreadcrumbs('/admin/tools/tool-123').map((item) => item.label)).toEqual(['系统管理', '工具与 MCP', '工具详情 · tool-123'])
+    expect(getRouteBreadcrumbs('/operations/tasks/task-123').map((item) => item.label)).toEqual(['任务中心', '任务指挥中心', '任务详情 · task-123'])
+  })
+
+  it('returns no breadcrumbs for an unknown route', () => {
+    expect(getRouteBreadcrumbs('/unknown/path')).toEqual([])
   })
 })

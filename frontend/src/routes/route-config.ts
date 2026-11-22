@@ -649,7 +649,7 @@ export const navigationSections: NavigationSection[] = [
         path: '/admin/rbac',
         authOnly: true,
       },
-      { label: '系统设置', path: '/admin/settings' },
+      { label: '系统设置', path: '/admin/settings', authOnly: true },
       { label: '审计中心', path: '/admin/audit' },
       { label: '调度任务', path: '/admin/scheduler/jobs' },
       { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
@@ -684,6 +684,51 @@ export function findNavigationSection(
       matchesPath(section.path, pathname) ||
       section.subpages.some((page) => matchesPath(page.path, pathname)),
   )
+}
+
+export interface BreadcrumbItem {
+  label: string
+  path?: string
+}
+
+function matchesRoutePattern(pattern: string, pathname: string): boolean {
+  const expected = pattern.split('/').filter(Boolean)
+  const actual = pathname.split('/').filter(Boolean)
+  return expected.length === actual.length && expected.every(
+    (segment, index) => segment.startsWith(':') || segment === actual[index],
+  )
+}
+
+/** Resolve breadcrumbs from the canonical navigation and route definitions. */
+export function getRouteBreadcrumbs(pathname: string): BreadcrumbItem[] {
+  const route = [...detailRoutes, ...pageRoutes, ...globalRoutes].find(
+    (candidate) => matchesRoutePattern(candidate.path, pathname),
+  )
+  const section =
+    findNavigationSection(pathname) ??
+    (route?.parentPath ? findNavigationSection(route.parentPath) : undefined)
+  const subpage = findSubPage(section, route?.parentPath ?? pathname)
+  if (!section) return route ? [{ label: route.title }] : []
+
+  const crumbs: BreadcrumbItem[] = [{ label: section.label, path: section.path }]
+  const currentLabel = route?.parentPath ? route.title : subpage?.label ?? route?.title
+  if (currentLabel && (currentLabel !== section.label || route?.parentPath)) {
+    if (route?.parentPath) {
+      const parent = [...pageRoutes, ...globalRoutes].find(
+        (candidate) => candidate.path === route.parentPath,
+      )
+      if (parent) crumbs.push({ label: parent.title, path: parent.path })
+    }
+    const entityId = route?.entityIdParam
+      ? decodeURIComponent(pathname.split('/').filter(Boolean).slice(-1)[0] ?? '')
+      : ''
+    crumbs.push({ label: entityId ? `${currentLabel} · ${entityId}` : currentLabel })
+  }
+  return crumbs
+}
+
+export function getAuthEntryRedirect(authEnabled: boolean): string | null {
+  return authEnabled ? null : '/workspace/overview'
 }
 
 export function findSubPage(
