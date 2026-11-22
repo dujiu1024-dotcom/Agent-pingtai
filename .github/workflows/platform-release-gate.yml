@@ -137,6 +137,7 @@ jobs:
             tests.test_issue_665_s_665_04_migration_acceptance \
             tests.test_issue_665_a_665_06_performance_parity \
             tests.test_issue_665_a_665_07_fault_degradation \
+            tests.test_issue_665_l4_t07_acceptance_report \
             tests.test_migration_batches -v
           python scripts/switch_core_acceptance.py
           python scripts/benchmark_switch_performance.py --workers 8 --operations 100 > switch-performance-benchmark.json
@@ -156,13 +157,6 @@ jobs:
           print("SWITCH_BENCHMARK=MEASURED (ephemeral CI PostgreSQL/Redis + synthetic SQLite baseline)")
           print("SWITCH_PARITY=INCOMPLETE (not a same-hardware production workload comparison)")
           PY
-      - name: Upload Issue 665 benchmark evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-665-switch-benchmark
-          path: switch-performance-benchmark.json
-          if-no-files-found: warn
       - name: End-to-end, fault-recovery and security regression suites
         run: |
           python -m unittest \
@@ -213,6 +207,21 @@ jobs:
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_issue_22_a_22_05_graph_storage_benchmark \
             tests.test_platform_perf_smoke -v
+      - name: Assemble Switch L4-T07 performance and failover evidence
+        run: |
+          python scripts/verify_switch_l4_t07_acceptance.py \
+            --benchmark switch-performance-benchmark.json \
+            --output switch-l4-t07-acceptance.json
+      - name: Upload Issue 665 L4-T07 benchmark and failover evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-665-switch-l4-t07-acceptance
+          path: |
+            switch-performance-benchmark.json
+            switch-l4-t07-acceptance.json
+          if-no-files-found: warn
+          retention-days: 30
 
   e2e-focused-unit:
     needs: changes
