@@ -136,6 +136,7 @@ export class WebSocketEventBus implements EventBusPort {
       return
     }
     if (this.seenEventIds.has(event.event_id)) return
+    if (event.sequence === undefined) return
     const previous = this.latestSequence.get(event.entity_id)
     if (previous !== undefined && event.sequence <= previous) return
 

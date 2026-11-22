@@ -12,6 +12,7 @@ from agent_platform.api.approvals import create_approval_router
 from agent_platform.api.audit import create_audit_router
 from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
+from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
 from agent_platform.api.contract import (
     API_V1_PREFIX,
@@ -19,23 +20,21 @@ from agent_platform.api.contract import (
     PublicApiContractASGIMiddleware,
     error_for_http_status,
 )
+from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
+from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.graph import create_graph_router
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
-from agent_platform.api.extension_publishers import create_extension_publisher_router
-from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
-from agent_platform.api.rag_playground import create_rag_playground_router
+from agent_platform.api.localization import create_locale_preferences_router
 from agent_platform.api.observability import create_observability_router
-from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.office import OfficeStateService, create_office_router
-from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
-from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
 from agent_platform.api.prompts import create_prompt_registry_router
 from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
+from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.registry import create_registry_router
 from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.runs import create_runs_router

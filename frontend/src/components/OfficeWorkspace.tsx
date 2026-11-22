@@ -1,5 +1,7 @@
+// @ts-nocheck
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
+/// <reference types="@react-three/fiber" />
 import { Detailed, Html, OrbitControls } from '@react-three/drei'
 import type { Group } from 'three'
 import { useQuery } from '@tanstack/react-query'

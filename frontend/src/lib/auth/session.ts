@@ -15,6 +15,8 @@ export interface SessionInfo {
   user?: SessionUser
   /** Present only when the identity API publishes authoritative grants. */
   permissions?: string[]
+  /** ISO-8601 timestamp when this session expires, if known. */
+  expires_at?: string
 }
 
 export async function fetchSession(): Promise<SessionInfo | null> {

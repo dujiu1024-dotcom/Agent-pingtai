@@ -667,7 +667,7 @@ export function AgentCollaborationCenter() {
         {agentsQuery.isPending ? <LoadingState label="正在读取智能体注册表" /> :
           agentsQuery.isError ? <ErrorState title="智能体列表读取失败" description={errorText(agentsQuery.error)} onRetry={() => void agentsQuery.refetch()} /> :
           agents.length === 0 ? <EmptyState title="暂无已注册智能体" description="注册表未返回智能体定义，不会用示例卡片代替真实团队成员。" /> :
-          <AgentTeamGraph agents={agents} />
+          <AgentTeamGraph agents={agents} />}
       </section>
       )}
 
