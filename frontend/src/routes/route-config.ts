@@ -19,6 +19,14 @@ export interface NavigationGroup {
 
 export const pageRoutes: PageRoute[] = [
   {
+    path: '/operations/sessions',
+    pageId: 'OPS-SESSIONS',
+    title: '会话与消息',
+    section: '智能体运营',
+    description: '会话列表、消息时间线与关联文件资产。',
+    owner: '#801',
+  },
+  {
     path: '/workspace/overview',
     pageId: 'WS-OVERVIEW',
     title: '运营驾驶舱',
@@ -304,6 +312,16 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/operations/sessions/:sessionId',
+    pageId: 'OPS-SESSION-DETAIL',
+    title: '会话详情',
+    section: '智能体运营',
+    description: '会话消息时间线与关联文件资产。',
+    parentPath: '/operations/sessions',
+    entityIdParam: 'sessionId',
+    owner: '#801',
+  },
   {
     path: '/operations/knowledge-bases/:collectionId',
     pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
