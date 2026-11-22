@@ -30,7 +30,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
-import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
+import { SkillsPage } from '@/features/admin/SkillsPage'
 import {
   EmptyState,
   ErrorState,
@@ -141,7 +141,6 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
-                    version={config.version}
                   />
                 }
               />
@@ -397,6 +396,7 @@ function resolveApiPath(routePath: string): string | null {
     // Organization / RBAC / Settings（admin.py 新增）
     '/admin/organization': '/platform/v1/admin/organization',
     '/admin/access-control': '/platform/v1/admin/access-control',
+    '/admin/settings': '/platform/v1/admin/settings',
     // Metrics JSON
     '/admin/operations': '/platform/v1/observability/metrics/json',
   }
@@ -411,6 +411,7 @@ function resolveApiPath(routePath: string): string | null {
     [
       '/admin/organization',
       '/admin/access-control',
+      '/admin/settings',
     ].includes(routePath)
   )
     return null
@@ -421,12 +422,10 @@ function PageView({
   route,
   authEnabled,
   capabilities,
-  version,
 }: {
   route: PageRoute
   authEnabled: boolean
   capabilities: string[]
-  version: string
 }) {
   if (route.capability && !capabilities.includes(route.capability)) {
     return (
@@ -462,7 +461,6 @@ function PageView({
       />
     )
   }
-  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
@@ -478,6 +476,7 @@ function PageView({
   )
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (
     route.path === '/operations/agents' ||
