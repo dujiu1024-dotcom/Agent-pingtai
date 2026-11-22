@@ -124,6 +124,38 @@ class HumanCollaborationPostgresTests(unittest.IsolatedAsyncioTestCase):
             return await AsyncConnection.connect(DSN, row_factory=dict_row)
         self.connect = connect
 
+    async def test_cancel_and_pause_actor_actions_persist_to_run_timeline(self):
+        from agent_platform.runtime.interventions import RunInterventionService
+
+        service = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        for event_type, status in (
+            ("human.run_cancel_requested", "cancelling"),
+            ("human.run_paused", "paused"),
+        ):
+            recorded = await service.record_action(
+                tenant_id=self.tenant_id, run_id=str(self.run_id),
+                actor_id="operator-a", event_type=event_type,
+                payload={"status": status, "version": 3},
+            )
+            self.assertEqual(recorded["event_type"], event_type)
+            self.assertEqual(recorded["actor_id"], "operator-a")
+        events = await service.list_events(
+            tenant_id=self.tenant_id, run_id=str(self.run_id),
+        )
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["human.run_cancel_requested", "human.run_paused"],
+        )
+        self.assertTrue(all(event["actor_id"] == "operator-a" for event in events))
+        self.assertEqual(events[0]["payload"]["status"], "cancelling")
+        with self.assertRaises(PermissionError):
+            await service.record_action(
+                tenant_id="another-tenant", run_id=str(self.run_id),
+                actor_id="operator-a", event_type="human.run_paused",
+            )
+
     async def test_rejected_approval_blocks_run_continuation(self):
         from agent_platform.runtime.interventions import RunInterventionService
 
