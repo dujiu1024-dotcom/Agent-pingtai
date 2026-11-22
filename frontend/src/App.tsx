@@ -41,6 +41,7 @@ import {
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
+import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -308,7 +309,7 @@ function PageView({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
-  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/overview') return <HomeWorkspace />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
