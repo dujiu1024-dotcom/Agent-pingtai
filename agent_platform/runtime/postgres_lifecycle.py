@@ -287,7 +287,7 @@ class PostgresRunStateStore(RunStateStore):
   c=await self._connect()
   async with c:
    cur=await c.execute(
-     "SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at,output,input,usage "
+     "SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at,output,input,usage,lease_token "
      "FROM platform_runs WHERE tenant_id=%s AND run_id=%s",
      (tenant_id,run_id),
    )
@@ -295,9 +295,11 @@ class PostgresRunStateStore(RunStateStore):
  async def transition(self,snapshot:RunSnapshot,*,expected_version:int)->RunSnapshot:
   c=await self._connect()
   async with c:
-   cur=await c.execute("SELECT status,version,session_id,created_by,project_id,agent_id FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR UPDATE",(snapshot.tenant_id,snapshot.run_id))
+   cur=await c.execute("SELECT status,version,session_id,created_by,project_id,agent_id,lease_token FROM platform_runs WHERE tenant_id=%s AND run_id=%s FOR UPDATE",(snapshot.tenant_id,snapshot.run_id))
    current=await cur.fetchone()
    if current is None or int(current["version"])!=expected_version:raise RuntimeError("Run state version conflict or Run not found")
+   if snapshot.lease_token > 0 and int(current.get("lease_token") or 0) != snapshot.lease_token:
+    raise RuntimeError("Run lease fencing token mismatch; stale worker write rejected")
    old_status=RunStatus(current["status"])
    if snapshot.status not in _ALLOWED[old_status]:raise ValueError(f"illegal Run transition {old_status.value} -> {snapshot.status.value}")
    cur=await c.execute("""UPDATE platform_runs SET status=%s,version=version+1,checkpoint_ref=%s,last_error=%s,updated_at=now(),
@@ -308,10 +310,13 @@ class PostgresRunStateStore(RunStateStore):
     preparation_owner=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out','interrupted','paused') THEN NULL ELSE preparation_owner END,
     preparation_lease_expires_at=CASE WHEN %s IN ('succeeded','failed','cancelled','timed_out','interrupted','paused') THEN NULL ELSE preparation_lease_expires_at END
     WHERE tenant_id=%s AND run_id=%s AND version=%s
-    RETURNING tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at""",
+      AND (%s::bigint IS NULL OR lease_token=%s)
+    RETURNING tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at,lease_token""",
     (snapshot.status.value,snapshot.checkpoint_ref,snapshot.last_error,snapshot.status.value,snapshot.status.value,
      snapshot.status.value,snapshot.status.value,snapshot.status.value,snapshot.status.value,
-     snapshot.tenant_id,snapshot.run_id,expected_version))
+     snapshot.tenant_id,snapshot.run_id,expected_version,
+     snapshot.lease_token if snapshot.lease_token > 0 else None,
+     snapshot.lease_token if snapshot.lease_token > 0 else None))
    row=await cur.fetchone()
    if row is None:raise RuntimeError("Run state version conflict or Run not found")
    try:
