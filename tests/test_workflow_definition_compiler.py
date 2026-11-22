@@ -132,7 +132,6 @@ class WorkflowCompilerTests(unittest.TestCase):
         self.assertEqual(metadata["engine"], "langgraph")
 
     def test_visual_designer_payload_builds_real_langgraph(self):
-        structural_retry = {"max_attempts": 1, "backoff": "none"}
         designer = {
             "nodes": [
                 {"id": "start", "node_type": "start", "version": 1,
