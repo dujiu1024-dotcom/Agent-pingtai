@@ -242,3 +242,54 @@
   font: inherit;
   font-size: 12px;
 }
+
+
+/* Task list selection and safe bulk actions */
+.task-bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: #526078;
+  font-size: 12px;
+}
+.task-bulk-toolbar .task-page-btn {
+  min-height: 32px;
+  padding: 5px 10px;
+}
+.task-bulk-toolbar .task-page-btn:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+.task-select-cell {
+  width: 38px;
+  text-align: center !important;
+}
+.task-select-cell input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+.task-bulk-success {
+  color: #2f7a4f;
+}
+.task-bulk-warning {
+  color: #a45b1b;
+}
+.task-bulk-failures {
+  flex-basis: 100%;
+  color: #a45b1b;
+}
+.task-bulk-failures summary {
+  cursor: pointer;
+}
+.task-bulk-failures span {
+  display: block;
+  padding-top: 5px;
+  overflow-wrap: anywhere;
+}
