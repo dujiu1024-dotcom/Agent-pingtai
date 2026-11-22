@@ -47,3 +47,9 @@
 @media(max-width:1100px){.office-main-grid{grid-template-columns:minmax(0,1fr) 290px}.office-canvas,.office-canvas canvas{min-height:490px}}
 @media(max-width:820px){.office-main-grid{grid-template-columns:1fr}.office-canvas,.office-canvas canvas{min-height:460px}}
 @media(max-width:560px){.office-canvas,.office-canvas canvas{min-height:360px}}
+
+.office-sync-state.is-error{color:#bd5360}
+.office-sync-state.is-error i{background:#d86d78;box-shadow:0 0 0 3px #d86d7822}
+.office-agent-status.status-unknown,.office-agent-status.status-offline{background:#aab4c4}
+.office-agent-status.status-paused{background:#8795ad}
+@media(max-width:820px){.office-heading-stats{flex-wrap:wrap}.office-inspector{min-height:0}}
