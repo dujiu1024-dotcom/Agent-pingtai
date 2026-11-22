@@ -134,6 +134,49 @@ class HybridControlPlaneTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[:2], ["control_plane_degraded", "control_plane_reconciling"])
         self.assertNotIn("resume", calls)
 
+    async def test_reconcile_audit_failure_keeps_control_plane_degraded(self) -> None:
+        calls: list[str] = []
+
+        async def audit(event: dict[str, object]) -> None:
+            calls.append(str(event["event"]))
+            if event["event"] == "control_plane_online":
+                raise RuntimeError("audit sink unavailable")
+
+        reconciler = ControlPlaneReconciler(
+            synchronize_policy=lambda: calls.append("sync"),
+            apply_revocations=lambda: calls.append("revocations"),
+            reconcile_license=lambda: calls.append("license"),
+            replay_outbox=lambda: calls.append("replay"),
+            resume_paused_runs=lambda: calls.append("resume"),
+            audit=audit,
+        )
+        await reconciler.control_plane_unavailable(reason="partition")
+        with self.assertRaisesRegex(RuntimeError, "audit sink unavailable"):
+            await reconciler.reconcile()
+        self.assertEqual(reconciler.mode, ControlPlaneMode.DEGRADED)
+        self.assertIn("resume", calls)
+        self.assertEqual(calls[-1], "control_plane_reconcile_failed")
+
+    async def test_reconcile_start_audit_failure_does_not_run_recovery(self) -> None:
+        calls: list[str] = []
+
+        async def audit(event: dict[str, object]) -> None:
+            if event["event"] == "control_plane_reconciling":
+                raise RuntimeError("audit sink unavailable")
+
+        reconciler = ControlPlaneReconciler(
+            synchronize_policy=lambda: calls.append("sync"),
+            apply_revocations=lambda: calls.append("revocations"),
+            reconcile_license=lambda: calls.append("license"),
+            replay_outbox=lambda: calls.append("replay"),
+            resume_paused_runs=lambda: calls.append("resume"),
+            audit=audit,
+        )
+        with self.assertRaisesRegex(RuntimeError, "audit sink unavailable"):
+            await reconciler.reconcile()
+        self.assertEqual(reconciler.mode, ControlPlaneMode.DEGRADED)
+        self.assertEqual(calls, [])
+
     async def test_run_handoff_fences_before_start_and_supports_failback(self) -> None:
         calls: list[str] = []
         fenced: set[str] = set()
