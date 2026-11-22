@@ -133,7 +133,7 @@ class PlatformBackupRunnerTests(unittest.TestCase):
             entries = {
                 "backup_postgres.sh": ("platform-20261117T010101Z.dump.age", "postgres-custom-age-v1", "2026-11-17T01:00:00Z"),
                 "backup_redis.sh": ("redis-20261117T010102Z.rdb.age", "redis-rdb-age-v1", "2026-11-17T01:00:01Z"),
-                "backup_object_storage.sh": ("object-storage-20261117T010103Z.tar.gz.age", "minio-mirror-age-v1", "2026-11-17T02:00:00Z"),
+                "backup_object_storage.sh": ("object-storage-20261117T010103Z.tar.gz.age", "minio-mirror-age-v1", "2026-11-17T02:00:02Z"),
                 "backup_platform_config.sh": ("platform-config-20261117T010104Z.tar.gz.age", "platform-config-tar-age-v1", "2026-11-17T01:00:02Z"),
             }
             artifact, fmt, stamp = entries[name]
