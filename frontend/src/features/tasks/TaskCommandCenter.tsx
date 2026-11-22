@@ -1044,6 +1044,8 @@ export function RunTracePage() {
   const [manualCallId, setManualCallId] = useState('')
   const [extraCallIds, setExtraCallIds] = useState<string[]>([])
   const [eventPage, setEventPage] = useState(0)
+  const [eventTypeFilter, setEventTypeFilter] = useState('all')
+  const [eventSearch, setEventSearch] = useState('')
   const EVENT_PAGE_SIZE = 10
   const rq = useQuery({
     queryKey: ['run', runId],
@@ -1256,9 +1258,21 @@ export function RunTracePage() {
       ? r.duration_ms
       : Date.parse(String(r.updated_at ?? r.finished_at ?? '')) -
         Date.parse(String(r.created_at ?? r.started_at ?? ''))
-  const eventTotalPages = Math.max(1, Math.ceil(events.length / EVENT_PAGE_SIZE))
+  const eventTypes = [...new Set(events.map((event) => eventTypeOf(event)).filter(Boolean))].sort()
+  const filteredEvents = events.filter((event) => {
+    const type = eventTypeOf(event)
+    if (eventTypeFilter !== 'all' && type !== eventTypeFilter) return false
+    const needle = eventSearch.trim().toLocaleLowerCase()
+    if (!needle) return true
+    const searchable = [type, event.summary, event.actor, event.actor_id, event.source,
+      event.request_id, event.trace_id, event.event_id]
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ').toLocaleLowerCase()
+    return searchable.includes(needle)
+  })
+  const eventTotalPages = Math.max(1, Math.ceil(filteredEvents.length / EVENT_PAGE_SIZE))
   const eventCurrentPage = Math.min(eventPage, eventTotalPages - 1)
-  const visibleEvents = events.slice(
+  const visibleEvents = filteredEvents.slice(
     eventCurrentPage * EVENT_PAGE_SIZE,
     (eventCurrentPage + 1) * EVENT_PAGE_SIZE,
   )
@@ -1281,7 +1295,21 @@ export function RunTracePage() {
       <section className="task-detail-panel">
         <div className="run-controls-head">
           <h2>事件时间线</h2>
-          <span>事件流：{eventStreamState === 'connected' ? '实时连接' : eventStreamState === 'fallback' ? '轮询兼容模式' : '正在恢复'} · 每页 {EVENT_PAGE_SIZE} 条</span>
+          <span>事件流：{eventStreamState === 'connected' ? '实时连接' : eventStreamState === 'fallback' ? '轮询兼容模式' : '正在恢复'} · {filteredEvents.length}/{events.length} 条匹配</span>
+        </div>
+        <div className="run-event-filters" role="search" aria-label="筛选运行事件">
+          <label>
+            <span>事件类型</span>
+            <select aria-label="按事件类型筛选" value={eventTypeFilter} onChange={(event) => { setEventTypeFilter(event.target.value); setEventPage(0) }}>
+              <option value="all">全部类型</option>
+              {eventTypes.map((type) => <option key={type} value={type}>{eventLabel(type)} ({type})</option>)}
+            </select>
+          </label>
+          <label>
+            <span>关键词</span>
+            <input aria-label="搜索运行事件" type="search" placeholder="事件、摘要、操作人、Trace ID…" value={eventSearch} onChange={(event) => { setEventSearch(event.target.value); setEventPage(0) }} />
+          </label>
+          {(eventTypeFilter !== 'all' || eventSearch) && <button className="button-secondary" type="button" onClick={() => { setEventTypeFilter('all'); setEventSearch(''); setEventPage(0) }}>清除筛选</button>}
         </div>
         {eq.isPending ? (
           <LoadingState />
@@ -1290,7 +1318,7 @@ export function RunTracePage() {
             description={mutErr(eq.error)}
             onRetry={() => void eq.refetch()}
           />
-        ) : events.length ? (
+        ) : filteredEvents.length ? (
           <>
             <ol className="run-timeline">
               {visibleEvents.map((e, index) => {
@@ -1299,7 +1327,7 @@ export function RunTracePage() {
                 const from = typeof payload?.from_status === 'string' ? payload.from_status : ''
                 const to = typeof payload?.to_status === 'string' ? payload.to_status : ''
                 const globalIndex = eventCurrentPage * EVENT_PAGE_SIZE + index
-                const previous = Date.parse(String(events[globalIndex - 1]?.occurred_at ?? ''))
+                const previous = Date.parse(String(filteredEvents[globalIndex - 1]?.occurred_at ?? ''))
                 const current = Date.parse(String(e.occurred_at ?? ''))
                 const delta = Number.isFinite(previous) && Number.isFinite(current) && current >= previous ? current - previous : NaN
                 return (
@@ -1337,18 +1365,18 @@ export function RunTracePage() {
                 )
               })}
             </ol>
-            {events.length > EVENT_PAGE_SIZE && (
+            {filteredEvents.length > EVENT_PAGE_SIZE && (
               <div className="run-pagination">
                 <button className="button-secondary" type="button" disabled={eventCurrentPage === 0} onClick={() => setEventPage(page => Math.max(0, page - 1))}>← 上一页</button>
-                <span>第 {eventCurrentPage + 1} / {eventTotalPages} 页 · 共 {events.length} 条</span>
+                <span>第 {eventCurrentPage + 1} / {eventTotalPages} 页 · 共 {filteredEvents.length} 条</span>
                 <button className="button-secondary" type="button" disabled={eventCurrentPage + 1 >= eventTotalPages} onClick={() => setEventPage(page => page + 1)}>下一页 →</button>
               </div>
             )}
           </>
         ) : (
           <EmptyState
-            title="暂无执行事件"
-            description="服务端没有返回运行事件。"
+            title={events.length ? '没有匹配的运行事件' : '暂无执行事件'}
+            description={events.length ? '调整事件类型或关键词筛选条件。' : '服务端没有返回运行事件。'}
           />
         )}
       </section>
