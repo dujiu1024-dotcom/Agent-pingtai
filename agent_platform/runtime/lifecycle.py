@@ -3,10 +3,24 @@ from __future__ import annotations
 
 import asyncio
 import math
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol
+
+_CURRENT_WORKER_LEASE_TOKEN: ContextVar[int | None] = ContextVar("current_worker_lease_token", default=None)
+
+
+def set_worker_lease_token(token: int) -> Token[int | None]:
+ """Bind the claimed fencing token to this worker task's async context."""
+ if type(token) is not int or token < 1:
+  raise ValueError("lease_token must be a positive integer")
+ return _CURRENT_WORKER_LEASE_TOKEN.set(token)
+
+
+def reset_worker_lease_token(token: Token[int | None]) -> None:
+ _CURRENT_WORKER_LEASE_TOKEN.reset(token)
 
 
 def _now() -> datetime: return datetime.now(timezone.utc)
@@ -94,14 +108,16 @@ class RunLifecycleManager:
    if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
    return old
   updated=await self.store.transition(RunSnapshot(tenant_id,run_id,status,old.version,
-   checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error),expected_version=old.version)
+   checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error,
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
   if self.token_service is not None:
    await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
   return updated
  async def start(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  return await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.RUNNING,old.version),expected_version=old.version)
+  return await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.RUNNING,old.version,
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
  async def cancel(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
@@ -112,7 +128,8 @@ class RunLifecycleManager:
    updated=old
   else:
    target=RunStatus.CANCELLED if old.status in {RunStatus.QUEUED,RunStatus.PAUSED,RunStatus.INTERRUPTED} else RunStatus.CANCELLING
-   updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
+   updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version,
+    lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
   if task is not None:
@@ -128,6 +145,7 @@ class RunLifecycleManager:
   updated=await self.store.transition(RunSnapshot(
    tenant_id,run_id,RunStatus.PAUSED,old.version,
    checkpoint_ref=checkpoint_ref,last_error=reason[:500],
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0,
   ),expected_version=old.version)
   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
@@ -141,13 +159,15 @@ class RunLifecycleManager:
   return await self.store.transition(RunSnapshot(
    tenant_id,run_id,RunStatus.INTERRUPTED,old.version,
    checkpoint_ref=old.checkpoint_ref,last_error="human resume requested",
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0,
   ),expected_version=old.version)
  async def list_recent(self,tenant_id:str,limit:int=20)->list[RunSnapshot]:
   return await self.store.list_recent(tenant_id,limit=limit)
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500]),expected_version=old.version)
+  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500],
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
   if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
   return updated
  async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100,worker_id:str|None=None,lease_seconds:int=60,tenant_id:str|None=None)->list[str]:
@@ -157,13 +177,15 @@ class RunLifecycleManager:
   release=getattr(self.store,"release_lease",None)
   for row in rows:
    running=None
+   lease_context=set_worker_lease_token(row.lease_token) if worker_id and row.lease_token > 0 else None
    try:
     # Human approval pauses are deliberate and must never be auto-resumed.
     if row.status==RunStatus.PAUSED: continue
     # A claimed RUNNING row has an expired worker lease and is now safe to interrupt.
     if row.status==RunStatus.RUNNING:
      row=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.INTERRUPTED,row.version,
-      checkpoint_ref=row.checkpoint_ref,last_error="previous worker lease expired"),expected_version=row.version)
+      checkpoint_ref=row.checkpoint_ref,last_error="previous worker lease expired",
+      lease_token=row.lease_token),expected_version=row.version)
      if self.token_service is not None:
       await self.token_service.revoke_run(tenant_id=row.tenant_id,run_id=row.run_id)
     # Interrupted execution without a checkpoint cannot be resumed safely.
@@ -173,7 +195,7 @@ class RunLifecycleManager:
      continue
     if row.checkpoint_ref: await checkpoint_loader(row)
     running=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.RUNNING,row.version,
-     checkpoint_ref=row.checkpoint_ref),expected_version=row.version)
+     checkpoint_ref=row.checkpoint_ref,lease_token=row.lease_token),expected_version=row.version)
     await resume(running)
     resumed.append(row.run_id)
    except Exception as exc:
@@ -187,7 +209,9 @@ class RunLifecycleManager:
       checkpoint_ref=row.checkpoint_ref,error=f"recovery failed: {str(exc)[:400]}")
    finally:
     if worker_id and release is not None:
-     await release(row.tenant_id,row.run_id,worker_id)
+     await release(row.tenant_id,row.run_id,worker_id,lease_token=row.lease_token)
+    if lease_context is not None:
+     reset_worker_lease_token(lease_context)
   return resumed
  async def run_with_timeout(self,tenant_id:str,run_id:str,operation:Any,*,timeout:float)->Any:
   if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
