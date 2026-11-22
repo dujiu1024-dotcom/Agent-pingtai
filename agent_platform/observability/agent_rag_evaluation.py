@@ -11,7 +11,7 @@ import json
 from dataclasses import dataclass
 from math import log2
 from statistics import mean
-from typing import Protocol, Sequence
+from typing import Any, Callable, Protocol, Sequence
 from uuid import uuid4
 
 
@@ -292,7 +292,7 @@ class AgentRAGEvaluationService:
 class PostgresAgentRAGEvaluationRepository:
     """Tenant-scoped immutable persistence for Agent/RAG evaluation reports."""
 
-    def __init__(self, connection_factory) -> None:
+    def __init__(self, connection_factory: Callable[[], Any]) -> None:
         self._connect = connection_factory
 
     async def save_evaluation_report(self, report: EvaluationReport) -> None:
@@ -349,7 +349,7 @@ class PostgresAgentRAGEvaluationRepository:
                 ),
             )
 
-    async def get_report(self, *, tenant_id: str, run_id: str) -> dict:
+    async def get_report(self, *, tenant_id: str, run_id: str) -> dict[str, Any]:
         if not tenant_id.strip() or not run_id.strip():
             raise ValueError("tenant_id and run_id are required")
         connection = await self._connect()
@@ -373,7 +373,7 @@ class PostgresAgentRAGEvaluationRepository:
 
     async def list_reports(
         self, *, tenant_id: str, dataset_id: str | None = None, limit: int = 20,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         if not tenant_id.strip():
             raise ValueError("tenant_id is required")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
