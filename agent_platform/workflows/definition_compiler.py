@@ -150,6 +150,7 @@ class LangGraphWorkflowCompiler:
         if not start_edges:
             return value
         normalized_edges: list[dict[str, Any]] = []
+        port_checks: list[dict[str, Any]] = []
         branches: dict[str, dict[str, Any]] = {}
         node_map = {
             node.get("id"): node for node in nodes
@@ -189,6 +190,7 @@ class LangGraphWorkflowCompiler:
             "nodes": nodes,
             "edges": normalized_edges,
             "branches": list(branches.values()),
+            "port_checks": port_checks,
         }
 
     def diagnose(self, definition: Mapping[str, Any]) -> tuple[WorkflowDiagnostic, ...]:
@@ -306,20 +308,26 @@ class LangGraphWorkflowCompiler:
             elif node_by_id.get(source, {}).get("node_type") == "end" or node_by_id.get(target, {}).get("node_type") == "start":
                 diagnostics.append(WorkflowDiagnostic("edge.direction", "edges cannot leave end or enter start", path))
             else:
-                source_ports_meta = node_by_id.get(source, {}).get("ports")
-                target_ports_meta = node_by_id.get(target, {}).get("ports") if target != "__end__" else {}
-                source_ports = source_ports_meta.get("outputs", []) if isinstance(source_ports_meta, Mapping) else []
-                target_ports = target_ports_meta.get("inputs", []) if isinstance(target_ports_meta, Mapping) else []
-                source_port = edge.get("source_port", "default")
-                target_port = edge.get("target_port", "default")
-                if not isinstance(source_ports, list) or source_port not in source_ports:
-                    diagnostics.append(WorkflowDiagnostic("edge.source_port", "edge source port is not declared", path + ".source_port"))
-                if target != "__end__" and (not isinstance(target_ports, list) or target_port not in target_ports):
-                    diagnostics.append(WorkflowDiagnostic("edge.target_port", "edge target port is not declared", path + ".target_port"))
+                pass
             if isinstance(source, str) and isinstance(target, str):
                 if (source, target) in seen_edges:
                     diagnostics.append(WorkflowDiagnostic("edge.duplicate", "duplicate edge", path))
                 seen_edges.add((source, target))
+
+        for index, edge in enumerate(definition.get("port_checks", [])):
+            if not isinstance(edge, Mapping):
+                continue
+            source, target = edge.get("source"), edge.get("target")
+            if not isinstance(source, str) or not isinstance(target, str):
+                continue
+            source_ports_meta = node_by_id.get(source, {}).get("ports")
+            target_ports_meta = node_by_id.get(target, {}).get("ports")
+            source_ports = source_ports_meta.get("outputs", []) if isinstance(source_ports_meta, Mapping) else []
+            target_ports = target_ports_meta.get("inputs", []) if isinstance(target_ports_meta, Mapping) else []
+            if edge.get("source_port") not in source_ports:
+                diagnostics.append(WorkflowDiagnostic("edge.source_port", "edge source port is not declared", f"$.edges[{index}].source_port"))
+            if edge.get("target_port") not in target_ports:
+                diagnostics.append(WorkflowDiagnostic("edge.target_port", "edge target port is not declared", f"$.edges[{index}].target_port"))
 
         branch_sources: set[str] = set()
         for index, branch in enumerate(branches):
