@@ -54,6 +54,9 @@ jobs:
       - name: Parallel rollout artifact build
         if: always()
         run: pnpm exec vite build --mode parallel
+      - name: Verify production and parallel artifacts are isolated and complete
+        if: always()
+        run: node scripts/verify-parallel-artifact.mjs
       - name: Install Playwright browser
         if: always()
         run: pnpm exec playwright install --with-deps chromium
