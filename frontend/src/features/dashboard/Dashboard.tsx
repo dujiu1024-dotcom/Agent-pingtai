@@ -250,9 +250,9 @@ function TrendChart({
 
 export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const tasksQuery = useQuery({
-    queryKey: ['dashboard', 'workbench-tasks'],
+    queryKey: ['home-workspace', 'tasks'],
     queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   })
   const trendsQuery = useQuery({
     queryKey: ['dashboard', 'observability-trends'],
