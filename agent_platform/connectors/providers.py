@@ -162,7 +162,7 @@ class PostgresSourceProvider:
             sql = f"SELECT * FROM {_qualified(target)} ORDER BY 1 LIMIT %s OFFSET %s"
             params: list[Any] = [page_size, offset]
         elif kind == "query":
-            base = _readonly_query(target, provider="MySQL").rstrip(";")
+            base = _readonly_query(target, provider="PostgreSQL").rstrip(";")
             sql = base if re.search(r"\blimit\b", base, re.IGNORECASE) else f"{base} LIMIT %s OFFSET %s"
             params = [] if sql == base else [page_size, offset]
         else:
@@ -227,7 +227,7 @@ class MySQLSourceProvider:
             sql = f"SELECT * FROM {table} LIMIT %s OFFSET %s"
             params: list[Any] = [page_size, offset]
         elif kind == "query":
-            base = target.strip().rstrip(";")
+            base = _readonly_query(target, provider="MySQL").rstrip(";")
             sql = base if re.search(r"\blimit\b", base, re.IGNORECASE) else f"{base} LIMIT %s OFFSET %s"
             params = [] if sql == base else [page_size, offset]
         else:
