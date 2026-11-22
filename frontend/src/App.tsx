@@ -22,6 +22,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { Dashboard } from '@/features/dashboard/Dashboard'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
@@ -361,6 +362,9 @@ function RouteGuard({
       />
     )
   }
+  if (route.path === '/admin/access-control') return <Navigate to="/admin/rbac" replace />
+  if (route.path === '/admin/organization') return <OrganizationAccessPage page="organization" />
+  if (route.path === '/admin/rbac') return <OrganizationAccessPage page="rbac" />
   if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
