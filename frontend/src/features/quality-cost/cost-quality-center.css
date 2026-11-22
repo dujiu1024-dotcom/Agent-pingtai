@@ -60,3 +60,6 @@
 .cq-report-list article .text-link{width:max-content;font-size:11px}
 .cq-usage-panel .cq-table{min-width:1120px}
 @media(max-width:720px){.cq-usage-actions{align-items:flex-start;flex-direction:column}.cq-usage-actions .button-secondary{width:100%}}
+
+.cq-performance-table { min-width: 980px; }
+.cq-performance-table td:last-child { min-width: 220px; white-space:normal; }
