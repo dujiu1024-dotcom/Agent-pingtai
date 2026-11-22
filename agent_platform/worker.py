@@ -13,7 +13,6 @@ from typing import Any
 from agent_platform.events.outbox import OutboxRelay, PostgresOutboxStore
 from agent_platform.events.outbox_worker import OutboxRelayWorker
 from agent_platform.events.redis_streams import RedisStreamsTransport
-from agent_platform.production_config import load_production_settings
 from agent_platform.security.audit import PostgresAuditWriter
 
 logger = logging.getLogger("agent_platform.worker")
@@ -31,16 +30,28 @@ async def _postgres_connection(dsn: str) -> Any:
 
 
 async def run_worker() -> None:
-    settings = load_production_settings()
+    # Reuse the production root and its trusted Run builder in this dedicated
+    # process. The API role disables its in-process RunExecutionWorker.
+    from agent_platform.production import app as production_app
+
+    settings = production_app.state.production_settings
+    run_execution = getattr(production_app.state, "run_execution", None)
+    run_worker = getattr(run_execution, "task_worker", None)
+    if run_worker is None:
+        raise RuntimeError(
+            "production Run worker requires the trusted production Run execution builder"
+        )
+
     async def connection_factory() -> Any:
         return await _postgres_connection(settings.postgres_dsn)
+
     transport = RedisStreamsTransport(settings.redis_url)
     relay = OutboxRelay(
         store=PostgresOutboxStore(connection_factory=connection_factory),
         transport=transport,
         audit_sink=PostgresAuditWriter(connection_factory),
     )
-    worker = OutboxRelayWorker(
+    outbox_worker = OutboxRelayWorker(
         relay=relay,
         interval_seconds=1.0,
         batch_limit=100,
@@ -53,13 +64,18 @@ async def run_worker() -> None:
         except NotImplementedError:
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
 
-    await worker.start()
-    logger.info("production outbox worker started")
+    await run_worker.start()
     try:
+        await outbox_worker.start()
+        logger.info("production Run execution and Outbox workers started")
         await stop.wait()
     finally:
-        await worker.stop()
-        logger.info("production outbox worker stopped")
+        await outbox_worker.stop()
+        await run_worker.stop()
+        redis_client = getattr(production_app.state, "redis_client", None)
+        if redis_client is not None:
+            await redis_client.aclose()
+        logger.info("production Run execution and Outbox workers stopped")
 
 
 def main() -> None:

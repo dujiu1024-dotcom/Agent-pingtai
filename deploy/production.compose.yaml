@@ -13,6 +13,7 @@ services:
     environment:
       PLATFORM_ASGI_APP: ${PLATFORM_ASGI_APP:-agent_platform.production:app}
       AGENT_PLATFORM_REQUIRE_RUN_EXECUTION: ${AGENT_PLATFORM_REQUIRE_RUN_EXECUTION:-true}
+      AGENT_PLATFORM_RUN_WORKER_ENABLED: "false"
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
       PORT: "8080"
       POSTGRES_HOST: postgres
@@ -127,6 +128,8 @@ services:
       - exec python -m "$${PLATFORM_WORKER_MODULE}"
     environment:
       PLATFORM_WORKER_MODULE: ${PLATFORM_WORKER_MODULE:-agent_platform.worker}
+      AGENT_PLATFORM_REQUIRE_RUN_EXECUTION: "true"
+      AGENT_PLATFORM_RUN_WORKER_ENABLED: "true"
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"

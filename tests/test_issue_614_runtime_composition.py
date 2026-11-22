@@ -25,6 +25,9 @@ class ClaimedTaskDisappearsStore(FakeRunStore):
         self.claim_args = (worker_id, limit, lease_seconds)
         return [SimpleNamespace(tenant_id="tenant-a", run_id="run-1")]
 
+    async def get_run_record(self, tenant_id, run_id):
+        return {"task_id": "task-1"}
+
     async def get_task_record(self, tenant_id, run_id):
         return None
 
@@ -85,7 +88,7 @@ class ProductionRunCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(runtime.task_worker._task)
 
     def test_rejects_lifecycle_using_a_different_run_store(self):
-        with self.assertRaisesRegex(ValueError, "same durable RunStateStore"):
+        with self.assertRaisesRegex(ValueError, "share one durable RunStateStore"):
             self.build(lifecycle=FakeLifecycle(FakeRunStore()))
 
     def test_rejects_missing_shared_quota_limiter(self):
@@ -120,7 +123,7 @@ class RunWorkerDispatchContractTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(counts, {
             "claimed": 1, "succeeded": 0, "failed": 0,
-            "cancelled": 0, "skipped": 1,
+            "cancelled": 0, "skipped": 1, "timed_out": 0,
         })
         self.assertEqual(store.claim_args, ("worker-test-2", 10, 60))
         self.assertEqual(store.released, [("tenant-a", "run-1", "worker-test-2")])
@@ -163,6 +166,39 @@ class TrustedBuilderDiscoveryTests(unittest.TestCase):
 
 
 class ProductionEntrypointWiringTests(unittest.TestCase):
+    def test_api_role_can_disable_in_process_run_worker(self):
+        import os
+        import asyncio
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from agent_platform.production_config import ProductionSettings
+
+        settings = ProductionSettings(
+            postgres_dsn="postgresql://platform@db/platform",
+            redis_url="redis://redis:6379/0",
+            allowed_origins=("https://platform.example.com",),
+        )
+        with patch.dict(os.environ, {
+            "AGENT_PLATFORM_DSN": "postgresql://platform@db/platform",
+            "REDIS_URL": "redis://redis:6379/0",
+            "ALLOWED_ORIGINS": "https://platform.example.com",
+            "AGENT_PLATFORM_RUN_WORKER_ENABLED": "false",
+        }), patch(
+            "agent_platform.production.create_platform_app", return_value=FastAPI()
+        ):
+            from agent_platform.production import create_production_app
+            app = create_production_app(
+                settings=settings,
+                connection_factory=lambda: None,
+                redis_client=SimpleNamespace(ping=lambda: True),
+            )
+        start_worker = next(
+            callback for callback in app.router.on_startup
+            if getattr(callback, "__name__", "") == "start_run_worker"
+        )
+        asyncio.run(start_worker())
+
     def test_production_root_installs_builder_runtime_into_api_and_worker_slots(self):
         import importlib
         import os

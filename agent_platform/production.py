@@ -943,6 +943,7 @@ def create_production_app(
         ),
     )
     app.state.production_settings = configured
+    app.state.redis_client = redis_client
     app.state.identity_repository = identity_repository
     app.state.knowledge_service = knowledge_service
     app.state.memory_service = memory_service
@@ -964,9 +965,12 @@ def create_production_app(
 
     # 启动 RunExecutionWorker——没有它 queued Runs 永远不会被 claim
     async def start_run_worker() -> None:
-        import sys as _sys
+        enabled_value = os.environ.get("AGENT_PLATFORM_RUN_WORKER_ENABLED", "true").strip().lower()
+        if enabled_value not in {"true", "false", "1", "0", "yes", "no"}:
+            raise RuntimeError("AGENT_PLATFORM_RUN_WORKER_ENABLED must be a boolean")
+        if enabled_value not in {"true", "1", "yes"}:
+            return
         task_worker = getattr(run_execution, "task_worker", None)
-        print(f"[STARTUP] run_execution={run_execution is not None}, task_worker={task_worker is not None}", file=_sys.stderr, flush=True)
         if task_worker is not None:
             await task_worker.start()
             import logging
