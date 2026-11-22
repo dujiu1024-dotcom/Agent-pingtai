@@ -452,7 +452,7 @@ def create_platform_app(
             tool_skill_evaluation_authorizer, resource_audit_writer,
         )):
             raise ValueError(
-                "Tool/MCP checker, Skill reviewer, registry resolver/authorizer and audit writer must be configured together"
+                "Tool/MCP checker, Skill reviewer, resource/version authorizers, registry resolver and audit writer must be configured together"
             )
         app.include_router(create_tool_skill_evaluation_router(
             resolve_principal=_principal_from_request,
