@@ -25,7 +25,7 @@ class WorkflowProductionResolverTests(unittest.TestCase):
             self.assertIs(_load_trusted_workflow_compiler_resolver(), resolver)
 
     def test_multiple_resolvers_fail_closed_instead_of_choosing_implicitly(self):
-        first = unittest.mock.Mock(name="first")
+        first = Mock(name="first")
         second = unittest.mock.Mock(name="second")
         first.name = second.name = "resolver"
         with patch("importlib.metadata.entry_points", return_value=(first, second)):
