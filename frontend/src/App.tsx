@@ -9,6 +9,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
 } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -51,6 +52,9 @@ import {
   detailRoutes,
   globalRoutes,
   pageRoutes,
+  navigationSections,
+  getRouteBreadcrumbs,
+  getAuthEntryRedirect,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
@@ -139,13 +143,10 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                 key={route.pageId}
                 path={route.path}
                 element={
-                  config.auth.enabled ? (
-                    <AuthEntryPage route={route} />
+                  getAuthEntryRedirect(config.auth.enabled) ? (
+                    <Navigate to={getAuthEntryRedirect(config.auth.enabled)!} replace />
                   ) : (
-                    <ModeRestrictedState
-                      title="当前模式不提供身份入口"
-                      description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。"
-                    />
+                    <AuthEntryPage route={route} />
                   )
                 }
               />
@@ -162,6 +163,8 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const navigate = useNavigate()
+  const location = useLocation()
+  const breadcrumbs = getRouteBreadcrumbs(location.pathname)
   const [toast, setToast] = useState('')
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -179,60 +182,32 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     window.setTimeout(() => setToast(''), 1700)
   }
 
-  const navigation = [
-    { path: '/workspace/overview', title: '工作台', icon: '⌂', view: 'home' },
-    { path: '/workspace/office', title: '3D 办公室', icon: '▣', view: 'office' },
-    { path: '/workspace/tasks', title: '任务中心', icon: '☰' },
-    { path: '/workspace/collaboration', title: 'Agent 协作', icon: '⚇' },
-    { path: '/admin/workflows', title: 'Workflow', icon: '⌘' },
-    { path: '/workspace/quality-cost', title: '成本分摊', icon: '¥' },
-    { path: '/admin/settings', title: '系统管理', icon: '⚙' },
-  ]
+  const navigation = navigationSections.map((section) => ({
+    path: section.path,
+    title: section.label,
+    icon: section.icon,
+    view: section.id === 'home' || section.id === 'office' ? section.id : undefined,
+  }))
 
-  // Keep the seven prototype entries unchanged. New capabilities are appended
-  // after them so the original navigation order remains stable.
-  const navigationExtensions: {
-    path: string
-    title: string
-    icon: string
-    authOnly?: boolean
-    capability?: string
-  }[] = [
-    { path: '/operations/agents', title: 'Agent 运行态', icon: '◈' },
-    { path: '/admin/agents', title: 'Agent 定义', icon: '✧' },
-    { path: '/operations/approvals', title: '审批中心', icon: '✓' },
-    { path: '/operations/knowledge-bases', title: '知识库', icon: '▤' },
-    { path: '/operations/memories', title: '记忆治理', icon: '◇' },
-    { path: '/operations/conversations', title: '会话与消息', icon: '☷' },
-    { path: '/operations/files', title: '文件与产物', icon: '▧' },
-    { path: '/operations/evaluation/datasets', title: '评测数据集', icon: '◎' },
-    { path: '/operations/evaluation/runs', title: '评测运行', icon: '◴' },
-    { path: '/admin/tools', title: '工具与 MCP', icon: '⌘' },
-    { path: '/admin/skills', title: 'Skills', icon: '✦' },
-    { path: '/admin/models/providers', title: '模型供应商', icon: '◉' },
-    { path: '/admin/models/templates', title: '模型模板', icon: '▦' },
-    { path: '/admin/models/routing', title: '模型路由', icon: '⇄' },
-    {
-      path: '/admin/prompts',
-      title: 'Prompt 管理',
-      icon: '¶',
-      capability: 'prompt_management',
-    },
-    { path: '/admin/ops', title: '系统运维', icon: '⌁' },
-    { path: '/admin/audit', title: '审计中心', icon: '◷' },
-    { path: '/notifications', title: '通知中心', icon: '♧' },
-    { path: '/admin/scheduler/jobs', title: '调度任务', icon: '◴' },
-    { path: '/admin/scheduler/subscriptions', title: '事件订阅', icon: '⌁' },
-    { path: '/admin/organization', title: '组织与成员', icon: '♙', authOnly: true },
-    { path: '/admin/access-control', title: '角色与权限', icon: '⚿', authOnly: true },
-  ].filter(
-    (item) =>
-      (!item.authOnly || config.auth.enabled) &&
-      (!item.capability || config.capabilities.includes(item.capability)),
+  const navigationExtensions = navigationSections.flatMap((section) =>
+    section.subpages
+      .filter((page) => page.path !== section.path)
+      .filter((page) => (!page.authOnly || config.auth.enabled) &&
+        (!page.capability || config.capabilities.includes(page.capability)))
+      .map((page) => ({ path: page.path, title: page.label, icon: section.icon })),
+  ).concat(
+    globalRoutes
+      .filter((route) => route.path !== '/search')
+      .map((route) => ({
+        path: route.path,
+        title: route.title,
+        icon: route.path === '/notifications' ? '♧' : '◷',
+      })),
   )
 
+
   return (
-    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
+    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'} data-v={location.pathname.startsWith('/workspace/office') ? 'office' : 'home'}>
       <aside className="sidebar" aria-label="主导航">
         <Link className="brand" to="/workspace/overview" aria-label="Agent 平台工作台">
           <span className="brand-mark" aria-hidden="true">A</span>
@@ -320,6 +295,16 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             </button>
           </div>
         </header>
+        {breadcrumbs.length > 0 && (
+          <nav className="app-breadcrumbs" aria-label="面包屑">
+            {breadcrumbs.map((crumb, index) => (
+              <span className="app-breadcrumb-item" key={`${crumb.label}-${index}`}>
+                {index > 0 && <span className="app-breadcrumb-separator" aria-hidden="true">/</span>}
+                {crumb.path && index < breadcrumbs.length - 1 ? <Link to={crumb.path}>{crumb.label}</Link> : <span aria-current="page">{crumb.label}</span>}
+              </span>
+            ))}
+          </nav>
+        )}
         <Outlet />
       </main>
       <div className={toast ? 'prototype-toast visible' : 'prototype-toast'} role="status" aria-live="polite">
