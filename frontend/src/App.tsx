@@ -25,6 +25,7 @@ import { Dashboard } from '@/features/workspace/Dashboard'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
+import { AgentRuntimeDetail, AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
@@ -301,6 +302,8 @@ function RouteGuard({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/operations/agents') return <AgentRuntimeList />
+  if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/admin/ops') return <SystemOpsPage />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
