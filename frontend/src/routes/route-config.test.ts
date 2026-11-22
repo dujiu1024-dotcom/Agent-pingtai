@@ -185,4 +185,22 @@ describe('route configuration', () => {
     ).toBe('asset-123')
   })
 
+
+  it('connects all Evaluation workspace routes to the #803 main page', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    const expected = [
+      ['/operations/evaluation/datasets', '#803'],
+      ['/operations/evaluation/datasets/:datasetId', '#803'],
+      ['/operations/evaluation/runs', '#803'],
+      ['/operations/evaluation/runs/:evaluationRunId', '#803'],
+    ] as const
+
+    for (const [path, owner] of expected) {
+      const route = [...pageRoutes, ...detailRoutes].find((item) => item.path === path)
+      expect(route?.owner).toBe(owner)
+    }
+    expect(matchRoutes(routeObjects, '/operations/evaluation/datasets/dataset-123')?.[0].params.datasetId).toBe('dataset-123')
+    expect(matchRoutes(routeObjects, '/operations/evaluation/runs/run-456')?.[0].params.evaluationRunId).toBe('run-456')
+  })
+
 })
