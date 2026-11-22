@@ -5,6 +5,9 @@ import math
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+SUPPORTED_EMBEDDING_DIMENSIONS = (1024, 1536)
+DEFAULT_EMBEDDING_DIMENSIONS = 1024
+
 
 class EmbeddingProvider(Protocol):
     async def embed_query(self, text: str) -> Sequence[float]: ...
@@ -15,14 +18,14 @@ class EmbeddingProvider(Protocol):
 class EmbeddingProfile:
     model_id: str
     version: str
-    dimensions: int = 1024
+    dimensions: int = DEFAULT_EMBEDDING_DIMENSIONS
     normalize: bool = False
 
     def __post_init__(self) -> None:
         if not self.model_id.strip() or not self.version.strip():
             raise ValueError("embedding model_id and version are required")
-        if isinstance(self.dimensions, bool) or self.dimensions < 1:
-            raise ValueError("embedding dimensions must be a positive integer")
+        if isinstance(self.dimensions, bool) or not isinstance(self.dimensions, int) or self.dimensions not in SUPPORTED_EMBEDDING_DIMENSIONS:
+            raise ValueError(f"embedding dimensions must be one of {SUPPORTED_EMBEDDING_DIMENSIONS}")
 
     @property
     def storage_key(self) -> str:

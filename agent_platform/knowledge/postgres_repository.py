@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 
+from agent_platform.knowledge.embedding import DEFAULT_EMBEDDING_DIMENSIONS, SUPPORTED_EMBEDDING_DIMENSIONS
 from agent_platform.knowledge.contracts import (
     Document,
     DocumentChunk,
@@ -19,11 +20,11 @@ def _jsonb(value: Any)->Any:
     except ImportError as exc:raise RuntimeError("Install psycopg[binary,pool]") from exc
     return Jsonb(value)
 class PostgresKnowledgeRepository:
-    def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=1024)->None:
+    def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=DEFAULT_EMBEDDING_DIMENSIONS)->None:
         if not embedding_model.strip() or not embedding_model_version.strip():
             raise ValueError("embedding model and version are required")
-        if isinstance(embedding_dimensions, bool) or not isinstance(embedding_dimensions, int) or embedding_dimensions < 1:
-            raise ValueError("embedding_dimensions must be a positive integer")
+        if isinstance(embedding_dimensions, bool) or not isinstance(embedding_dimensions, int) or embedding_dimensions not in SUPPORTED_EMBEDDING_DIMENSIONS:
+            raise ValueError(f"embedding_dimensions must be one of {SUPPORTED_EMBEDDING_DIMENSIONS}")
         self._connect=connection_factory
         self.embedding_model=embedding_model
         self.embedding_model_version=embedding_model_version
@@ -201,7 +202,7 @@ class PostgresKnowledgeRepository:
                     (self.embedding_model,self.embedding_model_version,self.embedding_dimensions))
                     await conn.execute("""INSERT INTO knowledge_embeddings(tenant_id,chunk_id,embedding_model,embedding,model_version,dimensions)
                     VALUES(%s,%s,%s,%s::vector,%s,%s)
-                    ON CONFLICT(tenant_id,chunk_id,embedding_model) DO UPDATE SET embedding=EXCLUDED.embedding,
+                    ON CONFLICT(tenant_id,chunk_id,embedding_model,model_version) DO UPDATE SET embedding=EXCLUDED.embedding,
                     model_version=EXCLUDED.model_version,dimensions=EXCLUDED.dimensions,created_at=now()""",
                     (tenant_id,chunk.chunk_id,self.embedding_model,literal,self.embedding_model_version,self.embedding_dimensions))
     async def get_document(self,tenant_id: str,document_id: str,version: int|None=None)->Document|None:
@@ -236,8 +237,11 @@ class PostgresKnowledgeRepository:
             semantic=[]
             if query_vector:
                 literal="["+",".join(str(float(x)) for x in query_vector)+"]"
-                semantic_sql="""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,(1-(e.embedding <=> %s::vector)) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version JOIN knowledge_embeddings e ON e.tenant_id=c.tenant_id AND e.chunk_id=c.chunk_id AND e.embedding_model=%s WHERE """+common+" AND "+chunk_acl+" ORDER BY e.embedding <=> %s::vector LIMIT %s"
-                semantic_params=(literal,self.embedding_model,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,literal,candidate_limit)
+                if len(query_vector) != self.embedding_dimensions:
+                    raise ValueError("query embedding dimension mismatch")
+                dimensions = self.embedding_dimensions
+                semantic_sql=f"""SELECT d.document_id,d.version,d.title,d.source_uri,c.chunk_id,c.body,c.page_number,c.start_offset,c.end_offset,(1-(e.embedding::vector({dimensions}) <=> %s::vector({dimensions}))) score FROM knowledge_documents d JOIN knowledge_chunks c ON c.tenant_id=d.tenant_id AND c.document_id=d.document_id AND c.document_version=d.version JOIN knowledge_embeddings e ON e.tenant_id=c.tenant_id AND e.chunk_id=c.chunk_id AND e.embedding_model=%s AND e.model_version=%s AND e.dimensions={dimensions} WHERE """+common+" AND "+chunk_acl+f" ORDER BY e.embedding::vector({dimensions}) <=> %s::vector({dimensions}) LIMIT %s"
+                semantic_params=(literal,self.embedding_model,self.embedding_model_version,principal.tenant_id,projects,principal.user_id,principal.user_id,principal.user_id,roles,projects,principal.user_id,roles,projects,literal,candidate_limit)
                 cur=await conn.execute(semantic_sql,semantic_params);semantic=await cur.fetchall()
         # Reciprocal-rank fusion combines independent lexical and semantic candidate lists.
         fused:dict[str,tuple[float,dict[str,Any],set[str]]]={}
