@@ -69,11 +69,17 @@ class InterventionApiTests(unittest.TestCase):
         async def detail_resolver(p):
             return Details()
 
+        async def executor_resolver(p):
+            class Executor:
+                async def pause(inner, *, tenant_id, run_id, reason):
+                    return await self.store.get(tenant_id, run_id)
+            return Executor()
+
         app = FastAPI()
         app.include_router(create_runs_router(
             resolve_principal=principal, resolve_lifecycle=lifecycle,
             authorize=authorize, resolve_interventions=intervention_resolver,
-            resolve_details=detail_resolver,
+            resolve_details=detail_resolver, resolve_executor=executor_resolver,
         ))
         self.client = TestClient(app)
 
@@ -136,6 +142,16 @@ class InterventionApiTests(unittest.TestCase):
         self.assertEqual(self.audit_records[0]["actor_id"], "operator-a")
         self.assertEqual(self.audit_records[0]["event_type"], "human.run_cancel_requested")
         self.assertEqual(self.audit_records[0]["payload"]["status"], "cancelled")
+        self.assertEqual(self.audit_records[0]["payload"]["version"], response.json()["version"])
+
+    def test_pause_records_actor_and_resulting_lifecycle_state(self):
+        response = self.client.post("/api/platform/v1/runs/run-1/pause")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "paused")
+        self.assertEqual(len(self.audit_records), 1)
+        self.assertEqual(self.audit_records[0]["actor_id"], "operator-a")
+        self.assertEqual(self.audit_records[0]["event_type"], "human.run_paused")
+        self.assertEqual(self.audit_records[0]["payload"]["status"], "paused")
         self.assertEqual(self.audit_records[0]["payload"]["version"], response.json()["version"])
 
     def test_intervention_is_not_visible_cross_tenant(self):
