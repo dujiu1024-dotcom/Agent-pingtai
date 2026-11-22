@@ -96,6 +96,57 @@ function Desk({ id, x, z, selected, onSelect }: {
   )
 }
 
+function OfficePlant({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh position={[0, 0.2, 0]} castShadow><cylinderGeometry args={[0.22, 0.28, 0.4, 12]} /><meshStandardMaterial color="#a8794f" roughness={0.82} /></mesh>
+      {Array.from({ length: 5 }, (_, index) => {
+        const angle = (index / 5) * Math.PI * 2
+        return <mesh key={index} position={[Math.cos(angle) * 0.2, 0.72 + (index % 2) * 0.12, Math.sin(angle) * 0.2]} rotation={[0.18, angle, -0.22]} castShadow>
+          <sphereGeometry args={[0.16, 8, 6]} /><meshStandardMaterial color={index % 2 ? '#5d8b69' : '#426b52'} roughness={0.8} />
+        </mesh>
+      })}
+      <mesh position={[0, 0.72, 0]} castShadow><cylinderGeometry args={[0.045, 0.06, 0.75, 8]} /><meshStandardMaterial color="#6d8c65" /></mesh>
+    </group>
+  )
+}
+
+function MeetingTable({ position }: { position: [number, number, number] }) {
+  return <group position={position}>
+    <mesh position={[0, 0.48, 0]} castShadow receiveShadow><cylinderGeometry args={[1.45, 1.45, 0.12, 32]} /><meshStandardMaterial color="#a8794f" roughness={0.58} /></mesh>
+    <mesh position={[0, 0.23, 0]} castShadow><cylinderGeometry args={[0.16, 0.24, 0.46, 12]} /><meshStandardMaterial color="#76553b" /></mesh>
+    {Array.from({ length: 6 }, (_, index) => {
+      const angle = (index / 6) * Math.PI * 2
+      return <group key={index} position={[Math.cos(angle) * 1.9, 0, Math.sin(angle) * 1.9]} rotation={[0, -angle, 0]}>
+        <mesh position={[0, 0.32, 0.35]} castShadow><boxGeometry args={[0.62, 0.12, 0.62]} /><meshStandardMaterial color="#d7dfeb" /></mesh>
+        <mesh position={[0, 0.63, 0.63]} castShadow><boxGeometry args={[0.62, 0.58, 0.1]} /><meshStandardMaterial color="#b9c7d9" /></mesh>
+      </group>
+    })}
+  </group>
+}
+
+function OfficeDecorations() {
+  return <>
+    <mesh position={[0, 0.035, -6.35]}><boxGeometry args={[19.5, 0.06, 0.16]} /><meshStandardMaterial color="#a8794f" /></mesh>
+    <mesh position={[-9.65, 1.45, 0]}><boxGeometry args={[0.12, 2.9, 13.1]} /><meshStandardMaterial color="#c8d3e4" /></mesh>
+    <mesh position={[0, 1.5, -6.55]}><boxGeometry args={[19.5, 2.8, 0.12]} /><meshStandardMaterial color="#c8d3e4" /></mesh>
+    {[-6.2, -2.1, 2.0, 6.1].map((x) => <group key={x} position={[x, 1.65, -6.46]}>
+      <mesh><boxGeometry args={[2.65, 1.45, 0.08]} /><meshStandardMaterial color="#fffaf0" /></mesh>
+      <mesh position={[0, 0, 0.055]}><boxGeometry args={[2.35, 1.17, 0.035]} /><meshStandardMaterial color="#b9d8e2" emissive="#8eb8c9" emissiveIntensity={0.08} /></mesh>
+      <mesh position={[0, 0, 0.09]}><boxGeometry args={[0.045, 1.18, 0.04]} /><meshStandardMaterial color="#fffaf0" /></mesh>
+      <mesh position={[0, 0, 0.09]}><boxGeometry args={[2.36, 0.045, 0.04]} /><meshStandardMaterial color="#fffaf0" /></mesh>
+    </group>)}
+    <OfficePlant position={[-8.1, 0, -5.1]} /><OfficePlant position={[8.1, 0, -5.1]} />
+    <OfficePlant position={[-8.1, 0, 5.1]} /><OfficePlant position={[8.1, 0, 5.1]} />
+    <MeetingTable position={[-5.9, 0, 3.1]} />
+    <group position={[3.2, 0, 3.4]}>
+      <mesh position={[0, 0.3, 0]} castShadow><boxGeometry args={[2.6, 0.58, 0.9]} /><meshStandardMaterial color="#91a9c8" /></mesh>
+      <mesh position={[0, 0.64, -0.35]} castShadow><boxGeometry args={[2.6, 0.78, 0.18]} /><meshStandardMaterial color="#718bad" /></mesh>
+      <mesh position={[0, 0.62, 0.62]}><boxGeometry args={[1.2, 0.06, 0.7]} /><meshStandardMaterial color="#a8794f" /></mesh>
+    </group>
+  </>
+}
+
 function OfficeScene({ selectedDesk, onSelectDesk }: { selectedDesk: string | null; onSelectDesk: (id: string) => void }) {
   return (
     <>
@@ -122,7 +173,7 @@ function OfficeScene({ selectedDesk, onSelectDesk }: { selectedDesk: string | nu
             </mesh>
           </group>
         ))}
-        {desks.map((desk) => (
+        <OfficeDecorations />\n        {desks.map((desk) => (
           <Desk key={desk.id} {...desk} selected={selectedDesk === desk.id} onSelect={onSelectDesk} />
         ))}
         <group position={[-9.8, 0.45, 0]}>

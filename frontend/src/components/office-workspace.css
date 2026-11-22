@@ -29,3 +29,21 @@
 @media(max-width:820px){.office-main-grid{grid-template-columns:1fr}.office-inspector{min-height:420px}.office-canvas,.office-canvas canvas{min-height:440px}.office-heading{align-items:flex-start;flex-direction:column}.office-heading-stats{padding:0}}
 @media(max-width:560px){.office-topbar{padding:10px}.office-top-actions{width:100%;justify-content:flex-end}.office-sync-state{margin-right:auto}.office-floor-tab{flex:1;justify-content:center;padding:8px}.office-floor-tab span{display:none}.office-heading h1{font-size:21px}.office-heading-stats{width:100%;justify-content:space-between;gap:10px}.office-canvas,.office-canvas canvas{min-height:350px}.office-viewport-caption{align-items:flex-start;flex-direction:column;gap:6px}.office-map-legend small{width:100%;margin-left:0}}
 @media(prefers-reduced-motion:reduce){.office-floor-tab{transition:none}}
+
+/* Round 3 prototype alignment: cool canvas, crisp glass panels and clear spatial hierarchy. */
+.office-workspace{gap:16px;padding-top:4px}
+.office-topbar{min-height:70px;padding:11px 19px;border-color:#dfe6f1;border-radius:12px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px #243b6410}
+.office-brand-mark{border-radius:10px;background:#2f6af0;box-shadow:0 6px 14px #2f6af033}
+.office-heading h1{font-size:27px;letter-spacing:-.7px}
+.office-main-grid{grid-template-columns:minmax(0,1fr) 320px;gap:16px;min-height:640px}
+.office-viewport,.office-inspector{border-color:#dfe6f1;border-radius:12px;box-shadow:0 8px 26px #243b640d}
+.office-canvas{min-height:560px;background:radial-gradient(ellipse at 50% 40%,#dbe4f3 0%,#aebbd8 72%)}
+.office-canvas canvas{min-height:560px}
+.office-viewport-caption{padding:15px 19px;background:#fff}
+.office-map-legend{padding:13px 19px;background:#fff}
+.office-inspector{padding-right:17px;padding-left:17px}
+.office-floor-overview>div{background:#f7f9fd}
+.office-selected-desk{border-color:#dce6fc;background:linear-gradient(135deg,#f7f9ff,#fff)}
+@media(max-width:1100px){.office-main-grid{grid-template-columns:minmax(0,1fr) 290px}.office-canvas,.office-canvas canvas{min-height:490px}}
+@media(max-width:820px){.office-main-grid{grid-template-columns:1fr}.office-canvas,.office-canvas canvas{min-height:460px}}
+@media(max-width:560px){.office-canvas,.office-canvas canvas{min-height:360px}}
