@@ -1,0 +1,50 @@
+/* Runtime theme aliases. Canonical values live in components/design-system.css. */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --brand: var(--color-brand-600);
+  --surface: var(--color-neutral-0);
+  --muted: var(--color-neutral-600);
+  --border: var(--color-neutral-200);
+  --fg: var(--color-neutral-900);
+  --bg: var(--color-neutral-50);
+  --canvas: var(--color-neutral-50);
+  --content-surface: var(--color-neutral-0);
+  --text-primary: var(--color-neutral-900);
+  --text-secondary: var(--color-neutral-600);
+  --focus-outline: 2px solid var(--color-brand-600);
+}
+
+/* Warm, immersive Office surface; status semantics remain shared with light theme. */
+:root[data-theme='office'] {
+  color-scheme: light;
+  --canvas: var(--office-wall);
+  --content-surface: var(--office-surface);
+  --text-primary: var(--office-ink);
+  --text-secondary: var(--color-neutral-600);
+  --brand: var(--color-brand-700);
+  --surface: var(--content-surface);
+  --fg: var(--text-primary);
+  --bg: var(--canvas);
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: 2px;
+}
+
+:where(button, input, select, textarea):disabled,
+:where([aria-disabled='true']) {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
