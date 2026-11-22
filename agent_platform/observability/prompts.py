@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -276,15 +277,28 @@ class PromptRegistry:
         self, prompt_id: str, candidate_version: int, percentage: float, *,
         updated_by: str = "system", evaluation_run_id: str | None = None,
     ) -> None:
+        if not isinstance(updated_by, str) or not updated_by.strip():
+            raise ValueError("updated_by is required")
+        if (
+            isinstance(candidate_version, bool)
+            or not isinstance(candidate_version, int)
+            or candidate_version < 1
+        ):
+            raise ValueError("candidate_version must be a positive integer")
+        if (
+            isinstance(percentage, bool)
+            or not isinstance(percentage, (int, float))
+            or not math.isfinite(percentage)
+            or not 0 < percentage <= 100
+        ):
+            raise ValueError("canary percentage must be a finite number in (0, 100]")
         if prompt_id not in self._active:
             raise ValueError("activate a stable prompt version before setting a canary")
         if candidate_version not in self._versions.get(prompt_id, {}):
             raise KeyError("candidate prompt version does not exist")
         if candidate_version == self._active[prompt_id]:
             raise ValueError("canary candidate must differ from active version")
-        if not 0 < percentage <= 100:
-            raise ValueError("canary percentage must be in (0, 100]")
-        self._canary[prompt_id] = (candidate_version, percentage)
+        self._canary[prompt_id] = (candidate_version, float(percentage))
         self._record_audit(prompt_id, "canary.configured", updated_by, {
             "canary_version": candidate_version, "percentage": percentage,
             "evaluation_run_id": evaluation_run_id,
