@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -48,7 +48,6 @@ export function PromptRegistryPage() {
       apiClient.get<ListResponse<PromptSummary>>(
         '/platform/v1/prompts/?limit=200',
       ),
-    enabled: !promptId,
   })
 
   const versionsQuery = useQuery({
@@ -98,7 +97,14 @@ export function PromptRegistryPage() {
     ),
   })
 
-  const gateVersion = selectedVersion ?? currentVersion
+  const selectedSummary = useMemo(
+    () => listQuery.data?.items.find((item) => item.prompt_id === promptId),
+    [listQuery.data, promptId],
+  )
+
+  const gateVersion =
+    selectedVersion ?? selectedSummary?.active_version ?? currentVersion
+
   const gateQuery = useQuery({
     queryKey: ['prompt-evaluation-gate', promptId, gateVersion],
     queryFn: () =>
@@ -110,7 +116,6 @@ export function PromptRegistryPage() {
         promptPath(promptId!) + '/evaluation-gate?version=' + gateVersion,
       ),
     enabled: Boolean(promptId && gateVersion),
-    retry: false,
   })
 
   const createDraft = useMutation({
@@ -421,24 +426,34 @@ export function PromptRegistryPage() {
           </section>
 
           <section className="prompt-gate-note">
-            <strong>评测 Gate · v{gateVersion ?? '—'}</strong>
-            {gateQuery.isPending && gateVersion && <p>正在读取服务端评测记录…</p>}
-            {gateQuery.data?.status === 'passed' && (
-              <p>
-                已找到服务端通过记录（{gateQuery.data.action}），评测运行：{gateQuery.data.eval_run_id}。
-              </p>
-            )}
-            {gateQuery.data?.status === 'not_recorded' && (
-              <p>未找到该版本的通过记录；这不代表评测失败，发布操作仍由服务端 Gate 强制校验。</p>
+            <strong>评测 Gate</strong>
+            {gateQuery.isPending && gateVersion && (
+              <p>正在读取服务端评测记录…</p>
             )}
             {gateQuery.isError && (
               <p>
-                {gateQuery.error instanceof Error ? gateQuery.error.message : String(gateQuery.error)}
-                。当前后端可能尚未开放 Gate 结果读取接口；不会据此推断评测通过或失败。
+                无法读取 Gate 记录：
+                {gateQuery.error instanceof Error
+                  ? gateQuery.error.message
+                  : String(gateQuery.error)}
+              </p>
+            )}
+            {gateQuery.data?.status === 'passed' && (
+              <p>
+                版本 v{gateVersion} 已有服务端通过记录（{gateQuery.data.action}），
+                评测运行：{gateQuery.data.eval_run_id}。
+              </p>
+            )}
+            {gateQuery.data?.status === 'not_recorded' && (
+              <p>
+                版本 v{gateVersion} 未找到已通过的评测记录，不代表评测失败；
+                发布操作仍会由服务端 Gate 强制校验。
               </p>
             )}
             {!gateVersion && <p>暂无版本可查询评测记录。</p>}
-            <p>本页面不提供绕过 Gate 的发布操作。</p>
+            <p>
+              本页不提供绕过 Gate 的发布操作。评测失败明细仅在 Gate 拒绝发布时由服务端返回。
+            </p>
           </section>
         </div>
       </div>

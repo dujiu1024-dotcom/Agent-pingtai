@@ -29,7 +29,7 @@ from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.observability import create_observability_router
-from agent_platform.api.bootstrap import create_bootstrap_router, resolve_bootstrap_capabilities
+from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.office import OfficeStateService, create_office_router
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.public_contract import PublicApiContractMiddleware, install_api_error_handlers
@@ -263,22 +263,11 @@ def create_platform_app(
         window_seconds=60,
     )
     app.include_router(create_identity_router(identity=identity))
-    prompt_management_available = (
-        auth_enabled
-        and prompt_registry is not None
-        and callable(getattr(prompt_registry, "list_prompts", None))
-        and prompt_manage_authorizer is not None
-    )
-    effective_bootstrap_capabilities = resolve_bootstrap_capabilities(
-        bootstrap_capabilities,
-        auth_enabled=auth_enabled,
-        prompt_registry_configured=prompt_management_available,
-        prompt_evaluation_gate_configured=(
-            prompt_management_available and callable(prompt_evaluation_gate)
-        ),
-    )
+    advertised_capabilities = set(bootstrap_capabilities)
+    if auth_enabled and prompt_registry is not None and prompt_manage_authorizer is not None:
+        advertised_capabilities.add("prompt_management")
     app.include_router(create_bootstrap_router(
-        auth_enabled=auth_enabled, capabilities=effective_bootstrap_capabilities,
+        auth_enabled=auth_enabled, capabilities=sorted(advertised_capabilities),
     ))
     if office_state_service is not None:
         app.include_router(create_office_router(
@@ -343,6 +332,8 @@ def create_platform_app(
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
     ))
     if prompt_registry_configured:
+        if not auth_enabled:
+            raise ValueError("Prompt Registry requires auth_enabled=True")
         if prompt_registry is None or prompt_manage_authorizer is None:
             raise ValueError(
                 "prompt registry and prompt manager authorizer must be configured together"
@@ -518,7 +509,7 @@ def create_platform_app(
             "quotas": quota_reporting_store is not None or quota_store is not None,
             "metrics": metrics_exporter is not None,
             "audit": audit_reader is not None and audit_authorizer is not None,
-            "prompt_management": prompt_management_available,
+            "prompt_management": prompt_registry is not None and prompt_manage_authorizer is not None,
         },
         resolve_principal=_principal_from_request if task_center_configured else None,
         resolve_task_service=task_service_resolver,

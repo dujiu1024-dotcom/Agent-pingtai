@@ -9,7 +9,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from agent_platform.identity.models import Principal
-from agent_platform.observability.prompts import tenant_prompt_key, tenant_prompt_prefix
+from agent_platform.observability.prompts import tenant_prompt_key
 
 
 def _principal(request: Request) -> Principal:
@@ -84,49 +84,14 @@ def create_prompt_registry_router(
     @router.get("/")
     async def list_prompts(request: Request, limit: int = Query(default=50, ge=1, le=200)):
         actor = _principal(request)
+        if not await _allowed(authorize, actor, "*", "read"):
+            raise HTTPException(403, "prompt registry permission required")
         list_fn = getattr(registry, "list_prompts", None)
         if not callable(list_fn):
             raise HTTPException(501, "prompt listing is not supported by this registry")
-        prefix = tenant_prompt_prefix(actor.tenant_id)
-        try:
-            rows = list_fn(prefix=prefix, limit=limit)
-            if inspect.isawaitable(rows):
-                rows = await rows
-        except (TypeError, ValueError):
-            raise HTTPException(503, "tenant-scoped prompt listing is not supported") from None
-        if not isinstance(rows, (list, tuple)):
-            raise HTTPException(503, "prompt registry returned an invalid list")
-        items: list[dict[str, Any]] = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            storage_key = row.get("storage_key")
-            if not isinstance(storage_key, str) or not storage_key.startswith(prefix):
-                continue
-            prompt_id = storage_key[len(prefix):]
-            if not prompt_id or not await _allowed(authorize, actor, prompt_id, "read"):
-                continue
-            latest_version = row.get("latest_version")
-            active_version = row.get("active_version")
-            version_count = row.get("version_count")
-            if (
-                isinstance(latest_version, bool) or not isinstance(latest_version, int)
-                or latest_version < 1
-                or (active_version is not None and (
-                    isinstance(active_version, bool) or not isinstance(active_version, int)
-                    or active_version < 1
-                ))
-                or isinstance(version_count, bool) or not isinstance(version_count, int)
-                or version_count < 1
-            ):
-                continue
-            items.append({
-                "prompt_id": prompt_id,
-                "latest_version": latest_version,
-                "active_version": active_version,
-                "version_count": version_count,
-            })
-        return {"items": items, "count": len(items)}
+        tenant_prefix = f"tenant:{len(actor.tenant_id)}:{actor.tenant_id}:"
+        rows = await invoke(list_fn, prefix=tenant_prefix, limit=limit)
+        return {"items": list(rows), "count": len(rows)}
 
     @router.post("/{prompt_id}/versions", status_code=201)
     async def register_version(prompt_id: str, request: Request):
@@ -138,8 +103,8 @@ def create_prompt_registry_router(
         if not isinstance(body, dict) or not isinstance(body.get("template"), str):
             raise HTTPException(400, "template string is required")
         try:
-            version = await registry.register(
-                storage_key, body["template"], created_by=actor.user_id,
+            version = await invoke(
+                registry.register, storage_key, body["template"], created_by=actor.user_id,
             )
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -286,8 +251,8 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         gate = await require_evaluation_gate(actor, prompt_id, version, "activate")
         try:
-            await registry.activate(
-                storage_key, version, updated_by=actor.user_id,
+            await invoke(
+                registry.activate, storage_key, version, updated_by=actor.user_id,
                 evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
@@ -311,8 +276,8 @@ def create_prompt_registry_router(
             raise HTTPException(400, "percentage must be a finite number")
         gate = await require_evaluation_gate(actor, prompt_id, version, "canary")
         try:
-            await registry.set_canary(
-                storage_key, version, float(percentage), updated_by=actor.user_id,
+            await invoke(
+                registry.set_canary, storage_key, version, float(percentage), updated_by=actor.user_id,
                 evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
@@ -337,14 +302,46 @@ def create_prompt_registry_router(
             raise HTTPException(400, "version must be a positive integer")
         gate = await require_evaluation_gate(actor, prompt_id, version, "rollback")
         try:
-            await registry.rollback(
-                storage_key, version, updated_by=actor.user_id,
+            await invoke(
+                registry.rollback, storage_key, version, updated_by=actor.user_id,
                 evaluation_run_id=gate["eval_run_id"],
             )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         return {"prompt_id": prompt_id, "active_version": version,
                 "updated_by": actor.user_id, "eval_run_id": gate["eval_run_id"]}
+
+    @router.get("/{prompt_id}/evaluation-gate")
+    async def evaluation_gate_status(
+        prompt_id: str, request: Request, version: int = Query(ge=1),
+    ):
+        _actor, storage_key = await context(request, prompt_id, "read")
+        list_audit = getattr(registry, "list_audit", None)
+        if not callable(list_audit):
+            raise HTTPException(501, "prompt evaluation evidence is not supported")
+        events = await invoke(list_audit, storage_key, limit=200)
+        for event in reversed(events):
+            action = event.get("action") if isinstance(event, dict) else getattr(event, "action", None)
+            details = event.get("details") if isinstance(event, dict) else getattr(event, "details", ())
+            if isinstance(details, (list, tuple)):
+                details = dict(details)
+            if not isinstance(details, dict):
+                details = {}
+            event_version = details.get("active_version", details.get("canary_version"))
+            if (
+                action in {"version.activated", "canary.configured", "version.rolled_back"}
+                and event_version == version
+                and isinstance(details.get("evaluation_run_id"), str)
+                and details["evaluation_run_id"].strip()
+            ):
+                return {
+                    "prompt_id": prompt_id, "version": version, "status": "passed",
+                    "eval_run_id": details["evaluation_run_id"], "action": action,
+                }
+        return {
+            "prompt_id": prompt_id, "version": version,
+            "status": "not_recorded", "eval_run_id": None, "action": None,
+        }
 
     @router.get("/{prompt_id}/audit")
     async def prompt_audit(prompt_id: str, request: Request, limit: int = 100):
@@ -354,7 +351,7 @@ def create_prompt_registry_router(
         list_audit = getattr(registry, "list_audit", None)
         if not callable(list_audit):
             raise HTTPException(501, "prompt audit history is not supported")
-        rows = await list_audit(storage_key, limit=limit)
+        rows = await invoke(list_audit, storage_key, limit=limit)
         return {"items": rows, "count": len(rows)}
 
     @router.post("/{prompt_id}/render")
@@ -381,8 +378,8 @@ def create_prompt_registry_router(
         ):
             raise HTTPException(400, "version must be a positive integer")
         try:
-            rendered, selected = await registry.render(
-                storage_key, variables, rollout_key=rollout_key, version=version,
+            rendered, selected = await invoke(
+                registry.render, storage_key, variables, rollout_key=rollout_key, version=version,
             )
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc

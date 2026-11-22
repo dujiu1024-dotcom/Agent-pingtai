@@ -137,6 +137,32 @@ class PromptRegistry:
         })
         return record
 
+    def list_prompts(self, *, prefix: str, limit: int = 50) -> tuple[dict[str, object], ...]:
+        """List prompt summaries scoped to an exact tenant storage-key prefix."""
+        if not isinstance(prefix, str) or not prefix.endswith(":"):
+            raise ValueError("tenant prompt prefix must end with a separator")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        summaries: list[dict[str, object]] = []
+        for storage_key, versions in self._versions.items():
+            if not storage_key.startswith(prefix) or not versions:
+                continue
+            latest_version = max(versions)
+            latest = versions[latest_version]
+            canary = self._canary.get(storage_key)
+            summaries.append({
+                "prompt_id": storage_key[len(prefix):],
+                "latest_version": latest_version,
+                "active_version": self._active.get(storage_key),
+                "canary_version": canary[0] if canary else None,
+                "canary_percentage": canary[1] if canary else None,
+                "versions_count": len(versions),
+                "variables": list(latest.variables),
+                "content_hash": latest.content_hash,
+            })
+        summaries.sort(key=lambda item: str(item["prompt_id"]))
+        return tuple(summaries[:limit])
+
     def list_versions(self, prompt_id: str) -> tuple[PromptVersion, ...]:
         """Return immutable versions in ascending version order."""
         return tuple(
@@ -242,6 +268,7 @@ class PromptRegistry:
 
     def activate(
         self, prompt_id: str, version: int, *, updated_by: str = "system",
+        evaluation_run_id: str | None = None,
     ) -> None:
         if not isinstance(updated_by, str) or not updated_by.strip():
             raise ValueError("updated_by is required")
@@ -252,10 +279,13 @@ class PromptRegistry:
         self._active[prompt_id] = version
         self._canary.pop(prompt_id, None)
         self._record_audit(prompt_id, "version.activated", updated_by, {
-            "active_version": version,
+            "active_version": version, "evaluation_run_id": evaluation_run_id,
         })
 
-    def rollback(self, prompt_id: str, version: int, *, updated_by: str) -> None:
+    def rollback(
+        self, prompt_id: str, version: int, *, updated_by: str,
+        evaluation_run_id: str | None = None,
+    ) -> None:
         if not isinstance(updated_by, str) or not updated_by.strip():
             raise ValueError("updated_by is required")
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
@@ -265,10 +295,13 @@ class PromptRegistry:
         self._active[prompt_id] = version
         self._canary.pop(prompt_id, None)
         self._record_audit(prompt_id, "version.rolled_back", updated_by, {
-            "active_version": version,
+            "active_version": version, "evaluation_run_id": evaluation_run_id,
         })
 
-    def set_canary(self, prompt_id: str, candidate_version: int, percentage: float) -> None:
+    def set_canary(
+        self, prompt_id: str, candidate_version: int, percentage: float, *,
+        updated_by: str = "system", evaluation_run_id: str | None = None,
+    ) -> None:
         if prompt_id not in self._active:
             raise ValueError("activate a stable prompt version before setting a canary")
         if candidate_version not in self._versions.get(prompt_id, {}):
@@ -278,6 +311,10 @@ class PromptRegistry:
         if not 0 < percentage <= 100:
             raise ValueError("canary percentage must be in (0, 100]")
         self._canary[prompt_id] = (candidate_version, percentage)
+        self._record_audit(prompt_id, "canary.configured", updated_by, {
+            "canary_version": candidate_version, "percentage": percentage,
+            "evaluation_run_id": evaluation_run_id,
+        })
 
     def resolve(self, prompt_id: str, *, rollout_key: str = "", version: int | None = None) -> PromptVersion:
         versions = self._versions.get(prompt_id, {})

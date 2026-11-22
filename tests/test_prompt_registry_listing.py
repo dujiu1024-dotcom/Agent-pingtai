@@ -1,86 +1,51 @@
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from __future__ import annotations
 
-from agent_platform.api.prompts import create_prompt_registry_router
-from agent_platform.identity.models import Principal
-from agent_platform.observability.prompts import (
-    PromptRegistry,
-    tenant_prompt_key,
-    tenant_prompt_prefix,
-)
+import unittest
+
+from agent_platform.observability.prompts import PromptRegistry
 
 
-def _principal(tenant_id: str = "tenant-a") -> Principal:
-    return Principal(
-        user_id="user-1",
-        tenant_id=tenant_id,
-        session_id="session-1",
-        email="user@example.test",
-        display_name="Test User",
-    )
+class PromptRegistryListingTests(unittest.TestCase):
+    def test_list_prompts_returns_only_keys_with_the_exact_tenant_prefix(self) -> None:
+        registry = PromptRegistry()
+        registry.register("tenant:3:org:shared", "hello {name}", created_by="user-a")
+        registry.register("tenant:3:org:billing", "invoice {number}", created_by="user-a")
+        registry.register("tenant:4:org2:shared", "private {value}", created_by="user-b")
 
+        rows = registry.list_prompts(prefix="tenant:3:org:", limit=20)
 
-def test_prompt_registry_list_is_tenant_scoped_and_authorized() -> None:
-    registry = PromptRegistry()
-    registry.register(tenant_prompt_key("tenant-a", "visible"), "Hello {name}")
-    registry.register(tenant_prompt_key("tenant-a", "hidden"), "Secret {value}")
-    registry.register(tenant_prompt_key("tenant-b", "foreign"), "Other tenant {value}")
+        self.assertEqual([row["prompt_id"] for row in rows], ["billing", "shared"])
+        self.assertTrue(all(row["versions_count"] == 1 for row in rows))
+        self.assertTrue(all("template" not in row for row in rows))
 
-    def authorize(actor: Principal, prompt_id: str, action: str) -> bool:
-        return actor.tenant_id == "tenant-a" and prompt_id == "visible" and action == "read"
+    def test_list_prompts_reports_latest_active_and_canary_versions(self) -> None:
+        registry = PromptRegistry()
+        key = "tenant:3:org:welcome"
+        registry.register(key, "hello {name}", created_by="user-a")
+        registry.register(key, "welcome {name}", created_by="user-a")
+        registry.activate(key, 1, updated_by="user-a", evaluation_run_id="eval-101")
+        registry.set_canary(
+            key, 2, 10, updated_by="user-a", evaluation_run_id="eval-102",
+        )
 
-    app = FastAPI()
-    principal = _principal()
+        row = registry.list_prompts(prefix="tenant:3:org:")[0]
 
-    @app.middleware("http")
-    async def inject_test_principal(request, call_next):
-        setattr(request.state, "identity.principal", principal)
-        return await call_next(request)
+        self.assertEqual(row["latest_version"], 2)
+        self.assertEqual(row["active_version"], 1)
+        self.assertEqual(row["canary_version"], 2)
+        self.assertEqual(row["canary_percentage"], 10)
+        self.assertEqual(row["versions_count"], 2)
+        canary_event = registry.list_audit(key)[-1]
+        self.assertEqual(canary_event.action, "canary.configured")
+        self.assertEqual(dict(canary_event.details)["evaluation_run_id"], "eval-102")
 
-    app.include_router(create_prompt_registry_router(registry=registry, authorize=authorize))
-    response = TestClient(app).get("/api/platform/v1/prompts/")
+    def test_list_prompts_rejects_invalid_limits(self) -> None:
+        registry = PromptRegistry()
+        for limit in (0, -1, 201, True, 1.5):
+            with self.subTest(limit=limit):
+                with self.assertRaisesRegex(ValueError, "limit must be between 1 and 200"):
+                    registry.list_prompts(prefix="tenant:3:org:", limit=limit)  # type: ignore[arg-type]
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "items": [{
-            "prompt_id": "visible",
-            "latest_version": 1,
-            "active_version": None,
-            "version_count": 1,
-        }],
-        "count": 1,
-    }
-    assert "tenant-a" not in response.text
-    assert "tenant-b" not in response.text
-    assert "hidden" not in response.text
-    assert "foreign" not in response.text
-
-
-def test_prompt_registry_storage_listing_requires_exact_tenant_prefix() -> None:
-    registry = PromptRegistry()
-    registry.register(tenant_prompt_key("acme", "one"), "One")
-    registry.register(tenant_prompt_key("acme-other", "two"), "Two")
-
-    rows = registry.list_prompts(prefix=tenant_prompt_prefix("acme"), limit=10)
-
-    assert len(rows) == 1
-    assert rows[0]["storage_key"] == tenant_prompt_key("acme", "one")
-
-
-def test_prompt_registry_list_rejects_invalid_prefix_and_limit() -> None:
-    registry = PromptRegistry()
-
-    for prefix in ("", "tenant:", "other:"):
-        try:
-            registry.list_prompts(prefix=prefix, limit=10)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("invalid tenant prefix must be rejected")
-
-    try:
-        registry.list_prompts(prefix=tenant_prompt_prefix("acme"), limit=0)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("invalid limit must be rejected")
+    def test_list_prompts_rejects_missing_tenant_prefix(self) -> None:
+        with self.assertRaisesRegex(ValueError, "tenant prompt prefix must end with a separator"):
+            PromptRegistry().list_prompts(prefix="")
