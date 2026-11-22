@@ -152,4 +152,14 @@ describe('route configuration', () => {
         .params.providerId,
     ).toBe('provider-7')
   })
+
+  it('registers file asset routes under #802 and preserves deep-link ids', () => {
+    const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
+    const fileDetailRoute = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
+    expect(filesRoute?.owner).toBe('#802')
+    expect(fileDetailRoute?.owner).toBe('#802')
+    expect(
+      matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/files/asset-123')?.[0].params.fileId,
+    ).toBe('asset-123')
+  })
 })
