@@ -71,6 +71,10 @@ from agent_platform.knowledge.ollama import (
     ollama_embedding_config_from_env,
 )
 from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
+from agent_platform.knowledge.acl_invalidation_worker import (
+    KnowledgeInvalidationWorker,
+    PostgresKnowledgeInvalidationConsumer,
+)
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.postgres_repository import PostgresMemoryRepository
@@ -754,6 +758,11 @@ def create_production_app(
     outbox_relay_worker = OutboxRelayWorker(
         relay=outbox_relay, interval_seconds=1.0, batch_limit=100,
     )
+    knowledge_invalidation_worker = KnowledgeInvalidationWorker(
+        consumer=PostgresKnowledgeInvalidationConsumer(connection_factory),
+        interval_seconds=0.5,
+        batch_size=100,
+    )
 
     async def enqueue_webhook(
         tenant_id: str, event_id: str, topic: str, body: Mapping[str, Any],
@@ -985,6 +994,16 @@ def create_production_app(
 
     app.router.on_startup.append(start_run_worker)
     app.router.on_shutdown.append(stop_run_worker)
+
+    async def start_knowledge_invalidation_worker() -> None:
+        await knowledge_invalidation_worker.start()
+
+    async def stop_knowledge_invalidation_worker() -> None:
+        await knowledge_invalidation_worker.stop()
+
+    app.state.knowledge_invalidation_worker = knowledge_invalidation_worker
+    app.router.on_startup.append(start_knowledge_invalidation_worker)
+    app.router.on_shutdown.append(stop_knowledge_invalidation_worker)
 
     if close_redis_on_shutdown:
         async def close_production_resources() -> None:
