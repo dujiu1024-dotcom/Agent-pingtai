@@ -1,14 +1,12 @@
-# Agent 平台功能演示 Demo
+# Agent 平台独立演示 Demo
 
-本目录提供两种演示入口，按用途选择：
+## 唯一默认入口
 
-## 入口
+打开 `index.html` 会自动进入 `production.html`。实际演示页面直接复用仓库 `frontend/src` 中的生产 React 页面、菜单、路由、业务组件和 CSS，不再使用旧版独立 HTML 模板作为默认展示。
 
-- `index.html`：轻量独立演示页。无需安装依赖，直接用浏览器打开；使用自带 mock 数据和演示交互。
-- `production.html`：生产前端组件演示入口。通过 Vite 直接加载 `frontend/src` 中的生产 React 页面、路由、组件和 CSS，并在浏览器端注入本地 mock API。
-- `prototype-original.html`：用户提交的原始交互原型备份，不作为默认演示入口。
+`prototype-original.html` 仅作为用户提供的原始视觉原型存档，不是第二套产品界面。旧版独立模拟页面不再作为对外演示入口。
 
-## 启动生产组件演示
+## 本地启动与构建
 
 要求 Node.js 20.19+。
 
@@ -18,21 +16,29 @@ npm install
 npm run dev
 ```
 
-Vite 启动后打开终端输出的本地地址及 `/production.html`。生产组件源码通过别名直接引用仓库中的 `frontend/src`，不复制或修改生产源码。
+开发服务器根地址会自动跳转至生产组件演示页。构建独立静态演示包：
+
+```bash
+npm run build
+```
+
+构建产物位于 `dist-production/`。将该目录内容部署到静态站点根目录即可；无需部署后端、数据库或 Redis。由于 React Router 使用 history 路由，静态托管服务需要将未知路径回退到 `production.html`。
 
 ## 模拟数据与安全边界
 
-- `production-main.tsx` 在生产模块加载前替换浏览器 fetch，将 API 请求路由到本地 mock transport。
-- 模拟传输提供启动配置、任务、Agent、Workflow、审批、Tool/Skill 和 Run 的样例数据；启动配置使用演示权限模式（`auth.enabled=true`），以便显示组织与 RBAC 等权限模式页面。未覆盖的 GET 接口返回空列表，写请求只返回本地模拟成功结果。
-- 不需要后端服务，不连接生产 API，不写入数据库，也不会执行真实发布、审批或任务操作。
-- 页面布局、路由和已接入的业务组件来自生产前端；但数据、权限模式和写操作均为演示模拟。
-- 生产路由中仍存在由生产代码明确标记为“业务页面待模块接入”的页面。演示入口复用这些真实占位状态，不将它们包装成已交付的生产功能。
-- 3D 办公室复用生产 React Three Fiber 场景；运行效果取决于浏览器 WebGL 支持。
+- `production-main.tsx` 在动态加载生产页面之前安装本地 mock transport；演示 API 不访问生产服务。
+- mock transport 支持启动配置、任务、Agent、Workflow、审批、Tool/Skill 和 Run 的样例数据；未覆盖的 GET 返回空集合，写请求只返回本地模拟结果。
+- 页面结构、菜单、路由、业务控件和样式直接来自生产前端源码；数据、权限配置和写操作是演示模拟，不会写入真实业务系统。
+- 模拟启动配置启用权限模式，以便展示组织与 RBAC 页面。
+- 生产源码中仍明确标记为待模块接入的页面，演示时保留真实占位状态，不伪装成已交付功能。
+- 3D 办公室复用生产 React Three Fiber 场景，效果依赖浏览器 WebGL 支持。
+- 页面右下角显示“生产前端组件 · 本地模拟数据”标识。
 
-## 原型独立演示入口覆盖
+## 原型资料
 
-`index.html` 保留七个一级模块和主要业务页面的独立交互演示，包括菜单切换、列表筛选、详情弹窗、创建表单、Workflow 节点操作、办公室工位查看及模拟导出/刷新/发布反馈。该入口的数据与交互逻辑独立于生产 React 代码。
+- `prototype-original.html`：原始 HTML 原型备份，仅供视觉对照。
+- `demo-runtime.js`：旧独立 HTML 演示运行时，不由默认入口加载。
 
-## 当前验证状态
+## 验收边界
 
-生产组件演示入口已接入源码与 mock transport 配置；尚需在具备依赖安装和浏览器运行环境的机器执行 `npm install`、`npm run dev` 和逐路由浏览器验收。未完成该验收前，不宣称构建或端到端测试通过。
+代码复用关系和默认入口已调整；仍需在具备 Node.js 依赖与浏览器的环境运行 `npm install`、`npm run build`，并逐路由验收菜单、页面、页签、分页、弹窗、筛选和 3D 场景。未完成构建及浏览器验收前，不宣称端到端验收通过。
