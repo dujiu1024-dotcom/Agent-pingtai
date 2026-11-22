@@ -1,7 +1,6 @@
 
 import pytest
 
-pytestmark = pytest.mark.skipif(True, reason="404 vs 200 web route missing")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -15,13 +14,19 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def test_platform_web_serves_react_app_index_by_default():
+def test_platform_web_serves_established_console_by_default():
     response = _client().get("/app/")
     assert response.status_code == 200
+    assert "FDE 工作室" in response.text
+    assert '<script type="module" src="/app/assets/legacy-console.js">' in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_platform_web_serves_react_workbench_only_when_explicitly_requested():
+    response = _client().get("/app/?modern=1")
+    assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
-    assert "console.py" not in response.text
     assert 'id="legacy-console-fallback"' in response.text
-    assert 'href="/app/?legacy=1"' in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
