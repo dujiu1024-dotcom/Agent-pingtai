@@ -138,6 +138,7 @@ class LangGraphWorkflowCompiler:
         nodes = value.get("nodes")
         edges = value.get("edges", [])
         if value.get("schema_version") == 1 and "entry_point" in value:
+            value["entry_points"] = [value.pop("entry_point")]
             return value
         if not isinstance(nodes, list) or not isinstance(edges, list):
             return value
@@ -150,7 +151,10 @@ class LangGraphWorkflowCompiler:
             return value
         normalized_edges: list[dict[str, Any]] = []
         branches: dict[str, dict[str, Any]] = {}
-        node_map = {node.get("id"): node for node in nodes if isinstance(node, Mapping)}
+        node_map = {
+            node.get("id"): node for node in nodes
+            if isinstance(node, Mapping) and isinstance(node.get("id"), str)
+        }
         for edge in edges:
             if not isinstance(edge, Mapping):
                 normalized_edges.append(edge)
@@ -158,7 +162,7 @@ class LangGraphWorkflowCompiler:
             source, target = edge.get("source"), edge.get("target")
             if source == start_id:
                 continue
-            if isinstance(node_map.get(source), Mapping) and node_map[source].get("node_type") == "condition":
+            if isinstance(source, str) and isinstance(target, str) and isinstance(node_map.get(source), Mapping) and node_map[source].get("node_type") == "condition":
                 branch = branches.setdefault(source, {
                     "source": source,
                     "field": str(node_map[source].get("config", {}).get("route_field", "route")),
@@ -176,7 +180,12 @@ class LangGraphWorkflowCompiler:
             })
         return {
             "schema_version": 1,
-            "entry_points": [edge.get("target") for edge in start_edges if edge.get("target") in node_map and node_map[edge.get("target")].get("node_type") != "end"],
+            "entry_points": [
+                edge.get("target") for edge in start_edges
+                if isinstance(edge.get("target"), str)
+                and edge.get("target") in node_map
+                and node_map[edge.get("target")].get("node_type") not in {"start", "end"}
+            ],
             "nodes": nodes,
             "edges": normalized_edges,
             "branches": list(branches.values()),
@@ -271,8 +280,19 @@ class LangGraphWorkflowCompiler:
                 ))
 
         entries = definition.get("entry_points")
-        if not isinstance(entries, list) or not entries or any(not isinstance(entry, str) or entry not in ids for entry in entries):
-            diagnostics.append(WorkflowDiagnostic("entry.invalid", "entry_points must reference known nodes", "$.entry_points"))
+        if not isinstance(entries, list) or not entries or any(
+            not isinstance(entry, str) or entry not in ids
+            or node_by_id.get(entry, {}).get("node_type") in {"start", "end"}
+            for entry in entries
+        ):
+            diagnostics.append(WorkflowDiagnostic("entry.invalid", "entry_points must reference executable known nodes", "$.entry_points"))
+        if any(isinstance(node, Mapping) and node.get("node_type") in {"start", "end"} for node in nodes):
+            start_count = sum(1 for node in nodes if isinstance(node, Mapping) and node.get("node_type") == "start")
+            end_count = sum(1 for node in nodes if isinstance(node, Mapping) and node.get("node_type") == "end")
+            if start_count != 1:
+                diagnostics.append(WorkflowDiagnostic("start.count", "designer graph requires exactly one start node", "$.nodes"))
+            if end_count < 1:
+                diagnostics.append(WorkflowDiagnostic("end.required", "designer graph requires at least one end node", "$.nodes"))
 
         seen_edges: set[tuple[str, str]] = set()
         for index, edge in enumerate(edges):
@@ -283,6 +303,17 @@ class LangGraphWorkflowCompiler:
             source, target = edge.get("source"), edge.get("target")
             if not isinstance(source, str) or source not in ids or not isinstance(target, str) or target not in ids | {"__end__"}:
                 diagnostics.append(WorkflowDiagnostic("edge.reference", "edge references an unknown node", path))
+            elif node_by_id.get(source, {}).get("node_type") == "end" or node_by_id.get(target, {}).get("node_type") == "start":
+                diagnostics.append(WorkflowDiagnostic("edge.direction", "edges cannot leave end or enter start", path))
+            else:
+                source_ports = node_by_id.get(source, {}).get("ports", {}).get("outputs", [])
+                target_ports = node_by_id.get(target, {}).get("ports", {}).get("inputs", []) if target != "__end__" else []
+                source_port = edge.get("source_port", "default")
+                target_port = edge.get("target_port", "default")
+                if source_port not in source_ports:
+                    diagnostics.append(WorkflowDiagnostic("edge.source_port", "edge source port is not declared", path + ".source_port"))
+                if target != "__end__" and target_port not in target_ports:
+                    diagnostics.append(WorkflowDiagnostic("edge.target_port", "edge target port is not declared", path + ".target_port"))
             if isinstance(source, str) and isinstance(target, str):
                 if (source, target) in seen_edges:
                     diagnostics.append(WorkflowDiagnostic("edge.duplicate", "duplicate edge", path))
@@ -297,7 +328,7 @@ class LangGraphWorkflowCompiler:
             source, field, routes = branch.get("source"), branch.get("field"), branch.get("routes")
             if not isinstance(source, str) or source not in ids or not isinstance(field, str) or not field:
                 diagnostics.append(WorkflowDiagnostic("branch.source", "branch source and state field are required", path))
-            if source in branch_sources:
+            if isinstance(source, str) and source in branch_sources:
                 diagnostics.append(WorkflowDiagnostic("branch.duplicate", "only one branch declaration per source is allowed", path))
             if isinstance(source, str):
                 branch_sources.add(source)
