@@ -177,7 +177,7 @@ function AppShell({ authEnabled, capabilities }: { authEnabled: boolean; capabil
   }
 
   return (
-    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
+    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'} data-v={location.pathname.startsWith('/workspace/office') ? 'office' : 'home'}>
       <aside className="sidebar" aria-label="主导航">
         <Link className="brand" to="/workspace/overview" aria-label="Agent 平台工作台">
           <span className="brand-mark" aria-hidden="true">A</span>
