@@ -306,13 +306,15 @@ class LangGraphWorkflowCompiler:
             elif node_by_id.get(source, {}).get("node_type") == "end" or node_by_id.get(target, {}).get("node_type") == "start":
                 diagnostics.append(WorkflowDiagnostic("edge.direction", "edges cannot leave end or enter start", path))
             else:
-                source_ports = node_by_id.get(source, {}).get("ports", {}).get("outputs", [])
-                target_ports = node_by_id.get(target, {}).get("ports", {}).get("inputs", []) if target != "__end__" else []
+                source_ports_meta = node_by_id.get(source, {}).get("ports")
+                target_ports_meta = node_by_id.get(target, {}).get("ports") if target != "__end__" else {}
+                source_ports = source_ports_meta.get("outputs", []) if isinstance(source_ports_meta, Mapping) else []
+                target_ports = target_ports_meta.get("inputs", []) if isinstance(target_ports_meta, Mapping) else []
                 source_port = edge.get("source_port", "default")
                 target_port = edge.get("target_port", "default")
-                if source_port not in source_ports:
+                if not isinstance(source_ports, list) or source_port not in source_ports:
                     diagnostics.append(WorkflowDiagnostic("edge.source_port", "edge source port is not declared", path + ".source_port"))
-                if target != "__end__" and target_port not in target_ports:
+                if target != "__end__" and (not isinstance(target_ports, list) or target_port not in target_ports):
                     diagnostics.append(WorkflowDiagnostic("edge.target_port", "edge target port is not declared", path + ".target_port"))
             if isinstance(source, str) and isinstance(target, str):
                 if (source, target) in seen_edges:
