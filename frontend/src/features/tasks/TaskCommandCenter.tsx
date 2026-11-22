@@ -1262,6 +1262,16 @@ export function RunTracePage() {
     eventCurrentPage * EVENT_PAGE_SIZE,
     (eventCurrentPage + 1) * EVENT_PAGE_SIZE,
   )
+  // Derive step/log views only from persisted Run events; never synthesize progress.
+  const stepEvents = events.filter((event) =>
+    /(step|node|tool)[._:-]/i.test(eventTypeOf(event)),
+  )
+  const logEvents = events.filter((event) => {
+    const type = eventTypeOf(event)
+    const payload = payloadOf(event)
+    return /(log|error|exception)/i.test(type) ||
+      Boolean(payload && ['level', 'message', 'log', 'error', 'stack_trace'].some((key) => key in payload))
+  })
   return (
     <section className="page-content task-detail">
       <button className="button-link" onClick={() => nav(-1)}>
@@ -1278,6 +1288,79 @@ export function RunTracePage() {
           <span>{events.length} 条事件</span>
         </div>
       </div>
+      <section className="task-detail-panel">
+        <div className="run-controls-head">
+          <h2>运行概况</h2>
+          {r.task_id ? (
+            <Link to={`/operations/tasks/${encodeURIComponent(r.task_id)}`}>
+              查看任务与重试入口
+            </Link>
+          ) : (
+            <span>任务关联信息不可用</span>
+          )}
+        </div>
+        <dl>
+          <dt>Run ID</dt><dd>{r.run_id}</dd>
+          <dt>状态</dt><dd><span className={`run-chip s-${r.status}`}>{valueLabel(r.status)}</span></dd>
+          <dt>Task ID</dt><dd>{r.task_id ?? '—'}</dd>
+          <dt>Agent ID</dt><dd>{r.agent_id ?? '—'}</dd>
+          <dt>Trace ID</dt><dd>{r.trace_id ?? '—'}</dd>
+          <dt>最后错误</dt><dd>{r.last_error ?? '—'}</dd>
+        </dl>
+      </section>
+      <section className="task-detail-panel">
+        <div className="run-controls-head">
+          <h2>执行步骤</h2>
+          <span>{stepEvents.length} 条步骤事件</span>
+        </div>
+        {stepEvents.length ? (
+          <ol className="run-timeline">
+            {stepEvents.map((event) => (
+              <li key={event.event_id}>
+                <span className="run-tl-dot" aria-hidden="true" />
+                <div className="run-tl-body">
+                  <div className="run-tl-head">
+                    <strong>{eventLabel(eventTypeOf(event))}</strong>
+                    <time>{dt(event.occurred_at)}</time>
+                  </div>
+                  <p>{event.summary ?? '服务端未提供步骤摘要'}</p>
+                  {event.sequence != null && <small>序号 #{event.sequence}</small>}
+                  {event.payload != null && (
+                    <details><summary>步骤载荷</summary><pre>{localizedJson(event.payload)}</pre></details>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <EmptyState title="暂无步骤事件" description="服务端事件中没有可识别的 step、node 或 tool 事件；不推测步骤进度。" />
+        )}
+      </section>
+      <section className="task-detail-panel">
+        <div className="run-controls-head">
+          <h2>日志与错误上下文</h2>
+          <span>{logEvents.length} 条日志事件</span>
+        </div>
+        {logEvents.length ? (
+          <ol className="run-timeline">
+            {logEvents.map((event) => (
+              <li key={event.event_id}>
+                <span className="run-tl-dot" aria-hidden="true" />
+                <div className="run-tl-body">
+                  <div className="run-tl-head">
+                    <strong>{eventLabel(eventTypeOf(event))}</strong>
+                    <time>{dt(event.occurred_at)}</time>
+                  </div>
+                  <p>{event.summary ?? '服务端未提供日志摘要'}</p>
+                  {event.payload != null && <pre>{localizedJson(event.payload)}</pre>}
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <EmptyState title="暂无日志事件" description="服务端事件中没有带日志级别、消息或错误上下文的记录。" />
+        )}
+      </section>
       <section className="task-detail-panel">
         <div className="run-controls-head">
           <h2>事件时间线</h2>
