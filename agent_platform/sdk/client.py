@@ -71,11 +71,22 @@ class PlatformApiError(RuntimeError):
         self.status_code = status_code
         self.body = body
         self.headers = dict(headers or {})
-        error = body.get("error", {}) if isinstance(body, dict) else {}
-        self.code = str(error.get("code") or "http_error")
-        self.message = str(error.get("message") or f"platform API returned HTTP {status_code}")
-        self.details = error.get("details")
-        self.request_id = body.get("request_id") if isinstance(body, dict) else None
+        if isinstance(body, dict):
+            error = body.get("error", {})
+            if isinstance(error, dict):
+                self.code = str(error.get("code") or "http_error")
+                self.message = str(error.get("message") or f"platform API returned HTTP {status_code}")
+                self.details = error.get("details")
+            else:
+                self.code = str(error or "http_error")
+                self.message = str(error or f"platform API returned HTTP {status_code}")
+                self.details = None
+            self.request_id = body.get("request_id")
+        else:
+            self.code = "http_error"
+            self.message = f"platform API returned HTTP {status_code}"
+            self.details = None
+            self.request_id = None
         self.request_id = self.request_id or next(
             (value for key, value in self.headers.items() if key.lower() == "x-request-id"), None,
         )

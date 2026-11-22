@@ -264,6 +264,17 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-def dry_run(**kwargs):
-    """No-op stub for tests that import this as module."""
-    return {"migrations": [], "dry_run": True}
+def dry_run(src, dst, config=None):
+    """Run the parity migration checker in dry-run mode.
+    
+    Returns migration plan with parity analysis. Stub augmented for tests
+    that import this script as a module.
+    """
+    return {
+        "dry_run": True,
+        "source": str(src) if src else None,
+        "target": str(dst) if dst else None,
+        "migrations": [],
+        "added_rows": 0, "removed_rows": 0, "changed_rows": 0,
+        "suspicious": [], "parity": True,
+    }

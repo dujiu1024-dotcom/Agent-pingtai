@@ -45,10 +45,14 @@ class AsyncCircuitBreaker:
         failure_threshold: int = 3,
         recovery_timeout_seconds: float = 30.0,
         half_open_max_calls: int = 1,
+        clock=None,
     ) -> None:
+        if failure_threshold < 1:
+            raise ValueError("failure_threshold must be >= 1")
         self._failure_threshold = failure_threshold
         self._recovery_timeout = recovery_timeout_seconds
         self._half_open_max = half_open_max_calls
+        self._clock = clock or time.monotonic
         self._states: dict[str, _BreakerState] = {}
         self._global_lock = asyncio.Lock()
 
@@ -71,7 +75,7 @@ class AsyncCircuitBreaker:
             if state.state == "closed":
                 return True
             if state.state == "open":
-                elapsed = time.monotonic() - state.opened_at
+                elapsed = self._clock() - state.opened_at
                 if elapsed >= self._recovery_timeout:
                     state.state = "half-open"
                     state.failures = 0
@@ -104,18 +108,18 @@ class AsyncCircuitBreaker:
         state = self._get_or_create(breaker_key)
         async with state.lock:
             state.failures += 1
-            state.last_failure_at = time.monotonic()
+            state.last_failure_at = self._clock()
             if state.state == "half-open":
                 # A probe failed → back to open, reset timer
                 state.state = "open"
-                state.opened_at = time.monotonic()
+                state.opened_at = self._clock()
                 logger.warning(
                     "circuit %s half-open→open (probe failure, %d total)",
                     breaker_key, state.failures,
                 )
             elif state.state == "closed" and state.failures >= self._failure_threshold:
                 state.state = "open"
-                state.opened_at = time.monotonic()
+                state.opened_at = self._clock()
                 logger.warning(
                     "circuit %s closed→open (%d failures in a row)",
                     breaker_key, state.failures,
@@ -145,9 +149,13 @@ class ModelCircuitBreaker(AsyncCircuitBreaker):
         failure_threshold: int = 3,
         reset_timeout_seconds: float = 30.0,
         half_open_max_calls: int = 1,
+        clock=None,
     ) -> None:
+        if failure_threshold < 1:
+            raise ValueError("failure_threshold must be >= 1")
         super().__init__(
             failure_threshold=failure_threshold,
             recovery_timeout_seconds=reset_timeout_seconds,
             half_open_max_calls=half_open_max_calls,
+            clock=clock,
         )
