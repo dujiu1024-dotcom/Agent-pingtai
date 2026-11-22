@@ -136,3 +136,16 @@ task_worker = RunExecutionWorker(
 - 宿主 Agent Graph Factory 必须将委派输入中的 `allowed_tools` 继续约束到 Gateway 调用；平台在提交前校验它是已发布 Agent 工具集合的子集，但不会替宿主动态生成任意工具执行代码。
 
 该适配器提供可复用的持久化接线，不替代真实 PostgreSQL Checkpointer、Worker 多实例、模型代理和 Gateway 安全边界的部署演练。
+
+
+## Run 生命周期 API 与操作者事件记录（L2-T17）
+
+Run API 位于 `/api/platform/v1/runs/{run_id}`，取消、暂停和恢复操作在完成生命周期状态转换后追加操作者审计事件：
+
+- `POST /{run_id}/cancel`：授权动作 `cancel`；事件 `human.run_cancel_requested`。
+- `POST /{run_id}/pause`：授权动作 `pause`；事件 `human.run_paused`。
+- `POST /{run_id}/resume`：授权动作 `resume`；事件 `human.run_resumed`，并在恢复前检查未决人工决策/审批。
+- 操作者事件写入 `platform_run_events`，包含 Principal 的 actor_id、Run 状态及版本；服务端按 tenant_id + run_id 校验目标 Run，并对 payload 做脱敏。
+- PostgreSQL RunStateStore 的状态转换仍在同一事务内追加 `run.status_changed`，记录 from_status、to_status 和版本；操作者事件补充“谁发起了动作”，不替代状态事实事件。
+- `GET /{run_id}/events` 读取持久化事件；`GET /{run_id}/stream` 提供带 Last-Event-ID 恢复游标的 SSE 事件流。读写均先执行 Run 资源级授权。
+- 如果宿主未注入 InterventionService，状态转换事件仍由 PostgreSQL 状态存储负责；actor 级动作事件依赖该服务的 record_action 能力。
