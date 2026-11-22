@@ -1,5 +1,14 @@
 """Resilience primitives for graceful degradation and fault isolation."""
 
+from agent_platform.resilience.hybrid_control_plane import (
+    ControlPlaneMode,
+    ControlPlaneReconciler,
+    OfflinePolicySynchronizer,
+    PolicySnapshotRejected,
+    PolicySyncResult,
+    RunNodeHandoff,
+    SignedPolicySnapshot,
+)
 from agent_platform.resilience.offline_policy import (
     CachedAuthorization,
     LicenseState,
@@ -9,6 +18,7 @@ from agent_platform.resilience.offline_policy import (
     OfflinePolicyEvaluator,
     OfflineResult,
 )
+
 from agent_platform.resilience.policies import (
     Bulkhead,
     BulkheadRejected,
@@ -27,4 +37,7 @@ __all__ = [
     "Bulkhead", "BulkheadRejected", "CircuitBreaker", "CircuitBreakerOpen",
     "CircuitState", "DegradationPolicy", "DependencyUnavailable",
     "FailureMode", "ResilientExecutor",
+    "ControlPlaneMode", "ControlPlaneReconciler", "OfflinePolicySynchronizer",
+    "PolicySnapshotRejected", "PolicySyncResult", "RunNodeHandoff",
+    "SignedPolicySnapshot",
 ]
