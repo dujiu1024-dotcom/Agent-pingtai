@@ -100,7 +100,7 @@ async function downloadVersion(assetId: string, version: number, filename: strin
     anchor.click()
     anchor.remove()
   } finally {
-    URL.revokeObjectURL(objectUrl)
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
   }
 }
 
@@ -198,7 +198,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
     ...queryOptions,
   })
   const session = sessionQuery.data?.session
-  const messages = (messagesQuery.data?.pages ?? []).flatMap((page) => page.items).reverse()
+  const messages = (messagesQuery.data?.pages ?? []).flatMap((page) => page.items).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.message_id.localeCompare(b.message_id))
   const files = filesQuery.data?.items ?? []
 
   if (sessionQuery.isPending || messagesQuery.isPending) return <main className="page-content sf-page"><LoadingState label="正在加载会话详情与消息" /></main>
