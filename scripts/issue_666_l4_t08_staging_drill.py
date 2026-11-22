@@ -48,7 +48,7 @@ def _sqlite_rows(connection: sqlite3.Connection, table: str) -> list[dict[str, A
 
 
 def _postgres_rows(connection: Any, table: str) -> list[dict[str, Any]]:
-    cursor = connection.execute(f'SELECT * FROM public."{table}" ORDER BY 1')
+    cursor = connection.execute(f'SELECT * FROM issue_666_l4_t08."{table}" ORDER BY 1')
     names = [item.name for item in cursor.description]
     return [dict(zip(names, row)) for row in cursor.fetchall()]
 
@@ -58,7 +58,7 @@ def _mapping_file(path: Path) -> None:
     for table, columns in TABLES.items():
         entries.append({
             "source": table,
-            "target_schema": "public",
+            "target_schema": "issue_666_l4_t08",
             "target": table,
             "columns": {column: column for column in columns},
             "primary_key": [columns[0]],
@@ -82,10 +82,11 @@ def _create_source(path: Path) -> None:
 
 
 def _create_postgres_schema(connection: Any) -> None:
-    connection.execute("DROP TABLE IF EXISTS public.documents, public.tasks, public.users CASCADE")
-    connection.execute("CREATE TABLE public.users (user_id BIGINT PRIMARY KEY, display_name TEXT NOT NULL)")
-    connection.execute("CREATE TABLE public.tasks (task_id BIGINT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL)")
-    connection.execute("CREATE TABLE public.documents (document_id BIGINT PRIMARY KEY, source_uri TEXT NOT NULL, payload BYTEA NOT NULL)")
+    connection.execute("DROP SCHEMA IF EXISTS issue_666_l4_t08 CASCADE")
+    connection.execute("CREATE SCHEMA issue_666_l4_t08")
+    connection.execute("CREATE TABLE issue_666_l4_t08.users (user_id BIGINT PRIMARY KEY, display_name TEXT NOT NULL)")
+    connection.execute("CREATE TABLE issue_666_l4_t08.tasks (task_id BIGINT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL)")
+    connection.execute("CREATE TABLE issue_666_l4_t08.documents (document_id BIGINT PRIMARY KEY, source_uri TEXT NOT NULL, payload BYTEA NOT NULL)")
     connection.commit()
 
 
@@ -165,21 +166,22 @@ def run_drill(dsn: str, evidence_path: Path) -> dict[str, Any]:
             if applied.get("status") != "committed":
                 raise RuntimeError("staging migration did not commit")
             pre_rollback: dict[str, Any] = {}
-            for table in TABLES:
-                src = _sqlite_rows(sqlite3.connect(source_db), table)
-                dst = _postgres_rows(pg, table)
-                if _canonical(src) != _canonical(dst):
-                    raise RuntimeError(f"source-to-staging zero-diff check failed: {table}")
-                pre_rollback[table] = {
-                    "rows_source": len(src),
-                    "rows_staging": len(dst),
-                    "source_sha256": _sha(src),
-                    "staging_sha256": _sha(dst),
-                    "zero_diff": True,
-                }
+            with sqlite3.connect(source_db) as source_connection:
+                for table in TABLES:
+                    src = _sqlite_rows(source_connection, table)
+                    dst = _postgres_rows(pg, table)
+                    if _canonical(src) != _canonical(dst):
+                        raise RuntimeError(f"source-to-staging zero-diff check failed: {table}")
+                    pre_rollback[table] = {
+                        "rows_source": len(src),
+                        "rows_staging": len(dst),
+                        "source_sha256": _sha(src),
+                        "staging_sha256": _sha(dst),
+                        "zero_diff": True,
+                    }
             # Model one post-cutover write. The reverse-sync must bring this row
             # back before the gateway can safely point at the legacy database.
-            pg.execute("INSERT INTO public.tasks (task_id, title, status) VALUES (12, 'Post-cutover', 'created')")
+            pg.execute("INSERT INTO issue_666_l4_t08.tasks (task_id, title, status) VALUES (12, 'Post-cutover', 'created')")
             pg.commit()
             post_cutover_rows = {table: len(_postgres_rows(pg, table)) for table in TABLES}
 
