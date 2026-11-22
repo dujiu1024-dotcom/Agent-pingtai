@@ -2,6 +2,9 @@
 
 ## Route contract
 
+- Historical bookmarks to `GET /console.html` receive a temporary redirect
+  to `/app/?legacy=1`, preserving the legacy experience through the new
+  gateway route without exposing the archive as a separate root static mount.
 - `GET /app` and `GET /app/` serve the React platform UI when
   `agent_platform/web/static/index.html` is present.
 - The platform UI HTML response receives a small, accessible
