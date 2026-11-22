@@ -101,7 +101,6 @@ include = [
   "tests/test_bootstrap_prompt_capabilities.py",
   "tests/test_evaluation_store.py",
   "tests/test_evaluation_worker.py",
-  "tests/test_production_evaluation_worker.py",
   "tests/test_evaluation_governance.py",
   "tests/test_sandbox_oci.py",
   "tests/test_issue_21_c_21_02_security_negative.py",
@@ -137,7 +136,6 @@ include = [
   "tests/test_gateway_runtime_postgres_integration.py",
   "tests/test_gateway_service.py",
   "tests/test_run_lifecycle.py",
-  "tests/test_issue_12_a_12_02_security_acceptance.py",
   "tests/test_issue_12_a_12_03_runtime_acceptance.py",
   "tests/test_issue_9_a_9_02_run_access_resume.py",
   "tests/test_run_context.py",
@@ -206,10 +204,8 @@ include = [
   "scripts/migration_diff.py",
   "tests/test_api_v1_compatibility_middleware.py",
   "scripts/evaluate_switch_performance_parity.py",
-  "scripts/issue_666_l4_t08_staging_drill.py",
   "tests/test_issue_665_a_665_06_performance_parity.py",
-  "scripts/verify_switch_l4_t07_acceptance.py",
-  "tests/test_issue_665_l4_t07_acceptance_report.py",
+  "tests/test_issue_848_l4_t09_evidence_matrix.py",
 ]
 
 [tool.ruff.lint]
