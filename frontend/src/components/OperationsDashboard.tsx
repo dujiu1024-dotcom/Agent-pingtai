@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { ApiError, apiClient } from '@/lib/api'
+import { OperationsCockpitExtension } from './OperationsCockpitExtension'
 
 type UsageEvent = {
   event_id: string
@@ -789,6 +790,7 @@ export function Dashboard() {
       <p className="home-footnote">
         指标来自已接入服务端数据；并发与失败 TopN 尚未接入，未做估算展示。
       </p>
+      <OperationsCockpitExtension />
     </section>
   )
 }
