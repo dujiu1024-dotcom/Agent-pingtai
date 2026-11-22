@@ -261,7 +261,7 @@ export function OfficeWorkspace() {
           </button>)}
         </div>
         <div className="office-top-actions">
-          <span className="office-sync-state"><i />实时数据待接入</span>
+          <span className={`office-sync-state ${dataUnavailable ? 'is-error' : ''}`}><i />{agentsQuery.isLoading || tasksQuery.isLoading ? '正在同步' : dataUnavailable ? '部分数据不可用' : '数据已同步'}</span>
           <button className={view === 'space' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('space')}>空间视角</button>
           <button className={view === 'top' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('top')}>俯视图</button>
         </div>
@@ -269,7 +269,7 @@ export function OfficeWorkspace() {
 
       <section className="office-heading">
         <div><p className="office-eyebrow">DIGITAL WORKSPACE / {floor.label}F</p><h1>{floor.name}</h1><p>{floor.description} <span>·</span> 交互式 3D 空间</p></div>
-        <div className="office-heading-stats"><div><strong>{desks.length}</strong><span>工位总数</span></div><i /><div><strong>{visibleAgents.length}</strong><span>在线 Agent</span></div><i /><div><strong>—</strong><span>执行中任务</span></div></div>
+        <div className="office-heading-stats"><div><strong>{desks.length}</strong><span>工位总数</span></div><i /><div><strong>{activeAgents}</strong><span>活跃 Agent</span></div><i /><div><strong>{runningTasks}</strong><span>执行中任务</span></div></div>
       </section>
 
       <section className="office-main-grid">
@@ -280,24 +280,24 @@ export function OfficeWorkspace() {
               <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} />
             </Canvas>
           </div>
-          <div className="office-map-legend"><span><i className="legend-desk" />标准工位</span><span><i className="legend-selected" />已选工位</span><span><i className="legend-agent" />Agent 状态（接入后显示）</span><small>场景布局为交互式空间模型，Agent 状态以服务端快照为准</small></div>
+          <div className="office-map-legend"><span><i className="legend-desk" />标准工位</span><span><i className="legend-selected" />已选工位</span><span><i className="legend-agent" />Agent 状态</span><small>状态由 Agent Registry 与任务执行记录推导；未提供的状态显示为未知</small></div>
         </div>
 
         <aside className="office-inspector">
           <div className="office-inspector-title"><div><p className="office-eyebrow">SPACE EXPLORER</p><h2>空间信息</h2></div><span className="office-floor-chip">{floor.label}F</span></div>
           <label className="office-search"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索 Agent / 工位" aria-label="搜索 Agent 或工位" /></label>
           <div className="office-inspector-section"><div className="office-section-heading">楼层概览 <span>OVERVIEW</span></div>
-            <div className="office-floor-overview"><div><strong>21</strong><span>工位</span></div><div><strong>05</strong><span>功能区域</span></div><div><strong>{visibleAgents.length.toString().padStart(2, '0')}</strong><span>Agent</span></div></div>
+            <div className="office-floor-overview"><div><strong>21</strong><span>工位</span></div><div><strong>05</strong><span>功能区域</span></div><div><strong>{visibleAgents.length.toString().padStart(2, '0')}</strong><span>Registry Agent</span></div></div>
           </div>
           <div className="office-inspector-section"><div className="office-section-heading">功能区域 <span>5 ZONES</span></div>
             <div className="office-zone-list">{zones.map((zone) => <div className="office-zone-row" key={zone.id}><span className="office-zone-dot" /><span><strong>{zone.name}</strong><small>{zone.subtitle}</small></span><span className="office-zone-count">—</span></div>)}</div>
           </div>
-          <div className="office-inspector-section office-agent-section"><div className="office-section-heading">Agent 状态 <span>{visibleAgents.length} ONLINE</span></div>
-            {visibleAgents.length ? visibleAgents.map((agent) => <div className="office-agent-row" key={agent.agent_id}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></div>) :
-              <div className="office-no-agents"><span>⌁</span><strong>暂无实时 Agent 数据</strong><p>Office snapshot 接入后，将在此展示 Agent、当前任务与实时状态。</p></div>}
+          <div className="office-inspector-section office-agent-section"><div className="office-section-heading">Agent 状态 <span>{agentsQuery.isLoading ? '同步中' : `${visibleAgents.length} AGENTS`}</span></div>
+            {agentsQuery.isLoading || tasksQuery.isLoading ? <div className="office-no-agents"><span>⌁</span><strong>正在读取 Agent Registry</strong><p>正在同步服务端 Agent 定义与任务执行记录。</p></div> : dataUnavailable ? <div className="office-no-agents"><span>!</span><strong>实时数据暂不可用</strong><p>无法完整读取 Agent Registry 或任务执行记录，请检查服务端 API。</p></div> : visibleAgents.length ? visibleAgents.map((agent) => <div className="office-agent-row" key={agent.agent_id}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></div>) :
+              <div className="office-no-agents"><span>⌁</span><strong>暂无匹配的 Agent</strong><p>当前 Registry 没有匹配的 Agent，或搜索条件没有结果。</p></div>}
           </div>
           <div className="office-selected-desk">{selectedDesk ? <><span>当前选中工位</span><strong>{selectedDesk.toUpperCase()}</strong><small>尚未分配 Agent</small></> : <><span>工位详情</span><strong>选择一个工位</strong><small>点击 3D 场景中的桌面查看详情</small></>}</div>
-          <p className="office-api-note">状态数据：服务端 Office snapshot / event stream。未接入前不展示模拟运行状态。</p>
+          <p className="office-api-note">状态数据：服务端 Agent Registry + Workbench Tasks API，按 60 秒 / 30 秒轮询；无任务状态的 Agent 标记为未知，不生成模拟遥测。</p>
         </aside>
       </section>
     </main>
