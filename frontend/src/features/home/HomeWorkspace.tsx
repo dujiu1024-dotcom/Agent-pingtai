@@ -5,17 +5,21 @@ import { ArrowRight, Bot, Workflow, Wallet, Play, Sparkles, Sun, Moon } from 'lu
 import { apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { formatDuration, resolveAgentId, resolveTaskTitle, unwrapList } from '@/features/tasks/task-model'
-import type { RunRecord, TaskRecord } from '@/features/tasks/task-model'
+import type { TaskRecord } from '@/features/tasks/task-model'
 import './HomeWorkspace.css'
 
 type AgentRegistryItem = {
   item_id: string
   status?: string
   definition?: { name?: string; description?: string; [key: string]: unknown }
+  created_at?: string | null
+  published_at?: string | null
   [key: string]: unknown
 }
 type TaskTab = 'all' | 'running' | 'approval'
 type AgentCardData = { id: string; name: string; description: string; status: string; runs: number }
+type ApprovalRecord = { approval_id: string; action: string; resource: string; status: string }
+type HomeActivityEvent = { id: string; kind: 'agent' | 'workflow' | 'task' | 'approval'; title: string; detail: string; at: string | null; href: string }
 
 const RUNNING = new Set(['running', 'executing', 'in_progress', 'queued', 'pending'])
 const APPROVAL = new Set(['waiting_approval', 'waiting_human'])
@@ -43,25 +47,68 @@ export function filterHomeTasks(tasks: TaskRecord[], tab: TaskTab): TaskRecord[]
   if (tab === 'approval') return tasks.filter((task) => APPROVAL.has(task.status))
   return tasks
 }
-export function rankHomeAgents(agents: AgentRegistryItem[], runs: RunRecord[]): AgentCardData[] {
-  const counts = new Map<string, number>()
-  for (const run of runs) {
-    if (!run.agent_id) continue
-    counts.set(run.agent_id, (counts.get(run.agent_id) ?? 0) + 1)
+export function rankHomeAgents(agents: AgentRegistryItem[], tasks: TaskRecord[]): AgentCardData[] {
+  const runIdsByAgent = new Map<string, Set<string>>()
+  for (const task of tasks) {
+    if (!task.agent_id || !task.run_id) continue
+    const runIds = runIdsByAgent.get(task.agent_id) ?? new Set<string>()
+    runIds.add(task.run_id)
+    runIdsByAgent.set(task.agent_id, runIds)
   }
   return agents.map((agent) => ({
     id: agent.item_id,
     name: typeof agent.definition?.name === 'string' && agent.definition.name.trim() ? agent.definition.name : agent.item_id,
     description: typeof agent.definition?.description === 'string' ? agent.definition.description : '已登记的智能体',
     status: typeof agent.status === 'string' ? agent.status : 'registered',
-    runs: counts.get(agent.item_id) ?? 0,
+    runs: runIdsByAgent.get(agent.item_id)?.size ?? 0,
   })).sort((a, b) => b.runs - a.runs || a.name.localeCompare(b.name, 'zh-CN')).slice(0, 6)
 }
-export function sortRecentRuns(runs: RunRecord[]): RunRecord[] {
-  return [...runs].sort((a, b) =>
-    (Date.parse(b.updated_at ?? b.finished_at ?? b.started_at ?? b.created_at ?? '') || 0) -
-    (Date.parse(a.updated_at ?? a.finished_at ?? a.started_at ?? a.created_at ?? '') || 0),
-  ).slice(0, 6)
+
+export function buildHomeActivityFeed(
+  tasks: TaskRecord[],
+  agents: AgentRegistryItem[],
+  workflows: AgentRegistryItem[],
+  approvals: ApprovalRecord[],
+): HomeActivityEvent[] {
+  const events: HomeActivityEvent[] = []
+  for (const task of tasks) {
+    if (!COMPLETED.has(task.status.toLowerCase())) continue
+    events.push({
+      id: 'task:' + task.task_id, kind: 'task', title: '任务完成',
+      detail: resolveTaskTitle(task) + ' · ' + (task.agent_id ?? '未关联 Agent'),
+      at: task.finished_at ?? task.updated_at ?? task.created_at ?? null,
+      href: '/operations/tasks/' + encodeURIComponent(task.task_id),
+    })
+  }
+  for (const agent of agents) {
+    const at = agent.published_at ?? agent.created_at ?? null
+    if (!at) continue
+    const name = typeof agent.definition?.name === 'string' ? agent.definition.name : agent.item_id
+    events.push({
+      id: 'agent:' + agent.item_id + ':' + at, kind: 'agent', title: 'Agent 更新',
+      detail: name + ' · ' + agent.item_id, at,
+      href: '/admin/agents/' + encodeURIComponent(agent.item_id),
+    })
+  }
+  for (const workflow of workflows) {
+    const at = workflow.published_at ?? workflow.created_at ?? null
+    if (!at) continue
+    const name = typeof workflow.definition?.name === 'string' ? workflow.definition.name : workflow.item_id
+    events.push({
+      id: 'workflow:' + workflow.item_id + ':' + at, kind: 'workflow', title: 'Workflow 新增',
+      detail: name + ' · ' + workflow.item_id, at,
+      href: '/admin/workflows/' + encodeURIComponent(workflow.item_id),
+    })
+  }
+  for (const approval of approvals) {
+    if (approval.status.toLowerCase() !== 'pending') continue
+    events.push({
+      id: 'approval:' + approval.approval_id, kind: 'approval', title: '审批已提交',
+      detail: approval.action + ' · ' + approval.resource, at: null,
+      href: '/operations/approvals',
+    })
+  }
+  return events.sort((a, b) => (Date.parse(b.at ?? '') || 0) - (Date.parse(a.at ?? '') || 0)).slice(0, 8)
 }
 
 function TaskListPanel() {
@@ -115,17 +162,17 @@ function PopularAgents() {
     refetchInterval: 30_000,
     retry: false,
   })
-  const runsQuery = useQuery({
-    queryKey: ['home-workspace', 'agent-usage-runs'],
-    queryFn: async () => unwrapList<RunRecord>(await apiClient.get<unknown>('/platform/v1/runs')),
-    refetchInterval: 30_000,
+  const tasksQuery = useQuery({
+    queryKey: ['home-workspace', 'tasks'],
+    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    refetchInterval: 15_000,
     retry: false,
   })
-  const ranked = useMemo(() => rankHomeAgents(agentsQuery.data ?? [], runsQuery.data ?? []), [agentsQuery.data, runsQuery.data])
-  const loading = agentsQuery.isPending || runsQuery.isPending
-  const error = agentsQuery.error ?? runsQuery.error
+  const ranked = useMemo(() => rankHomeAgents(agentsQuery.data ?? [], tasksQuery.data ?? []), [agentsQuery.data, tasksQuery.data])
+  const loading = agentsQuery.isPending || tasksQuery.isPending
+  const error = agentsQuery.error ?? tasksQuery.error
   if (loading) return <section className="home-r3-panel"><LoadingState label="正在读取热门 Agent" /></section>
-  if (error) return <section className="home-r3-panel"><ErrorState title="热门 Agent 读取失败" description={error instanceof Error ? error.message : 'Agent 服务请求失败'} onRetry={() => { void agentsQuery.refetch(); void runsQuery.refetch() }} /></section>
+  if (error) return <section className="home-r3-panel"><ErrorState title="热门 Agent 读取失败" description={error instanceof Error ? error.message : 'Agent 服务请求失败'} onRetry={() => { void agentsQuery.refetch(); void tasksQuery.refetch() }} /></section>
   return (
     <section className="home-r3-panel home-r3-agent-panel" aria-labelledby="home-r3-agent-title">
       <header className="home-r3-panel-heading">
@@ -142,37 +189,68 @@ function PopularAgents() {
           </Link>
         ))}
       </div> : <EmptyState title="暂无已登记 Agent" description="注册中心返回的 Agent 会展示在这里。" />}
-      <footer className="home-r3-panel-foot">依据注册中心数据及 Run 记录统计；仅统计当前返回的运行记录</footer>
+      <footer className="home-r3-panel-foot">运行数按任务服务返回的非空 Run ID 去重统计；仅统计当前返回记录</footer>
     </section>
   )
 }
 
-function ActivityFeed() {
-  const query = useQuery({
-    queryKey: ['home-workspace', 'recent-runs'],
-    queryFn: async () => unwrapList<RunRecord>(await apiClient.get<unknown>('/platform/v1/runs')),
+function ActivityFeed({ authEnabled }: { authEnabled: boolean }) {
+  const tasksQuery = useQuery({
+    queryKey: ['home-workspace', 'tasks'],
+    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
     refetchInterval: 15_000,
     retry: false,
   })
-  const runs = useMemo(() => sortRecentRuns(query.data ?? []), [query.data])
+  const agentsQuery = useQuery({
+    queryKey: ['home-workspace', 'agents'],
+    queryFn: async () => unwrapList<AgentRegistryItem>(await apiClient.get<unknown>('/platform/v1/registry/agent')),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const workflowsQuery = useQuery({
+    queryKey: ['home-workspace', 'workflows'],
+    queryFn: async () => unwrapList<AgentRegistryItem>(await apiClient.get<unknown>('/platform/v1/registry/workflow')),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const approvalsQuery = useQuery({
+    queryKey: ['home-workspace', 'approvals'],
+    queryFn: async () => unwrapList<ApprovalRecord>(await apiClient.get<unknown>('/platform/v1/approvals?limit=20')),
+    refetchInterval: 15_000,
+    retry: false,
+    enabled: authEnabled,
+  })
+  const queries = [tasksQuery, agentsQuery, workflowsQuery, approvalsQuery]
+  const events = useMemo(() => buildHomeActivityFeed(
+    tasksQuery.data ?? [], agentsQuery.data ?? [], workflowsQuery.data ?? [], approvalsQuery.data ?? [],
+  ), [tasksQuery.data, agentsQuery.data, workflowsQuery.data, approvalsQuery.data])
+  const pending = [tasksQuery, agentsQuery, workflowsQuery].some((query) => query.isPending)
+  const errors = queries.filter((query) => query.isError)
+  const refresh = () => queries.forEach((query) => void query.refetch())
   return (
     <section className="home-r3-panel home-r3-activity-panel" aria-labelledby="home-r3-activity-title">
       <header className="home-r3-panel-heading">
         <div><span className="home-r3-eyebrow">RECENT ACTIVITY</span><h2 id="home-r3-activity-title">最近动态</h2></div>
         <Link className="home-r3-more" to="/workspace/tasks">运行记录 <ArrowRight size={14} /></Link>
       </header>
-      {query.isPending ? <LoadingState label="正在读取最近动态" /> : query.isError ? (
-        <ErrorState title="最近动态读取失败" description={query.error instanceof Error ? query.error.message : '运行记录请求失败'} onRetry={() => void query.refetch()} />
-      ) : runs.length ? (
-        <ol className="home-r3-timeline">
-          {runs.map((run) => {
-            const status = run.status.toLowerCase()
-            const label = COMPLETED.has(status) ? '任务执行完成' : status === 'failed' ? '任务执行失败' : APPROVAL.has(status) ? '任务进入审批' : RUNNING.has(status) ? '任务运行状态更新' : '任务状态更新'
-            return <li key={run.run_id}><span className={`home-r3-timeline-dot tone-${statusTone(status)}`} /><time>{formatClock(run.updated_at ?? run.finished_at ?? run.started_at ?? run.created_at)}</time><span className="home-r3-timeline-copy"><strong>{label}</strong><small>{run.task_id ?? run.run_id}{run.agent_id ? ` · Agent ${run.agent_id}` : ''}</small></span><Link to={`/operations/runs/${encodeURIComponent(run.run_id)}`} aria-label={`查看运行 ${run.run_id}`}>查看</Link></li>
-          })}
-        </ol>
-      ) : <EmptyState title="暂无最近动态" description="任务运行产生记录后，会出现在此时间线。" />}
-      <footer className="home-r3-panel-foot">来源：真实 Run 记录 · 15 秒刷新</footer>
+      {pending && !events.length ? <LoadingState label="正在读取最近动态" /> : events.length ? (
+        <>
+          <ol className="home-r3-timeline">
+            {events.map((event) => (
+              <li key={event.id}>
+                <span className={`home-r3-timeline-dot tone-${event.kind === 'task' ? 'success' : event.kind === 'approval' ? 'waiting' : 'neutral'}`} />
+                <time>{formatClock(event.at)}</time>
+                <span className="home-r3-timeline-copy"><strong>{event.title}</strong><small>{event.detail}</small></span>
+                <Link to={event.href} aria-label={`查看${event.title}`}>查看</Link>
+              </li>
+            ))}
+          </ol>
+          {errors.length > 0 && <p className="home-r3-feed-note">部分动态源暂不可用（{errors.length}）；已展示成功读取的真实记录。</p>}
+        </>
+      ) : errors.length ? (
+        <ErrorState title="动态暂不可用" description="任务、Agent、Workflow 或审批数据源请求失败。" onRetry={refresh} />
+      ) : <EmptyState title="暂无最近动态" description="Agent、Workflow、任务或审批产生记录后，会出现在此时间线。" />}
+      <footer className="home-r3-panel-foot">来源：任务、Agent/Workflow 注册中心；审批动态仅在权限模式下读取</footer>
     </section>
   )
 }
@@ -184,7 +262,7 @@ const quickEntries = [
   { title: '运行任务', detail: '进入任务中心', to: '/workspace/tasks', icon: <Play size={19} /> },
 ]
 
-export function HomeWorkspace() {
+export function HomeWorkspace({ authEnabled }: { authEnabled: boolean }) {
   const [dark, setDark] = useState(false)
   return (
     <section className={dark ? 'page-content home-r3 home-r3-dark' : 'page-content home-r3'}>
@@ -197,7 +275,7 @@ export function HomeWorkspace() {
       </header>
       <div className="home-r3-main-grid">
         <TaskListPanel />
-        <div className="home-r3-side-stack"><PopularAgents /><ActivityFeed /></div>
+        <div className="home-r3-side-stack"><PopularAgents /><ActivityFeed authEnabled={authEnabled} /></div>
       </div>
       <section className="home-r3-quick" aria-labelledby="home-r3-quick-title">
         <header><div><span className="home-r3-eyebrow">QUICK ACCESS</span><h2 id="home-r3-quick-title">快捷入口</h2></div></header>

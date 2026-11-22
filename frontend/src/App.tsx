@@ -47,11 +47,10 @@ import {
 } from '@/features/tasks/TaskCommandCenter'
 import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
-import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
-import { Dashboard } from '@/components/OperationsDashboard'
+import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
@@ -461,8 +460,7 @@ function PageView({
       />
     )
   }
-  if (route.path === '/admin/ops') return <SystemOpsPage />
-  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/overview') return <HomeWorkspace authEnabled={authEnabled} />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
   if (route.path === '/search')

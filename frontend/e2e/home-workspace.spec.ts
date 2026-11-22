@@ -16,8 +16,14 @@ test('Home workspace renders API-backed task, popular Agent and activity panels'
   await page.route('**/api/platform/v1/registry/agent', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ items: [
-      { item_id: 'agent-coder', status: 'active', definition: { name: '代码助手', description: '代码分析与生成' } },
+      { item_id: 'agent-coder', status: 'active', created_at: '2026-11-22T09:00:00Z', definition: { name: '代码助手', description: '代码分析与生成' } },
       { item_id: 'agent-analyst', status: 'registered', definition: { name: '市场分析助手', description: '市场研究' } },
+    ] }),
+  }))
+  await page.route('**/api/platform/v1/registry/workflow', (route) => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ items: [
+      { item_id: 'workflow-daily', status: 'published', created_at: '2026-11-22T08:00:00Z', definition: { name: '日报流程' } },
     ] }),
   }))
   await page.route('**/api/platform/v1/runs', (route) => route.fulfill({
@@ -35,7 +41,12 @@ test('Home workspace renders API-backed task, popular Agent and activity panels'
   await expect(page.getByText('正在运行的任务')).toBeVisible()
   await expect(page.getByRole('heading', { name: '热门 Agent' })).toBeVisible()
   await expect(page.getByText('代码助手')).toBeVisible()
+  await expect(page.getByRole('link', { name: /你好！我是你的 Agent 助手/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: '切换主题' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '最近动态' })).toBeVisible()
+  await expect(page.getByText('任务完成')).toBeVisible()
+  await expect(page.getByText('Agent 更新')).toBeVisible()
+  await expect(page.getByText('Workflow 新增')).toBeVisible()
 
   await page.getByRole('tab', { name: /运行中/ }).click()
   await expect(page.getByText('正在运行的任务')).toBeVisible()
