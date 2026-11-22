@@ -120,16 +120,6 @@ export function PromptRegistryPage({
       ),
     enabled: Boolean(promptId && currentVersion),
   })
-  const gateQuery = useQuery({
-    queryKey: ['prompt-evaluation-gate', promptId, currentVersion],
-    queryFn: () =>
-      apiClient.get<{ status: 'passed' | 'not_recorded'; eval_run_id: string | null; action: string | null }>(
-        `/platform/v1/prompts/${encodeURIComponent(promptId!)}/evaluation-gate?version=${currentVersion}`,
-      ),
-    enabled: Boolean(promptId && currentVersion && evaluationGateEnabled),
-    retry: false,
-  })
-
   const diffQuery = useQuery({
     queryKey: ['prompt-diff', promptId, selectedVersion, baseVersion],
     queryFn: () =>
@@ -197,7 +187,6 @@ export function PromptRegistryPage({
       setActionNotice('灰度配置已由服务端接受。')
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['prompt-registry'] }),
-        queryClient.invalidateQueries({ queryKey: ['prompt-evaluation-gate', promptId] }),
       ])
     },
     onError: (error) => { setActionNotice(null); setActionError(errorMessage(error)) },
@@ -386,11 +375,11 @@ export function PromptRegistryPage({
                   </button>
                   <section className="prompt-evaluation-gate" aria-live="polite">
                     <h3>评测 Gate 状态</h3>
-                    {!evaluationGateEnabled ? <p className="muted">服务端未声明 prompt_evaluation_gate；发布、灰度和回滚操作已禁用。</p> : null}
-                    {evaluationGateEnabled && gateQuery.isPending ? <p>正在读取版本 v{currentVersion} 的 Gate 记录…</p> : null}
-                    {gateQuery.isError ? <p role="alert">{errorMessage(gateQuery.error)}</p> : null}
-                    {gateQuery.data?.status === 'passed' ? <p>已通过 · {gateQuery.data.action ?? '服务端 Gate'} · Eval Run {gateQuery.data.eval_run_id ?? '未返回'}</p> : null}
-                    {gateQuery.data?.status === 'not_recorded' ? <p>尚无已通过记录；这不代表评测失败。服务端仍会在写操作时强制执行 Gate。</p> : null}
+                    {!evaluationGateEnabled ? (
+                      <p className="muted">服务端未声明 prompt_evaluation_gate；激活、灰度和回滚操作已禁用。</p>
+                    ) : (
+                      <p className="muted">当前 API 未提供独立的 Gate 结果读取接口，具体评测状态未知。激活、灰度和回滚请求仍由服务端 Gate 强制校验；请求被拒绝时显示服务端错误。</p>
+                    )}
                   </section>
                   {actionNotice ? <p role="status">{actionNotice}</p> : null}
                   {actionError ? <p role="alert">{actionError}</p> : null}
