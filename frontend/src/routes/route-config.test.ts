@@ -377,4 +377,14 @@ describe('Issue #746 Agent collaboration route', () => {
     expect(resolveCollaborationPage('/workspace/collaboration')?.type).toBe(AgentCollaborationCenter)
     expect(resolveCollaborationPage('/workspace/overview')).toBeNull()
   })
+
+  it('mounts the same runtime view for a workflow Run deep link and passes its Run ID', async () => {
+    const [{ resolveCollaborationPage }, { AgentCollaborationCenter }] = await Promise.all([
+      import('../App'),
+      import('../features/collaboration/AgentCollaborationCenter'),
+    ])
+    const page = resolveCollaborationPage('/operations/workflow-runs/:runId', 'run-123')
+    expect(page?.type).toBe(AgentCollaborationCenter)
+    expect(page?.props.initialRunId).toBe('run-123')
+  })
 })
