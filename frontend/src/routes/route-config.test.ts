@@ -68,6 +68,25 @@ describe('route configuration', () => {
     ).toBe('/workspace/overview')
   })
 
+  it('registers the Run event timeline as a refreshable task-center deep link', () => {
+    const route = pageRoutes.find((item) => item.path === '/operations/tasks/timeline')
+    expect(route).toMatchObject({
+      pageId: 'WS-TASK-RUN-TIMELINE',
+      owner: '#745',
+      parentPath: '/workspace/tasks',
+    })
+    expect(
+      matchRoutes(
+        getAllRoutes(false).map((item) => ({ path: item.path })),
+        '/operations/tasks/timeline',
+      ),
+    ).not.toBeNull()
+    expect(getRouteBreadcrumbs('/operations/tasks/timeline').map((item) => item.label)).toEqual([
+      '任务中心',
+      'Run 事件时间线',
+    ])
+  })
+
   it('registers the OperationsDashboard route under Issue #797', () => {
     const route = pageRoutes.find((item) => item.path === '/operations/dashboard')
     expect(route).toMatchObject({ pageId: 'OPS-DASHBOARD', owner: '#797' })
