@@ -2,10 +2,19 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 STATIC = Path(__file__).with_name("static")
 LEGACY_CONSOLE = Path(__file__).resolve().parents[2] / "console.html"
+_LEGACY_ENTRY = (
+    '<style>#legacy-console-fallback{position:fixed;right:16px;bottom:14px;z-index:2147483000;'
+    'padding:8px 12px;border:1px solid #667085;border-radius:8px;background:#182230;'
+    'color:#fff;font:13px/1.4 system-ui,sans-serif;text-decoration:none;'
+    'box-shadow:0 2px 10px #0003}#legacy-console-fallback:focus-visible{outline:3px solid #8ab4ff;'
+    'outline-offset:2px}</style>'
+    '<a id="legacy-console-fallback" href="/app/?legacy=1" '
+    'aria-label="打开旧版功能兼容控制台">旧版功能兼容入口</a>'
+)
 
 
 def _legacy_console_response() -> FileResponse:
@@ -18,12 +27,21 @@ def _legacy_console_response() -> FileResponse:
     )
 
 
-def _index_response() -> FileResponse:
-    if not (STATIC / "index.html").is_file():
+def _index_response() -> HTMLResponse | FileResponse:
+    index = STATIC / "index.html"
+    if not index.is_file():
         return _legacy_console_response()
-    return FileResponse(
-        STATIC / "index.html",
-        media_type="text/html; charset=utf-8",
+
+    content = index.read_text(encoding="utf-8")
+    # Keep the compatibility route discoverable even when the React bundle is
+    # rebuilt independently of the Python gateway package.
+    if 'id="legacy-console-fallback"' not in content:
+        if "</body>" in content:
+            content = content.replace("</body>", _LEGACY_ENTRY + "</body>", 1)
+        else:
+            content += _LEGACY_ENTRY
+    return HTMLResponse(
+        content,
         headers={"Cache-Control": "no-store"},
     )
 
