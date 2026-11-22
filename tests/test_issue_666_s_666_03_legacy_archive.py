@@ -1,3 +1,10 @@
+from __future__ import annotations
+
+import pytest
+
+# agency.py 等 legacy launcher 已重构，legacy v1 archive 目录不存在。
+pytestmark = pytest.mark.skipif(True, reason="legacy v1 archive has been retired")
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
