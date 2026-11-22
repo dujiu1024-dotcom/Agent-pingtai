@@ -117,6 +117,49 @@ services:
     cpus: ${ALERT_WORKER_CPU_LIMIT:-1.0}
     networks: [platform]
 
+  platform-evaluation-scheduler:
+    image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
+    restart: unless-stopped
+    profiles: ["evaluation"]
+    init: true
+    read_only: true
+    user: "10001:10001"
+    command: ["python", "-m", "agent_platform.observability.production_evaluation_worker"]
+    environment:
+      AGENT_PLATFORM_DSN: ${AGENT_PLATFORM_DSN:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set exact HTTPS ALLOWED_ORIGINS}
+      EVALUATION_RUNNER_ENTRYPOINT: ${EVALUATION_RUNNER_ENTRYPOINT:-}
+      EVALUATION_SCHEDULES_JSON: '${EVALUATION_SCHEDULES_JSON:-}'
+      EVALUATION_SCHEDULER_POLL_SECONDS: ${EVALUATION_SCHEDULER_POLL_SECONDS:-5}
+      EVALUATION_SCHEDULER_LEASE_SECONDS: ${EVALUATION_SCHEDULER_LEASE_SECONDS:-120}
+      EVALUATION_SCHEDULER_MAX_CONCURRENT_RUNS: ${EVALUATION_SCHEDULER_MAX_CONCURRENT_RUNS:-2}
+      EVALUATION_CASE_CONCURRENCY: ${EVALUATION_CASE_CONCURRENCY:-4}
+      EVALUATION_MIN_PASS_RATE: ${EVALUATION_MIN_PASS_RATE:-0.95}
+      EVALUATION_MIN_AVERAGE_SCORE: ${EVALUATION_MIN_AVERAGE_SCORE:-0.9}
+      EVALUATION_MIN_AVERAGE_RECALL_AT_K: ${EVALUATION_MIN_AVERAGE_RECALL_AT_K:-0.8}
+    secrets: [postgres_password, redis_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stop_grace_period: 60s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: ${EVALUATION_WORKER_MEMORY_LIMIT:-1g}
+    cpus: ${EVALUATION_WORKER_CPU_LIMIT:-1.0}
+    networks: [platform]
+
   platform-worker:
     image: ${PLATFORM_API_IMAGE:?Set immutable PLATFORM_API_IMAGE in deploy/.env.production}
     restart: unless-stopped
