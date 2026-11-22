@@ -30,6 +30,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
+import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
 import {
   EmptyState,
   ErrorState,
@@ -498,6 +499,7 @@ function PageView({
     return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
+  if (route.path.startsWith('/admin/models/')) return <ModelsManagementPage />
 
   // 通用分支：后端有 API → GenericListPage，无 API → EmptyState
   const apiPath = resolveApiPath(route.path)
