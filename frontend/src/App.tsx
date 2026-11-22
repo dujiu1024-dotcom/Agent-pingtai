@@ -21,6 +21,7 @@ import {
   LoadingState,
   ModeRestrictedState,
   NotFoundState,
+  ForbiddenState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
@@ -53,6 +54,7 @@ import {
   authRoutes,
   detailRoutes,
   globalRoutes,
+  systemRoutes,
   pageRoutes,
   navigationSections,
   getRouteBreadcrumbs,
@@ -127,17 +129,23 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
               path="/app"
               element={<Navigate to="/workspace/overview" replace />}
             />
-            {[...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
+            {[...pageRoutes, ...detailRoutes, ...globalRoutes, ...systemRoutes].map((route) => (
               <Route
                 key={route.path}
                 path={route.path}
                 element={
+                  route.path === '/403' ? (
+                    <ForbiddenState />
+                  ) : route.path === '/404' ? (
+                    <NotFoundState />
+                  ) : (
                   <RouteGuard
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
                     version={config.version}
                   />
+                  )
                 }
               />
             ))}
