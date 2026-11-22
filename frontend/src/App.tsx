@@ -24,6 +24,7 @@ import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { FilesWorkspace } from '@/features/files/FilesWorkspace'
+import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -291,6 +292,7 @@ function RouteGuard({
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/files') return <FilesWorkspace authEnabled={authEnabled} />
+  if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
