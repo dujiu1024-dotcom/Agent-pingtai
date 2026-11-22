@@ -10,6 +10,29 @@
  * blocked_reason/tags/participant_agent_ids/artifacts/owner/due_at/progress
  * 等），一律通过 helper 从 input 或其它字段兜底。
  */
+export const TASK_LIST_COLUMNS = [
+  { key: 'title', label: '任务名称', required: true },
+  { key: 'status', label: '状态' },
+  { key: 'priority', label: '优先级' },
+  { key: 'project', label: '项目' },
+  { key: 'agent', label: '负责 Agent' },
+  { key: 'creator', label: '创建人' },
+  { key: 'created', label: '创建时间' },
+  { key: 'updated', label: '更新时间' },
+  { key: 'duration', label: '耗时' },
+  { key: 'run', label: '最近 Run' },
+  { key: 'trace', label: 'Trace ID' },
+] as const
+export type TaskListColumnKey = (typeof TASK_LIST_COLUMNS)[number]['key']
+export const DEFAULT_TASK_LIST_COLUMNS: TaskListColumnKey[] = [
+  'title', 'status', 'priority', 'project', 'agent', 'created', 'run',
+]
+export function normalizeTaskListColumns(value: string | null): TaskListColumnKey[] {
+  if (!value) return [...DEFAULT_TASK_LIST_COLUMNS]
+  const allowed = new Set<string>(TASK_LIST_COLUMNS.map((column) => column.key))
+  const selected = [...new Set(value.split(',').filter((key) => allowed.has(key)))] as TaskListColumnKey[]
+  return selected.includes('title') ? selected : ['title', ...selected]
+}
 export type TaskRecord = {
   // === 后端 _task_view 真实字段 ===
   task_id: string

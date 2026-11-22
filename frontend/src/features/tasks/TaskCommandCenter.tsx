@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, apiClient } from '@/lib/api'
@@ -12,10 +12,12 @@ import {
   resolveTaskDescription,
   resolveTaskTitle,
   sortEvents,
+  normalizeTaskListColumns,
+  TASK_LIST_COLUMNS,
   unwrapList,
   unwrapRecord,
 } from './task-model'
-import type { RunEvent, RunRecord, TaskRecord } from './task-model'
+import type { RunEvent, RunRecord, TaskRecord, TaskListColumnKey } from './task-model'
 import './task-controls.css'
 const TASKS = '/platform/v1/workbench/tasks',
   RUNS = '/platform/v1/runs',
@@ -188,6 +190,7 @@ export function TaskCommandCenter() {
     [view, setView] = useState<'kanban' | 'list' | 'timeline'>(
       (sp.get('view') as 'kanban' | 'list' | 'timeline') ?? 'list',
     )
+  const visibleColumns = normalizeTaskListColumns(sp.get('columns'))
   const q = useQuery({
     queryKey: ['tasks'],
     queryFn: () =>
@@ -231,8 +234,28 @@ export function TaskCommandCenter() {
         String(t.priority ?? '') === sp.get('priority')) &&
       (!sp.get('project_id') || t.project_id === sp.get('project_id')) &&
       (!sp.get('agent_id') || resolveAgentId(t) === sp.get('agent_id')) &&
+      (!sp.get('created_by') ||
+        String(t.created_by ?? '').toLowerCase().includes(sp.get('created_by')!.toLowerCase())) &&
+      (!sp.get('from') ||
+        (Boolean(t.created_at) && Date.parse(t.created_at!) >= Date.parse(sp.get('from')!))) &&
+      (!sp.get('to') ||
+        (Boolean(t.created_at) && Date.parse(t.created_at!) <= Date.parse(sp.get('to')!))) &&
       (!sp.get('tag') || t.tags?.includes(sp.get('tag')!) === true),
   )
+  const sortKey = sp.get('sort') ?? 'created_at'
+  const sortDirection = sp.get('order') === 'asc' ? 1 : -1
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    const aValue = sortKey === 'updated_at' ? a.updated_at
+      : sortKey === 'duration_ms' ? a.duration_ms
+      : a.created_at
+    const bValue = sortKey === 'updated_at' ? b.updated_at
+      : sortKey === 'duration_ms' ? b.duration_ms
+      : b.created_at
+    const primary = typeof aValue === 'number' || typeof bValue === 'number'
+      ? Number(aValue ?? 0) - Number(bValue ?? 0)
+      : String(aValue ?? '').localeCompare(String(bValue ?? ''))
+    return primary * sortDirection || a.task_id.localeCompare(b.task_id)
+  })
   // 分页：从 URL 读取，非法值回退默认
   const page = Math.max(1, Number(sp.get('page') ?? 1) || 1)
   const pageSize =
@@ -242,7 +265,7 @@ export function TaskCommandCenter() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const startIdx = (safePage - 1) * pageSize
-  const paged = filtered.slice(startIdx, startIdx + pageSize)
+  const paged = sortedFiltered.slice(startIdx, startIdx + pageSize)
   const set = (k: string, v: string) => {
     const n = new URLSearchParams(sp)
     if (v) {
@@ -336,6 +359,47 @@ export function TaskCommandCenter() {
           value={sp.get('agent_id') ?? ''}
           onChange={(e) => set('agent_id', e.target.value)}
         />
+        <input
+          aria-label="创建人筛选"
+          placeholder="创建人"
+          value={sp.get('created_by') ?? ''}
+          onChange={(e) => set('created_by', e.target.value)}
+        />
+        <label className="task-date-filter">
+          创建时间起
+          <input
+            aria-label="创建时间起"
+            type="datetime-local"
+            value={sp.get('from') ?? ''}
+            onChange={(e) => set('from', e.target.value)}
+          />
+        </label>
+        <label className="task-date-filter">
+          创建时间止
+          <input
+            aria-label="创建时间止"
+            type="datetime-local"
+            value={sp.get('to') ?? ''}
+            onChange={(e) => set('to', e.target.value)}
+          />
+        </label>
+        <select
+          aria-label="排序字段"
+          value={sortKey}
+          onChange={(e) => set('sort', e.target.value)}
+        >
+          <option value="created_at">创建时间</option>
+          <option value="updated_at">更新时间</option>
+          <option value="duration_ms">运行耗时</option>
+        </select>
+        <select
+          aria-label="排序方向"
+          value={sortDirection === 1 ? 'asc' : 'desc'}
+          onChange={(e) => set('order', e.target.value)}
+        >
+          <option value="desc">降序</option>
+          <option value="asc">升序</option>
+        </select>
         <div className="task-view-switch">
           {(['kanban', 'list', 'timeline'] as const).map((v) => (
             <button
@@ -354,6 +418,35 @@ export function TaskCommandCenter() {
             </button>
           ))}
         </div>
+        {view === 'list' && (
+          <details className="task-column-config">
+            <summary>配置列表列（{visibleColumns.length}/{TASK_LIST_COLUMNS.length}）</summary>
+            <div role="group" aria-label="可见任务列表列">
+              {TASK_LIST_COLUMNS.map((column) => (
+                <label key={column.key}>
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.includes(column.key)}
+                    disabled={column.key === 'title'}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...visibleColumns, column.key]
+                        : visibleColumns.filter((key) => key !== column.key)
+                      const ordered = TASK_LIST_COLUMNS
+                        .map((item) => item.key)
+                        .filter((key) => next.includes(key))
+                      set('columns', ordered.join(','))
+                    }}
+                  />
+                  {column.label}
+                </label>
+              ))}
+              <button type="button" onClick={() => set('columns', '')}>
+                恢复默认列
+              </button>
+            </div>
+          </details>
+        )}
       </div>
       {q.isPending ? (
         <LoadingState label="正在加载任务" />
@@ -394,59 +487,64 @@ export function TaskCommandCenter() {
             <table className="task-table">
               <thead>
                 <tr>
-                  <th>任务名称</th>
-                  <th>状态</th>
-                  <th>优先级</th>
-                  <th>项目</th>
-                  <th>负责 Agent</th>
-                  <th>创建时间</th>
-                  <th>运行</th>
+                  {visibleColumns.map((key) => (
+                    <th key={key}>
+                      {TASK_LIST_COLUMNS.find((column) => column.key === key)?.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {paged.map((t) => {
                   const agentId = resolveAgentId(t)
-                  const agentLabel =
-                    agentNameOf(agentId) ?? agentId ?? '—'
+                  const agentLabel = agentNameOf(agentId) ?? agentId ?? '—'
                   const runId = resolveRunId(t)
-                  return (
-                    <tr key={t.task_id}>
-                      <td>
-                        <Link
-                          to={`/operations/tasks/${encodeURIComponent(t.task_id)}`}
-                        >
+                  const cells: Record<TaskListColumnKey, ReactNode> = {
+                    title: (
+                      <>
+                        <Link to={`/operations/tasks/${encodeURIComponent(t.task_id)}`}>
                           {resolveTaskTitle(t)}
                         </Link>
                         <small>{t.task_id}</small>
-                      </td>
-                      <td>
-                        <span
-                          className={`status-badge ${statusBadgeClass(t.status)}`}
-                        >
-                          {valueLabel(t.status)}
-                        </span>
-                      </td>
-                      <td>
-                        {priority[String(t.priority ?? '')] ??
-                          t.priority ??
-                          '—'}
-                      </td>
-                      <td>
-                        {resolveProjectLabel(t)}
-                      </td>
-                      <td>{agentLabel}</td>
-                      <td>{dt(t.created_at)}</td>
-                      <td>
-                        {runId ? (
-                          <Link
-                            to={`/operations/runs/${encodeURIComponent(runId)}`}
-                          >
-                            {String(runId).slice(-8)}
-                          </Link>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
+                      </>
+                    ),
+                    status: (
+                      <span className={`status-badge ${statusBadgeClass(t.status)}`}>
+                        {valueLabel(t.status)}
+                      </span>
+                    ),
+                    priority:
+                      priority[String(t.priority ?? '')] ?? t.priority ?? '—',
+                    project: resolveProjectLabel(t),
+                    agent: agentLabel,
+                    creator: t.created_by ?? '—',
+                    created: dt(t.created_at),
+                    updated: dt(t.updated_at),
+                    duration: formatDuration(t.duration_ms),
+                    run: runId ? (
+                      <Link to={`/operations/runs/${encodeURIComponent(runId)}`}>
+                        {String(runId).slice(-8)}
+                      </Link>
+                    ) : (
+                      '—'
+                    ),
+                    trace: t.trace_id ? (
+                      runId ? (
+                        <Link to={`/operations/runs/${encodeURIComponent(runId)}`}>
+                          {t.trace_id}
+                        </Link>
+                      ) : (
+                        t.trace_id
+                      )
+                    ) : (
+                      '—'
+                    ),
+                  }
+                  return (
+                    <tr key={t.task_id}>
+                      {visibleColumns.map((key) => (
+                        <td key={key}>{cells[key]}</td>
+                      ))}
                     </tr>
                   )
                 })}
