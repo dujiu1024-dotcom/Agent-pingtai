@@ -334,7 +334,11 @@ class GraphSchemaRegistry:
             if definition.name in _BUILTIN_TYPES:
                 raise ValueError("built-in entity types cannot be overridden")
             if any(item.name == definition.name for item in current.entity_types):
-                return self  # idempotent: entity type already registered
+                # entity type already registered — rebuild and return updated
+                return GraphSchema(
+                    tenant_id, current.entity_types,
+                    current.relation_types, current.source_mappings,
+                )
             updated = GraphSchema(
                 tenant_id, current.entity_types + (definition,),
                 current.relation_types, current.source_mappings,
