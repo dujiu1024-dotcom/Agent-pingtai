@@ -366,7 +366,12 @@ export function TaskCommandCenter() {
           <h1>任务指挥中心</h1>
           <p>跟踪任务生命周期、负责人、阻塞和交付。</p>
         </div>
-        <div className="task-heading-actions"><small>自动刷新 · 15s</small><Link className="button-secondary" to="/operations/tasks/timeline">Run 事件时间线</Link></div>
+        <div className="task-heading-actions">
+          <small>自动刷新 · 15s</small>
+          <Link className="button-secondary" to="/operations/tasks/timeline">
+            Run 事件时间线
+          </Link>
+        </div>
       </div>
       <div className="task-toolbar">
         <input
@@ -478,7 +483,9 @@ export function TaskCommandCenter() {
               {v === 'kanban' ? '看板' : '列表'}
             </button>
           ))}
-          <Link className="button-secondary" to="/operations/tasks/timeline">时间线</Link>
+          <Link className="button-secondary" to="/operations/tasks/timeline">
+            时间线
+          </Link>
         </div>
         {view === 'list' && (
           <details className="task-column-config">
