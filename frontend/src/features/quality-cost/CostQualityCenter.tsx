@@ -13,6 +13,7 @@ import {
   localizedJson,
   valueLabel,
 } from '@/lib/i18n/labels'
+import { buildDailyUsageTrend } from './usage-trends'
 import './cost-quality-center.css'
 
 type UsageEvent = {
@@ -144,6 +145,26 @@ const unwrapItems = <T,>(value: ListResponse<T> | T[]): T[] =>
 
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return <article className="cq-metric"><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</article>
+}
+
+function TrendLine({ label, values, format }: { label: string; values: Array<number | null>; format: (value: number) => string }) {
+  const finite = values.filter((value): value is number => value != null && Number.isFinite(value))
+  if (!finite.length) return <div className="cq-trend-unavailable">当前范围没有可绘制的{label}数据</div>
+  const min = Math.min(...finite)
+  const max = Math.max(...finite)
+  const span = max - min || 1
+  const points = values.map((value, index) => value == null || !Number.isFinite(value)
+    ? null
+    : `${values.length < 2 ? 50 : index / (values.length - 1) * 100},${40 - ((value - min) / span) * 32}`).filter((point): point is string => point != null)
+  return <div className="cq-trend-chart">
+    <div className="cq-trend-summary"><span>{label}</span><strong>{format(finite.reduce((sum, value) => sum + value, 0))}</strong></div>
+    <svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label={`${label}每日趋势，${finite.length}个有值日期`}>
+      <line x1="0" y1="40" x2="100" y2="40" />
+      {points.length > 1 && <polyline points={points.join(' ')} />}
+      {points.map((point, index) => <circle key={index} cx={point.split(',')[0]} cy={point.split(',')[1]} r="1.4" />)}
+    </svg>
+    <div className="cq-trend-range"><span>按 UTC 日期</span><span>{finite.length} 个数据点</span></div>
+  </div>
 }
 
 export function CostQualityCenter() {
@@ -282,6 +303,7 @@ export function CostQualityCenter() {
   })
 
   const events = useMemo(() => unwrapItems(usage.data ?? []), [usage.data])
+  const dailyTrend = useMemo(() => buildDailyUsageTrend(events), [events])
   const budgetRows = useMemo(
     () =>
       adminSettings.data?.items?.find((item) => item.section === 'quota_budgets')?.rows ?? [],
@@ -405,6 +427,29 @@ export function CostQualityCenter() {
             <Metric label="P50 / P95 延迟" value={summary.data.p50_latency_ms == null && summary.data.p95_latency_ms == null ? '—' : number(summary.data.p50_latency_ms) + ' / ' + number(summary.data.p95_latency_ms) + ' ms'} hint="服务端未提供时不推算" />
             <Metric label="首 Token P50" value={summary.data.first_token_ms_p50 == null ? '—' : number(summary.data.first_token_ms_p50) + ' ms'} hint="仅显示服务端提供值" />
           </div>
+          <section className="cq-panel cq-trends-panel">
+            <header><div><h2>Token / 费用趋势</h2><p>按 Usage Ledger 的 occurred_at（UTC 日）聚合；不从总量或模型排行反推时间序列</p></div><span>{dailyTrend.length} 天</span></header>
+            {usage.isPending ? <LoadingState label="正在读取趋势账本" /> : usage.isError ? (
+              <ErrorState title="趋势数据暂不可用" description={errorText(usage.error)} onRetry={() => void usage.refetch()} />
+            ) : dailyTrend.length ? (
+              <>
+                <div className="cq-trend-grid">
+                  <TrendLine label="每日 Token" values={dailyTrend.map((day) => day.totalTokens)} format={number} />
+                  <TrendLine label="每日费用（USD）" values={dailyTrend.map((day) => day.costUsd)} format={usd} />
+                </div>
+                <div className="cq-trend-table-wrap">
+                  <table className="cq-table cq-trend-table">
+                    <thead><tr><th>日期（UTC）</th><th>输入 Token</th><th>输出 Token</th><th>总 Token</th><th>费用（USD）</th><th>有价 / 缺价事件</th></tr></thead>
+                    <tbody>{dailyTrend.map((day) => <tr key={day.date}>
+                      <td>{day.date}</td><td>{number(day.inputTokens)}</td><td>{number(day.outputTokens)}</td><td>{number(day.totalTokens)}</td>
+                      <td>{day.costUsd == null ? '—' : usd(String(day.costUsd))}</td><td>{number(day.pricedEvents)} / {number(day.unpricedEvents)}</td>
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+                <p className="cq-footnote">费用仅累加服务端返回且可解析的 cost_usd；缺价事件单独计数，不视为 0 USD。当前账本请求最多读取 1,000 条，达到上限时趋势可能不完整。</p>
+              </>
+            ) : <EmptyState title="暂无趋势数据" description="当前筛选范围内没有可用于趋势聚合的用量账本事件。" />}
+          </section>
           <div className="cq-panels">
             <section className="cq-panel">
               <header><div><h2>模型费用排行</h2><p>按账本 cost_usd 聚合；不推算缺失价格</p></div></header>
