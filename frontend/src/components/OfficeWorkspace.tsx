@@ -14,6 +14,8 @@ type OfficeAgent = {
   status: AgentStatus
   floor_id?: string
   desk_id?: string
+  x?: number
+  z?: number
   task_id?: string
   task_title?: string
   run_id?: string
@@ -123,8 +125,8 @@ export function normalizeOfficeAgents(snapshot: unknown): NormalizedOfficeAgent[
       model_template: latest?.model_template || latest?.model || agent.model_template,
       last_active_at: latest?.updated_at || latest?.created_at || agent.last_active_at,
       // Position is trusted only when both finite coordinates are explicitly returned.
-      x: Number.isFinite(agent.x) ? agent.x : undefined,
-      z: Number.isFinite(agent.z) ? agent.z : undefined,
+      x: Number.isFinite(agent.x) && Number.isFinite(agent.z) ? agent.x : undefined,
+      z: Number.isFinite(agent.x) && Number.isFinite(agent.z) ? agent.z : undefined,
     }
   })
 }
@@ -275,7 +277,25 @@ function OfficeDecorations() {
   </>
 }
 
-function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone }: { selectedDesk: string | null; onSelectDesk: (id: string) => void; selectedZone: string | null; onSelectZone: (id: string) => void }) {
+function AgentAvatar({ agent, onSelect }: { agent: NormalizedOfficeAgent; onSelect: (id: string) => void }) {
+  const color = agent.status === 'running' ? '#2fbd83'
+    : agent.status === 'failed' ? '#d65c68'
+    : agent.status === 'waiting_approval' ? '#d99b36'
+    : agent.status === 'queued' || agent.status === 'collaborating' ? '#5688e8'
+    : '#8794a9'
+  if (agent.x === undefined || agent.z === undefined) return null
+  return (
+    <group position={[agent.x, 0, agent.z]} onClick={(event) => { event.stopPropagation(); onSelect(agent.agent_id) }}
+      onPointerOver={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer' }}
+      onPointerOut={() => { document.body.style.cursor = '' }}>
+      <mesh position={[0, 0.38, 0]} castShadow><cylinderGeometry args={[0.22, 0.28, 0.58, 12]} /><meshStandardMaterial color={color} roughness={0.62} /></mesh>
+      <mesh position={[0, 0.83, 0]} castShadow><sphereGeometry args={[0.2, 16, 12]} /><meshStandardMaterial color="#f0c9a7" roughness={0.72} /></mesh>
+      <mesh position={[0, 0.08, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[0.31, 0.39, 24]} /><meshBasicMaterial color={color} /></mesh>
+    </group>
+  )
+}
+
+function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone, agents, onSelectAgent }: { selectedDesk: string | null; onSelectDesk: (id: string) => void; selectedZone: string | null; onSelectZone: (id: string) => void; agents: NormalizedOfficeAgent[]; onSelectAgent: (id: string) => void }) {
   return (
     <>
       <color attach="background" args={['#aebbd8']} />
@@ -304,6 +324,9 @@ function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone }:
         <OfficeDecorations />
         {desks.map((desk) => (
           <Desk key={desk.id} {...desk} selected={selectedDesk === desk.id} onSelect={onSelectDesk} />
+        ))}
+        {agents.filter((agent) => agent.floor_id === undefined || agent.floor_id === 'floor-02').map((agent) => (
+          <AgentAvatar key={agent.agent_id} agent={agent} onSelect={onSelectAgent} />
         ))}
         <group position={[-9.8, 0.45, 0]}>
           <mesh castShadow><boxGeometry args={[0.24, 0.9, 13.8]} /><meshStandardMaterial color="#b7c5dc" /></mesh>
@@ -402,7 +425,7 @@ export function OfficeWorkspace() {
             <div className="office-2d-desks">{desks.map((desk) => <button type="button" key={desk.id} className={selectedDesk === desk.id ? 'office-2d-desk selected' : 'office-2d-desk'} onClick={() => setSelectedDesk(desk.id)}>{desk.id.toUpperCase()}</button>)}</div>
           </div> : <div className={view === 'top' ? 'office-canvas office-canvas-top' : 'office-canvas'}>
             <Canvas key={view} shadows dpr={[1, 1.5]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
-              <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} selectedZone={selectedZone} onSelectZone={setSelectedZone} />
+              <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} selectedZone={selectedZone} onSelectZone={setSelectedZone} agents={agents} onSelectAgent={setSelectedAgentId} />
             </Canvas>
           </div>}
           <div className="office-map-legend"><span><i className="legend-desk" />标准工位</span><span><i className="legend-selected" />已选工位</span><span><i className="legend-agent" />Agent 状态</span><small>状态由 Agent Registry 与任务执行记录推导；未提供的状态显示为未知</small></div>
