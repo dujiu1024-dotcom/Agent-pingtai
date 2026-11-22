@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import AsyncMock
 
+from agent_platform.runtime.lifecycle import RunSnapshot, RunStatus
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
 
 
@@ -19,6 +20,7 @@ class _Connection:
         self.cursor = _Cursor(row)
         self.query = ""
         self.params = ()
+        self.calls = 0
 
     async def __aenter__(self):
         return self
@@ -29,6 +31,7 @@ class _Connection:
     async def execute(self, query, params=()):
         self.query = query
         self.params = params
+        self.calls += 1
         return self.cursor
 
 
@@ -98,6 +101,32 @@ class RunLeaseFencingEnforcementTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("lease_token=%s", connection.query)
         self.assertNotIn("IS NULL OR", connection.query)
         self.assertEqual(connection.params[-1], 11)
+
+
+    async def test_stale_worker_run_transition_is_rejected_before_update(self):
+        connection = _Connection(row={
+            "status": "running",
+            "version": 5,
+            "session_id": None,
+            "created_by": "actor-a",
+            "project_id": None,
+            "agent_id": "agent-a",
+            "lease_token": 12,
+        })
+
+        async def connect():
+            return connection
+
+        store = PostgresRunStateStore(connect)
+        stale_snapshot = RunSnapshot(
+            "tenant-a", "run-a", RunStatus.SUCCEEDED, 5,
+            lease_token=11,
+        )
+        with self.assertRaisesRegex(RuntimeError, "fencing token mismatch"):
+            await store.transition(stale_snapshot, expected_version=5)
+
+        self.assertEqual(connection.calls, 1)
+        self.assertIn("FOR UPDATE", connection.query)
 
     async def test_missing_or_invalid_token_fails_before_database_access(self):
         connect = AsyncMock()
