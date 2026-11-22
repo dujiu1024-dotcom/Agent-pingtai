@@ -194,7 +194,7 @@ function PopularAgents() {
   )
 }
 
-function ActivityFeed() {
+function ActivityFeed({ authEnabled }: { authEnabled: boolean }) {
   const tasksQuery = useQuery({
     queryKey: ['home-workspace', 'tasks'],
     queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
@@ -218,12 +218,13 @@ function ActivityFeed() {
     queryFn: async () => unwrapList<ApprovalRecord>(await apiClient.get<unknown>('/platform/v1/approvals?limit=20')),
     refetchInterval: 15_000,
     retry: false,
+    enabled: authEnabled,
   })
   const queries = [tasksQuery, agentsQuery, workflowsQuery, approvalsQuery]
   const events = useMemo(() => buildHomeActivityFeed(
     tasksQuery.data ?? [], agentsQuery.data ?? [], workflowsQuery.data ?? [], approvalsQuery.data ?? [],
   ), [tasksQuery.data, agentsQuery.data, workflowsQuery.data, approvalsQuery.data])
-  const pending = queries.some((query) => query.isPending)
+  const pending = [tasksQuery, agentsQuery, workflowsQuery].some((query) => query.isPending)
   const errors = queries.filter((query) => query.isError)
   const refresh = () => queries.forEach((query) => void query.refetch())
   return (
@@ -249,7 +250,7 @@ function ActivityFeed() {
       ) : errors.length ? (
         <ErrorState title="动态暂不可用" description="任务、Agent、Workflow 或审批数据源请求失败。" onRetry={refresh} />
       ) : <EmptyState title="暂无最近动态" description="Agent、Workflow、任务或审批产生记录后，会出现在此时间线。" />}
-      <footer className="home-r3-panel-foot">来源：任务、Agent/Workflow 注册中心与审批 API；只展示可验证的真实记录</footer>
+      <footer className="home-r3-panel-foot">来源：任务、Agent/Workflow 注册中心；审批动态仅在权限模式下读取</footer>
     </section>
   )
 }
@@ -261,7 +262,7 @@ const quickEntries = [
   { title: '运行任务', detail: '进入任务中心', to: '/workspace/tasks', icon: <Play size={19} /> },
 ]
 
-export function HomeWorkspace() {
+export function HomeWorkspace({ authEnabled }: { authEnabled: boolean }) {
   const [dark, setDark] = useState(false)
   return (
     <section className={dark ? 'page-content home-r3 home-r3-dark' : 'page-content home-r3'}>
@@ -274,7 +275,7 @@ export function HomeWorkspace() {
       </header>
       <div className="home-r3-main-grid">
         <TaskListPanel />
-        <div className="home-r3-side-stack"><PopularAgents /><ActivityFeed /></div>
+        <div className="home-r3-side-stack"><PopularAgents /><ActivityFeed authEnabled={authEnabled} /></div>
       </div>
       <section className="home-r3-quick" aria-labelledby="home-r3-quick-title">
         <header><div><span className="home-r3-eyebrow">QUICK ACCESS</span><h2 id="home-r3-quick-title">快捷入口</h2></div></header>
