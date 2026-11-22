@@ -20,7 +20,7 @@ The store adapter must implement `PolicySnapshotStore.put_if_newer` as one datab
 4. Replay durable Outbox events using existing stable event IDs and consumer receipts.
 5. Resume paused Runs only after the preceding stages succeed.
 
-Any failure returns the mode to DEGRADED and stops the sequence. It never resumes Runs after a failed revocation or license reconciliation.
+Any failure, including a failed transition audit write, returns the mode to DEGRADED and stops the sequence. Recovery does not begin if its start audit cannot be persisted; a failed final ONLINE audit also leaves the reconciler DEGRADED. It never resumes Runs after a failed revocation or license reconciliation.
 
 ## Cross-node takeover and failback
 
