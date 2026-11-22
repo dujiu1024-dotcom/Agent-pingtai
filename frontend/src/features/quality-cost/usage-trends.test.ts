@@ -31,4 +31,71 @@ describe('buildDailyUsageTrend', () => {
     ])
     expect(trend.map((day) => day.date)).toEqual(['2026-11-20', '2026-11-23'])
   })
+
+  it('returns an empty result for an empty ledger', () => {
+    expect(buildDailyUsageTrend([])).toEqual([])
+  })
+
+  it('aggregates very large finite token and cost values without truncating the result', () => {
+    const trend = buildDailyUsageTrend([
+      {
+        occurred_at: '2026-11-22T10:00:00Z',
+        input_tokens: Number.MAX_SAFE_INTEGER,
+        output_tokens: 1_000_000_000_000_000,
+        total_tokens: 9_007_199_254_740_991,
+        cost_usd: '1e150',
+      },
+      {
+        occurred_at: '2026-11-22T11:00:00Z',
+        input_tokens: 1_000_000_000_000_000,
+        output_tokens: 0,
+        total_tokens: 1_000_000_000_000_000,
+        cost_usd: '2e150',
+      },
+    ])
+
+    expect(trend).toEqual([
+      {
+        date: '2026-11-22',
+        inputTokens: Number.MAX_SAFE_INTEGER + 1_000_000_000_000_000,
+        outputTokens: 1_000_000_000_000_000,
+        totalTokens: 10_007_199_254_740_991,
+        costUsd: 3e150,
+        pricedEvents: 2,
+        unpricedEvents: 0,
+      },
+    ])
+  })
+
+  it('preserves negative adjustments instead of clamping them to zero', () => {
+    const trend = buildDailyUsageTrend([
+      {
+        occurred_at: '2026-11-22T10:00:00Z',
+        input_tokens: 10,
+        output_tokens: 5,
+        total_tokens: 15,
+        cost_usd: '0.75',
+      },
+      {
+        occurred_at: '2026-11-22T11:00:00Z',
+        input_tokens: -4,
+        output_tokens: -1,
+        total_tokens: -5,
+        cost_usd: '-1.25',
+      },
+    ])
+
+    expect(trend).toEqual([
+      {
+        date: '2026-11-22',
+        inputTokens: 6,
+        outputTokens: 4,
+        totalTokens: 10,
+        costUsd: -0.5,
+        pricedEvents: 2,
+        unpricedEvents: 0,
+      },
+    ])
+  })
+
 })
