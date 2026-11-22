@@ -13,6 +13,8 @@ from agent_platform.knowledge.acl_invalidation_events import (
 
 
 class KnowledgeACLInvalidationEventTests(unittest.TestCase):
+    event: KnowledgeACLInvalidationEvent
+
     def setUp(self) -> None:
         self.event = KnowledgeACLInvalidationEvent(
             event_id=42,
