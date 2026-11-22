@@ -291,7 +291,7 @@ export const pageRoutes: PageRoute[] = [
     title: '评测数据集',
     section: '智能体运营',
     description: 'Evaluation Dataset 列表入口。',
-    owner: '#750',
+    owner: '#803',
   },
   {
     path: '/operations/evaluation/runs',
@@ -299,7 +299,7 @@ export const pageRoutes: PageRoute[] = [
     title: '评测运行与样本',
     section: '智能体运营',
     description: 'Evaluation Run 列表入口。',
-    owner: '#750',
+    owner: '#803',
   },
 ]
 
@@ -322,7 +322,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Dataset 唯一详情路由。',
     parentPath: '/operations/evaluation/datasets',
     entityIdParam: 'datasetId',
-    owner: '#750',
+    owner: '#803',
   },
   {
     path: '/operations/evaluation/runs/:evaluationRunId',
@@ -332,7 +332,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Evaluation Run 唯一详情路由。',
     parentPath: '/operations/evaluation/runs',
     entityIdParam: 'evaluationRunId',
-    owner: '#750',
+    owner: '#803',
   },
   {
     path: '/admin/models/providers/:providerId',
