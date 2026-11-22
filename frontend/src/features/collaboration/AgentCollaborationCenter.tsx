@@ -8,6 +8,7 @@ import { eventLabel, localizedJson, valueLabel } from '@/lib/i18n/labels'
 import { useAuth } from '@/providers/AuthProvider'
 import { AgentTeamGraph } from './AgentTeamGraph'
 import { WorkflowRunCanvas } from './WorkflowRunCanvas'
+import { createBlackboardMessagePayload } from './blackboard-message'
 import { mergeRunRuntimeEvents, normalizeRunSseEvent } from './workflow-run-events'
 import './AgentCollaborationCenter.css'
 
@@ -384,6 +385,8 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
   const [runStreamStatus, setRunStreamStatus] = useState<'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'unsupported'>('idle')
   const [liveStatus, setLiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle')
   const [lastLiveEvent, setLastLiveEvent] = useState('')
+  const [messageTitle, setMessageTitle] = useState('')
+  const [messageBody, setMessageBody] = useState('')
   const [editContent, setEditContent] = useState('{}')
   const [editError, setEditError] = useState('')
   const [challengeReason, setChallengeReason] = useState('')
@@ -529,7 +532,7 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
       if (scope && scope !== 'tenant') params.set('scope', scope)
       return apiClient.get<unknown>(`/platform/v1/blackboard/entries/all?${params}`)
     },
-    refetchInterval: liveRefresh && Boolean(scopeId.trim()) && liveStatus === 'connected' ? false : 20000,
+    refetchInterval: liveRefresh && Boolean(scope) && Boolean(scopeId.trim()) && liveStatus === 'connected' ? false : 20000,
   })
   const entries = useMemo(() => unwrap<RecordValue>(entriesQuery.data), [entriesQuery.data])
   const hasVersion = useMemo(() => entries.some(entry => entryVersion(entry) > 0), [entries])
@@ -592,6 +595,18 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
     void queryClient.invalidateQueries({ queryKey: ['collaboration', 'blackboard-history'] })
   }
 
+  const messageMutation = useMutation({
+    mutationFn: (input: { scope: string; scopeId: string; title: string; message: string }) =>
+      apiClient.post('/platform/v1/blackboard/entries', createBlackboardMessagePayload(input)),
+    onSuccess: () => {
+      setMessageTitle('')
+      setMessageBody('')
+      setBbPage(0)
+      setBbMode('entries')
+      invalidateBlackboard()
+    },
+  })
+
   const reviseMutation = useMutation({
     mutationFn: (input: { entryId: string; content: RecordValue; expectedVersion: number }) =>
       apiClient.patch(
@@ -618,7 +633,7 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
   })
 
   useEffect(() => {
-    if (!liveRefresh || !scopeId.trim()) {
+    if (!liveRefresh || !scope || !scopeId.trim()) {
       setLiveStatus('idle')
       return
     }
@@ -650,6 +665,12 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
       source.close()
     }
   }, [liveRefresh, scope, scopeId, queryClient])
+
+  const submitMessage = (event: FormEvent) => {
+    event.preventDefault()
+    if (!scope || !scopeId.trim() || !messageBody.trim()) return
+    messageMutation.mutate({ scope, scopeId: scopeId.trim(), title: messageTitle.trim(), message: messageBody.trim() })
+  }
 
   const submitRevision = (event: FormEvent) => {
     event.preventDefault()
@@ -886,8 +907,26 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
           )}
           <label>范围标识<input value={scopeId} onChange={event => { setScopeId(event.target.value); setSelectedEntry('') }} placeholder="留空 = 展示全部条目" /></label>
           <label>条目类型<select value={kind} onChange={event => setKind(event.target.value)}><option value="">全部类型</option>{['fact','claim','evidence','challenge','conflict','decision','artifact','note'].map(value => <option key={value} value={value}>{bbKind(value)}</option>)}</select></label>
-          <label className="collab-bb-toggle"><input type="checkbox" checked={liveRefresh} onChange={event => setLiveRefresh(event.target.checked)} disabled={!scopeId.trim()} />实时刷新</label>
+          <label className="collab-bb-toggle"><input type="checkbox" checked={liveRefresh} onChange={event => setLiveRefresh(event.target.checked)} disabled={!scope || !scopeId.trim()} />实时刷新</label>
         </div>
+        <form className="collab-message-composer" onSubmit={submitMessage} aria-label="发送 Blackboard 协作消息">
+          <div className="collab-message-composer-heading">
+            <div><strong>发送协作消息</strong><small>消息将作为 Blackboard note 写入当前范围，并进入实时事件流</small></div>
+            <span>{scope && scopeId.trim() ? bbScope(scope) + ' · ' + scopeId.trim() : '请先选择范围并填写范围标识'}</span>
+          </div>
+          <label>消息标题（可选）
+            <input value={messageTitle} onChange={event => setMessageTitle(event.target.value)} maxLength={160} placeholder="例如：研究结论同步" />
+          </label>
+          <label>消息内容
+            <textarea value={messageBody} onChange={event => setMessageBody(event.target.value)} rows={3} maxLength={10000} required placeholder="输入要同步给协作成员的内容..." />
+          </label>
+          {messageMutation.isError && <p className="collab-bb-error" role="alert">{blackboardError(messageMutation.error)}</p>}
+          {messageMutation.isSuccess && <p className="collab-bb-success" role="status">消息已写入 Blackboard；实时事件到达后列表自动刷新。</p>}
+          <div className="collab-message-composer-actions">
+            <span>发送身份与范围权限由服务端会话校验</span>
+            <button type="submit" className="button-primary" disabled={!scope || !scopeId.trim() || !messageBody.trim() || messageMutation.isPending}>{messageMutation.isPending ? '发送中…' : '发送消息'}</button>
+          </div>
+        </form>
         {liveRefresh && (
           <div className={liveStatus === 'error' ? 'collab-bb-live error' : 'collab-bb-live'}>
             <strong>{{ idle: '待启用', connecting: '连接中…', connected: '已连接', error: '连接中断，将自动重连' }[liveStatus]}</strong>
