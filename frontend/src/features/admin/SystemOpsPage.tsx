@@ -34,7 +34,7 @@ type SchedulerRun = {
   [key: string]: unknown
 }
 
-const endpoints = {
+export const systemOpsEndpoints = {
   metrics: '/platform/v1/observability/metrics/json',
   capacity: '/platform/v1/observability/health/capacity',
   readiness: '../health/ready',
@@ -112,31 +112,31 @@ function QueryState({ label, pending, error, onRetry }: {
 export function SystemOpsPage() {
   const metrics = useQuery({
     queryKey: ['system-ops', 'metrics'],
-    queryFn: async () => apiClient.get<unknown>(endpoints.metrics),
+    queryFn: async () => apiClient.get<unknown>(systemOpsEndpoints.metrics),
     refetchInterval: 30000,
     retry: false,
   })
   const capacity = useQuery({
     queryKey: ['system-ops', 'capacity-health'],
-    queryFn: async () => apiClient.get<HealthResult>(endpoints.capacity),
+    queryFn: async () => apiClient.get<HealthResult>(systemOpsEndpoints.capacity),
     refetchInterval: 15000,
     retry: false,
   })
   const readiness = useQuery({
     queryKey: ['system-ops', 'readiness'],
-    queryFn: async () => apiClient.get<HealthResult>(endpoints.readiness),
+    queryFn: async () => apiClient.get<HealthResult>(systemOpsEndpoints.readiness),
     refetchInterval: 15000,
     retry: false,
   })
   const jobs = useQuery({
     queryKey: ['system-ops', 'scheduler-jobs'],
-    queryFn: async () => apiClient.get<unknown>(endpoints.jobs),
+    queryFn: async () => apiClient.get<unknown>(systemOpsEndpoints.jobs),
     refetchInterval: 30000,
     retry: false,
   })
   const runs = useQuery({
     queryKey: ['system-ops', 'scheduler-runs'],
-    queryFn: async () => apiClient.get<unknown>(endpoints.runs),
+    queryFn: async () => apiClient.get<unknown>(systemOpsEndpoints.runs),
     refetchInterval: 30000,
     retry: false,
   })
