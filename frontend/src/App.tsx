@@ -185,7 +185,13 @@ function AppShell({ config }: { config: BootstrapConfig }) {
 
   // Keep the seven prototype entries unchanged. New capabilities are appended
   // after them so the original navigation order remains stable.
-  const navigationExtensions: { path: string; title: string; icon: string; authOnly?: boolean; capability?: string }[] = [
+  const navigationExtensions: {
+    path: string
+    title: string
+    icon: string
+    authOnly?: boolean
+    capability?: string
+  }[] = [
     { path: '/operations/agents', title: 'Agent 运行态', icon: '◈' },
     { path: '/admin/agents', title: 'Agent 定义', icon: '✧' },
     { path: '/operations/approvals', title: '审批中心', icon: '✓' },
@@ -193,11 +199,19 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     { path: '/operations/memories', title: '记忆治理', icon: '◇' },
     { path: '/operations/conversations', title: '会话与消息', icon: '☷' },
     { path: '/operations/files', title: '文件与产物', icon: '▧' },
-    { path: '/operations/evaluation/datasets', title: '评测中心', icon: '◎' },
+    { path: '/operations/evaluation/datasets', title: '评测数据集', icon: '◎' },
+    { path: '/operations/evaluation/runs', title: '评测运行', icon: '◴' },
     { path: '/admin/tools', title: '工具与 MCP', icon: '⌘' },
     { path: '/admin/skills', title: 'Skills', icon: '✦' },
-    { path: '/admin/models/providers', title: '模型管理', icon: '◉' },
-    { path: '/admin/prompts', title: 'Prompt 管理', icon: '¶', capability: 'prompt_management' },
+    { path: '/admin/models/providers', title: '模型供应商', icon: '◉' },
+    { path: '/admin/models/templates', title: '模型模板', icon: '▦' },
+    { path: '/admin/models/routing', title: '模型路由', icon: '⇄' },
+    {
+      path: '/admin/prompts',
+      title: 'Prompt 管理',
+      icon: '¶',
+      capability: 'prompt_management',
+    },
     { path: '/admin/ops', title: '系统运维', icon: '⌁' },
     { path: '/admin/audit', title: '审计中心', icon: '◷' },
     { path: '/notifications', title: '通知中心', icon: '♧' },
@@ -205,9 +219,10 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     { path: '/admin/scheduler/subscriptions', title: '事件订阅', icon: '⌁' },
     { path: '/admin/organization', title: '组织与成员', icon: '♙', authOnly: true },
     { path: '/admin/access-control', title: '角色与权限', icon: '⚿', authOnly: true },
-  ].filter((item) =>
-    (!item.authOnly || config.auth.enabled) &&
-    (!item.capability || config.capabilities.includes(item.capability))
+  ].filter(
+    (item) =>
+      (!item.authOnly || config.auth.enabled) &&
+      (!item.capability || config.capabilities.includes(item.capability)),
   )
 
   return (
