@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import unittest
 
 from scripts.verify_switch_l4_t07_acceptance import build_report
@@ -66,6 +67,18 @@ class SwitchL4T07AcceptanceReportTests(unittest.TestCase):
         benchmark = _benchmark()
         del benchmark["platform_redis_queue"]["metrics"]["latency_ms"]["p99"]
         with self.assertRaisesRegex(ValueError, "Redis queue latency"):
+            build_report(benchmark)
+
+    def test_rejects_non_finite_latency(self):
+        benchmark = _benchmark()
+        benchmark["legacy_sqlite"]["run_lifecycle_transaction"]["latency_ms"]["p95"] = math.nan
+        with self.assertRaisesRegex(ValueError, "latency distribution"):
+            build_report(benchmark)
+
+    def test_rejects_non_finite_throughput(self):
+        benchmark = _benchmark()
+        benchmark["platform_postgres_pool"]["metrics"]["blackboard_write_read"]["ops_per_second"] = math.inf
+        with self.assertRaisesRegex(ValueError, "throughput is invalid"):
             build_report(benchmark)
 
 
