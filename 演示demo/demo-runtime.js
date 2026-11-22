@@ -12,14 +12,13 @@
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     Object.keys(saved).forEach((key) => {
       if (Array.isArray(saved[key]) && Array.isArray(data[key])) {
-        data[key] = saved[key].map((row) => Array.isArray(row) ? row.map(escapeHtml) : row);
+        data[key] = saved[key].map((row) => Array.isArray(row) ? row : row);
       }
     });
   } catch (error) {
     localStorage.removeItem(STORAGE_KEY);
   }
 
-  const originalCreateItem = createItem;
   window.createItem = function () {
     openModal("创建记录", `
       <div class="field"><label>名称</label><input id="demo-name" maxlength="80" placeholder="输入名称" required></div>
