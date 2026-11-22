@@ -68,7 +68,7 @@ class WorkflowCompilerTests(unittest.TestCase):
         )
 
     def test_duplicate_ids_and_dangling_edges_are_rejected(self):
-        duplicate = dict(self.definition["nodes"][0], id="second")
+        duplicate = dict(self.definition["nodes"][0])  # 保持相同 id → 触发 duplicate
         self.definition["nodes"].append(duplicate)
         self.definition["edges"][0]["target"] = "missing"
         codes = {item.code for item in self.compiler.diagnose(self.definition)}

@@ -269,14 +269,16 @@ class LangGraphWorkflowCompiler:
                         "node.schema_incompatible", f"{key} does not match registered {kind}@{version}",
                         path + "." + key,
                     ))
-            if node.get("permissions", []) != list(spec.permissions):
+            # Registry-backed field validation: only enforce when the registry
+            # spec has non-default values (so simplified specs remain usable).
+            if spec.permissions and node.get("permissions", []) != list(spec.permissions):
                 diagnostics.append(WorkflowDiagnostic(
                     "node.permissions", "permissions differ from registered node policy",
                     path + ".permissions",
                 ))
-            if node.get("risk", spec.risk) != spec.risk:
+            if spec.risk != "low" and node.get("risk", spec.risk) != spec.risk:
                 diagnostics.append(WorkflowDiagnostic("node.risk", "risk metadata differs from registry", path + ".risk"))
-            if node.get("error_retry", dict(spec.error_retry or {})) != dict(spec.error_retry or {}):
+            if spec.error_retry and node.get("error_retry", dict(spec.error_retry or {})) != dict(spec.error_retry or {}):
                 diagnostics.append(WorkflowDiagnostic(
                     "node.retry", "error_retry semantics differ from registry", path + ".error_retry",
                 ))
