@@ -1,14 +1,21 @@
 """Hybrid control-plane degradation, policy synchronization and Run node handoff.
 
-The module composes trusted deployment adapters. Signature verification, durable
-snapshot storage, node fencing and worker lifecycle remain infrastructure ports;
-this code never treats an unverified cache or an unfenced node as authoritative.
+The module composes trusted deployment adapters. Signature verification,
+snapshot persistence, node fencing and worker lifecycle remain explicit
+infrastructure ports; unverified cache and unfenced nodes are never authoritative.
 """
 from __future__ import annotations
 
+import asyncio
+import fcntl
+import hashlib
 import inspect
+import json
+import os
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Protocol, cast
 
 
@@ -47,6 +54,159 @@ class PolicySnapshotStore(Protocol):
         self, snapshot: SignedPolicySnapshot, *, expected_revision: int | None,
     ) -> bool:
         """Atomically persist only if the current revision still matches."""
+
+
+class LocalFilePolicySnapshotStore:
+    """Cross-process CAS store using advisory locks and atomic durable replacement.
+
+    Each tenant has a separately hashed filename. Writers serialize on a stable
+    lock file, verify the expected revision while holding the lock, fsync a
+    private temporary file, atomically replace the snapshot, then fsync the
+    directory entry. The async API delegates blocking filesystem work to a
+    worker thread so it does not block the event loop.
+    """
+
+    def __init__(self, directory: str | os.PathLike[str]) -> None:
+        self._directory = Path(directory)
+
+    def _paths(self, tenant_id: str) -> tuple[Path, Path]:
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        key = hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()
+        return self._directory / f"{key}.json", self._directory / f"{key}.lock"
+
+    @staticmethod
+    def _encode(snapshot: SignedPolicySnapshot) -> bytes:
+        document = {
+            "tenant_id": snapshot.tenant_id,
+            "revision": snapshot.revision,
+            "policy_version": snapshot.policy_version,
+            "issued_at": snapshot.issued_at,
+            "expires_at": snapshot.expires_at,
+            "revocation_epoch": snapshot.revocation_epoch,
+            "payload": dict(snapshot.payload),
+            "signature": snapshot.signature,
+        }
+        try:
+            return (json.dumps(
+                document, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                allow_nan=False,
+            ) + "\n").encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("policy snapshot payload must be finite JSON data") from exc
+
+    @staticmethod
+    def _decode(raw: bytes, tenant_id: str) -> SignedPolicySnapshot:
+        try:
+            document = json.loads(raw)
+            if not isinstance(document, dict) or document.get("tenant_id") != tenant_id:
+                raise ValueError("policy snapshot tenant scope mismatch")
+            payload = document["payload"]
+            if not isinstance(payload, dict):
+                raise ValueError("policy snapshot payload must be an object")
+            return SignedPolicySnapshot(
+                tenant_id=document["tenant_id"],
+                revision=document["revision"],
+                policy_version=document["policy_version"],
+                issued_at=document["issued_at"],
+                expires_at=document["expires_at"],
+                revocation_epoch=document["revocation_epoch"],
+                payload=payload,
+                signature=document["signature"],
+            )
+        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError("stored policy snapshot is corrupt; refusing to load") from exc
+        except ValueError as exc:
+            raise RuntimeError("stored policy snapshot is invalid; refusing to load") from exc
+
+    def _locked(self, tenant_id: str):
+        snapshot_path, lock_path = self._paths(tenant_id)
+        self._directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        flags = os.O_CREAT | os.O_RDWR
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor = os.open(lock_path, flags, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        return snapshot_path, descriptor
+
+    @staticmethod
+    def _unlock(descriptor: int) -> None:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+    def _get_sync(self, tenant_id: str) -> SignedPolicySnapshot | None:
+        snapshot_path, lock_fd = self._locked(tenant_id)
+        try:
+            try:
+                raw = snapshot_path.read_bytes()
+            except FileNotFoundError:
+                return None
+            return self._decode(raw, tenant_id)
+        finally:
+            self._unlock(lock_fd)
+
+    def _put_sync(
+        self, snapshot: SignedPolicySnapshot, expected_revision: int | None,
+    ) -> bool:
+        snapshot_path, lock_fd = self._locked(snapshot.tenant_id)
+        temporary_path: str | None = None
+        try:
+            current: SignedPolicySnapshot | None
+            try:
+                current = self._decode(snapshot_path.read_bytes(), snapshot.tenant_id)
+            except FileNotFoundError:
+                current = None
+            actual_revision = current.revision if current is not None else None
+            if actual_revision != expected_revision:
+                return False
+            if current is not None:
+                if snapshot.revision <= current.revision:
+                    return False
+                if snapshot.revocation_epoch < current.revocation_epoch:
+                    return False
+            encoded = self._encode(snapshot)
+            fd, temporary_path = tempfile.mkstemp(
+                prefix=f".{snapshot_path.name}.", suffix=".tmp", dir=self._directory,
+            )
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "wb") as stream:
+                    stream.write(encoded)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary_path, snapshot_path)
+                temporary_path = None
+                directory_fd = os.open(self._directory, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            except Exception:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+            return True
+        finally:
+            if temporary_path is not None:
+                try:
+                    os.unlink(temporary_path)
+                except FileNotFoundError:
+                    pass
+            self._unlock(lock_fd)
+
+    async def get(self, tenant_id: str) -> SignedPolicySnapshot | None:
+        return await asyncio.to_thread(self._get_sync, tenant_id)
+
+    async def put_if_newer(
+        self, snapshot: SignedPolicySnapshot, *, expected_revision: int | None,
+    ) -> bool:
+        if expected_revision is not None and expected_revision < 1:
+            raise ValueError("expected_revision must be positive or None")
+        return await asyncio.to_thread(self._put_sync, snapshot, expected_revision)
 
 
 @dataclass(frozen=True)

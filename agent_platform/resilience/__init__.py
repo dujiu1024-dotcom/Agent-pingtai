@@ -3,6 +3,7 @@
 from agent_platform.resilience.hybrid_control_plane import (
     ControlPlaneMode,
     ControlPlaneReconciler,
+    LocalFilePolicySnapshotStore,
     OfflinePolicySynchronizer,
     PolicySnapshotRejected,
     PolicySyncResult,
@@ -36,7 +37,8 @@ __all__ = [
     "Bulkhead", "BulkheadRejected", "CircuitBreaker", "CircuitBreakerOpen",
     "CircuitState", "DegradationPolicy", "DependencyUnavailable",
     "FailureMode", "ResilientExecutor",
-    "ControlPlaneMode", "ControlPlaneReconciler", "OfflinePolicySynchronizer",
+    "ControlPlaneMode", "ControlPlaneReconciler", "LocalFilePolicySnapshotStore",
+    "OfflinePolicySynchronizer",
     "PolicySnapshotRejected", "PolicySyncResult", "RunNodeHandoff",
     "SignedPolicySnapshot",
 ]
