@@ -1,5 +1,14 @@
 """Resilience primitives for graceful degradation and fault isolation."""
 
+from agent_platform.resilience.offline_policy import (
+    CachedAuthorization,
+    LicenseState,
+    OfflineAction,
+    OfflineDecision,
+    OfflinePolicy,
+    OfflinePolicyEvaluator,
+    OfflineResult,
+)
 from agent_platform.resilience.policies import (
     Bulkhead,
     BulkheadRejected,
@@ -13,6 +22,8 @@ from agent_platform.resilience.policies import (
 )
 
 __all__ = [
+    "CachedAuthorization", "LicenseState", "OfflineAction", "OfflineDecision",
+    "OfflinePolicy", "OfflinePolicyEvaluator", "OfflineResult",
     "Bulkhead", "BulkheadRejected", "CircuitBreaker", "CircuitBreakerOpen",
     "CircuitState", "DegradationPolicy", "DependencyUnavailable",
     "FailureMode", "ResilientExecutor",
