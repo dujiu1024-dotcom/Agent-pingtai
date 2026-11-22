@@ -19,6 +19,7 @@ type EvaluationRun = {
   average_recall_at_k?: number
   created_at?: string
   metrics?: Record<string, number | null>
+  report?: Record<string, unknown> | string
   [key: string]: unknown
 }
 type Comparison = {
@@ -36,6 +37,19 @@ const itemsOf = <T,>(value: Envelope<T> | T[] | undefined): T[] =>
   Array.isArray(value) ? value : value?.items ?? []
 const idOf = (row: EvaluationRun) => String(row.eval_run_id ?? row.run_id ?? '')
 const dateText = (value?: string) => value ? new Date(value).toLocaleString() : '—'
+const reportOf = (row: EvaluationRun): Record<string, unknown> => {
+  if (row.report && typeof row.report === 'object') return row.report
+  if (typeof row.report === 'string') {
+    try { const parsed: unknown = JSON.parse(row.report); return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {} } catch { return {} }
+  }
+  return {}
+}
+const runMetric = (row: EvaluationRun, key: string): number | null => {
+  const report = reportOf(row)
+  const metrics = report.metrics && typeof report.metrics === 'object' ? report.metrics as Record<string, unknown> : {}
+  const value = row[key] ?? metrics[key] ?? report[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
 const metricLabel: Record<string, string> = {
   average_score: '平均评分',
   pass_rate: '通过率',
@@ -104,7 +118,7 @@ export function EvaluationResultsPanel() {
       const rows = itemsOf(response)
       setVersions(rows)
       const latest = rows[0]
-      setVersion((current) => rows.some((row) => String(row.version) === current) ? current : String(latest?.version ?? ''))
+      setVersion(String(latest?.version ?? ''))
     } catch (reason) {
       setVersions([])
       setError(errorText(reason))
@@ -203,7 +217,7 @@ export function EvaluationResultsPanel() {
       {loadingRuns ? <LoadingState label="正在读取评测运行" /> : runs.length ? <>
         <div className="cq-table-wrap"><table className="cq-table"><thead><tr><th>选择</th><th>Run ID</th><th>模型</th><th>通过率</th><th>平均分</th><th>Recall@K</th><th>Gate</th><th>运行时间</th></tr></thead><tbody>{runs.map((row, index) => {
           const id = idOf(row)
-          return <tr key={id || index}><td><input aria-label={`选择运行 ${id}`} type="checkbox" checked={selectedRuns.includes(id)} disabled={!id || (!selectedRuns.includes(id) && selectedRuns.length >= 32)} onChange={() => toggleRun(id)} /></td><td>{id ? <Link className="text-link" to={`/operations/evaluation/runs/${encodeURIComponent(id)}?dataset_id=${encodeURIComponent(datasetId)}`}>{id}</Link> : '—'}</td><td>{row.model_key ?? '—'}</td><td>{displayMetric('pass_rate', row.pass_rate)}</td><td>{displayMetric('average_score', row.average_score)}</td><td>{displayMetric('average_recall_at_k', row.average_recall_at_k)}</td><td>{row.gate_passed == null ? '—' : row.gate_passed ? '通过' : '未通过'}</td><td>{dateText(row.created_at)}</td></tr>
+          return <tr key={id || index}><td><input aria-label={`选择运行 ${id}`} type="checkbox" checked={selectedRuns.includes(id)} disabled={!id || (!selectedRuns.includes(id) && selectedRuns.length >= 32)} onChange={() => toggleRun(id)} /></td><td>{id ? <Link className="text-link" to={`/operations/evaluation/runs/${encodeURIComponent(id)}?dataset_id=${encodeURIComponent(datasetId)}`}>{id}</Link> : '—'}</td><td>{row.model_key ?? '—'}</td><td>{displayMetric('pass_rate', runMetric(row, 'pass_rate'))}</td><td>{displayMetric('average_score', runMetric(row, 'average_score'))}</td><td>{displayMetric('average_recall_at_k', runMetric(row, 'average_recall_at_k'))}</td><td>{row.gate_passed == null ? '—' : row.gate_passed ? '通过' : '未通过'}</td><td>{dateText(row.created_at)}</td></tr>
         })}</tbody></table></div>
         <div className="cq-eval-actions"><span>已选择 {selectedRuns.length} / 32（至少选择 2 个运行）</span><button className="button-primary" type="button" disabled={comparing || selectedRuns.length < 2} onClick={() => void createComparison()}>{comparing ? '生成中…' : '对比所选运行'}</button></div>
       </> : <EmptyState title="暂无评测运行" description="该数据集版本尚无可读取的评测报告。" />}
