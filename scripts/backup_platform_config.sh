@@ -65,7 +65,7 @@ with path.open("rb") as stream:
     for chunk in iter(lambda: stream.read(1024 * 1024), b""):
         digest.update(chunk)
 print(json.dumps({
-    "format": "platform-config-age-v1",
+    "format": "platform-config-tar-age-v1",
     "artifact": path.name,
     "sha256": digest.hexdigest(),
     "created_at_utc": stamp,
