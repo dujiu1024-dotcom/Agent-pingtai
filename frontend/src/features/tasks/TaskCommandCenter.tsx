@@ -22,6 +22,7 @@ import {
 } from './task-model'
 import type { RunEvent, RunRecord, TaskRecord, TaskListColumnKey } from './task-model'
 import './task-controls.css'
+import { TaskKanban } from './TaskKanban'
 const TASKS = '/platform/v1/workbench/tasks',
   RUNS = '/platform/v1/runs',
   AGENT_REGISTRY = '/platform/v1/registry/agent'
@@ -465,25 +466,14 @@ export function TaskCommandCenter() {
           description="调整筛选条件，或等待服务端任务数据。"
         />
       ) : view === 'kanban' ? (
-        <div className="task-kanban">
-          {statuses.map((s) => (
-            <section className="task-column" key={s}>
-              <header>
-                <strong>{valueLabel(s)}</strong>
-                <span>{filtered.filter((t) => t.status === s).length}</span>
-              </header>
-              {filtered
-                .filter((t) => t.status === s)
-                .map((t) => (
-                  <Card
-                    key={t.task_id}
-                    t={t}
-                    agentNameOf={agentNameOf}
-                  />
-                ))}
-            </section>
-          ))}
-        </div>
+        <TaskKanban
+          statuses={statuses}
+          tasks={sortedFiltered}
+          statusLabel={valueLabel}
+          renderCard={(task) => (
+            <Card t={task} agentNameOf={agentNameOf} />
+          )}
+        />
       ) : view === 'list' ? (
         <>
           <div className="task-table-wrap">
