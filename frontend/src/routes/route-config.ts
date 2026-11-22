@@ -173,7 +173,7 @@ export const pageRoutes: PageRoute[] = [
     title: '会话与消息',
     section: '智能体运营',
     description: '会话与消息记录入口。',
-    owner: '#750',
+    owner: '#762',
   },
   {
     path: '/operations/files',
@@ -181,7 +181,7 @@ export const pageRoutes: PageRoute[] = [
     title: '文件与产物',
     section: '智能体运营',
     description: '文件和运行产物入口。',
-    owner: '#802',
+    owner: '#762',
   },
   {
     path: '/admin/agents',
@@ -444,7 +444,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Conversation 唯一详情路由。',
     parentPath: '/operations/conversations',
     entityIdParam: 'conversationId',
-    owner: '#750',
+    owner: '#762',
   },
   {
     path: '/operations/files/:fileId',
@@ -454,7 +454,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'File/Artifact 唯一详情路由。',
     parentPath: '/operations/files',
     entityIdParam: 'fileId',
-    owner: '#802',
+    owner: '#762',
   },
   {
     path: '/admin/audit/:eventId',
