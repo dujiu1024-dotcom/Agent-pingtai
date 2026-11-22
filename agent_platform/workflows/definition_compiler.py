@@ -397,6 +397,47 @@ class LangGraphWorkflowCompiler:
                     "graph.mixed_outgoing", "a node cannot mix normal edges and conditional branches",
                     "$.edges",
                 ))
+
+        adjacency: dict[str, set[str]] = {node_id: set() for node_id in ids}
+        terminal_found = False
+        for edge in edges:
+            if not isinstance(edge, Mapping):
+                continue
+            source, target = edge.get("source"), edge.get("target")
+            if isinstance(source, str) and source in ids and isinstance(target, str):
+                if target == "__end__":
+                    terminal_found = True
+                elif target in ids:
+                    adjacency[source].add(target)
+        for branch in branches:
+            if not isinstance(branch, Mapping) or not isinstance(branch.get("source"), str):
+                continue
+            routes = branch.get("routes")
+            if not isinstance(routes, Mapping):
+                continue
+            for target in routes.values():
+                if target == "__end__":
+                    terminal_found = True
+                elif isinstance(target, str) and target in ids:
+                    adjacency[branch["source"]].add(target)
+        if not terminal_found:
+            diagnostics.append(WorkflowDiagnostic("graph.no_terminal", "graph must contain a path to END", "$.edges"))
+        reachable: set[str] = set()
+        pending = list(entries) if isinstance(entries, list) else []
+        while pending:
+            current = pending.pop()
+            if current in reachable or current not in adjacency:
+                continue
+            reachable.add(current)
+            pending.extend(adjacency[current] - reachable)
+        unreachable = sorted(
+            node_id for node_id, node in node_by_id.items()
+            if node.get("node_type") not in {"start", "end"} and node_id not in reachable
+        )
+        if unreachable:
+            diagnostics.append(WorkflowDiagnostic(
+                "graph.unreachable", "unreachable nodes: " + ", ".join(unreachable), "$.nodes",
+            ))
         return tuple(diagnostics)
 
     def compile(self, definition: Mapping[str, Any]) -> tuple[Any, dict[str, Any]]:
