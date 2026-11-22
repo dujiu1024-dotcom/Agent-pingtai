@@ -171,6 +171,27 @@ export type RunEvent = {
   summary?: string
   payload?: unknown
 }
+
+export function classifyRunEvents(events: RunEvent[]): {
+  steps: RunEvent[]
+  logs: RunEvent[]
+} {
+  const steps: RunEvent[] = []
+  const logs: RunEvent[] = []
+  for (const event of events) {
+    const type = event.type
+    const payload =
+      event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
+        ? (event.payload as Record<string, unknown>)
+        : null
+    if (/(step|node|tool)[._:-]/i.test(type)) steps.push(event)
+    if (
+      /(log|error|exception)/i.test(type) ||
+      Boolean(payload && ['level', 'message', 'log', 'error', 'stack_trace'].some((key) => key in payload))
+    ) logs.push(event)
+  }
+  return { steps, logs }
+}
 export function unwrapList<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[]
   if (v && typeof v === 'object') {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, mergeRunEvents, normalizeTaskListColumns, parseRunEventFrame, sortEvents, unwrapList } from './task-model'
+import { classifyRunEvents, formatDuration, mergeRunEvents, normalizeTaskListColumns, parseRunEventFrame, sortEvents, unwrapList } from './task-model'
 describe('task command center model', () => {
   it('normalizes list envelopes', () => {
     expect(unwrapList({ data: [1] })).toEqual([1])
@@ -30,6 +30,17 @@ describe('task command center model', () => {
       [parsed!, parsed!],
     ).map((event) => event.event_id)).toEqual(['run-1:1', 'run-1:2'])
     expect(parseRunEventFrame('data: not-json\n\n', 'run-1')).toBeNull()
+  })
+  it('classifies persisted Run step and log events without inventing records', () => {
+    const events = [
+      { event_id: '1', type: 'STEP_STARTED', summary: 'step started' },
+      { event_id: '2', type: 'TOOL_CALL', summary: 'tool called' },
+      { event_id: '3', type: 'RUN_ERROR', payload: { error: 'boom' } },
+      { event_id: '4', type: 'TOKEN_STREAM', payload: { token: 'x' } },
+    ]
+    const result = classifyRunEvents(events)
+    expect(result.steps.map((event) => event.event_id)).toEqual(['1', '2'])
+    expect(result.logs.map((event) => event.event_id)).toEqual(['3'])
   })
   it('formats known durations', () => {
     expect(formatDuration(65000)).toBe('1m 5s')
