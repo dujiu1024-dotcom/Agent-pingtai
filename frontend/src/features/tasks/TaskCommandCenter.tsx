@@ -195,6 +195,10 @@ export function TaskCommandCenter() {
       (sp.get('view') as 'kanban' | 'list' | 'timeline') ?? 'list',
     )
   const visibleColumns = normalizeTaskListColumns(sp.get('columns'))
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkFeedback, setBulkFeedback] = useState('')
+  const [bulkFailureIds, setBulkFailureIds] = useState<string[]>([])
   const q = useQuery({
     queryKey: ['tasks'],
     queryFn: () =>
@@ -223,6 +227,7 @@ export function TaskCommandCenter() {
   const agentNameOf = (id?: string) =>
     id ? agentNameMap.get(id) : undefined
   const tasks = q.data?.items ?? []
+  const availableTags = [...new Set(tasks.flatMap((task) => task.tags ?? []))].sort()
   const statuses = useMemo(
     () => [...new Set(tasks.map((t) => t.status))].sort(),
     [tasks],
@@ -272,6 +277,7 @@ export function TaskCommandCenter() {
   const paged = sortedFiltered.slice(startIdx, startIdx + pageSize)
   const set = (k: string, v: string) => {
     const n = new URLSearchParams(sp)
+    if (k !== 'page' && k !== 'page_size') n.delete('page')
     if (v) {
       n.set(k, v)
     } else {
@@ -290,6 +296,40 @@ export function TaskCommandCenter() {
     n.delete('page') // 切换 pageSize 时回到第 1 页
     if (s !== DEFAULT_PAGE_SIZE) n.set('page_size', String(s))
     setSp(n)
+  }
+  const selectedTasks = filtered.filter((task) => selectedTaskIds.includes(task.task_id))
+  const cancelableSelected = selectedTasks.filter((task) => !RUN_TERMINAL.has(task.status))
+  const retryableSelected = selectedTasks.filter((task) => TASK_RETRYABLE.has(task.status))
+  const currentPageSelected = paged.length > 0 && paged.every((task) => selectedTaskIds.includes(task.task_id))
+  const togglePageSelection = (checked: boolean) => {
+    const pageIds = new Set(paged.map((task) => task.task_id))
+    setSelectedTaskIds((current) => checked
+      ? [...new Set([...current, ...pageIds])]
+      : current.filter((id) => !pageIds.has(id)))
+    setBulkFeedback('')
+    setBulkFailureIds([])
+  }
+  const runBulkAction = async (action: 'cancel' | 'retry') => {
+    const eligible = action === 'cancel' ? cancelableSelected : retryableSelected
+    if (!eligible.length || bulkBusy) return
+    const skipped = selectedTasks.length - eligible.length
+    const actionLabel = action === 'cancel' ? '取消' : '重试'
+    if (!window.confirm(`确认对选中的 ${eligible.length} 个任务执行批量${actionLabel}吗？${skipped ? `另有 ${skipped} 个任务不满足状态条件，将跳过。` : ''}`)) return
+    setBulkBusy(true)
+    setBulkFeedback('')
+    setBulkFailureIds([])
+    const results = await Promise.allSettled(eligible.map((task) => action === 'cancel'
+      ? apiClient.post(`${TASKS}/${encodeURIComponent(task.task_id)}/cancel`)
+      : apiClient.post(`${TASKS}/${encodeURIComponent(task.task_id)}/retry`, {
+          idempotency_key: retryKey(),
+        })))
+    const succeededIds = eligible.filter((_, index) => results[index].status === 'fulfilled').map((task) => task.task_id)
+    const failedIds = eligible.filter((_, index) => results[index].status === 'rejected').map((task) => task.task_id)
+    setSelectedTaskIds((current) => current.filter((id) => !succeededIds.includes(id)))
+    setBulkFailureIds(failedIds)
+    setBulkFeedback(`批量${actionLabel}完成：成功 ${succeededIds.length} 个，失败 ${failedIds.length} 个，跳过 ${skipped} 个。`)
+    setBulkBusy(false)
+    await q.refetch()
   }
   const statusBadgeClass = (status: string) =>
     STATUS_BADGE_CLASS[status.toLowerCase()] ?? 'badge-default'
@@ -369,6 +409,14 @@ export function TaskCommandCenter() {
           value={sp.get('created_by') ?? ''}
           onChange={(e) => set('created_by', e.target.value)}
         />
+        <select
+          aria-label="标签筛选"
+          value={sp.get('tag') ?? ''}
+          onChange={(e) => set('tag', e.target.value)}
+        >
+          <option value="">全部标签</option>
+          {availableTags.map((tag) => <option key={tag} value={tag}>{tag}</option>)}
+        </select>
         <label className="task-date-filter">
           创建时间起
           <input
@@ -476,10 +524,19 @@ export function TaskCommandCenter() {
         />
       ) : view === 'list' ? (
         <>
+          <div className="task-bulk-toolbar" aria-label="批量任务操作">
+            <span>已选 {selectedTasks.length} 项（当前页 {paged.length} 项）</span>
+            <button type="button" className="task-page-btn" disabled={!selectedTasks.length || bulkBusy} onClick={() => setSelectedTaskIds([])}>清空选择</button>
+            <button type="button" className="task-page-btn" disabled={!cancelableSelected.length || bulkBusy} onClick={() => void runBulkAction('cancel')}>{bulkBusy ? '处理中…' : `批量取消（${cancelableSelected.length}）`}</button>
+            <button type="button" className="task-page-btn" disabled={!retryableSelected.length || bulkBusy} onClick={() => void runBulkAction('retry')}>{bulkBusy ? '处理中…' : `批量重试（${retryableSelected.length}）`}</button>
+            {bulkFeedback && <span className={bulkFailureIds.length ? 'task-bulk-warning' : 'task-bulk-success'} role="status">{bulkFeedback}</span>}
+            {bulkFailureIds.length > 0 && <details className="task-bulk-failures"><summary>查看失败任务 ID</summary><span>{bulkFailureIds.join('、')}</span></details>}
+          </div>
           <div className="task-table-wrap">
             <table className="task-table">
               <thead>
                 <tr>
+                  <th className="task-select-cell"><input type="checkbox" aria-label="选择当前页全部任务" checked={currentPageSelected} onChange={(event) => togglePageSelection(event.target.checked)} /></th>
                   {visibleColumns.map((key) => (
                     <th key={key}>
                       {TASK_LIST_COLUMNS.find((column) => column.key === key)?.label}
@@ -535,6 +592,20 @@ export function TaskCommandCenter() {
                   }
                   return (
                     <tr key={t.task_id}>
+                      <td className="task-select-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={`选择任务 ${t.task_id}`}
+                          checked={selectedTaskIds.includes(t.task_id)}
+                          onChange={(event) => {
+                            setSelectedTaskIds((current) => event.target.checked
+                              ? [...new Set([...current, t.task_id])]
+                              : current.filter((id) => id !== t.task_id))
+                            setBulkFeedback('')
+                            setBulkFailureIds([])
+                          }}
+                        />
+                      </td>
                       {visibleColumns.map((key) => (
                         <td key={key}>{cells[key]}</td>
                       ))}
