@@ -583,9 +583,9 @@ async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
 // otherwise treats that document URL as an application route and renders the
 // not-found view. Normalize only the document entry (not deep links) to the real
 // workbench route before React Router reads the initial location.
-const demoBasePath = import.meta.env.BASE_URL.replace(/\\/+$/, '')
+const demoBasePath = import.meta.env.BASE_URL.replace(/\/+$/, '')
 const demoEntryPath = `${demoBasePath}/production.html` || '/production.html'
-const currentPath = window.location.pathname.replace(/\\/+$/, '') || '/'
+const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
 if (currentPath === demoEntryPath) {
   window.history.replaceState(
     window.history.state,
