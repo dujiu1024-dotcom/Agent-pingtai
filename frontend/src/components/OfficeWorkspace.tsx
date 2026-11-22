@@ -220,8 +220,35 @@ export function OfficeWorkspace() {
   const [selectedDesk, setSelectedDesk] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const floor = useMemo(() => floors.find((item) => item.id === floorId) ?? floors[1], [floorId])
-  const visibleAgents = agents.filter((agent) => agent.floor_id === floorId &&
+  const agentsQuery = useQuery({
+    queryKey: ['workspace', 'office', 'agents'],
+    queryFn: () => apiClient.get<unknown>(AGENTS_API).then((value) => listFrom<RegistryAgent>(value)),
+    staleTime: 30000,
+    refetchInterval: 60000,
+  })
+  const tasksQuery = useQuery({
+    queryKey: ['workspace', 'office', 'tasks'],
+    queryFn: () => apiClient.get<unknown>(TASKS_API).then((value) => listFrom<OfficeTask>(value)),
+    staleTime: 15000,
+    refetchInterval: 30000,
+  })
+  const agents = useMemo(() => (agentsQuery.data ?? []).map((agent): OfficeAgent => {
+    const latestTask = (tasksQuery.data ?? []).filter((task) => task.agent_id === agent.item_id)
+      .sort((a, b) => taskTimestamp(b) - taskTimestamp(a))[0]
+    return {
+      agent_id: agent.item_id,
+      name: agent.definition?.name || agent.item_id,
+      role: agent.definition?.description || 'Agent Registry 条目',
+      status: latestTask ? taskStatus(latestTask.status) : 'unknown',
+      floor_id: agent.floor_id || agent.definition?.floor_id,
+      desk_id: agent.desk_id || agent.definition?.desk_id,
+    }
+  }), [agentsQuery.data, tasksQuery.data])
+  const visibleAgents = agents.filter((agent) => (!agent.floor_id || agent.floor_id === floorId) &&
     `${agent.name} ${agent.agent_id} ${agent.desk_id ?? ''}`.toLowerCase().includes(search.toLowerCase()))
+  const runningTasks = (tasksQuery.data ?? []).filter((task) => ['running', 'executing'].includes((task.status ?? '').toLowerCase())).length
+  const activeAgents = visibleAgents.filter((agent) => ['running', 'collaborating', 'waiting_approval', 'queued'].includes(agent.status)).length
+  const dataUnavailable = agentsQuery.isError || tasksQuery.isError
 
   return (
     <main className="office-workspace">
