@@ -190,6 +190,17 @@ export function unwrapRecord<T>(v: unknown): T {
   if (v && typeof v === 'object' && 'data' in v) return (v as { data: T }).data
   return v as T
 }
+export function filterRunEvents(events: RunEvent[], typeFilter = 'all', search = ''): RunEvent[] {
+  const needle = search.trim().toLocaleLowerCase()
+  return events.filter((event) => {
+    if (typeFilter !== 'all' && event.type !== typeFilter) return false
+    if (!needle) return true
+    return [event.type, event.summary, event.actor, event.source, event.request_id, event.trace_id, event.event_id]
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ').toLocaleLowerCase().includes(needle)
+  })
+}
+
 export function sortEvents(events: RunEvent[]): RunEvent[] {
   return [...events].sort((a, b) =>
     a.sequence != null && b.sequence != null && a.sequence !== b.sequence
