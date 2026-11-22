@@ -42,7 +42,8 @@ from agent_platform.control_plane.postgres_connectors import (
     PostgresConnectorSink,
 )
 from agent_platform.control_plane.registry import RegistryService
-from agent_platform.control_plane.sessions_assets import SessionAssetService
+from agent_platform.control_plane.file_processing import FileProcessingWorker, PostgresFileProcessingQueue
+from agent_platform.control_plane.sessions_assets import ObjectStorage, SessionAssetService
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.events.outbox import OutboxRelay, PostgresOutboxStore
 from agent_platform.events.outbox_worker import OutboxRelayWorker
@@ -110,11 +111,8 @@ from agent_platform.scheduling.feishu import FeishuNotifier, load_feishu_config
 from agent_platform.scheduling.service import PostgresSchedulerService
 from agent_platform.security.audit import PostgresAuditWriter, PostgresIdentityAuditReader
 from agent_platform.security.local_store import LocalSecretStore
+from agent_platform.storage.production_composition import ManagedFileProcessingWorker
 from agent_platform.tools.production_reconciliation import build_tool_effect_reconciliation_service
-from agent_platform.tools.idempotency import (
-    PostgresToolEffectStore,
-    ToolEffectReconciliationService,
-)
 from agent_platform.web.board_page import create_board_page_router
 from agent_platform.web.console_pages import create_console_pages_router
 from agent_platform.workflows.production_resolver import (
@@ -163,7 +161,10 @@ def create_production_app(
     redis_client: Any | None = None,
     run_execution_builder: Callable[..., ProductionRunExecution] | None = None,
     workflow_compiler_resolver: Callable[..., Any] | None = None,
-    session_storage: Any | None = None,
+    session_storage: ObjectStorage | None = None,
+    file_processing_scanner: Any | None = None,
+    file_processing_worker_id: str | None = None,
+    file_processing_poll_interval_seconds: float = 1.0,
     local_owner_email: str | None = None,
     local_tenant_id: str | None = None,
 ) -> FastAPI:
@@ -363,6 +364,44 @@ def create_production_app(
         except AuthorizationDenied:
             return False
         return True
+
+    file_processing_worker = None
+    managed_file_processing_worker = None
+    if file_processing_scanner is not None:
+        if session_storage is None:
+            raise ValueError("session_storage is required when file processing is enabled")
+        storage_adapter = session_storage
+        worker_id = (file_processing_worker_id or os.environ.get(
+            "AGENT_PLATFORM_FILE_WORKER_ID"
+        ) or f"api-file-worker-{os.getpid()}").strip()
+        if not worker_id:
+            raise ValueError("file_processing_worker_id must not be empty")
+        file_processing_queue = PostgresFileProcessingQueue(
+            connection_factory=connection_factory,
+        )
+
+        def file_repository_for_tenant(tenant_id: str) -> PostgresSessionRepository:
+            return PostgresSessionRepository(
+                tenant_id=tenant_id, connection_factory=connection_factory,
+            )
+
+        def file_storage_for_tenant(_tenant_id: str) -> ObjectStorage:
+            # Storage is a host-owned port; the composition root never creates
+            # an SDK client or owns its credentials/session lifecycle.
+            return storage_adapter
+
+        file_processing_worker = FileProcessingWorker(
+            queue=file_processing_queue,
+            worker_id=worker_id,
+            repository_for_tenant=file_repository_for_tenant,
+            storage_for_tenant=file_storage_for_tenant,
+            scanner=file_processing_scanner,
+            knowledge_for_tenant=lambda _tenant_id: knowledge_service,
+        )
+        managed_file_processing_worker = ManagedFileProcessingWorker(
+            worker=file_processing_worker,
+            poll_interval_seconds=file_processing_poll_interval_seconds,
+        )
 
     if session_storage is not None:
         async def resolve_sessions(principal: Any) -> SessionAssetService:
@@ -976,6 +1015,8 @@ def create_production_app(
     )
     app.state.production_settings = configured
     app.state.redis_client = redis_client
+    app.state.file_processing_worker = file_processing_worker
+    app.state.managed_file_processing_worker = managed_file_processing_worker
     app.state.identity_repository = identity_repository
     app.state.knowledge_service = knowledge_service
     app.state.memory_service = memory_service
@@ -1017,6 +1058,16 @@ def create_production_app(
 
     app.router.on_startup.append(start_run_worker)
     app.router.on_shutdown.append(stop_run_worker)
+
+    if managed_file_processing_worker is not None:
+        async def start_file_processing_worker() -> None:
+            await managed_file_processing_worker.start()
+
+        async def stop_file_processing_worker() -> None:
+            await managed_file_processing_worker.stop()
+
+        app.router.on_startup.append(start_file_processing_worker)
+        app.router.on_shutdown.append(stop_file_processing_worker)
 
     async def start_knowledge_invalidation_worker() -> None:
         await knowledge_invalidation_worker.start()

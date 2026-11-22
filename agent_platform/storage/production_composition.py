@@ -170,3 +170,50 @@ def build_production_asset_connector_runtime(
         file_processing_queue=file_queue,
         file_processing_worker=file_worker,
     )
+
+
+class ManagedFileProcessingWorker:
+    """Poll the injected file-processing worker under the host app lifecycle."""
+
+    def __init__(self, *, worker: Any, poll_interval_seconds: float = 1.0) -> None:
+        if poll_interval_seconds <= 0:
+            raise ValueError("file worker poll interval must be positive")
+        if not callable(getattr(worker, "run_once", None)):
+            raise TypeError("file processing worker must provide run_once()")
+        self.worker = worker
+        self.poll_interval_seconds = poll_interval_seconds
+        self._stop = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+
+    @property
+    def running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    async def run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                processed = await self.worker.run_once()
+            except Exception:
+                # Transient PostgreSQL/storage failures must not permanently
+                # terminate the lifespan-managed worker.
+                processed = False
+            if not processed:
+                try:
+                    await asyncio.wait_for(
+                        self._stop.wait(), timeout=self.poll_interval_seconds,
+                    )
+                except TimeoutError:
+                    pass
+
+    async def start(self) -> None:
+        if self.running:
+            return
+        self._stop.clear()
+        self._task = asyncio.create_task(self.run(), name="postgres-file-processing-worker")
+
+    async def stop(self) -> None:
+        self._stop.set()
+        task = self._task
+        if task is not None:
+            await task
+            self._task = None
