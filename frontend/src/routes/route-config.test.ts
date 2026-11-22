@@ -5,6 +5,7 @@ import {
   authRoutes,
   detailRoutes,
   getAllRoutes,
+  getNavigationSections,
   getVisibleNavigation,
   getWorkspaceViewMode,
   globalRoutes,
@@ -27,7 +28,7 @@ describe('route configuration', () => {
   })
 
   it('provides six primary navigation items with system administration grouped under workflow', () => {
-    expect(getVisibleNavigation(false).map((group) => group.id)).toEqual([
+    expect(getNavigationSections(false).map((group) => group.id)).toEqual([
       'home',
       'office',
       'tasks',
@@ -35,10 +36,10 @@ describe('route configuration', () => {
       'workflow',
       'cost',
     ])
-    expect(getVisibleNavigation(false).find((group) => group.id === 'workflow')?.label)
+    expect(getNavigationSections(false).find((group) => group.id === 'workflow')?.label)
       .toBe('工作流与系统管理')
     expect(
-      getVisibleNavigation(false).find((group) => group.id === 'workflow')?.subpages,
+      getNavigationSections(false).find((group) => group.id === 'workflow')?.subpages,
     ).toEqual(expect.arrayContaining([
       expect.objectContaining({ path: '/admin/workflows' }),
       expect.objectContaining({ path: '/admin/agents' }),
