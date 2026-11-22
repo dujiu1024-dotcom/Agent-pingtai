@@ -81,7 +81,9 @@ describe('route configuration', () => {
         '/operations/tasks/timeline',
       ),
     ).not.toBeNull()
-    expect(getRouteBreadcrumbs('/operations/tasks/timeline').map((item) => item.label)).toEqual([
+    expect(
+      getRouteBreadcrumbs('/operations/tasks/timeline').map((item) => item.label),
+    ).toEqual([
       '任务中心',
       'Run 事件时间线',
     ])
