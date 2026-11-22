@@ -33,7 +33,7 @@ describe('task command center model', () => {
   })
   it('filters Run events by exact type and searchable event metadata without mutating input', () => {
     const events = [
-      { event_id: 'e-1', type: 'TOOL_CALL', summary: 'Search index', actor: 'agent-alpha', trace_id: 'trace-1' },
+      { event_id: 'e-1', type: 'TOOL_CALL', event_type: 'TOOL_CALL', summary: 'Search index', actor: 'agent-alpha', trace_id: 'trace-1' },
       { event_id: 'e-2', type: 'RUN_FAILED', summary: 'Permission denied', source: 'runtime' },
       { event_id: 'e-3', type: 'TOOL_RESULT', summary: 'Index ready', actor: 'agent-beta' },
     ]
