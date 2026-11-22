@@ -82,9 +82,18 @@ class LangGraphWorkflowCompiler:
         except ImportError as exc:
             raise RuntimeError("LangGraph is required to compile Workflow definitions") from exc
 
+        from langgraph.types import RetryPolicy
+
         graph: Any = StateGraph(dict)
-        for node_id, node in nodes.items():
-            graph.add_node(node_id, node)
+        for node in definition["nodes"]:
+            node_id = node["id"]
+            node_callable = nodes[node_id]
+            retry = node.get("error_retry", {})
+            attempts = retry.get("max_attempts", 1) if isinstance(retry, Mapping) else 1
+            if attempts > 1:
+                graph.add_node(node_id, node_callable, retry_policy=RetryPolicy(max_attempts=attempts))
+            else:
+                graph.add_node(node_id, node_callable)
 
         entry = definition["entry_point"]
         graph.add_edge(START, entry)
@@ -180,9 +189,20 @@ class LangGraphWorkflowCompiler:
                 ))
             if not isinstance(node.get("config", {}), Mapping):
                 diagnostics.append(WorkflowDiagnostic("node.config", "config must be an object", path + ".config"))
+            retry = node.get("error_retry", {})
+            if not isinstance(retry, Mapping):
+                diagnostics.append(WorkflowDiagnostic("node.retry", "error_retry must be an object", path + ".error_retry"))
+            elif "max_attempts" in retry and (
+                isinstance(retry["max_attempts"], bool)
+                or not isinstance(retry["max_attempts"], int)
+                or retry["max_attempts"] < 1
+            ):
+                diagnostics.append(WorkflowDiagnostic(
+                    "node.retry", "max_attempts must be a positive integer", path + ".error_retry.max_attempts",
+                ))
 
         entry = definition.get("entry_point")
-        if entry not in ids:
+        if not isinstance(entry, str) or entry not in ids:
             diagnostics.append(WorkflowDiagnostic("entry.invalid", "entry_point must reference a known node", "$.entry_point"))
 
         seen_edges: set[tuple[str, str]] = set()
@@ -192,7 +212,7 @@ class LangGraphWorkflowCompiler:
                 diagnostics.append(WorkflowDiagnostic("edge.type", "edge must be an object", path))
                 continue
             source, target = edge.get("source"), edge.get("target")
-            if source not in ids or target not in ids | {"__end__"}:
+            if not isinstance(source, str) or source not in ids or not isinstance(target, str) or target not in ids | {"__end__"}:
                 diagnostics.append(WorkflowDiagnostic("edge.reference", "edge references an unknown node", path))
             if (source, target) in seen_edges:
                 diagnostics.append(WorkflowDiagnostic("edge.duplicate", "duplicate edge", path))
@@ -205,7 +225,7 @@ class LangGraphWorkflowCompiler:
                 diagnostics.append(WorkflowDiagnostic("branch.type", "branch must be an object", path))
                 continue
             source, field, routes = branch.get("source"), branch.get("field"), branch.get("routes")
-            if source not in ids or not isinstance(field, str) or not field:
+            if not isinstance(source, str) or source not in ids or not isinstance(field, str) or not field:
                 diagnostics.append(WorkflowDiagnostic("branch.source", "branch source and state field are required", path))
             if source in branch_sources:
                 diagnostics.append(WorkflowDiagnostic("branch.duplicate", "only one branch declaration per source is allowed", path))
@@ -217,7 +237,7 @@ class LangGraphWorkflowCompiler:
                 diagnostics.append(WorkflowDiagnostic("branch.default", "default must name a route key", path + ".default"))
             targets = list(routes.values())
             for target in targets:
-                if target not in ids | {"__end__"}:
+                if not isinstance(target, str) or target not in ids | {"__end__"}:
                     diagnostics.append(WorkflowDiagnostic("branch.target", "branch target is unknown", path + ".routes"))
         for edge in edges:
             if isinstance(edge, Mapping) and edge.get("source") in branch_sources:
@@ -239,7 +259,12 @@ class LangGraphWorkflowCompiler:
                     "node.unknown", "node type disappeared during compilation",
                     "$.nodes",
                 ),))
-            compiled_nodes[node["id"]] = spec.factory(dict(node.get("config", {})))
+            try:
+                compiled_nodes[node["id"]] = spec.factory(dict(node.get("config", {})))
+            except Exception as exc:
+                raise WorkflowDefinitionError((WorkflowDiagnostic(
+                    "node.factory_failed", str(exc)[:500], f"$.nodes[{node['id']}].config",
+                ),)) from exc
         try:
             graph = self._graph_factory(definition, compiled_nodes)
         except Exception as exc:
