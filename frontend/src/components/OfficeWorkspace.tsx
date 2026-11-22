@@ -1,18 +1,46 @@
 import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import './office-workspace.css'
 
 type Floor = { id: string; label: string; name: string; description: string }
-type AgentStatus = 'idle' | 'queued' | 'running' | 'collaborating' | 'waiting_approval' | 'paused' | 'failed' | 'offline'
+type AgentStatus = 'idle' | 'queued' | 'running' | 'collaborating' | 'waiting_approval' | 'paused' | 'failed' | 'offline' | 'unknown'
 type OfficeAgent = {
   agent_id: string
   name: string
   role: string
   status: AgentStatus
-  floor_id: string
+  floor_id?: string
   desk_id?: string
 }
+type RegistryAgent = { item_id: string; floor_id?: string; desk_id?: string; definition?: { name?: string; description?: string; floor_id?: string; desk_id?: string } }
+type OfficeTask = { task_id: string; agent_id?: string; status?: string; updated_at?: string; created_at?: string }
+const TASKS_API = '/platform/v1/workbench/tasks'
+const AGENTS_API = '/platform/v1/registry/agent'
+const listFrom = <T,>(value: unknown): T[] => {
+  if (Array.isArray(value)) return value as T[]
+  if (!value || typeof value !== 'object') return []
+  const record = value as Record<string, unknown>
+  for (const key of ['items', 'results', 'data']) {
+    const candidate = record[key]
+    if (Array.isArray(candidate)) return candidate as T[]
+    if (candidate && typeof candidate === 'object' && Array.isArray((candidate as Record<string, unknown>).items)) return (candidate as { items: T[] }).items
+  }
+  return []
+}
+const taskStatus = (status = ''): AgentStatus => {
+  const value = status.toLowerCase()
+  if (['running', 'executing'].includes(value)) return 'running'
+  if (['waiting_approval', 'waiting_human'].includes(value)) return 'waiting_approval'
+  if (['queued', 'pending'].includes(value)) return 'queued'
+  if (value === 'paused') return 'paused'
+  if (['failed', 'error'].includes(value)) return 'failed'
+  if (['succeeded', 'success', 'completed', 'done'].includes(value)) return 'idle'
+  return 'unknown'
+}
+const taskTimestamp = (task: OfficeTask) => Date.parse(task.updated_at ?? task.created_at ?? '') || 0
 
 const floors: Floor[] = [
   { id: 'floor-03', label: '03', name: '创新与协作层', description: '会议、协作与项目空间' },
@@ -29,11 +57,8 @@ const statusLabels: Record<AgentStatus, string> = {
   paused: '已暂停',
   failed: '失败',
   offline: '离线',
+  unknown: '状态未知',
 }
-
-// The office API is the source of truth. Keep this empty until a real snapshot is supplied;
-// never turn illustrative scene objects into fabricated live Agent telemetry.
-const agents: OfficeAgent[] = []
 
 const zones = [
   { id: 'focus', name: '专注工位', subtitle: 'FOCUS PODS', x: -6.1, z: -3.8, width: 5.4, depth: 4.5 },
