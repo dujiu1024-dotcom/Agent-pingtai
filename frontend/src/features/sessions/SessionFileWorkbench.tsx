@@ -106,10 +106,11 @@ async function downloadVersion(assetId: string, version: number, filename: strin
 }
 
 export function SessionFileWorkbench({ view, authEnabled = true }: { view: 'sessions' | 'files'; authEnabled?: boolean }) {
-  const { conversationId, fileId } = useParams()
+  const { conversationId, sessionId: legacySessionId, fileId } = useParams()
+  const selectedSessionId = conversationId ?? legacySessionId
   if (view === 'sessions') {
-    return conversationId
-      ? <SessionDetail sessionId={conversationId} />
+    return selectedSessionId
+      ? <SessionDetail sessionId={selectedSessionId} />
       : <SessionList />
   }
   if (!authEnabled) return <main className="page-content sf-page"><ModeRestrictedState title="文件资产仅在权限模式开放" description="当前服务端 auth.enabled=false。文件列表、预览和下载依赖身份与资源授权；免登录模式下不会请求文件 API。" /></main>

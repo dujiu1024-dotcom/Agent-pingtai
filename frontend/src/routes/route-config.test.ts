@@ -410,3 +410,17 @@ describe('Issue #746 Agent collaboration route', () => {
     expect(page?.props.initialRunId).toBe('run-123')
   })
 })
+
+
+describe('Issue #750 unified Session workbench', () => {
+  it('routes legacy Sessions and canonical Conversations URLs to SessionFileWorkbench', async () => {
+    const [{ resolveSessionWorkbenchPage }, { SessionFileWorkbench }] = await Promise.all([
+      import('../App'),
+      import('../features/sessions/SessionFileWorkbench'),
+    ])
+    for (const path of ['/operations/sessions', '/operations/sessions/:sessionId', '/operations/conversations', '/operations/conversations/:conversationId']) {
+      expect(resolveSessionWorkbenchPage(path)?.type, path).toBe(SessionFileWorkbench)
+    }
+    expect(resolveSessionWorkbenchPage('/operations/files')).toBeNull()
+  })
+})
