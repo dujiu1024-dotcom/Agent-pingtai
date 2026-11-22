@@ -3,7 +3,6 @@ import { isNodeRuntimeEvent, nodeStatusForRuntimeEvent, runtimeEdgesFromEvents }
 
 type RuntimeEvent = Record<string, unknown>
 type RuntimeNode = { id: string; label: string; type: string; status: string; firstAt: string; lastAt: string; events: number; input?: unknown; output?: unknown; error?: unknown }
-type RuntimeEdge = { id: string; source: string; target: string; label: string }
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
