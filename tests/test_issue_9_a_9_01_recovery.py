@@ -166,6 +166,83 @@ class Issue9RecoveryPostgresTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(record["status"], "succeeded")
         self.assertEqual(record["output"]["answer"], "resumed")
 
+    async def test_manual_intervention_survives_worker_restart_and_applies_once_before_resume(self):
+        from agent_platform.runtime.interventions import RunInterventionService
+
+        run_id = await self._create_task_run()
+        # The worker has checkpointed and paused before its process disappears.
+        async with await self.connect() as conn:
+            await conn.execute(
+                """UPDATE platform_runs
+                   SET status='paused',checkpoint_ref=%s
+                   WHERE tenant_id=%s AND run_id=%s""",
+                ("checkpoint-before-human-input", self.tenant_id, run_id),
+            )
+            await conn.commit()
+
+        before_restart = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        submitted = await before_restart.submit(
+            tenant_id=self.tenant_id,
+            run_id=run_id,
+            actor_id="operator-before-restart",
+            kind="context",
+            payload={"additional_context": "Use the approved customer evidence only."},
+        )
+        self.assertEqual(submitted["status"], "pending")
+
+        # Recreate the service as a new worker process. The durable intervention,
+        # rather than process-local memory, supplies the resume input.
+        after_restart = RunInterventionService(
+            tenant_id=self.tenant_id, connection_factory=self.connect,
+        )
+        applied_payloads = []
+
+        async def apply_to_checkpoint(payload):
+            applied_payloads.append(dict(payload))
+
+        applied = await after_restart.apply_pending(
+            tenant_id=self.tenant_id,
+            run_id=run_id,
+            worker_id="worker-after-restart",
+            applier=apply_to_checkpoint,
+        )
+        self.assertEqual(applied, 1)
+        self.assertEqual(len(applied_payloads), 1)
+        self.assertEqual(
+            applied_payloads[0]["payload"]["additional_context"],
+            "Use the approved customer evidence only.",
+        )
+        self.assertEqual(
+            applied_payloads[0]["actor_id"], "operator-before-restart",
+        )
+
+        # A second recovery attempt must not apply the same human input twice.
+        self.assertEqual(
+            await after_restart.apply_pending(
+                tenant_id=self.tenant_id,
+                run_id=run_id,
+                worker_id="worker-retry",
+                applier=apply_to_checkpoint,
+            ),
+            0,
+        )
+        self.assertEqual(len(applied_payloads), 1)
+        interventions = await after_restart.list_interventions(
+            tenant_id=self.tenant_id, run_id=run_id,
+        )
+        self.assertEqual(interventions[0]["intervention_id"], submitted["intervention_id"])
+        self.assertEqual(interventions[0]["status"], "applied")
+        self.assertEqual(interventions[0]["applied_by"], "worker-after-restart")
+        events = await after_restart.list_events(
+            tenant_id=self.tenant_id, run_id=run_id,
+        )
+        self.assertEqual(
+            [event["event_type"] for event in events],
+            ["human.intervention_submitted", "human.intervention_applied"],
+        )
+
     async def test_fresh_gateway_replays_confirmed_external_effect_without_second_dispatch(self):
         run_id = await self._create_task_run()
         call_id = "stable-provider-call"
