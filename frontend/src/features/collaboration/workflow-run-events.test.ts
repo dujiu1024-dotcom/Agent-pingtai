@@ -11,7 +11,6 @@ describe('Workflow Run live event adapter', () => {
     const event = normalizeRunSseEvent(
       { run_id: 'run-a', sequence: 7, event_type: 'STEP_START', node_id: 'research', node_name: 'Research' },
       'run-a:7',
-      '2026-11-22T00:00:00Z',
     )
     expect(event).toMatchObject({
       event_id: 'run-a:7',
