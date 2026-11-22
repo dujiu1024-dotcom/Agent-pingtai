@@ -37,7 +37,6 @@ import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
 import { AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { SessionFileWorkbench } from '@/features/sessions/SessionFileWorkbench'
-import { SessionsWorkspace } from '@/features/sessions/SessionsWorkspace'
 import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
 import { ApprovalDetailPage } from '@/features/approvals/ApprovalDetailPage'
 import { GenericListPage } from '@/components/GenericListPage'
@@ -345,7 +344,8 @@ function RouteGuard({
   capabilities: string[]
   version: string
 }) {
-  const runId = useParams<{ runId?: string }>().runId ?? ''
+  const routeParams = useParams<{ runId?: string; sessionId?: string; conversationId?: string }>()
+  const runId = routeParams.runId ?? ''
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -391,8 +391,8 @@ function RouteGuard({
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/approvals') return <GenericListPage title="审批中心" description="查看服务端返回且当前身份有权访问的审批请求。" apiPath="/platform/v1/approvals" refetchInterval={15000} />
   if (route.path === '/operations/approvals/:approvalId') return <ApprovalDetailPage />
-  if (route.path === '/operations/sessions' || route.path === '/operations/sessions/:sessionId') return <SessionsWorkspace />
-  if (route.path === '/operations/conversations' || route.path === '/operations/conversations/:conversationId') return <SessionFileWorkbench view="sessions" />
+  const sessionPage = resolveSessionWorkbenchPage(route.path, authEnabled)
+  if (sessionPage) return sessionPage
   if (route.path === '/operations/files' || route.path === '/operations/files/:fileId') return <SessionFileWorkbench view="files" authEnabled={authEnabled} />
   if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
   if (route.path === '/admin/skills') return <SkillsPage />
@@ -462,4 +462,16 @@ function AuthEntryPage({ route }: { route: PageRoute }) {
 
 export default function App() {
   return <BootstrapGate />
+}
+
+
+/** Resolve both historical Session URLs to the single SessionFileWorkbench implementation. */
+export function resolveSessionWorkbenchPage(routePath: string, authEnabled = true): ReactElement | null {
+  if (routePath === '/operations/sessions' || routePath === '/operations/conversations') {
+    return <SessionFileWorkbench view="sessions" authEnabled={authEnabled} />
+  }
+  if (routePath === '/operations/sessions/:sessionId' || routePath === '/operations/conversations/:conversationId') {
+    return <SessionFileWorkbench view="sessions" authEnabled={authEnabled} />
+  }
+  return null
 }
