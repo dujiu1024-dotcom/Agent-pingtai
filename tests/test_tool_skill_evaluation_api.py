@@ -136,6 +136,40 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.assertEqual(response.json()["skill_version"], 2)
         self.assertEqual([event["outcome"] for event in self.audit.events], ["started", "succeeded"])
 
+    def test_skill_evaluation_reports_scanner_unavailable_as_rejected(self):
+        self._publish("skill", "scanner-offline", {
+            "manifest": {
+                "name": "scanner-offline",
+                "dependencies": {"safe-parser": "==1.2.3"},
+            },
+        })
+        app = FastAPI()
+        app.add_middleware(ApiV1CompatibilityMiddleware)
+        app.include_router(create_tool_skill_evaluation_router(
+            resolve_principal=lambda request: Principal(
+                user_id="user-a", tenant_id="tenant-a", session_id="s",
+                email="user@example.test", display_name="User",
+            ),
+            resolve_registry=lambda actor: self.registry,
+            authorize=lambda *args: True,
+            resolve_mcp_checker=lambda actor: None,
+            resolve_skill_reviewer=lambda actor: SkillDependencyReviewer(
+                store=InMemorySkillDependencyReviewStore(),
+                approved_pins={"safe-parser": ("==1.2.3",)},
+                scanner=None,
+            ),
+            audit_writer=self.audit,
+        ))
+        response = TestClient(app).post(
+            "/api/v1/skills/scanner-offline/evaluate", json={"version": 2},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "rejected")
+        self.assertTrue(any(
+            "dependency_scanner_not_configured" in finding
+            for finding in response.json()["findings"]
+        ))
+
     def test_missing_principal_is_rejected(self):
         app = FastAPI()
         app.add_middleware(ApiV1CompatibilityMiddleware)
