@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { eventLabel, localizedJson, valueLabel } from '@/lib/i18n/labels'
 import {
   formatDuration,
+  classifyRunEvents,
   resolveAgentId,
   resolveProjectLabel,
   resolveRunId,
@@ -1263,15 +1264,7 @@ export function RunTracePage() {
     (eventCurrentPage + 1) * EVENT_PAGE_SIZE,
   )
   // Derive step/log views only from persisted Run events; never synthesize progress.
-  const stepEvents = events.filter((event) =>
-    /(step|node|tool)[._:-]/i.test(eventTypeOf(event)),
-  )
-  const logEvents = events.filter((event) => {
-    const type = eventTypeOf(event)
-    const payload = payloadOf(event)
-    return /(log|error|exception)/i.test(type) ||
-      Boolean(payload && ['level', 'message', 'log', 'error', 'stack_trace'].some((key) => key in payload))
-  })
+  const { steps: stepEvents, logs: logEvents } = classifyRunEvents(events)
   return (
     <section className="page-content task-detail">
       <button className="button-link" onClick={() => nav(-1)}>
