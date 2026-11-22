@@ -120,7 +120,10 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
       <ErrorBoundary>
         <Routes>
           <Route element={<AppShell config={config} />}>
-            <Route path="/_storybook/design-system" element={<DesignSystemShowcase />} />
+            <Route
+              path="/_storybook/design-system"
+              element={<DesignSystemShowcase />}
+            />
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
