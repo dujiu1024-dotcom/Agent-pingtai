@@ -6,7 +6,6 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Request
 
-from agent_platform.control_plane.registry import RegistryService
 from agent_platform.control_plane.skill_dependency_review import (
     SkillDependencyReviewError,
     SkillDependencyReviewer,
