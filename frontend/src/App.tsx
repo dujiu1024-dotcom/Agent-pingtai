@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ReactElement } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -345,7 +346,7 @@ function RouteGuard({
 export function resolveAdminPage(
   routePath: string,
   authEnabled: boolean,
-): React.ReactElement | null {
+): ReactElement | null {
   if (routePath === '/admin/agents' || routePath === '/admin/agents/:agentId') {
     return <AgentDefinitionPage />
   }
