@@ -1,7 +1,7 @@
 """Production Workflow compiler resolver loading and fail-closed behavior tests."""
 import asyncio
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
@@ -18,7 +18,7 @@ class WorkflowProductionResolverTests(unittest.TestCase):
 
     def test_exactly_one_trusted_resolver_entry_point_is_loaded(self):
         resolver = object()
-        entry = unittest.mock.Mock(name="workflow-compiler-entry")
+        entry = Mock(name="workflow-compiler-entry")
         entry.name = "resolver"
         entry.load.return_value = resolver
         with patch("importlib.metadata.entry_points", return_value=(entry,)):
