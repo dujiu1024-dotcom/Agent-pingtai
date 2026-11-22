@@ -70,7 +70,10 @@ def create_observability_router(
             try:
                 items = await _fallback_db_metrics()
             except Exception:
-                items = []
+                # An unavailable database is an operational failure, not a
+                # successful empty metrics response. The dashboard relies on
+                # non-2xx responses to render its explicit failure state.
+                raise HTTPException(503, "metrics fallback query is unavailable") from None
         return {"items": items, "count": len(items)}
 
     @router.get("/health/capacity")
