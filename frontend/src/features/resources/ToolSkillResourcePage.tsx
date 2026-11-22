@@ -104,6 +104,13 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
     mutationFn: () => apiClient.post(`/platform/v1/registry/${kind}/${encodeURIComponent(itemId!)}/disable`),
     onSuccess: invalidate,
   })
+  // Re-enable by creating a fresh active version from the latest published version.
+  // The Registry API intentionally has no mutable "enable" operation.
+  const enable = useMutation({
+    mutationFn: (version: number) =>
+      apiClient.post(`/platform/v1/registry/${kind}/${encodeURIComponent(itemId!)}/rollback/${version}`),
+    onSuccess: invalidate,
+  })
   const connectionTest = useMutation({
     mutationFn: () =>
       apiClient.post<ConnectionTestResult>(
@@ -158,11 +165,17 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
     )
   }
 
-  const definition = active.data?.definition ?? {}
+  const latestVersion = [...(versions.data?.items ?? [])].sort((left, right) => right.version - left.version)[0]
+  const latestPublishedVersion = [...(versions.data?.items ?? [])]
+    .filter((item) => item.status === 'published')
+    .sort((left, right) => right.version - left.version)[0]
+  const displayedItem = active.data ?? latestVersion
+  const definition = displayedItem?.definition ?? {}
   const error = [
     publish,
     rollback,
     disable,
+    enable,
     connectionTest,
     compatibilityEvaluation,
   ].find((mutation) => mutation.isError)?.error
@@ -197,13 +210,32 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
         <p className="eyebrow"><Link to={`/admin/${kind === 'tool' ? 'tools' : 'skills'}`}>{title}</Link> · 资源详情</p>
         <h1>{String(definition.name ?? itemId)}</h1>
         <p>资源 ID：{itemId}</p>
-        {active.data && <small>生效版本 v{active.data.version} · {valueLabel(active.data.status)}</small>}
+        {displayedItem && <small>{active.data ? '生效版本' : '最近版本'} v{displayedItem.version} · {valueLabel(displayedItem.status)}</small>}
       </div>
       {active.isPending && <LoadingState />}
-      {active.isError && <ErrorState title="无法读取生效版本" description={active.error instanceof Error ? active.error.message : '该资源尚无生效版本或无读取权限。'} />}
-      {active.data && <>
+      {active.isError && !latestVersion && <ErrorState title="无法读取资源版本" description={active.error instanceof Error ? active.error.message : '该资源尚无生效版本或无读取权限。'} />}
+      {displayedItem && <>
         <div className="detail-actions">
-          <button className="button-secondary" type="button" disabled={disable.isPending || active.data.status === 'disabled'} onClick={() => disable.mutate()}>停用资源</button>
+          {kind === 'tool' && active.data && (
+            <button className="button-secondary" type="button" disabled={disable.isPending} onClick={() => disable.mutate()}>
+              {disable.isPending ? '停用中…' : '停用资源'}
+            </button>
+          )}
+          {kind === 'tool' && displayedItem.status === 'disabled' && latestPublishedVersion && (
+            <button
+              className="button-secondary"
+              type="button"
+              disabled={enable.isPending}
+              onClick={() => enable.mutate(latestPublishedVersion.version)}
+            >
+              {enable.isPending ? '启用中…' : '启用资源'}
+            </button>
+          )}
+          {kind === 'skill' && (
+            <button className="button-secondary" type="button" disabled={disable.isPending || !active.data} onClick={() => disable.mutate()}>
+              停用资源
+            </button>
+          )}
           {kind === 'tool' && capabilities.isPending && (
             <span className="detail-empty">正在检查连接测试能力…</span>
           )}
@@ -211,7 +243,7 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
             <button
               className="button-secondary"
               type="button"
-              disabled={connectionTest.isPending || active.data.status !== 'published'}
+              disabled={connectionTest.isPending || !active.data || active.data.status !== 'published'}
               onClick={() => connectionTest.mutate()}
             >
               {connectionTest.isPending ? '连接测试中…' : '测试连接'}
@@ -245,17 +277,32 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
             )}
           {error && <span className="auth-error" role="alert">{error instanceof Error ? error.message : '操作失败'}</span>}
         </div>
-        {kind === 'tool' && connectionTest.data && (
-          <section className="detail-section">
-            <h2 className="detail-section-title">最近连接测试</h2>
-            <p>
-              状态：{connectionTest.data.status} · 延迟：
-              {connectionTest.data.latency_ms} ms
-            </p>
-            {connectionTest.data.error_code && (
-              <p role="status">错误代码：{connectionTest.data.error_code}</p>
+        {kind === 'tool' && (
+          <section className="detail-section" aria-label="MCP 健康状态">
+            <h2 className="detail-section-title">MCP 健康状态</h2>
+            {connectionTest.data ? (
+              <>
+                <p
+                  role={connectionTest.data.status === 'healthy' ? 'status' : 'alert'}
+                  aria-live="polite"
+                >
+                  {connectionTest.data.status === 'healthy' ? '连接正常' : '连接异常'}
+                  {' · '}最近检查：{new Date(connectionTest.data.checked_at).toLocaleString('zh-CN')}
+                  {' · '}延迟：{connectionTest.data.latency_ms} ms
+                </p>
+                {connectionTest.data.error_code && (
+                  <p role="alert">失败原因代码：{connectionTest.data.error_code}</p>
+                )}
+                <p>期望工具：{connectionTest.data.expected_tools.join(', ') || '无'}</p>
+                <p>发现工具：{connectionTest.data.discovered_tools.join(', ') || '无'}</p>
+              </>
+            ) : connectionTest.isError ? (
+              <p role="alert">
+                连接测试请求失败：{connectionTest.error instanceof Error ? connectionTest.error.message : '服务暂不可用'}
+              </p>
+            ) : (
+              <p className="detail-empty">尚无本次页面会话中的连接测试结果。执行“测试连接”后显示服务端健康检查结果。</p>
             )}
-            <p>发现工具：{connectionTest.data.discovered_tools.join(', ') || '无'}</p>
           </section>
         )}
         {kind === 'skill' && compatibilityEvaluation.data && (
