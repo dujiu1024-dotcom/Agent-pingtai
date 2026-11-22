@@ -13,6 +13,8 @@ type PromptSummary = {
   latest_version: number
   active_version: number | null
   version_count: number
+  canary_version?: number | null
+  canary_percentage?: number | null
 }
 
 type PromptList = { items: PromptSummary[]; count: number }
@@ -59,6 +61,9 @@ export function PromptRegistryPage({
   const [selectedVersion, setSelectedVersion] = useState<number | ''>('')
   const [baseVersion, setBaseVersion] = useState<number | ''>('')
   const [formError, setFormError] = useState<string | null>(null)
+  const [canaryPercentage, setCanaryPercentage] = useState('10')
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   useEffect(() => {
     setSelectedVersion('')
@@ -108,6 +113,16 @@ export function PromptRegistryPage({
       ),
     enabled: Boolean(promptId && currentVersion),
   })
+  const gateQuery = useQuery({
+    queryKey: ['prompt-evaluation-gate', promptId, currentVersion],
+    queryFn: () =>
+      apiClient.get<{ status: 'passed' | 'not_recorded'; eval_run_id: string | null; action: string | null }>(
+        `/platform/v1/prompts/${encodeURIComponent(promptId!)}/evaluation-gate?version=${currentVersion}`,
+      ),
+    enabled: Boolean(promptId && currentVersion && evaluationGateEnabled),
+    retry: false,
+  })
+
   const diffQuery = useQuery({
     queryKey: ['prompt-diff', promptId, selectedVersion, baseVersion],
     queryFn: () =>
@@ -156,6 +171,41 @@ export function PromptRegistryPage({
         }),
       ])
     },
+  })
+
+  const configureCanary = useMutation({
+    mutationFn: () => {
+      const percentage = Number(canaryPercentage)
+      if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
+        throw new Error('灰度比例必须大于 0 且不超过 100。')
+      }
+      if (!currentVersion) throw new Error('没有可灰度的版本。')
+      return apiClient.post(
+        `/platform/v1/prompts/${encodeURIComponent(promptId!)}/canary`,
+        { version: currentVersion, percentage },
+      )
+    },
+    onSuccess: async () => {
+      setActionError(null)
+      setActionNotice('灰度配置已由服务端接受。')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['prompt-registry'] }),
+        queryClient.invalidateQueries({ queryKey: ['prompt-evaluation-gate', promptId] }),
+      ])
+    },
+    onError: (error) => { setActionNotice(null); setActionError(errorMessage(error)) },
+  })
+  const rollbackVersion = useMutation({
+    mutationFn: () => apiClient.post(
+      `/platform/v1/prompts/${encodeURIComponent(promptId!)}/rollback`,
+      { version: currentVersion },
+    ),
+    onSuccess: async () => {
+      setActionError(null)
+      setActionNotice('回滚请求已由服务端接受。')
+      await queryClient.invalidateQueries({ queryKey: ['prompt-registry'] })
+    },
+    onError: (error) => { setActionNotice(null); setActionError(errorMessage(error)) },
   })
 
   const handleCreate = (event: FormEvent<HTMLFormElement>) => {
@@ -240,6 +290,9 @@ export function PromptRegistryPage({
                     ? `当前激活 v${item.active_version}`
                     : '尚无激活版本'}
                 </small>
+                {item.canary_version ? (
+                  <small>灰度 v{item.canary_version} · {item.canary_percentage ?? '比例未知'}%</small>
+                ) : null}
               </Link>
             ))}
           </div>
@@ -324,12 +377,22 @@ export function PromptRegistryPage({
                       ? '提交评测 Gate…'
                       : '通过评测 Gate 并激活'}
                   </button>
-                  {!evaluationGateEnabled ? (
-                    <p className="muted">
-                      当前后端未配置 Prompt Evaluation
-                      Gate，激活/灰度/回滚操作已禁用。
-                    </p>
-                  ) : null}
+                  <section className="prompt-evaluation-gate" aria-live="polite">
+                    <h3>评测 Gate 状态</h3>
+                    {!evaluationGateEnabled ? <p className="muted">服务端未声明 prompt_evaluation_gate；发布、灰度和回滚操作已禁用。</p> : null}
+                    {evaluationGateEnabled && gateQuery.isPending ? <p>正在读取版本 v{currentVersion} 的 Gate 记录…</p> : null}
+                    {gateQuery.isError ? <p role="alert">{errorMessage(gateQuery.error)}</p> : null}
+                    {gateQuery.data?.status === 'passed' ? <p>已通过 · {gateQuery.data.action ?? '服务端 Gate'} · Eval Run {gateQuery.data.eval_run_id ?? '未返回'}</p> : null}
+                    {gateQuery.data?.status === 'not_recorded' ? <p>尚无已通过记录；这不代表评测失败。服务端仍会在写操作时强制执行 Gate。</p> : null}
+                  </section>
+                  {actionNotice ? <p role="status">{actionNotice}</p> : null}
+                  {actionError ? <p role="alert">{actionError}</p> : null}
+                  <div className="prompt-version-toolbar">
+                    <label htmlFor="prompt-canary-percentage">灰度比例（%）</label>
+                    <input id="prompt-canary-percentage" type="number" min="0.1" max="100" step="0.1" value={canaryPercentage} onChange={(event) => setCanaryPercentage(event.target.value)} />
+                    <button type="button" disabled={!evaluationGateEnabled || !currentVersion || configureCanary.isPending} onClick={() => configureCanary.mutate()}>{configureCanary.isPending ? '配置中…' : '配置当前版本灰度'}</button>
+                    <button type="button" disabled={!evaluationGateEnabled || !currentVersion || rollbackVersion.isPending} onClick={() => rollbackVersion.mutate()}>{rollbackVersion.isPending ? '回滚中…' : '回滚到当前版本'}</button>
+                  </div>
                   {activateVersion.isError ? (
                     <p role="alert">{errorMessage(activateVersion.error)}</p>
                   ) : null}
