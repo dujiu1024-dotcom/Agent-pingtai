@@ -724,6 +724,10 @@ export function findSubPage(
   )
 }
 
+export function getAuthEntryRedirect(authEnabled: boolean): string | null {
+  return authEnabled ? null : '/workspace/overview'
+}
+
 export const authRoutes: PageRoute[] = [
   {
     path: '/auth/login',
