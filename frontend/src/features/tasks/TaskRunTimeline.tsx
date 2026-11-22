@@ -10,7 +10,7 @@ import {
   resolveTaskTitle,
   unwrapList,
 } from './task-model'
-import type { RunEvent, TaskRecord } from './task-model'
+import type { RunEvent } from './task-model'
 import { buildTaskRunTimelineEntries } from './task-run-timeline-model'
 import './task-controls.css'
 
