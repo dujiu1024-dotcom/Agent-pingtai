@@ -1529,3 +1529,45 @@ body {
 .auth-back-link{display:inline-block;margin-top:20px;color:#2f6af0;font-size:12px}
 .auth-notice{padding:16px;border:1px solid #b7dfc4;border-radius:9px;background:#f2fbf5;color:#285c39;font-size:13px;line-height:1.7}
 @media(max-width:520px){.auth-card{padding:26px 22px}.auth-screen{min-height:calc(100vh - 58px);padding:20px 14px}}
+
+
+/* Issue #818 · route-aware breadcrumb trail */
+.app-breadcrumbs {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 4px 10px;
+  color: #dbe4f8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.app-breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.app-breadcrumb-item a {
+  color: #dbe4f8;
+  transition: color 0.16s ease;
+}
+.app-breadcrumb-item a:hover {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.app-breadcrumb-item [aria-current="page"] {
+  color: #fff;
+  font-weight: 650;
+}
+.app-breadcrumb-separator {
+  color: rgba(219, 228, 248, 0.62);
+}
+@media (max-width: 640px) {
+  .app-breadcrumbs {
+    min-height: 28px;
+    padding-bottom: 7px;
+    font-size: 11px;
+  }
+}
