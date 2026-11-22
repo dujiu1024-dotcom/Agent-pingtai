@@ -26,7 +26,7 @@ def test_platform_web_serves_agent_platform_workbench_by_default():
     # The checked-in production bundle must expose the appended menu too;
     # source-only navigation changes are not sufficient for the served UI.
     bundle = client.get("/app/assets/app.js")
-    stylesheet_path = re.search(r'href="([^"]+\\.css)"', response.text)
+    stylesheet_path = re.search(r'href="([^"]+\.css)"', response.text)
     assert stylesheet_path is not None
     stylesheet = client.get(stylesheet_path.group(1))
     assert bundle.status_code == 200
