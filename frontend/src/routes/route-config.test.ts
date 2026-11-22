@@ -209,16 +209,16 @@ describe('route configuration', () => {
     ).toBe('provider-7')
   })
 
-  it('mounts the unified Session/File workbench for list and detail routes owned by #762', () => {
+  it('assigns file asset list and detail routes to #802 while keeping session routes under #762', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
     const fileDetailRoute = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
     const conversationRoute = pageRoutes.find((route) => route.path === '/operations/conversations')
     const conversationDetail = detailRoutes.find((route) => route.path === '/operations/conversations/:conversationId')
 
-    expect(filesRoute?.owner).toBe('#762')
+    expect(filesRoute?.owner).toBe('#802')
     expect(filesRoute?.authOnly).toBeUndefined()
-    expect(fileDetailRoute?.owner).toBe('#762')
+    expect(fileDetailRoute?.owner).toBe('#802')
     expect(fileDetailRoute?.authOnly).toBeUndefined()
     expect(conversationRoute?.owner).toBe('#762')
     expect(conversationDetail?.owner).toBe('#762')
