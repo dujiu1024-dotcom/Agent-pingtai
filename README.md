@@ -50,6 +50,24 @@ python3 agency.py doctor
 
 ---
 
+## 本地基础设施一键启停（PostgreSQL / Redis / MinIO）
+
+仓库根目录提供完整配置模板和启停脚本：
+
+```bash
+cp .env.example .env
+# 将 PostgreSQL、Redis、MinIO 的 REPLACE_* 密码改为随机值
+chmod 600 .env
+./start.sh
+./stop.sh
+```
+
+- `start.sh` 使用 Docker Compose v2 启动 `deploy/compose.yaml`，等待 PostgreSQL、Redis、MinIO 健康检查通过后显示服务状态。
+- `stop.sh` 停止并移除容器，但保留命名数据卷；不会执行数据删除。
+- 可通过 `ENV_FILE=/absolute/path/to/.env ./start.sh` 指定其他环境文件。
+- 该基础设施 Compose 文件**不启动 API 或 Worker**。生产 API/Worker 镜像、HTTPS Origin、密钥文件和出口代理需按 `deploy/.env.production.example` 与 `deploy/OPERATIONS.md` 单独配置。
+- `.env.example` 中 Runtime、Cost、Budget 字段是本地配置参考；预算是否生效仍由服务端 Quota Policy 配置和执行，不能仅靠环境变量宣称已启用强制限额。
+
 ## 常用命令
 
 | 命令 | 作用 |
