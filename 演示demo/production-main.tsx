@@ -579,6 +579,21 @@ async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
   return localFallback(input, init, path, method)
 }
 
+// The standalone production document is served at /production.html. BrowserRouter
+// otherwise treats that document URL as an application route and renders the
+// not-found view. Normalize only the document entry (not deep links) to the real
+// workbench route before React Router reads the initial location.
+const demoBasePath = import.meta.env.BASE_URL.replace(/\\/+$/, '')
+const demoEntryPath = `${demoBasePath}/production.html` || '/production.html'
+const currentPath = window.location.pathname.replace(/\\/+$/, '') || '/'
+if (currentPath === demoEntryPath) {
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${demoBasePath}/workspace/overview${window.location.search}${window.location.hash}`,
+  )
+}
+
 // Install the local transport before importing production modules. ApiClient
 // captures fetch when its singleton is constructed during module evaluation.
 window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
