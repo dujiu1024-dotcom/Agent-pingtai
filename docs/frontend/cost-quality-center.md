@@ -69,3 +69,13 @@ The capacity health endpoint is dependency-injected and may return 503 when no m
 - Focused regression test added at `tests/test_issue_747_noauth_usage_scope.py`.
 - CI is required to execute Python tests, frontend lint/typecheck/build and integration checks. No local checkout/runtime was available through this execution surface.
 - Real device, production billing/provider and external-resource validation are skipped as requested.
+
+
+## L3-T15 — Token / 费用统计卡片与趋势图
+
+- 统计卡片继续消费服务端 Usage Summary 的 Token、请求量和费用汇总，不在浏览器重新计算汇总费用。
+- 新增按 UTC 日期的 Token 与费用趋势，基于同一筛选条件下 Usage Ledger 返回的 `occurred_at`、`input_tokens`、`output_tokens`、`total_tokens` 和 `cost_usd` 聚合。
+- 缺失/非法价格事件不加入费用合计，单独计数；某日所有事件均缺价时该日费用显示为不可用（—），不显示为 0 USD。
+- 图表旁提供逐日明细表，明确 UTC 日期、Token 分项、费用及有价/缺价事件数。费用币种沿用 API 明确提供的 USD。
+- 当前 Usage Ledger 请求上限为 1,000 条；达到上限时图表提示可能不完整，不声称覆盖全部事件。趋势仅表示筛选后实际返回的账本记录，不从 Summary 总量推算缺失日期。
+- 新增纯函数测试覆盖日期聚合、跨日排序、缺价处理及非法时间戳过滤。
