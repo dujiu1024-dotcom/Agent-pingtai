@@ -109,11 +109,11 @@ export class ApiClient {
       ifMatch,
       etag = true,
       responseType = 'json',
+      method: inputMethod = 'GET',
       retries = inputMethod.toUpperCase() === 'GET' ? 2 : 0,
       retryDelayMs = 250,
       headers: requestHeaders,
       signal: callerSignal,
-      method: inputMethod = 'GET',
       ...rest
     } = options
     const method = inputMethod.toUpperCase()

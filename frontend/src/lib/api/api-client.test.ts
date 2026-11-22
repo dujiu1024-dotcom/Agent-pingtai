@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { ApiClient, ApiConflictError } from './api-client'
+import { ApiClient, ApiConflictError, ApiError } from './api-client'
 
 describe('ApiClient', () => {
   it('serializes the shared pagination contract', async () => {
@@ -210,5 +210,107 @@ describe('ApiClient', () => {
     await vi.advanceTimersByTimeAsync(25)
     await assertion
     vi.useRealTimers()
+  })
+})
+
+
+describe('ApiClient HTTP failure paths', () => {
+  it('surfaces 401 as an authentication error without retrying', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 'UNAUTHENTICATED',
+          message: 'Authentication required',
+          request_id: 'req-401',
+          retryable: false,
+        }),
+        { status: 401, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+
+    await expect(client.get('/private', { retries: 4, retryDelayMs: 0 })).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 401,
+      code: 'UNAUTHENTICATED',
+      requestId: 'req-401',
+      retryable: false,
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a 429 response and succeeds when the rate limit clears', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'RATE_LIMITED', message: 'Slow down' }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: 'available' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+
+    await expect(
+      client.get('/limited', { retries: 1, retryDelayMs: 0 }),
+    ).resolves.toEqual({ data: 'available' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops retrying 500 responses at the configured retry limit', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          code: 'INTERNAL_ERROR',
+          message: 'Temporary server failure',
+          request_id: 'req-500',
+          retryable: true,
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+
+    await expect(
+      client.get('/unstable', { retries: 2, retryDelayMs: 0 }),
+    ).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 500,
+      code: 'INTERNAL_ERROR',
+      requestId: 'req-500',
+      retryable: true,
+    })
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retry a 500 response for a non-idempotent POST request', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'INTERNAL_ERROR', message: 'Failed' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const client = new ApiClient({
+      baseUrl: 'https://example.test/api',
+      fetcher,
+    })
+
+    await expect(
+      client.post('/commands', { action: 'run' }, { retries: 3, retryDelayMs: 0 }),
+    ).rejects.toBeInstanceOf(ApiError)
+    expect(fetcher).toHaveBeenCalledTimes(1)
   })
 })
