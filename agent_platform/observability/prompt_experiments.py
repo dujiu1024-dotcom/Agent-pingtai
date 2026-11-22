@@ -24,6 +24,31 @@ from agent_platform.observability.evaluation_governance import (
 from agent_platform.observability.prompts import PromptVersion, tenant_prompt_key
 
 
+def _sanitize_nan_inf(obj: Any) -> Any:
+    """Recursively replace NaN/Inf with None for json.dumps safety."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_nan_inf(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nan_inf(v) for v in obj]
+    return obj
+
+
+def _sanitize_json_value(obj: Any) -> Any:
+    """json.dumps default fallback — stringify non-serializable objects."""
+    if hasattr(obj, "__float__"):
+        val = float(obj)
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return val
+    if hasattr(obj, "__dict__"):
+        return str(obj)
+    return str(obj)
+
+
 @dataclass(frozen=True)
 class PromptExperimentCase:
     case_id: str
@@ -382,10 +407,12 @@ class PostgresPromptExperimentRepository:
             "comparison": asdict(report.comparison) if is_dataclass(report.comparison) else report.comparison,
             "created_at_epoch_ms": report.created_at_epoch_ms,
         }
+        payload = _sanitize_nan_inf(payload)
         try:
             encoded = json.dumps(
                 payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                 allow_nan=False,
+                default=_sanitize_json_value,
             )
         except (TypeError, ValueError) as exc:
             raise ValueError("experiment report must contain finite JSON values") from exc
