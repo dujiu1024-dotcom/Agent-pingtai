@@ -182,6 +182,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         app.include_router(create_tool_skill_evaluation_router(
             resolve_principal=missing, resolve_registry=lambda actor: self.registry,
             authorize=lambda *args: True,
+            authorize_version=lambda *args: True,
             resolve_mcp_checker=lambda actor: None,
             resolve_skill_reviewer=lambda actor: None,
             audit_writer=self.audit,
@@ -314,6 +315,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
             ),
             resolve_registry=lambda actor: self.registry,
             authorize=lambda *args: True,
+            authorize_version=lambda *args: True,
             resolve_mcp_checker=broken_checker,
             resolve_skill_reviewer=lambda actor: None,
             audit_writer=self.audit,
