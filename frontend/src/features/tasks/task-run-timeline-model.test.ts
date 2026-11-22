@@ -25,11 +25,13 @@ describe('buildTaskRunTimelineEntries', () => {
       [event('event-early', '2026-11-22T10:01:00Z')],
     ])
 
-    expect(result.map(({ event: item, task: owner, runId }) => [
-      item.event_id,
-      owner.task_id,
-      runId,
-    ])).toEqual([
+    expect(
+      result.map(({ event: item, task: owner, runId }) => [
+        item.event_id,
+        owner.task_id,
+        runId,
+      ]),
+    ).toEqual([
       ['event-early', 'task-b', 'run-b'],
       ['event-late', 'task-a', 'run-a'],
     ])
@@ -46,13 +48,16 @@ describe('buildTaskRunTimelineEntries', () => {
 
   it('uses deterministic Run and event identifiers when timestamps tie', () => {
     const sameTime = '2026-11-22T10:00:00Z'
-    const result = buildTaskRunTimelineEntries([
-      { task: task('task-b'), runId: 'run-b' },
-      { task: task('task-a'), runId: 'run-a' },
-    ], [
-      [event('event-b', sameTime)],
-      [event('event-a', sameTime)],
-    ])
+    const result = buildTaskRunTimelineEntries(
+      [
+        { task: task('task-b'), runId: 'run-b' },
+        { task: task('task-a'), runId: 'run-a' },
+      ],
+      [
+        [event('event-b', sameTime)],
+        [event('event-a', sameTime)],
+      ],
+    )
     expect(result.map(({ runId }) => runId)).toEqual(['run-a', 'run-b'])
   })
 })
