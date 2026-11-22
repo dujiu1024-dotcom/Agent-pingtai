@@ -493,12 +493,12 @@ export const globalRoutes: PageRoute[] = [
     owner: '#751',
   },
   {
-    path: '/admin/operations',
+    path: '/admin/ops',
     pageId: 'GLOBAL-OPS',
     title: '系统运维',
     section: '全局能力',
-    description: '系统诊断与运维事件入口。',
-    owner: '#751',
+    description: 'Metrics、组件 Health 与 Scheduler 运行态 Dashboard。',
+    owner: '#813',
   },
   {
     path: '/admin/scheduler/jobs',
@@ -635,7 +635,7 @@ export const navigationSections: NavigationSection[] = [
       { label: '审计中心', path: '/admin/audit' },
       { label: '调度任务', path: '/admin/scheduler/jobs' },
       { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
-      { label: '系统运维', path: '/admin/operations' },
+      { label: '系统运维', path: '/admin/ops' },
     ],
   },
 ]
