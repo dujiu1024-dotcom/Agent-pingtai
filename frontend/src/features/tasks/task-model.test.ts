@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, mergeRunEvents, normalizeTaskListColumns, parseRunEventFrame, sortEvents, unwrapList } from './task-model'
+import { filterRunEvents, formatDuration, mergeRunEvents, normalizeTaskListColumns, parseRunEventFrame, sortEvents, unwrapList } from './task-model'
 describe('task command center model', () => {
   it('normalizes list envelopes', () => {
     expect(unwrapList({ data: [1] })).toEqual([1])
@@ -30,6 +30,17 @@ describe('task command center model', () => {
       [parsed!, parsed!],
     ).map((event) => event.event_id)).toEqual(['run-1:1', 'run-1:2'])
     expect(parseRunEventFrame('data: not-json\n\n', 'run-1')).toBeNull()
+  })
+  it('filters Run events by exact type and searchable event metadata without mutating input', () => {
+    const events = [
+      { event_id: 'e-1', type: 'TOOL_CALL', summary: 'Search index', actor: 'agent-alpha', trace_id: 'trace-1' },
+      { event_id: 'e-2', type: 'RUN_FAILED', summary: 'Permission denied', source: 'runtime' },
+      { event_id: 'e-3', type: 'TOOL_RESULT', summary: 'Index ready', actor: 'agent-beta' },
+    ]
+    expect(filterRunEvents(events, 'TOOL_CALL').map((event) => event.event_id)).toEqual(['e-1'])
+    expect(filterRunEvents(events, 'all', 'TRACE-1').map((event) => event.event_id)).toEqual(['e-1'])
+    expect(filterRunEvents(events, 'all', 'permission').map((event) => event.event_id)).toEqual(['e-2'])
+    expect(events).toHaveLength(3)
   })
   it('formats known durations', () => {
     expect(formatDuration(65000)).toBe('1m 5s')
