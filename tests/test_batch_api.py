@@ -107,7 +107,7 @@ class BatchApiTests(unittest.TestCase):
 
         class MatchingService:
             tenant_id = "tenant-a"
-            async def get_batch(self, batch_id: str):
+            async def get_batch(self, batch_id: str, tenant_id: str | None = None):
                 return None
         async def resolve_matching(_principal):
             return MatchingService()
