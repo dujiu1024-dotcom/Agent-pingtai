@@ -98,7 +98,7 @@ class LangGraphWorkflowCompiler:
                     node_id, node_callable,
                     retry_policy=RetryPolicy(
                         max_attempts=attempts,
-                        initial_interval=0.0 if backoff == "none" else 0.5,
+                        initial_interval=0.001 if backoff == "none" else 0.5,
                         backoff_factor=1.0 if backoff == "linear" else 2.0,
                     ),
                 )
@@ -390,7 +390,7 @@ class LangGraphWorkflowCompiler:
         return graph, {
             "definition_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
             "node_count": len(compiled_nodes),
-            "edge_count": len(definition.get("edges", [])) + sum(
+            "edge_count": len(definition.get("port_checks", definition.get("edges", []))) + sum(
                 len(branch.get("routes", {})) for branch in definition.get("branches", [])
             ),
             "engine": "langgraph",
