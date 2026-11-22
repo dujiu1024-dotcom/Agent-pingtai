@@ -26,6 +26,11 @@ class FakeS3Client:
     async def delete_object(self, **kwargs):
         self.objects.pop((kwargs["Bucket"], kwargs["Key"]), None)
 
+    async def head_bucket(self, **kwargs):
+        if getattr(self, "unavailable", False):
+            raise ConnectionError("storage unavailable")
+        self.head_bucket_name = kwargs["Bucket"]
+
     def generate_presigned_url(self, method, *, Params, ExpiresIn):
         self.presign_calls.append((method, Params, ExpiresIn))
         return "https://storage.example.test/signed"
@@ -47,6 +52,24 @@ class S3ObjectStorageTests(unittest.IsolatedAsyncioTestCase):
             await storage.presign_get(key, expires_in=901)
         await storage.delete(key)
         self.assertEqual(client.objects, {})
+
+    async def test_readiness_probes_bucket_and_fails_closed_on_unavailability(self):
+        client = FakeS3Client()
+        storage = S3ObjectStorage(client=client, bucket="assets")
+        self.assertTrue(await storage.check_ready())
+        self.assertEqual(client.head_bucket_name, "assets")
+
+        client.unavailable = True
+        with self.assertRaises(ObjectStorageError):
+            await storage.check_ready()
+
+    async def test_readiness_is_not_healthy_without_probe_capability(self):
+        class IncompleteClient:
+            pass
+
+        storage = S3ObjectStorage(client=IncompleteClient(), bucket="assets")
+        with self.assertRaises(ObjectStorageError):
+            await storage.check_ready()
 
     async def test_kms_configuration_and_unsafe_keys(self):
         client = FakeS3Client()
