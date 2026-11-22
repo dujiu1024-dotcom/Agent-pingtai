@@ -48,3 +48,22 @@ Pass `workflow_compiler_resolver(principal)` to `create_platform_app` alongside 
 ## Validation
 
 Run `python -m unittest tests.test_workflow_definition_compiler tests.test_workflow_compiler_api tests.test_workflow_publish_compile_gate -v`. The tests cover allowlisted node factories, current designer payload compatibility, schema/typed-port compatibility, unknown nodes, graph references, branch targets, retry/permission metadata, compiler failures, API authorization, and fail-closed publication. Real LangGraph compile integration is separately exercised when LangGraph dependencies are installed; no real server/device is required.
+
+
+## Production composition root wiring
+
+`agent_platform.production.create_production_app` forwards the compiler resolver
+into `create_platform_app`, alongside the tenant-scoped Registry resolver and
+authorizer. A deployment may pass `workflow_compiler_resolver` directly, or
+install exactly one reviewed Python entry point named `resolver` in the
+`agent_platform.workflow_compiler` entry-point group. The loaded callable must
+return the tenant-specific `LangGraphWorkflowCompiler` for the authenticated
+Principal and must use only reviewed node factories.
+
+When no trusted resolver is installed, production still mounts the diagnostics,
+compile, and Registry publish routes, but the resolver returns HTTP 503. This is
+intentional fail-closed behavior: no empty/fake node registry is treated as a
+working compiler, and Workflow publication remains disabled until the trusted
+node factories are configured. Multiple installed resolver entry points or a
+non-callable entry point fail application composition rather than selecting an
+ambiguous implementation.

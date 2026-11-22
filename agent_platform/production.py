@@ -112,6 +112,10 @@ from agent_platform.tools.idempotency import (
 )
 from agent_platform.web.board_page import create_board_page_router
 from agent_platform.web.console_pages import create_console_pages_router
+from agent_platform.workflows.production_resolver import (
+    load_trusted_workflow_compiler_resolver,
+    workflow_compiler_unavailable,
+)
 
 
 def _postgres_connection_factory(dsn: str) -> Callable[[], Any]:
@@ -153,12 +157,22 @@ def create_production_app(
     connection_factory: Any | None = None,
     redis_client: Any | None = None,
     run_execution_builder: Callable[..., ProductionRunExecution] | None = None,
+    workflow_compiler_resolver: Callable[..., Any] | None = None,
     session_storage: Any | None = None,
     local_owner_email: str | None = None,
     local_tenant_id: str | None = None,
 ) -> FastAPI:
     """Build the production API graph; optional arguments are test seams only."""
     configured = settings or load_production_settings()
+    if workflow_compiler_resolver is None:
+        workflow_compiler_resolver = load_trusted_workflow_compiler_resolver()
+    if workflow_compiler_resolver is None:
+        # The HTTP routes remain discoverable in every production composition,
+        # but compile and publish return 503 until a trusted node registry is
+        # installed. Never create an empty/pretend registry or accept user code.
+        workflow_compiler_resolver = workflow_compiler_unavailable
+    if not callable(workflow_compiler_resolver):
+        raise TypeError("workflow_compiler_resolver must be a trusted callable")
     if connection_factory is None:
         connection_factory = _postgres_connection_factory(configured.postgres_dsn)
 
@@ -885,6 +899,7 @@ def create_production_app(
         locale_manage_authorizer=authorize_locale_manage,
         registry_service_resolver=resolve_registry,
         registry_authorizer=authorize_registry,
+        workflow_compiler_resolver=workflow_compiler_resolver,
         session_service_resolver=resolve_sessions,
         session_authorizer=authorize_session,
         approval_service=approval_service,
