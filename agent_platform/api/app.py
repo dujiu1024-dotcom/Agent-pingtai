@@ -261,7 +261,9 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    app.include_router(create_identity_router(identity=identity))
+    app.include_router(create_identity_router(
+        identity=identity, connection_factory=connection_factory,
+    ))
     advertised_capabilities = set(bootstrap_capabilities)
     if auth_enabled and prompt_registry is not None and prompt_manage_authorizer is not None:
         advertised_capabilities.add("prompt_management")
