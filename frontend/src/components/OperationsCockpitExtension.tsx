@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Activity, AlertTriangle, Bot, Cpu, Gauge, RefreshCw } from 'lucide-react'
+import { Activity, AlertTriangle, Bot, Cpu, Gauge, RefreshCw, Wallet } from 'lucide-react'
 
 import { ApiError, apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import './operations-cockpit-extension.css'
+import { buildTaskDateDrilldown } from './operations-cockpit-metrics'
 
 type UsageEvent = {
   event_id: string
@@ -30,6 +31,11 @@ type AlertRecord = {
   metric_name?: string
 }
 type HealthRecord = { status?: string; [key: string]: unknown }
+type UsageSummary = {
+  estimated_cost_usd?: string
+  provider_reported_cost_usd?: string
+  reconciled_event_cost_usd?: string
+}
 
 const DAY_OPTIONS = [1, 7, 30, 90]
 const statusLabel: Record<string, string> = {
@@ -100,6 +106,13 @@ export function OperationsCockpitExtension() {
     staleTime: 30_000,
     retry: false,
   })
+  const summaryQuery = useQuery({
+    queryKey: ['operations-cockpit-extension', 'usage-summary', queryString(serverParams)],
+    queryFn: () => apiClient.get<UsageSummary>(`/platform/v1/quotas/usage/summary?${serverParams}`),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: false,
+  })
   const taskQuery = useQuery({
     queryKey: ['operations-cockpit-extension', 'tasks'],
     queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
@@ -163,6 +176,7 @@ export function OperationsCockpitExtension() {
   }
   const refresh = () => {
     void usageQuery.refetch()
+    void summaryQuery.refetch()
     void taskQuery.refetch()
     void alertsQuery.refetch()
     void healthQuery.refetch()
@@ -172,6 +186,13 @@ export function OperationsCockpitExtension() {
   if (agent) filteredQuery.set('agent', agent)
   if (model) filteredQuery.set('model', model)
   const taskDrill = `/workspace/tasks?${filteredQuery.toString()}`
+  const formatMoney = (value?: string) => {
+    if (value === undefined || value === null || value.trim() === '') return '—'
+    const amount = Number(value)
+    return Number.isFinite(amount)
+      ? new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 4 }).format(amount)
+      : '—'
+  }
 
   return (
     <section className="page-content ops-cockpit-extension" aria-labelledby="ops-cockpit-title">
@@ -219,9 +240,21 @@ export function OperationsCockpitExtension() {
           <header><h3><Activity size={17} /> Token 吞吐趋势</h3><span>{events.length ? `${events.length} 条用量事件` : '暂无数据'}</span></header>
           {usageQuery.isPending ? <LoadingState label="正在加载用量趋势" /> : usageQuery.isError ? <ErrorState title="用量趋势加载失败" description={`${usageQuery.error instanceof Error ? usageQuery.error.message : '请求失败'}${queryErrorId(usageQuery.error) ? ` · request_id: ${queryErrorId(usageQuery.error)}` : ''}`} onRetry={() => void usageQuery.refetch()} /> : dailyRows.length ? (
             <div className="ops-cockpit-bars" aria-label="按本地日期聚合的 Token 用量趋势">
-              {dailyRows.map(([day, value]) => <Link key={day} to={`/workspace/tasks?date=${encodeURIComponent(day)}&days=${days}`} title={`${day}：${value.toLocaleString()} tokens`}><span style={{ height: `${Math.max(5, value / maxDaily * 100)}%` }} /><small>{day}</small></Link>)}
+              {dailyRows.map(([day, value]) => <Link key={day} to={buildTaskDateDrilldown(day)} title={`${day}：${value.toLocaleString()} tokens`}><span style={{ height: `${Math.max(5, value / maxDaily * 100)}%` }} /><small>{day}</small></Link>)}
             </div>
           ) : <EmptyState title="所选范围暂无用量事件" description="无数据不以 0 替代。" />}
+        </article>
+
+        <article className="ops-cockpit-panel">
+          <header><h3><Wallet size={17} /> 成本口径</h3><Link to="/workspace/quality-cost">成本与质量 →</Link></header>
+          {summaryQuery.isPending ? <LoadingState label="正在加载成本汇总" /> : summaryQuery.isError ? <ErrorState title="成本汇总不可用" description={errorDescription(summaryQuery.error)} onRetry={() => void summaryQuery.refetch()} /> : summaryQuery.data ? (
+            <dl className="ops-cost-breakdown">
+              <div><dt>估算成本</dt><dd>{formatMoney(summaryQuery.data.estimated_cost_usd)}</dd></div>
+              <div><dt>供应商报告</dt><dd>{formatMoney(summaryQuery.data.provider_reported_cost_usd)}</dd></div>
+              <div><dt>已核对事件成本</dt><dd>{formatMoney(summaryQuery.data.reconciled_event_cost_usd)}</dd></div>
+            </dl>
+          ) : <EmptyState title="暂无成本汇总" description="服务端未返回成本口径数据，不以 0 替代。" />}
+          <p className="ops-api-gap">三种成本口径分开展示，不相加、不互相替代；当前没有经核实的日级成本序列 API。</p>
         </article>
 
         <article className="ops-cockpit-panel">
