@@ -90,6 +90,7 @@ def create_platform_app(
     workflow_compiler_resolver: Any | None = None,
     tool_mcp_checker_resolver: Any | None = None,
     skill_dependency_reviewer_resolver: Any | None = None,
+    tool_skill_evaluation_authorizer: Any | None = None,
     session_authorizer: Any | None = None,
     connector_service_resolver: Any | None = None,
     connector_authorizer: Any | None = None,
@@ -442,12 +443,13 @@ def create_platform_app(
         ))
     tool_skill_evaluation_configured = any(value is not None for value in (
         tool_mcp_checker_resolver, skill_dependency_reviewer_resolver,
+        tool_skill_evaluation_authorizer,
     ))
     if tool_skill_evaluation_configured:
         if any(value is None for value in (
             registry_service_resolver, registry_authorizer,
             tool_mcp_checker_resolver, skill_dependency_reviewer_resolver,
-            resource_audit_writer,
+            tool_skill_evaluation_authorizer, resource_audit_writer,
         )):
             raise ValueError(
                 "Tool/MCP checker, Skill reviewer, registry resolver/authorizer and audit writer must be configured together"
@@ -456,6 +458,7 @@ def create_platform_app(
             resolve_principal=_principal_from_request,
             resolve_registry=registry_service_resolver,
             authorize=registry_authorizer,
+            authorize_version=tool_skill_evaluation_authorizer,
             resolve_mcp_checker=tool_mcp_checker_resolver,
             resolve_skill_reviewer=skill_dependency_reviewer_resolver,
             audit_writer=resource_audit_writer,
