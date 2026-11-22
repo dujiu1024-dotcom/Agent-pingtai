@@ -19,7 +19,7 @@ class _LeaseStore:
         self.owned = owned
         self.calls = 0
 
-    async def heartbeat(self, tenant_id, run_id, worker_id, *, lease_seconds):
+    async def heartbeat(self, tenant_id, run_id, worker_id, *, lease_seconds, lease_token):
         self.calls += 1
         return self.owned
 
@@ -116,7 +116,7 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
         with patch("agent_platform.runtime.workbench_tasks.asyncio.sleep", immediate_sleep):
             with self.assertRaises(WorkerLeaseLost):
                 await worker._with_heartbeat(
-                    type("Snapshot", (), {"tenant_id": "tenant-a", "run_id": "run-a"})(),
+                    type("Snapshot", (), {"tenant_id": "tenant-a", "run_id": "run-a", "lease_token": 4})(),
                     execute(None, None, {}),
                 )
 
