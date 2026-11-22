@@ -362,7 +362,9 @@ function RouteGuard({
   capabilities: string[]
   version: string
 }) {
-  const runId = useParams<{ runId?: string }>().runId ?? ''
+  const params = useParams<{ runId?: string; entryId?: string }>()
+  const runId = params.runId ?? ''
+  const entryId = params.entryId ?? ''
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -406,7 +408,7 @@ function RouteGuard({
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/operations/tasks/timeline') return <TaskRunTimeline />
-  const collaborationPage = resolveCollaborationPage(route.path, runId)
+  const collaborationPage = resolveCollaborationPage(route.path, runId, entryId)
   if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (route.path === '/operations/agents/:agentId') return <AgentDefinitionPage />
@@ -445,9 +447,10 @@ function RouteGuard({
 }
 
 /** Resolve the collaboration workspace and its run-scoped deep link. */
-export function resolveCollaborationPage(routePath: string, runId = ''): ReactElement | null {
+export function resolveCollaborationPage(routePath: string, runId = '', entryId = ''): ReactElement | null {
   if (routePath === '/workspace/collaboration') return <AgentCollaborationCenter />
   if (routePath === '/operations/workflow-runs/:runId') return <AgentCollaborationCenter initialRunId={runId} />
+  if (routePath === '/operations/blackboard/:entryId') return <AgentCollaborationCenter initialEntryId={entryId} />
   return null
 }
 
