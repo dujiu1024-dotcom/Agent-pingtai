@@ -69,3 +69,14 @@ The capacity health endpoint is dependency-injected and may return 503 when no m
 - Focused regression test added at `tests/test_issue_747_noauth_usage_scope.py`.
 - CI is required to execute Python tests, frontend lint/typecheck/build and integration checks. No local checkout/runtime was available through this execution surface.
 - Real device, production billing/provider and external-resource validation are skipped as requested.
+
+
+## L4-T16 performance metrics view
+
+- Adds a dedicated **性能** tab to the existing Cost & Quality Center; no parallel backend metrics API or telemetry recorder is introduced.
+- Reads the existing authenticated `GET /platform/v1/observability/metrics/json` endpoint through the shared API client and renders the returned metric families, sample values, types, help text and bounded labels.
+- Reuses the existing quota usage summary for request count, success/error rates, P50/P95 latency and first-token P50 only when the response actually contains those fields.
+- Current verified `build_usage_report` contract does not provide request count, success/error rates or latency percentiles. The performance view therefore displays these as unavailable. The metrics endpoint exports Prometheus snapshots, not a time-series query; cumulative counters are not presented as requests/second. Throughput remains unavailable until a server-side rate/window contract exists.
+- The Prometheus table is a current collector snapshot and is explicitly not represented as matching the selected date/model filter. The quota summary cards do honor the existing date/model filters.
+- Loading, request error, empty collector and unavailable metric states are explicit. No metric values are synthesized from ledger event counts or runtime totals.
+- Verification: source/API contract reviewed against `agent_platform/api/observability.py`, `agent_platform/observability/metrics.py`, `agent_platform/observability/prometheus.py` and `agent_platform/quotas/usage_reporting.py`. This connector-only environment has no local frontend runner; CI is required for lint, typecheck, build and automated tests. No real-device or production-resource validation is claimed.
