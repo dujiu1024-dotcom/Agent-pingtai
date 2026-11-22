@@ -5,6 +5,7 @@ import { ApiError, apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { eventLabel, localizedJson, valueLabel } from '@/lib/i18n/labels'
 import {
+  filterRunEvents,
   formatDuration,
   resolveAgentId,
   resolveProjectLabel,
@@ -1259,17 +1260,7 @@ export function RunTracePage() {
       : Date.parse(String(r.updated_at ?? r.finished_at ?? '')) -
         Date.parse(String(r.created_at ?? r.started_at ?? ''))
   const eventTypes = [...new Set(events.map((event) => eventTypeOf(event)).filter(Boolean))].sort()
-  const filteredEvents = events.filter((event) => {
-    const type = eventTypeOf(event)
-    if (eventTypeFilter !== 'all' && type !== eventTypeFilter) return false
-    const needle = eventSearch.trim().toLocaleLowerCase()
-    if (!needle) return true
-    const searchable = [type, event.summary, event.actor, event.actor_id, event.source,
-      event.request_id, event.trace_id, event.event_id]
-      .filter((value): value is string => typeof value === 'string')
-      .join(' ').toLocaleLowerCase()
-    return searchable.includes(needle)
-  })
+  const filteredEvents = filterRunEvents(events, eventTypeFilter, eventSearch)
   const eventTotalPages = Math.max(1, Math.ceil(filteredEvents.length / EVENT_PAGE_SIZE))
   const eventCurrentPage = Math.min(eventPage, eventTotalPages - 1)
   const visibleEvents = filteredEvents.slice(
