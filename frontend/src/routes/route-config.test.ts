@@ -10,6 +10,8 @@ import {
   isCanonicalRouteSetValid,
   navigationSections,
   pageRoutes,
+  getNavigationSections,
+  getRouteBreadcrumbs,
 } from './route-config'
 
 describe('route configuration', () => {
@@ -253,4 +255,26 @@ describe('authentication entry routes', () => {
   })
 
 
+})
+
+describe('unified shell navigation and breadcrumbs', () => {
+  it('filters auth-only and capability navigation from the canonical sections', () => {
+    const noAuth = getNavigationSections(false).flatMap((section) => section.subpages.map((page) => page.path))
+    const withAuth = getNavigationSections(true).flatMap((section) => section.subpages.map((page) => page.path))
+    expect(noAuth).not.toContain('/admin/organization')
+    expect(noAuth).not.toContain('/admin/access-control')
+    expect(withAuth).toContain('/admin/organization')
+    expect(getNavigationSections(true).flatMap((section) => section.subpages.map((page) => page.path))).not.toContain('/admin/prompts')
+    expect(getNavigationSections(true, ['prompt_management']).flatMap((section) => section.subpages.map((page) => page.path))).toContain('/admin/prompts')
+  })
+
+  it('builds list and detail breadcrumbs from the canonical route map', () => {
+    expect(getRouteBreadcrumbs('/admin/tools').map((item) => item.label)).toEqual(['系统管理', '工具与 MCP'])
+    expect(getRouteBreadcrumbs('/admin/tools/tool-123').map((item) => item.label)).toEqual(['系统管理', '工具与 MCP', '工具详情 · tool-123'])
+    expect(getRouteBreadcrumbs('/operations/tasks/task-123').map((item) => item.label)).toEqual(['任务中心', '任务指挥中心', '任务详情 · task-123'])
+  })
+
+  it('does not expose an unrelated breadcrumb for unknown routes', () => {
+    expect(getRouteBreadcrumbs('/not-registered')).toEqual([])
+  })
 })
