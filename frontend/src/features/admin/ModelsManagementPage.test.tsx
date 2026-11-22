@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseModelDefinition } from './ModelsManagementPage'
+import { getRoutingEmptyState, parseModelDefinition } from './ModelsManagementPage'
 
 describe('model management definition validation', () => {
   it('accepts a JSON object with secret references', () => {
@@ -22,5 +22,23 @@ describe('model management definition validation', () => {
 
   it('rejects malformed JSON', () => {
     expect(() => parseModelDefinition('{invalid')).toThrow()
+  })
+})
+
+
+describe('model routing empty state', () => {
+  it('explains shared-instance behavior when auth is disabled', () => {
+    const state = getRoutingEmptyState(false)
+    expect(state.title).toContain('共享实例模式')
+    expect(state.description).toContain('auth.enabled=false')
+    expect(state.description).toContain('不按用户或部门隔离')
+    expect(state.description).toContain('不发起策略请求')
+  })
+
+  it('keeps the missing routing API explicit when auth is enabled', () => {
+    const state = getRoutingEmptyState(true)
+    expect(state.title).toContain('API')
+    expect(state.description).toContain('routing_policy')
+    expect(state.description).toContain('不展示虚构策略')
   })
 })
