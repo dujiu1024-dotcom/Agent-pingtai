@@ -40,11 +40,77 @@ class ProductionSettings:
     allowed_origins: tuple[str, ...]
 
 
+_AUTH_SECRET_KEYS = (
+    "SECRET_KEY",
+    "AUTH_SECRET",
+    "AUTH_SECRET_KEY",
+    "JWT_SECRET",
+    "JWT_SECRET_KEY",
+    "SESSION_SECRET",
+    "SESSION_SECRET_KEY",
+    "TOKEN_SIGNING_KEY",
+    "COOKIE_SIGNING_KEY",
+    "CSRF_SECRET",
+)
+_INSECURE_SECRET_VALUES = {
+    "secret", "secret-key", "secret_key", "changeme", "change-me", "change_me",
+    "password", "default", "dev", "development", "test", "example",
+    "example-secret", "your-secret", "your-secret-key", "your-secret-here",
+    "replace-me", "replace_me", "insecure", "supersecret", "jwt-secret",
+}
+_FALSE_VALUES = {"0", "false", "no", "off"}
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _validate_production_security(env: Mapping[str, str]) -> None:
+    """Reject authentication bypasses and placeholder signing secrets at boot."""
+    auth_enabled = env.get("AUTH_ENABLED")
+    if auth_enabled is not None:
+        value = auth_enabled.strip().lower()
+        if value not in _TRUE_VALUES:
+            raise ProductionConfigurationError(
+                "AUTH_ENABLED must be true in the production composition"
+            )
+
+    for key in ("CSRF_ENABLED", "CSRF_PROTECTION_ENABLED",
+                "AUTH_VALIDATION_ENABLED", "AUTHORIZATION_VALIDATION_ENABLED",
+                "TOKEN_VALIDATION_ENABLED"):
+        raw = env.get(key)
+        if raw is not None and raw.strip().lower() in _FALSE_VALUES:
+            raise ProductionConfigurationError(
+                f"{key}=false is forbidden in production"
+            )
+        if raw is not None and raw.strip().lower() not in _TRUE_VALUES | _FALSE_VALUES:
+            raise ProductionConfigurationError(f"{key} must be a boolean")
+
+    for key in ("DISABLE_CSRF", "CSRF_BYPASS", "AUTH_BYPASS",
+                "DISABLE_AUTH", "SKIP_AUTHENTICATION",
+                "DISABLE_AUTH_VALIDATION", "SKIP_AUTH_VALIDATION"):
+        raw = env.get(key)
+        if raw is not None and raw.strip().lower() not in _TRUE_VALUES | _FALSE_VALUES:
+            raise ProductionConfigurationError(f"{key} must be a boolean")
+        if raw is not None and raw.strip().lower() in _TRUE_VALUES:
+            raise ProductionConfigurationError(
+                f"{key}=true is forbidden in production"
+            )
+
+    for key in _AUTH_SECRET_KEYS:
+        raw = env.get(key)
+        if raw is None or not raw.strip():
+            continue
+        value = raw.strip()
+        if value.casefold() in _INSECURE_SECRET_VALUES or len(value) < 32:
+            raise ProductionConfigurationError(
+                f"{key} must be a non-default secret of at least 32 characters"
+            )
+
+
 def load_production_settings(
     environ: Mapping[str, str] | None = None,
 ) -> ProductionSettings:
     """Load settings and fail fast instead of serving a partially wired API."""
     env = os.environ if environ is None else environ
+    _validate_production_security(env)
     postgres_dsn = env.get("AGENT_PLATFORM_DSN", "").strip() or env.get(
         "DATABASE_URL", ""
     ).strip()
