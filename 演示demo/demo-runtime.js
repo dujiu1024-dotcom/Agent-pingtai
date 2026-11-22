@@ -1,9 +1,7 @@
 /* Standalone demo runtime: browser-only mock data, no production API. */
 (() => {
   const STORAGE_KEY = "agent-platform-demo-v1";
-  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[ch]);
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"\x27`]/g, "");
   const persist = () => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
     catch (error) { notify("浏览器存储不可用，本次修改仅在当前页面有效"); }
