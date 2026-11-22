@@ -136,6 +136,19 @@ describe('route configuration', () => {
     expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
   })
 
+
+  it('registers Session and File workbench list/detail routes under #762', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
+      path: route.path,
+    }))
+    expect(pageRoutes.find((route) => route.path === '/operations/conversations')?.owner).toBe('#762')
+    expect(detailRoutes.find((route) => route.path === '/operations/conversations/:conversationId')?.owner).toBe('#762')
+    expect(pageRoutes.find((route) => route.path === '/operations/files')?.owner).toBe('#762')
+    expect(detailRoutes.find((route) => route.path === '/operations/files/:fileId')?.owner).toBe('#762')
+    expect(matchRoutes(routeObjects, '/operations/conversations/session-abc')?.[0].params.conversationId).toBe('session-abc')
+    expect(matchRoutes(routeObjects, '/operations/files/asset-xyz')?.[0].params.fileId).toBe('asset-xyz')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
