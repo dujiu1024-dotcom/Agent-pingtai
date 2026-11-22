@@ -47,10 +47,6 @@ from agent_platform.api.value_management import create_value_management_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
-from agent_platform.business_automation import (
-    WorkflowDefinitionRepository,
-    create_business_automation_router,
-)
 from agent_platform.events.admin import WebhookSubscriptionService
 from agent_platform.graph.knowledge_extraction import (
     KnowledgeGraphExtractionService,
@@ -101,8 +97,6 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     connector_sync_worker: Any | None = None,
     connector_cleanup_worker: Any | None = None,
-    workflow_definition_repository: WorkflowDefinitionRepository | None = None,
-    workflow_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_replay_resolver: Any | None = None,
     run_authorizer: Any | None = None,
@@ -731,15 +725,6 @@ def create_platform_app(
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
         ))
-    workflow_configured = any(value is not None for value in (workflow_definition_repository, workflow_authorizer))
-    if workflow_configured:
-        if workflow_definition_repository is None or workflow_authorizer is None:
-            raise ValueError("workflow definition repository and authorizer must be configured together")
-        app.include_router(create_business_automation_router(
-            resolve_principal=_principal_from_request,
-            repository=workflow_definition_repository,
-            authorize=workflow_authorizer,
-        ))
     for worker, name in (
         (connector_sync_worker, "connector_sync_worker"),
         (connector_cleanup_worker, "connector_cleanup_worker"),
@@ -800,5 +785,6 @@ def create_platform_app(
         app.include_router(create_value_management_router(
             service_resolver=value_management_resolver,
             authorize_manage=value_management_authorizer,
+            usage_store=quota_reporting_store or quota_store,
         ))
     return app

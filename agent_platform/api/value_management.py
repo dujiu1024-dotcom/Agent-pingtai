@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import inspect
-from datetime import date, datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -10,9 +10,16 @@ from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.identity.models import Principal
 from agent_platform.value_management import AIContribution, HumanBaseline, calculate_value
+from agent_platform.value_management_metrics import (
+    ToolCostLine,
+    aggregate_value_costs,
+    calculate_business_value_metrics,
+)
 
 
-def create_value_management_router(*, service_resolver: Any, authorize_manage: Any) -> APIRouter:
+def create_value_management_router(
+    *, service_resolver: Any, authorize_manage: Any, usage_store: Any | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/value-management", tags=["value-management"])
 
     def principal(request: Request) -> Principal:
@@ -44,31 +51,18 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
         service = await service_for(actor)
         try:
             body = await request.json()
-            if isinstance(body.get("historical_business_volume"), bool):
-                raise ValueError("historical_business_volume must be an integer, not a boolean")
             baseline = HumanBaseline(
                 tenant_id=actor.tenant_id, process_id=str(body["process_id"]),
                 role_id=str(body["role_id"]), manual_minutes_per_unit=Decimal(str(body["manual_minutes_per_unit"])),
                 labor_cost_per_hour=Decimal(str(body["labor_cost_per_hour"])),
                 quality_rate=Decimal(str(body["quality_rate"])), sample_size=int(body["sample_size"]),
                 source=str(body["source"]), owner_id=actor.user_id, version=str(body.get("version", "1")),
-                historical_business_volume=(int(body["historical_business_volume"])
-                    if body.get("historical_business_volume") is not None else None),
-                volume_period_start=(date.fromisoformat(body["volume_period_start"])
-                    if body.get("volume_period_start") is not None else None),
-                volume_period_end=(date.fromisoformat(body["volume_period_end"])
-                    if body.get("volume_period_end") is not None else None),
-                volume_source=(str(body["volume_source"]) if body.get("volume_source") is not None else None),
             )
             saved = await service.save_baseline(baseline)
         except (KeyError, ValueError, TypeError, ArithmeticError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"tenant_id": actor.tenant_id, "process_id": saved.process_id,
-                "role_id": saved.role_id, "version": saved.version,
-                "historical_business_volume": saved.historical_business_volume,
-                "volume_period_start": saved.volume_period_start.isoformat() if saved.volume_period_start else None,
-                "volume_period_end": saved.volume_period_end.isoformat() if saved.volume_period_end else None,
-                "volume_source": saved.volume_source}
+                "role_id": saved.role_id, "version": saved.version}
 
     @router.post("/attributions", status_code=201)
     async def record_attribution(request: Request):
@@ -117,6 +111,126 @@ def create_value_management_router(*, service_resolver: Any, authorize_manage: A
                 "roi": str(result.roi) if result.roi is not None else None,
                 "financial_status": result.financial_status, "cost_basis": result.cost_basis,
                 "attribution_version": result.attribution_version}
+
+    @router.post("/metrics", status_code=201)
+    async def record_metrics(request: Request):
+        actor = principal(request)
+        service = await service_for(actor)
+        if usage_store is None or not callable(getattr(usage_store, "list_usage", None)):
+            raise HTTPException(503, "tenant usage ledger is not configured")
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("JSON object required")
+            run_ids = body.get("run_ids")
+            if (
+                not isinstance(run_ids, list) or not run_ids
+                or len(run_ids) > 25
+                or any(not isinstance(item, str) or not item.strip() for item in run_ids)
+                or len(set(run_ids)) != len(run_ids)
+            ):
+                raise ValueError("run_ids must contain 1-25 unique non-empty strings")
+            start = datetime.fromisoformat(str(body["window_start"]))
+            end = datetime.fromisoformat(str(body["window_end"]))
+            if start.tzinfo is None or end.tzinfo is None or end <= start:
+                raise ValueError("metrics window must be ordered and timezone-aware")
+            if end - start > timedelta(days=366):
+                raise ValueError("metrics window cannot exceed 366 days")
+            completed_units = body["completed_units"]
+            if isinstance(completed_units, bool) or not isinstance(completed_units, int):
+                raise ValueError("completed_units must be a non-negative integer")
+            metric = calculate_business_value_metrics(
+                completed_units=completed_units,
+                baseline_cycle_minutes_per_unit=Decimal(str(body["baseline_cycle_minutes_per_unit"])),
+                actual_cycle_minutes_per_unit=Decimal(str(body["actual_cycle_minutes_per_unit"])),
+                baseline_throughput_per_hour=Decimal(str(body["baseline_throughput_per_hour"])),
+                actual_throughput_per_hour=Decimal(str(body["actual_throughput_per_hour"])),
+            )
+            raw_tool_lines = body.get("tool_cost_lines")
+            if raw_tool_lines is not None and not isinstance(raw_tool_lines, list):
+                raise ValueError("tool_cost_lines must be a list when supplied")
+            tool_lines = None if raw_tool_lines is None else tuple(
+                ToolCostLine(
+                    tool_key=str(item["tool_key"]), call_count=item["call_count"],
+                    cost_usd=Decimal(str(item["cost_usd"])), source=str(item["source"]),
+                    pricing_version=str(item["pricing_version"]),
+                    evidence_ref=str(item["evidence_ref"]) if item.get("evidence_ref") is not None else None,
+                )
+                for item in raw_tool_lines if isinstance(item, dict)
+            )
+            if raw_tool_lines is not None and len(tool_lines) != len(raw_tool_lines):
+                raise ValueError("each tool_cost_line must be a JSON object")
+            events = []
+            usage_truncated = False
+            for run_id in run_ids:
+                run_events = await usage_store.list_usage(
+                    actor.tenant_id, start, end, run_id=run_id, limit=10000,
+                )
+                usage_truncated = usage_truncated or len(run_events) >= 10000
+                events.extend(run_events)
+            costs = aggregate_value_costs(
+                events, tenant_id=actor.tenant_id, run_ids=run_ids,
+                tool_cost_lines=tool_lines, usage_truncated=usage_truncated,
+            )
+            process_id = str(body["process_id"])
+            role_id = str(body["role_id"])
+            attribution_id = str(body["attribution_id"])
+            metric_version = str(body.get("metric_version", "1"))
+            source_metadata = body.get("source_metadata")
+            if source_metadata is None:
+                source_metadata = {}
+            if not isinstance(source_metadata, dict):
+                raise ValueError("source_metadata must be a JSON object")
+            try:
+                snapshot_id = await service.save_metrics(
+                    tenant_id=actor.tenant_id, attribution_id=attribution_id,
+                    process_id=process_id, role_id=role_id, window_start=start,
+                    window_end=end, metrics=metric, run_ids=run_ids,
+                    cost_breakdown=costs, metric_version=metric_version,
+                    source_metadata=source_metadata, actor_id=actor.user_id,
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "attribution not found for authenticated tenant") from exc
+        except HTTPException:
+            raise
+        except KeyError as exc:
+            raise HTTPException(400, f"missing required field: {exc.args[0]}") from exc
+        except (ValueError, TypeError, ArithmeticError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {
+            "id": snapshot_id, "attribution_id": attribution_id,
+            "metrics": {
+                "completed_units": metric.completed_units,
+                "baseline_cycle_minutes_per_unit": str(metric.baseline_cycle_minutes_per_unit),
+                "actual_cycle_minutes_per_unit": str(metric.actual_cycle_minutes_per_unit),
+                "cycle_time_delta_minutes_per_unit": str(metric.cycle_time_delta_minutes_per_unit),
+                "cycle_time_reduction_rate": str(metric.cycle_time_reduction_rate),
+                "cycle_minutes_saved": str(metric.cycle_minutes_saved),
+                "baseline_throughput_per_hour": str(metric.baseline_throughput_per_hour),
+                "actual_throughput_per_hour": str(metric.actual_throughput_per_hour),
+                "throughput_delta_per_hour": str(metric.throughput_delta_per_hour),
+                "throughput_change_rate": str(metric.throughput_change_rate),
+                "metric_version": metric_version,
+            },
+            "costs": costs,
+            "window_start": start.isoformat(), "window_end": end.isoformat(),
+        }
+
+    @router.get("/metrics/{attribution_id}")
+    async def get_metrics(request: Request, attribution_id: str):
+        actor = principal(request)
+        service = await service_for(actor)
+        if not callable(getattr(service, "list_metrics", None)):
+            raise HTTPException(503, "value metrics repository is not configured")
+        try:
+            from uuid import UUID
+            UUID(attribution_id)
+            items = await service.list_metrics(
+                tenant_id=actor.tenant_id, attribution_id=attribution_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, "attribution_id must be a UUID") from exc
+        return {"tenant_id": actor.tenant_id, "attribution_id": attribution_id, "items": items}
 
     @router.get("/summary")
     async def summary(request: Request, start: datetime, end: datetime):

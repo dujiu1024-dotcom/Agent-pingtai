@@ -27,15 +27,12 @@ class PostgresAIValueRepository:
             await connection.execute(
                 """INSERT INTO ai_value_baselines
                 (tenant_id,process_id,role_id,version,manual_minutes_per_unit,
-                 labor_cost_per_hour,quality_rate,sample_size,source,owner_id,
-                 historical_business_volume,volume_period_start,volume_period_end,volume_source)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 labor_cost_per_hour,quality_rate,sample_size,source,owner_id)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (tenant_id,process_id,role_id,version) DO NOTHING""",
                 (baseline.tenant_id, baseline.process_id, baseline.role_id, baseline.version,
                  baseline.manual_minutes_per_unit, baseline.labor_cost_per_hour,
-                 baseline.quality_rate, baseline.sample_size, baseline.source, baseline.owner_id,
-                 baseline.historical_business_volume, baseline.volume_period_start,
-                 baseline.volume_period_end, baseline.volume_source),
+                 baseline.quality_rate, baseline.sample_size, baseline.source, baseline.owner_id),
             )
             cursor = await connection.execute(
                 """SELECT * FROM ai_value_baselines
@@ -45,11 +42,7 @@ class PostgresAIValueRepository:
             row = await cursor.fetchone()
         if row is None:
             raise RuntimeError("baseline persistence failed")
-        if (row["owner_id"] != baseline.owner_id or row["source"] != baseline.source
-                or row["historical_business_volume"] != baseline.historical_business_volume
-                or row["volume_period_start"] != baseline.volume_period_start
-                or row["volume_period_end"] != baseline.volume_period_end
-                or row["volume_source"] != baseline.volume_source):
+        if row["owner_id"] != baseline.owner_id or row["source"] != baseline.source:
             raise ValueError("baseline version is immutable; create a new version")
         return baseline
 
@@ -72,9 +65,6 @@ class PostgresAIValueRepository:
             labor_cost_per_hour=Decimal(row["labor_cost_per_hour"]),
             quality_rate=Decimal(row["quality_rate"]), sample_size=row["sample_size"],
             source=row["source"], owner_id=row["owner_id"], version=row["version"],
-            historical_business_volume=row["historical_business_volume"],
-            volume_period_start=row["volume_period_start"], volume_period_end=row["volume_period_end"],
-            volume_source=row["volume_source"],
         )
 
     async def save_attribution(
@@ -138,4 +128,88 @@ class PostgresAIValueRepository:
             "net_benefit": str(row["net_benefit"]) if row["net_benefit"] is not None else None,
             "financially_confirmed_count": row["financially_confirmed_count"],
             "estimated_count": row["estimated_count"],
+        } for row in rows]
+
+
+    async def save_metrics(
+        self, *, tenant_id: str, attribution_id: str, process_id: str, role_id: str,
+        window_start: datetime, window_end: datetime, metrics: Any,
+        run_ids: list[str], cost_breakdown: dict[str, Any], metric_version: str,
+        source_metadata: dict[str, Any], actor_id: str,
+    ) -> str:
+        """Persist one immutable metrics snapshot, guarded by attribution tenant ownership."""
+        from uuid import UUID
+
+        if window_start.tzinfo is None or window_end.tzinfo is None or window_end <= window_start:
+            raise ValueError("metrics window must be ordered and timezone-aware")
+        if not metric_version or not run_ids or any(not item for item in run_ids):
+            raise ValueError("metric_version and non-empty run_ids are required")
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """INSERT INTO ai_value_metric_snapshots
+                (tenant_id,attribution_id,process_id,role_id,window_start,window_end,
+                 completed_units,baseline_cycle_minutes_per_unit,actual_cycle_minutes_per_unit,
+                 cycle_time_delta_minutes_per_unit,cycle_time_reduction_rate,cycle_minutes_saved,
+                 baseline_throughput_per_hour,actual_throughput_per_hour,throughput_delta_per_hour,
+                 throughput_change_rate,run_ids,cost_breakdown,metric_version,source_metadata,actor_id)
+                SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s::jsonb,%s
+                FROM ai_value_attributions a
+                WHERE a.id=%s AND a.tenant_id=%s AND a.process_id=%s AND a.role_id=%s AND %s <= (a.auto_completed + a.assisted_completed + a.human_takeovers)
+                RETURNING id""",
+                (tenant_id,UUID(attribution_id),process_id,role_id,window_start,window_end,
+                 metrics.completed_units,metrics.baseline_cycle_minutes_per_unit,
+                 metrics.actual_cycle_minutes_per_unit,metrics.cycle_time_delta_minutes_per_unit,
+                 metrics.cycle_time_reduction_rate,metrics.cycle_minutes_saved,
+                 metrics.baseline_throughput_per_hour,metrics.actual_throughput_per_hour,
+                 metrics.throughput_delta_per_hour,metrics.throughput_change_rate,run_ids,
+                 json.dumps(cost_breakdown,ensure_ascii=False),metric_version,
+                 json.dumps(source_metadata,ensure_ascii=False),actor_id,
+                 UUID(attribution_id),tenant_id,process_id,role_id,metrics.completed_units),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise KeyError("attribution not found for authenticated tenant")
+        return str(row["id"])
+
+
+    async def list_metrics(self, *, tenant_id: str, attribution_id: str) -> list[dict[str, Any]]:
+        """Read metric snapshots through tenant and attribution scope."""
+        from uuid import UUID
+
+        connection = await self._connection_factory()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT id,attribution_id,process_id,role_id,window_start,window_end,
+                          completed_units,baseline_cycle_minutes_per_unit,
+                          actual_cycle_minutes_per_unit,cycle_time_delta_minutes_per_unit,
+                          cycle_time_reduction_rate,cycle_minutes_saved,
+                          baseline_throughput_per_hour,actual_throughput_per_hour,
+                          throughput_delta_per_hour,throughput_change_rate,run_ids,
+                          cost_breakdown,metric_version,source_metadata,actor_id,created_at
+                   FROM ai_value_metric_snapshots
+                   WHERE tenant_id=%s AND attribution_id=%s
+                   ORDER BY created_at,id""",
+                (tenant_id,UUID(attribution_id)),
+            )
+            rows = await cursor.fetchall()
+        fields = (
+            "baseline_cycle_minutes_per_unit", "actual_cycle_minutes_per_unit",
+            "cycle_time_delta_minutes_per_unit", "cycle_time_reduction_rate",
+            "cycle_minutes_saved", "baseline_throughput_per_hour",
+            "actual_throughput_per_hour", "throughput_delta_per_hour",
+            "throughput_change_rate",
+        )
+        return [{
+            "id": str(row["id"]), "attribution_id": str(row["attribution_id"]),
+            "process_id": row["process_id"], "role_id": row["role_id"],
+            "window_start": row["window_start"].isoformat(),
+            "window_end": row["window_end"].isoformat(),
+            "completed_units": row["completed_units"],
+            **{field: str(row[field]) for field in fields},
+            "run_ids": list(row["run_ids"]),
+            "cost_breakdown": row["cost_breakdown"],
+            "metric_version": row["metric_version"],
+            "source_metadata": row["source_metadata"],
+            "actor_id": row["actor_id"], "created_at": row["created_at"].isoformat(),
         } for row in rows]
