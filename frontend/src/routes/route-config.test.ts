@@ -217,3 +217,10 @@ describe('system operations dashboard route', () => {
     expect(route?.description).toContain('Metrics')
   })
 })
+
+describe('authentication entry routes', () => {
+  it('assigns login and administrator initialization routes to #809', () => {
+    expect(authRoutes.map((route) => route.path)).toEqual(['/auth/login', '/auth/initialize'])
+    expect(authRoutes.every((route) => route.authOnly && route.owner === '#809')).toBe(true)
+  })
+})
