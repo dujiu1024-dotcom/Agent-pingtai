@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from agent_platform.identity.models import AuthenticatedApiCredential, Principal
 
 
 def _principal(request: Request):
@@ -15,8 +17,33 @@ def _principal(request: Request):
     return actor
 
 
-def create_admin_router(*, connection_factory: Any) -> APIRouter:
+def create_admin_router(
+    *, connection_factory: Any, identity_repository: Any | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/admin", tags=["admin"])
+
+    async def require_admin(request: Request):
+        """Require the current tenant's persisted tenant.manage permission."""
+        principal = _principal(request)
+        if identity_repository is None:
+            raise HTTPException(503, "admin authorization is not configured")
+        if not isinstance(principal, (Principal, AuthenticatedApiCredential)):
+            raise HTTPException(403, "administrator permission required")
+        if (
+            isinstance(principal, AuthenticatedApiCredential)
+            and "tenant.manage" not in principal.scopes
+        ):
+            raise HTTPException(403, "administrator permission required")
+        allowed = await identity_repository.has_permission(
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            resource_type="tenant",
+            resource_id=principal.tenant_id,
+            permission_key="tenant.manage",
+        )
+        if not allowed:
+            raise HTTPException(403, "administrator permission required")
+        return principal
 
     async def _query(sql: str, params: tuple = ()) -> list[dict]:
         connection = await connection_factory()
@@ -32,8 +59,7 @@ def create_admin_router(*, connection_factory: Any) -> APIRouter:
                 pass
 
     @router.get("/organization")
-    async def list_organization(request: Request):
-        principal = _principal(request)
+    async def list_organization(principal: Any = Depends(require_admin)):
         tenant_id = principal.tenant_id
         tenants = await _query(
             """SELECT display_name, status, created_at
@@ -55,8 +81,7 @@ def create_admin_router(*, connection_factory: Any) -> APIRouter:
         ], "count": len(tenants) + len(users)}
 
     @router.get("/access-control")
-    async def list_access_control(request: Request):
-        principal = _principal(request)
+    async def list_access_control(principal: Any = Depends(require_admin)):
         tenant_id = principal.tenant_id
         roles = await _query(
             """SELECT name, description, is_system, created_at
@@ -96,8 +121,7 @@ def create_admin_router(*, connection_factory: Any) -> APIRouter:
         ], "count": len(roles) + len(bindings) + len(permissions)}
 
     @router.get("/settings")
-    async def list_settings(request: Request):
-        principal = _principal(request)
+    async def list_settings(principal: Any = Depends(require_admin)):
         quotas = await _query(
             """SELECT scope_type, scope_id,
                       period_start, period_end,

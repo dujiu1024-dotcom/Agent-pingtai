@@ -359,7 +359,10 @@ def create_platform_app(
         ))
     if connection_factory is not None:
         from agent_platform.api.admin import create_admin_router
-        app.include_router(create_admin_router(connection_factory=connection_factory))
+        app.include_router(create_admin_router(
+            connection_factory=connection_factory,
+            identity_repository=identity_repository,
+        ))
     prompt_registry_configured = any(value is not None for value in (
         prompt_registry, prompt_manage_authorizer, prompt_evaluation_gate,
     ))
