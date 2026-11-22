@@ -164,6 +164,15 @@ describe('ApiClient', () => {
     ).toBeNull()
   })
 
+  it('preserves non-envelope error payloads for health probes and diagnostics', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ status: 'degraded', checks: { redis: 'down' } }), { status: 503 }))
+    const client = new ApiClient({ baseUrl: 'https://example.test', fetcher })
+    await expect(client.get('/health/ready', { retries: 0 })).rejects.toMatchObject({
+      status: 503,
+      details: { status: 'degraded', checks: { redis: 'down' } },
+    })
+  })
+
   it('retries transient GET failures and returns binary bodies through the client', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response('temporarily unavailable', { status: 503 }))
