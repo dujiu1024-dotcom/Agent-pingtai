@@ -68,12 +68,11 @@ class PostgresAuditWriter:
     ) -> None:
         connection = await self._connect()
         async with connection:
-            async with connection.transaction():
-                await self.record_on_connection(
-                    connection, tenant_id=tenant_id, actor_id=actor_id,
-                    action=action, subject_id=subject_id, outcome=outcome,
-                    detail=detail,
-                )
+            await self.record_on_connection(
+                connection, tenant_id=tenant_id, actor_id=actor_id,
+                action=action, subject_id=subject_id, outcome=outcome,
+                detail=detail,
+            )
 
 
 class PostgresIdentityAuditReader:
