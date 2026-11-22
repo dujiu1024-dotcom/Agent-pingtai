@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
+from datetime import datetime, timezone
 
 from agent_platform.observability.agent_rag_evaluation import (
     AgentRAGEvaluationService,
@@ -11,6 +13,7 @@ from agent_platform.observability.agent_rag_evaluation import (
     EvaluationDataset,
     EvaluationPlan,
     ModelEndpoint,
+    PostgresAgentRAGEvaluationRepository,
     dataset_fingerprint,
     score_case,
 )
@@ -140,3 +143,121 @@ class AgentRAGEvaluationTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeReportCursor:
+    def __init__(self, row=None, rows=None):
+        self.row = row
+        self.rows = rows or []
+
+    async def fetchone(self):
+        return self.row
+
+    async def fetchall(self):
+        return self.rows
+
+
+class FakeReportConnection:
+    def __init__(self, database):
+        self.database = database
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def execute(self, query, params=()):
+        sql = " ".join(query.split())
+        if sql.startswith("INSERT INTO platform_agent_rag_eval_reports"):
+            (run_id, tenant_id, dataset_id, version, fingerprint, endpoint_id,
+             model_key, model_version, concurrency, report) = params
+            row = {
+                "run_id": run_id, "tenant_id": tenant_id, "dataset_id": dataset_id,
+                "dataset_version": version, "dataset_sha256": fingerprint,
+                "endpoint_id": endpoint_id, "model_key": model_key,
+                "model_version": model_version, "concurrency_limit": concurrency,
+                "report": json.loads(report),
+                "created_at": datetime(2026, 11, 22, tzinfo=timezone.utc),
+            }
+            self.database[(tenant_id, run_id)] = row
+            return FakeReportCursor()
+        if "WHERE tenant_id = %s AND run_id = %s" in sql:
+            tenant_id, run_id = params
+            return FakeReportCursor(self.database.get((tenant_id, run_id)))
+        if "WHERE tenant_id = %s AND dataset_id = %s" in sql:
+            tenant_id, dataset_id, limit = params
+            rows = [
+                row for (owner, _), row in self.database.items()
+                if owner == tenant_id and row["dataset_id"] == dataset_id
+            ]
+            return FakeReportCursor(rows=rows[:limit])
+        if "WHERE tenant_id = %s ORDER BY created_at DESC" in sql:
+            tenant_id, limit = params
+            rows = [row for (owner, _), row in self.database.items() if owner == tenant_id]
+            return FakeReportCursor(rows=rows[:limit])
+        raise AssertionError(f"unhandled SQL: {sql}")
+
+
+class FakeReportDatabase:
+    def __init__(self):
+        self.rows = {}
+
+    async def connect(self):
+        return FakeReportConnection(self.rows)
+
+
+class AgentRAGEvaluationReportPersistenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_report_round_trip_is_tenant_scoped_and_lists_dataset_history(self):
+        database = FakeReportDatabase()
+        repository = PostgresAgentRAGEvaluationRepository(database.connect)
+        report = type("Report", (), {
+            "run_id": "e9f2e6bd-cb4c-42db-94d8-6c0f991d5f71",
+            "tenant_id": "tenant-a",
+            "dataset_id": "rag-release",
+            "dataset_version": 7,
+            "dataset_sha256": "a" * 64,
+            "endpoint_id": "endpoint-eu",
+            "model_key": "answer-model",
+            "model_version": "v7",
+            "concurrency_limit": 2,
+            "case_metrics": (),
+            "metrics": {"answer_term_f1": 0.9},
+        })()
+        await repository.save_evaluation_report(report)
+
+        loaded = await repository.get_report(
+            tenant_id="tenant-a", run_id=report.run_id,
+        )
+        self.assertEqual(loaded["report"]["metrics"]["answer_term_f1"], 0.9)
+        self.assertEqual(loaded["dataset_sha256"], "a" * 64)
+        self.assertEqual(
+            await repository.list_reports(tenant_id="tenant-a", dataset_id="rag-release"),
+            [loaded],
+        )
+        self.assertEqual(
+            await repository.list_reports(tenant_id="tenant-b"), [],
+        )
+        with self.assertRaises(KeyError):
+            await repository.get_report(tenant_id="tenant-b", run_id=report.run_id)
+
+    async def test_report_persistence_rejects_invalid_fingerprint_and_list_limit(self):
+        database = FakeReportDatabase()
+        repository = PostgresAgentRAGEvaluationRepository(database.connect)
+        report = type("Report", (), {
+            "run_id": "e9f2e6bd-cb4c-42db-94d8-6c0f991d5f71",
+            "tenant_id": "tenant-a",
+            "dataset_id": "rag-release",
+            "dataset_version": 7,
+            "dataset_sha256": "not-a-fingerprint",
+            "endpoint_id": "endpoint-eu",
+            "model_key": "answer-model",
+            "model_version": "v7",
+            "concurrency_limit": 2,
+            "case_metrics": (),
+            "metrics": {},
+        })()
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            await repository.save_evaluation_report(report)
+        with self.assertRaisesRegex(ValueError, "limit"):
+            await repository.list_reports(tenant_id="tenant-a", limit=0)
