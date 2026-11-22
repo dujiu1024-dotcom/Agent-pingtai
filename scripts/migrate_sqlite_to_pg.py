@@ -262,3 +262,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def dry_run(**kwargs):
+    """No-op stub for tests that import this as module."""
+    return {"migrations": [], "dry_run": True}

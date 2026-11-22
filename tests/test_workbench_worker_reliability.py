@@ -80,7 +80,7 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
             async def execute(self, **_kwargs):
                 raise AssertionError("interrupted Runs must resume, not start over")
 
-            async def resume_claimed(self, *, snapshot, input):
+            async def resume_claimed(self, *, snapshot, input, session_context=None):
                 self.resumed_snapshot = snapshot
                 return {"answer": "resumed"}
 

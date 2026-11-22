@@ -204,9 +204,10 @@ def ensure_runtime_adapter_compatible(
         )
 
 
-@dataclass(frozen=True)
 class UnsupportedHarnessCapability(RuntimeError):
     """Raised when a request requires a feature not declared by its adapter."""
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
 
 
 class CapabilityAwareHarnessAdapter:

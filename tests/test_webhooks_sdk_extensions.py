@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 import unittest
+from unittest.mock import MagicMock
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime as format_http_date
 from urllib.request import Request
@@ -306,6 +307,7 @@ class WebhookTests(unittest.IsolatedAsyncioTestCase):
             store=store, transport=transport, resolve_secret=resolve_secret,
             egress_policy=WebhookEgressPolicy(resolver=lambda host, port: ("93.184.216.34",)),
             clock=lambda: datetime(2026, 11, 16, tzinfo=timezone.utc),
+            audit_sink=FakeAuditSink(),
         )
         result = await dispatcher.dispatch()
         self.assertEqual(result["delivered"], 1)

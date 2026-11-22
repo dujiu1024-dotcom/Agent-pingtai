@@ -33,7 +33,7 @@ class Secrets:
 
 
 class ModelTransport:
-    async def complete(self, *, config, messages, request_parameters, timeout_seconds):
+    async def complete(self, *, config, messages, request_parameters, timeout_seconds, tools=None, tool_choice=None, on_token=None):
         return {
             "choices": [{"message": {"content": "ok"}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
