@@ -78,3 +78,25 @@ Focused tests cover composition, tenant-bound task service resolution, exact sha
 `tests.test_issue_614_runtime_composition` now also exercises `create_production_app()` with a trusted builder and isolated dependency doubles. It asserts that the builder receives the exact PostgreSQL Run store and lifecycle created by the production root, and that the resulting task service resolver, task authorizer, executor resolver and worker are all passed into `create_platform_app()` together. This guards against a deployment root that constructs a worker but silently omits one of the API/worker integration slots.
 
 The test is registered in the `platform-release-gate` focused-unit job. It validates repository-level composition wiring only; the deployment package's real graph, Vault, provider, PostgreSQL checkpoint and multi-process worker behavior still require deployment acceptance.
+
+
+## Dedicated API / Worker production roles
+
+The production Compose topology runs the same repository-owned production
+composition in two process roles:
+
+- `platform-api` uses `agent_platform.production:app` with
+  `AGENT_PLATFORM_RUN_WORKER_ENABLED=false`; API replicas serve requests and
+  do not each start a competing Run polling loop.
+- `platform-worker` runs `python -m agent_platform.worker` with
+  `AGENT_PLATFORM_REQUIRE_RUN_EXECUTION=true`. The worker imports the same
+  production root, requires its trusted Run execution builder, starts the
+  PostgreSQL-backed `RunExecutionWorker` alongside the Outbox relay, and
+  stops both on SIGINT/SIGTERM.
+- The worker closes the Redis client created by the production root after
+  stopping its workers. The Outbox worker separately closes its own Redis
+  Streams transport.
+
+The focused worker-entrypoint regression test verifies startup/shutdown order,
+resource closure, and fail-closed behavior when the trusted builder is absent.
+This is a deterministic composition test, not a live deployment rehearsal.
