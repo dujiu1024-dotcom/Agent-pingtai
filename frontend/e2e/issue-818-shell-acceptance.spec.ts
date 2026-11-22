@@ -36,9 +36,13 @@ test.describe('Issue #818 navigation, top bar and route guard', () => {
       await expect(navigation.getByRole('link', { name: label })).toBeVisible()
     }
     await expect(navigation.locator('.nav-item')).toHaveCount(6)
+    const homeLink = navigation.getByRole('link', { name: '工作台' })
+    await expect(homeLink).toHaveAttribute('aria-current', 'page')
+    await expect(homeLink).toHaveCSS('color', 'rgb(47, 106, 240)')
+    await navigation.getByRole('link', { name: '成本分摊' }).hover()
     await expect(
-      navigation.getByRole('link', { name: '工作台' }),
-    ).toHaveAttribute('aria-current', 'page')
+      navigation.getByRole('link', { name: '成本分摊' }),
+    ).toHaveCSS('color', 'rgb(47, 106, 240)')
 
     await navigation.getByRole('link', { name: '3D 办公室' }).click()
     await expect(page).toHaveURL(/\/app\/workspace\/office$/)
