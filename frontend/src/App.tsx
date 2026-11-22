@@ -460,7 +460,7 @@ function PageView({
       />
     )
   }
-  if (route.path === '/workspace/overview') return <HomeWorkspace />
+  if (route.path === '/workspace/overview') return <HomeWorkspace authEnabled={authEnabled} />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
   if (route.path === '/search')
