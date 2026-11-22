@@ -678,7 +678,7 @@ export const authRoutes: PageRoute[] = [
     title: '登录',
     section: '身份',
     description: '仅在服务端 auth.enabled=true 时启用登录入口。',
-    owner: '#743',
+    owner: '#809',
     authOnly: true,
   },
   {
@@ -686,8 +686,8 @@ export const authRoutes: PageRoute[] = [
     pageId: 'AUTH-INITIALIZE',
     title: '管理员初始化',
     section: '身份',
-    description: '仅权限模式且服务端报告需要初始化时启用。',
-    owner: '#743',
+    description: '仅权限模式开放；服务端仅允许在平台首次初始化前创建首位租户管理员。',
+    owner: '#809',
     authOnly: true,
   },
 ]

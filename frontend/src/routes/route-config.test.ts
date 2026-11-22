@@ -185,6 +185,14 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
+  it('assigns login and administrator initialization routes to #809', () => {
+    expect(authRoutes.map((route) => route.path)).toEqual([
+      '/auth/login',
+      '/auth/initialize',
+    ])
+    expect(authRoutes.every((route) => route.authOnly && route.owner === '#809')).toBe(true)
+  })
+
   it('gates Agent runtime list/detail on registry capability and assigns #808 ownership', () => {
     const visibleWithoutRegistry = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
     const visibleWithRegistry = getVisibleNavigation(true, ['agent_management']).flatMap((group) => group.items.map((item) => item.path))
