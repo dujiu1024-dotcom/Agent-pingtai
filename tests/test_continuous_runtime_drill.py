@@ -171,3 +171,39 @@ def test_naive_timestamps_are_rejected(tmp_path: Path) -> None:
     result = run_record(tmp_path, record)
     assert result.returncode == 2
     assert "must include a timezone" in result.stderr
+
+
+def test_local_failover_simulation_archives_a_report_without_infrastructure(tmp_path: Path) -> None:
+    report_dir = tmp_path / "archived-dr-reports"
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--simulate-local", "--report-dir", str(report_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    report_path = Path(output["report_path"])
+    assert report_path.parent == report_dir
+    assert report_path.is_file()
+    archived = json.loads(report_path.read_text(encoding="utf-8"))
+    assert archived["passed"] is True
+    assert archived["simulated_only"] is True
+    assert archived["infrastructure_touched"] is False
+    assert archived["production_rpo_seconds"] is None
+    assert archived["production_rto_seconds"] is None
+    states = [event["state"] for event in archived["events"]]
+    assert states.index("PRIMARY_FENCED") < states.index("STANDBY_PROMOTED")
+    assert states[-1] == "DRILL_COMPLETE"
+    assert archived["simulated_recovery_checks"]["duplicate_external_effects"] == 0
+
+
+def test_local_simulation_requires_explicit_report_directory() -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--simulate-local"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "--report-dir is required" in result.stderr

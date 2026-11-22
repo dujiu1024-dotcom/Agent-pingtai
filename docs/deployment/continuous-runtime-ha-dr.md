@@ -22,6 +22,16 @@ python scripts/continuous_runtime_drill.py --plan
 
 The plan is evidence orchestration only. It does not stop services, create backups, restore databases, promote replicas, replay messages, switch DNS or change traffic. Those actions remain under the existing #18 operator runbook and environment change controls.
 
+## Local primary/standby simulation and report archive
+
+Run the infrastructure-free state-machine rehearsal and write a JSON report to an explicit archive directory:
+
+```bash
+python scripts/continuous_runtime_drill.py --simulate-local --report-dir ./artifacts/dr-reports
+```
+
+The simulator records failure injection, former-primary fencing, standby promotion, recovery gates, and controlled failback. It writes a timestamped JSON report atomically and prints the report path. The report labels itself `local_simulation`, records that no infrastructure was touched, and leaves production RPO/RTO measurements null. This mode is a deterministic local software simulation; it does not execute real database replication, node fencing, traffic switching, or restore operations.
+
 ## Cross-component consistency contract
 
 1. Freeze API writers, schedulers, workers and queue consumers. Drain in-flight work and assign one `checkpoint_id` to the coordinated recovery point.
