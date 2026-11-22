@@ -64,7 +64,6 @@ class MemoryExpiryWorkerTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await worker.run_once()
 
-
     async def test_expiry_boundary_transitions_once_and_hides_memory(self):
         repository = InMemoryMemoryRepository()
         service = MemoryService(repository)
