@@ -38,3 +38,19 @@ describe('Agent definition route', () => {
     expect(isCanonicalRouteSetValid()).toBe(true)
   })
 })
+
+
+describe('Agent runtime routes', () => {
+  it('assigns the runtime list and detail routes to #808', () => {
+    const list = pageRoutes.find((item) => item.path === '/operations/agents')
+    const detail = pageRoutes.find((item) => item.path === '/operations/agents/:agentId')
+
+    expect(list?.owner).toBe('#808')
+    expect(detail).toMatchObject({
+      pageId: 'OPS-AGENT-DETAIL',
+      parentPath: '/operations/agents',
+      entityIdParam: 'agentId',
+      owner: '#808',
+    })
+  })
+})
