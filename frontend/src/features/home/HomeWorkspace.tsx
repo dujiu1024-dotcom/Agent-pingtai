@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { formatDuration, resolveAgentId, resolveTaskTitle, unwrapList } from '@/features/tasks/task-model'
 import type { TaskRecord } from '@/features/tasks/task-model'
+import { Dashboard } from '@/features/dashboard/Dashboard'
 import './HomeWorkspace.css'
 
 type AgentRegistryItem = {
@@ -273,6 +274,7 @@ export function HomeWorkspace({ authEnabled }: { authEnabled: boolean }) {
           <Link className="home-r3-assistant" to="/workspace/quickstart"><Sparkles size={16} />你好！我是你的 Agent 助手</Link>
         </div>
       </header>
+      <Dashboard embedded />
       <div className="home-r3-main-grid">
         <TaskListPanel />
         <div className="home-r3-side-stack"><PopularAgents /><ActivityFeed authEnabled={authEnabled} /></div>
