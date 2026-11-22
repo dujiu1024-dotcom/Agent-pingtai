@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Sequence
 
-from agent_platform.knowledge.embedding import DEFAULT_EMBEDDING_DIMENSIONS, SUPPORTED_EMBEDDING_DIMENSIONS
+from agent_platform.knowledge.embedding import (
+    DEFAULT_EMBEDDING_DIMENSIONS,
+    SUPPORTED_EMBEDDING_DIMENSIONS,
+)
 from agent_platform.knowledge.contracts import (
     Document,
     DocumentChunk,
