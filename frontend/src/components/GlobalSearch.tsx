@@ -23,10 +23,10 @@ const typeLabels: Record<string, string> = {
 export function GlobalSearch() {
   const [term, setTerm] = useState('')
   const query = useQuery({
-    queryKey: ['global-search', term],
+    queryKey: ['global-search', term.trim()],
     queryFn: () =>
       apiClient.get<{ items: SearchItem[]; count: number }>(
-        `/platform/v1/search?q=${encodeURIComponent(term)}&limit=30`,
+        `/platform/v1/search?q=${encodeURIComponent(term.trim())}&limit=30`,
       ),
     enabled: term.trim().length >= 2,
     retry: false,
