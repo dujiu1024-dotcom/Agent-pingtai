@@ -20,6 +20,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
+import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
@@ -107,7 +108,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
             />
             {[...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
               <Route
-                key={route.pageId}
+                key={route.path}
                 path={route.path}
                 element={
                   <RouteGuard
@@ -281,6 +282,13 @@ function RouteGuard({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
+  if (route.path === '/admin/prompts' || route.path === '/admin/prompts/:promptId') {
+    return (
+      <PromptRegistryPage
+        evaluationGateEnabled={capabilities.includes('prompt_evaluation_gate')}
+      />
+    )
+  }
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (route.path === '/search')

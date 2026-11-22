@@ -23,6 +23,13 @@ describe('Prompt Registry routes', () => {
     const match = matchRoutes(routeObjects, '/admin/prompts/support.reply')
 
     expect(match?.[0].params.promptId).toBe('support.reply')
+    expect(detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')).toMatchObject({
+      pageId: 'ADM-PROMPT-DETAIL',
+      parentPath: '/admin/prompts',
+      entityIdParam: 'promptId',
+      owner: '#807',
+      capability: 'prompt_management',
+    })
     expect(
       detailRoutes.find((route) => route.path === '/admin/prompts/:promptId'),
     ).toMatchObject({
