@@ -501,6 +501,14 @@ export const globalRoutes: PageRoute[] = [
     owner: '#751',
   },
   {
+    path: '/admin/ops',
+    pageId: 'GLOBAL-OPS-DASHBOARD',
+    title: '系统运维看板',
+    section: '全局能力',
+    description: 'Metrics、Health 与 Scheduler 运行状态。',
+    owner: '#813',
+  },
+  {
     path: '/admin/scheduler/jobs',
     pageId: 'GLOBAL-SCHEDULER-JOBS',
     title: '调度任务',
