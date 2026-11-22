@@ -57,8 +57,16 @@ jobs:
       - name: Install Playwright browser
         if: always()
         run: pnpm exec playwright install --with-deps chromium
-      - name: Core UI E2E (desktop and tablet)
+      - name: Core UI E2E (desktop, tablet and mobile)
         if: always()
+        env:
+          PLATFORM_E2E_BASE_URL: ${{ vars.PLATFORM_E2E_BASE_URL }}
+          PLATFORM_E2E_TENANT_ID: ${{ secrets.PLATFORM_E2E_TENANT_ID }}
+          PLATFORM_E2E_EMAIL: ${{ secrets.PLATFORM_E2E_EMAIL }}
+          PLATFORM_E2E_PASSWORD: ${{ secrets.PLATFORM_E2E_PASSWORD }}
+          PLATFORM_E2E_MODEL_TEMPLATE_ID: ${{ vars.PLATFORM_E2E_MODEL_TEMPLATE_ID }}
+          PLATFORM_E2E_PROJECT_ID: ${{ vars.PLATFORM_E2E_PROJECT_ID }}
+          PLATFORM_E2E_SESSION_ID: ${{ vars.PLATFORM_E2E_SESSION_ID }}
         run: pnpm test:e2e
       - name: Upload Playwright report
         if: always()
