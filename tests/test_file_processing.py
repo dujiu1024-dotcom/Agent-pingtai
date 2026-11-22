@@ -262,7 +262,6 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.status, AssetStatus.PENDING)
         self.assertEqual(self.queue.failures, ["valueerror"])
 
-
     async def test_in_memory_queue_deduplicates_retries_and_dead_letters(self):
         queue = InMemoryFileProcessingQueue(max_attempts=2)
         await queue.enqueue(tenant_id="tenant-a", asset_id="asset-a")
