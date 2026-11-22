@@ -152,12 +152,15 @@ jobs:
         run: python -m pip install ruff pytest
       - name: Run hybrid control-plane tests
         run: python -m unittest tests.test_hybrid_control_plane -v
+      - name: Run policy snapshot file-store tests
+        run: python -m unittest tests.test_policy_snapshot_file_store -v
       - name: Lint hybrid control-plane files
         run: >-
           ruff check
           agent_platform/resilience/hybrid_control_plane.py
           agent_platform/resilience/__init__.py
           tests/test_hybrid_control_plane.py
+          tests/test_policy_snapshot_file_store.py
 
   test:
     needs: [changes, lint, typecheck]
