@@ -85,6 +85,9 @@ def create_extension_publisher_router(
         if not isinstance(extension_id, str):
             raise HTTPException(400, "extension_id is required")
         await authorize(actor, extension_id, "publisher_key.rotate" if previous else "publisher_key.register")
+        # Write-ahead audit: record the attempted registration before side effect.
+        action = "rotate" if previous else "register"
+        await audit(actor, extension_id, key_id or "pending", action, "requested")
         try:
             pem_bytes = pem.encode("ascii")
             values = {
@@ -107,7 +110,7 @@ def create_extension_publisher_router(
             raise HTTPException(400, str(exc)) from exc
         except Exception as exc:
             raise HTTPException(503, "publisher key registry is unavailable") from exc
-        await audit(actor, extension_id, key.key_id, "rotate" if previous else "register", "succeeded")
+        await audit(actor, extension_id, key.key_id, action, "succeeded")
         return {
             "tenant_id": actor.tenant_id,
             "extension_id": extension_id,

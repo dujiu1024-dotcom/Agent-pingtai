@@ -96,7 +96,7 @@ async def _estimate(
             raise
         if not allow_overflow_count:
             raise ContextOverflowError(
-                "estimated prompt plus planned output exceeds model context window"
+                "estimated prompt plus planned output exceeds model context window; policy=reject"
             ) from exc
         estimate = estimator.estimate(
             model_id=model_id, messages=messages,
@@ -199,6 +199,7 @@ async def prepare_context(
             estimator, model_id=model_id, messages=candidate,
             request_parameters=request_parameters,
             context_window_tokens=context_window_tokens,
+            allow_overflow_count=True,
         )
         if reduced_counts[2] > context_window_tokens:
             raise ContextOverflowError("summarized context still exceeds model context window")
