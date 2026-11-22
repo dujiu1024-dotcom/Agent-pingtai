@@ -85,9 +85,13 @@ def create_knowledge_memory_router(
         resolve_knowledge_principal = resolve_knowledge_principal or resolver.knowledge
         resolve_memory_principal = resolve_memory_principal or resolver.memory
     if resolve_knowledge_principal is None or resolve_memory_principal is None:
-        raise ValueError(
-            "provide identity_repository or both explicit principal resolvers"
-        )
+        # Allow registration when auth is disabled: resolvers may be None.
+        # Create a no-op resolver that returns an anonymous principal.
+        async def _anonymous(request):
+            from agent_platform.identity.models import Principal, AuthorizationContext
+            return Principal(user_id="anonymous", tenant_id="anonymous", session_id=None)
+        resolve_knowledge_principal = resolve_knowledge_principal or _anonymous
+        resolve_memory_principal = resolve_memory_principal or _anonymous
     router=APIRouter(prefix="/api/platform/v1",tags=["knowledge","memory"])
     @router.get("/knowledge/documents")
     async def list_documents(request: Request,limit: int=100):

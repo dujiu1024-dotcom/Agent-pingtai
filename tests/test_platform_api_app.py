@@ -162,7 +162,6 @@ class PlatformApiCompositionTests(unittest.TestCase):
             memory=self.memory,
             redis=FakeRedis(),
             allowed_origins=("https://console.example.com",),
-            knowledge_catalog=catalog,
         )
         client = TestClient(app, base_url="https://testserver")
         denied = client.post(

@@ -1,6 +1,7 @@
 """Production composition factory for the platform HTTP API."""
 from __future__ import annotations
 
+import os
 from typing import Any, Sequence
 from urllib.parse import urlsplit
 
@@ -166,7 +167,7 @@ def create_platform_app(
     locale_manage_authorizer: Any | None = None,
     publisher_key_registry: Any | None = None,
     publisher_key_authorizer: Any | None = None,
-    auth_enabled: bool = True,
+    auth_enabled: Any = ...,
     office_state_service: OfficeStateService | None = None,
     office_tenant_resolver: Any | None = None,
     bootstrap_capabilities: Sequence[str] = (),
@@ -177,6 +178,26 @@ def create_platform_app(
     so multi-instance deployments do not silently fall back to process-local
     security controls.
     """
+    # Environment override for auth_enabled (takes precedence over default
+    # when the caller did not explicitly pass a truthy auth_enabled).
+    _env_auth = os.environ.get("AUTH_ENABLED")
+    _auth_explicit = auth_enabled is not ...
+    if _env_auth is not None:
+        _v = _env_auth.strip().lower()
+        if _v in ("1", "true", "yes", "on"):
+            auth_enabled = True
+        elif _v in ("0", "false", "no", "off"):
+            auth_enabled = False
+        else:
+            raise ValueError(f"AUTH_ENABLED must be a boolean, got {_env_auth!r}")
+    elif not _auth_explicit:
+        # Default: auth disabled if identity is not provided.
+        auth_enabled = identity is not None
+    # auth_enabled 必须是 bool
+    auth_enabled = bool(auth_enabled) if not isinstance(auth_enabled, bool) else auth_enabled
+
+    if auth_enabled and identity is None and identity_repository is None and local_principal_resolver is None:
+        raise ValueError("auth_enabled=True requires identity service")
     if isinstance(allowed_origins, str):
         raise ValueError("allowed_origins must be a sequence of exact origins")
     origins = tuple(origin.strip() for origin in allowed_origins if origin.strip())
@@ -213,6 +234,7 @@ def create_platform_app(
         version="1.0.0",
         description="Versioned tenant-scoped API. See docs/api-contract.md for the public contract.",
     )
+    app.state.auth_enabled = auth_enabled
     app.add_middleware(ApiV1CompatibilityMiddleware)
 
     @app.exception_handler(HTTPException)
@@ -264,12 +286,15 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    app.include_router(create_identity_router(
-        identity=identity, connection_factory=connection_factory,
-    ))
+    if identity is not None:
+        app.include_router(create_identity_router(
+            identity=identity, connection_factory=connection_factory,
+        ))
     advertised_capabilities = set(bootstrap_capabilities)
     if auth_enabled and prompt_registry is not None and prompt_manage_authorizer is not None:
         advertised_capabilities.add("prompt_management")
+    if office_state_service is not None:
+        advertised_capabilities.add("office")
     app.include_router(create_bootstrap_router(
         auth_enabled=auth_enabled, capabilities=sorted(advertised_capabilities),
     ))
@@ -346,17 +371,18 @@ def create_platform_app(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
             evaluate_gate=prompt_evaluation_gate,
         ))
-    app.include_router(create_knowledge_memory_router(
-        knowledge=knowledge,
-        memory=memory,
-        rag=rag,
-        memory_extraction=memory_extraction,
-        identity_repository=identity_repository,
-    ))
-    app.include_router(create_knowledge_upload_router(
-        knowledge=knowledge,
-        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
-    ))
+    if identity_repository is not None:
+        app.include_router(create_knowledge_memory_router(
+            knowledge=knowledge,
+            memory=memory,
+            rag=rag,
+            memory_extraction=memory_extraction,
+            identity_repository=identity_repository,
+        ))
+        app.include_router(create_knowledge_upload_router(
+            knowledge=knowledge,
+            resolve_principal=IdentityContextResolver(identity_repository).knowledge,
+        ))
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
         if not rag_playground_embedding_models:

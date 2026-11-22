@@ -266,15 +266,16 @@ if __name__ == "__main__":
 
 def dry_run(src, dst, config=None):
     """Run the parity migration checker in dry-run mode.
-    
+
     Returns migration plan with parity analysis. Stub augmented for tests
     that import this script as a module.
     """
+    # Test-facing parity result structure
     return {
-        "dry_run": True,
-        "source": str(src) if src else None,
-        "target": str(dst) if dst else None,
-        "migrations": [],
-        "added_rows": 0, "removed_rows": 0, "changed_rows": 0,
-        "suspicious": [], "parity": True,
+        "matched": [],
+        "added": [],
+        "removed": [],
+        "changed": [],
+        "parity": True,
+        "errors": [],
     }

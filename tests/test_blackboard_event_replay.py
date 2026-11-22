@@ -22,17 +22,35 @@ class FakeCursor:
         return self.rows[0] if self.rows else None
 
 
+class FakeTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+
 class FakeConnection:
     def __init__(self, rows):
         self.rows = rows
         self.query = None
         self.params = None
 
+    def __await__(self):
+        # Make the connection itself awaitable: `await factory()` that returns
+        # this connection works out of the box.
+        async def _resolve():
+            return self
+        return _resolve().__await__()
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_):
         return False
+
+    def transaction(self):
+        return FakeTransaction()
 
     async def execute(self, query, params):
         self.query = query

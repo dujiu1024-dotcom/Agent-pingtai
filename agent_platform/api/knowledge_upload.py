@@ -35,8 +35,12 @@ _EXTENSION_MEDIA_TYPES = {
 
 
 def create_knowledge_upload_router(
-    *, knowledge: KnowledgeService, resolve_principal: PrincipalResolver,
+    *, knowledge: KnowledgeService, resolve_principal: PrincipalResolver | None = None,
 ) -> APIRouter:
+    if resolve_principal is None:
+        async def resolve_principal(request):
+            from agent_platform.identity.models import Principal
+            return Principal(user_id="anonymous", tenant_id="anonymous", session_id=None)
     router = APIRouter(prefix="/api/platform/v1/knowledge", tags=["knowledge-ingestion"])
 
     @router.post("/documents/upload", status_code=201)
