@@ -417,6 +417,14 @@ function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, 
     try { const parsed: unknown = JSON.parse(raw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as JsonRecord } catch { /* demo accepts form-like payloads */ }
   }
   if (method === 'DELETE') return jsonResponse({ ok: true, deleted: true, demo: true })
+  if (method === 'POST' && path.includes('/graph/extractions')) {
+    return jsonResponse({ job_id: 'graph-extraction-demo-' + crypto.randomUUID(), total: 12, status: 'queued', demo: true }, 202)
+  }
+  if (method === 'POST' && (path.includes('/memories/') || path.includes('/memories/conflicts/'))) {
+    return jsonResponse({ memory_id: 'memory-active-001', status: 'active', version: 2, ok: true, demo: true })
+  }
+  if (method === 'POST' && path.endsWith('/compare')) return jsonResponse(fixture)
+  if (method === 'POST' && path.endsWith('/rollout')) return jsonResponse(fixture)
   if (method === 'POST' && (path.includes('/search') || path.includes('/answer'))) {
     return jsonResponse({ ok: true, answer: '演示操作已完成，已返回本地模拟结果。', results: fixture.items ?? [], items: fixture.items ?? [], total: fixture.total ?? 0 })
   }
