@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
 import { apiClient } from '@/lib/api'
-import { unwrapList } from '@/features/tasks/task-model'
+import { resolveTaskTitle, unwrapList } from '@/features/tasks/task-model'
 import { OperationsCockpitExtension } from '@/components/OperationsCockpitExtension'
 import type { TaskRecord } from '@/features/tasks/task-model'
 
@@ -251,12 +251,12 @@ function TrendChart({
 export function Dashboard() {
   const tasksQuery = useQuery({
     queryKey: ['dashboard', 'workbench-tasks'],
-    queryFn: () => apiClient.get<unknown>('/workbench/tasks'),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
     refetchInterval: 30000,
   })
   const trendsQuery = useQuery({
     queryKey: ['dashboard', 'observability-trends'],
-    queryFn: () => apiClient.get<unknown>('/observability/trends'),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/observability/trends'),
     refetchInterval: 30000,
   })
   const taskPayload = record(tasksQuery.data)
@@ -266,16 +266,24 @@ export function Dashboard() {
     [tasksQuery.data],
   )
   const completed = tasks.filter((task) =>
-    ['completed', 'succeeded'].includes(task.status.toLowerCase()),
+    ['completed', 'succeeded', 'success', 'done'].includes(
+      String(task.status ?? '').toLowerCase(),
+    ),
   ).length
   const successRate =
     numberAt(taskPayload, ['success_rate', 'successRate']) ??
     numberAt(taskData, ['success_rate', 'successRate']) ??
-    (tasks.length ? completed / tasks.length : undefined)
+    (tasks.length ? completed / tasks.length : tasksQuery.isSuccess ? 0 : undefined)
   const totalTasks =
     numberAt(taskPayload, ['total_tasks', 'task_count', 'total']) ??
     numberAt(taskData, ['total_tasks', 'task_count', 'total']) ??
     (tasksQuery.isSuccess ? tasks.length : undefined)
+  const durationValues = tasks
+    .map((task) => task.duration_ms)
+    .filter(
+      (value): value is number =>
+        typeof value === 'number' && Number.isFinite(value) && value >= 0,
+    )
   const averageDuration =
     numberAt(taskPayload, [
       'average_duration_ms',
@@ -288,10 +296,26 @@ export function Dashboard() {
       'avg_duration_ms',
       'average_duration',
       'avg_duration',
-    ])
+    ]) ??
+    (durationValues.length
+      ? durationValues.reduce((sum, value) => sum + value, 0) /
+        durationValues.length
+      : undefined)
+  const taskCosts = tasks
+    .map((task) => {
+      const usage = record(task.usage)
+      return (
+        numberAt(record(task), ['total_cost', 'cost', 'cost_usd']) ??
+        numberAt(usage, ['total_cost', 'cost', 'cost_usd', 'estimated_cost_usd'])
+      )
+    })
+    .filter((value): value is number => value != null && value >= 0)
   const totalCost =
     numberAt(taskPayload, ['total_cost', 'cost']) ??
-    numberAt(taskData, ['total_cost', 'cost'])
+    numberAt(taskData, ['total_cost', 'cost']) ??
+    (taskCosts.length
+      ? taskCosts.reduce((sum, value) => sum + value, 0)
+      : undefined)
   const points = useMemo(
     () => normalizeDashboardTrendPoints(trendsQuery.data),
     [trendsQuery.data],
@@ -417,7 +441,7 @@ export function Dashboard() {
                     data-status={task.status.toLowerCase()}
                   />
                   <span className="dashboard-task-copy">
-                    <strong>{task.title}</strong>
+                    <strong>{resolveTaskTitle(task)}</strong>
                     <small>{task.status}</small>
                   </span>
                   <span className="dashboard-task-arrow">→</span>
