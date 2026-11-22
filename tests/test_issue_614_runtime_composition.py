@@ -88,6 +88,11 @@ class ProductionRunCompositionTests(unittest.IsolatedAsyncioTestCase):
         await runtime.task_worker.stop()
         self.assertIsNone(runtime.task_worker._task)
 
+    def test_optional_run_context_resolver_accepts_none(self):
+        _run_store, runtime = self.build(run_context_resolver=None)
+        self.assertIsNone(runtime.task_worker.run_context_resolver)
+
+
     def test_rejects_lifecycle_using_a_different_run_store(self):
         with self.assertRaisesRegex(ValueError, "share one durable RunStateStore"):
             self.build(lifecycle=FakeLifecycle(FakeRunStore()))
@@ -199,6 +204,59 @@ class ProductionEntrypointWiringTests(unittest.TestCase):
             if getattr(callback, "__name__", "") == "start_run_worker"
         )
         asyncio.run(start_worker())
+
+    def test_nullable_optional_dependencies_are_forwarded_as_disabled_or_safe_defaults(self):
+        import os
+        from unittest.mock import patch
+
+        from fastapi import FastAPI
+        from redis.asyncio import Redis
+        from agent_platform.production_config import ProductionSettings
+
+        fake_redis = SimpleNamespace(ping=lambda: True)
+        settings = ProductionSettings(
+            postgres_dsn="postgresql://platform@db/platform",
+            redis_url="redis://redis:6379/0",
+            allowed_origins=("https://platform.example.com",),
+        )
+        environment = {
+            "AGENT_PLATFORM_DSN": "postgresql://platform@db/platform",
+            "REDIS_URL": "redis://redis:6379/0",
+            "ALLOWED_ORIGINS": "https://platform.example.com",
+            "AGENT_PLATFORM_REQUIRE_RUN_EXECUTION": "false",
+        }
+        from agent_platform import production
+
+        with (
+            patch.dict(os.environ, environment),
+            patch.object(Redis, "from_url", return_value=fake_redis),
+            patch.object(production, "load_trusted_workflow_compiler_resolver", return_value=None),
+            patch.object(production, "create_platform_app", return_value=FastAPI()) as create_app,
+        ):
+            app = production.create_production_app(
+                settings=settings,
+                connection_factory=lambda: None,
+                redis_client=fake_redis,
+                run_execution_builder=None,
+                workflow_compiler_resolver=None,
+                session_storage=None,
+                local_owner_email=None,
+                local_tenant_id=None,
+            )
+
+        wired = create_app.call_args.kwargs
+        self.assertIsNone(app.state.run_execution)
+        self.assertIsNone(wired["session_service_resolver"])
+        self.assertIsNone(wired["session_authorizer"])
+        self.assertIsNone(wired["run_executor_resolver"])
+        self.assertIsNone(wired["task_service_resolver"])
+        self.assertIsNone(wired["task_authorizer"])
+        self.assertIsNone(wired["task_worker"])
+        self.assertIsNone(wired["batch_service_resolver"])
+        self.assertIsNone(wired["batch_authorizer"])
+        self.assertTrue(callable(wired["workflow_compiler_resolver"]))
+        self.assertIsNone(wired["local_principal_resolver"])
+
 
     def test_production_root_installs_builder_runtime_into_api_and_worker_slots(self):
         import importlib
