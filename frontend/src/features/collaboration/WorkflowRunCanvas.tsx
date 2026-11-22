@@ -69,10 +69,22 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
             <small>{node.type} · {node.events} 条事件</small><strong>{node.label}</strong><span className={'workflow-run-node-status ' + (node.status === 'failed' ? 'failed' : node.status === 'completed' || node.status === 'succeeded' ? 'success' : node.status === 'running' ? 'running' : '')}>{node.status}</span>
             <small>{node.lastAt || '事件未提供时间'}</small>
           </button>
-          {view === 'graph' && index < nodes.length - 1 && <span className="workflow-run-connector" aria-hidden="true">⋯</span>}
+          
         </div>)}
       </div>
-      {edges.length > 0 && <p className="workflow-run-edge-note">事件明确提供的节点关系：{edges.map(edge => edge.id).join(' · ')}</p>}
+      <section className="workflow-run-edges" aria-label="Workflow 实际连线">
+        <h4>实际节点连线 <small>只读 · 来自运行事件</small></h4>
+        {edges.length > 0 ? (
+          <ul>
+            {edges.map(edge => <li key={edge.id}>
+              <span className="workflow-run-edge-node">{edge.source}</span>
+              <span className="workflow-run-edge-arrow" aria-label="指向">→</span>
+              <span className="workflow-run-edge-node">{edge.target}</span>
+              <small>{edge.label}</small>
+            </li>)}
+          </ul>
+        ) : <p role="status">当前 Run 事件未提供 parent/next 节点引用，暂无可确认的连线；不按节点顺序推断执行路径。</p>}
+      </section>
       {active && <aside className="workflow-run-node-detail" aria-live="polite">
         <h4>{active.label} · {active.id}</h4>
         <dl><div><dt>节点类型</dt><dd>{active.type}</dd></div><div><dt>事件数量</dt><dd>{active.events}</dd></div><div><dt>首次事件</dt><dd>{active.firstAt || '未提供'}</dd></div><div><dt>最近事件</dt><dd>{active.lastAt || '未提供'}</dd></div></dl>
