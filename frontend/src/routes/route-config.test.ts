@@ -88,6 +88,18 @@ describe('route configuration', () => {
     )
   })
 
+  it('mounts the dedicated collaboration workspace and run-scoped workflow route', async () => {
+    const [{ resolveCollaborationPage }, { AgentCollaborationCenter }] = await Promise.all([
+      import('../App'),
+      import('../features/collaboration/AgentCollaborationCenter'),
+    ])
+    expect(resolveCollaborationPage('/workspace/collaboration')?.type).toBe(AgentCollaborationCenter)
+    const runPage = resolveCollaborationPage('/operations/workflow-runs/:runId', 'run-123')
+    expect(runPage?.type).toBe(AgentCollaborationCenter)
+    expect(runPage?.props.initialRunId).toBe('run-123')
+    expect(resolveCollaborationPage('/operations/workflow-runs/:runId')?.props.initialRunId).toBe('')
+  })
+
   it('keeps Agent collaboration reachable in no-auth mode', () => {
     const visiblePaths = getVisibleNavigation(false).flatMap((group) =>
       group.items.map((item) => item.path),
