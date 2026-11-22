@@ -44,7 +44,7 @@ describe('route configuration', () => {
       '/admin/skills',
       '/admin/settings',
       '/admin/audit',
-      '/admin/operations',
+      '/admin/ops',
     ]) {
       expect(registeredPaths.has(path), path).toBe(true)
     }
@@ -185,4 +185,17 @@ describe('route configuration', () => {
     ).toBe('asset-123')
   })
 
+})
+
+
+describe('system operations dashboard route', () => {
+  it('registers the Metrics, Health and Scheduler dashboard under Issue #813', () => {
+    const route = globalRoutes.find((item) => item.path === '/admin/ops')
+    expect(route).toMatchObject({
+      pageId: 'GLOBAL-OPS',
+      title: '系统运维',
+      owner: '#813',
+    })
+    expect(route?.description).toContain('Metrics')
+  })
 })
