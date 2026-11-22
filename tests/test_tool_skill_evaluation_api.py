@@ -137,7 +137,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["status"], "approved")
         self.assertEqual(response.json()["skill_version"], 2)
-        self.assertEqual([event["outcome"] for event in self.audit.events], ["started", "succeeded"])
+        self.assertEqual([event["outcome"] for event in self.audit.events], ["requested", "succeeded"])
 
     def test_skill_evaluation_reports_scanner_unavailable_as_rejected(self):
         self._publish("skill", "scanner-offline", {
