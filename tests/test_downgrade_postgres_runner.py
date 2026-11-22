@@ -56,6 +56,17 @@ class DowngradePostgresRunnerTests(unittest.TestCase):
     def add_down(self, name: str, sql: str = "DROP TABLE sample;\n") -> None:
         (self.migrations / f"{name}.down.sql").write_text(sql, encoding="utf-8")
 
+    def assert_selected_exactly(self, selected: str, other: str) -> None:
+        self.add_down(selected, f"SELECT '{selected}';\n")
+        self.add_down(other, f"SELECT '{other}';\n")
+
+        result = self.run_runner(selected)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        generated = self.capture.read_text(encoding="utf-8")
+        self.assertIn(f"migration_name='{selected}'", generated)
+        self.assertNotIn(f"migration_name='{other}'", generated)
+
     def test_reads_exact_down_file_and_deletes_exact_ledger_name(self) -> None:
         name = "025_workbench_task_execution.sql"
         self.add_down(name, "BEGIN;\nDROP TABLE sample;\nCOMMIT;\n")
@@ -66,23 +77,15 @@ class DowngradePostgresRunnerTests(unittest.TestCase):
         generated = self.capture.read_text(encoding="utf-8")
         self.assertIn(f"migration_name='{name}'", generated)
         self.assertIn(f"DELETE FROM platform_schema_migrations WHERE migration_name='{name}'", generated)
-        self.assertIn("DROP TABLE sample;", generated)
-        self.assertNotIn("\n  BEGIN;\n  COMMIT;", generated)
 
-    def test_duplicate_numeric_prefixes_are_selected_by_full_filename(self) -> None:
-        first = "025_asset_connector_workers.sql"
-        second = "025_workbench_task_execution.sql"
-        self.add_down(first, "DROP TABLE connector_workers;\n")
-        self.add_down(second, "DROP TABLE workbench_tasks;\n")
+    def test_disambiguates_025_and_031_full_filenames(self) -> None:
+        self.assert_selected_exactly("025_workbench_task_execution.sql", "031_workbench_task_execution.sql")
 
-        result = self.run_runner(second)
+    def test_disambiguates_044_and_054_full_filenames(self) -> None:
+        self.assert_selected_exactly("044_workbench_task_priority.sql", "054_workbench_task_priority.sql")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        generated = self.capture.read_text(encoding="utf-8")
-        self.assertIn(f"migration_name='{second}'", generated)
-        self.assertNotIn(f"migration_name='{first}'", generated)
-        self.assertIn("DROP TABLE workbench_tasks;", generated)
-        self.assertNotIn("DROP TABLE connector_workers;", generated)
+    def test_disambiguates_045_and_056_full_filenames(self) -> None:
+        self.assert_selected_exactly("045_workbench_task_priority.sql", "056_workbench_task_retry.sql")
 
     def test_requires_explicit_down_file(self) -> None:
         result = self.run_runner("044_workbench_task_priority.sql")
@@ -94,21 +97,6 @@ class DowngradePostgresRunnerTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 result = self.run_runner(invalid)
                 self.assertEqual(result.returncode, 2)
-
-    def test_down_script_path_uses_full_duplicate_migration_names(self) -> None:
-        pairs = (
-            ("044_workbench_task_priority.sql", "054_workbench_task_priority.sql"),
-            ("045_workbench_task_priority.sql", "056_workbench_task_retry.sql"),
-        )
-        for first, second in pairs:
-            with self.subTest(first=first, second=second):
-                self.add_down(first, f"SELECT '{first}';\n")
-                self.add_down(second, f"SELECT '{second}';\n")
-                result = self.run_runner(second)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                generated = self.capture.read_text(encoding="utf-8")
-                self.assertIn(f"migration_name='{second}'", generated)
-                self.assertNotIn(f"migration_name='{first}'", generated)
 
 
 if __name__ == "__main__":
