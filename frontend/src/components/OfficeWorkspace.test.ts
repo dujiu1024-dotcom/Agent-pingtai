@@ -26,6 +26,21 @@ describe('normalizeOfficeAgents', () => {
     })
   })
 
+  it('only accepts a complete server-provided coordinate pair for scene placement', () => {
+    const [positioned, partial, deskOnly] = normalizeOfficeAgents({
+      agents: [
+        { agent_id: 'positioned', x: 2.5, z: -1.25 },
+        { agent_id: 'partial', x: 3.5 },
+        { agent_id: 'desk-only', desk_id: 'desk-07' },
+      ],
+    })
+    expect(positioned).toMatchObject({ x: 2.5, z: -1.25 })
+    expect(partial.x).toBeUndefined()
+    expect(partial.z).toBeUndefined()
+    expect(deskOnly.x).toBeUndefined()
+    expect(deskOnly.z).toBeUndefined()
+  })
+
   it('uses actual run status and never fabricates a running state', () => {
     const agents = normalizeOfficeAgents({
       agents: [{ agent_id: 'agent-2', name: '分析助手' }, { agent_id: 'agent-3', name: '离线助手' }],
