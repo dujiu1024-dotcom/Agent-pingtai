@@ -5,9 +5,9 @@ from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
-from agent_platform.production import (
-    _load_trusted_workflow_compiler_resolver,
-    _workflow_compiler_unavailable,
+from agent_platform.workflows.production_resolver import (
+    load_trusted_workflow_compiler_resolver,
+    workflow_compiler_unavailable,
 )
 
 
