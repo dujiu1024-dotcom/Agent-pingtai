@@ -8,12 +8,12 @@ class InMemoryMetricsSafetyTests(unittest.TestCase):
         metrics = InMemoryMetricsRecorder()
         metrics.increment(
             "agent_runs_total",
-            labels={"component": 'api"\\worker\\nnext'},
+            labels={"component": 'api"\\worker\nnext'},
         )
         rendered = metrics.render_prometheus()
         self.assertEqual(
             rendered,
-            'agent_runs_total{component="api\\\"\\\\worker\\nnext"} 1.0\\n',
+            'agent_runs_total{component="api\\"\\\\worker\\nnext"} 1.0\n',
         )
 
     def test_non_finite_and_non_numeric_values_are_rejected(self):
@@ -30,6 +30,7 @@ class InMemoryMetricsSafetyTests(unittest.TestCase):
             metrics.increment("agent_runs_total", -1)
         with self.assertRaisesRegex(ValueError, "non-negative"):
             metrics.observe("agent_run_duration_seconds", -0.1)
+
 
     def test_excess_high_cardinality_labels_are_rejected_without_recording(self):
         operations = (
