@@ -108,6 +108,9 @@ export class ApiClient {
       idempotencyKey,
       ifMatch,
       etag = true,
+      responseType = 'json',
+      retries = inputMethod.toUpperCase() === 'GET' ? 2 : 0,
+      retryDelayMs = 250,
       headers: requestHeaders,
       signal: callerSignal,
       method: inputMethod = 'GET',
@@ -117,7 +120,7 @@ export class ApiClient {
     const url = new URL(path.replace(/^\//, ''), this.resolveBaseUrl())
     const headers = new Headers(this.defaultHeaders)
     new Headers(requestHeaders).forEach((value, key) => headers.set(key, value))
-    headers.set('Accept', 'application/json')
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json')
     const cacheKey = `${method}:${url.toString()}`
     const cached =
       method === 'GET' && etag ? this.etagCache.get(cacheKey) : undefined
@@ -165,19 +168,49 @@ export class ApiClient {
     )
 
     try {
-      const response = await this.fetcher(url, {
-        ...rest,
-        method,
-        headers,
-        body: requestBody,
-        credentials: this.credentials,
-        signal: controller.signal,
-      })
+      let response: Response | undefined
+      for (let attempt = 0; attempt <= Math.max(0, retries); attempt += 1) {
+        try {
+          response = await this.fetcher(url, {
+            ...rest,
+            method,
+            headers,
+            body: requestBody,
+            credentials: this.credentials,
+            signal: controller.signal,
+          })
+        } catch (error) {
+          const canRetry = attempt < retries && !controller.signal.aborted &&
+            (method === 'GET' || method === 'HEAD') && error instanceof TypeError
+          if (!canRetry) throw error
+          await new Promise<void>((resolve, reject) => {
+            const timerId = setTimeout(resolve, retryDelayMs * 2 ** attempt)
+            controller.signal.addEventListener('abort', () => {
+              clearTimeout(timerId)
+              reject(controller.signal.reason)
+            }, { once: true })
+          })
+          continue
+        }
+        const transientStatus = [429, 500, 502, 503, 504].includes(response.status)
+        if (transientStatus && attempt < retries && (method === 'GET' || method === 'HEAD')) {
+          await new Promise<void>((resolve, reject) => {
+            const timerId = setTimeout(resolve, retryDelayMs * 2 ** attempt)
+            controller.signal.addEventListener('abort', () => {
+              clearTimeout(timerId)
+              reject(controller.signal.reason)
+            }, { once: true })
+          })
+          continue
+        }
+        break
+      }
+      if (!response) throw new ApiError('请求未收到服务端响应', { status: 0, code: 'NETWORK_ERROR', retryable: true })
 
       if (response.status === 304 && cached) return cached.body as T
 
       const requestId = response.headers.get('x-request-id') ?? undefined
-      const responseBody = await this.readBody(response)
+      const responseBody = await this.readBody(response, responseType, !response.ok)
       if (!response.ok) {
         const error = this.toError(response.status, responseBody, requestId)
         if (response.status === 409 || response.status === 412) {
@@ -299,9 +332,11 @@ export class ApiClient {
     return new URL(normalized, window.location.origin).toString()
   }
 
-  private async readBody(response: Response): Promise<unknown> {
+  private async readBody(response: Response, responseType: 'json' | 'blob' | 'text' = 'json', parseError = false): Promise<unknown> {
     if (response.status === 204) return undefined
+    if (responseType === 'blob' && !parseError) return response.blob()
     const text = await response.text()
+    if (responseType === 'text' && !parseError) return text
     if (!text) return undefined
     try {
       return JSON.parse(text) as unknown
@@ -330,3 +365,5 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient()
+/** Root-relative health endpoints share transport/error handling without the /api prefix. */
+export const healthApiClient = new ApiClient({ baseUrl: '/' })
