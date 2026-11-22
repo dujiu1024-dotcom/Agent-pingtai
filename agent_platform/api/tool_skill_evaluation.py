@@ -19,6 +19,7 @@ def create_tool_skill_evaluation_router(
     resolve_principal: Callable[[Request], Any],
     resolve_registry: Callable[[Principal], Any],
     authorize: Callable[[Principal, str, str, str], Any],
+    authorize_version: Callable[[Principal, str, str, int, str], Any],
     resolve_mcp_checker: Callable[[Principal], Any],
     resolve_skill_reviewer: Callable[[Principal], Any],
     audit_writer: Any,
@@ -62,7 +63,8 @@ def create_tool_skill_evaluation_router(
     ):
         actor = await actor_for(request)
         allowed = await resolve(authorize(actor, kind, item_id, action))
-        if allowed is not True:
+        version_allowed = await resolve(authorize_version(actor, kind, item_id, version, action))
+        if allowed is not True or version_allowed is not True:
             audit_action = "tool.mcp_connection_test" if kind == "tool" else "skill.compatibility_evaluation"
             await audit(
                 actor, audit_action, f"{item_id}:v{version}", "denied",
