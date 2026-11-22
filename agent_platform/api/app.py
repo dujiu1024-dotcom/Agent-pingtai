@@ -563,10 +563,15 @@ def create_platform_app(
             raise ValueError("graph_visualization_url requires graph API configuration and an HTTPS URL without credentials or fragment")
     app.include_router(create_workbench_router(
         features={
-            "knowledge": True,
-            "rag": rag is not None,
-            "rag_query": rag_playground_configured,
-            "memory": True,
+            # Knowledge/Memory routers are only mounted when the identity
+            # repository-backed principal adapters are available. Do not
+            # advertise them as usable in a no-auth composition that omits
+            # those adapters; that would turn an intentionally unavailable
+            # capability into a misleading UI/API contract.
+            "knowledge": identity_repository is not None,
+            "rag": rag is not None and identity_repository is not None,
+            "rag_query": rag_playground_configured and identity_repository is not None,
+            "memory": identity_repository is not None,
             "sessions": sessions_configured,
             "registry": registry_configured,
             "agent_management": registry_configured,
