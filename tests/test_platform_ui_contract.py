@@ -73,6 +73,7 @@ class PlatformWorkbenchUiContractTests(unittest.TestCase):
         self.assertIn('asset_ids:assetIds', source)
         self.assertIn('credentials:"same-origin"', source)
         self.assertIn('sessionMessages").addEventListener("click"', source)
+        self.assertIn('await show("files")', source)
 
     def test_file_workbench_uses_authorized_metadata_versions_restore_and_delete(self):
         source = (
