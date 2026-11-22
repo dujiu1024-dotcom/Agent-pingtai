@@ -25,7 +25,7 @@ def create_tool_skill_evaluation_router(
     audit_writer: Any,
 ) -> APIRouter:
     """Expose only host-injected probes/scanners; registry data is never executable."""
-    router = APIRouter(prefix="/api/v1", tags=["tool-skill-evaluation"])
+    router = APIRouter(prefix="/api/platform/v1", tags=["tool-skill-evaluation"])
 
     async def resolve(value: Any) -> Any:
         return await value if inspect.isawaitable(value) else value
