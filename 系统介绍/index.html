@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Agent Platform 系统整体介绍：用通俗语言介绍平台定位、技术架构、核心能力与典型应用。">
+<title>系统介绍｜Agent Platform</title>
+<style>
+:root{--bg:#08111f;--panel:#101e31;--panel2:#14263d;--line:#263b56;--text:#edf4ff;--muted:#a8bad1;--cyan:#55d6d0;--blue:#76a9ff;--purple:#b69cff;--green:#7ee0ae;--amber:#ffcc7a;--max:1160px}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 80% 0%,#193452 0,transparent 36%),var(--bg);color:var(--text);font:16px/1.7 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}.wrap{width:min(var(--max),calc(100% - 40px));margin:auto}
+header{padding:22px 0;border-bottom:1px solid #ffffff16;background:#08111fcc;backdrop-filter:blur(12px);position:sticky;top:0;z-index:10}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{font-weight:800;letter-spacing:.04em}.brand i{display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--cyan);margin-right:10px;box-shadow:0 0 18px var(--cyan)}nav{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.hero{padding:88px 0 70px}.eyebrow{color:var(--cyan);font-size:13px;letter-spacing:.18em;font-weight:700}.hero h1{font-size:clamp(38px,6vw,68px);line-height:1.12;letter-spacing:-.04em;margin:18px 0}.hero h1 span{color:var(--cyan)}.lead{max-width:760px;color:#c1d0e3;font-size:19px}.hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.btn{padding:11px 18px;border:1px solid var(--line);border-radius:9px;color:var(--text);font-weight:650}.btn.primary{background:var(--cyan);color:#06202a;border-color:var(--cyan)}
+.pill{display:inline-flex;padding:5px 10px;border:1px solid #55d6d055;border-radius:30px;color:var(--cyan);font-size:12px;margin:4px 6px 0 0}
+section{padding:60px 0;border-top:1px solid #ffffff12}.section-kicker{color:var(--cyan);font-size:12px;letter-spacing:.16em;font-weight:700}.section-title{font-size:clamp(27px,4vw,40px);line-height:1.25;margin:8px 0 12px}.section-desc{color:var(--muted);max-width:780px;margin:0 0 28px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:linear-gradient(145deg,var(--panel),#0d1929);border:1px solid var(--line);border-radius:15px;padding:22px}.card h3{margin:5px 0 8px;font-size:18px}.card p{color:var(--muted);margin:0;font-size:14px}.num{font-size:12px;color:var(--cyan);font-weight:800;letter-spacing:.1em}.icon{font-size:23px;margin-bottom:8px}
+.arch{background:linear-gradient(180deg,#0e1d30,#0a1524);border:1px solid var(--line);border-radius:18px;padding:24px;overflow:hidden}.layer{border:1px solid #3b5879;background:#14263c;border-radius:12px;padding:14px 18px;margin:10px auto;max-width:850px;text-align:center}.layer strong{display:block;color:var(--text)}.layer small{color:var(--muted)}.arrow{text-align:center;color:var(--cyan);font-size:22px;line-height:1.2}.layer.core{border-color:#55d6d088;background:linear-gradient(90deg,#153a45,#172b47)}.layer.storage{border-color:#b69cff77}.sidecars{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:850px;margin:10px auto}.sidecars div{background:#0c1929;border:1px dashed #405976;border-radius:9px;padding:12px;text-align:center;color:var(--muted);font-size:13px}
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.step{padding:16px 12px;text-align:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px}.step b{display:block;color:var(--cyan);margin-bottom:5px}.step span{font-size:13px;color:var(--muted)}
+.taglist{display:flex;flex-wrap:wrap;gap:8px}.tag{padding:7px 11px;border-radius:7px;background:#172b43;border:1px solid #2c4562;color:#d7e6f8;font-size:13px}
+.callout{border-left:3px solid var(--amber);background:#2a241b66;padding:15px 18px;border-radius:0 10px 10px 0;color:#e6d7bd;font-size:14px;margin-top:20px}
+.status{display:inline-block;font-size:11px;padding:3px 8px;border-radius:20px;margin-bottom:8px}.ready{background:#153b32;color:var(--green)}.building{background:#3a3020;color:var(--amber)}.roadmap{background:#282340;color:var(--purple)}
+footer{padding:30px 0 50px;color:var(--muted);font-size:13px;border-top:1px solid #ffffff12}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.flow{grid-template-columns:repeat(2,1fr)}nav{display:none}.hero{padding:60px 0 48px}.sidecars{grid-template-columns:1fr}}
+@media(max-width:520px){.grid{grid-template-columns:1fr}.wrap{width:min(100% - 28px,var(--max))}.arch{padding:13px}.layer{padding:12px 8px}.lead{font-size:17px}}
+</style>
+</head>
+<body>
+<header><div class="wrap nav"><div class="brand"><i></i>AGENT PLATFORM</div><nav><a href="#overview">平台定位</a><a href="#architecture">技术架构</a><a href="#capabilities">核心能力</a><a href="#scenarios">能做什么</a><a href="#boundary">建设边界</a></nav></div></header>
+<main>
+<div class="wrap hero" id="overview">
+<div class="eyebrow">AI-NATIVE OPERATING PLATFORM</div>
+<h1>让 AI 从“会聊天”<br>走向<span>能协作、能办事、可管理</span></h1>
+<p class="lead">Agent Platform 是面向企业和软件公司的智能体运行底座。它把多个 AI 专家、业务流程、知识资料和外部工具组织起来，在权限与审批约束下完成实际工作，并且让过程可追踪、结果可审计。</p>
+<div class="hero-actions"><a class="btn primary" href="#architecture">了解系统架构 ↓</a><a class="btn" href="#scenarios">看看能解决什么问题</a></div>
+<div style="margin-top:24px"><span class="pill">多智能体协作</span><span class="pill">工作流编排</span><span class="pill">工具安全治理</span><span class="pill">企业级多租户</span><span class="pill">私有化部署</span></div>
+</div>
+<section><div class="wrap">
+<div class="section-kicker">01 / WHAT IT IS</div><h2 class="section-title">先用一句大白话讲清楚</h2>
+<p class="section-desc">把它理解成一家数字化公司的“AI 操作系统”：不是单独一个聊天机器人，而是一套能安排 AI 员工、分配任务、提供资料、调用工具、检查过程和记录结果的基础设施。</p>
+<div class="grid">
+<div class="card"><div class="icon">🧠</div><h3>AI 专家团队</h3><p>不同 Agent 可以扮演不同岗位，例如研究、分析、执行、审核。它们围绕同一个任务协作，而不是各聊各的。</p></div>
+<div class="card"><div class="icon">🗂️</div><h3>统一工作台账</h3><p>项目、任务、运行记录、资料、决策和证据有明确归属。工作进展能够沉淀，不只留在聊天窗口里。</p></div>
+<div class="card"><div class="icon">🛡️</div><h3>带护栏的自动化</h3><p>AI 可以处理授权范围内的工作；涉及对外发送、资金或权限等高风险操作时，必须按规则审批或由人执行。</p></div>
+</div></div></section>
+<section id="architecture"><div class="wrap">
+<div class="section-kicker">02 / TECHNICAL ARCHITECTURE</div><h2 class="section-title">技术架构：每一层各司其职</h2>
+<p class="section-desc">系统采用分层、模块化设计。入口层接收请求，控制面管理身份和权限，编排层安排流程，运行时执行 Agent，黑板共享协作信息，工具网关控制外部操作，底层负责数据与事件。</p>
+<div class="arch">
+<div class="layer"><strong>使用入口｜Web UI · API · CLI</strong><small>用户、业务系统和运维人员从这里使用平台</small></div><div class="arrow">↓</div>
+<div class="layer"><strong>平台控制面｜身份认证 · 多租户 · RBAC · 审计 · 配置</strong><small>确认“谁在操作、能操作什么、当前任务属于谁”</small></div><div class="arrow">↓</div>
+<div class="layer core"><strong>流程编排｜LangGraph</strong><small>安排步骤、分支、并行任务；支持暂停、人工介入与恢复</small></div><div class="arrow">↓</div>
+<div class="layer core"><strong>Agent Runtime｜Harness 适配层</strong><small>承载单次 Agent 执行；通过适配器连接可替换的执行引擎</small></div><div class="arrow">↓</div>
+<div class="layer"><strong>智能体协作｜专家 Agent · Skills · 模型模板</strong><small>读取任务上下文、分析问题、提交观点与结构化产物</small></div><div class="arrow">↓</div>
+<div class="layer core"><strong>安全工具网关｜MCP · 风险分级 · 审批</strong><small>所有外部工具调用经过统一授权、参数校验、审批和审计</small></div>
+<div class="sidecars"><div>Hybrid Blackboard<br>共享事实、证据、观点与裁决</div><div>Knowledge & Memory<br>知识检索与长期记忆</div><div>Conversation & Run<br>对话、任务与运行生命周期</div></div>
+<div class="layer storage"><strong>数据与事件底座｜PostgreSQL · pgvector · Redis Streams</strong><small>业务事实持久化、语义检索、异步事件分发与失败重试</small></div>
+<div class="sidecars"><div>Langfuse<br>运行链路与模型成本观测</div><div>Audit Log<br>操作记录与责任追踪</div><div>Evaluation<br>质量评测与回归门禁</div></div>
+</div>
+<div class="callout">关键原则：Agent 不直接连接数据库、Redis 或任意外部系统。它通过平台提供的受控接口工作；高风险操作不能靠模型自己说“我有权限”来放行。</div>
+</div></section>
+<section id="capabilities"><div class="wrap">
+<div class="section-kicker">03 / CAPABILITIES</div><h2 class="section-title">平台具备哪些技术能力</h2>
+<p class="section-desc">以下是平台的能力版图。具体模块的交付状态以代码、测试和部署验收为准；架构设计覆盖不等于所有能力已经全部生产化。</p>
+<div class="grid">
+<div class="card"><div class="num">01 · IDENTITY</div><h3>多租户与权限</h3><p>不同客户、组织和团队的数据与操作权限隔离；通过角色和资源范围控制访问。</p></div>
+<div class="card"><div class="num">02 · AGENT RUNTIME</div><h3>智能体运行时</h3><p>统一 Agent 的执行入口和上下文，运行引擎通过适配层接入，避免平台被某一个模型或框架锁死。</p></div>
+<div class="card"><div class="num">03 · ORCHESTRATION</div><h3>工作流编排</h3><p>把复杂工作拆成步骤，支持条件分支、并行处理、等待人工确认和中断后恢复。</p></div>
+<div class="card"><div class="num">04 · BLACKBOARD</div><h3>共享认知黑板</h3><p>专家共享事实、证据和观点；可以提出质疑、登记冲突并形成有依据的决策，不靠聊天记录碰运气。</p></div>
+<div class="card"><div class="num">05 · TOOL GATEWAY</div><h3>工具与 MCP 安全网关</h3><p>统一接入外部工具，按租户、角色、Run 和工具白名单授权；高风险动作绑定一次性审批。</p></div>
+<div class="card"><div class="num">06 · KNOWLEDGE</div><h3>知识库与检索</h3><p>管理文档、版本、切片、索引、访问控制和来源引用，让 Agent 能基于企业资料回答和工作。</p></div>
+<div class="card"><div class="num">07 · MEMORY</div><h3>记忆与上下文</h3><p>管理跨会话可复用的信息，并区分对话历史、任务运行状态、知识资料和共享黑板。</p></div>
+<div class="card"><div class="num">08 · GOVERNANCE</div><h3>评测与治理</h3><p>通过评测集、回归检查、权限策略和审计记录，持续检查 Agent 是否按预期工作。</p></div>
+<div class="card"><div class="num">09 · COST & QUOTA</div><h3>配额与成本管理</h3><p>按租户、模型或任务约束资源使用，跟踪 Token、延迟和调用成本。</p></div>
+<div class="card"><div class="num">10 · OBSERVABILITY</div><h3>运行可观测</h3><p>追踪一次任务经过哪些步骤、调用了什么工具、哪里失败、消耗多少资源，方便排障。</p></div>
+<div class="card"><div class="num">11 · RELIABILITY</div><h3>事件可靠性</h3><p>通过持久化事件、重试、幂等回执和死信处理，降低异步任务丢失或重复处理的风险。</p></div>
+<div class="card"><div class="num">12 · EXTENSIBILITY</div><h3>扩展与部署</h3><p>通过声明式扩展包和版本化接口增加行业 Agent；支持私有部署、迁移和灰度切换的建设方向。</p></div>
+</div></div></section>
+<section id="scenarios"><div class="wrap">
+<div class="section-kicker">04 / USE CASES</div><h2 class="section-title">它具体能帮企业干什么</h2>
+<p class="section-desc">平台提供通用底座，实际业务由行业 Agent、工作流、知识资料和授权工具组合出来。</p>
+<div class="flow">
+<div class="step"><b>接收目标</b><span>用户提出需求、上传资料或创建任务</span></div>
+<div class="step"><b>拆解工作</b><span>编排流程，分配给不同专家 Agent</span></div>
+<div class="step"><b>协同分析</b><span>查知识、共享证据、交叉检查</span></div>
+<div class="step"><b>受控执行</b><span>调用授权工具；必要时请求人工审批</span></div>
+<div class="step"><b>交付沉淀</b><span>输出结果、记录过程、形成可追溯资产</span></div>
+</div>
+<div class="grid" style="margin-top:18px">
+<div class="card"><h3>企业 AI 客服</h3><p>检索产品知识和客户记录，判断问题类型，生成答复草稿；退款、改账等动作按权限交由人工确认。</p></div>
+<div class="card"><h3>研发与项目管理</h3><p>拆解需求、整理 Issue、分派任务、检查交付证据、汇总进度，让项目过程透明可追踪。</p></div>
+<div class="card"><h3>行业知识助手</h3><p>把企业制度、产品手册、业务资料接入知识库，让专业 Agent 按来源回答并形成分析报告。</p></div>
+<div class="card"><h3>运营与流程自动化</h3><p>串联内部系统和外部工具，自动完成低风险步骤；关键发布、通知和数据变更保留审批关口。</p></div>
+<div class="card"><h3>多专家研究分析</h3><p>让多个 Agent 从不同角度研究同一问题，交换证据、挑战结论，再汇总成有依据的判断。</p></div>
+<div class="card"><h3>软件公司交付行业产品</h3><p>在统一底座上配置品牌、行业知识、角色和流程，形成可复制交付的垂直领域 AI 产品。</p></div>
+</div>
+</div></section>
+<section><div class="wrap">
+<div class="section-kicker">05 / TECHNOLOGY STACK</div><h2 class="section-title">主要技术选型</h2><p class="section-desc">采用成熟组件解决通用问题，把研发精力留给平台业务逻辑和安全治理。</p>
+<div class="taglist"><span class="tag">Python · 服务与领域模块</span><span class="tag">FastAPI · API 服务</span><span class="tag">LangGraph · 状态化工作流</span><span class="tag">Harness Adapter · Agent 执行适配</span><span class="tag">MCP · 工具协议</span><span class="tag">Agent Skills · 能力描述</span><span class="tag">PostgreSQL · 主数据</span><span class="tag">pgvector · 向量检索</span><span class="tag">Redis Streams · 事件分发</span><span class="tag">Langfuse · 可观测</span><span class="tag">Prometheus Client · 指标</span><span class="tag">JSON Schema · 参数校验</span></div>
+</div></section>
+<section id="boundary"><div class="wrap">
+<div class="section-kicker">06 / DELIVERY BOUNDARY</div><h2 class="section-title">哪些已经有基础，哪些仍需持续建设</h2>
+<p class="section-desc">我们不把设计蓝图说成已经全部上线。仓库同时保留轻量旧工作台，并在 agent_platform/ 中建设生产级平台模块；新平台依赖单独安装，基础设施接入按阶段推进。</p>
+<div class="grid">
+<div class="card"><span class="status ready">仓库已有实现基础</span><h3>核心模块与安全机制</h3><p>已建立平台模块边界、共享契约、PostgreSQL 迁移体系，以及黑板、工具网关、事件可靠性、租户身份等模块的实现与测试基础。</p></div>
+<div class="card"><span class="status building">持续集成与验收</span><h3>端到端运行链路</h3><p>LangGraph、Harness、MCP、数据库与事件设施需要在具体部署环境完成组合验证；不同运行适配器的质量和成本仍需基准评测。</p></div>
+<div class="card"><span class="status roadmap">按阶段生产化</span><h3>部署与运维闭环</h3><p>控制面服务化、多实例路由、真实模型接入、完整 UI、故障演练、监控告警和迁移回滚，需要逐项完成生产验收。</p></div>
+</div>
+<div class="callout">特别说明：平台架构目标包含多租户、私有部署、SaaS、灰度迁移等企业能力，但实际可用范围取决于当前部署版本和已完成的验收项。不要仅凭本介绍判断某项功能已在生产环境启用。</div>
+</div></section>
+<section><div class="wrap">
+<div class="section-kicker">07 / PRODUCT VALUE</div><h2 class="section-title">最终带来的价值</h2>
+<div class="grid">
+<div class="card"><h3>对业务团队</h3><p>把重复、跨系统、需要多角色协作的工作流程化，减少人工搬运和信息遗漏。</p></div>
+<div class="card"><h3>对管理者</h3><p>看得到任务进度、执行过程、资源成本和审批记录，出了问题能定位、能追责、能复盘。</p></div>
+<div class="card"><h3>对软件公司</h3><p>底座能力复用，行业能力差异化；不必每做一个 AI 产品就从权限、运行时和工具治理重新造轮子。</p></div>
+</div>
+</div></section>
+</main>
+<footer><div class="wrap">Agent Platform · 系统整体介绍<br>技术架构与能力说明基于仓库 README 和《智能体平台改造总设计》整理。本文为系统介绍材料，不替代部署手册、接口文档或生产验收报告。</div></footer>
+</body></html>
