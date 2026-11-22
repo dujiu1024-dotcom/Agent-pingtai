@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { ApiError, apiClient } from '@/lib/api'
@@ -45,6 +45,7 @@ function definitionText(item?: RegistryItem): string {
 
 export function SkillsPage() {
   const { skillId } = useParams<{ skillId: string }>()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState('')
   const [newId, setNewId] = useState('')
@@ -96,7 +97,7 @@ export function SkillsPage() {
       setNewId('')
       setError(null)
       await queryClient.invalidateQueries({ queryKey: ['skills-registry'] })
-      window.location.assign(`/admin/skills/${encodeURIComponent(created.item_id)}`)
+      navigate(`/admin/skills/${encodeURIComponent(created.item_id)}`)
     },
     onError: (reason) => setError(errorMessage(reason)),
   })
