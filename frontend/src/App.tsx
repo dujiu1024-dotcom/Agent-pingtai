@@ -13,6 +13,7 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import {
   EmptyState,
   ErrorState,
@@ -21,10 +22,8 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
-import { SystemOpsPage } from '@/features/operations/SystemOpsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
-import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -98,6 +97,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
+          <Route path="/admin/rbac" element={<Navigate to="/admin/access-control" replace />} />
           <Route element={<AppShell config={config} />}>
             <Route
               path="/"
@@ -116,7 +116,6 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
-                    version={config.version}
                   />
                 }
               />
@@ -290,12 +289,10 @@ function PageView({
   route,
   authEnabled,
   capabilities,
-  version,
 }: {
   route: PageRoute
   authEnabled: boolean
   capabilities: string[]
-  version: string
 }) {
   if (route.authOnly && !authEnabled) {
     return (
@@ -313,13 +310,13 @@ function PageView({
       />
     )
   if (route.path === '/workspace/overview') return <Dashboard />
-  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
-  if (route.path === '/admin/ops') return <SystemOpsPage />
+  if (route.path === '/admin/organization') return <OrganizationAccessPage page="organization" />
+  if (route.path === '/admin/access-control') return <OrganizationAccessPage page="rbac" />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
