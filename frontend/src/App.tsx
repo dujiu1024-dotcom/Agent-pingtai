@@ -50,7 +50,7 @@ import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
-import { Dashboard } from '@/components/OperationsDashboard'
+import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
@@ -460,7 +460,7 @@ function PageView({
       />
     )
   }
-  if (route.path === '/workspace/overview') return <Dashboard />
+  if (route.path === '/workspace/overview') return <HomeWorkspace />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
   if (route.path === '/search')
