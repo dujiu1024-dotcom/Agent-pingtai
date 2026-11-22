@@ -219,6 +219,7 @@ class RunNodeHandoff:
         if self.active_node is not None and self.active_node != former:
             raise RuntimeError("handoff source is not the active Run node")
         await _invoke(lambda: self._stop_worker(former))
+        self.active_node = None
         await _invoke(lambda: self._fence_node(former))
         confirmed = self._confirm_fenced(former)
         if inspect.isawaitable(confirmed):
