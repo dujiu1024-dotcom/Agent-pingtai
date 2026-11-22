@@ -39,6 +39,9 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   idempotencyKey?: string
   ifMatch?: string
   etag?: boolean
+  responseType?: 'json' | 'blob' | 'text'
+  retries?: number
+  retryDelayMs?: number
 }
 
 export interface ApiClientOptions {

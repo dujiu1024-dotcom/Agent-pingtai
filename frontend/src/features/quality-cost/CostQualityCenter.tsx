@@ -244,31 +244,13 @@ export function CostQualityCenter() {
       if (runId) search.set('run_id', runId)
       if (projectId) search.set('project_id', projectId)
       if (agentId) search.set('agent_id', agentId)
-      // 与 apiClient 相同：同源 Cookie 会话随请求发送。
-      const response = await fetch(`/api/platform/v1/quotas/usage.csv?${search.toString()}`, {
-        method: 'GET',
-        credentials: 'same-origin',
-        headers: { Accept: 'text/csv' },
-      }).catch(() => {
-        throw new ApiError('无法连接服务端，请稍后重试。', {
-          status: 0,
-          code: 'NETWORK_ERROR',
-        })
+      const blob = await apiClient.get<Blob>(
+        `/platform/v1/quotas/usage.csv?${search.toString()}`,
+        { responseType: 'blob', etag: false, headers: { Accept: 'text/csv' } },
+      ).catch((error: unknown) => {
+        if (error instanceof ApiError) throw error
+        throw new ApiError('无法连接服务端，请稍后重试。', { status: 0, code: 'NETWORK_ERROR', retryable: true })
       })
-      if (!response.ok) {
-        let detail = ''
-        try {
-          const payload = (await response.json()) as { message?: string; detail?: string }
-          detail = payload.message ?? (typeof payload.detail === 'string' ? payload.detail : '')
-        } catch {
-          detail = ''
-        }
-        throw new ApiError(detail || '用量 CSV 导出失败。', {
-          status: response.status,
-          code: 'CSV_EXPORT_FAILED',
-        })
-      }
-      const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url

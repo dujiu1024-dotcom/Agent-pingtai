@@ -672,9 +672,7 @@ function FilePreview({ assetId, mediaType }: { assetId: string; mediaType?: stri
   const previewQuery = useQuery({
     queryKey: ['file-preview', assetId],
     queryFn: async () => {
-      const res = await fetch(`/api/platform/v1/files/${encodeURIComponent(assetId)}/content`, { credentials: 'same-origin' })
-      if (!res.ok) throw new Error(`下载失败 ${res.status}`)
-      return res.blob()
+      return apiClient.get<Blob>(`/platform/v1/files/${encodeURIComponent(assetId)}/content`, { responseType: 'blob', etag: false })
     },
     retry: false,
   })

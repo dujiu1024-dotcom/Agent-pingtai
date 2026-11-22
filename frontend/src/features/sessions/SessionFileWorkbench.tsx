@@ -79,17 +79,15 @@ const queryOptions = { staleTime: 0, gcTime: 0, refetchOnWindowFocus: true }
 const safeFileName = (value: string) => value.replace(/[\\r\\n"]/g, '_')
 
 async function downloadVersion(assetId: string, version: number, filename: string) {
-  const response = await fetch(
-    `/api${API}/files/${encodeURIComponent(assetId)}/versions/${version}`,
-    { credentials: 'same-origin', cache: 'no-store', headers: { Accept: '*/*' } },
-  )
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403 || response.status === 404 || response.status === 410) {
-      throw new Error(errorLabel(new ApiError('文件下载被拒绝', { status: response.status, code: 'file_download_denied' })))
+  const blob = await apiClient.get<Blob>(
+    `${API}/files/${encodeURIComponent(assetId)}/versions/${version}`,
+    { responseType: 'blob', etag: false, cache: 'no-store', headers: { Accept: '*/*' } },
+  ).catch((error: unknown) => {
+    if (error instanceof ApiError && [401, 403, 404, 410].includes(error.status)) {
+      throw new Error(errorLabel(new ApiError('文件下载被拒绝', { status: error.status, code: 'file_download_denied' })))
     }
-    throw new Error(`文件下载失败（HTTP ${response.status}）`)
-  }
-  const blob = await response.blob()
+    throw error
+  })
   const objectUrl = URL.createObjectURL(blob)
   try {
     const anchor = document.createElement('a')
