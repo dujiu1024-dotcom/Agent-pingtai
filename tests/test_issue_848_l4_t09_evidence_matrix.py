@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 MATRIX = ROOT / "docs/architecture/L4_T09_ATOMIC_CI_PRODUCTION_EVIDENCE_MATRIX.md"
 

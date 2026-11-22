@@ -1,7 +1,7 @@
 """FastAPI identity route integration tests."""
 import unittest
-from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 from agent_platform.api.identity import create_identity_router
 from agent_platform.identity.http import IdentityASGIMiddleware

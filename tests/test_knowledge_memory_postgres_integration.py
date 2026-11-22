@@ -19,8 +19,8 @@ if DSN:
         KnowledgeScope,
     )
     from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
-    from agent_platform.memory.postgres_repository import PostgresMemoryRepository
     from agent_platform.memory.deletion import MemoryDeletionWorker, PostgresMemoryDeletionQueue
+    from agent_platform.memory.postgres_repository import PostgresMemoryRepository
     from agent_platform.memory.service import (
         MemoryCandidate,
         MemoryPrincipal,

@@ -18,7 +18,10 @@ from agent_platform.observability.evaluation import EvalGatePolicy
 from agent_platform.observability.evaluation_leases import PostgresEvaluationScheduleLeaseStore
 from agent_platform.observability.evaluation_runner import EvaluationRunService
 from agent_platform.observability.evaluation_store import PostgresEvaluationRepository
-from agent_platform.observability.evaluation_worker import EvaluationSchedule, EvaluationScheduleWorker
+from agent_platform.observability.evaluation_worker import (
+    EvaluationSchedule,
+    EvaluationScheduleWorker,
+)
 from agent_platform.production_config import load_production_settings
 
 logger = logging.getLogger("agent_platform.evaluation_scheduler")
