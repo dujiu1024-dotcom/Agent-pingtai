@@ -155,13 +155,19 @@ function TrendLine({ label, values, format }: { label: string; values: Array<num
   const span = max - min || 1
   const points = values.map((value, index) => value == null || !Number.isFinite(value)
     ? null
-    : `${values.length < 2 ? 50 : index / (values.length - 1) * 100},${40 - ((value - min) / span) * 32}`).filter((point): point is string => point != null)
+    : `${values.length < 2 ? 50 : index / (values.length - 1) * 100},${40 - ((value - min) / span) * 32}`)
+  const segments: string[][] = []
+  points.forEach((point) => {
+    if (point == null) return
+    if (!segments.length || points[points.indexOf(point) - 1] == null) segments.push([])
+    segments[segments.length - 1].push(point)
+  })
   return <div className="cq-trend-chart">
     <div className="cq-trend-summary"><span>{label}</span><strong>{format(finite.reduce((sum, value) => sum + value, 0))}</strong></div>
     <svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label={`${label}每日趋势，${finite.length}个有值日期`}>
       <line x1="0" y1="40" x2="100" y2="40" />
-      {points.length > 1 && <polyline points={points.join(' ')} />}
-      {points.map((point, index) => <circle key={index} cx={point.split(',')[0]} cy={point.split(',')[1]} r="1.4" />)}
+      {segments.filter((segment) => segment.length > 1).map((segment, index) => <polyline key={index} points={segment.join(' ')} />)}
+      {points.map((point, index) => point == null ? null : <circle key={index} cx={point.split(',')[0]} cy={point.split(',')[1]} r="1.4" />)}
     </svg>
     <div className="cq-trend-range"><span>按 UTC 日期</span><span>{finite.length} 个数据点</span></div>
   </div>
@@ -435,7 +441,7 @@ export function CostQualityCenter() {
               <>
                 <div className="cq-trend-grid">
                   <TrendLine label="每日 Token" values={dailyTrend.map((day) => day.totalTokens)} format={number} />
-                  <TrendLine label="每日费用（USD）" values={dailyTrend.map((day) => day.costUsd)} format={usd} />
+                  <TrendLine label="每日费用（USD）" values={dailyTrend.map((day) => day.costUsd)} format={(value) => usd(String(value))} />
                 </div>
                 <div className="cq-trend-table-wrap">
                   <table className="cq-table cq-trend-table">
