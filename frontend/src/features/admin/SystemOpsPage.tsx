@@ -17,6 +17,11 @@ type SchedulerJob = {
   enabled?: boolean
   status?: string
   interval_seconds?: number
+  failure_count?: number
+  last_result?: string
+  last_message?: string
+  last_run_at?: string
+  next_run_at?: string
   [key: string]: unknown
 }
 type SchedulerRun = {
@@ -25,6 +30,7 @@ type SchedulerRun = {
   status?: string
   started_at?: string
   finished_at?: string
+  message?: string
   [key: string]: unknown
 }
 
@@ -50,6 +56,18 @@ function display(value: unknown): string {
   if (typeof value === 'number') return value.toLocaleString('zh-CN')
   if (typeof value === 'string') return value
   return JSON.stringify(value)
+}
+
+function statusClass(value: unknown): string {
+  const status = typeof value === 'string' ? value.toLowerCase() : 'unknown'
+  if (['failed', 'error', 'critical', 'unavailable', 'timed_out'].includes(status)) {
+    return 'ops-status ops-status--critical'
+  }
+  if (['warning', 'retrying'].includes(status)) return 'ops-status ops-status--warning'
+  if (['succeeded', 'success', 'ok', 'ready', 'idle'].includes(status)) {
+    return 'ops-status ops-status--ok'
+  }
+  return 'ops-status'
 }
 
 function timestamp(value: unknown): string {
@@ -146,7 +164,7 @@ export function SystemOpsPage() {
                     <span>{display(metric.display_name ?? metric.name ?? metric.metric ?? metric.key ?? key)}</span>
                     <strong>{display(value ?? metric)}</strong>
                     {metric.unit !== undefined && <small>{display(metric.unit)}</small>}
-                    {!value && entries.length > 1 && <small>{entries.length} 个返回字段</small>}
+                    {(value === null || value === undefined) && entries.length > 1 && <small>{entries.length} 个返回字段</small>}
                   </article>
                 )
               })}
