@@ -8,7 +8,6 @@ Listeners must treat notifications as hints and re-read authoritative ACLs.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import Any, Callable
 
@@ -45,10 +44,10 @@ class PostgresKnowledgeInvalidationConsumer:
                 )
                 rows = await cursor.fetchall()
                 for row in rows:
-                    payload = KnowledgeACLInvalidationEvent.from_record(row).to_dict()
+                    event = KnowledgeACLInvalidationEvent.from_record(row)
                     await connection.execute(
                         "SELECT pg_notify(%s, %s)",
-                        (_CHANNEL, json.dumps(payload, separators=(",", ":"))),
+                        (_CHANNEL, event.to_json()),
                     )
                     await connection.execute(
                         """UPDATE knowledge_cache_invalidations
