@@ -184,5 +184,13 @@ describe('route configuration', () => {
       matchRoutes(routeObjects, '/operations/files/asset-123')?.[0].params.fileId,
     ).toBe('asset-123')
   })
+  it('registers Skills list and detail routes under #806', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    const list = routes.find((route) => route.path === '/admin/skills')
+    const detail = routes.find((route) => route.path === '/admin/skills/:skillId')
+    expect(list?.owner).toBe('#806')
+    expect(detail?.owner).toBe('#806')
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
+  })
 
 })
