@@ -7,6 +7,7 @@ import {
   getAllRoutes,
   getVisibleNavigation,
   globalRoutes,
+  systemRoutes,
   isCanonicalRouteSetValid,
   navigationSections,
   pageRoutes,
@@ -18,7 +19,7 @@ import {
 describe('route configuration', () => {
   it('keeps canonical page ids and paths unique', () => {
     expect(
-      isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes]),
+      isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...systemRoutes, ...authRoutes]),
     ).toBe(true)
   })
 
@@ -51,6 +52,19 @@ describe('route configuration', () => {
     ]) {
       expect(registeredPaths.has(path), path).toBe(true)
     }
+  })
+
+
+  it('registers explicit 403 and 404 destinations in the canonical system route table', () => {
+    expect(systemRoutes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '/403', pageId: 'SYS-FORBIDDEN', owner: '#743' }),
+      expect.objectContaining({ path: '/404', pageId: 'SYS-NOT-FOUND', owner: '#743' }),
+    ]))
+    const routes = getAllRoutes(false)
+    expect(routes.map((route) => route.path)).toContain('/403')
+    expect(routes.map((route) => route.path)).toContain('/404')
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/403')).not.toBeNull()
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/404')).not.toBeNull()
   })
 
   it('provides exactly four primary navigation sections', () => {
