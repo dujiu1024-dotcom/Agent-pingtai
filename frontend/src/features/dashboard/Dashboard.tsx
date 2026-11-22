@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
+import './dashboard.css'
+
 import { apiClient } from '@/lib/api'
 import { unwrapList } from '@/features/tasks/task-model'
 import type { TaskRecord } from '@/features/tasks/task-model'
@@ -56,7 +58,7 @@ function dateLabel(value: unknown, index: number): string {
     : `${date.getMonth() + 1}/${date.getDate()}`
 }
 
-function trendPoints(value: unknown): TrendPoint[] {
+export function normalizeDashboardTrendPoints(value: unknown): TrendPoint[] {
   return listAt(value).map((item, index) => {
     const point = record(item)
     return {
@@ -289,7 +291,10 @@ export function Dashboard() {
   const totalCost =
     numberAt(taskPayload, ['total_cost', 'cost']) ??
     numberAt(taskData, ['total_cost', 'cost'])
-  const points = useMemo(() => trendPoints(trendsQuery.data), [trendsQuery.data])
+  const points = useMemo(
+    () => normalizeDashboardTrendPoints(trendsQuery.data),
+    [trendsQuery.data],
+  )
   const metrics = [
     {
       label: '任务数',
