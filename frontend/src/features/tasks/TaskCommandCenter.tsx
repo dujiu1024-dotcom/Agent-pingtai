@@ -256,9 +256,11 @@ export function TaskCommandCenter() {
   const sortedFiltered = [...filtered].sort((a, b) => {
     const aValue = sortKey === 'updated_at' ? a.updated_at
       : sortKey === 'duration_ms' ? a.duration_ms
+      : sortKey === 'priority' ? a.priority
       : a.created_at
     const bValue = sortKey === 'updated_at' ? b.updated_at
       : sortKey === 'duration_ms' ? b.duration_ms
+      : sortKey === 'priority' ? b.priority
       : b.created_at
     const primary = typeof aValue === 'number' || typeof bValue === 'number'
       ? Number(aValue ?? 0) - Number(bValue ?? 0)
@@ -278,6 +280,11 @@ export function TaskCommandCenter() {
   const set = (k: string, v: string) => {
     const n = new URLSearchParams(sp)
     if (k !== 'page' && k !== 'page_size') n.delete('page')
+    if (!['page', 'page_size', 'columns', 'sort', 'order'].includes(k)) {
+      setSelectedTaskIds([])
+      setBulkFeedback('')
+      setBulkFailureIds([])
+    }
     if (v) {
       n.set(k, v)
     } else {
@@ -443,6 +450,7 @@ export function TaskCommandCenter() {
           <option value="created_at">创建时间</option>
           <option value="updated_at">更新时间</option>
           <option value="duration_ms">运行耗时</option>
+          <option value="priority">优先级</option>
         </select>
         <select
           aria-label="排序方向"
