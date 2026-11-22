@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { ReactElement } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -38,6 +39,8 @@ import {
   RunTracePage,
 } from '@/features/tasks/TaskCommandCenter'
 import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
+import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
+import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -319,7 +322,8 @@ function RouteGuard({
   if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
-  if (route.path.startsWith('/admin/models/routing')) return <ModelsManagementPage authEnabled={authEnabled} />
+  const adminPage = resolveAdminPage(route.path, authEnabled)
+  if (adminPage) return adminPage
   if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
   return (
     <section className="page-content">
@@ -336,6 +340,34 @@ function RouteGuard({
       />
     </section>
   )
+}
+
+/** Resolve the dedicated admin resource page for each canonical route. */
+export function resolveAdminPage(
+  routePath: string,
+  authEnabled: boolean,
+): ReactElement | null {
+  if (routePath === '/admin/agents' || routePath === '/admin/agents/:agentId') {
+    return <AgentDefinitionPage />
+  }
+  if (
+    routePath === '/admin/workflows' ||
+    routePath === '/admin/workflows/:workflowId' ||
+    routePath === '/admin/workflows/:workflowId/edit'
+  ) {
+    return <WorkflowDesignerPage />
+  }
+  if (
+    routePath === '/admin/models/providers' ||
+    routePath === '/admin/models/providers/:providerId' ||
+    routePath === '/admin/models/templates' ||
+    routePath === '/admin/models/templates/:templateId' ||
+    routePath === '/admin/models/routing' ||
+    routePath === '/admin/models/routing/:policyId'
+  ) {
+    return <ModelsManagementPage authEnabled={authEnabled} />
+  }
+  return null
 }
 
 function AuthEntryPage({ route }: { route: PageRoute }) {
