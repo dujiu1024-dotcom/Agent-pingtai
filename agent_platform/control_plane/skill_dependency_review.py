@@ -112,6 +112,7 @@ class SkillDependencyReviewer:
         self, *, store: SkillDependencyReviewStore,
         approved_pins: Mapping[str, tuple[str, ...]],
         scanner: DependencyAdvisoryScanner | None = None,
+        approved_tools: frozenset[str] | None = None,
     ) -> None:
         self.store = store
         self.approved_pins = {
@@ -119,6 +120,10 @@ class SkillDependencyReviewer:
             for package, pins in approved_pins.items()
         }
         self.scanner = scanner
+        self.approved_tools = (
+            frozenset(tool.casefold() for tool in approved_tools)
+            if approved_tools is not None else None
+        )
 
     async def review(
         self, *, item: RegistryVersion, actor_id: str,
@@ -135,6 +140,21 @@ class SkillDependencyReviewer:
             raise SkillDependencyReviewError("Skill dependencies must be an object")
         dependencies: dict[str, str] = {}
         findings: list[str] = []
+        raw_tools = manifest.get("tool_allowlist", manifest.get("tools", ()))
+        if not isinstance(raw_tools, (list, tuple)):
+            findings.append("invalid_tool_allowlist")
+        else:
+            requested_tools = tuple(
+                tool.strip() for tool in raw_tools
+                if isinstance(tool, str) and tool.strip()
+            )
+            if len(requested_tools) != len(raw_tools) or len(set(requested_tools)) != len(requested_tools):
+                findings.append("invalid_tool_allowlist")
+            for tool in requested_tools:
+                if self.approved_tools is None:
+                    findings.append("tool_allowlist_not_configured:" + tool[:100])
+                elif tool.casefold() not in self.approved_tools:
+                    findings.append("tool_not_allowlisted:" + tool[:100])
         for raw_package, raw_pin in raw_dependencies.items():
             if not isinstance(raw_package, str) or not isinstance(raw_pin, str):
                 findings.append("invalid_dependency_entry")
