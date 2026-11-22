@@ -40,6 +40,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { SessionFileWorkbench } from '@/features/sessions/SessionFileWorkbench'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -474,6 +475,10 @@ function PageView({
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
+  if (route.path === '/operations/conversations' || route.path === '/operations/conversations/:conversationId')
+    return <SessionFileWorkbench view="sessions" />
+  if (route.path === '/operations/files' || route.path === '/operations/files/:fileId')
+    return <SessionFileWorkbench view="files" />
   if (
     route.path === '/operations/agents' ||
     route.path === '/operations/agents/:agentId' ||

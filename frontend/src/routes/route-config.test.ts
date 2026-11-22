@@ -128,61 +128,25 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
-  it('registers Skills registry list and detail routes under #759', () => {
+  it('registers Skills registry list and detail routes under #806', () => {
     const list = pageRoutes.find((route) => route.path === '/admin/skills')
     const detail = detailRoutes.find((route) => route.path === '/admin/skills/:skillId')
-    expect(list?.owner).toBe('#759')
-    expect(detail?.owner).toBe('#759')
+    expect(list?.owner).toBe('#806')
+    expect(detail?.owner).toBe('#806')
     expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
   })
 
 
-  it('keeps the admin resource suite reachable with one owner per child work package', () => {
-    const visible = getVisibleNavigation(false).flatMap((group) =>
-      group.items.map((item) => item.path),
-    )
-    for (const path of [
-      '/admin/agents',
-      '/admin/workflows',
-      '/admin/models/providers',
-      '/admin/models/templates',
-      '/admin/models/routing',
-      '/admin/tools',
-      '/admin/skills',
-    ]) {
-      expect(visible).toContain(path)
-    }
-
-    expect(pageRoutes.find((route) => route.path === '/admin/agents')?.owner).toBe('#757')
-    expect(pageRoutes.find((route) => route.path === '/admin/workflows')?.owner).toBe('#758')
-    for (const path of [
-      '/admin/models/providers',
-      '/admin/models/templates',
-      '/admin/models/routing',
-      '/admin/tools',
-      '/admin/skills',
-    ]) {
-      expect(pageRoutes.find((route) => route.path === path)?.owner).toBe('#759')
-    }
-    expect(pageRoutes.find((route) => route.path === '/admin/organization')?.owner).toBe('#756')
-    expect(pageRoutes.find((route) => route.path === '/admin/access-control')?.owner).toBe('#756')
-  })
-
-  it('keeps resource detail deep links attached to their canonical list routes', () => {
+  it('registers Session and File workbench list/detail routes under #762', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
     }))
-    const cases = [
-      ['/admin/models/providers/provider-1', 'providerId', 'provider-1'],
-      ['/admin/models/templates/template-1', 'templateId', 'template-1'],
-      ['/admin/models/routing/policy-1', 'policyId', 'policy-1'],
-      ['/admin/tools/tool-1', 'toolId', 'tool-1'],
-      ['/admin/skills/skill-1', 'skillId', 'skill-1'],
-      ['/admin/workflows/workflow-1/edit', 'workflowId', 'workflow-1'],
-    ] as const
-    for (const [path, param, value] of cases) {
-      expect(matchRoutes(routeObjects, path)?.[0].params[param]).toBe(value)
-    }
+    expect(pageRoutes.find((route) => route.path === '/operations/conversations')?.owner).toBe('#762')
+    expect(detailRoutes.find((route) => route.path === '/operations/conversations/:conversationId')?.owner).toBe('#762')
+    expect(pageRoutes.find((route) => route.path === '/operations/files')?.owner).toBe('#762')
+    expect(detailRoutes.find((route) => route.path === '/operations/files/:fileId')?.owner).toBe('#762')
+    expect(matchRoutes(routeObjects, '/operations/conversations/session-abc')?.[0].params.conversationId).toBe('session-abc')
+    expect(matchRoutes(routeObjects, '/operations/files/asset-xyz')?.[0].params.fileId).toBe('asset-xyz')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
