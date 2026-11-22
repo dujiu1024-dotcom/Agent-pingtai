@@ -34,7 +34,7 @@ import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
-import { AgentRuntimeDetail, AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
+import { AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { SessionFileWorkbench } from '@/features/sessions/SessionFileWorkbench'
 import { SessionsWorkspace } from '@/features/sessions/SessionsWorkspace'
@@ -384,7 +384,7 @@ function RouteGuard({
   const collaborationPage = resolveCollaborationPage(route.path, runId)
   if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />
-  if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
+  if (route.path === '/operations/agents/:agentId') return <AgentDefinitionPage />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/admin/ops') return <SystemOpsPage />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
