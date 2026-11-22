@@ -8,7 +8,6 @@ import {
   filterRunEvents,
   resolveRunId,
   resolveTaskTitle,
-  sortEvents,
   unwrapList,
 } from './task-model'
 import type { RunEvent, TaskRecord } from './task-model'
@@ -54,24 +53,23 @@ export function TaskRunTimeline() {
   })
   const entries = useMemo<TimelineEntry[]>(() => {
     const byRun = new Map(runs.map((run) => [run.runId, run.task]))
-    return sortEvents(
-      eventQueries.flatMap((query, index) =>
-        (query.data ?? []).map((event) => ({
-          task: byRun.get(runs[index]?.runId ?? '')!,
-          runId: runs[index]?.runId ?? '',
-          event,
-        })),
-      ).filter((entry) => Boolean(entry.task)),
-    ).map((entry) => entry)
+    return eventQueries.flatMap((query, index) =>
+      (query.data ?? []).map((event) => ({
+        task: byRun.get(runs[index]?.runId ?? '')!,
+        runId: runs[index]?.runId ?? '',
+        event,
+      })),
+    ).filter((entry) => Boolean(entry.task)).sort((a, b) =>
+      (Date.parse(a.event.occurred_at ?? '') || 0) -
+      (Date.parse(b.event.occurred_at ?? '') || 0) ||
+      a.runId.localeCompare(b.runId) ||
+      a.event.event_id.localeCompare(b.event.event_id),
+    )
   }, [eventQueries, runs])
   const filtered = useMemo(() => {
-    const accepted = filterRunEvents(
-      entries.map((entry) => entry.event),
-      eventType,
-      search,
+    return entries.filter((entry) =>
+      filterRunEvents([entry.event], eventType, search).length > 0,
     )
-    const ids = new Set(accepted.map((event) => event.event_id))
-    return entries.filter((entry) => ids.has(entry.event.event_id))
   }, [entries, eventType, search])
   const eventTypes = [...new Set(entries.map(({ event }) => event.event_type ?? event.type))].sort()
   const loading = tasksQuery.isPending || eventQueries.some((query) => query.isPending)
