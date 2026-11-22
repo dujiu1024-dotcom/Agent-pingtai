@@ -199,7 +199,7 @@
 
 ## 12. 可运行组件样例
 
-入口：`frontend/src/components/DesignSystemShowcase.tsx`，样式：`frontend/src/components/design-system.css`。它在新前端首页直接挂载，展示品牌/语义色、按钮交互与禁用态、键盘焦点、三档表格密度、图表色板及 Office 材质预览。该样例不依赖 Storybook 或外部资源，可由现有 Vite dev/build 直接运行。
+入口：`frontend/src/components/DesignSystemShowcase.tsx`，路径：`/app/_storybook/design-system`。该内部演示路由展示品牌/语义色、按钮交互与禁用态、键盘焦点、三档表格密度、图表色板、Office 材质及基础组件 Story；不依赖 Storybook 或外部资源，可由现有 Vite dev/build 直接运行。
 
 ## 13. Token 落地与变更规则
 
@@ -209,7 +209,7 @@
 - 本规范是第一版工程基线；截图评审后允许调数值，但必须以同一 Token 更新文档、CSS 和样例，不能单页私改。
 
 
-## 12. 基础组件 API（L1-T13）
+## 14. 基础组件 API（L1-T13）
 
 组件统一从 `@/components` 导入，避免页面直接依赖组件内部文件：
 
@@ -227,10 +227,10 @@ import type { TableColumn } from '@/components'
 | Empty | 空数据状态 | 有标题/说明/可选操作；role=status；不得将空数据伪装成请求成功的业务记录 |
 | Loading | 加载反馈 | role=status、aria-live；支持尺寸与整页布局；尊重 prefers-reduced-motion |
 
-### 12.1 Story 演示
+### 14.1 Story 演示
 
 `frontend/src/components/ComponentStories.tsx` 是可运行的组件 Story 集合，由 `DesignSystemShowcase` 挂载。演示覆盖按钮变体/禁用/加载、Card 结构、Table 密度和数据、Modal 键盘/遮罩交互、Empty 操作槽及 Loading 状态。演示数据仅为本地静态样例，不调用业务 API、不写入后端。
 
-### 12.2 样式与可访问性
+### 14.2 样式与可访问性
 
 组件样式只消费本文件定义的 CSS Token（品牌/中性/语义色、间距、圆角、层级、动效）；交互控件提供可见 focus-visible 状态。Loading 动效在系统启用 reduced motion 时关闭。Modal 通过 aria-modal/aria-labelledby 暴露语义，关闭后恢复触发前焦点。Table 使用原生 table/thead/th/tbody 结构，窄屏由外层容器横向滚动。
