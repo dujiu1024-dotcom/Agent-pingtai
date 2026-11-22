@@ -157,11 +157,16 @@ function TrendLine({ label, values, format }: { label: string; values: Array<num
     ? null
     : `${values.length < 2 ? 50 : index / (values.length - 1) * 100},${40 - ((value - min) / span) * 32}`)
   const segments: string[][] = []
+  let currentSegment: string[] = []
   points.forEach((point) => {
-    if (point == null) return
-    if (!segments.length || points[points.indexOf(point) - 1] == null) segments.push([])
-    segments[segments.length - 1].push(point)
+    if (point == null) {
+      if (currentSegment.length) segments.push(currentSegment)
+      currentSegment = []
+    } else {
+      currentSegment.push(point)
+    }
   })
+  if (currentSegment.length) segments.push(currentSegment)
   return <div className="cq-trend-chart">
     <div className="cq-trend-summary"><span>{label}</span><strong>{format(finite.reduce((sum, value) => sum + value, 0))}</strong></div>
     <svg viewBox="0 0 100 44" preserveAspectRatio="none" role="img" aria-label={`${label}每日趋势，${finite.length}个有值日期`}>
