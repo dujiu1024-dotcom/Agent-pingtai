@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { RefreshCw } from 'lucide-react'
 
-import { ApiError, apiClient } from '@/lib/api'
+import { ApiError, apiClient, healthApiClient } from '@/lib/api'
 import './status-board.css'
 
 type FeatureMap = Record<string, boolean>
@@ -72,22 +72,23 @@ const featureLabels: Array<[key: string, label: string]> = [
   ['audit', '审计'],
 ]
 
-async function probe(path: string): Promise<ProbeResult> {
-  const response = await fetch(path, {
-    cache: 'no-store',
-    headers: { Accept: 'application/json' },
-  })
-  let body: Record<string, unknown> | null = null
+export async function probe(path: string): Promise<ProbeResult> {
   try {
-    const parsed: unknown = await response.json()
-    body =
-      parsed && typeof parsed === 'object'
-        ? (parsed as Record<string, unknown>)
-        : null
-  } catch {
-    body = null
+    const body = await healthApiClient.get<Record<string, unknown>>(path, {
+      cache: 'no-store', etag: false, retries: 0,
+    })
+    return { ok: true, status: 200, body }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      const details = error.details
+      return {
+        ok: false,
+        status: error.status,
+        body: details && typeof details === 'object' ? details as Record<string, unknown> : null,
+      }
+    }
+    throw error
   }
-  return { ok: response.ok, status: response.status, body }
 }
 
 function errorText(error: unknown): string {
