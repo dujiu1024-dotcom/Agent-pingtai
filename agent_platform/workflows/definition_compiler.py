@@ -423,7 +423,7 @@ class LangGraphWorkflowCompiler:
         if not terminal_found:
             diagnostics.append(WorkflowDiagnostic("graph.no_terminal", "graph must contain a path to END", "$.edges"))
         reachable: set[str] = set()
-        pending = list(entries) if isinstance(entries, list) else []
+        pending = [entry for entry in entries if isinstance(entry, str)] if isinstance(entries, list) else []
         while pending:
             current = pending.pop()
             if current in reachable or current not in adjacency:
