@@ -24,8 +24,14 @@ class EmbeddingProfile:
     def __post_init__(self) -> None:
         if not self.model_id.strip() or not self.version.strip():
             raise ValueError("embedding model_id and version are required")
-        if isinstance(self.dimensions, bool) or not isinstance(self.dimensions, int) or self.dimensions not in SUPPORTED_EMBEDDING_DIMENSIONS:
-            raise ValueError(f"embedding dimensions must be one of {SUPPORTED_EMBEDDING_DIMENSIONS}")
+        if (
+            isinstance(self.dimensions, bool)
+            or not isinstance(self.dimensions, int)
+            or self.dimensions not in SUPPORTED_EMBEDDING_DIMENSIONS
+        ):
+            raise ValueError(
+                f"embedding dimensions must be one of {SUPPORTED_EMBEDDING_DIMENSIONS}"
+            )
 
     @property
     def storage_key(self) -> str:

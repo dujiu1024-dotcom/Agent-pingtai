@@ -26,8 +26,14 @@ class PostgresKnowledgeRepository:
     def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=DEFAULT_EMBEDDING_DIMENSIONS)->None:
         if not embedding_model.strip() or not embedding_model_version.strip():
             raise ValueError("embedding model and version are required")
-        if isinstance(embedding_dimensions, bool) or not isinstance(embedding_dimensions, int) or embedding_dimensions not in SUPPORTED_EMBEDDING_DIMENSIONS:
-            raise ValueError(f"embedding_dimensions must be one of {SUPPORTED_EMBEDDING_DIMENSIONS}")
+        if (
+            isinstance(embedding_dimensions, bool)
+            or not isinstance(embedding_dimensions, int)
+            or embedding_dimensions not in SUPPORTED_EMBEDDING_DIMENSIONS
+        ):
+            raise ValueError(
+                f"embedding_dimensions must be one of {SUPPORTED_EMBEDDING_DIMENSIONS}"
+            )
         self._connect=connection_factory
         self.embedding_model=embedding_model
         self.embedding_model_version=embedding_model_version

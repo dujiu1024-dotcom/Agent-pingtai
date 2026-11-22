@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from agent_platform.knowledge.embedding import DEFAULT_EMBEDDING_DIMENSIONS, SUPPORTED_EMBEDDING_DIMENSIONS, EmbeddingProfile
+from agent_platform.knowledge.embedding import (
+    DEFAULT_EMBEDDING_DIMENSIONS,
+    SUPPORTED_EMBEDDING_DIMENSIONS,
+    EmbeddingProfile,
+)
 from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
 
 
