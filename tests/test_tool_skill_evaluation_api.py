@@ -10,10 +10,13 @@ from fastapi.testclient import TestClient
 from agent_platform.api.contract import ApiV1CompatibilityMiddleware
 from agent_platform.api.tool_skill_evaluation import create_tool_skill_evaluation_router
 from agent_platform.control_plane.registry import (
-    InMemoryRegistryRepository, RegistryService, RegistryVersion,
+    InMemoryRegistryRepository,
+    RegistryService,
+    RegistryVersion,
 )
 from agent_platform.control_plane.skill_dependency_review import (
-    InMemorySkillDependencyReviewStore, SkillDependencyReviewer,
+    InMemorySkillDependencyReviewStore,
+    SkillDependencyReviewer,
 )
 from agent_platform.identity.models import Principal
 from agent_platform.tools.mcp_health import InMemoryMCPHealthStore, MCPHealthChecker
