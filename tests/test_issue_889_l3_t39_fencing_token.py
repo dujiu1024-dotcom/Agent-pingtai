@@ -103,6 +103,21 @@ class PostgresRunLeaseFencingTokenTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("lease_token=%s", connection.query)
         self.assertEqual(connection.params[-2:], (3, 3))
 
+
+    async def test_workbench_failure_write_checks_supplied_token(self):
+        connection = _Connection(_Cursor(row={"status": "interrupted"}))
+
+        async def connect():
+            return connection
+
+        store = PostgresRunStateStore(connect)
+        self.assertEqual(await store.record_workbench_failure(
+            "tenant-a", "00000000-0000-0000-0000-000000000001",
+            "worker-a", error="failed", lease_token=9,
+        ), "interrupted")
+        self.assertIn("lease_token=%s", connection.query)
+        self.assertEqual(connection.params[-2:], (9, 9))
+
     async def test_lease_write_rejects_non_positive_token_before_database_access(self):
         connect = AsyncMock()
         store = PostgresRunStateStore(connect)
@@ -110,6 +125,7 @@ class PostgresRunLeaseFencingTokenTests(unittest.IsolatedAsyncioTestCase):
             lambda: store.heartbeat("tenant-a", "run-a", "worker-a", lease_token=0),
             lambda: store.release_lease("tenant-a", "run-a", "worker-a", lease_token=-1),
             lambda: store.owns_lease("tenant-a", "run-a", "worker-a", lease_token=True),
+            lambda: store.record_workbench_failure("tenant-a", "00000000-0000-0000-0000-000000000001", "worker-a", error="x", lease_token=0),
         ):
             with self.subTest(method=method), self.assertRaisesRegex(
                 ValueError, "lease_token must be a positive integer",
