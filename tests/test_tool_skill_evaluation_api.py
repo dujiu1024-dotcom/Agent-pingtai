@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agent_platform.api.contract import ApiV1CompatibilityMiddleware
 from agent_platform.api.tool_skill_evaluation import create_tool_skill_evaluation_router
 from agent_platform.control_plane.registry import (
     InMemoryRegistryRepository, RegistryService, RegistryVersion,
@@ -87,6 +88,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
             )
 
         app = FastAPI()
+        app.add_middleware(ApiV1CompatibilityMiddleware)
         app.include_router(create_tool_skill_evaluation_router(
             resolve_principal=principal,
             resolve_registry=resolve_registry,
@@ -132,6 +134,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
 
     def test_missing_principal_is_rejected(self):
         app = FastAPI()
+        app.add_middleware(ApiV1CompatibilityMiddleware)
         async def missing(request):
             return None
         app.include_router(create_tool_skill_evaluation_router(
@@ -187,6 +190,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
                 session_factory=lambda tenant, server: BrokenSession(),
             )
         app = FastAPI()
+        app.add_middleware(ApiV1CompatibilityMiddleware)
         app.include_router(create_tool_skill_evaluation_router(
             resolve_principal=lambda request: Principal(
                 user_id="user-a", tenant_id="tenant-a", session_id="s",
