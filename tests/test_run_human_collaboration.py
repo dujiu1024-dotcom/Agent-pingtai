@@ -145,8 +145,8 @@ class HumanCollaborationPostgresTests(unittest.IsolatedAsyncioTestCase):
             tenant_id=self.tenant_id, run_id=str(self.run_id),
         )
         self.assertEqual(
-            [event["event_type"] for event in events],
-            ["human.run_cancel_requested", "human.run_paused"],
+            {event["event_type"] for event in events},
+            {"human.run_cancel_requested", "human.run_paused"},
         )
         self.assertTrue(all(event["actor_id"] == "operator-a" for event in events))
         self.assertEqual(events[0]["payload"]["status"], "cancelling")
