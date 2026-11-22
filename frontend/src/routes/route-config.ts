@@ -237,8 +237,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-SKILLS',
     title: 'Skills',
     section: '平台管理',
-    description: 'Skill 管理入口。',
-    owner: '#749',
+    description: 'Skill Registry、版本与发布生命周期管理。',
+    owner: '#806',
   },
   {
     path: '/admin/organization',
@@ -376,13 +376,13 @@ export const detailRoutes: PageRoute[] = [
   },
   {
     path: '/admin/skills/:skillId',
-    pageId: 'ADM-SKILLS',
+    pageId: 'ADM-SKILLS-DETAIL',
     title: 'Skill 详情',
     section: '平台管理',
-    description: 'Skill 唯一详情路由。',
+    description: 'Skill active 定义、Agent 兼容性及版本生命周期。',
     parentPath: '/admin/skills',
     entityIdParam: 'skillId',
-    owner: '#749',
+    owner: '#806',
   },
   {
     path: '/admin/agents/:agentId',
