@@ -2,7 +2,7 @@ import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 STATIC = Path(__file__).with_name("static")
 LEGACY_CONSOLE = Path(__file__).resolve().parents[2] / "console.html"
@@ -48,6 +48,15 @@ def _index_response() -> HTMLResponse | FileResponse:
 
 def create_platform_web_router() -> APIRouter:
     router = APIRouter(tags=["platform-web"])
+
+    @router.get("/console.html", include_in_schema=False)
+    async def legacy_console_entry():
+        """Migrate bookmarked legacy console URLs to the explicit compatibility route."""
+        return RedirectResponse(
+            "/app/?legacy=1",
+            status_code=307,
+            headers={"Cache-Control": "no-store"},
+        )
 
     @router.get("/app", include_in_schema=False)
     @router.get("/app/", include_in_schema=False)
