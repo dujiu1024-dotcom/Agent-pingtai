@@ -83,6 +83,22 @@ class RedisStreamsTransport:
         self, *, tenant_id: str, topic: str, group: str, consumer: str,
         min_idle_ms: int = 30_000, start_id: str = "0-0", count: int = 20,
     ) -> list[tuple[str, dict[str, str]]]:
+        messages, _deleted_ids = await self.claim_pending_recovery(
+            tenant_id=tenant_id, topic=topic, group=group, consumer=consumer,
+            min_idle_ms=min_idle_ms, start_id=start_id, count=count,
+        )
+        return messages
+
+    async def claim_pending_recovery(
+        self, *, tenant_id: str, topic: str, group: str, consumer: str,
+        min_idle_ms: int = 30_000, start_id: str = "0-0", count: int = 20,
+    ) -> tuple[list[tuple[str, dict[str, str]]], list[str]]:
+        """Claim stale PEL entries and report payloads already removed from the stream.
+
+        Redis 7 XAUTOCLAIM returns deleted IDs as its third result. Those IDs
+        are no longer claimable and must be reconciled against the durable
+        PostgreSQL Outbox by the caller rather than silently treated as done.
+        """
         if self._client is None:
             raise RuntimeError("RedisStreamsTransport.connect() must be called first")
         if min_idle_ms < 0 or count < 1 or count > 500:
@@ -92,7 +108,11 @@ class RedisStreamsTransport:
             min_idle_time=min_idle_ms, start_id=start_id, count=count,
         )
         messages = result[1] if len(result) > 1 else []
-        return [(message_id, fields) for message_id, fields in messages]
+        deleted_ids = result[2] if len(result) > 2 else []
+        return (
+            [(message_id, fields) for message_id, fields in messages],
+            [str(message_id) for message_id in deleted_ids],
+        )
 
     async def acknowledge(
         self, *, tenant_id: str, topic: str, group: str, message_id: str
@@ -123,6 +143,54 @@ class RedisStreamsTransport:
             results = await pipe.execute()
         return str(results[0])
 
+
+    async def replay_dead_letter(
+        self, *, tenant_id: str, topic: str, dlq_group: str,
+        message_id: str, confirmation: str,
+    ) -> str:
+        """Replay one pending DLQ entry to its source stream exactly once per DLQ group.
+
+        The Lua transaction verifies that the DLQ entry still exists, copies
+        its original fields (including event_id), then ACKs it. A failed ACK
+        removes the newly-created source entry. Consumers must still deduplicate
+        by event_id because delivery remains at-least-once.
+        """
+        if self._client is None:
+            raise RuntimeError("RedisStreamsTransport.connect() must be called first")
+        if not isinstance(dlq_group, str) or not dlq_group.strip():
+            raise ValueError("dlq_group is required")
+        if not isinstance(message_id, str) or not message_id:
+            raise ValueError("message_id is required")
+        try:
+            major, minor = message_id.split("-", 1)
+            if int(major) < 0 or int(minor) < 0:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise ValueError("message_id must be a Redis Stream ID") from None
+        if confirmation != f"REPLAY-DLQ:{tenant_id}:{topic}":
+            raise PermissionError("explicit tenant/topic DLQ replay confirmation is required")
+        source = self._stream(tenant_id, topic)
+        dead_letter = self._dead_letter_stream(tenant_id, topic)
+        script = """
+        local rows = redis.call('XRANGE', KEYS[1], ARGV[1], ARGV[1], 'COUNT', 1)
+        if #rows == 0 then return nil end
+        local fields = rows[1][2]
+        local new_args = {KEYS[2], '*'}
+        for i = 1, #fields do table.insert(new_args, fields[i]) end
+        local new_id = redis.call('XADD', unpack(new_args))
+        local acked = redis.call('XACK', KEYS[1], ARGV[2], ARGV[1])
+        if acked == 0 then
+            redis.call('XDEL', KEYS[2], new_id)
+            return nil
+        end
+        return new_id
+        """
+        result = await self._client.eval(
+            script, 2, dead_letter, source, message_id, dlq_group,
+        )
+        if result is None:
+            raise LookupError("DLQ entry is missing or is not pending for the selected group")
+        return str(result)
 
     @staticmethod
     def _stream_id_key(message_id: str) -> tuple[int, int]:

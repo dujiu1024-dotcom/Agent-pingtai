@@ -13,6 +13,7 @@ class S3Client(Protocol):
     async def put_object(self, **kwargs: Any) -> Any: ...
     async def get_object(self, **kwargs: Any) -> Any: ...
     async def delete_object(self, **kwargs: Any) -> Any: ...
+    async def head_bucket(self, **kwargs: Any) -> Any: ...
     def generate_presigned_url(self, ClientMethod: str, *, Params: dict[str, Any], ExpiresIn: int) -> Any: ...
 
 
@@ -41,6 +42,23 @@ class S3ObjectStorage:
         self.bucket = bucket
         self.server_side_encryption = server_side_encryption
         self.kms_key_id = kms_key_id
+
+    async def check_ready(self) -> bool:
+        """Probe bucket access for readiness; dependency errors fail the probe.
+
+        The workload identity must be granted the bucket metadata permission
+        required by HeadBucket. Missing probe support is not treated as healthy.
+        """
+        probe = getattr(self.client, "head_bucket", None)
+        if not callable(probe):
+            raise ObjectStorageError("S3 client does not support bucket readiness checks")
+        try:
+            result = probe(Bucket=self.bucket)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            raise ObjectStorageError("object storage bucket is unavailable") from exc
+        return True
 
     @staticmethod
     def _validate_key(object_key: str) -> str:
