@@ -43,9 +43,12 @@ class CredentialGrant:
 
 
 class CredentialRepository(Protocol):
-    async def create(self, record: CredentialRecord) -> None: ...
+    async def create_with_audit(self, record: CredentialRecord, *, audit: Any) -> None: ...
     async def get(self, *, tenant_id: str, credential_id: str) -> CredentialRecord | None: ...
-    async def grant(self, grant: CredentialGrant) -> None: ...
+    async def grant_with_audit(self, grant: CredentialGrant, *, audit: Any) -> None: ...
+    async def revoke_with_audit(
+        self, *, tenant_id: str, credential_id: str, actor_id: str, audit: Any,
+    ) -> bool: ...
     async def get_grant(
         self, *, tenant_id: str, credential_id: str,
         consumer_type: str, consumer_id: str,
@@ -95,6 +98,9 @@ class CredentialService:
             raise ValueError("credential_type must be oauth, api_key or service_account")
         tags = self._scopes(scopes)
         credential_id = str(uuid4())
+        atomic_create = getattr(self._repository, "create_with_audit", None)
+        if not callable(atomic_create):
+            raise RuntimeError("credential creation requires transactional audit support")
         secret_ref = f"secret://{tenant}/credentials/{credential_id}"
         secret_version = await self._secrets.create(secret_ref=secret_ref, value=value)
         from datetime import datetime, timezone
@@ -103,17 +109,8 @@ class CredentialService:
             credential_type=credential_type, secret_ref=secret_ref, scopes=tags,
             created_by=actor, created_at=secret_version.created_at or datetime.now(timezone.utc),
         )
-        atomic_create = getattr(self._repository, "create_with_audit", None)
         try:
-            if callable(atomic_create):
-                await atomic_create(record, audit=self._audit)
-            else:
-                await self._repository.create(record)
-                await self._audit.record(
-                    tenant_id=tenant, actor_id=actor, action="credential.created",
-                    subject_id=credential_id,
-                    detail={"credential_type": credential_type, "scopes": list(tags)},
-                )
+            await atomic_create(record, audit=self._audit)
         except Exception:
             # A Postgres repository rolls metadata and audit back in one
             # transaction. Revoke the external secret so failed creation
@@ -122,13 +119,6 @@ class CredentialService:
                 await self._secrets.revoke(secret_ref=secret_ref)
             except Exception:
                 pass
-            if not callable(atomic_create):
-                try:
-                    await self._repository.revoke(
-                        tenant_id=tenant, credential_id=credential_id
-                    )
-                except Exception:
-                    pass
             raise
         return record
 
@@ -136,6 +126,9 @@ class CredentialService:
         self, *, tenant_id: str, credential_id: str, consumer_type: str,
         consumer_id: str, scopes: tuple[str, ...] | list[str], granted_by: str,
     ) -> CredentialGrant:
+        atomic_grant = getattr(self._repository, "grant_with_audit", None)
+        if not callable(atomic_grant):
+            raise RuntimeError("credential grants require transactional audit support")
         tenant = self._required(tenant_id, "tenant_id")
         credential = self._required(credential_id, "credential_id")
         consumer = self._required(consumer_id, "consumer_id")
@@ -154,24 +147,7 @@ class CredentialService:
             consumer_type=consumer_type, consumer_id=consumer,
             scopes=requested, granted_by=actor, created_at=datetime.now(timezone.utc),
         )
-        atomic_grant = getattr(self._repository, "grant_with_audit", None)
-        if callable(atomic_grant):
-            await atomic_grant(grant, audit=self._audit)
-        else:
-            await self._repository.grant(grant)
-            try:
-                await self._audit.record(
-                    tenant_id=tenant, actor_id=actor, action="credential.granted",
-                    subject_id=credential,
-                    detail={"consumer_type": consumer_type, "consumer_id": consumer,
-                            "scopes": list(requested)},
-                )
-            except Exception:
-                await self._repository.revoke_grant(
-                    tenant_id=tenant, credential_id=credential,
-                    consumer_type=consumer_type, consumer_id=consumer,
-                )
-                raise
+        await atomic_grant(grant, audit=self._audit)
         return grant
 
     async def resolve(
@@ -216,31 +192,23 @@ class CredentialService:
         return value
 
     async def revoke(self, *, tenant_id: str, credential_id: str, actor_id: str) -> bool:
+        atomic_revoke = getattr(self._repository, "revoke_with_audit", None)
+        if not callable(atomic_revoke):
+            raise RuntimeError("credential revocation requires transactional audit support")
         tenant = self._required(tenant_id, "tenant_id")
         credential = self._required(credential_id, "credential_id")
         actor = self._required(actor_id, "actor_id")
         record = await self._repository.get(tenant_id=tenant, credential_id=credential)
         if record is None:
             return False
-        atomic_revoke = getattr(self._repository, "revoke_with_audit", None)
-        if callable(atomic_revoke):
-            changed = await atomic_revoke(
-                tenant_id=tenant, credential_id=credential,
-                actor_id=actor, audit=self._audit,
-            )
-            if changed:
-                # The metadata+audit transaction has committed. Vault cleanup
-                # is a separate external operation and remains retryable.
-                await self._secrets.revoke(secret_ref=record.secret_ref)
-            return changed
-
-        changed = await self._repository.revoke(tenant_id=tenant, credential_id=credential)
+        changed = await atomic_revoke(
+            tenant_id=tenant, credential_id=credential,
+            actor_id=actor, audit=self._audit,
+        )
         if changed:
+            # The metadata+audit transaction has committed. Vault cleanup
+            # is a separate external operation and remains retryable.
             await self._secrets.revoke(secret_ref=record.secret_ref)
-            await self._audit.record(
-                tenant_id=tenant, actor_id=actor, action="credential.revoked",
-                subject_id=credential,
-            )
         return changed
 
 
