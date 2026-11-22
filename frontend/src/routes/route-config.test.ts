@@ -126,13 +126,25 @@ describe('route configuration', () => {
     expect(withCapability).toContain('/admin/prompts')
   })
 
+  it('registers organization and canonical RBAC pages as auth-only routes', () => {
+    const organization = pageRoutes.find((route) => route.path === '/admin/organization')
+    const rbac = pageRoutes.find((route) => route.path === '/admin/rbac')
+    const legacyRbac = pageRoutes.find((route) => route.path === '/admin/access-control')
+
+    expect(organization?.authOnly).toBe(true)
+    expect(rbac).toMatchObject({ pageId: 'ADM-RBAC-CANONICAL', owner: '#798', authOnly: true })
+    expect(legacyRbac?.authOnly).toBe(true)
+    expect(getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))).not.toContain('/admin/rbac')
+    expect(getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))).toContain('/admin/rbac')
+  })
+
   it('exposes identity and RBAC routes only when server mode enables auth', () => {
     expect(getAllRoutes(true)).toEqual(expect.arrayContaining(authRoutes))
     expect(
       getVisibleNavigation(true).flatMap((group) =>
         group.items.map((item) => item.path),
       ),
-    ).toContain('/admin/access-control')
+).toContain('/admin/rbac')
   })
 
   it('registers Knowledge collection and document deep links under #760', () => {
