@@ -32,6 +32,22 @@ describe('route configuration', () => {
     ).toBe('/workspace/overview')
   })
 
+  it('registers the Operations dashboard route and resolves direct navigation', () => {
+    const dashboard = pageRoutes.find(
+      (route) => route.path === '/operations/dashboard',
+    )
+    expect(dashboard?.pageId).toBe('OPS-DASHBOARD')
+    expect(dashboard?.owner).toBe('#797')
+    expect(
+      matchRoutes(
+        [...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => ({
+          path: route.path,
+        })),
+        '/operations/dashboard',
+      ),
+    ).not.toBeNull()
+  })
+
   it('keeps Agent collaboration reachable in no-auth mode', () => {
     const visiblePaths = getVisibleNavigation(false).flatMap((group) =>
       group.items.map((item) => item.path),
