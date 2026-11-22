@@ -35,7 +35,9 @@ class FakeSchedulerService:
         return {"configured": False, "reason": "not configured"}
 
 
-def _client(service: FakeSchedulerService) -> TestClient:
+def _client(
+    service: FakeSchedulerService, *, raise_server_exceptions: bool = True,
+) -> TestClient:
     app = FastAPI()
     app.include_router(create_scheduler_router(service=service))
 
@@ -50,7 +52,7 @@ def _client(service: FakeSchedulerService) -> TestClient:
         )
         return await call_next(request)
 
-    return TestClient(app)
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
 
 def test_scheduler_read_api_returns_persisted_failure_details_for_current_tenant():
@@ -74,10 +76,7 @@ def test_scheduler_read_api_does_not_turn_backend_failure_into_empty_success():
         async def list_jobs(self, tenant_id: str):
             raise RuntimeError("database unavailable")
 
-    client = _client(UnavailableScheduler())
-    response = client.get(
-        "/api/platform/v1/scheduler/jobs",
-        raise_server_exceptions=False,
-    )
+    client = _client(UnavailableScheduler(), raise_server_exceptions=False)
+    response = client.get("/api/platform/v1/scheduler/jobs")
 
     assert response.status_code == 500
