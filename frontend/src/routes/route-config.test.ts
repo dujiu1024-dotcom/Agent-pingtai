@@ -128,6 +128,14 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers Tools registry list and detail routes under #805', () => {
+    const list = pageRoutes.find((route) => route.path === '/admin/tools')
+    const detail = detailRoutes.find((route) => route.path === '/admin/tools/:toolId')
+    expect(list?.owner).toBe('#805')
+    expect(detail?.owner).toBe('#805')
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/tools/mcp-fetch')?.[0].params.toolId).toBe('mcp-fetch')
+  })
+
   it('registers Skills registry list and detail routes under #806', () => {
     const list = pageRoutes.find((route) => route.path === '/admin/skills')
     const detail = detailRoutes.find((route) => route.path === '/admin/skills/:skillId')
