@@ -198,6 +198,7 @@ include = [
   "tests/test_issue_20_a_20_02_webhook_security_reliability.py",
   "tests/test_issue_20_c_20_02_signature_expiry_boundaries.py",
   "tests/test_issue_848_l4_t09_evidence_matrix.py",
+  "tests/test_validate_migrations.py",
 ]
 
 [tool.ruff.lint]
