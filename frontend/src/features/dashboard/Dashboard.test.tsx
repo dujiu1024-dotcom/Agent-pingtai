@@ -12,7 +12,7 @@ describe('normalizeDashboardTrendPoints', () => {
           ],
         },
       }),
-    ).toEqual([{ label: '11/20', tasks: 12, success: 0.75 }])
+    ).toEqual([{ label: '今天', tasks: 12, success: 0.75 }])
   })
 
   it('returns no fabricated points for an empty response', () => {
