@@ -536,6 +536,26 @@ export const globalRoutes: PageRoute[] = [
   },
 ]
 
+/** Explicit error destinations are routable, but never appear in navigation. */
+export const systemRoutes: PageRoute[] = [
+  {
+    path: '/403',
+    pageId: 'SYS-FORBIDDEN',
+    title: '无权访问',
+    section: '系统状态',
+    description: '当前会话无权访问此资源。',
+    owner: '#743',
+  },
+  {
+    path: '/404',
+    pageId: 'SYS-NOT-FOUND',
+    title: '页面不存在',
+    section: '系统状态',
+    description: '请求的页面不存在或尚未开放。',
+    owner: '#743',
+  },
+]
+
 export interface SubPageNav {
   label: string
   path: string
@@ -811,18 +831,19 @@ export function getAllRoutes(authEnabled: boolean): PageRoute[] {
     ...pageRoutes,
     ...detailRoutes,
     ...globalRoutes,
+    ...systemRoutes,
     ...(authEnabled ? authRoutes : []),
   ]
 }
 
 export function findPageRoute(path: string): PageRoute | undefined {
-  return [...pageRoutes, ...globalRoutes, ...authRoutes].find(
+  return [...pageRoutes, ...globalRoutes, ...systemRoutes, ...authRoutes].find(
     (route) => route.path === path,
   )
 }
 
 export function isCanonicalRouteSetValid(
-  routes: PageRoute[] = [...pageRoutes, ...globalRoutes, ...authRoutes],
+  routes: PageRoute[] = [...pageRoutes, ...globalRoutes, ...systemRoutes, ...authRoutes],
 ): boolean {
   const paths = routes.map((route) => route.path)
   const ids = routes.map((route) => route.pageId)
