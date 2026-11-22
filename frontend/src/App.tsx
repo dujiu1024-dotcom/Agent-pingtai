@@ -40,6 +40,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -496,6 +497,7 @@ function PageView({
     route.path === '/operations/documents/:documentId'
   )
     return <KnowledgeWorkbench />
+  if (route.path === '/operations/files') return <FilesWorkspace authEnabled={authEnabled} />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
 
