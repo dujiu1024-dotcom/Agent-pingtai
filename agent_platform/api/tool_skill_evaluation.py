@@ -142,7 +142,7 @@ def create_tool_skill_evaluation_router(
             raise HTTPException(503, "trusted MCP session factory is not configured")
         subject = f"{item_id}:v{version}"
         await audit(
-            actor, "tool.mcp_connection_test", subject, "started",
+            actor, "tool.mcp_connection_test", subject, "requested",
             {"resource_type": "tool", "resource_id": item_id, "version": version},
         )
         try:
