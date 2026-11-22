@@ -100,11 +100,14 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
-  it('registers the dedicated immersive Office page under #817', () => {
-    const route = pageRoutes.find((item) => item.path === '/office')
-    expect(route?.pageId).toBe('UI-R3-OFFICE')
-    expect(route?.owner).toBe('#817')
-    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((item) => ({ path: item.path })), '/office')?.[0].route.path).toBe('/office')
+  it('registers session list and detail routes under #801', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    expect(routes.find((route) => route.path === '/operations/sessions')?.owner).toBe('#801')
+    expect(routes.find((route) => route.path === '/operations/sessions/:sessionId')?.owner).toBe('#801')
+    expect(routes.find((route) => route.path === '/operations/sessions')?.authOnly).toBe(true)
+    expect(getVisibleNavigation(false).flatMap((group) => group.items).map((route) => route.path)).not.toContain('/operations/sessions')
+    expect(getVisibleNavigation(true).flatMap((group) => group.items).map((route) => route.path)).toContain('/operations/sessions')
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {

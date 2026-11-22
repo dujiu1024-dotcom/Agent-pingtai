@@ -13,6 +13,7 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { SessionsWorkspace } from '@/features/sessions/SessionsWorkspace'
 import {
   EmptyState,
   ErrorState,
@@ -21,9 +22,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
-import { OfficePage } from '@/pages/office/OfficePage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
-import { Dashboard } from '@/features/dashboard/Dashboard'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
   TaskCommandCenter,
@@ -42,7 +41,6 @@ import {
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
-import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -310,14 +308,14 @@ function PageView({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
-  if (route.path === '/workspace/overview') return <HomeWorkspace />
+  if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
-  if (route.path === '/office') return <OfficePage />
+  if (route.path === '/operations/sessions' || route.path === '/operations/sessions/:sessionId') return <SessionsWorkspace />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
@@ -339,6 +337,57 @@ function PageView({
   )
 }
 
+function Dashboard() {
+  const shortcuts = [
+    {
+      title: '任务指挥中心',
+      description: '任务队列与执行状态',
+      to: '/workspace/tasks',
+    },
+    {
+      title: 'Agent 协作中心',
+      description: 'Agent 与 Workflow 运行态',
+      to: '/workspace/collaboration',
+    },
+    {
+      title: '成本与质量',
+      description: '用量、质量与评测聚合',
+      to: '/workspace/quality-cost',
+    },
+    {
+      title: '3D 数字办公室',
+      description: '沉浸式办公室入口',
+      to: '/workspace/office',
+    },
+  ]
+  return (
+    <section className="page-content dashboard-page">
+      <div className="dashboard-hero">
+        <p className="eyebrow">AGENT PLATFORM / WORKSPACE</p>
+        <h1>运营驾驶舱</h1>
+        <p>
+          统一进入工作空间、智能体运营与平台管理。业务指标将在对应模块 API
+          接入后展示。
+        </p>
+      </div>
+      <div className="shortcut-grid">
+        {shortcuts.map((item) => (
+          <Link className="shortcut-card" to={item.to} key={item.to}>
+            <strong>{item.title}</strong>
+            <span>{item.description}</span>
+            <span className="shortcut-arrow" aria-hidden="true">
+              →
+            </span>
+          </Link>
+        ))}
+      </div>
+      <EmptyState
+        title="驾驶舱数据尚未接入"
+        description="当前只提供稳定导航和页面框架，不使用静态假指标替代服务端数据。"
+      />
+    </section>
+  )
+}
 
 function AuthEntryPage({ route }: { route: PageRoute }) {
   return (
