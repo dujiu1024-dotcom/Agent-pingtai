@@ -371,7 +371,7 @@ function RouteGuard({
   if (route.path === '/operations/approvals') return <GenericListPage title="审批中心" description="查看服务端返回且当前身份有权访问的审批请求。" apiPath="/platform/v1/approvals" refetchInterval={15000} />
   if (route.path === '/operations/approvals/:approvalId') return <ApprovalDetailPage />
   if (route.path === '/operations/conversations' || route.path === '/operations/conversations/:conversationId') return <SessionFileWorkbench view="sessions" />
-  if (route.path === '/operations/files' || route.path === '/operations/files/:fileId') return <SessionFileWorkbench view="files" />
+  if (route.path === '/operations/files' || route.path === '/operations/files/:fileId') return <SessionFileWorkbench view="files" authEnabled={authEnabled} />
   if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
   if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
