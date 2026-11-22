@@ -26,11 +26,16 @@ class PostgresAuditWriter:
     def __init__(self, connection_factory: Any) -> None:
         self._connect = connection_factory
 
-    async def record(
-        self, *, tenant_id: str, actor_id: str | None, action: str,
-        subject_id: str, outcome: str = "succeeded",
+    async def record_on_connection(
+        self, connection: Any, *, tenant_id: str, actor_id: str | None,
+        action: str, subject_id: str, outcome: str = "succeeded",
         detail: Mapping[str, Any] | None = None,
     ) -> None:
+        """Append an audit row on a caller-owned connection/transaction.
+
+        Business repositories use this method to commit their state change and
+        required audit event atomically. The caller owns transaction boundaries.
+        """
         if (
             not isinstance(tenant_id, str) or not tenant_id.strip()
             or not isinstance(subject_id, str) or not subject_id.strip()
@@ -49,13 +54,24 @@ class PostgresAuditWriter:
         safe_detail = redact_payload(dict(detail or {}))
         payload = json.dumps(safe_detail, ensure_ascii=False, sort_keys=True,
                              separators=(",", ":"), allow_nan=False)
+        await connection.execute(
+            """INSERT INTO platform_identity_audit
+               (tenant_id,actor_id,action,subject_id,outcome,detail)
+               VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
+            (tenant_id, actor_id, action, subject_id, outcome, payload),
+        )
+
+    async def record(
+        self, *, tenant_id: str, actor_id: str | None, action: str,
+        subject_id: str, outcome: str = "succeeded",
+        detail: Mapping[str, Any] | None = None,
+    ) -> None:
         connection = await self._connect()
         async with connection:
-            await connection.execute(
-                """INSERT INTO platform_identity_audit
-                   (tenant_id,actor_id,action,subject_id,outcome,detail)
-                   VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
-                (tenant_id, actor_id, action, subject_id, outcome, payload),
+            await self.record_on_connection(
+                connection, tenant_id=tenant_id, actor_id=actor_id,
+                action=action, subject_id=subject_id, outcome=outcome,
+                detail=detail,
             )
 
 
