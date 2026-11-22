@@ -79,12 +79,21 @@ class RedisStreamsRecoveryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             await transport.replay_dead_letter(
                 tenant_id="tenant-a", topic="events", dlq_group=" ",
-                message_id="bad", confirmation="REPLAY-DLQ:tenant-a:events",
+                message_id="7-2", confirmation="REPLAY-DLQ:tenant-a:events",
             )
         with self.assertRaises(ValueError):
             await transport.replay_dead_letter(
                 tenant_id="tenant-a", topic="events", dlq_group="ops",
                 message_id="bad", confirmation="REPLAY-DLQ:tenant-a:events",
+            )
+
+    async def test_dlq_replay_missing_pending_entry_fails_without_acknowledgement(self):
+        client = FakeRedis()
+        client.eval_result = None
+        with self.assertRaises(LookupError):
+            await self.transport(client).replay_dead_letter(
+                tenant_id="tenant-a", topic="events", dlq_group="ops",
+                message_id="7-2", confirmation="REPLAY-DLQ:tenant-a:events",
             )
 
 
