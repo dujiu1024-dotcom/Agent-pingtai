@@ -144,6 +144,13 @@ describe('route configuration', () => {
     expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
   })
 
+  it('registers the Metrics, Health and Scheduler operations dashboard under #813', () => {
+    const route = globalRoutes.find((item) => item.path === '/admin/ops')
+    expect(route?.pageId).toBe('GLOBAL-OPS-DASHBOARD')
+    expect(route?.owner).toBe('#813')
+    expect(matchRoutes([...pageRoutes, ...globalRoutes].map((item) => ({ path: item.path })), '/admin/ops')?.[0].route.path).toBe('/admin/ops')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,

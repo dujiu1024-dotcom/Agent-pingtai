@@ -30,7 +30,6 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
-import { SkillsPage } from '@/features/admin/SkillsPage'
 import {
   EmptyState,
   ErrorState,
@@ -48,7 +47,7 @@ import {
 } from '@/features/tasks/TaskCommandCenter'
 import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
-import { AgentRuntimeList } from '@/features/agents/AgentRuntimeList'
+import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
@@ -462,6 +461,7 @@ function PageView({
       />
     )
   }
+  if (route.path === '/admin/ops') return <SystemOpsPage />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
@@ -477,10 +477,9 @@ function PageView({
   )
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
-  if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
-  if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (
+    route.path === '/operations/agents' ||
     route.path === '/operations/agents/:agentId' ||
     route.path === '/admin/agents' ||
     route.path === '/admin/agents/:agentId'
