@@ -362,9 +362,10 @@ function RouteGuard({
   capabilities: string[]
   version: string
 }) {
-  const params = useParams<{ runId?: string; entryId?: string }>()
+  const params = useParams<{ runId?: string; entryId?: string; memoryId?: string }>()
   const runId = params.runId ?? ''
   const entryId = params.entryId ?? ''
+  const memoryId = params.memoryId ?? ''
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -396,6 +397,7 @@ function RouteGuard({
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
   if (route.path === '/operations/memories') return <MemoryGovernancePage />
+  if (route.path === '/operations/memories/:memoryId') return <GenericListPage title="记忆版本历史" description={`记忆 ${memoryId} 的版本记录与治理状态。`} apiPath={`/platform/v1/memories/${encodeURIComponent(memoryId)}/history`} />
   if (route.path === '/admin/audit') return <AuditCenterPage />
   if (route.path === '/admin/audit/:eventId') return <AuditEventDetailPage />
   if (route.path === '/admin/scheduler/jobs') return <GenericListPage title="调度任务" description="查看定时作业状态、最近执行结果与失败原因。" apiPath="/platform/v1/scheduler/jobs" refetchInterval={30000} />
