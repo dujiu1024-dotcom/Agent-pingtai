@@ -7,8 +7,8 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.control_plane.skill_dependency_review import (
-    SkillDependencyReviewError,
     SkillDependencyReviewer,
+    SkillDependencyReviewError,
 )
 from agent_platform.identity.models import Principal
 from agent_platform.tools.mcp_health import MCPHealthChecker
