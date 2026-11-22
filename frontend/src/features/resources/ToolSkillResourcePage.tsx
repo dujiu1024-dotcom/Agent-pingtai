@@ -18,6 +18,24 @@ interface RegistryItem {
 
 type ResourceKind = 'tool' | 'skill'
 
+interface ConnectionTestResult {
+  status: string
+  checked_at: string
+  latency_ms: number
+  expected_tools: string[]
+  discovered_tools: string[]
+  error_code: string | null
+}
+
+interface SkillEvaluationResult {
+  status: string
+  skill_version: number
+  manifest_digest: string
+  dependencies: Record<string, string>
+  findings: string[]
+  reviewed_at: string
+}
+
 function safeValue(value: unknown, key = ''): string {
   if (/(secret|token|api.?key|password|credential)/i.test(key)) {
     return '[敏感字段已隐藏；请使用 secret_ref]'
@@ -77,10 +95,18 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
     onSuccess: invalidate,
   })
   const connectionTest = useMutation({
-    mutationFn: () => apiClient.post<{ status: string; checked_at: string; latency_ms: number; expected_tools: string[]; discovered_tools: string[]; error_code: string | null }>(`/v1/tools/${encodeURIComponent(itemId!)}/test-connection`, { version: active.data!.version }),
+    mutationFn: () =>
+      apiClient.post<ConnectionTestResult>(
+        `/v1/tools/${encodeURIComponent(itemId!)}/test-connection`,
+        { version: active.data!.version },
+      ),
   })
   const compatibilityEvaluation = useMutation({
-    mutationFn: () => apiClient.post<{ status: string; skill_version: number; manifest_digest: string; dependencies: Record<string, string>; findings: string[]; reviewed_at: string }>(`/v1/skills/${encodeURIComponent(itemId!)}/evaluate`, { version: active.data!.version }),
+    mutationFn: () =>
+      apiClient.post<SkillEvaluationResult>(
+        `/v1/skills/${encodeURIComponent(itemId!)}/evaluate`,
+        { version: active.data!.version },
+      ),
   })
 
   if (!itemId) {
@@ -123,7 +149,13 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
   }
 
   const definition = active.data?.definition ?? {}
-  const error = [publish, rollback, disable, connectionTest, compatibilityEvaluation].find((mutation) => mutation.isError)?.error
+  const error = [
+    publish,
+    rollback,
+    disable,
+    connectionTest,
+    compatibilityEvaluation,
+  ].find((mutation) => mutation.isError)?.error
   const fields = kind === 'tool'
     ? [
         ['描述', definition.description, 'description'],
@@ -162,22 +194,54 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
       {active.data && <>
         <div className="detail-actions">
           <button className="button-secondary" type="button" disabled={disable.isPending || active.data.status === 'disabled'} onClick={() => disable.mutate()}>停用资源</button>
-          {kind === 'tool' && <button className="button-secondary" type="button" disabled={connectionTest.isPending || active.data.status !== 'published'} onClick={() => connectionTest.mutate()}>{connectionTest.isPending ? '连接测试中…' : '测试连接'}</button>}
-          {kind === 'skill' && <button className="button-secondary" type="button" disabled={compatibilityEvaluation.isPending || active.data.status !== 'published'} onClick={() => compatibilityEvaluation.mutate()}>{compatibilityEvaluation.isPending ? '评估中…' : '评估兼容性'}</button>}
+          {kind === 'tool' && (
+            <button
+              className="button-secondary"
+              type="button"
+              disabled={connectionTest.isPending || active.data.status !== 'published'}
+              onClick={() => connectionTest.mutate()}
+            >
+              {connectionTest.isPending ? '连接测试中…' : '测试连接'}
+            </button>
+          )}
+          {kind === 'skill' && (
+            <button
+              className="button-secondary"
+              type="button"
+              disabled={
+                compatibilityEvaluation.isPending || active.data.status !== 'published'
+              }
+              onClick={() => compatibilityEvaluation.mutate()}
+            >
+              {compatibilityEvaluation.isPending ? '评估中…' : '评估兼容性'}
+            </button>
+          )}
           {error && <span className="auth-error" role="alert">{error instanceof Error ? error.message : '操作失败'}</span>}
         </div>
-        {kind === 'tool' && connectionTest.data && <section className="detail-section">
-          <h2 className="detail-section-title">最近连接测试</h2>
-          <p>状态：{connectionTest.data.status} · 延迟：{connectionTest.data.latency_ms} ms</p>
-          {connectionTest.data.error_code && <p role="status">错误代码：{connectionTest.data.error_code}</p>}
-          <p>发现工具：{connectionTest.data.discovered_tools.join(', ') || '无'}</p>
-        </section>}
-        {kind === 'skill' && compatibilityEvaluation.data && <section className="detail-section">
-          <h2 className="detail-section-title">兼容性评估</h2>
-          <p>结果：{compatibilityEvaluation.data.status} · 版本：v{compatibilityEvaluation.data.skill_version}</p>
-          <p>Manifest Digest：{compatibilityEvaluation.data.manifest_digest}</p>
-          <p>发现项：{compatibilityEvaluation.data.findings.join('；') || '无'}</p>
-        </section>}
+        {kind === 'tool' && connectionTest.data && (
+          <section className="detail-section">
+            <h2 className="detail-section-title">最近连接测试</h2>
+            <p>
+              状态：{connectionTest.data.status} · 延迟：
+              {connectionTest.data.latency_ms} ms
+            </p>
+            {connectionTest.data.error_code && (
+              <p role="status">错误代码：{connectionTest.data.error_code}</p>
+            )}
+            <p>发现工具：{connectionTest.data.discovered_tools.join(', ') || '无'}</p>
+          </section>
+        )}
+        {kind === 'skill' && compatibilityEvaluation.data && (
+          <section className="detail-section">
+            <h2 className="detail-section-title">兼容性评估</h2>
+            <p>
+              结果：{compatibilityEvaluation.data.status} · 版本：
+              v{compatibilityEvaluation.data.skill_version}
+            </p>
+            <p>Manifest Digest：{compatibilityEvaluation.data.manifest_digest}</p>
+            <p>发现项：{compatibilityEvaluation.data.findings.join('；') || '无'}</p>
+          </section>
+        )}
         <h2 className="detail-section-title">配置与治理信息</h2>
 
         <dl className="detail-fields">
