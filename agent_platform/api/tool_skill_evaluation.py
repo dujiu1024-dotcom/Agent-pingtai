@@ -82,6 +82,18 @@ def create_tool_skill_evaluation_router(
             raise HTTPException(409, "only published resource versions can be evaluated")
         return actor, item
 
+    def safe_probe_error_code(value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.casefold()
+        if "timeout" in normalized:
+            return "probe_timeout"
+        if "auth" in normalized or "unauthorized" in normalized or "permission" in normalized:
+            return "authentication_failed"
+        if normalized == "tool_inventory_mismatch":
+            return "tool_inventory_mismatch"
+        return "probe_failed"
+
     def health_view(record: Any) -> dict[str, Any]:
         return {
             "tenant_id": record.tenant_id,
@@ -91,7 +103,7 @@ def create_tool_skill_evaluation_router(
             "latency_ms": record.latency_ms,
             "expected_tools": list(record.expected_tools),
             "discovered_tools": list(record.discovered_tools),
-            "error_code": record.error_code,
+            "error_code": safe_probe_error_code(record.error_code),
         }
 
     @router.post("/tools/{item_id}/test-connection")
@@ -100,8 +112,8 @@ def create_tool_skill_evaluation_router(
             body = await request.json()
         except Exception as exc:
             raise HTTPException(400, "JSON object is required") from exc
-        if not isinstance(body, dict):
-            raise HTTPException(400, "JSON object is required")
+        if not isinstance(body, dict) or set(body) != {"version"}:
+            raise HTTPException(400, "JSON object with only a version field is required")
         version = body.get("version")
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
             raise HTTPException(400, "a positive published version is required")
@@ -138,7 +150,7 @@ def create_tool_skill_evaluation_router(
             actor, "tool.mcp_connection_test", subject,
             "succeeded" if record.status == "healthy" else "failed",
             {"resource_type": "tool", "resource_id": item_id, "version": version,
-             "status": record.status, "error_code": record.error_code},
+             "status": record.status, "error_code": safe_probe_error_code(record.error_code)},
         )
         return health_view(record)
 
