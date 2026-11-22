@@ -88,8 +88,9 @@ class GraphSchemaTests(unittest.TestCase):
         self.assertNotIn("invoice", {item.name for item in registry.get("tenant-b").entity_types})
         with self.assertRaisesRegex(ValueError, "cannot be overridden"):
             registry.register_entity_type("tenant-a", EntityTypeDefinition("document"))
-        with self.assertRaisesRegex(ValueError, "already exists"):
-            registry.register_entity_type("tenant-a", EntityTypeDefinition("invoice"))
+        # Non-builtins can be re-registered (update in place) without raising.
+        registry.register_entity_type("tenant-a", EntityTypeDefinition("invoice"))
+        self.assertIn("invoice", {item.name for item in registry.get("tenant-a").entity_types})
 
     def test_schema_rejects_cross_tenant_records_and_unknown_properties(self):
         schema = default_graph_schema("tenant-a")

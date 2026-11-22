@@ -331,16 +331,21 @@ class GraphSchemaRegistry:
             raise ValueError("definition must be an EntityTypeDefinition")
         with self._lock:
             current = self.get(tenant_id)
+            # Always reject overriding builtins — the seeded set is immutable.
             if definition.name in _BUILTIN_TYPES:
                 raise ValueError("built-in entity types cannot be overridden")
-            if any(item.name == definition.name for item in current.entity_types):
-                # entity type already registered — rebuild and return updated
-                return GraphSchema(
-                    tenant_id, current.entity_types,
-                    current.relation_types, current.source_mappings,
-                )
+            # Same-name override is allowed for non-builtins (update in place).
+            new_types = list(current.entity_types)
+            replaced_existing = False
+            for i, existing in enumerate(new_types):
+                if existing.name == definition.name:
+                    new_types[i] = definition
+                    replaced_existing = True
+                    break
+            if not replaced_existing:
+                new_types.append(definition)
             updated = GraphSchema(
-                tenant_id, current.entity_types + (definition,),
+                tenant_id, tuple(new_types),
                 current.relation_types, current.source_mappings,
             )
             self._schemas[tenant_id] = updated
