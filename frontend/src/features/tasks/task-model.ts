@@ -162,6 +162,8 @@ export type RunRecord = {
 export type RunEvent = {
   event_id: string
   type: string
+  event_type?: string
+  actor_id?: string
   occurred_at?: string
   actor?: string
   source?: string
@@ -211,6 +213,18 @@ export function unwrapRecord<T>(v: unknown): T {
   if (v && typeof v === 'object' && 'data' in v) return (v as { data: T }).data
   return v as T
 }
+export function filterRunEvents(events: RunEvent[], typeFilter = 'all', search = ''): RunEvent[] {
+  const needle = search.trim().toLocaleLowerCase()
+  return events.filter((event) => {
+    const eventType = event.event_type ?? event.type
+    if (typeFilter !== 'all' && eventType !== typeFilter) return false
+    if (!needle) return true
+    return [eventType, event.summary, event.actor, event.actor_id, event.source, event.request_id, event.trace_id, event.event_id]
+      .filter((value): value is string => typeof value === 'string')
+      .join(' ').toLocaleLowerCase().includes(needle)
+  })
+}
+
 export function sortEvents(events: RunEvent[]): RunEvent[] {
   return [...events].sort((a, b) =>
     a.sequence != null && b.sequence != null && a.sequence !== b.sequence
