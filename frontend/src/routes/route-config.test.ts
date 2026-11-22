@@ -111,6 +111,14 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
+  it('registers system settings as an authenticated read-only route owned by #812', () => {
+    const settings = pageRoutes.find((route) => route.path === '/admin/settings')
+    expect(settings?.owner).toBe('#812')
+    expect(settings?.authOnly).toBe(true)
+    expect(getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))).not.toContain('/admin/settings')
+    expect(getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))).toContain('/admin/settings')
+  })
+
   it('gates Agent runtime list/detail on registry capability and assigns #808 ownership', () => {
     const visibleWithoutRegistry = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
     const visibleWithRegistry = getVisibleNavigation(true, ['agent_management']).flatMap((group) => group.items.map((item) => item.path))
