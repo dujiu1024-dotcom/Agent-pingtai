@@ -214,11 +214,14 @@ class RunNodeHandoff:
             raise ValueError("handoff requires two distinct node identifiers")
         if self.active_node is not None and self.active_node != former:
             raise RuntimeError("handoff source is not the active Run node")
-        await self._stop_worker(former)
-        await self._fence_node(former)
-        if not await self._confirm_fenced(former):
+        await _invoke(lambda: self._stop_worker(former))
+        await _invoke(lambda: self._fence_node(former))
+        confirmed = self._confirm_fenced(former)
+        if inspect.isawaitable(confirmed):
+            confirmed = await confirmed
+        if not confirmed:
             raise RuntimeError("former Run node is not fenced; takeover refused")
-        await self._start_worker(target)
+        await _invoke(lambda: self._start_worker(target))
         self.active_node = target
         await _invoke(lambda: self._audit({
             "event": "run_node_handoff_completed", "operation": operation,
