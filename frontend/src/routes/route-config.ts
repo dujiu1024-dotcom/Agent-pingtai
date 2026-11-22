@@ -181,8 +181,8 @@ export const pageRoutes: PageRoute[] = [
     title: '会话与消息',
     section: '智能体运营',
     description: '会话列表、消息时间线与关联文件资产。',
-    authOnly: true,
     owner: '#801',
+    authOnly: true,
   },
   {
     path: '/operations/conversations',
@@ -332,17 +332,6 @@ export const pageRoutes: PageRoute[] = [
 
 export const detailRoutes: PageRoute[] = [
   {
-    path: '/operations/sessions/:sessionId',
-    pageId: 'OPS-SESSION-DETAIL',
-    title: '会话详情',
-    section: '智能体运营',
-    description: '会话消息时间线与关联文件资产。',
-    parentPath: '/operations/sessions',
-    entityIdParam: 'sessionId',
-    authOnly: true,
-    owner: '#801',
-  },
-  {
     path: '/admin/prompts/:promptId',
     pageId: 'ADM-PROMPT-DETAIL',
     title: 'Prompt 详情',
@@ -474,6 +463,17 @@ export const detailRoutes: PageRoute[] = [
     owner: '#750',
   },
   {
+    path: '/operations/sessions/:sessionId',
+    pageId: 'OPS-SESSION-DETAIL',
+    title: '会话详情',
+    section: '智能体运营',
+    description: '会话消息时间线与关联文件资产。',
+    parentPath: '/operations/sessions',
+    entityIdParam: 'sessionId',
+    owner: '#801',
+    authOnly: true,
+  },
+  {
     path: '/operations/conversations/:conversationId',
     pageId: 'OPS-CONVERSATIONS',
     title: '会话详情',
@@ -556,26 +556,6 @@ export const globalRoutes: PageRoute[] = [
   },
 ]
 
-/** Explicit error destinations are routable, but never appear in navigation. */
-export const systemRoutes: PageRoute[] = [
-  {
-    path: '/403',
-    pageId: 'SYS-FORBIDDEN',
-    title: '无权访问',
-    section: '系统状态',
-    description: '当前会话无权访问此资源。',
-    owner: '#743',
-  },
-  {
-    path: '/404',
-    pageId: 'SYS-NOT-FOUND',
-    title: '页面不存在',
-    section: '系统状态',
-    description: '请求的页面不存在或尚未开放。',
-    owner: '#743',
-  },
-]
-
 export interface SubPageNav {
   label: string
   path: string
@@ -626,6 +606,7 @@ export const navigationSections: NavigationSection[] = [
     subpages: [
       { label: '任务列表', path: '/workspace/tasks' },
       { label: '审批中心', path: '/operations/approvals' },
+      { label: '会话工作区', path: '/operations/sessions', authOnly: true },
       { label: '会话与消息', path: '/operations/conversations' },
       { label: '文件与产物', path: '/operations/files' },
     ],
@@ -851,19 +832,18 @@ export function getAllRoutes(authEnabled: boolean): PageRoute[] {
     ...pageRoutes,
     ...detailRoutes,
     ...globalRoutes,
-    ...systemRoutes,
     ...(authEnabled ? authRoutes : []),
   ]
 }
 
 export function findPageRoute(path: string): PageRoute | undefined {
-  return [...pageRoutes, ...globalRoutes, ...systemRoutes, ...authRoutes].find(
+  return [...pageRoutes, ...globalRoutes, ...authRoutes].find(
     (route) => route.path === path,
   )
 }
 
 export function isCanonicalRouteSetValid(
-  routes: PageRoute[] = [...pageRoutes, ...globalRoutes, ...systemRoutes, ...authRoutes],
+  routes: PageRoute[] = [...pageRoutes, ...globalRoutes, ...authRoutes],
 ): boolean {
   const paths = routes.map((route) => route.path)
   const ids = routes.map((route) => route.pageId)
