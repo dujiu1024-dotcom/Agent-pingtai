@@ -27,6 +27,8 @@ class ProductionAssetConnectorCompositionTests(unittest.TestCase):
             bucket="platform-assets",
             connection_factory=lambda: object(),
             connector_service=service,
+            file_repository_for_tenant=lambda tenant_id: object(),
+            knowledge_for_tenant=lambda tenant_id: object(),
             worker_id="connector-worker-1",
             clamav_host="clamav",
         )
@@ -34,6 +36,9 @@ class ProductionAssetConnectorCompositionTests(unittest.TestCase):
         self.assertIsInstance(runtime.scanner, ClamAVScanner)
         self.assertIsInstance(runtime.connector_queue, PostgresConnectorSyncQueue)
         self.assertIsInstance(runtime.connector_worker, ManagedConnectorWorker)
+        self.assertIsNotNone(runtime.file_processing_queue)
+        self.assertIsNotNone(runtime.file_processing_worker)
+        self.assertIs(runtime.file_processing_worker.scanner, runtime.scanner)
         self.assertIs(service.sync_queue, runtime.connector_queue)
         self.assertIs(runtime.connector_worker.worker.queue, runtime.connector_queue)
 
@@ -47,12 +52,16 @@ class ProductionAssetConnectorCompositionTests(unittest.TestCase):
             {"connection_factory": None},
             {"worker_id": ""},
             {"clamav_host": ""},
+            {"file_repository_for_tenant": None},
+            {"knowledge_for_tenant": None},
         )
         base = {
             "s3_client": AsyncS3Client(),
             "bucket": "assets",
             "connection_factory": lambda: object(),
             "connector_service": service,
+            "file_repository_for_tenant": lambda tenant_id: object(),
+            "knowledge_for_tenant": lambda tenant_id: object(),
             "worker_id": "worker",
             "clamav_host": "clamav",
         }
