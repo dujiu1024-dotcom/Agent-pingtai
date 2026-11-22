@@ -90,6 +90,49 @@ class PostgresMigrationScriptTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 2)
             self.assertIn("invalid migration filename", completed.stderr)
 
+    def test_rejects_duplicate_migration_versions_before_psql(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            migrations = Path(tmp) / "migrations"
+            migrations.mkdir()
+            (migrations / "001_first.sql").write_text("SELECT 1;\n", encoding="utf-8")
+            (migrations / "001_renamed.sql").write_text("SELECT 2;\n", encoding="utf-8")
+            env = os.environ.copy()
+            env.update({"PG_DSN": "postgresql://unused", "MIGRATION_DIR": str(migrations)})
+            completed = subprocess.run(
+                ["bash", str(RUNNER)], cwd=ROOT, env=env,
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("duplicate migration version 001", completed.stderr)
+
+    def test_runner_refuses_to_drop_historical_migration_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            migrations = Path(tmp) / "migrations"
+            migrations.mkdir()
+            (migrations / "001_current.sql").write_text("SELECT 1;\n", encoding="utf-8")
+            fake_bin = Path(tmp) / "bin"
+            fake_bin.mkdir()
+            capture = Path(tmp) / "captured"
+            fake_psql = fake_bin / "psql"
+            fake_psql.write_text(
+                "#!/usr/bin/env bash\nset -euo pipefail\n"
+                'mkdir -p "$CAPTURE_DIR"\n'
+                'cp -R "$(dirname "$6")" "$CAPTURE_DIR/runner-dir"\n',
+                encoding="utf-8",
+            )
+            fake_psql.chmod(0o755)
+            env = os.environ.copy()
+            env.update({"PG_DSN": "postgresql://unused", "MIGRATION_DIR": str(migrations),
+                        "CAPTURE_DIR": str(capture), "PATH": f"{fake_bin}:{env['PATH']}"})
+            completed = subprocess.run(
+                ["bash", str(RUNNER)], cwd=ROOT, env=env,
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            runner_sql = (capture / "runner-dir" / "runner.sql").read_text(encoding="utf-8")
+            self.assertIn("migration_name NOT IN ('001_current.sql')", runner_sql)
+            self.assertIn("An applied migration is missing or was renamed", runner_sql)
+
 
 if __name__ == "__main__":
     unittest.main()

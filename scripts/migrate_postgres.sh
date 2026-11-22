@@ -25,6 +25,48 @@ SQL
 shopt -s nullglob
 files=("$MIGRATION_DIR"/*.sql)
 (("${#files[@]}" > 0)) || { echo "no SQL migrations found" >&2; exit 2; }
+
+# Migration sequence numbers are immutable identities, not display labels.
+declare -A seen_versions=()
+last_version=0
+known_names=()
+for file in "${files[@]}"; do
+  name="$(basename "$file")"
+  [[ "$name" =~ ^([0-9]{3})_[A-Za-z0-9_]+\.sql$ ]] || {
+    echo "invalid migration filename: $name" >&2
+    exit 2
+  }
+  version="${BASH_REMATCH[1]}"
+  if [[ -n "${seen_versions[$version]:-}" ]]; then
+    echo "duplicate migration version $version: $name and ${seen_versions[$version]}" >&2
+    exit 2
+  fi
+  if ((10#$version <= last_version)); then
+    echo "migration versions must be strictly increasing: $name" >&2
+    exit 2
+  fi
+  seen_versions[$version]="$name"
+  last_version=$((10#$version))
+  known_names+=("$name")
+done
+
+# Never silently forget an applied migration after a rename or deletion.
+known_sql=""
+for name in "${known_names[@]}"; do
+  [[ -z "$known_sql" ]] || known_sql+=","
+  known_sql+="'$name'"
+done
+cat >> "$RUNNER" <<SQL
+SELECT EXISTS(
+  SELECT 1 FROM platform_schema_migrations
+  WHERE migration_name NOT IN ($known_sql)
+) AS removed_migration \\gset
+\\if :removed_migration
+  \\echo "An applied migration is missing or was renamed; restore its original filename"
+  \\quit 4
+\\endif
+SQL
+
 for file in "${files[@]}"; do
   name="$(basename "$file")"
   [[ "$name" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] || {
