@@ -17,7 +17,7 @@ def test_platform_web_serves_agent_platform_workbench_by_default():
     assert '<div id="root"></div>' in response.text
     assert 'id="legacy-console-fallback"' in response.text
     assert 'src="/app/assets/app.js"' in response.text
-    assert "FDE 工作室" not in response.text
+    assert "<title>Agent 平台</title>" in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
