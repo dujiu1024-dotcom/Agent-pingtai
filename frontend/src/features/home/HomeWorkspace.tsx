@@ -12,6 +12,8 @@ type AgentRegistryItem = {
   item_id: string
   status?: string
   definition?: { name?: string; description?: string; [key: string]: unknown }
+  created_at?: string | null
+  published_at?: string | null
   [key: string]: unknown
 }
 type TaskTab = 'all' | 'running' | 'approval'
