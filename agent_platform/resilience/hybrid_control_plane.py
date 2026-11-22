@@ -9,7 +9,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Awaitable, Callable, Mapping, Protocol, cast
 
 
 class ControlPlaneMode(str, Enum):
@@ -190,16 +190,20 @@ class ControlPlaneReconciler:
         return self.mode
 
 
+NodeAction = Callable[[str], Awaitable[None] | None]
+FenceConfirmation = Callable[[str], Awaitable[bool] | bool]
+
+
 class RunNodeHandoff:
     """Fence the former owner before starting its peer; workers share durable leases."""
 
     def __init__(
         self,
         *,
-        stop_worker: Callable[[str], Awaitable[None]],
-        fence_node: Callable[[str], Awaitable[None]],
-        confirm_fenced: Callable[[str], Awaitable[bool]],
-        start_worker: Callable[[str], Awaitable[None]],
+        stop_worker: NodeAction,
+        fence_node: NodeAction,
+        confirm_fenced: FenceConfirmation,
+        start_worker: NodeAction,
         audit: Callable[[Mapping[str, Any]], Awaitable[None] | None],
     ) -> None:
         self._stop_worker = stop_worker
@@ -218,7 +222,7 @@ class RunNodeHandoff:
         await _invoke(lambda: self._fence_node(former))
         confirmed = self._confirm_fenced(former)
         if inspect.isawaitable(confirmed):
-            confirmed = await confirmed
+            confirmed = await cast(Awaitable[bool], confirmed)
         if not confirmed:
             raise RuntimeError("former Run node is not fenced; takeover refused")
         await _invoke(lambda: self._start_worker(target))
