@@ -669,6 +669,48 @@ export function findNavigationSection(
   )
 }
 
+export interface BreadcrumbItem {
+  label: string
+  path?: string
+}
+
+function matchesRoutePattern(pattern: string, pathname: string): boolean {
+  const expected = pattern.split('/').filter(Boolean)
+  const actual = pathname.split('/').filter(Boolean)
+  return expected.length === actual.length && expected.every(
+    (segment, index) => segment.startsWith(':') || segment === actual[index],
+  )
+}
+
+/** Resolve a route's navigation context from the canonical navigation/route maps. */
+export function getRouteBreadcrumbs(pathname: string): BreadcrumbItem[] {
+  const section = findNavigationSection(pathname)
+  const subpage = findSubPage(section, pathname)
+  const route = [...detailRoutes, ...pageRoutes, ...globalRoutes].find(
+    (candidate) => matchesRoutePattern(candidate.path, pathname),
+  )
+  if (!section) {
+    return route ? [{ label: route.title }] : []
+  }
+
+  const crumbs: BreadcrumbItem[] = [{ label: section.label, path: section.path }]
+  const currentLabel = subpage?.label ?? route?.title
+  const currentPath = subpage?.path
+  if (currentLabel && (currentLabel !== section.label || route?.parentPath)) {
+    if (route?.parentPath && currentPath !== route.parentPath) {
+      const parent = [...pageRoutes, ...globalRoutes].find(
+        (candidate) => candidate.path === route.parentPath,
+      )
+      if (parent) crumbs.push({ label: parent.title, path: parent.path })
+    }
+    const entityId = route?.entityIdParam
+      ? decodeURIComponent(pathname.split('/').filter(Boolean).at(-1) ?? '')
+      : ''
+    crumbs.push({ label: entityId ? `${currentLabel} · ${entityId}` : currentLabel })
+  }
+  return crumbs
+}
+
 export function findSubPage(
   section: NavigationSection | undefined,
   pathname: string,
