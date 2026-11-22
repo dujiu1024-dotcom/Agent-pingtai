@@ -5,7 +5,7 @@ import { ArrowRight, Bot, Workflow, Wallet, Play, Sparkles, Sun, Moon } from 'lu
 import { apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { formatDuration, resolveAgentId, resolveTaskTitle, unwrapList } from '@/features/tasks/task-model'
-import type { RunRecord, TaskRecord } from '@/features/tasks/task-model'
+import type { TaskRecord } from '@/features/tasks/task-model'
 import './HomeWorkspace.css'
 
 type AgentRegistryItem = {
@@ -16,6 +16,8 @@ type AgentRegistryItem = {
 }
 type TaskTab = 'all' | 'running' | 'approval'
 type AgentCardData = { id: string; name: string; description: string; status: string; runs: number }
+type ApprovalRecord = { approval_id: string; action: string; resource: string; status: string }
+type HomeActivityEvent = { id: string; kind: 'agent' | 'workflow' | 'task' | 'approval'; title: string; detail: string; at: string | null; href: string }
 
 const RUNNING = new Set(['running', 'executing', 'in_progress', 'queued', 'pending'])
 const APPROVAL = new Set(['waiting_approval', 'waiting_human'])
@@ -43,25 +45,68 @@ export function filterHomeTasks(tasks: TaskRecord[], tab: TaskTab): TaskRecord[]
   if (tab === 'approval') return tasks.filter((task) => APPROVAL.has(task.status))
   return tasks
 }
-export function rankHomeAgents(agents: AgentRegistryItem[], runs: RunRecord[]): AgentCardData[] {
-  const counts = new Map<string, number>()
-  for (const run of runs) {
-    if (!run.agent_id) continue
-    counts.set(run.agent_id, (counts.get(run.agent_id) ?? 0) + 1)
+export function rankHomeAgents(agents: AgentRegistryItem[], tasks: TaskRecord[]): AgentCardData[] {
+  const runIdsByAgent = new Map<string, Set<string>>()
+  for (const task of tasks) {
+    if (!task.agent_id || !task.run_id) continue
+    const runIds = runIdsByAgent.get(task.agent_id) ?? new Set<string>()
+    runIds.add(task.run_id)
+    runIdsByAgent.set(task.agent_id, runIds)
   }
   return agents.map((agent) => ({
     id: agent.item_id,
     name: typeof agent.definition?.name === 'string' && agent.definition.name.trim() ? agent.definition.name : agent.item_id,
     description: typeof agent.definition?.description === 'string' ? agent.definition.description : '已登记的智能体',
     status: typeof agent.status === 'string' ? agent.status : 'registered',
-    runs: counts.get(agent.item_id) ?? 0,
+    runs: runIdsByAgent.get(agent.item_id)?.size ?? 0,
   })).sort((a, b) => b.runs - a.runs || a.name.localeCompare(b.name, 'zh-CN')).slice(0, 6)
 }
-export function sortRecentRuns(runs: RunRecord[]): RunRecord[] {
-  return [...runs].sort((a, b) =>
-    (Date.parse(b.updated_at ?? b.finished_at ?? b.started_at ?? b.created_at ?? '') || 0) -
-    (Date.parse(a.updated_at ?? a.finished_at ?? a.started_at ?? a.created_at ?? '') || 0),
-  ).slice(0, 6)
+
+export function buildHomeActivityFeed(
+  tasks: TaskRecord[],
+  agents: AgentRegistryItem[],
+  workflows: AgentRegistryItem[],
+  approvals: ApprovalRecord[],
+): HomeActivityEvent[] {
+  const events: HomeActivityEvent[] = []
+  for (const task of tasks) {
+    if (!COMPLETED.has(task.status.toLowerCase())) continue
+    events.push({
+      id: 'task:' + task.task_id, kind: 'task', title: '任务完成',
+      detail: resolveTaskTitle(task) + ' · ' + (task.agent_id ?? '未关联 Agent'),
+      at: task.finished_at ?? task.updated_at ?? task.created_at ?? null,
+      href: '/operations/tasks/' + encodeURIComponent(task.task_id),
+    })
+  }
+  for (const agent of agents) {
+    const at = agent.published_at ?? agent.created_at ?? null
+    if (!at) continue
+    const name = typeof agent.definition?.name === 'string' ? agent.definition.name : agent.item_id
+    events.push({
+      id: 'agent:' + agent.item_id + ':' + at, kind: 'agent', title: 'Agent 更新',
+      detail: name + ' · ' + agent.item_id, at,
+      href: '/admin/agents/' + encodeURIComponent(agent.item_id),
+    })
+  }
+  for (const workflow of workflows) {
+    const at = workflow.published_at ?? workflow.created_at ?? null
+    if (!at) continue
+    const name = typeof workflow.definition?.name === 'string' ? workflow.definition.name : workflow.item_id
+    events.push({
+      id: 'workflow:' + workflow.item_id + ':' + at, kind: 'workflow', title: 'Workflow 新增',
+      detail: name + ' · ' + workflow.item_id, at,
+      href: '/admin/workflows/' + encodeURIComponent(workflow.item_id),
+    })
+  }
+  for (const approval of approvals) {
+    if (approval.status.toLowerCase() !== 'pending') continue
+    events.push({
+      id: 'approval:' + approval.approval_id, kind: 'approval', title: '审批已提交',
+      detail: approval.action + ' · ' + approval.resource, at: null,
+      href: '/operations/approvals',
+    })
+  }
+  return events.sort((a, b) => (Date.parse(b.at ?? '') || 0) - (Date.parse(a.at ?? '') || 0)).slice(0, 8)
 }
 
 function TaskListPanel() {
