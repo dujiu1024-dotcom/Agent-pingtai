@@ -11,19 +11,29 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def test_platform_web_serves_established_console_by_default():
+def test_platform_web_serves_agent_platform_workbench_by_default():
     response = _client().get("/app/")
     assert response.status_code == 200
-    assert "FDE 工作室" in response.text
-    assert '<script type="module" src="/app/assets/legacy-console.js">' in response.text
+    assert '<div id="root"></div>' in response.text
+    assert 'id="legacy-console-fallback"' in response.text
+    assert 'src="/app/assets/app.js"' in response.text
+    assert "FDE 工作室" not in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_platform_web_serves_react_workbench_only_when_explicitly_requested():
+def test_platform_web_keeps_react_workbench_available_with_explicit_modern_flag():
     response = _client().get("/app/?modern=1")
     assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
     assert 'id="legacy-console-fallback"' in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_platform_web_serves_legacy_console_only_when_explicitly_requested():
+    response = _client().get("/app/?legacy=1")
+    assert response.status_code == 200
+    assert "FDE 工作室" in response.text
+    assert '<script type="module" src="/app/assets/legacy-console.js">' in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
