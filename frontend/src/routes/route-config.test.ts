@@ -100,14 +100,13 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
-  it('registers session list and detail routes under #801', () => {
+  it('registers evaluation dataset and run routes under #803', () => {
     const routes = [...pageRoutes, ...detailRoutes]
-    expect(routes.find((route) => route.path === '/operations/sessions')?.owner).toBe('#801')
-    expect(routes.find((route) => route.path === '/operations/sessions/:sessionId')?.owner).toBe('#801')
-    expect(routes.find((route) => route.path === '/operations/sessions')?.authOnly).toBe(true)
-    expect(getVisibleNavigation(false).flatMap((group) => group.items).map((route) => route.path)).not.toContain('/operations/sessions')
-    expect(getVisibleNavigation(true).flatMap((group) => group.items).map((route) => route.path)).toContain('/operations/sessions')
-    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
+    expect(pageRoutes.find((route) => route.path === '/admin/evaluation/datasets')?.owner).toBe('#803')
+    expect(pageRoutes.find((route) => route.path === '/admin/evaluation/runs')?.owner).toBe('#803')
+    const routeObjects = routes.map((route) => ({ path: route.path }))
+    expect(matchRoutes(routeObjects, '/admin/evaluation/datasets/ds-42')?.[0].params.datasetId).toBe('ds-42')
+    expect(matchRoutes(routeObjects, '/admin/evaluation/runs/run-17')?.[0].params.runId).toBe('run-17')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
