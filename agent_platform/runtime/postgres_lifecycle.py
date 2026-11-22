@@ -418,17 +418,17 @@ class PostgresRunStateStore(RunStateStore):
       AND (worker_id IS NULL OR worker_id=%s OR lease_expires_at<=now()) RETURNING run_id""",
     (worker_id,lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
- async def owns_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int|None=None)->bool:
-  if lease_token is not None and (type(lease_token) is not int or lease_token<1):
+ async def owns_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int)->bool:
+  if type(lease_token) is not int or lease_token<1:
    raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT 1 FROM platform_runs
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s
-      AND lease_expires_at>now() AND (%s::bigint IS NULL OR lease_token=%s)""",(tenant_id,run_id,worker_id,lease_token,lease_token))
+      AND lease_expires_at>now() AND lease_token=%s""",(tenant_id,run_id,worker_id,lease_token))
    return await cur.fetchone() is not None
 
- async def heartbeat(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60,lease_token:int|None=None)->bool:
+ async def heartbeat(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int,lease_seconds:int=60)->bool:
   if lease_token is not None and (type(lease_token) is not int or lease_token<1):
    raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
@@ -436,9 +436,9 @@ class PostgresRunStateStore(RunStateStore):
    cur=await c.execute("""UPDATE platform_runs SET lease_expires_at=now()+(%s * interval '1 second')
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND lease_expires_at>now() AND status='running'
       AND (%s::bigint IS NULL OR lease_token=%s)
-    RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id,lease_token,lease_token))
+    RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id,lease_token))
    return await cur.fetchone() is not None
- async def record_workbench_failure(self,tenant_id:str,run_id:str,worker_id:str,*,error:str,lease_token:int|None=None)->str|None:
+ async def record_workbench_failure(self,tenant_id:str,run_id:str,worker_id:str,*,error:str,lease_token:int)->str|None:
   """Retry an owned task after failure, or atomically move exhausted work to the DLQ."""
   if lease_token is not None and (type(lease_token) is not int or lease_token<1):
    raise ValueError("lease_token must be a positive integer")
@@ -467,7 +467,7 @@ class PostgresRunStateStore(RunStateStore):
       reason=EXCLUDED.reason,payload=EXCLUDED.payload,updated_at=now()
     RETURNING run_id
    )
-   SELECT status FROM updated""",(error[:500],error[:500],tenant_id,UUID(run_id),worker_id,lease_token,lease_token))
+   SELECT status FROM updated""",(error[:500],error[:500],tenant_id,UUID(run_id),worker_id,lease_token))
    row=await cur.fetchone()
    return row["status"] if row is not None else None
 
@@ -492,7 +492,7 @@ class PostgresRunStateStore(RunStateStore):
     RETURNING run_id""",(reason,tenant_id,UUID(run_id)))
    return await cur.fetchone() is not None
 
- async def release_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int|None=None)->bool:
+ async def release_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int)->bool:
   if lease_token is not None and (type(lease_token) is not int or lease_token<1):
    raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
