@@ -67,5 +67,111 @@ class ContextOverflowPolicyTests(unittest.TestCase):
         self.assertEqual(result.tokens_before, result.tokens_after)
 
 
+    def test_exact_budget_boundary_does_not_trigger_degradation(self):
+        calls = []
+
+        def summarize(sections, allowance):
+            calls.append((sections, allowance))
+            return "should not run"
+
+        result = prepare_context(
+            self.bundle,
+            max_tokens=19,
+            strategy="summarize",
+            token_counter=word_counter,
+            summarizer=summarize,
+        )
+
+        self.assertEqual(result.sections, self.bundle.sections)
+        self.assertEqual(result.tokens_before, 19)
+        self.assertEqual(result.tokens_after, 19)
+        self.assertEqual(calls, [])
+
+    def test_truncate_stops_as_soon_as_budget_is_satisfied(self):
+        result = prepare_context(
+            self.bundle,
+            max_tokens=14,
+            strategy="truncate",
+            token_counter=word_counter,
+        )
+
+        self.assertEqual(result.removed_keys, ("history",))
+        self.assertEqual(tuple(section.key for section in result.sections),
+                         ("goal", "constraints", "decision", "evidence", "notes"))
+        self.assertEqual(result.tokens_after, 13)
+        self.assertEqual(self.bundle.sections[-2].key, "history")
+
+    def test_truncate_uses_original_order_for_equal_priority_sections(self):
+        bundle = ContextBundle((
+            ContextSection("goal", "goal", "g"),
+            ContextSection("constraint", "constraint", "c"),
+            ContextSection("decision", "decision", "d"),
+            ContextSection("evidence", "evidence", "e"),
+            ContextSection("first", "context", "a b c", priority=1),
+            ContextSection("second", "context", "d e f", priority=1),
+        ))
+
+        result = prepare_context(
+            bundle,
+            max_tokens=7,
+            strategy="truncate",
+            token_counter=word_counter,
+        )
+
+        self.assertEqual(result.removed_keys, ("first",))
+        self.assertEqual(tuple(section.key for section in result.sections),
+                         ("goal", "constraint", "decision", "evidence", "second"))
+        self.assertEqual(result.tokens_after, 7)
+
+    def test_summarize_requires_a_summarizer(self):
+        with self.assertRaisesRegex(ContextOverflowError, "requires optional context and a summarizer"):
+            prepare_context(
+                self.bundle,
+                max_tokens=11,
+                strategy="summarize",
+                token_counter=word_counter,
+            )
+
+    def test_empty_summary_fails_closed(self):
+        with self.assertRaisesRegex(ContextOverflowError, "empty or invalid summary"):
+            prepare_context(
+                self.bundle,
+                max_tokens=11,
+                strategy="summarize",
+                token_counter=word_counter,
+                summarizer=lambda _sections, _limit: "  ",
+            )
+
+    def test_critical_overflow_does_not_call_summarizer(self):
+        calls = []
+
+        def summarize(sections, allowance):
+            calls.append((sections, allowance))
+            return "compressed"
+
+        with self.assertRaisesRegex(ContextOverflowError, "critical"):
+            prepare_context(
+                self.bundle,
+                max_tokens=5,
+                strategy="summarize",
+                token_counter=word_counter,
+                summarizer=summarize,
+            )
+
+        self.assertEqual(calls, [])
+
+    def test_token_counter_exception_propagates_without_fallback(self):
+        def broken_counter(_sections):
+            raise RuntimeError("tokenizer unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "tokenizer unavailable"):
+            prepare_context(
+                self.bundle,
+                max_tokens=10,
+                strategy="truncate",
+                token_counter=broken_counter,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
