@@ -62,6 +62,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.registry = RegistryService(self.repository)
         self.audit = Audit()
         self.allowed = True
+        self.version_allowed = True
         self.probe_calls = []
 
         async def principal(request):
@@ -97,6 +98,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
             resolve_principal=principal,
             resolve_registry=resolve_registry,
             authorize=authorize,
+            authorize_version=lambda actor, kind, item_id, version, action: self.version_allowed,
             resolve_mcp_checker=checker,
             resolve_skill_reviewer=reviewer,
             audit_writer=self.audit,
@@ -152,6 +154,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
             ),
             resolve_registry=lambda actor: self.registry,
             authorize=lambda *args: True,
+            authorize_version=lambda *args: True,
             resolve_mcp_checker=lambda actor: None,
             resolve_skill_reviewer=lambda actor: SkillDependencyReviewer(
                 store=InMemorySkillDependencyReviewStore(),
@@ -216,6 +219,16 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.probe_calls, [])
 
+    def test_version_permission_denial_is_audited_without_running_probe(self):
+        self._publish("tool", "version-denied", {"allowlist": ["read"]})
+        self.version_allowed = False
+        response = self.client.post(
+            "/api/v1/tools/version-denied/test-connection", json={"version": 2},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.probe_calls, [])
+        self.assertEqual([event["outcome"] for event in self.audit.events], ["denied"])
+
     def test_audit_failure_fails_closed_before_probe(self):
         self._publish("tool", "audit-tool", {"allowlist": ["read"]})
         self.audit.fail = True
@@ -250,6 +263,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
                 ),
                 resolve_registry=lambda actor: self.registry,
                 authorize=lambda *args: True,
+                authorize_version=lambda *args: True,
                 resolve_mcp_checker=lambda actor: MCPHealthChecker(
                     store=InMemoryMCPHealthStore(),
                     session_factory=lambda tenant, server: session,
