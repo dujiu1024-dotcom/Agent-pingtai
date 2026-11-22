@@ -7,15 +7,17 @@ try:
     from agent_platform.quotas.service import (
         QuotaPolicy, QuotaDimension, QuotaExceeded, QuotaPolicyMissing,
     )
-except ImportError:  # pragma: no cover - quota API was rewritten; old symbols gone
-    pytest.skip("quota API was rewritten; QuotaPolicy/QuotaDimension/etc. no longer exist", allow_module_level=True)
+except ImportError as exc:  # pragma: no cover - quota API was rewritten; old symbols gone
+    pytestmark = pytest.mark.skipif(True, reason=f"quota API was rewritten: {exc}")
+    QuotaPolicy = QuotaDimension = QuotaExceeded = QuotaPolicyMissing = None
 
 try:
     from agent_platform.quotas.service import (
         InMemoryQuotaStore, QuotaService,
     )
 except ImportError as exc:  # pragma: no cover
-    pytest.skip(f"quota service import failed: {exc}", allow_module_level=True)
+    pytestmark = pytest.mark.skipif(True, reason=f"quota service import failed: {exc}")
+    InMemoryQuotaStore = QuotaService = None
 
 
 class TenantQuotaTests(unittest.IsolatedAsyncioTestCase):

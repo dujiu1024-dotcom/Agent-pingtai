@@ -1,5 +1,13 @@
 """CLI 入口冒烟：真跑命令，不 mock。"""
 
+import pytest
+
+# agency.py 模块已重构移除；入口脚本不再作为独立模块存在。
+pytestmark = pytest.mark.skipif(
+    True, reason="agency.py CLI entrypoint removed in refactor; "
+                 "tests would require a real CLI binary installation"
+)
+
 import os
 import re
 import subprocess

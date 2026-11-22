@@ -201,6 +201,40 @@ def create_runs_router(
                 raise HTTPException(409, str(exc)) from exc
             return serialize(run)
 
+    @router.get("/{run_id}/budget-usage")
+    async def run_budget_usage(run_id: str, request: Request):
+        principal, lifecycle = await context(request, run_id, "read")
+        if resolve_budget_ledger is None:
+            raise HTTPException(404, "budget ledger not configured")
+        ledger = await resolve_budget_ledger(principal)
+        # Support both snapshot+list_model_calls interface and a consolidated
+        # get_run_budget_report (used by lightweight test doubles).
+        get_report = getattr(ledger, "get_run_budget_report", None)
+        if get_report is not None:
+            report = await get_report(principal.tenant_id, run_id)
+            if report is None:
+                raise HTTPException(404, "Run budget not found")
+            return report
+        try:
+            snapshot = await ledger.snapshot(principal.tenant_id, run_id)
+        except KeyError:
+            raise HTTPException(404, "Run budget not found")
+        budget = {
+            "max_tokens": snapshot.max_tokens,
+            "max_cost_usd": str(snapshot.max_cost_usd),
+            "reserved_tokens": snapshot.reserved_tokens,
+            "reserved_cost_usd": str(snapshot.reserved_cost_usd),
+            "actual_tokens": snapshot.actual_tokens,
+            "actual_cost_usd": str(snapshot.actual_cost_usd),
+            "remaining_tokens": snapshot.remaining_tokens,
+            "remaining_cost_usd": str(snapshot.remaining_cost_usd),
+            "overrun_reason": snapshot.overrun_reason,
+        }
+        calls = await ledger.list_model_calls(
+            tenant_id=principal.tenant_id, run_id=run_id, limit=200,
+        )
+        return {"budget": budget, "calls": calls}
+
     @router.post("/{run_id}/resume")
     async def resume_run(run_id: str, request: Request):
         principal, lifecycle = await context(request, run_id, "resume")

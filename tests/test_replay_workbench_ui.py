@@ -5,10 +5,9 @@ import pytest
 # vite production bundle minifies React attributes and renames ids; the
 # assertions below target bundler-layout tokens, not stable product
 # contracts.  Skip rather than chase hashed identifiers.
-pytestmark = pytest.mark.skip(
-    reason="vite production bundle renames/minifies tokens; "
-           "see test_platform_workbench_flow_ui.py for rationale",
-    allow_module_level=True,
+pytestmark = pytest.mark.skipif(
+    True, reason="vite production bundle renames/minifies tokens; "
+                 "see test_platform_workbench_flow_ui.py for rationale"
 )
 
 from pathlib import Path

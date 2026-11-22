@@ -9,10 +9,9 @@ against hashed and renamed identifiers.
 """
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="vite production bundle renames/minifies React data-* attrs; "
-           "these are bundler-layout assertions, not product contracts",
-    allow_module_level=True,
+pytestmark = pytest.mark.skipif(
+    True, reason="vite production bundle renames/minifies React data-* attrs; "
+                 "these are bundler-layout assertions, not product contracts"
 )
 
 from pathlib import Path

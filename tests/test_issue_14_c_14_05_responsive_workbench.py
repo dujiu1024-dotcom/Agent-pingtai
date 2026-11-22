@@ -9,10 +9,9 @@ every vite re-build.
 
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="vite production bundle hashes/shortens CSS and JS tokens; "
-           "see test_platform_workbench_flow_ui.py for rationale",
-    allow_module_level=True,
+pytestmark = pytest.mark.skipif(
+    True, reason="vite production bundle hashes/shortens CSS and JS tokens; "
+                 "see test_platform_workbench_flow_ui.py for rationale"
 )
 
 from fastapi import FastAPI

@@ -21,7 +21,7 @@ try:
     )
     from agent_platform.memory.service import InMemoryMemoryRepository, MemoryService
 except ImportError as exc:  # pragma: no cover - guards against old API drift
-    pytest.skip(f"graph pipeline API was rewritten: {exc}", allow_module_level=True)
+    pytestmark = pytest.mark.skipif(True, reason=f"graph pipeline API was rewritten: {exc}")
 
 
 class FakeExtractor:

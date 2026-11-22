@@ -85,14 +85,14 @@ class RunBudgetUsageReadbackTests(unittest.TestCase):
         self.runs_app = FastAPI()
         self.runs_app.include_router(create_runs_router(
             resolve_principal=principal, resolve_lifecycle=lifecycle,
-            authorize=authorize, resolve_run_budget_ledger=resolve_reader,
+            authorize=authorize, resolve_budget_ledger=resolve_reader,
         ))
         self.runs_client = TestClient(self.runs_app)
 
         self.audit_app = FastAPI()
         self.audit_app.include_router(create_audit_router(
             reader=object(), authorize_read=lambda _principal: True,
-            run_budget_reader=self.reader,
+            budget_reader=self.reader,
         ))
 
         @self.audit_app.middleware("http")
@@ -147,7 +147,7 @@ class RunBudgetUsageReadbackTests(unittest.TestCase):
 
         app.include_router(create_runs_router(
             resolve_principal=principal, resolve_lifecycle=lifecycle,
-            authorize=denied, resolve_run_budget_ledger=resolve_reader,
+            authorize=denied, resolve_budget_ledger=resolve_reader,
         ))
         response = TestClient(app).get("/api/platform/v1/runs/run-1/budget-usage")
         self.assertEqual(response.status_code, 403)
