@@ -386,7 +386,7 @@ class LangGraphWorkflowCompiler:
                 continue
             if branch.get("default") not in routes:
                 diagnostics.append(WorkflowDiagnostic("branch.default", "default must name a route key", path + ".default"))
-            for route_key, target in routes.items():
+            for _route_key, target in routes.items():
                 if target == "__duplicate_route__":
                     diagnostics.append(WorkflowDiagnostic("branch.duplicate_port", "condition output port is connected more than once", path + ".routes"))
                 if target != "__duplicate_route__" and (not isinstance(target, str) or target not in ids | {"__end__"}):
