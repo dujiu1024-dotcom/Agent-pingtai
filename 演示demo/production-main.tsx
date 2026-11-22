@@ -129,7 +129,7 @@ function mockApi(input: RequestInfo | URL, init?: RequestInit): Response {
 
   if (path.endsWith('/platform/v1/bootstrap')) {
     return jsonResponse({
-      auth: { enabled: false },
+      auth: { enabled: true },
       version: 'demo-production-ui',
       capabilities: ['prompt_management', 'prompt_evaluation_gate'],
     })
