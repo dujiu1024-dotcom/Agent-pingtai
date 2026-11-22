@@ -360,7 +360,13 @@ const Badge: React.FC<{ status?: string; children: React.ReactNode }> = ({ statu
   <span className={`ctl-badge ${statusClass(status)}`}>{children}</span>
 )
 
-export function AgentCollaborationCenter({ initialRunId = '', initialEntryId = '' }: { initialRunId?: string; initialEntryId?: string } = {}) {
+export function AgentCollaborationCenter({
+  initialRunId = '',
+  initialEntryId = '',
+}: {
+  initialRunId?: string
+  initialEntryId?: string
+} = {}) {
   const queryClient = useQueryClient()
   const { session } = useAuth()
   const ownerId = session?.user?.user_id ?? ''
@@ -380,7 +386,12 @@ export function AgentCollaborationCenter({ initialRunId = '', initialEntryId = '
   useEffect(() => { setBbPage(0) }, [scope, scopeId, kind])
   // 切换运行时重置事件分页
   useEffect(() => { setRunId(initialRunId) }, [initialRunId])
-  useEffect(() => { if (initialEntryId) { setSelectedEntry(initialEntryId); setTab('blackboard') } }, [initialEntryId])
+  useEffect(() => {
+    if (initialEntryId) {
+      setSelectedEntry(initialEntryId)
+      setTab('blackboard')
+    }
+  }, [initialEntryId])
   useEffect(() => { setEvPage(0) }, [runId])
   const [liveRefresh, setLiveRefresh] = useState(false)
   const [liveRunEvents, setLiveRunEvents] = useState<RecordValue[]>([])
