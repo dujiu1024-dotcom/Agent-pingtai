@@ -353,7 +353,10 @@ export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
 
   if (embedded) {
     return (
-      <section className="dashboard-redesign dashboard-embedded" aria-label="工作台系统概览">
+      <section
+        className="dashboard-redesign dashboard-embedded"
+        aria-label="工作台系统概览"
+      >
         <div className="dashboard-kpi-grid">
           {metrics.map((metric) => (
             <article className="dashboard-kpi-card" key={metric.label}>
@@ -368,15 +371,25 @@ export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
             </article>
           ))}
         </div>
-        <section className="dashboard-panel dashboard-trend-panel" aria-labelledby="dashboard-embedded-trend-title">
+        <section
+          className="dashboard-panel dashboard-trend-panel"
+          aria-labelledby="dashboard-embedded-trend-title"
+        >
           <header className="dashboard-panel-heading">
             <div>
               <h2 id="dashboard-embedded-trend-title">系统概览</h2>
               <p>任务数与成功率趋势</p>
             </div>
-            <span className="dashboard-live-state"><i />趋势统计</span>
+            <span className="dashboard-live-state">
+              <i />
+              趋势统计
+            </span>
           </header>
-          <TrendChart points={points} loading={trendsQuery.isPending} failed={trendsQuery.isError} />
+          <TrendChart
+            points={points}
+            loading={trendsQuery.isPending}
+            failed={trendsQuery.isError}
+          />
         </section>
         <p className="dashboard-data-note">
           {tasksQuery.isError
