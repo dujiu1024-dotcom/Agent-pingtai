@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import './design-system.css'
+import { ComponentStories } from './ComponentStories'
 
 const brandColors = [
   ['Brand 50', '#EFF4FF'],
@@ -217,6 +218,7 @@ export default function DesignSystemShowcase() {
           </p>
         </article>
       </div>
+      <ComponentStories />
     </section>
   )
 }
