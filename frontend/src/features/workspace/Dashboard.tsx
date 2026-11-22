@@ -90,7 +90,7 @@ export function Dashboard() {
   const visibleTasks = useMemo(() => {
     const selected = tab === 'running' ? running : tab === 'approval' ? approvals : tasks
     return [...selected].sort((a, b) => Date.parse(b.updated_at ?? b.created_at ?? '') - Date.parse(a.updated_at ?? a.created_at ?? '')).slice(0, 6)
-  }, [tab, tasks, running.length, approvals.length])
+  }, [tab, tasks, running, approvals])
   const trend = useMemo(() => {
     const today = new Date()
     return Array.from({ length: 7 }, (_, index) => {
