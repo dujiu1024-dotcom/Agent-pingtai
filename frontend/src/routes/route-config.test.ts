@@ -152,4 +152,18 @@ describe('route configuration', () => {
         .params.providerId,
     ).toBe('provider-7')
   })
+
+  it('registers session list and detail routes under #801', () => {
+    const list = pageRoutes.find((route) => route.path === '/operations/sessions')
+    const detail = detailRoutes.find((route) => route.path === '/operations/sessions/:sessionId')
+    expect(list?.owner).toBe('#801')
+    expect(detail?.owner).toBe('#801')
+    expect(detail?.parentPath).toBe('/operations/sessions')
+    expect(
+      matchRoutes(
+        [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })),
+        '/operations/sessions/session-123',
+      )?.[0].params.sessionId,
+    ).toBe('session-123')
+  })
 })
