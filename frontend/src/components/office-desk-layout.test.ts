@@ -4,7 +4,8 @@ import { getOfficeDeskPosition } from './office-desk-layout'
 describe('getOfficeDeskPosition', () => {
   it('maps the first, middle, and last desks to the established 7x3 grid', () => {
     expect(getOfficeDeskPosition('desk-01')).toEqual({ x: -7.2, z: -4.6 })
-    expect(getOfficeDeskPosition('desk-08')).toEqual({ x: -7.2, z: -0.09999999999999964 })
+    expect(getOfficeDeskPosition('desk-08')).toMatchObject({ x: -7.2 })
+    expect(getOfficeDeskPosition('desk-08')?.z).toBeCloseTo(-0.1)
     expect(getOfficeDeskPosition('desk-21')).toEqual({ x: 6.9, z: 4.4 })
   })
 
