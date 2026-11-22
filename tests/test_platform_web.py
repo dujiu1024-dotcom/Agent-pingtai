@@ -12,13 +12,24 @@ def _client() -> TestClient:
 
 
 def test_platform_web_serves_agent_platform_workbench_by_default():
-    response = _client().get("/app/")
+    client = _client()
+    response = client.get("/app/")
     assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
     assert 'id="legacy-console-fallback"' in response.text
     assert 'src="/app/assets/app.js"' in response.text
     assert "<title>Agent 平台</title>" in response.text
     assert response.headers["cache-control"] == "no-store"
+
+    # The checked-in production bundle must expose the appended menu too;
+    # source-only navigation changes are not sufficient for the served UI.
+    bundle = client.get("/app/assets/app.js")
+    stylesheet = client.get("/app/assets/index-680ma_rn.css")
+    assert bundle.status_code == 200
+    assert "新增业务" in bundle.text
+    assert "Agent 运行态" in bundle.text
+    assert stylesheet.status_code == 200
+    assert ".prototype-nav-section-label" in stylesheet.text
 
 
 def test_platform_web_keeps_react_workbench_available_with_explicit_modern_flag():
