@@ -125,6 +125,18 @@ jobs:
         run: |
           python -m pip install -U pip
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
+      - name: Execute Issue 666 disposable staging import, zero-diff and rollback drill
+        run: |
+          python scripts/issue_666_l4_t08_staging_drill.py \
+            --dsn "$AGENT_PLATFORM_TEST_DSN" \
+            --evidence issue-666-l4-t08-staging-drill.json
+      - name: Upload Issue 666 staging and rollback evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue-666-l4-t08-staging-rollback-evidence
+          path: issue-666-l4-t08-staging-drill.json
+          if-no-files-found: warn
       - name: Run Issue 665 switch end-to-end, fault, migration and performance contracts
         env:
           AGENT_PLATFORM_BENCH_DSN: postgresql://platform:platform@localhost:5432/platform_test
