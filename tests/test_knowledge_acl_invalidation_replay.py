@@ -77,7 +77,7 @@ class KnowledgeInvalidationReplayTests(unittest.IsolatedAsyncioTestCase):
                 raise RuntimeError("cache temporarily unavailable")
 
         async def rebuild(_watermark):
-            return None
+            source.events.append({"event_id": 6, "resource_id": "newer-doc"})
 
         replay = KnowledgeInvalidationReplay(
             subscriber_id="cache-a", source=source, checkpoints=store,
@@ -85,9 +85,9 @@ class KnowledgeInvalidationReplayTests(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(RuntimeError, "temporarily unavailable"):
             await replay.reconnect()
-        self.assertEqual(await store.load("cache-a"), 0)
-        self.assertEqual(await replay.reconnect(), 1)
         self.assertEqual(await store.load("cache-a"), 5)
+        self.assertEqual(await replay.reconnect(), 1)
+        self.assertEqual(await store.load("cache-a"), 6)
 
     async def test_reconnect_uses_checkpoint_without_unnecessary_full_rebuild(self):
         source = FakeInvalidationSource([
