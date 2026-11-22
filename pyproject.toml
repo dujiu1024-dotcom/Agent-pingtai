@@ -167,6 +167,7 @@ include = [
   "tests/test_clamav_scanner.py",
   "tests/test_s3_object_storage.py",
   "tests/test_data_connectors.py",
+  "tests/test_issue_15_l1_t31_dangerous_auth_config.py",
   "tests/test_issue_15_l1_t30_connector_readonly.py",
   "tests/test_issue_8_c_8_05.py",
   "tests/test_issue_8_a_8_01_contracts.py",
