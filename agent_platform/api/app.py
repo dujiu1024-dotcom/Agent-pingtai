@@ -1,7 +1,6 @@
 """Production composition factory for the platform HTTP API."""
 from __future__ import annotations
 
-import os
 from typing import Any, Sequence
 from urllib.parse import urlsplit
 
@@ -20,10 +19,6 @@ from agent_platform.api.contract import (
     ApiV1CompatibilityMiddleware,
     PublicApiContractASGIMiddleware,
     error_for_http_status,
-)
-from agent_platform.api.digital_employees import (
-    create_digital_employee_router,
-    create_team_template_router,
 )
 from agent_platform.api.evaluation_rollout import create_evaluation_rollout_router
 from agent_platform.api.extension_publishers import create_extension_publisher_router
@@ -71,20 +66,6 @@ from agent_platform.security.audit_http import AuditRequestASGIMiddleware
 from agent_platform.web.app import create_platform_web_router
 
 
-def _resolve_auth_enabled(value: bool | None) -> bool:
-    """Resolve immutable process-start auth mode; unset deployments default to no-auth."""
-    if value is not None:
-        if not isinstance(value, bool):
-            raise ValueError("auth_enabled must be a boolean")
-        return value
-    raw = os.environ.get("AUTH_ENABLED", "false").strip().lower()
-    if raw in {"1", "true", "yes", "on"}:
-        return True
-    if raw in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError("AUTH_ENABLED must be one of true/false, 1/0, yes/no, on/off")
-
-
 async def _principal_from_request(request: Any) -> Any:
     from agent_platform.identity.models import Principal
     principal = getattr(request.state, "identity.principal", None)
@@ -96,8 +77,8 @@ async def _principal_from_request(request: Any) -> Any:
 
 def create_platform_app(
     *,
-    identity: IdentityService | None = None,
-    identity_repository: Any | None = None,
+    identity: IdentityService,
+    identity_repository: Any,
     knowledge: KnowledgeService,
     memory: MemoryService,
     redis: Any,
@@ -191,14 +172,11 @@ def create_platform_app(
     locale_manage_authorizer: Any | None = None,
     publisher_key_registry: Any | None = None,
     publisher_key_authorizer: Any | None = None,
-    auth_enabled: bool | None = None,
+    auth_enabled: bool = True,
     office_state_service: OfficeStateService | None = None,
     office_tenant_resolver: Any | None = None,
     bootstrap_capabilities: Sequence[str] | None = None,
     knowledge_catalog: Any | None = None,
-    digital_employee_service_resolver: Any | None = None,
-    digital_employee_read_authorizer: Any | None = None,
-    digital_employee_install_authorizer: Any | None = None,
     marketplace_service_resolver: Any | None = None,
     marketplace_authorizer: Any | None = None,
 ) -> FastAPI:
@@ -208,9 +186,6 @@ def create_platform_app(
     so multi-instance deployments do not silently fall back to process-local
     security controls.
     """
-    auth_enabled = _resolve_auth_enabled(auth_enabled)
-    if auth_enabled and (identity is None or identity_repository is None):
-        raise ValueError("auth.enabled=true requires identity service and identity_repository")
     if isinstance(allowed_origins, str):
         raise ValueError("allowed_origins must be a sequence of exact origins")
     origins = tuple(origin.strip() for origin in allowed_origins if origin.strip())
@@ -300,23 +275,21 @@ def create_platform_app(
         limit=120,
         window_seconds=60,
     )
-    if auth_enabled:
-        app.include_router(create_identity_router(
-            identity=identity, connection_factory=connection_factory,
-        ))
+    app.include_router(create_identity_router(
+        identity=identity, connection_factory=connection_factory,
+    ))
     auto_capabilities: set[str] = set()
     if office_state_service is not None:
         auto_capabilities.add("office")
-    if identity_repository is not None:
-        if knowledge is not None:
-            auto_capabilities.add("knowledge")
-            auto_capabilities.add("knowledge-memory")
-            if knowledge_catalog is not None:
-                auto_capabilities.add("knowledge-catalog")
-        if memory is not None:
-            auto_capabilities.add("memory")
-        if rag is not None or rag_playground_resolver is not None:
-            auto_capabilities.add("rag")
+    if knowledge is not None:
+        auto_capabilities.add("knowledge")
+        auto_capabilities.add("knowledge-memory")
+        if knowledge_catalog is not None:
+            auto_capabilities.add("knowledge-catalog")
+    if memory is not None:
+        auto_capabilities.add("memory")
+    if rag is not None or rag_playground_resolver is not None:
+        auto_capabilities.add("rag")
     if any(v is not None for v in (
         registry_service_resolver, session_service_resolver, run_lifecycle_resolver,
         task_service_resolver, blackboard_repository_resolver, graph_query_service_resolver,
@@ -441,35 +414,27 @@ def create_platform_app(
             registry=prompt_registry, authorize=prompt_manage_authorizer,
             evaluate_gate=prompt_evaluation_gate,
         ))
-    # These adapters require a persisted Principal/AuthorizationContext. In a
-    # no-auth composition they remain unmounted until an instance-context adapter
-    # is supplied; never synthesize an anonymous identity to satisfy them.
-    if identity_repository is not None:
-        app.include_router(create_knowledge_memory_router(
-            knowledge=knowledge,
-            memory=memory,
-            rag=rag,
-            memory_extraction=memory_extraction,
-            identity_repository=identity_repository,
-        ))
-        app.include_router(create_knowledge_upload_router(
+    app.include_router(create_knowledge_memory_router(
+        knowledge=knowledge,
+        memory=memory,
+        rag=rag,
+        memory_extraction=memory_extraction,
+        identity_repository=identity_repository,
+    ))
+    app.include_router(create_knowledge_upload_router(
+        knowledge=knowledge,
+        resolve_principal=IdentityContextResolver(identity_repository).knowledge,
+    ))
+    if knowledge_catalog is not None:
+        app.include_router(create_knowledge_catalog_router(
+            catalog=knowledge_catalog,
             knowledge=knowledge,
             resolve_principal=IdentityContextResolver(identity_repository).knowledge,
         ))
-        if knowledge_catalog is not None:
-            app.include_router(create_knowledge_catalog_router(
-                catalog=knowledge_catalog,
-                knowledge=knowledge,
-                resolve_principal=IdentityContextResolver(identity_repository).knowledge,
-            ))
-    elif knowledge_catalog is not None or rag_playground_resolver is not None:
-        raise ValueError("knowledge catalog and RAG playground require an explicit authorization context")
     rag_playground_configured = rag_playground_resolver is not None
     if rag_playground_configured:
         if not rag_playground_embedding_models:
             raise ValueError("RAG playground requires configured embedding model IDs")
-        if identity_repository is None:
-            raise ValueError("RAG playground requires an explicit authorization context")
         knowledge_principal_resolver = IdentityContextResolver(identity_repository).knowledge
         app.include_router(create_rag_playground_router(
             resolve_principal=knowledge_principal_resolver,
@@ -810,30 +775,6 @@ def create_platform_app(
             service=locale_preference_service,
             authorize_manage=locale_manage_authorizer,
             audit_writer=resource_audit_writer,
-        ))
-    digital_employee_configured = any(value is not None for value in (
-        digital_employee_service_resolver, digital_employee_read_authorizer,
-        digital_employee_install_authorizer,
-    ))
-    if digital_employee_configured:
-        if any(value is None for value in (
-            digital_employee_service_resolver, digital_employee_read_authorizer,
-            digital_employee_install_authorizer,
-        )):
-            raise ValueError(
-                "digital employee service resolver and read/install authorizers must be configured together"
-            )
-        app.include_router(create_digital_employee_router(
-            resolve_principal=_principal_from_request,
-            resolve_service=digital_employee_service_resolver,
-            authorize_read=digital_employee_read_authorizer,
-            authorize_install=digital_employee_install_authorizer,
-        ))
-        app.include_router(create_team_template_router(
-            resolve_principal=_principal_from_request,
-            resolve_service=digital_employee_service_resolver,
-            authorize_read=digital_employee_read_authorizer,
-            authorize_install=digital_employee_install_authorizer,
         ))
     marketplace_configured = any(value is not None for value in (
         marketplace_service_resolver, marketplace_authorizer,
