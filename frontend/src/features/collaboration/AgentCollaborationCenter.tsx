@@ -9,6 +9,7 @@ import { useAuth } from '@/providers/AuthProvider'
 import { AgentTeamGraph } from './AgentTeamGraph'
 import { WorkflowRunCanvas } from './WorkflowRunCanvas'
 import { createBlackboardMessagePayload } from './blackboard-message'
+import { subscribeBlackboardEvents } from './blackboard-event-stream'
 import { mergeRunRuntimeEvents, normalizeRunSseEvent } from './workflow-run-events'
 import './AgentCollaborationCenter.css'
 
@@ -383,7 +384,7 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
   const [liveRefresh, setLiveRefresh] = useState(false)
   const [liveRunEvents, setLiveRunEvents] = useState<RecordValue[]>([])
   const [runStreamStatus, setRunStreamStatus] = useState<'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'unsupported'>('idle')
-  const [liveStatus, setLiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle')
+  const [liveStatus, setLiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error'>('idle')
   const [lastLiveEvent, setLastLiveEvent] = useState('')
   const [messageTitle, setMessageTitle] = useState('')
   const [messageBody, setMessageBody] = useState('')
@@ -642,28 +643,23 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
       return
     }
     const params = new URLSearchParams({ scope, scope_id: scopeId.trim() })
-    const source = new EventSource(`/api/platform/v1/blackboard/events/stream?${params.toString()}`)
-    setLiveStatus('connecting')
-    source.onopen = () => setLiveStatus('connected')
-    source.onerror = () => setLiveStatus('error')
-    const handleUpdate = (event: MessageEvent<string>) => {
-      setLiveStatus('connected')
-      try {
-        const payload = JSON.parse(event.data) as RecordValue
-        setLastLiveEvent(
-          `${date(payload.occurred_at)} · ${eventTypeZh(text(payload.event_type, ''))} · v${String(payload.entry_version ?? '—')} · ${text(payload.entry_id, '条目未提供').slice(0, 12)}`,
-        )
-      } catch {
-        setLastLiveEvent('收到实时更新事件。')
-      }
-      void queryClient.invalidateQueries({ queryKey: ['collaboration', 'blackboard'] })
-      void queryClient.invalidateQueries({ queryKey: ['collaboration', 'blackboard-history'] })
-    }
-    source.addEventListener('blackboard_update', handleUpdate as EventListener)
-    return () => {
-      source.removeEventListener('blackboard_update', handleUpdate as EventListener)
-      source.close()
-    }
+    const url = `/api/platform/v1/blackboard/events/stream?${params.toString()}`
+    return subscribeBlackboardEvents({
+      url,
+      onStatus: setLiveStatus,
+      onUpdate: event => {
+        try {
+          const payload = JSON.parse(event.data) as RecordValue
+          setLastLiveEvent(
+            `${date(payload.occurred_at)} · ${eventTypeZh(text(payload.event_type, ''))} · v${String(payload.entry_version ?? '—')} · ${text(payload.entry_id, '条目未提供').slice(0, 12)}`,
+          )
+        } catch {
+          setLastLiveEvent('收到实时更新事件。')
+        }
+        void queryClient.invalidateQueries({ queryKey: ['collaboration', 'blackboard'] })
+        void queryClient.invalidateQueries({ queryKey: ['collaboration', 'blackboard-history'] })
+      },
+    })
   }, [liveRefresh, scope, scopeId, queryClient])
 
   const submitMessage = (event: FormEvent) => {
@@ -929,7 +925,7 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
         </form>
         {liveRefresh && (
           <div className={liveStatus === 'error' ? 'collab-bb-live error' : 'collab-bb-live'}>
-            <strong>{{ idle: '待启用', connecting: '连接中…', connected: '已连接', error: '连接中断，将自动重连' }[liveStatus]}</strong>
+            <strong>{{ idle: '待启用', connecting: '连接中…', connected: '已连接', reconnecting: '连接中断，正在重连', error: '连接不可用' }[liveStatus]}</strong>
             {lastLiveEvent && <span>最近事件：{lastLiveEvent}</span>}
             <span>连接正常时暂停轮询；断线恢复期间自动回到 20 秒快照刷新。</span>
           </div>
