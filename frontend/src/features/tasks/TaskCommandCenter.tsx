@@ -478,7 +478,7 @@ export function TaskCommandCenter() {
               {v === 'kanban' ? '看板' : '列表'}
             </button>
           ))}
-          <Link className="task-view-link" to="/operations/tasks/timeline">时间线</Link>
+          <Link className="button-secondary" to="/operations/tasks/timeline">时间线</Link>
         </div>
         {view === 'list' && (
           <details className="task-column-config">
