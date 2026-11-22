@@ -40,7 +40,6 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
-import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -51,7 +50,8 @@ import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
-import { Dashboard as OperationsDashboard } from '@/components/OperationsDashboard'
+import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
+import { Dashboard } from '@/components/OperationsDashboard'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
@@ -461,8 +461,16 @@ function PageView({
       />
     )
   }
-  if (route.path === '/workspace/overview' || route.path === '/operations/dashboard')
-    return <OperationsDashboard />
+  if (route.path === '/admin/access-control') {
+    return <Navigate to="/admin/rbac" replace />
+  }
+  if (route.path === '/admin/organization') {
+    return <OrganizationAccessPage page="organization" />
+  }
+  if (route.path === '/admin/rbac') {
+    return <OrganizationAccessPage page="rbac" />
+  }
+  if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
   if (route.path === '/search')
@@ -498,7 +506,6 @@ function PageView({
     route.path === '/operations/documents/:documentId'
   )
     return <KnowledgeWorkbench />
-  if (route.path === '/operations/files') return <FilesWorkspace authEnabled={authEnabled} />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
 

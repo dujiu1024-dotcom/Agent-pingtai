@@ -258,12 +258,21 @@ export const pageRoutes: PageRoute[] = [
     authOnly: true,
   },
   {
-    path: '/admin/access-control',
+    path: '/admin/rbac',
     pageId: 'ADM-RBAC',
     title: '角色与权限',
     section: '平台管理',
     description: '角色与权限管理；仅权限模式可用。',
-    owner: '#749',
+    owner: '#798',
+    authOnly: true,
+  },
+  {
+    path: '/admin/access-control',
+    pageId: 'ADM-RBAC-LEGACY',
+    title: '角色与权限（旧地址）',
+    section: '平台管理',
+    description: '兼容旧 RBAC 地址，自动跳转到 /admin/rbac。',
+    owner: '#798',
     authOnly: true,
   },
   {
@@ -636,7 +645,7 @@ export const navigationSections: NavigationSection[] = [
       },
       {
         label: '角色与权限',
-        path: '/admin/access-control',
+        path: '/admin/rbac',
         authOnly: true,
       },
       { label: '系统设置', path: '/admin/settings' },

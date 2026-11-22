@@ -89,6 +89,43 @@ describe('route configuration', () => {
     ).toBe('research-flow')
   })
 
+  it('registers organization and canonical RBAC pages as auth-only routes', () => {
+    const organization = pageRoutes.find(
+      (route) => route.path === '/admin/organization',
+    )
+    const rbac = pageRoutes.find((route) => route.path === '/admin/rbac')
+    const legacyRbac = pageRoutes.find(
+      (route) => route.path === '/admin/access-control',
+    )
+
+    expect(organization?.authOnly).toBe(true)
+    expect(organization?.owner).toBe('#798')
+    expect(rbac?.pageId).toBe('ADM-RBAC')
+    expect(rbac?.authOnly).toBe(true)
+    expect(rbac?.owner).toBe('#798')
+    expect(legacyRbac?.authOnly).toBe(true)
+
+    const routeObjects = getAllRoutes(true).map((route) => ({
+      path: route.path,
+    }))
+    expect(matchRoutes(routeObjects, '/admin/organization')).not.toBeNull()
+    expect(matchRoutes(routeObjects, '/admin/rbac')).not.toBeNull()
+    expect(matchRoutes(routeObjects, '/admin/access-control')).not.toBeNull()
+  })
+
+  it('uses /admin/rbac for RBAC navigation and hides it without auth', () => {
+    const authPaths = getVisibleNavigation(true).flatMap((group) =>
+      group.items.map((item) => item.path),
+    )
+    const noAuthPaths = getVisibleNavigation(false).flatMap((group) =>
+      group.items.map((item) => item.path),
+    )
+
+    expect(authPaths).toContain('/admin/rbac')
+    expect(authPaths).not.toContain('/admin/access-control')
+    expect(noAuthPaths).not.toContain('/admin/rbac')
+  })
+
   it('shows capability-gated navigation only when bootstrap advertises it', () => {
     const withoutCapability = getVisibleNavigation(true).flatMap((group) =>
       group.items.map((item) => item.path),
