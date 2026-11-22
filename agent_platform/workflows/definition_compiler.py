@@ -87,18 +87,28 @@ class LangGraphWorkflowCompiler:
         graph: Any = StateGraph(dict)
         for node in definition["nodes"]:
             node_id = node["id"]
+            if node.get("node_type") in {"start", "end"}:
+                continue
             node_callable = nodes[node_id]
             retry = node.get("error_retry", {})
             attempts = retry.get("max_attempts", 1) if isinstance(retry, Mapping) else 1
+            backoff = retry.get("backoff", "exponential") if isinstance(retry, Mapping) else "exponential"
             if attempts > 1:
-                graph.add_node(node_id, node_callable, retry_policy=RetryPolicy(max_attempts=attempts))
+                graph.add_node(
+                    node_id, node_callable,
+                    retry_policy=RetryPolicy(
+                        max_attempts=attempts,
+                        initial_interval=0.0 if backoff == "none" else 0.5,
+                        backoff_factor=1.0 if backoff == "linear" else 2.0,
+                    ),
+                )
             else:
                 graph.add_node(node_id, node_callable)
 
-        entry = definition["entry_point"]
-        graph.add_edge(START, entry)
+        for entry in definition["entry_points"]:
+            graph.add_edge(START, entry)
         conditional_sources: set[str] = set()
-        for index, edge in enumerate(definition.get("edges", [])):
+        for edge in definition.get("edges", []):
             source, target = edge["source"], edge["target"]
             if source in conditional_sources:
                 raise ValueError(f"node {source} cannot mix normal and conditional outgoing edges")
@@ -111,7 +121,7 @@ class LangGraphWorkflowCompiler:
             conditional_sources.add(source)
             field = branch["field"]
             routes = dict(branch["routes"])
-            default = branch.get("default")
+            default = branch["default"]
             def route(state: Mapping[str, Any], *, key: str = field, fallback: Any = default, route_map: Mapping[str, Any] = routes) -> Any:
                 value = state.get(key)
                 return value if value in route_map else fallback
@@ -121,13 +131,66 @@ class LangGraphWorkflowCompiler:
             )
         return graph.compile()
 
+    @staticmethod
+    def normalize_definition(definition: Mapping[str, Any]) -> dict[str, Any]:
+        """Accept the current designer payload and normalize it to compiler schema v1."""
+        value = dict(definition)
+        nodes = value.get("nodes")
+        edges = value.get("edges", [])
+        if value.get("schema_version") == 1 and "entry_point" in value:
+            return value
+        if not isinstance(nodes, list) or not isinstance(edges, list):
+            return value
+        starts = [node for node in nodes if isinstance(node, Mapping) and node.get("node_type") == "start"]
+        if len(starts) != 1:
+            return value
+        start_id = starts[0].get("id")
+        start_edges = [edge for edge in edges if isinstance(edge, Mapping) and edge.get("source") == start_id]
+        if not start_edges:
+            return value
+        normalized_edges: list[dict[str, Any]] = []
+        branches: dict[str, dict[str, Any]] = {}
+        node_map = {node.get("id"): node for node in nodes if isinstance(node, Mapping)}
+        for edge in edges:
+            if not isinstance(edge, Mapping):
+                normalized_edges.append(edge)
+                continue
+            source, target = edge.get("source"), edge.get("target")
+            if source == start_id:
+                continue
+            if isinstance(node_map.get(source), Mapping) and node_map[source].get("node_type") == "condition":
+                branch = branches.setdefault(source, {
+                    "source": source,
+                    "field": str(node_map[source].get("config", {}).get("route_field", "route")),
+                    "routes": {},
+                    "default": str(node_map[source].get("config", {}).get("default_port") or edge.get("source_port") or ""),
+                })
+                branch["routes"][str(edge.get("source_port") or "default")] = (
+                    "__end__" if isinstance(node_map.get(target), Mapping) and node_map[target].get("node_type") == "end"
+                    else target
+                )
+                continue
+            normalized_edges.append({
+                "source": source,
+                "target": "__end__" if isinstance(node_map.get(target), Mapping) and node_map[target].get("node_type") == "end" else target,
+            })
+        return {
+            "schema_version": 1,
+            "entry_points": [edge.get("target") for edge in start_edges if edge.get("target") in node_map and node_map[edge.get("target")].get("node_type") != "end"],
+            "nodes": nodes,
+            "edges": normalized_edges,
+            "branches": list(branches.values()),
+        }
+
     def diagnose(self, definition: Mapping[str, Any]) -> tuple[WorkflowDiagnostic, ...]:
+        if isinstance(definition, Mapping):
+            definition = self.normalize_definition(definition)
         diagnostics: list[WorkflowDiagnostic] = []
         if not isinstance(definition, Mapping):
             return (WorkflowDiagnostic("definition.type", "definition must be an object", "$"),)
         if definition.get("schema_version") != 1:
             diagnostics.append(WorkflowDiagnostic(
-                "schema.unsupported", "schema_version must equal 1", "$.schema_version",
+                "schema.unsupported", "schema_version must equal 1 or provide one start node in the designer payload", "$.schema_version",
             ))
         nodes = definition.get("nodes")
         edges = definition.get("edges", [])
@@ -159,6 +222,12 @@ class LangGraphWorkflowCompiler:
             node_by_id[node_id] = node
             if not isinstance(kind, str) or isinstance(version, bool) or not isinstance(version, int):
                 diagnostics.append(WorkflowDiagnostic("node.type_version", "node_type and integer version are required", path))
+                continue
+            if kind in {"start", "end"}:
+                if version != 1:
+                    diagnostics.append(WorkflowDiagnostic("node.structural_version", "start/end nodes support version 1 only", path + ".version"))
+                if not isinstance(node.get("ports"), Mapping):
+                    diagnostics.append(WorkflowDiagnostic("node.ports", "structural nodes require ports metadata", path + ".ports"))
                 continue
             spec = self.node_registry.resolve(kind, version)
             if spec is None:
@@ -201,9 +270,9 @@ class LangGraphWorkflowCompiler:
                     "node.retry", "max_attempts must be a positive integer", path + ".error_retry.max_attempts",
                 ))
 
-        entry = definition.get("entry_point")
-        if not isinstance(entry, str) or entry not in ids:
-            diagnostics.append(WorkflowDiagnostic("entry.invalid", "entry_point must reference a known node", "$.entry_point"))
+        entries = definition.get("entry_points")
+        if not isinstance(entries, list) or not entries or any(not isinstance(entry, str) or entry not in ids for entry in entries):
+            diagnostics.append(WorkflowDiagnostic("entry.invalid", "entry_points must reference known nodes", "$.entry_points"))
 
         seen_edges: set[tuple[str, str]] = set()
         for index, edge in enumerate(edges):
@@ -250,11 +319,14 @@ class LangGraphWorkflowCompiler:
         return tuple(diagnostics)
 
     def compile(self, definition: Mapping[str, Any]) -> tuple[Any, dict[str, Any]]:
+        definition = self.normalize_definition(definition)
         diagnostics = self.diagnose(definition)
         if diagnostics:
             raise WorkflowDefinitionError(diagnostics)
         compiled_nodes: dict[str, Callable[..., Any]] = {}
         for node in definition["nodes"]:
+            if node.get("node_type") in {"start", "end"}:
+                continue
             spec = self.node_registry.resolve(node["node_type"], node["version"])
             if spec is None:  # guarded by diagnose; protects against mutable registries
                 raise WorkflowDefinitionError((WorkflowDiagnostic(
