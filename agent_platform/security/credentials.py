@@ -103,23 +103,32 @@ class CredentialService:
             credential_type=credential_type, secret_ref=secret_ref, scopes=tags,
             created_by=actor, created_at=secret_version.created_at or datetime.now(timezone.utc),
         )
+        atomic_create = getattr(self._repository, "create_with_audit", None)
         try:
-            await self._repository.create(record)
-            await self._audit.record(
-                tenant_id=tenant, actor_id=actor, action="credential.created",
-                subject_id=credential_id,
-                detail={"credential_type": credential_type, "scopes": list(tags)},
-            )
+            if callable(atomic_create):
+                await atomic_create(record, audit=self._audit)
+            else:
+                await self._repository.create(record)
+                await self._audit.record(
+                    tenant_id=tenant, actor_id=actor, action="credential.created",
+                    subject_id=credential_id,
+                    detail={"credential_type": credential_type, "scopes": list(tags)},
+                )
         except Exception:
-            # Do not leave an unindexed active secret if metadata/audit commit fails.
+            # A Postgres repository rolls metadata and audit back in one
+            # transaction. Revoke the external secret so failed creation
+            # cannot leave an active, unindexed credential.
             try:
                 await self._secrets.revoke(secret_ref=secret_ref)
             except Exception:
                 pass
-            try:
-                await self._repository.revoke(tenant_id=tenant, credential_id=credential_id)
-            except Exception:
-                pass
+            if not callable(atomic_create):
+                try:
+                    await self._repository.revoke(
+                        tenant_id=tenant, credential_id=credential_id
+                    )
+                except Exception:
+                    pass
             raise
         return record
 
@@ -145,20 +154,24 @@ class CredentialService:
             consumer_type=consumer_type, consumer_id=consumer,
             scopes=requested, granted_by=actor, created_at=datetime.now(timezone.utc),
         )
-        await self._repository.grant(grant)
-        try:
-            await self._audit.record(
-                tenant_id=tenant, actor_id=actor, action="credential.granted",
-                subject_id=credential,
-                detail={"consumer_type": consumer_type, "consumer_id": consumer,
-                        "scopes": list(requested)},
-            )
-        except Exception:
-            await self._repository.revoke_grant(
-                tenant_id=tenant, credential_id=credential,
-                consumer_type=consumer_type, consumer_id=consumer,
-            )
-            raise
+        atomic_grant = getattr(self._repository, "grant_with_audit", None)
+        if callable(atomic_grant):
+            await atomic_grant(grant, audit=self._audit)
+        else:
+            await self._repository.grant(grant)
+            try:
+                await self._audit.record(
+                    tenant_id=tenant, actor_id=actor, action="credential.granted",
+                    subject_id=credential,
+                    detail={"consumer_type": consumer_type, "consumer_id": consumer,
+                            "scopes": list(requested)},
+                )
+            except Exception:
+                await self._repository.revoke_grant(
+                    tenant_id=tenant, credential_id=credential,
+                    consumer_type=consumer_type, consumer_id=consumer,
+                )
+                raise
         return grant
 
     async def resolve(
@@ -209,9 +222,20 @@ class CredentialService:
         record = await self._repository.get(tenant_id=tenant, credential_id=credential)
         if record is None:
             return False
+        atomic_revoke = getattr(self._repository, "revoke_with_audit", None)
+        if callable(atomic_revoke):
+            changed = await atomic_revoke(
+                tenant_id=tenant, credential_id=credential,
+                actor_id=actor, audit=self._audit,
+            )
+            if changed:
+                # The metadata+audit transaction has committed. Vault cleanup
+                # is a separate external operation and remains retryable.
+                await self._secrets.revoke(secret_ref=record.secret_ref)
+            return changed
+
         changed = await self._repository.revoke(tenant_id=tenant, credential_id=credential)
         if changed:
-            # Metadata is revoked first; failure to clean the vault is surfaced for retry.
             await self._secrets.revoke(secret_ref=record.secret_ref)
             await self._audit.record(
                 tenant_id=tenant, actor_id=actor, action="credential.revoked",
@@ -240,6 +264,98 @@ class PostgresCredentialRepository:
                 (record.credential_id, record.tenant_id, record.name, record.credential_type,
                  record.secret_ref, list(record.scopes), record.created_by, record.created_at),
             )
+
+    @staticmethod
+    async def _write_audit(
+        connection: Any, audit: Any, *, tenant_id: str, actor_id: str,
+        action: str, subject_id: str, detail: dict[str, Any] | None = None,
+    ) -> None:
+        record_on_connection = getattr(audit, "record_on_connection", None)
+        if not callable(record_on_connection):
+            raise TypeError(
+                "Postgres credential mutations require an audit writer "
+                "that supports record_on_connection"
+            )
+        await record_on_connection(
+            connection, tenant_id=tenant_id, actor_id=actor_id,
+            action=action, subject_id=subject_id, detail=detail,
+        )
+
+    async def create_with_audit(self, record: CredentialRecord, *, audit: Any) -> None:
+        """Commit credential metadata and its required audit event atomically."""
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_credentials
+                       (credential_id,tenant_id,name,credential_type,secret_ref,scopes,created_by,created_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (record.credential_id, record.tenant_id, record.name,
+                     record.credential_type, record.secret_ref, list(record.scopes),
+                     record.created_by, record.created_at),
+                )
+                await self._write_audit(
+                    connection, audit, tenant_id=record.tenant_id,
+                    actor_id=record.created_by, action="credential.created",
+                    subject_id=record.credential_id,
+                    detail={"credential_type": record.credential_type,
+                            "scopes": list(record.scopes)},
+                )
+
+    async def grant_with_audit(self, grant: CredentialGrant, *, audit: Any) -> None:
+        """Commit a grant/upsert and its audit event in the same transaction."""
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """INSERT INTO platform_credential_grants
+                       (tenant_id,credential_id,consumer_type,consumer_id,scopes,granted_by,created_at)
+                       SELECT %s,%s,%s,%s,%s,%s,%s
+                       WHERE EXISTS (
+                         SELECT 1 FROM platform_credentials
+                         WHERE tenant_id=%s AND credential_id=%s AND revoked_at IS NULL
+                       )
+                       ON CONFLICT (tenant_id,credential_id,consumer_type,consumer_id)
+                       DO UPDATE SET scopes=EXCLUDED.scopes,granted_by=EXCLUDED.granted_by,
+                                     created_at=EXCLUDED.created_at""",
+                    (grant.tenant_id, grant.credential_id, grant.consumer_type,
+                     grant.consumer_id, list(grant.scopes), grant.granted_by,
+                     grant.created_at, grant.tenant_id, grant.credential_id),
+                )
+                await self._write_audit(
+                    connection, audit, tenant_id=grant.tenant_id,
+                    actor_id=grant.granted_by, action="credential.granted",
+                    subject_id=grant.credential_id,
+                    detail={"consumer_type": grant.consumer_type,
+                            "consumer_id": grant.consumer_id,
+                            "scopes": list(grant.scopes)},
+                )
+
+    async def revoke_with_audit(
+        self, *, tenant_id: str, credential_id: str, actor_id: str, audit: Any,
+    ) -> bool:
+        """Revoke metadata/grants only if the corresponding audit row commits."""
+        connection = await self._connect()
+        async with connection:
+            async with connection.transaction():
+                cursor = await connection.execute(
+                    """UPDATE platform_credentials SET revoked_at=now()
+                       WHERE tenant_id=%s AND credential_id=%s AND revoked_at IS NULL
+                       RETURNING credential_id""",
+                    (tenant_id, credential_id),
+                )
+                if await cursor.fetchone() is None:
+                    return False
+                await connection.execute(
+                    """DELETE FROM platform_credential_grants
+                       WHERE tenant_id=%s AND credential_id=%s""",
+                    (tenant_id, credential_id),
+                )
+                await self._write_audit(
+                    connection, audit, tenant_id=tenant_id, actor_id=actor_id,
+                    action="credential.revoked", subject_id=credential_id,
+                )
+        return True
 
     @staticmethod
     def _record(row: Any) -> CredentialRecord:
