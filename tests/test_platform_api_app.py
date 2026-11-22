@@ -478,6 +478,33 @@ class PlatformApiCompositionTests(unittest.TestCase):
                 tool_mcp_checker_resolver=object(),
             )
 
+    def test_tool_skill_evaluation_routes_support_local_no_auth_principal(self):
+        from agent_platform.identity.models import Principal
+
+        app = create_platform_app(
+            auth_enabled=False,
+            identity=None,
+            identity_repository=None,
+            knowledge=self.knowledge,
+            memory=self.memory,
+            redis=FakeRedis(),
+            allowed_origins=("https://console.example.com",),
+            local_principal_resolver=lambda: Principal(
+                user_id="local-user", tenant_id="tenant-local",
+                session_id="local-session", email="local@example.test",
+                display_name="Local User",
+            ),
+            registry_service_resolver=lambda principal: object(),
+            registry_authorizer=lambda *args: True,
+            tool_mcp_checker_resolver=lambda principal: object(),
+            skill_dependency_reviewer_resolver=lambda principal: object(),
+            resource_audit_writer=object(),
+        )
+        routes = {route.path for route in app.routes}
+        self.assertIn("/api/platform/v1/tools/{item_id}/test-connection", routes)
+        self.assertIn("/api/platform/v1/skills/{item_id}/evaluate", routes)
+        self.assertFalse(app.state.auth_enabled)
+
     def test_observability_evaluation_dependencies_must_be_paired(self):
         with self.assertRaisesRegex(ValueError, "evaluation services and evaluation manager authorizer"):
             create_platform_app(auth_enabled=True, identity=self.identity,
