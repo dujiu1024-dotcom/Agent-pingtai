@@ -38,12 +38,13 @@ const listFrom = <T,>(value: unknown): T[] => {
   }
   return []
 }
-const statusText = (status = ''): string => ({
+const STATUS_LABELS: Record<string, string> = {
   running: '运行中', executing: '运行中', queued: '排队中', pending: '待处理',
   waiting_approval: '等待审批', waiting_human: '等待审批',
   succeeded: '已完成', success: '已完成', completed: '已完成', done: '已完成',
   failed: '失败', error: '失败', paused: '已暂停', cancelled: '已取消',
-}[status.toLowerCase()] ?? (status || '状态未知'))
+}
+const statusText = (status = ''): string => STATUS_LABELS[status.toLowerCase()] ?? (status || '状态未知')
 const statusClass = (status = '') => {
   const value = status.toLowerCase()
   if (['running', 'executing'].includes(value)) return 'is-running'
