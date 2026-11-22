@@ -206,7 +206,7 @@ export const pageRoutes: PageRoute[] = [
     title: '模型供应商',
     section: '平台管理',
     description: '模型 Provider 配置入口。',
-    owner: '#749',
+    owner: '#804',
   },
   {
     path: '/admin/models/templates',
@@ -214,7 +214,7 @@ export const pageRoutes: PageRoute[] = [
     title: '模型模板与目录',
     section: '平台管理',
     description: '模型模板与目录配置入口。',
-    owner: '#749',
+    owner: '#804',
   },
   {
     path: '/admin/models/routing',
@@ -222,7 +222,7 @@ export const pageRoutes: PageRoute[] = [
     title: '模型路由策略',
     section: '平台管理',
     description: '模型路由策略配置入口。',
-    owner: '#749',
+    owner: '#804',
   },
   {
     path: '/admin/tools',
@@ -342,7 +342,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Model Provider 唯一详情路由。',
     parentPath: '/admin/models/providers',
     entityIdParam: 'providerId',
-    owner: '#749',
+    owner: '#804',
   },
   {
     path: '/admin/models/templates/:templateId',
@@ -352,7 +352,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Model Template 唯一详情路由。',
     parentPath: '/admin/models/templates',
     entityIdParam: 'templateId',
-    owner: '#749',
+    owner: '#804',
   },
   {
     path: '/admin/models/routing/:policyId',
@@ -362,7 +362,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Routing Policy 唯一详情路由。',
     parentPath: '/admin/models/routing',
     entityIdParam: 'policyId',
-    owner: '#749',
+    owner: '#804',
   },
   {
     path: '/admin/tools/:toolId',

@@ -237,3 +237,22 @@ describe('route configuration', () => {
     ).toBe('asset-123')
   })
 })
+
+
+describe('model management routes', () => {
+  it('assigns all Provider, Template and Routing list/detail routes to #804', () => {
+    const expected = [
+      ['/admin/models/providers', 'ADM-MODEL-PROVIDERS'],
+      ['/admin/models/templates', 'ADM-MODEL-TEMPLATES'],
+      ['/admin/models/routing', 'ADM-MODEL-ROUTING'],
+      ['/admin/models/providers/:providerId', 'ADM-MODEL-PROVIDERS'],
+      ['/admin/models/templates/:templateId', 'ADM-MODEL-TEMPLATES'],
+      ['/admin/models/routing/:policyId', 'ADM-MODEL-ROUTING'],
+    ]
+    for (const [path, pageId] of expected) {
+      const route = [...pageRoutes, ...detailRoutes].find((item) => item.path === path)
+      expect(route?.pageId).toBe(pageId)
+      expect(route?.owner).toBe('#804')
+    }
+  })
+})
