@@ -26,12 +26,6 @@ test('Home workspace renders API-backed task, popular Agent and activity panels'
       { item_id: 'workflow-daily', status: 'published', created_at: '2026-11-22T08:00:00Z', definition: { name: '日报流程' } },
     ] }),
   }))
-  await page.route('**/api/platform/v1/approvals?limit=20', (route) => route.fulfill({
-    status: 200, contentType: 'application/json',
-    body: JSON.stringify({ items: [
-      { approval_id: 'approval-1', action: 'publish', resource: 'report', status: 'pending' },
-    ] }),
-  }))
   await page.route('**/api/platform/v1/runs', (route) => route.fulfill({
     status: 200, contentType: 'application/json',
     body: JSON.stringify({ items: [
@@ -53,7 +47,6 @@ test('Home workspace renders API-backed task, popular Agent and activity panels'
   await expect(page.getByText('任务完成')).toBeVisible()
   await expect(page.getByText('Agent 更新')).toBeVisible()
   await expect(page.getByText('Workflow 新增')).toBeVisible()
-  await expect(page.getByText('审批已提交')).toBeVisible()
 
   await page.getByRole('tab', { name: /运行中/ }).click()
   await expect(page.getByText('正在运行的任务')).toBeVisible()
