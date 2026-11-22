@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, normalizeTaskListColumns, sortEvents, unwrapList } from './task-model'
+import { formatDuration, mergeRunEvents, normalizeTaskListColumns, parseRunEventFrame, sortEvents, unwrapList } from './task-model'
 describe('task command center model', () => {
   it('normalizes list envelopes', () => {
     expect(unwrapList({ data: [1] })).toEqual([1])
@@ -18,6 +18,18 @@ describe('task command center model', () => {
     expect(normalizeTaskListColumns(null)).toEqual(['title', 'status', 'priority', 'project', 'agent', 'created', 'run'])
     expect(normalizeTaskListColumns('status,created,unknown,status')).toEqual(['title', 'status', 'created'])
     expect(normalizeTaskListColumns('trace')).toEqual(['title', 'trace'])
+  })
+  it('parses SSE Run frames and merges replayed events without duplicates', () => {
+    const parsed = parseRunEventFrame(
+      'id: run-1:2\nevent: token_stream\ndata: {"run_id":"run-1","sequence":2,"event_type":"TOKEN_STREAM","token":"A"}\n\n',
+      'run-1',
+    )
+    expect(parsed).toMatchObject({ event_id: 'run-1:2', type: 'TOKEN_STREAM', sequence: 2 })
+    expect(mergeRunEvents(
+      [{ event_id: 'run-1:1', type: 'RUN_START', sequence: 1 }],
+      [parsed!, parsed!],
+    ).map((event) => event.event_id)).toEqual(['run-1:1', 'run-1:2'])
+    expect(parseRunEventFrame('data: not-json\n\n', 'run-1')).toBeNull()
   })
   it('formats known durations', () => {
     expect(formatDuration(65000)).toBe('1m 5s')

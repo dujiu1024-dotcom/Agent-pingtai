@@ -204,3 +204,53 @@ export function formatDuration(ms?: number | null): string {
   const s = Math.floor(ms / 1000)
   return s < 60 ? `${Math.round(ms)} ms` : `${Math.floor(s / 60)}m ${s % 60}s`
 }
+
+
+/** Parse one Server-Sent Events frame from the Run event broker. */
+export function parseRunEventFrame(frame: string, runId: string): RunEvent | null {
+  let eventId = ''
+  let eventName = ''
+  const dataLines: string[] = []
+  for (const line of frame.split(/\r?\n/)) {
+    if (!line || line.startsWith(':')) continue
+    const separator = line.indexOf(':')
+    const field = separator < 0 ? line : line.slice(0, separator)
+    const value = (separator < 0 ? '' : line.slice(separator + 1)).replace(/^ /, '')
+    if (field === 'id') eventId = value
+    else if (field === 'event') eventName = value
+    else if (field === 'data') dataLines.push(value)
+  }
+  if (!dataLines.length) return null
+  let data: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(dataLines.join('\n'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    data = parsed as Record<string, unknown>
+  } catch {
+    return null
+  }
+  const sequence = typeof data.sequence === 'number' ? data.sequence : undefined
+  const resolvedId = eventId || (typeof data.event_id === 'string' ? data.event_id : sequence != null ? `${runId}:${sequence}` : '')
+  const type = typeof data.event_type === 'string' ? data.event_type : typeof data.type === 'string' ? data.type : eventName
+  if (!resolvedId || !type) return null
+  const occurredAt = data.occurred_at ?? data.timestamp
+  return {
+    event_id: resolvedId,
+    type,
+    occurred_at: typeof occurredAt === 'string' ? occurredAt : undefined,
+    actor: typeof data.actor === 'string' ? data.actor : typeof data.actor_id === 'string' ? data.actor_id : undefined,
+    source: typeof data.source === 'string' ? data.source : undefined,
+    request_id: typeof data.request_id === 'string' ? data.request_id : undefined,
+    trace_id: typeof data.trace_id === 'string' ? data.trace_id : undefined,
+    sequence,
+    summary: typeof data.summary === 'string' ? data.summary : typeof data.message === 'string' ? data.message : undefined,
+    payload: data.payload ?? data,
+  }
+}
+
+/** Merge replayed/live events without duplicating IDs; sequence remains authoritative. */
+export function mergeRunEvents(existing: RunEvent[], incoming: RunEvent[]): RunEvent[] {
+  const byId = new Map<string, RunEvent>()
+  for (const event of [...existing, ...incoming]) byId.set(event.event_id, event)
+  return sortEvents([...byId.values()])
+}

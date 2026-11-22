@@ -12,6 +12,8 @@ import {
   resolveTaskDescription,
   resolveTaskTitle,
   sortEvents,
+  mergeRunEvents,
+  parseRunEventFrame,
   normalizeTaskListColumns,
   TASK_LIST_COLUMNS,
   unwrapList,
@@ -1050,12 +1052,15 @@ export function RunTracePage() {
         .get<unknown>(`${RUNS}/${encodeURIComponent(runId)}`)
         .then(unwrapRecord<RunRecord>),
   })
+  const [eventStreamState, setEventStreamState] = useState<'connecting' | 'connected' | 'reconnecting' | 'fallback'>('connecting')
   const eq = useQuery({
     queryKey: ['run-events', runId],
-    queryFn: () =>
-      apiClient
+    queryFn: async () => {
+      const snapshot = await apiClient
         .get<unknown>(`${RUNS}/${encodeURIComponent(runId)}/events`)
-        .then(unwrapList<RunEvent>),
+        .then(unwrapList<RunEvent>)
+      return mergeRunEvents(qc.getQueryData<RunEvent[]>(['run-events', runId]) ?? [], snapshot)
+    },
     refetchInterval: 5000,
   })
   const iq = useQuery({
@@ -1071,6 +1076,92 @@ export function RunTracePage() {
     () => sortEvents(eq.data ?? []) as RawRunEvent[],
     [eq.data],
   )
+  // The Run stream supports Last-Event-ID replay. Reconnect from the last received
+  // cursor; if the bounded replay window expired, clear the cursor and resync from
+  // the durable events endpoint. The 5s query remains a compatibility fallback.
+  useEffect(() => {
+    if (!runId) return
+    let disposed = false
+    let lastEventId: string | undefined
+    let retryDelay = 1000
+    const controller = new AbortController()
+    const wait = (ms: number) => new Promise<void>((resolve) => {
+      const timeout = setTimeout(resolve, ms)
+      controller.signal.addEventListener('abort', () => {
+        clearTimeout(timeout)
+        resolve()
+      }, { once: true })
+    })
+    const connect = async () => {
+      while (!disposed) {
+        try {
+          setEventStreamState(lastEventId ? 'reconnecting' : 'connecting')
+          const headers = new Headers({ Accept: 'text/event-stream' })
+          if (lastEventId) headers.set('Last-Event-ID', lastEventId)
+          const response = await fetch(`/api${RUNS}/${encodeURIComponent(runId)}/stream`, {
+            method: 'GET',
+            headers,
+            credentials: 'same-origin',
+            signal: controller.signal,
+          })
+          if (response.status === 400 && lastEventId) {
+            // Cursor fell outside the broker's retained replay window.
+            lastEventId = undefined
+            setEventStreamState('reconnecting')
+            await qc.invalidateQueries({ queryKey: ['run-events', runId] })
+            continue
+          }
+          if (!response.ok || !response.body) {
+            setEventStreamState('fallback')
+            await wait(retryDelay)
+            retryDelay = Math.min(retryDelay * 2, 15000)
+            continue
+          }
+          setEventStreamState('connected')
+          retryDelay = 1000
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          let shouldReconnect = true
+          while (!disposed) {
+            const { value, done } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const frames = buffer.split(/\r?\n\r?\n/)
+            buffer = frames.pop() ?? ''
+            for (const frame of frames) {
+              const parsed = parseRunEventFrame(frame, runId)
+              if (!parsed) continue
+              const idLine = frame.split(/\r?\n/).find((line) => line.startsWith('id:'))
+              if (idLine) lastEventId = idLine.slice(3).trim()
+              else if (parsed.event_id.includes(':')) lastEventId = parsed.event_id
+              if (parsed.type === 'RECONNECT_REQUIRED') {
+                shouldReconnect = true
+                break
+              }
+              qc.setQueryData<RunEvent[]>(['run-events', runId], (current) =>
+                mergeRunEvents(current ?? [], [parsed]),
+              )
+              if (['COMPLETE', 'ERROR'].includes(parsed.type)) shouldReconnect = false
+            }
+            if (!shouldReconnect) break
+          }
+          await reader.cancel().catch(() => undefined)
+          if (!shouldReconnect) return
+        } catch {
+          if (disposed || controller.signal.aborted) return
+          setEventStreamState('reconnecting')
+        }
+        await wait(retryDelay)
+        retryDelay = Math.min(retryDelay * 2, 15000)
+      }
+    }
+    void connect()
+    return () => {
+      disposed = true
+      controller.abort()
+    }
+  }, [runId, qc])
   // 切换运行时回到第一页事件
   useEffect(() => setEventPage(0), [runId])
   const pendingInterventions = useMemo(
@@ -1190,7 +1281,7 @@ export function RunTracePage() {
       <section className="task-detail-panel">
         <div className="run-controls-head">
           <h2>事件时间线</h2>
-          <span>按发生顺序 · 每页 {EVENT_PAGE_SIZE} 条</span>
+          <span>事件流：{eventStreamState === 'connected' ? '实时连接' : eventStreamState === 'fallback' ? '轮询兼容模式' : '正在恢复'} · 每页 {EVENT_PAGE_SIZE} 条</span>
         </div>
         {eq.isPending ? (
           <LoadingState />
