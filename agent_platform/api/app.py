@@ -36,6 +36,7 @@ from agent_platform.api.quota_admin import create_quota_admin_router
 from agent_platform.api.quotas import create_quota_reporting_router
 from agent_platform.api.rag_playground import create_rag_playground_router
 from agent_platform.api.registry import create_registry_router
+from agent_platform.api.workflow_compiler import create_workflow_compiler_router
 from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.sessions import create_sessions_router
@@ -84,6 +85,7 @@ def create_platform_app(
     registry_service_resolver: Any | None = None,
     session_service_resolver: Any | None = None,
     registry_authorizer: Any | None = None,
+    workflow_compiler_resolver: Any | None = None,
     session_authorizer: Any | None = None,
     connector_service_resolver: Any | None = None,
     connector_authorizer: Any | None = None,
@@ -395,6 +397,18 @@ def create_platform_app(
         app.include_router(create_registry_router(
             resolve_principal=_principal_from_request,
             resolve_service=registry_service_resolver,
+            authorize=registry_authorizer,
+            resolve_workflow_compiler=workflow_compiler_resolver,
+        ))
+    if workflow_compiler_resolver is not None:
+        if registry_service_resolver is None or registry_authorizer is None:
+            raise ValueError(
+                "Workflow compiler requires the tenant-scoped registry resolver and authorizer"
+            )
+        app.include_router(create_workflow_compiler_router(
+            resolve_principal=_principal_from_request,
+            resolve_registry=registry_service_resolver,
+            resolve_compiler=workflow_compiler_resolver,
             authorize=registry_authorizer,
         ))
     if sessions_configured:
