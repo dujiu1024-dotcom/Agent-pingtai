@@ -250,7 +250,7 @@ def write_archived_report(report_dir: Path, report: dict[str, Any]) -> Path:
     report["report_id"] = f"local-dr-{created_at.strftime('%Y%m%dT%H%M%S%fZ')}"
     destination = report_dir / f"{report['report_id']}.json"
     temporary = report_dir / f".{destination.name}.tmp"
-    temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n",
+    temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
                          encoding="utf-8")
     temporary.replace(destination)
     return destination
