@@ -287,3 +287,124 @@ class AgentRAGEvaluationService:
         )
         await self._repository.save_evaluation_report(report)
         return report
+
+
+class PostgresAgentRAGEvaluationRepository:
+    """Tenant-scoped immutable persistence for Agent/RAG evaluation reports."""
+
+    def __init__(self, connection_factory) -> None:
+        self._connect = connection_factory
+
+    async def save_evaluation_report(self, report: EvaluationReport) -> None:
+        if not report.tenant_id.strip() or not report.run_id.strip():
+            raise ValueError("report tenant_id and run_id are required")
+        if len(report.dataset_sha256) != 64 or any(
+            char not in "0123456789abcdef" for char in report.dataset_sha256
+        ):
+            raise ValueError("report dataset_sha256 must be a lowercase SHA-256")
+        payload = {
+            "run_id": report.run_id,
+            "tenant_id": report.tenant_id,
+            "dataset_id": report.dataset_id,
+            "dataset_version": report.dataset_version,
+            "dataset_sha256": report.dataset_sha256,
+            "endpoint_id": report.endpoint_id,
+            "model_key": report.model_key,
+            "model_version": report.model_version,
+            "concurrency_limit": report.concurrency_limit,
+            "case_metrics": [
+                {
+                    "case_id": item.case_id,
+                    "retrieval_recall_at_k": item.retrieval_recall_at_k,
+                    "retrieval_precision_at_k": item.retrieval_precision_at_k,
+                    "retrieval_mrr": item.retrieval_mrr,
+                    "retrieval_ndcg_at_k": item.retrieval_ndcg_at_k,
+                    "answer_term_precision": item.answer_term_precision,
+                    "answer_term_recall": item.answer_term_recall,
+                    "answer_term_f1": item.answer_term_f1,
+                    "forbidden_term_rate": item.forbidden_term_rate,
+                    "citation_precision": item.citation_precision,
+                    "citation_recall": item.citation_recall,
+                    "citation_coverage": item.citation_coverage,
+                    "citation_validity": item.citation_validity,
+                }
+                for item in report.case_metrics
+            ],
+            "metrics": report.metrics,
+        }
+        connection = await self._connect()
+        async with connection:
+            await connection.execute(
+                """INSERT INTO platform_agent_rag_eval_reports
+                   (run_id, tenant_id, dataset_id, dataset_version,
+                    dataset_sha256, endpoint_id, model_key, model_version,
+                    concurrency_limit, report)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)""",
+                (
+                    report.run_id, report.tenant_id, report.dataset_id,
+                    report.dataset_version, report.dataset_sha256,
+                    report.endpoint_id, report.model_key, report.model_version,
+                    report.concurrency_limit,
+                    json.dumps(payload, ensure_ascii=False, allow_nan=False),
+                ),
+            )
+
+    async def get_report(self, *, tenant_id: str, run_id: str) -> dict:
+        if not tenant_id.strip() or not run_id.strip():
+            raise ValueError("tenant_id and run_id are required")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT run_id, tenant_id, dataset_id, dataset_version,
+                          dataset_sha256, endpoint_id, model_key, model_version,
+                          concurrency_limit, report, created_at
+                   FROM platform_agent_rag_eval_reports
+                   WHERE tenant_id = %s AND run_id = %s""",
+                (tenant_id, run_id),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            raise KeyError("Agent/RAG evaluation report not found in this tenant")
+        result = dict(row)
+        if isinstance(result.get("report"), str):
+            result["report"] = json.loads(result["report"])
+        result["run_id"] = str(result["run_id"])
+        return result
+
+    async def list_reports(
+        self, *, tenant_id: str, dataset_id: str | None = None, limit: int = 20,
+    ) -> list[dict]:
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        connection = await self._connect()
+        async with connection:
+            if dataset_id is None:
+                cursor = await connection.execute(
+                    """SELECT run_id, tenant_id, dataset_id, dataset_version,
+                              dataset_sha256, endpoint_id, model_key, model_version,
+                              concurrency_limit, report, created_at
+                       FROM platform_agent_rag_eval_reports
+                       WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s""",
+                    (tenant_id, limit),
+                )
+            else:
+                cursor = await connection.execute(
+                    """SELECT run_id, tenant_id, dataset_id, dataset_version,
+                              dataset_sha256, endpoint_id, model_key, model_version,
+                              concurrency_limit, report, created_at
+                       FROM platform_agent_rag_eval_reports
+                       WHERE tenant_id = %s AND dataset_id = %s
+                       ORDER BY created_at DESC LIMIT %s""",
+                    (tenant_id, dataset_id, limit),
+                )
+            rows = await cursor.fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            if isinstance(item.get("report"), str):
+                item["report"] = json.loads(item["report"])
+            item["run_id"] = str(item["run_id"])
+            results.append(item)
+        return results
