@@ -177,13 +177,15 @@ class RunLifecycleManager:
   release=getattr(self.store,"release_lease",None)
   for row in rows:
    running=None
+   lease_context=set_worker_lease_token(row.lease_token) if worker_id and row.lease_token > 0 else None
    try:
     # Human approval pauses are deliberate and must never be auto-resumed.
     if row.status==RunStatus.PAUSED: continue
     # A claimed RUNNING row has an expired worker lease and is now safe to interrupt.
     if row.status==RunStatus.RUNNING:
      row=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.INTERRUPTED,row.version,
-      checkpoint_ref=row.checkpoint_ref,last_error="previous worker lease expired"),expected_version=row.version)
+      checkpoint_ref=row.checkpoint_ref,last_error="previous worker lease expired",
+      lease_token=row.lease_token),expected_version=row.version)
      if self.token_service is not None:
       await self.token_service.revoke_run(tenant_id=row.tenant_id,run_id=row.run_id)
     # Interrupted execution without a checkpoint cannot be resumed safely.
@@ -193,7 +195,7 @@ class RunLifecycleManager:
      continue
     if row.checkpoint_ref: await checkpoint_loader(row)
     running=await self.store.transition(RunSnapshot(row.tenant_id,row.run_id,RunStatus.RUNNING,row.version,
-     checkpoint_ref=row.checkpoint_ref),expected_version=row.version)
+     checkpoint_ref=row.checkpoint_ref,lease_token=row.lease_token),expected_version=row.version)
     await resume(running)
     resumed.append(row.run_id)
    except Exception as exc:
@@ -208,6 +210,8 @@ class RunLifecycleManager:
    finally:
     if worker_id and release is not None:
      await release(row.tenant_id,row.run_id,worker_id,lease_token=row.lease_token)
+    if lease_context is not None:
+     reset_worker_lease_token(lease_context)
   return resumed
  async def run_with_timeout(self,tenant_id:str,run_id:str,operation:Any,*,timeout:float)->Any:
   if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
