@@ -254,7 +254,7 @@ export function OperationsCockpitExtension() {
               <div><dt>已核对事件成本</dt><dd>{formatMoney(summaryQuery.data.reconciled_event_cost_usd)}</dd></div>
             </dl>
           ) : <EmptyState title="暂无成本汇总" description="服务端未返回成本口径数据，不以 0 替代。" />}
-          <p className="ops-api-gap">三种成本口径分开展示，不相加、不互相替代；当前没有经核实的日级成本序列 API。</p>
+          <p className="ops-api-gap">三种成本口径分开展示，不相加、不互相替代；成本汇总支持时间/模型条件，当前 API 不支持项目/Agent 条件，也没有经核实的日级成本序列 API。</p>
         </article>
 
         <article className="ops-cockpit-panel">
