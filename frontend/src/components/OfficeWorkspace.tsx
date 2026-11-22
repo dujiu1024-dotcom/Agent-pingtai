@@ -355,9 +355,6 @@ export function OfficeWorkspace() {
   const dataUnavailable = officeQuery.isError
   const visibleAgents = agents.filter((agent) => (!agent.floor_id || agent.floor_id === floorId) &&
     `${agent.name} ${agent.agent_id} ${agent.desk_id ?? ''}`.toLowerCase().includes(search.toLowerCase()))
-  const runningTasks = (tasksQuery.data ?? []).filter((task) => ['running', 'executing'].includes((task.status ?? '').toLowerCase())).length
-  const activeAgents = visibleAgents.filter((agent) => ['running', 'collaborating', 'waiting_approval', 'queued'].includes(agent.status)).length
-  const dataUnavailable = agentsQuery.isError || tasksQuery.isError
   const selectedDeskAgent = visibleAgents.find((agent) => agent.desk_id === selectedDesk)
   const selectedAgent = agents.find((agent) => agent.agent_id === selectedAgentId)
   const selectedZoneDetails = zones.find((zone) => zone.id === selectedZone)
