@@ -49,12 +49,34 @@ jobs:
       AGENT_PLATFORM_TEST_REDIS_URL: redis://localhost:6379/0
       AGENT_PLATFORM_TEST_VAULT_ADDR: http://localhost:8200
       AGENT_PLATFORM_TEST_VAULT_TOKEN: a20-03-ci-root-token
+      AGENT_PLATFORM_BENCH_DSN: postgresql://platform:platform@localhost:5432/platform_test
+      AGENT_PLATFORM_BENCH_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install integration dependencies
-        run: python -m pip install "psycopg[binary]>=3.2,<4" "redis>=5,<7" "langgraph>=1.0,<2.0"
+        run: python -m pip install "psycopg[binary,pool]>=3.2,<4" "redis>=5,<7" "langgraph>=1.0,<2.0"
       - name: Run PostgreSQL and Redis integration tests
         run: python -m unittest tests.test_platform_postgres_integration tests.test_quota_postgres_integration tests.test_legacy_identity_migration tests.test_tenant_creation_integration tests.test_service_identity_authorization_integration tests.test_knowledge_memory_postgres_integration tests.test_redis_streams_integration tests.test_issue_18_a_18_03_redis_outbox_recovery_integration tests.test_gateway_runtime_postgres_integration tests.test_task_center_interventions_postgres_integration tests.test_file_processing_postgres_integration tests.test_connector_cleanup_postgres_integration tests.test_issue_16_a_16_02_postgres_integration tests.test_issue_20_a_20_03_real_services_acceptance tests.test_reliability_fault_injection -v
+      - name: Run Switch PostgreSQL/Redis migration and recovery acceptance
+        run: |
+          python -m unittest \\
+            tests.test_issue_665_s_665_03_fault_drill \\
+            tests.test_issue_665_s_665_04_migration_acceptance \\
+            tests.test_issue_666_a_666_06_migration_parity \\
+            tests.test_postgres_redis_worker_recovery_integration -v
+      - name: Execute Issue 666 disposable staging zero-diff and rollback drill
+        run: |
+          python scripts/issue_666_l4_t08_staging_drill.py \\
+            --dsn "$AGENT_PLATFORM_TEST_DSN" \\
+            --evidence issue-666-l4-t08-staging-drill.json
+      - name: Upload Issue 666 staging rollback evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: switch-staging-zero-diff-rollback
+          path: issue-666-l4-t08-staging-drill.json
+          if-no-files-found: warn
+          retention-days: 30
