@@ -65,7 +65,7 @@ type UsageSummary = {
 }
 type ListResponse<T> = { items?: T[]; data?: T[]; count?: number }
 type MetricSample = { name: string; value: number; labels?: Record<string, string> }
-type MetricFamily = { name: string; type: string; help?: string; samples?: MetricSample[] }
+type MetricFamily = { name: string; type: string; help?: string; samples?: MetricSample[]; labels?: Record<string, string>; value?: number }
 type MetricsResponse = { items?: MetricFamily[]; count?: number }
 type Health = { status: 'ok' | 'warning' | 'critical' | 'unavailable'; [key: string]: unknown }
 type EvaluationReport = Record<string, unknown>
@@ -465,7 +465,7 @@ export function CostQualityCenter() {
               <table className="cq-table cq-performance-table">
                 <thead><tr><th>指标</th><th>类型</th><th>标签</th><th>样本值</th><th>说明</th></tr></thead>
                 <tbody>{(performanceMetrics.data?.items ?? []).flatMap((family) =>
-                  (family.samples ?? []).map((sample, index) => (
+                  (family.samples ?? (typeof family.value === 'number' ? [{ name: family.name, value: family.value, labels: family.labels }] : [])).map((sample, index) => (
                     <tr key={family.name + ':' + sample.name + ':' + index}>
                       <td>{sample.name || family.name}</td>
                       <td>{family.type}</td>
