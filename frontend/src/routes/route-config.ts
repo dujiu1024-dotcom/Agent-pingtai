@@ -246,7 +246,7 @@ export const pageRoutes: PageRoute[] = [
     title: '组织与成员',
     section: '平台管理',
     description: '组织、部门、项目与成员管理；仅权限模式可用。',
-    owner: '#749',
+    owner: '#756',
     authOnly: true,
   },
   {
@@ -255,7 +255,7 @@ export const pageRoutes: PageRoute[] = [
     title: '角色与权限',
     section: '平台管理',
     description: '角色与权限管理；仅权限模式可用。',
-    owner: '#749',
+    owner: '#756',
     authOnly: true,
   },
   {
