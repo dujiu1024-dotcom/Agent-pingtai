@@ -76,18 +76,34 @@ function timestamp(value: unknown): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString('zh-CN')
 }
 
-function QueryState({ pending, error, onRetry }: {
+export function getQueryFailureDetails(label: string, error: Error) {
+  const detail = error as Error & { status?: number; code?: string; requestId?: string }
+  return {
+    title: `${label}读取失败`,
+    message: error.message || '服务端未返回错误详情',
+    status: detail.status,
+    code: detail.code,
+    requestId: detail.requestId,
+  }
+}
+
+function QueryState({ label, pending, error, onRetry }: {
+  label: string
   pending: boolean
   error: Error | null
   onRetry: () => void
 }) {
-  if (pending) return <p className="ops-muted">正在读取数据…</p>
+  if (pending) return <p className="ops-muted" role="status">{label}正在读取数据…</p>
   if (!error) return null
-  const requestId = 'requestId' in error ? String(error.requestId ?? '') : ''
+  const details = getQueryFailureDetails(label, error)
   return (
-    <div className="ops-error" role="alert">
-      <span>{error.message}</span>
-      {requestId && <small>Request ID: {requestId}</small>}
+    <div className="ops-error" role="alert" aria-live="assertive">
+      <strong>{details.title}</strong>
+      <span>{details.message}</span>
+      {(details.status !== undefined || details.code) && (
+        <small>HTTP {details.status ?? '—'}{details.code ? ` · ${details.code}` : ''}</small>
+      )}
+      {details.requestId && <small>Request ID: {details.requestId}</small>}
       <button type="button" onClick={onRetry}>重试</button>
     </div>
   )
@@ -151,7 +167,7 @@ export function SystemOpsPage() {
           <div><h2>Metrics 指标</h2><p>来源：Observability JSON exporter</p></div>
           <span>{metrics.dataUpdatedAt ? `更新于 ${new Date(metrics.dataUpdatedAt).toLocaleTimeString('zh-CN')}` : '尚未更新'}</span>
         </div>
-        <QueryState pending={metrics.isPending} error={metrics.error} onRetry={() => void metrics.refetch()} />
+        <QueryState label="Metrics" pending={metrics.isPending} error={metrics.error} onRetry={() => void metrics.refetch()} />
         {!metrics.isError && metrics.data !== undefined && (
           metricRows.length ? (
             <div className="ops-metric-grid">
@@ -180,7 +196,7 @@ export function SystemOpsPage() {
         <div className="ops-health-grid">
           <article className="ops-health-card">
             <h3>容量健康</h3>
-            <QueryState pending={capacity.isPending} error={capacity.error} onRetry={() => void capacity.refetch()} />
+            <QueryState label="容量健康" pending={capacity.isPending} error={capacity.error} onRetry={() => void capacity.refetch()} />
             {capacity.data && (
               <>
                 <strong className={`ops-status ops-status--${capacity.data.status ?? 'unknown'}`}>{display(capacity.data.status ?? '未知')}</strong>
@@ -191,7 +207,7 @@ export function SystemOpsPage() {
           </article>
           <article className="ops-health-card">
             <h3>Readiness</h3>
-            <QueryState pending={readiness.isPending} error={readiness.error} onRetry={() => void readiness.refetch()} />
+            <QueryState label="Readiness" pending={readiness.isPending} error={readiness.error} onRetry={() => void readiness.refetch()} />
             {readiness.data && (
               <>
                 <strong className={`ops-status ops-status--${readiness.data.status ?? 'unknown'}`}>{display(readiness.data.status ?? '未知')}</strong>
@@ -207,15 +223,16 @@ export function SystemOpsPage() {
         <div className="ops-panel-heading">
           <div><h2>Scheduler 调度状态</h2><p>只读展示作业配置与最近执行记录</p></div>
         </div>
-        <QueryState pending={jobs.isPending || runs.isPending} error={jobs.error ?? runs.error} onRetry={() => { void jobs.refetch(); void runs.refetch() }} />
-        {!jobs.isError && !runs.isError && jobs.data !== undefined && runs.data !== undefined && (
-          <>
-            <div className="ops-scheduler-summary">
-              <span>作业 <b>{jobRows.length}</b></span>
-              <span>最近执行 <b>{runRows.length}</b></span>
-              <span>累计失败 <b>{jobRows.reduce((total, job) => total + (Number(job.failure_count) || 0), 0)}</b></span>
-            </div>
-            {jobRows.length ? (
+        <div className="ops-scheduler-summary">
+          <span>作业 <b>{jobs.isError ? '不可用' : jobRows.length}</b></span>
+          <span>最近执行 <b>{runs.isError ? '不可用' : runRows.length}</b></span>
+          <span>累计失败 <b>{jobs.isError ? '—' : jobRows.reduce((total, job) => total + (Number(job.failure_count) || 0), 0)}</b></span>
+        </div>
+        <div className="ops-scheduler-data">
+          <section className="ops-scheduler-block" aria-label="Scheduler 作业列表">
+            <h3>作业列表</h3>
+            <QueryState label="Scheduler 作业列表" pending={jobs.isPending} error={jobs.error} onRetry={() => void jobs.refetch()} />
+            {!jobs.isError && jobs.data !== undefined && (jobRows.length ? (
               <div className="ops-table-wrap"><table><thead><tr><th>Job</th><th>启用</th><th>状态</th><th>失败次数</th><th>最近结果 / 错误</th><th>间隔</th></tr></thead>
                 <tbody>{jobRows.map((job, index) => <tr key={job.job_id ?? String(index)}>
                   <td>{display(job.name ?? job.job_id)}</td><td>{display(job.enabled)}</td>
@@ -223,18 +240,22 @@ export function SystemOpsPage() {
                   <td>{display(job.failure_count ?? 0)}</td><td>{display(job.last_message ?? job.last_result)}</td>
                   <td>{job.interval_seconds ? `${display(job.interval_seconds)} 秒` : '—'}</td>
                 </tr>)}</tbody></table></div>
-            ) : <p className="ops-muted">Scheduler API 返回空作业列表。</p>}
-            {runRows.length ? (
+            ) : <p className="ops-muted">Scheduler API 已响应，但作业列表为空。</p>)}
+          </section>
+          <section className="ops-scheduler-block" aria-label="Scheduler 最近执行记录">
+            <h3>最近执行记录</h3>
+            <QueryState label="Scheduler 执行记录" pending={runs.isPending} error={runs.error} onRetry={() => void runs.refetch()} />
+            {!runs.isError && runs.data !== undefined && (runRows.length ? (
               <div className="ops-table-wrap"><table><thead><tr><th>Run</th><th>Job</th><th>状态</th><th>开始时间</th><th>结束时间</th><th>失败详情</th></tr></thead>
                 <tbody>{runRows.map((run, index) => <tr key={run.run_id ?? String(index)}>
                   <td>{display(run.run_id)}</td><td>{display(run.job_id)}</td>
                   <td><span className={statusClass(run.status)}>{display(run.status ?? '未知')}</span></td>
                   <td>{timestamp(run.started_at)}</td><td>{timestamp(run.finished_at)}</td><td>{display(run.message)}</td>
                 </tr>)}</tbody></table></div>
-            ) : <p className="ops-muted">Scheduler API 返回空执行记录。</p>}
-          </>
-        )}
-        {(jobs.isError || runs.isError) && <p className="ops-muted">Scheduler 接口不可用时不展示空列表作为正常状态；请检查后端 Scheduler router/service 注册与权限配置。</p>}
+            ) : <p className="ops-muted">Scheduler API 已响应，但最近执行记录为空。</p>)}
+          </section>
+        </div>
+        {(jobs.isError || runs.isError) && <p className="ops-muted">各 Scheduler 数据源独立请求：一项失败不会隐藏另一项成功数据，也不会将失败请求伪装为空列表。</p>}
       </section>
     </main>
   )
