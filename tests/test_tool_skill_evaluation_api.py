@@ -158,7 +158,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(self.probe_calls, [])
 
-    def test_permission_denial_prevents_probe_and_audit(self):
+    def test_permission_denial_is_audited_without_running_probe(self):
         self._publish("tool", "denied-tool", {"allowlist": ["read"]})
         self.allowed = False
         response = self.client.post(
