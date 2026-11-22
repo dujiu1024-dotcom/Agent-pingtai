@@ -90,6 +90,22 @@ class WorkflowCompilerTests(unittest.TestCase):
         self.definition["nodes"][0]["permissions"] = ["admin.*"]
         self.assertIn("node.permissions", {item.code for item in self.compiler.diagnose(self.definition)})
 
+    def test_invalid_retry_attempts_are_rejected(self):
+        self.definition["nodes"][0]["error_retry"] = {"max_attempts": 0}
+        self.assertIn("node.retry", {item.code for item in self.compiler.diagnose(self.definition)})
+
+    def test_real_langgraph_stategraph_compiles_without_starting_a_run(self):
+        spec = WorkflowNodeType(
+            node_type="agent", version=1, factory=lambda config: lambda state: {"done": True},
+            config_schema={"type": "object"}, input_schema={"type": "object"},
+            output_schema={"type": "object"},
+            ports={"inputs": ["default"], "outputs": ["default"]},
+        )
+        compiler = LangGraphWorkflowCompiler(node_registry=WorkflowNodeRegistry([spec]))
+        graph, metadata = compiler.compile(self.definition)
+        self.assertTrue(callable(getattr(graph, "invoke", None)))
+        self.assertFalse(metadata["execution_started"])
+
     def test_graph_compile_exception_is_returned_as_diagnostic(self):
         compiler = LangGraphWorkflowCompiler(
             node_registry=WorkflowNodeRegistry([self.spec]),
