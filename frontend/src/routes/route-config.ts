@@ -684,11 +684,13 @@ function matchesRoutePattern(pattern: string, pathname: string): boolean {
 
 /** Resolve a route's navigation context from the canonical navigation/route maps. */
 export function getRouteBreadcrumbs(pathname: string): BreadcrumbItem[] {
-  const section = findNavigationSection(pathname)
-  const subpage = findSubPage(section, pathname)
   const route = [...detailRoutes, ...pageRoutes, ...globalRoutes].find(
     (candidate) => matchesRoutePattern(candidate.path, pathname),
   )
+  const section =
+    findNavigationSection(pathname) ??
+    (route?.parentPath ? findNavigationSection(route.parentPath) : undefined)
+  const subpage = findSubPage(section, route?.parentPath ?? pathname)
   if (!section) {
     return route ? [{ label: route.title }] : []
   }
