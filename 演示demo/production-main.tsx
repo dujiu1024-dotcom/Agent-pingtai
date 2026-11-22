@@ -205,7 +205,13 @@ async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
 
   const items = demoCollections[collectionPath]
   const suffix = path.slice(collectionPath.length).replace(/^\//, '')
-  const itemId = suffix ? decodeURIComponent(suffix.split('/')[0]) : ''
+  if (suffix.includes('/')) {
+    return jsonResponse({
+      error: 'demo_subresource_not_implemented',
+      message: `演示环境尚未接入子资源接口：${method} ${path}`,
+    }, 501)
+  }
+  const itemId = suffix ? decodeURIComponent(suffix) : ''
   if (method === 'GET') {
     if (!itemId) return responseForCollection(items, url)
     const item = items.find((entry) => getItemId(entry) === itemId)
