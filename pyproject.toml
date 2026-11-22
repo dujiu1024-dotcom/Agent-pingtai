@@ -147,6 +147,7 @@ include = [
   "tests/test_postgres_checkpointer.py",
   "tests/test_quota_token_estimator.py",
   "tests/test_quotas.py",
+  "tests/test_issue_17_l4_t25_quota_concurrency.py",
   "tests/test_quota_reporting_api.py",
   "tests/test_issue_17_a_17_03_delivery_readiness.py",
   "tests/test_issue_17_a_17_03_production_quota_wiring.py",
