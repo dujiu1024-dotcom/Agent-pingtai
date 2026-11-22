@@ -254,3 +254,54 @@ describe('authentication entry routes', () => {
 
 
 })
+
+
+describe('admin page mounting', () => {
+  it('mounts the dedicated Agent Definition page for list and detail routes', async () => {
+    const [{ resolveAdminPage }, { AgentDefinitionPage }] = await Promise.all([
+      import('../App'),
+      import('../features/agents/AgentDefinitionPage'),
+    ])
+    expect(resolveAdminPage('/admin/agents', false)?.type).toBe(AgentDefinitionPage)
+    expect(resolveAdminPage('/admin/agents/:agentId', false)?.type).toBe(AgentDefinitionPage)
+  })
+
+  it('mounts the dedicated Workflow Designer for list, detail and editor routes', async () => {
+    const [{ resolveAdminPage }, { WorkflowDesignerPage }] = await Promise.all([
+      import('../App'),
+      import('../features/workflows/WorkflowDesignerPage'),
+    ])
+    for (const path of [
+      '/admin/workflows',
+      '/admin/workflows/:workflowId',
+      '/admin/workflows/:workflowId/edit',
+    ]) {
+      expect(resolveAdminPage(path, false)?.type, path).toBe(WorkflowDesignerPage)
+    }
+  })
+
+  it('mounts Model Provider, Template and Routing pages without inventing routing APIs', async () => {
+    const [{ resolveAdminPage }, { ModelsManagementPage }] = await Promise.all([
+      import('../App'),
+      import('../features/admin/ModelsManagementPage'),
+    ])
+    for (const path of [
+      '/admin/models/providers',
+      '/admin/models/providers/:providerId',
+      '/admin/models/templates',
+      '/admin/models/templates/:templateId',
+      '/admin/models/routing',
+      '/admin/models/routing/:policyId',
+    ]) {
+      const page = resolveAdminPage(path, false)
+      expect(page?.type, path).toBe(ModelsManagementPage)
+      expect(page?.props.authEnabled, path).toBe(false)
+    }
+  })
+
+  it('leaves unrelated routes to their existing owners', async () => {
+    const { resolveAdminPage } = await import('../App')
+    expect(resolveAdminPage('/admin/tools', false)).toBeNull()
+    expect(resolveAdminPage('/admin/organization', false)).toBeNull()
+  })
+})
