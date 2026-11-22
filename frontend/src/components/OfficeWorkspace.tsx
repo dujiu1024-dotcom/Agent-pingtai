@@ -295,7 +295,7 @@ function AgentAvatar({ agent, onSelect }: { agent: NormalizedOfficeAgent; onSele
   )
 }
 
-function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone, agents, onSelectAgent }: { selectedDesk: string | null; onSelectDesk: (id: string) => void; selectedZone: string | null; onSelectZone: (id: string) => void; agents: NormalizedOfficeAgent[]; onSelectAgent: (id: string) => void }) {
+function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone, agents, onSelectAgent, floorId }: { selectedDesk: string | null; onSelectDesk: (id: string) => void; selectedZone: string | null; onSelectZone: (id: string) => void; agents: NormalizedOfficeAgent[]; onSelectAgent: (id: string) => void; floorId: string }) {
   return (
     <>
       <color attach="background" args={['#aebbd8']} />
@@ -325,7 +325,7 @@ function OfficeScene({ selectedDesk, onSelectDesk, selectedZone, onSelectZone, a
         {desks.map((desk) => (
           <Desk key={desk.id} {...desk} selected={selectedDesk === desk.id} onSelect={onSelectDesk} />
         ))}
-        {agents.filter((agent) => agent.floor_id === undefined || agent.floor_id === 'floor-02').map((agent) => (
+        {agents.filter((agent) => agent.floor_id === undefined || agent.floor_id === floorId).map((agent) => (
           <AgentAvatar key={agent.agent_id} agent={agent} onSelect={onSelectAgent} />
         ))}
         <group position={[-9.8, 0.45, 0]}>
@@ -425,7 +425,7 @@ export function OfficeWorkspace() {
             <div className="office-2d-desks">{desks.map((desk) => <button type="button" key={desk.id} className={selectedDesk === desk.id ? 'office-2d-desk selected' : 'office-2d-desk'} onClick={() => setSelectedDesk(desk.id)}>{desk.id.toUpperCase()}</button>)}</div>
           </div> : <div className={view === 'top' ? 'office-canvas office-canvas-top' : 'office-canvas'}>
             <Canvas key={view} shadows dpr={[1, 1.5]} camera={{ position: view === 'top' ? [0, 22, 0.01] : [13, 12, 16], fov: view === 'top' ? 42 : 38 }}>
-              <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} selectedZone={selectedZone} onSelectZone={setSelectedZone} agents={agents} onSelectAgent={setSelectedAgentId} />
+              <OfficeScene selectedDesk={selectedDesk} onSelectDesk={setSelectedDesk} selectedZone={selectedZone} onSelectZone={setSelectedZone} agents={agents} onSelectAgent={setSelectedAgentId} floorId={floorId} />
             </Canvas>
           </div>}
           <div className="office-map-legend"><span><i className="legend-desk" />标准工位</span><span><i className="legend-selected" />已选工位</span><span><i className="legend-agent" />Agent 状态</span><small>状态由 Agent Registry 与任务执行记录推导；未提供的状态显示为未知</small></div>
