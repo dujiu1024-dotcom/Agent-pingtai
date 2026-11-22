@@ -181,7 +181,7 @@ class ControlPlaneReconciler:
             await _invoke(self._replay_outbox)
             await _invoke(self._resume_paused_runs)
             await _invoke(lambda: self._audit({"event": "control_plane_online"}))
-        except Exception as exc:
+        except Exception:
             self.mode = ControlPlaneMode.DEGRADED
             # Preserve the original failure. Audit may itself be unavailable,
             # which is precisely why the in-memory state remains fail-closed.

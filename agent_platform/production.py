@@ -64,6 +64,10 @@ from agent_platform.i18n.preferences import (
 from agent_platform.identity.models import Principal, ResourceRef
 from agent_platform.identity.postgres import PostgresIdentityRepository
 from agent_platform.identity.service import AuthorizationDenied, IdentityService
+from agent_platform.knowledge.acl_invalidation_worker import (
+    KnowledgeInvalidationWorker,
+    PostgresKnowledgeInvalidationConsumer,
+)
 from agent_platform.knowledge.ollama import (
     OllamaChatGenerator,
     OllamaEmbedder,
@@ -71,10 +75,6 @@ from agent_platform.knowledge.ollama import (
     ollama_embedding_config_from_env,
 )
 from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
-from agent_platform.knowledge.acl_invalidation_worker import (
-    KnowledgeInvalidationWorker,
-    PostgresKnowledgeInvalidationConsumer,
-)
 from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.postgres_repository import PostgresMemoryRepository

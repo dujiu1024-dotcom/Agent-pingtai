@@ -18,7 +18,6 @@ from agent_platform.resilience.offline_policy import (
     OfflinePolicyEvaluator,
     OfflineResult,
 )
-
 from agent_platform.resilience.policies import (
     Bulkhead,
     BulkheadRejected,

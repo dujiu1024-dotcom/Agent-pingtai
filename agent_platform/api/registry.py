@@ -12,7 +12,10 @@ from agent_platform.control_plane.registry import (
     RegistryService,
 )
 from agent_platform.identity.models import Principal
-from agent_platform.workflows.definition_compiler import LangGraphWorkflowCompiler, WorkflowDefinitionError
+from agent_platform.workflows.definition_compiler import (
+    LangGraphWorkflowCompiler,
+    WorkflowDefinitionError,
+)
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 ServiceResolver = Callable[[Principal], Awaitable[RegistryService]]
