@@ -4,7 +4,10 @@ import { Link } from 'react-router-dom'
 
 import { apiClient } from '@/lib/api'
 import { unwrapList } from '@/features/tasks/task-model'
+import { OperationsCockpitExtension } from '@/components/OperationsCockpitExtension'
 import type { TaskRecord } from '@/features/tasks/task-model'
+
+import './dashboard.css'
 
 type AnyRecord = Record<string, unknown>
 type TrendPoint = {
@@ -56,7 +59,7 @@ function dateLabel(value: unknown, index: number): string {
     : `${date.getMonth() + 1}/${date.getDate()}`
 }
 
-function trendPoints(value: unknown): TrendPoint[] {
+export function normalizeDashboardTrendPoints(value: unknown): TrendPoint[] {
   return listAt(value).map((item, index) => {
     const point = record(item)
     return {
@@ -289,7 +292,10 @@ export function Dashboard() {
   const totalCost =
     numberAt(taskPayload, ['total_cost', 'cost']) ??
     numberAt(taskData, ['total_cost', 'cost'])
-  const points = useMemo(() => trendPoints(trendsQuery.data), [trendsQuery.data])
+  const points = useMemo(
+    () => normalizeDashboardTrendPoints(trendsQuery.data),
+    [trendsQuery.data],
+  )
   const metrics = [
     {
       label: '任务数',
@@ -426,6 +432,7 @@ export function Dashboard() {
           ? '任务接口请求失败；请检查服务状态。'
           : '仅展示后端已返回的指标；缺少成本或耗时字段时显示“暂无数据”，不填充演示值。'}
       </p>
+      <OperationsCockpitExtension />
     </section>
   )
 }

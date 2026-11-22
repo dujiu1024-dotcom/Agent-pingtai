@@ -23,7 +23,7 @@ import {
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
-import { Dashboard } from '@/features/workspace/Dashboard'
+import { Dashboard } from '@/features/dashboard/Dashboard'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
