@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeOfficeAgents, shouldUseOffice2DFallback } from './OfficeWorkspace'
+import { getOfficeEventStreamUrl, normalizeOfficeAgents, shouldUseOffice2DFallback } from './OfficeWorkspace'
 
 describe('normalizeOfficeAgents', () => {
   it('preserves live status and leaves placement unset without trusted coordinates', () => {
@@ -36,6 +36,18 @@ describe('normalizeOfficeAgents', () => {
     expect(agents.map((agent) => agent.status)).toEqual(['waiting_approval', 'offline'])
   })
 
+  it('maps platform terminal run states to neutral Agent availability states', () => {
+    const agents = normalizeOfficeAgents({
+      agents: [{ agent_id: 'agent-done' }, { agent_id: 'agent-timeout' }, { agent_id: 'agent-cancelled' }],
+      runs: [
+        { run_id: 'run-done', agent_id: 'agent-done', status: 'succeeded' },
+        { run_id: 'run-timeout', agent_id: 'agent-timeout', status: 'timed_out' },
+        { run_id: 'run-cancelled', agent_id: 'agent-cancelled', status: 'cancelled' },
+      ],
+    })
+    expect(agents.map((agent) => agent.status)).toEqual(['idle', 'failed', 'paused'])
+  })
+
   it('maps error-bearing run history to failed and successful completed history to idle', () => {
     const agents = normalizeOfficeAgents({
       agents: [{ agent_id: 'agent-fail' }, { agent_id: 'agent-ok' }],
@@ -61,5 +73,15 @@ describe('Office rendering fallbacks', () => {
     expect(agent.status).toBe('offline')
     expect(agent.x).toBeUndefined()
     expect(agent.z).toBeUndefined()
+  })
+})
+
+
+describe('Office event stream negotiation', () => {
+  it('uses only a stream URL advertised by the authoritative snapshot', () => {
+    expect(getOfficeEventStreamUrl({ events: { stream_url: '/api/platform/v1/office/events' } })).toBe('/api/platform/v1/office/events')
+    expect(getOfficeEventStreamUrl({ event_stream_url: '/api/platform/v1/office/events' })).toBe('/api/platform/v1/office/events')
+    expect(getOfficeEventStreamUrl({ events: { pending: 2 } })).toBeUndefined()
+    expect(getOfficeEventStreamUrl({ events: { stream_url: '   ' } })).toBeUndefined()
   })
 })
