@@ -186,7 +186,7 @@ class ControlPlaneReconciler:
             # Preserve the original failure. Audit may itself be unavailable,
             # which is precisely why the in-memory state remains fail-closed.
             try:
-                await _invoke(lambda: self._audit({
+                await _invoke(lambda exc=exc: self._audit({
                     "event": "control_plane_reconcile_failed",
                     "error_type": type(exc).__name__,
                 }))
