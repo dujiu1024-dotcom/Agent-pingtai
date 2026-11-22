@@ -126,7 +126,7 @@ test.describe('Issue #14 live model, Gateway and object-storage journey', () => 
       mimeType: 'text/markdown',
       buffer: Buffer.from(`# ${runTag}\n\nObject storage live upload acceptance.\n`),
     })
-    await page.getByRole('button', { name: '上传并处理文档' }).click()
+    await page.getByRole('button', { name: '上传并建立索引' }).click()
     const uploaded = await uploadResponse
     expect(uploaded.ok(), await uploaded.text()).toBeTruthy()
     await expect(page.getByText('文档解析、切片与索引处理已完成。')).toBeVisible({
