@@ -7,6 +7,7 @@ export interface PageRoute {
   parentPath?: string
   authOnly?: boolean
   capability?: string
+  permission?: string
   entityIdParam?: string
   owner: string
 }
@@ -293,18 +294,20 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-ORG',
     title: '组织与成员',
     section: '平台管理',
-    description: '组织、部门、项目与成员管理；仅权限模式可用。',
+    description: '组织、部门、项目与成员管理；仅权限模式且具备对应读取权限时可用。',
     owner: '#749',
     authOnly: true,
+    permission: 'platform.organization.read',
   },
   {
     path: '/admin/access-control',
     pageId: 'ADM-RBAC',
     title: '角色与权限',
     section: '平台管理',
-    description: '角色与权限管理；仅权限模式可用。',
+    description: '角色与权限管理；仅权限模式且具备对应读取权限时可用。',
     owner: '#749',
     authOnly: true,
+    permission: 'platform.rbac.read',
   },
   {
     path: '/admin/extensions',
@@ -592,6 +595,7 @@ export interface SubPageNav {
   path: string
   authOnly?: boolean
   capability?: string
+  permission?: string
 }
 
 export interface NavigationSection {
@@ -699,11 +703,13 @@ export const navigationSections: NavigationSection[] = [
         label: '组织与成员',
         path: '/admin/organization',
         authOnly: true,
+        permission: 'platform.organization.read',
       },
       {
         label: '角色与权限',
         path: '/admin/access-control',
         authOnly: true,
+        permission: 'platform.rbac.read',
       },
       { label: '系统设置', path: '/admin/settings' },
       { label: '告警中心', path: '/operations/alerts' },
@@ -721,13 +727,15 @@ export const navigationSections: NavigationSection[] = [
 export function getNavigationSections(
   authEnabled: boolean,
   capabilities: string[] = [],
+  permissions: readonly string[] = [],
 ): NavigationSection[] {
   return navigationSections.map((section) => ({
     ...section,
     subpages: section.subpages.filter(
       (page) =>
         (!page.authOnly || authEnabled) &&
-        (!page.capability || capabilities.includes(page.capability)),
+        (!page.capability || capabilities.includes(page.capability)) &&
+        (!authEnabled || !page.permission || permissions.includes(page.permission)),
     ),
   }))
 }

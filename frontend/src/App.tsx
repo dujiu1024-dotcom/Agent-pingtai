@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import {
   BrowserRouter,
   Link,
@@ -8,6 +8,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from 'react-router-dom'
 import {
   Bell,
@@ -27,17 +28,17 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import avatarImage from '@/assets/avatar.png'
 import { GlobalSearch } from '@/components/GlobalSearch'
-import { GlobalSearchDialog } from '@/components/GlobalSearchDialog'
-import { NotificationPopover } from '@/components/NotificationPopover'
 import { InitializePage, LoginPage } from '@/components/AuthPages'
 import {
   EmptyState,
   ErrorState,
+  ForbiddenState,
   LoadingState,
   ModeRestrictedState,
   NotFoundState,
 } from '@/components/States'
 import { AuthProvider, useAuth } from '@/providers/AuthProvider'
+import { canAccess } from '@/auth/authorization'
 import { GenericListPage } from '@/components/GenericListPage'
 import { CrudListPage } from '@/components/crud/CrudListPage'
 import { RegistryCatalogPage } from '@/components/crud/RegistryCatalogPage'
@@ -69,7 +70,6 @@ import { useUiStore } from '@/stores/ui-store'
 
 // 路由级代码分块：每个 feature 页面独立 chunk
 const Dashboard = lazy(() => import('@/components/OperationsDashboard').then((m) => ({ default: m.Dashboard })))
-const OperationsCockpitExtension = lazy(() => import('@/components/OperationsCockpitExtension').then((m) => ({ default: m.OperationsCockpitExtension })))
 const QuickStartPage = lazy(() => import('@/features/quickstart/QuickStartPage').then((m) => ({ default: m.QuickStartPage })))
 const StatusBoardPage = lazy(() => import('@/features/board/StatusBoardPage').then((m) => ({ default: m.StatusBoardPage })))
 const NotificationsPage = lazy(() => import('@/components/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
@@ -92,14 +92,12 @@ const BatchExecutionPage = lazy(() => import('@/features/batches/BatchExecutionP
 const RunReplayPage = lazy(() => import('@/features/replay/RunReplayPage').then((m) => ({ default: m.RunReplayPage })))
 const RagPlaygroundPage = lazy(() => import('@/features/rag/RagPlaygroundPage').then((m) => ({ default: m.RagPlaygroundPage })))
 const ExtensionPublishersPage = lazy(() => import('@/features/extensions/ExtensionPublishersPage').then((m) => ({ default: m.ExtensionPublishersPage })))
-const ToolSkillResourcePage = lazy(() => import('@/features/resources/ToolSkillResourcePage').then((m) => ({ default: m.ToolSkillResourcePage })))
 const PromptLifecyclePage = lazy(() => import('@/features/prompts/PromptLifecyclePage').then((m) => ({ default: m.PromptLifecyclePage })))
 const AuditCenterPage = lazy(() => import('@/features/audit/AuditCenterPage').then((m) => ({ default: m.AuditCenterPage })))
 const AuditEventDetailPage = lazy(() => import('@/features/audit/AuditEventDetailPage').then((m) => ({ default: m.AuditEventDetailPage })))
 const ApprovalDetailPage = lazy(() => import('@/features/approvals/ApprovalDetailPage').then((m) => ({ default: m.ApprovalDetailPage })))
 const MemoryGovernancePage = lazy(() => import('@/features/memories/MemoryGovernancePage').then((m) => ({ default: m.MemoryGovernancePage })))
 const EvaluationInsightsPage = lazy(() => import('@/features/evaluation/EvaluationInsightsPage').then((m) => ({ default: m.EvaluationInsightsPage })))
-const BusinessManagementHub = lazy(() => import('@/features/business/BusinessManagementHub').then((m) => ({ default: m.BusinessManagementHub })))
 
 const PageFallback = () => <LoadingState label="正在加载页面" />
 
@@ -178,7 +176,7 @@ function RequireSession({
       <Navigate
         to="/auth/login"
         replace
-        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+        state={{ from: location.pathname }}
       />
     )
   }
@@ -233,21 +231,17 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const location = useLocation()
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const closeSearch = useCallback(() => setSearchOpen(false), [])
-  const closeNotifications = useCallback(() => setNotificationsOpen(false), [])
+  const navigate = useNavigate()
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        setNotificationsOpen(false)
-        setSearchOpen(true)
+        navigate('/search')
       }
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [])
+  }, [navigate])
   useEffect(() => {
     const root = document.documentElement
     const vars = [
@@ -314,6 +308,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const sections = getNavigationSections(
     config.auth.enabled,
     config.capabilities,
+    auth.session?.permissions,
   )
   const effectivePath = current?.parentPath ?? location.pathname
   const section = findNavigationSection(effectivePath)
@@ -400,13 +395,9 @@ function AppShell({ config }: { config: BootstrapConfig }) {
 
       <main className="main-content">
         <header className="topbar">
-          <button
+          <Link
             className="global-search"
-            type="button"
-            onClick={() => {
-              setNotificationsOpen(false)
-              setSearchOpen(true)
-            }}
+            to="/search"
             aria-label="打开全局搜索"
           >
             <Search size={16} strokeWidth={2} aria-hidden="true" />
@@ -414,30 +405,22 @@ function AppShell({ config }: { config: BootstrapConfig }) {
               搜索 Agent、任务、文档…
             </span>
             <kbd>Ctrl K</kbd>
-          </button>
+          </Link>
           <div className="top-actions">
-            <div className="notification-anchor">
-              <button
-                className="icon-button"
-                type="button"
-                aria-label="打开通知"
-                aria-expanded={notificationsOpen}
-                onClick={() => {
-                  setSearchOpen(false)
-                  setNotificationsOpen((open) => !open)
-                }}
-              >
-                <Bell size={18} strokeWidth={1.9} />
-              </button>
-              {notificationsOpen && <NotificationPopover onClose={closeNotifications} />}
-            </div>
+            <Link
+              className="icon-button"
+              to="/notifications"
+              aria-label="打开通知中心"
+            >
+              <Bell size={18} strokeWidth={1.9} />
+            </Link>
             <span className="mode-indicator">
               {config.auth.enabled ? '权限已启用' : '免登录'}
             </span>
-            {config.auth.enabled && auth.status === 'authenticated' && auth.session && (
+            {config.auth.enabled && auth.session?.user && (
               <span className="top-action auth-entry">
                 <LogIn size={14} strokeWidth={2} aria-hidden="true" />
-                {auth.session.display_name || auth.session.email || auth.session.principal_type}
+                {auth.session.user.display_name || auth.session.user.email}
                 <button
                   className="text-link"
                   type="button"
@@ -455,7 +438,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             />
           </div>
         </header>
-        {searchOpen && <GlobalSearchDialog onClose={closeSearch} />}
         <nav className="page-breadcrumb" aria-label="面包屑">
           <Link to="/workspace/overview">首页</Link>
           {section && (
@@ -542,6 +524,7 @@ function PageView({
   route: PageRoute
   authEnabled: boolean
 }) {
+  const auth = useAuth()
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -550,7 +533,10 @@ function PageView({
       />
     )
   }
-  if (route.path === '/workspace/overview') return <Lazy><><Dashboard /><OperationsCockpitExtension /></></Lazy>
+  if (route.permission && !canAccess(authEnabled, auth.session, [route.permission])) {
+    return <ForbiddenState />
+  }
+  if (route.path === '/workspace/overview') return <Lazy><Dashboard /></Lazy>
   if (route.path === '/workspace/quickstart') return <Lazy><QuickStartPage /></Lazy>
   if (route.path === '/workspace/status') return <Lazy><StatusBoardPage /></Lazy>
   if (route.path === '/search') return <GlobalSearch />
@@ -596,11 +582,8 @@ function PageView({
   if (route.path === '/operations/replay') return <Lazy><RunReplayPage /></Lazy>
   if (route.path === '/operations/alerts') return <Lazy><AlertsPage /></Lazy>
   if (route.path === '/admin/extensions') return <Lazy><ExtensionPublishersPage /></Lazy>
-  if (route.path === '/admin/tools/:toolId') return <Lazy><ToolSkillResourcePage kind="tool" /></Lazy>
-  if (route.path === '/admin/skills/:skillId') return <Lazy><ToolSkillResourcePage kind="skill" /></Lazy>
   if (route.path === '/admin/prompts') return <Lazy><PromptLifecyclePage /></Lazy>
   if (route.path === '/admin/audit') return <Lazy><AuditCenterPage /></Lazy>
-  if (route.path === '/operations/business-management') return <Lazy><BusinessManagementHub /></Lazy>
   if (route.path === '/operations/memories') return <Lazy><MemoryGovernancePage /></Lazy>
   if (route.path === '/operations/evaluation/insights') return <Lazy><EvaluationInsightsPage /></Lazy>
   if (route.path === '/operations/tasks/:taskId') return <Lazy><TaskDetailPage /></Lazy>
