@@ -50,6 +50,7 @@ import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
+import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import { Dashboard } from '@/components/OperationsDashboard'
 import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
 import { StatusBoardPage } from '@/features/board/StatusBoardPage'
@@ -459,6 +460,15 @@ function PageView({
         evaluationGateEnabled={capabilities.includes('prompt_evaluation_gate')}
       />
     )
+  }
+  if (route.path === '/admin/access-control') {
+    return <Navigate to="/admin/rbac" replace />
+  }
+  if (route.path === '/admin/organization') {
+    return <OrganizationAccessPage page="organization" />
+  }
+  if (route.path === '/admin/rbac') {
+    return <OrganizationAccessPage page="rbac" />
   }
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
