@@ -63,6 +63,11 @@ def create_tool_skill_evaluation_router(
         actor = await actor_for(request)
         allowed = await resolve(authorize(actor, kind, item_id, action))
         if allowed is not True:
+            audit_action = "tool.mcp_connection_test" if kind == "tool" else "skill.compatibility_evaluation"
+            await audit(
+                actor, audit_action, f"{item_id}:v{version}", "denied",
+                {"resource_type": kind, "resource_id": item_id, "version": version},
+            )
             raise HTTPException(403, "registry resource access denied")
         service = await resolve(resolve_registry(actor))
         repository = getattr(service, "repository", None)
