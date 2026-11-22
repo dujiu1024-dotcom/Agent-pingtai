@@ -20,7 +20,10 @@ from uuid import UUID, uuid4
 from agent_platform.control_plane.registry import RegistryService
 from agent_platform.quotas.service import BudgetExceeded
 from agent_platform.runtime.execution import LangGraphRunExecutor
-from agent_platform.runtime.lifecycle import RunLifecycleManager, RunStatus, WorkerLeaseLost
+from agent_platform.runtime.lifecycle import (
+    RunLifecycleManager, RunStatus, WorkerLeaseLost,
+    set_worker_lease_token, reset_worker_lease_token,
+)
 
 
 class WorkbenchTaskError(ValueError):
@@ -1051,7 +1054,7 @@ class RunExecutionWorker:
             task_id = run_rec.get("task_id")
             record = await self.run_store.get_task_record(tenant_id, str(task_id))
             if record is None:
-                await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
+                await self.run_store.release_lease(tenant_id, run_id, self.worker_id, lease_token=snapshot.lease_token)
                 return "skipped"
             try:
                 async def execute_claimed() -> str:
@@ -1079,7 +1082,11 @@ class RunExecutionWorker:
                                 return result
                         return await self._execute_claimed(snapshot, resolved, record)
 
-                return await self._with_heartbeat(snapshot, execute_claimed())
+                token_context = set_worker_lease_token(snapshot.lease_token)
+                try:
+                    return await self._with_heartbeat(snapshot, execute_claimed())
+                finally:
+                    reset_worker_lease_token(token_context)
             except asyncio.CancelledError:
                 raise
             except BudgetExceeded:
