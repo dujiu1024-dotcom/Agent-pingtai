@@ -111,7 +111,7 @@ def _with_source_id(row: dict[str, Any]) -> dict[str, Any]:
 
 
 
-_SQL_LITERAL_OR_COMMENT = re.compile(r"'(?:''|[^'])*'|""(?: ""|[^""])*""|--[^\n]*|/\*.*?\*/", re.DOTALL)
+_SQL_LITERAL_OR_COMMENT = re.compile(r"'(?:''|[^'])*'|--[^\n]*|/\*.*?\*/", re.DOTALL)
 _SQL_WRITE_KEYWORDS = re.compile(
     r"\b(?:INSERT|UPDATE|DELETE|MERGE|REPLACE|UPSERT|CREATE|ALTER|DROP|TRUNCATE|"
     r"GRANT|REVOKE|COMMENT|RENAME|CALL|EXECUTE|PREPARE|DEALLOCATE|COPY|"
