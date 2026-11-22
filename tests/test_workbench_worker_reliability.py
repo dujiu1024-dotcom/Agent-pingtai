@@ -46,7 +46,7 @@ class WorkbenchWorkerReliabilityTests(unittest.IsolatedAsyncioTestCase):
 
         with patch("agent_platform.runtime.workbench_tasks.asyncio.sleep", immediate_sleep):
             with self.assertRaises(WorkerLeaseLost):
-                await worker._heartbeat_until_done("tenant-a", "run-a")
+                await worker._heartbeat_until_done("tenant-a", "run-a", lease_token=1)
 
         self.assertEqual(store.calls, 1)
 
