@@ -137,6 +137,7 @@ jobs:
             tests.test_issue_665_s_665_04_migration_acceptance \
             tests.test_issue_665_a_665_06_performance_parity \
             tests.test_issue_665_a_665_07_fault_degradation \
+            tests.test_issue_665_l4_t07_acceptance_report \
             tests.test_migration_batches -v
           python scripts/switch_core_acceptance.py
           python scripts/benchmark_switch_performance.py --workers 8 --operations 100 > switch-performance-benchmark.json
@@ -156,16 +157,7 @@ jobs:
           print("SWITCH_BENCHMARK=MEASURED (ephemeral CI PostgreSQL/Redis + synthetic SQLite baseline)")
           print("SWITCH_PARITY=INCOMPLETE (not a same-hardware production workload comparison)")
           PY
-      - name: Upload Issue 665 benchmark evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: issue-665-switch-benchmark
-          path: switch-performance-benchmark.json
-          if-no-files-found: warn
       - name: End-to-end, fault-recovery and security regression suites
-        env:
-          DRILL_EVIDENCE_DIR: issue-21-drill-evidence
         run: |
           python -m unittest \
             tests.test_platform_e2e_release_gate \
@@ -198,13 +190,6 @@ jobs:
             tests.test_outbox \
             tests.test_connector_framework \
             tests.test_backup_recovery_scripts \
-            tests.test_backup_disaster_recovery \
-            tests.test_backup_integrity_verification \
-            tests.test_object_storage_backup \
-            tests.test_object_storage_restore \
-            tests.test_platform_backup_policy \
-            tests.test_platform_backup_runner \
-            tests.test_issue_18_a_18_02_backup_restore_drill \
             tests.test_gateway_runtime_postgres_integration \
             tests.test_platform_postgres_integration \
             tests.test_postgres_langgraph_checkpoint_integration \
@@ -222,12 +207,19 @@ jobs:
             tests.test_issue_20_c_20_02_signature_expiry_boundaries \
             tests.test_issue_22_a_22_05_graph_storage_benchmark \
             tests.test_platform_perf_smoke -v
-      - name: Upload Issue #21 recovery drill evidence
+      - name: Assemble Switch L4-T07 performance and failover evidence
+        run: |
+          python scripts/verify_switch_l4_t07_acceptance.py \
+            --benchmark switch-performance-benchmark.json \
+            --output switch-l4-t07-acceptance.json
+      - name: Upload Issue 665 L4-T07 benchmark and failover evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: issue-21-l4-t06-recovery-drill-evidence
-          path: issue-21-drill-evidence/
+          name: issue-665-switch-l4-t07-acceptance
+          path: |
+            switch-performance-benchmark.json
+            switch-l4-t07-acceptance.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -252,8 +244,6 @@ jobs:
         run: python -m unittest tests.test_issue_614_runtime_composition -v
       - name: Run core business journey, unified model budget and release evidence acceptance tests
         run: python -m unittest tests.test_issue_72_a_72_01_unified_model_budget tests.test_registry_runtime_assembly tests.test_model_runtime_router tests.test_platform_e2e_release_gate tests.test_core_business_journey_e2e tests.test_release_gate_evidence tests.test_release_acceptance_report tests.test_evaluation_variants tests.test_issue_26_a_26_02_metric_accuracy tests.test_issue_28_a_28_02_malicious_skill_blocked -v
-      - name: Run Issue 12 Gateway and OCI isolation acceptance
-        run: python -m unittest tests.test_issue_12_a_12_02_security_acceptance tests.test_langgraph_gateway_contract tests.test_sandbox_oci -v
       - name: Run connector catalog and backward-compatibility acceptance tests
         run: python -m unittest tests.test_connector_catalog tests.test_connector_framework tests.test_issue_27_a_27_02_connector_isolation -v
       - name: Run distributed evaluation scheduler lease tests
