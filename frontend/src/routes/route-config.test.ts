@@ -85,6 +85,7 @@ describe('route configuration', () => {
       getRouteBreadcrumbs('/operations/tasks/timeline').map((item) => item.label),
     ).toEqual([
       '任务中心',
+      '任务指挥中心',
       'Run 事件时间线',
     ])
   })
