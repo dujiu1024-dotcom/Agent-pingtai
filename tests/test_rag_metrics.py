@@ -133,8 +133,9 @@ class RAGMetricsTests(unittest.IsolatedAsyncioTestCase):
             min_score=0.0,
         )
         for values in ({"top_k": True}, {"top_k": 0}, {"top_k": 21}, {"top_k": 5, "min_score": 2.0}):
+            merged = {**base, **values}
             with self.subTest(values=values), self.assertRaises(ValueError):
-                await evaluate_rag_dataset(**base, **values)
+                await evaluate_rag_dataset(**merged)
 
 
 if __name__ == "__main__":
