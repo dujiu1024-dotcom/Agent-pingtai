@@ -3,10 +3,24 @@ from __future__ import annotations
 
 import asyncio
 import math
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol
+
+_CURRENT_WORKER_LEASE_TOKEN: ContextVar[int | None] = ContextVar("current_worker_lease_token", default=None)
+
+
+def set_worker_lease_token(token: int) -> Token[int | None]:
+ """Bind the claimed fencing token to this worker task's async context."""
+ if type(token) is not int or token < 1:
+  raise ValueError("lease_token must be a positive integer")
+ return _CURRENT_WORKER_LEASE_TOKEN.set(token)
+
+
+def reset_worker_lease_token(token: Token[int | None]) -> None:
+ _CURRENT_WORKER_LEASE_TOKEN.reset(token)
 
 
 def _now() -> datetime: return datetime.now(timezone.utc)
@@ -94,14 +108,16 @@ class RunLifecycleManager:
    if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
    return old
   updated=await self.store.transition(RunSnapshot(tenant_id,run_id,status,old.version,
-   checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error),expected_version=old.version)
+   checkpoint_ref=checkpoint_ref or old.checkpoint_ref,last_error=error,
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
   if self.token_service is not None:
    await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
   return updated
  async def start(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  return await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.RUNNING,old.version),expected_version=old.version)
+  return await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.RUNNING,old.version,
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
  async def cancel(self,tenant_id:str,run_id:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
@@ -112,7 +128,8 @@ class RunLifecycleManager:
    updated=old
   else:
    target=RunStatus.CANCELLED if old.status in {RunStatus.QUEUED,RunStatus.PAUSED,RunStatus.INTERRUPTED} else RunStatus.CANCELLING
-   updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version),expected_version=old.version)
+   updated=await self.finish(tenant_id,run_id,target) if target==RunStatus.CANCELLED else await self.store.transition(RunSnapshot(tenant_id,run_id,target,old.version,
+    lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
   if task is not None:
@@ -128,6 +145,7 @@ class RunLifecycleManager:
   updated=await self.store.transition(RunSnapshot(
    tenant_id,run_id,RunStatus.PAUSED,old.version,
    checkpoint_ref=checkpoint_ref,last_error=reason[:500],
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0,
   ),expected_version=old.version)
   await self.tools.cancel_run(run_id,tenant_id=tenant_id)
   async with self._lock: task=self._tasks.get((tenant_id,run_id))
@@ -141,13 +159,15 @@ class RunLifecycleManager:
   return await self.store.transition(RunSnapshot(
    tenant_id,run_id,RunStatus.INTERRUPTED,old.version,
    checkpoint_ref=old.checkpoint_ref,last_error="human resume requested",
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0,
   ),expected_version=old.version)
  async def list_recent(self,tenant_id:str,limit:int=20)->list[RunSnapshot]:
   return await self.store.list_recent(tenant_id,limit=limit)
  async def mark_interrupted(self,tenant_id:str,run_id:str,*,checkpoint_ref:str|None,reason:str)->RunSnapshot:
   old=await self.store.get(tenant_id,run_id)
   if old is None: raise KeyError("Run not found")
-  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500]),expected_version=old.version)
+  updated=await self.store.transition(RunSnapshot(tenant_id,run_id,RunStatus.INTERRUPTED,old.version,checkpoint_ref,reason[:500],
+   lease_token=_CURRENT_WORKER_LEASE_TOKEN.get() or 0),expected_version=old.version)
   if self.token_service is not None: await self.token_service.revoke_run(tenant_id=tenant_id,run_id=run_id)
   return updated
  async def recover(self,*,checkpoint_loader:Any,resume:Any,limit:int=100,worker_id:str|None=None,lease_seconds:int=60,tenant_id:str|None=None)->list[str]:
