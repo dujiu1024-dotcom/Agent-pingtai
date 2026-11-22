@@ -124,7 +124,7 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 function mockApi(input: RequestInfo | URL, init?: RequestInit): Response {
   const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin)
-  const path = url.pathname.replace(/^\\/api(?=\\/)/, '')
+  const path = url.pathname.replace(/^\/api(?=\/)/, '')
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
 
   if (path.endsWith('/platform/v1/bootstrap')) {
