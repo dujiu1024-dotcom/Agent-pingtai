@@ -56,6 +56,8 @@ class PostgresGovernanceStoreTests(unittest.IsolatedAsyncioTestCase):
         )
         await store.save(record)
         loaded = await store.get("tenant-a", "mcp-docs")
+        if loaded is None:
+            self.fail("MCP health record was not loaded")
         self.assertEqual(loaded.tenant_id, "tenant-a")
         self.assertEqual(loaded.error_code, "tool_inventory_mismatch")
         self.assertIn("platform_mcp_health_checks", connection.statements[0][0])
@@ -85,6 +87,8 @@ class PostgresGovernanceStoreTests(unittest.IsolatedAsyncioTestCase):
         )
         await store.save(review)
         loaded = await store.get("tenant-a", "summarize", 4)
+        if loaded is None:
+            self.fail("Skill review was not loaded")
         self.assertEqual(loaded.manifest_digest, "a" * 64)
         self.assertEqual(loaded.findings, review.findings)
         self.assertIn("platform_skill_dependency_reviews", connection.statements[0][0])
