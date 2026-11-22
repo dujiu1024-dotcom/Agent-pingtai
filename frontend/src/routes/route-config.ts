@@ -76,14 +76,6 @@ export const pageRoutes: PageRoute[] = [
     owner: '#748',
   },
   {
-    path: '/operations/dashboard',
-    pageId: 'OPS-DASHBOARD',
-    title: '运营驾驶舱',
-    section: '智能体运营',
-    description: '基于已接入服务端指标的运营驾驶舱。',
-    owner: '#797',
-  },
-  {
     path: '/operations/agents',
     pageId: 'OPS-AGENTS',
     title: 'Agent 运行态',
@@ -189,7 +181,7 @@ export const pageRoutes: PageRoute[] = [
     title: '文件与产物',
     section: '智能体运营',
     description: '文件和运行产物入口。',
-    owner: '#802',
+    owner: '#750',
   },
   {
     path: '/admin/agents',
@@ -258,21 +250,12 @@ export const pageRoutes: PageRoute[] = [
     authOnly: true,
   },
   {
-    path: '/admin/rbac',
+    path: '/admin/access-control',
     pageId: 'ADM-RBAC',
     title: '角色与权限',
     section: '平台管理',
     description: '角色与权限管理；仅权限模式可用。',
-    owner: '#798',
-    authOnly: true,
-  },
-  {
-    path: '/admin/access-control',
-    pageId: 'ADM-RBAC-LEGACY',
-    title: '角色与权限（旧地址）',
-    section: '平台管理',
-    description: '兼容旧 RBAC 地址，自动跳转到 /admin/rbac。',
-    owner: '#798',
+    owner: '#749',
     authOnly: true,
   },
   {
@@ -459,7 +442,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'File/Artifact 唯一详情路由。',
     parentPath: '/operations/files',
     entityIdParam: 'fileId',
-    owner: '#802',
+    owner: '#750',
   },
   {
     path: '/admin/audit/:eventId',
@@ -603,7 +586,7 @@ export const navigationSections: NavigationSection[] = [
   },
   {
     id: 'workflow',
-    label: 'Workflow',
+    label: '工作流与系统管理',
     icon: '⌘',
     path: '/admin/workflows',
     subpages: [
@@ -613,6 +596,19 @@ export const navigationSections: NavigationSection[] = [
         path: '/admin/prompts',
         capability: 'prompt_management',
       },
+      { label: 'Agent 定义', path: '/admin/agents' },
+      { label: '模型供应商', path: '/admin/models/providers' },
+      { label: '模型模板', path: '/admin/models/templates' },
+      { label: '模型路由', path: '/admin/models/routing' },
+      { label: '工具与 MCP', path: '/admin/tools' },
+      { label: 'Skills', path: '/admin/skills' },
+      { label: '组织与成员', path: '/admin/organization', authOnly: true },
+      { label: '角色与权限', path: '/admin/access-control', authOnly: true },
+      { label: '系统设置', path: '/admin/settings' },
+      { label: '审计中心', path: '/admin/audit' },
+      { label: '调度任务', path: '/admin/scheduler/jobs' },
+      { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
+      { label: '系统运维', path: '/admin/operations' },
     ],
   },
   {
@@ -626,36 +622,15 @@ export const navigationSections: NavigationSection[] = [
       { label: '评测运行', path: '/operations/evaluation/runs' },
     ],
   },
-  {
-    id: 'administration',
-    label: '系统管理',
-    icon: '⚙',
-    path: '/admin/agents',
-    subpages: [
-      { label: 'Agent 定义', path: '/admin/agents' },
-      { label: '模型供应商', path: '/admin/models/providers' },
-      { label: '模型模板', path: '/admin/models/templates' },
-      { label: '模型路由', path: '/admin/models/routing' },
-      { label: '工具与 MCP', path: '/admin/tools' },
-      { label: 'Skills', path: '/admin/skills' },
-      {
-        label: '组织与成员',
-        path: '/admin/organization',
-        authOnly: true,
-      },
-      {
-        label: '角色与权限',
-        path: '/admin/rbac',
-        authOnly: true,
-      },
-      { label: '系统设置', path: '/admin/settings' },
-      { label: '审计中心', path: '/admin/audit' },
-      { label: '调度任务', path: '/admin/scheduler/jobs' },
-      { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
-      { label: '系统运维', path: '/admin/operations' },
-    ],
-  },
+
 ]
+
+export function getWorkspaceViewMode(pathname: string): 'home' | 'office' {
+  return pathname === '/workspace/office' ||
+    pathname.startsWith('/workspace/office/')
+    ? 'office'
+    : 'home'
+}
 
 export function getNavigationSections(
   authEnabled: boolean,

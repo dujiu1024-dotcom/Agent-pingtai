@@ -1496,3 +1496,38 @@ input:focus-visible {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   }
 }
+
+
+/* Issue #818: compact shell feedback and explicit view-mode hooks */
+.sidebar-collapsed-hint {
+  position: fixed;
+  z-index: 8;
+  top: 82px;
+  left: 88px;
+  padding: 8px 12px;
+  border: 1px solid #dbe4f5;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #526078;
+  box-shadow: 0 8px 24px rgba(25, 45, 85, 0.12);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+[data-v='office'] .main-content {
+  --workspace-view-mode: office;
+}
+
+[data-v='home'] .main-content {
+  --workspace-view-mode: home;
+}
+
+.primary-navigation .nav-item:hover {
+  background: #f4f6fc;
+  color: #2f6af0;
+}
+
+.primary-navigation .nav-item.active {
+  background: #edf2ff;
+  color: #2f6af0;
+}

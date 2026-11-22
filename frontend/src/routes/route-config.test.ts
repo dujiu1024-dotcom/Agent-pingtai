@@ -5,25 +5,46 @@ import {
   authRoutes,
   detailRoutes,
   getAllRoutes,
+  getNavigationSections,
   getVisibleNavigation,
+  getWorkspaceViewMode,
   globalRoutes,
   isCanonicalRouteSetValid,
   pageRoutes,
 } from './route-config'
 
 describe('route configuration', () => {
+  it('maps workspace and nested office paths to the correct view mode', () => {
+    expect(getWorkspaceViewMode('/workspace/overview')).toBe('home')
+    expect(getWorkspaceViewMode('/workspace/office')).toBe('office')
+    expect(getWorkspaceViewMode('/workspace/office/floor/2')).toBe('office')
+    expect(getWorkspaceViewMode('/operations/agents')).toBe('home')
+  })
+
   it('keeps canonical page ids and paths unique', () => {
     expect(
       isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes]),
     ).toBe(true)
   })
 
-  it('provides exactly three primary navigation sections', () => {
-    expect(getVisibleNavigation(false).map((group) => group.id)).toEqual([
-      'workspace',
-      'operations',
-      'administration',
+  it('provides six primary navigation items with system administration grouped under workflow', () => {
+    expect(getNavigationSections(false).map((group) => group.id)).toEqual([
+      'home',
+      'office',
+      'tasks',
+      'collaboration',
+      'workflow',
+      'cost',
     ])
+    expect(getNavigationSections(false).find((group) => group.id === 'workflow')?.label)
+      .toBe('工作流与系统管理')
+    expect(
+      getNavigationSections(false).find((group) => group.id === 'workflow')?.subpages,
+    ).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '/admin/workflows' }),
+      expect.objectContaining({ path: '/admin/agents' }),
+      expect.objectContaining({ path: '/admin/settings' }),
+    ]))
   })
 
   it('uses the frozen dashboard route as the default route target', () => {
