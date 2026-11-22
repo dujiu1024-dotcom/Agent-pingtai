@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
@@ -71,6 +71,8 @@ type OfficeSnapshotRun = {
   model_template?: string
   updated_at?: string
   created_at?: string
+  ok?: boolean
+  error?: string | null
 }
 type NormalizedOfficeAgent = OfficeAgent & {
   x?: number
@@ -319,35 +321,38 @@ export function OfficeWorkspace() {
   const [search, setSearch] = useState('')
   const [use2D, setUse2D] = useState(false)
   const floor = useMemo(() => floors.find((item) => item.id === floorId) ?? floors[1], [floorId])
-  const agentsQuery = useQuery({
-    queryKey: ['workspace', 'office', 'agents'],
-    queryFn: () => apiClient.get<unknown>(AGENTS_API).then((value) => listFrom<RegistryAgent>(value)),
-    staleTime: 30000,
-    refetchInterval: 60000,
+  const queryClient = useQueryClient()
+  const officeQuery = useQuery({
+    queryKey: ['workspace', 'office', 'state'],
+    queryFn: () => apiClient.get<unknown>('/platform/v1/office/state', { etag: false }),
+    staleTime: 5_000,
+    refetchInterval: 10_000,
   })
-  const tasksQuery = useQuery({
-    queryKey: ['workspace', 'office', 'tasks'],
-    queryFn: () => apiClient.get<unknown>(TASKS_API).then((value) => listFrom<OfficeTask>(value)),
-    staleTime: 15000,
-    refetchInterval: 30000,
-  })
-  const agents = useMemo(() => (agentsQuery.data ?? []).map((agent): OfficeAgent => {
-    const latestTask = (tasksQuery.data ?? []).filter((task) => task.agent_id === agent.item_id)
-      .sort((a, b) => taskTimestamp(b) - taskTimestamp(a))[0]
-    return {
-      agent_id: agent.item_id,
-      name: agent.definition?.name || agent.item_id,
-      role: agent.definition?.description || 'Agent Registry 条目',
-      status: latestTask ? taskStatus(latestTask.status) : 'unknown',
-      floor_id: agent.floor_id || agent.definition?.floor_id,
-      desk_id: agent.desk_id || agent.definition?.desk_id,
-      task_id: latestTask?.task_id,
-      task_title: latestTask?.title || latestTask?.prompt,
-      run_id: latestTask?.run_id,
-      model_template: latestTask?.model_template,
-      last_active_at: latestTask?.updated_at || latestTask?.created_at,
-    }
-  }), [agentsQuery.data, tasksQuery.data])
+  const snapshot = officeQuery.data
+  const streamUrl = getOfficeEventStreamUrl(snapshot)
+  useEffect(() => {
+    if (!streamUrl || typeof EventSource === 'undefined') return
+    const source = new EventSource(streamUrl, { withCredentials: true })
+    const reconcile = () => { void queryClient.invalidateQueries({ queryKey: ['workspace', 'office', 'state'] }) }
+    source.onmessage = reconcile
+    source.addEventListener('office.updated', reconcile)
+    source.addEventListener('agent.updated', reconcile)
+    source.addEventListener('run.updated', reconcile)
+    source.addEventListener('snapshot.invalidated', reconcile)
+    return () => source.close()
+  }, [queryClient, streamUrl])
+  const agents = useMemo(() => normalizeOfficeAgents(snapshot).map((agent) => ({
+    ...agent,
+    task_title: agent.task,
+    run_id: agent.current_run_id,
+  })), [snapshot])
+  const runs = snapshot && typeof snapshot === 'object'
+    ? ((snapshot as { data?: { runs?: OfficeSnapshotRun[] }; runs?: OfficeSnapshotRun[] }).data?.runs
+      ?? (snapshot as { runs?: OfficeSnapshotRun[] }).runs ?? [])
+    : []
+  const runningTasks = runs.filter((run) => ['running', 'executing'].includes((run.status ?? '').toLowerCase())).length
+  const activeAgents = agents.filter((agent) => ['running', 'collaborating', 'waiting_approval', 'queued'].includes(agent.status)).length
+  const dataUnavailable = officeQuery.isError
   const visibleAgents = agents.filter((agent) => (!agent.floor_id || agent.floor_id === floorId) &&
     `${agent.name} ${agent.agent_id} ${agent.desk_id ?? ''}`.toLowerCase().includes(search.toLowerCase()))
   const runningTasks = (tasksQuery.data ?? []).filter((task) => ['running', 'executing'].includes((task.status ?? '').toLowerCase())).length
@@ -374,7 +379,7 @@ export function OfficeWorkspace() {
           </button>)}
         </div>
         <div className="office-top-actions">
-          <span className={`office-sync-state ${dataUnavailable ? 'is-error' : ''}`}><i />{agentsQuery.isLoading || tasksQuery.isLoading ? '正在同步' : dataUnavailable ? '部分数据不可用' : '数据已同步'}</span>
+          <span className={`office-sync-state ${dataUnavailable ? 'is-error' : ''}`}><i />{officeQuery.isLoading ? '正在同步' : dataUnavailable ? '实时数据不可用' : '实时状态已同步'}</span>
           <button className={view === 'space' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('space')}>空间视角</button>
           <button className={view === 'top' ? 'office-view-button active' : 'office-view-button'} onClick={() => setView('top')}>俯视图</button>
           <button className={use2D ? 'office-view-button active' : 'office-view-button'} onClick={() => setUse2D((value) => !value)} aria-pressed={use2D}>2D 列表</button>
@@ -409,12 +414,12 @@ export function OfficeWorkspace() {
           <div className="office-inspector-section"><div className="office-section-heading">功能区域 <span>{zones.length} ZONES</span></div>
             <div className="office-zone-list">{zones.map((zone) => <button type="button" className={selectedZone === zone.id ? 'office-zone-row selected' : 'office-zone-row'} key={zone.id} onClick={() => setSelectedZone(zone.id)}><span className="office-zone-dot" /><span><strong>{zone.name}</strong><small>{zone.subtitle}</small></span><span className="office-zone-count">查看</span></button>)}</div>
           </div>
-          <div className="office-inspector-section office-agent-section"><div className="office-section-heading">Agent 状态 <span>{agentsQuery.isLoading ? '同步中' : `${visibleAgents.length} AGENTS`}</span></div>
-            {agentsQuery.isLoading || tasksQuery.isLoading ? <div className="office-no-agents"><span>⌁</span><strong>正在读取 Agent Registry</strong><p>正在同步服务端 Agent 定义与任务执行记录。</p></div> : dataUnavailable ? <div className="office-no-agents"><span>!</span><strong>实时数据暂不可用</strong><p>无法完整读取 Agent Registry 或任务执行记录，请检查服务端 API。</p></div> : visibleAgents.length ? visibleAgents.map((agent) => <button type="button" className={selectedAgentId === agent.agent_id ? 'office-agent-row selected' : 'office-agent-row'} key={agent.agent_id} onClick={() => setSelectedAgentId(agent.agent_id)}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></button>) :
+          <div className="office-inspector-section office-agent-section"><div className="office-section-heading">Agent 状态 <span>{officeQuery.isLoading ? '同步中' : `${visibleAgents.length} AGENTS`}</span></div>
+            {officeQuery.isLoading ? <div className="office-no-agents"><span>⌁</span><strong>正在读取 Agent Registry</strong><p>正在同步服务端 Agent 定义与任务执行记录。</p></div> : dataUnavailable ? <div className="office-no-agents"><span>!</span><strong>实时数据暂不可用</strong><p>无法完整读取 Agent Registry 或任务执行记录，请检查服务端 API。</p></div> : visibleAgents.length ? visibleAgents.map((agent) => <button type="button" className={selectedAgentId === agent.agent_id ? 'office-agent-row selected' : 'office-agent-row'} key={agent.agent_id} onClick={() => setSelectedAgentId(agent.agent_id)}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></button>) :
               <div className="office-no-agents"><span>⌁</span><strong>暂无匹配的 Agent</strong><p>当前 Registry 没有匹配的 Agent，或搜索条件没有结果。</p></div>}
           </div>
           <div className="office-selected-desk">{selectedAgent ? <><span>Agent 详情</span><strong>{selectedAgent.name}</strong><small>{selectedAgent.role}</small><small>状态：{statusLabels[selectedAgent.status]}</small><small>工位：{selectedAgent.desk_id || '未分配'}</small><small>任务：{selectedAgent.task_title || selectedAgent.task_id || '无关联任务'}</small><small>Run：{selectedAgent.run_id || '—'}</small><small>模型模板：{selectedAgent.model_template || '—'}</small><small>最近活动：{selectedAgent.last_active_at || '—'}</small><button type="button" className="office-clear-selection" onClick={() => setSelectedAgentId(null)}>关闭 Agent 详情</button></> : selectedDesk ? <><span>当前选中工位</span><strong>{selectedDesk.toUpperCase()}</strong><small>{selectedDeskAgent ? `Agent：${selectedDeskAgent.name} · ${statusLabels[selectedDeskAgent.status]}` : '尚未关联 Agent 数据'}</small></> : selectedZoneDetails ? <><span>区域详情</span><strong>{selectedZoneDetails.name}</strong><small>{selectedZoneDetails.subtitle}</small><small>当前楼层：{floor.name}</small></> : <><span>工位详情</span><strong>选择一个工位或区域</strong><small>点击 3D 场景、区域列表或二维地图查看详情</small></>}</div>
-          <p className="office-api-note">状态数据：服务端 Agent Registry + Workbench Tasks API，按 60 秒 / 30 秒轮询；无任务状态的 Agent 标记为未知。仅展示服务端明确提供的 Agent 工位映射，不根据 ID 推断坐标。</p>
+          <p className="office-api-note">状态数据：服务端 Agent Registry + Workbench Tasks API，按 10 秒快照校准；若快照显式提供事件流地址则订阅并触发快照重取；无任务状态的 Agent 标记为未知。仅展示服务端明确提供的 Agent 工位映射，不根据 ID 推断坐标。</p>
         </aside>
       </section>
     </main>
