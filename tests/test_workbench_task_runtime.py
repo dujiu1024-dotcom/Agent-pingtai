@@ -92,6 +92,12 @@ class TaskRunStore(InMemoryRunStateStore):
         self.idempotency[key] = run_id
         return run_id
 
+    async def get_run_record(self, tenant_id, run_id):
+        row = self.records.get(run_id)
+        if row is None or row["tenant_id"] != tenant_id:
+            return None
+        return row
+
     async def get_task_record(self, tenant_id, task_id, *, actor_id=None):
         row = self.records.get(task_id)
         if row is None or row["tenant_id"] != tenant_id:
