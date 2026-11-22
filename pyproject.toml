@@ -136,6 +136,7 @@ include = [
   "tests/test_gateway_runtime_postgres_integration.py",
   "tests/test_gateway_service.py",
   "tests/test_run_lifecycle.py",
+  "tests/test_issue_12_a_12_02_security_acceptance.py",
   "tests/test_issue_12_a_12_03_runtime_acceptance.py",
   "tests/test_issue_9_a_9_02_run_access_resume.py",
   "tests/test_run_context.py",
