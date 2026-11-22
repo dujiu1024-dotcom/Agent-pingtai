@@ -8,6 +8,7 @@ import {
   getVisibleNavigation,
   globalRoutes,
   isCanonicalRouteSetValid,
+  navigationSections,
   pageRoutes,
 } from './route-config'
 
@@ -16,6 +17,37 @@ describe('route configuration', () => {
     expect(
       isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes]),
     ).toBe(true)
+  })
+
+  it('integrates all frontend navigation entries with unique registered routes', () => {
+    const routes = getAllRoutes(true)
+    const paths = routes.map((route) => route.path)
+    const registeredPaths = new Set(paths)
+
+    expect(paths).toHaveLength(new Set(paths).size)
+    for (const section of navigationSections) {
+      expect(registeredPaths.has(section.path), section.path).toBe(true)
+      for (const subpage of section.subpages) {
+        expect(registeredPaths.has(subpage.path), subpage.path).toBe(true)
+      }
+    }
+
+    for (const path of [
+      '/workspace/overview',
+      '/workspace/tasks',
+      '/workspace/collaboration',
+      '/workspace/quality-cost',
+      '/workspace/office',
+      '/admin/agents',
+      '/admin/workflows',
+      '/admin/tools',
+      '/admin/skills',
+      '/admin/settings',
+      '/admin/audit',
+      '/admin/operations',
+    ]) {
+      expect(registeredPaths.has(path), path).toBe(true)
+    }
   })
 
   it('provides exactly four primary navigation sections', () => {
