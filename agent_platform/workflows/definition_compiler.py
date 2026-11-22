@@ -1,0 +1,256 @@
+"""Compile versioned declarative Workflow definitions into LangGraph StateGraphs.
+
+Only platform-registered node factories are executable. User definitions never
+supply Python import paths, callables, scheduler logic, or checkpointer objects.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping, Sequence
+
+
+@dataclass(frozen=True)
+class WorkflowNodeType:
+    node_type: str
+    version: int
+    factory: Callable[[Mapping[str, Any]], Callable[..., Any]]
+    config_schema: Mapping[str, Any]
+    input_schema: Mapping[str, Any]
+    output_schema: Mapping[str, Any]
+    ports: Mapping[str, Any]
+    permissions: tuple[str, ...] = ()
+    risk: str = "low"
+    error_retry: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class WorkflowDiagnostic:
+    code: str
+    message: str
+    path: str
+    severity: str = "error"
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "code": self.code, "message": self.message,
+            "path": self.path, "severity": self.severity,
+        }
+
+
+class WorkflowDefinitionError(ValueError):
+    def __init__(self, diagnostics: Sequence[WorkflowDiagnostic]) -> None:
+        self.diagnostics = tuple(diagnostics)
+        super().__init__("; ".join(item.message for item in self.diagnostics))
+
+
+class WorkflowNodeRegistry:
+    """Explicit allowlist of reviewed platform node implementations."""
+
+    def __init__(self, node_types: Sequence[WorkflowNodeType] = ()) -> None:
+        self._types: dict[tuple[str, int], WorkflowNodeType] = {}
+        for item in node_types:
+            self.register(item)
+
+    def register(self, item: WorkflowNodeType) -> None:
+        key = (item.node_type, item.version)
+        if not item.node_type.strip() or item.version < 1 or key in self._types:
+            raise ValueError("node type/version must be unique and valid")
+        self._types[key] = item
+
+    def resolve(self, node_type: str, version: int) -> WorkflowNodeType | None:
+        return self._types.get((node_type, version))
+
+
+class LangGraphWorkflowCompiler:
+    """Validate and compile immutable Workflow versions; never executes a graph."""
+
+    def __init__(
+        self, *, node_registry: WorkflowNodeRegistry,
+        graph_factory: Callable[[Mapping[str, Any], Mapping[str, Callable[..., Any]]], Any] | None = None,
+    ) -> None:
+        self.node_registry = node_registry
+        self._graph_factory = graph_factory or self._compile_state_graph
+
+    @staticmethod
+    def _compile_state_graph(
+        definition: Mapping[str, Any], nodes: Mapping[str, Callable[..., Any]],
+    ) -> Any:
+        try:
+            from langgraph.graph import END, START, StateGraph
+        except ImportError as exc:
+            raise RuntimeError("LangGraph is required to compile Workflow definitions") from exc
+
+        graph: Any = StateGraph(dict)
+        for node_id, node in nodes.items():
+            graph.add_node(node_id, node)
+
+        entry = definition["entry_point"]
+        graph.add_edge(START, entry)
+        conditional_sources: set[str] = set()
+        for index, edge in enumerate(definition.get("edges", [])):
+            source, target = edge["source"], edge["target"]
+            if source in conditional_sources:
+                raise ValueError(f"node {source} cannot mix normal and conditional outgoing edges")
+            graph.add_edge(source, END if target == "__end__" else target)
+
+        for branch in definition.get("branches", []):
+            source = branch["source"]
+            if source in conditional_sources:
+                raise ValueError(f"node {source} has multiple conditional branch declarations")
+            conditional_sources.add(source)
+            field = branch["field"]
+            routes = dict(branch["routes"])
+            default = branch.get("default")
+            def route(state: Mapping[str, Any], *, key: str = field, fallback: Any = default) -> Any:
+                value = state.get(key)
+                return value if value in routes else fallback
+            graph.add_conditional_edges(
+                source, route,
+                {key: END if target == "__end__" else target for key, target in routes.items()},
+            )
+        return graph.compile()
+
+    def diagnose(self, definition: Mapping[str, Any]) -> tuple[WorkflowDiagnostic, ...]:
+        diagnostics: list[WorkflowDiagnostic] = []
+        if not isinstance(definition, Mapping):
+            return (WorkflowDiagnostic("definition.type", "definition must be an object", "$"),)
+        if definition.get("schema_version") != 1:
+            diagnostics.append(WorkflowDiagnostic(
+                "schema.unsupported", "schema_version must equal 1", "$.schema_version",
+            ))
+        nodes = definition.get("nodes")
+        edges = definition.get("edges", [])
+        branches = definition.get("branches", [])
+        if not isinstance(nodes, list) or not nodes:
+            diagnostics.append(WorkflowDiagnostic("nodes.required", "nodes must be a non-empty array", "$.nodes"))
+            nodes = []
+        if not isinstance(edges, list):
+            diagnostics.append(WorkflowDiagnostic("edges.type", "edges must be an array", "$.edges"))
+            edges = []
+        if not isinstance(branches, list):
+            diagnostics.append(WorkflowDiagnostic("branches.type", "branches must be an array", "$.branches"))
+            branches = []
+
+        ids: set[str] = set()
+        node_by_id: dict[str, Mapping[str, Any]] = {}
+        for index, node in enumerate(nodes):
+            path = f"$.nodes[{index}]"
+            if not isinstance(node, Mapping):
+                diagnostics.append(WorkflowDiagnostic("node.type", "node must be an object", path))
+                continue
+            node_id, kind, version = node.get("id"), node.get("node_type"), node.get("version")
+            if not isinstance(node_id, str) or not node_id.strip():
+                diagnostics.append(WorkflowDiagnostic("node.id", "node id is required", path + ".id"))
+                continue
+            if node_id in ids:
+                diagnostics.append(WorkflowDiagnostic("node.duplicate", f"duplicate node id: {node_id}", path + ".id"))
+            ids.add(node_id)
+            node_by_id[node_id] = node
+            if not isinstance(kind, str) or isinstance(version, bool) or not isinstance(version, int):
+                diagnostics.append(WorkflowDiagnostic("node.type_version", "node_type and integer version are required", path))
+                continue
+            spec = self.node_registry.resolve(kind, version)
+            if spec is None:
+                diagnostics.append(WorkflowDiagnostic(
+                    "node.unknown", f"unknown or incompatible node type/version: {kind}@{version}",
+                    path + ".node_type",
+                ))
+                continue
+            for key, expected in (
+                ("config_schema", spec.config_schema), ("input_schema", spec.input_schema),
+                ("output_schema", spec.output_schema), ("ports", spec.ports),
+            ):
+                if node.get(key) != expected:
+                    diagnostics.append(WorkflowDiagnostic(
+                        "node.schema_incompatible", f"{key} does not match registered {kind}@{version}",
+                        path + "." + key,
+                    ))
+            if node.get("permissions", []) != list(spec.permissions):
+                diagnostics.append(WorkflowDiagnostic(
+                    "node.permissions", "permissions differ from registered node policy",
+                    path + ".permissions",
+                ))
+            if node.get("risk", spec.risk) != spec.risk:
+                diagnostics.append(WorkflowDiagnostic("node.risk", "risk metadata differs from registry", path + ".risk"))
+            if node.get("error_retry", dict(spec.error_retry or {})) != dict(spec.error_retry or {}):
+                diagnostics.append(WorkflowDiagnostic(
+                    "node.retry", "error_retry semantics differ from registry", path + ".error_retry",
+                ))
+            if not isinstance(node.get("config", {}), Mapping):
+                diagnostics.append(WorkflowDiagnostic("node.config", "config must be an object", path + ".config"))
+
+        entry = definition.get("entry_point")
+        if entry not in ids:
+            diagnostics.append(WorkflowDiagnostic("entry.invalid", "entry_point must reference a known node", "$.entry_point"))
+
+        seen_edges: set[tuple[str, str]] = set()
+        for index, edge in enumerate(edges):
+            path = f"$.edges[{index}]"
+            if not isinstance(edge, Mapping):
+                diagnostics.append(WorkflowDiagnostic("edge.type", "edge must be an object", path))
+                continue
+            source, target = edge.get("source"), edge.get("target")
+            if source not in ids or target not in ids | {"__end__"}:
+                diagnostics.append(WorkflowDiagnostic("edge.reference", "edge references an unknown node", path))
+            if (source, target) in seen_edges:
+                diagnostics.append(WorkflowDiagnostic("edge.duplicate", "duplicate edge", path))
+            seen_edges.add((source, target))
+
+        branch_sources: set[str] = set()
+        for index, branch in enumerate(branches):
+            path = f"$.branches[{index}]"
+            if not isinstance(branch, Mapping):
+                diagnostics.append(WorkflowDiagnostic("branch.type", "branch must be an object", path))
+                continue
+            source, field, routes = branch.get("source"), branch.get("field"), branch.get("routes")
+            if source not in ids or not isinstance(field, str) or not field:
+                diagnostics.append(WorkflowDiagnostic("branch.source", "branch source and state field are required", path))
+            if source in branch_sources:
+                diagnostics.append(WorkflowDiagnostic("branch.duplicate", "only one branch declaration per source is allowed", path))
+            branch_sources.add(source)
+            if not isinstance(routes, Mapping) or not routes:
+                diagnostics.append(WorkflowDiagnostic("branch.routes", "routes must be a non-empty object", path + ".routes"))
+                continue
+            targets = list(routes.values()) + ([branch["default"]] if branch.get("default") is not None else [])
+            for target in targets:
+                if target not in ids | {"__end__"}:
+                    diagnostics.append(WorkflowDiagnostic("branch.target", "branch target is unknown", path + ".routes"))
+        for edge in edges:
+            if isinstance(edge, Mapping) and edge.get("source") in branch_sources:
+                diagnostics.append(WorkflowDiagnostic(
+                    "graph.mixed_outgoing", "a node cannot mix normal edges and conditional branches",
+                    "$.edges",
+                ))
+        return tuple(diagnostics)
+
+    def compile(self, definition: Mapping[str, Any]) -> tuple[Any, dict[str, Any]]:
+        diagnostics = self.diagnose(definition)
+        if diagnostics:
+            raise WorkflowDefinitionError(diagnostics)
+        compiled_nodes: dict[str, Callable[..., Any]] = {}
+        for node in definition["nodes"]:
+            spec = self.node_registry.resolve(node["node_type"], node["version"])
+            if spec is None:  # guarded by diagnose; protects against mutable registries
+                raise WorkflowDefinitionError((WorkflowDiagnostic(
+                    "node.unknown", "node type disappeared during compilation",
+                    "$.nodes",
+                ),))
+            compiled_nodes[node["id"]] = spec.factory(dict(node.get("config", {})))
+        try:
+            graph = self._graph_factory(definition, compiled_nodes)
+        except Exception as exc:
+            raise WorkflowDefinitionError((WorkflowDiagnostic(
+                "compile.failed", str(exc)[:500], "$",
+            ),)) from exc
+        canonical = json.dumps(definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return graph, {
+            "definition_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            "node_count": len(compiled_nodes),
+            "edge_count": len(definition.get("edges", [])) + sum(
+                len(branch.get("routes", {})) for branch in definition.get("branches", [])
+            ),
+            "engine": "langgraph",
+            "execution_started": False,
+        }
