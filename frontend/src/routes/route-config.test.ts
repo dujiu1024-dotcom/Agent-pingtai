@@ -94,6 +94,12 @@ describe('route configuration', () => {
       import('../features/collaboration/AgentCollaborationCenter'),
     ])
     expect(resolveCollaborationPage('/workspace/collaboration')?.type).toBe(AgentCollaborationCenter)
+    const workflowRunRoute = pageRoutes.find(route => route.path === '/operations/workflow-runs/:runId')
+    expect(workflowRunRoute).toMatchObject({ owner: '#746', authOnly: undefined })
+    expect(matchRoutes(
+      [...pageRoutes, ...detailRoutes].map(route => ({ path: route.path })),
+      '/operations/workflow-runs/run-123',
+    )?.[0].params.runId).toBe('run-123')
     const runPage = resolveCollaborationPage('/operations/workflow-runs/:runId', 'run-123')
     expect(runPage?.type).toBe(AgentCollaborationCenter)
     expect(runPage?.props.initialRunId).toBe('run-123')
