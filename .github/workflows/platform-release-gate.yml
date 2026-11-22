@@ -231,6 +231,8 @@ jobs:
           python -m pip install -r requirements-platform.txt -r requirements-knowledge-parsers.txt -r requirements-harness-strands.txt
       - name: Validate page map and route contract
         run: python -m unittest tests.test_issue_753_page_map_contract -v
+      - name: Run platform UI and legacy console fallback contracts
+        run: python -m pytest tests/test_platform_web.py -q
       - name: Run production API and dedicated worker composition contract
         run: python -m unittest tests.test_issue_614_runtime_composition -v
       - name: Run core business journey, unified model budget and release evidence acceptance tests
