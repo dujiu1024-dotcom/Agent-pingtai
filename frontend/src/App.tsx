@@ -22,6 +22,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
+import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import {
@@ -289,6 +290,7 @@ function RouteGuard({
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.path === '/admin/ops') return <SystemOpsPage />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/files') return <FilesWorkspace authEnabled={authEnabled} />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
