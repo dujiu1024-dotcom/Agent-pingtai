@@ -131,6 +131,40 @@ class WorkflowCompilerTests(unittest.TestCase):
         self.assertEqual(graph["nodes"], ("agent",))
         self.assertEqual(metadata["engine"], "langgraph")
 
+    def test_visual_designer_payload_builds_real_langgraph(self):
+        structural_retry = {"max_attempts": 1, "backoff": "none"}
+        designer = {
+            "nodes": [
+                {"id": "start", "node_type": "start", "version": 1,
+                 "ports": {"inputs": [], "outputs": ["main"]}},
+                {"id": "agent", "node_type": "agent", "version": 1, "config": {},
+                 "config_schema": {"type": "object"}, "input_schema": {"type": "object"},
+                 "output_schema": {"type": "object"}, "ports": {"inputs": ["main"], "outputs": ["main"]},
+                 "permissions": ["agent.execute"], "risk": "medium",
+                 "error_retry": {"max_attempts": 2}},
+                {"id": "end", "node_type": "end", "version": 1,
+                 "ports": {"inputs": ["main"], "outputs": []}},
+            ],
+            "edges": [
+                {"source": "start", "target": "agent", "source_port": "main", "target_port": "main"},
+                {"source": "agent", "target": "end", "source_port": "main", "target_port": "main"},
+            ],
+        }
+        designer_spec = WorkflowNodeType(
+            node_type="agent", version=1, factory=lambda config: lambda state: state,
+            config_schema={"type": "object"}, input_schema={"type": "object"},
+            output_schema={"type": "object"},
+            ports={"inputs": ["main"], "outputs": ["main"]},
+            permissions=("agent.execute",), risk="medium",
+            error_retry={"max_attempts": 2},
+        )
+        graph, metadata = LangGraphWorkflowCompiler(
+            node_registry=WorkflowNodeRegistry([designer_spec]),
+        ).compile(designer)
+        self.assertTrue(callable(getattr(graph, "invoke", None)))
+        self.assertEqual(metadata["edge_count"], 2)
+        self.assertFalse(metadata["execution_started"])
+
     def test_invalid_retry_attempts_are_rejected(self):
         self.definition["nodes"][0]["error_retry"] = {"max_attempts": 0}
         self.assertIn("node.retry", {item.code for item in self.compiler.diagnose(self.definition)})
