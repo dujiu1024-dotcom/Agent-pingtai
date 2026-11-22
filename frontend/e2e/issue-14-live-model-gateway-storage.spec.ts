@@ -13,14 +13,13 @@ const requiredEnvironment = [
 const missing = requiredEnvironment.filter((key) => !process.env[key])
 
 test.describe('Issue #14 live model, Gateway and object-storage journey', () => {
-  test.skip(
-    missing.length > 0,
-    `requires a deployed integration environment and dedicated test credentials; missing: ${missing.join(', ')}`,
-  )
-
   test('login → publish model-backed Agent → execute through Gateway → upload to object storage', async ({
     page,
   }) => {
+    test.skip(
+      missing.length > 0,
+      `requires a deployed integration environment and dedicated test credentials; missing: ${missing.join(', ')}`,
+    )
     const baseUrl = process.env.PLATFORM_E2E_BASE_URL!
     const tenantId = process.env.PLATFORM_E2E_TENANT_ID!
     const email = process.env.PLATFORM_E2E_EMAIL!
