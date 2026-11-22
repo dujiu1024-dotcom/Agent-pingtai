@@ -90,6 +90,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
                 store=InMemorySkillDependencyReviewStore(),
                 approved_pins={"safe-parser": ("==1.2.3",)},
                 scanner=Scanner(),
+                approved_tools=frozenset({"read", "search"}),
             )
 
         app = FastAPI()
@@ -160,6 +161,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
                 store=InMemorySkillDependencyReviewStore(),
                 approved_pins={"safe-parser": ("==1.2.3",)},
                 scanner=None,
+                approved_tools=frozenset({"read", "search"}),
             ),
             audit_writer=self.audit,
         ))
@@ -170,6 +172,20 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "rejected")
         self.assertTrue(any(
             "dependency_scanner_not_configured" in finding
+            for finding in response.json()["findings"]
+        ))
+
+    def test_skill_evaluation_rejects_tools_outside_host_allowlist(self):
+        self._publish("skill", "unsafe-skill", {
+            "manifest": {"name": "unsafe-skill", "tool_allowlist": ["admin.delete"]},
+        })
+        response = self.client.post(
+            "/api/v1/skills/unsafe-skill/evaluate", json={"version": 2},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "rejected")
+        self.assertTrue(any(
+            "tool_not_allowlisted:admin.delete" in finding
             for finding in response.json()["findings"]
         ))
 
