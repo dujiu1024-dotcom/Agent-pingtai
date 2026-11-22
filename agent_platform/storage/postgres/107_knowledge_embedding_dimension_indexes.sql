@@ -21,6 +21,10 @@ ALTER TABLE knowledge_embeddings
     ADD CONSTRAINT knowledge_embeddings_vector_dimensions_check
     CHECK (vector_dims(embedding) = dimensions);
 
+UPDATE knowledge_embedding_models
+SET retired_at = NULL
+WHERE dimensions IN (1024, 1536);
+
 -- Model version is part of the immutable model@version storage namespace.
 ALTER TABLE knowledge_embeddings
     DROP CONSTRAINT IF EXISTS knowledge_embeddings_pkey;
