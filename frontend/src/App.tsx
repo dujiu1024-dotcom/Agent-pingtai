@@ -59,6 +59,7 @@ import {
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 import { AdminInitPage, LoginPage } from '@/features/auth/AuthPages'
+import '@/routes/issue-818-breadcrumbs.css'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
