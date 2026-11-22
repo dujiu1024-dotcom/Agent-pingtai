@@ -80,6 +80,7 @@ def create_platform_app(
     rag_playground_embedding_models: Sequence[str] = (),
     memory_extraction: MemoryExtractionService | None = None,
     memory_expiry_worker: Any | None = None,
+    memory_deletion_worker: Any | None = None,
     registry_service_resolver: Any | None = None,
     session_service_resolver: Any | None = None,
     registry_authorizer: Any | None = None,
@@ -431,6 +432,13 @@ def create_platform_app(
             raise ValueError("memory_expiry_worker must expose async start() and stop()")
         app.router.on_startup.append(memory_expiry_worker.start)
         app.router.on_shutdown.append(memory_expiry_worker.stop)
+    if memory_deletion_worker is not None:
+        if not callable(getattr(memory_deletion_worker, "start", None)) or not callable(
+            getattr(memory_deletion_worker, "stop", None)
+        ):
+            raise ValueError("memory_deletion_worker must expose async start() and stop()")
+        app.router.on_startup.append(memory_deletion_worker.start)
+        app.router.on_shutdown.append(memory_deletion_worker.stop)
     if quota_reservation_worker is not None:
         if not callable(getattr(quota_reservation_worker, "start", None)) or not callable(
             getattr(quota_reservation_worker, "stop", None)
