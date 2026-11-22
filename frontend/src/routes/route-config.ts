@@ -632,7 +632,7 @@ export const navigationSections: NavigationSection[] = [
         path: '/admin/access-control',
         authOnly: true,
       },
-      { label: '系统设置', path: '/admin/settings' },
+      { label: '系统设置', path: '/admin/settings', authOnly: true },
       { label: '审计中心', path: '/admin/audit' },
       { label: '调度任务', path: '/admin/scheduler/jobs' },
       { label: '事件订阅', path: '/admin/scheduler/subscriptions' },
@@ -697,7 +697,7 @@ export function getRouteBreadcrumbs(pathname: string): BreadcrumbItem[] {
   const currentLabel = route?.parentPath ? route.title : subpage?.label ?? route?.title
   const currentPath = subpage?.path
   if (currentLabel && (currentLabel !== section.label || route?.parentPath)) {
-    if (route?.parentPath && currentPath !== route.parentPath) {
+    if (route?.parentPath) {
       const parent = [...pageRoutes, ...globalRoutes].find(
         (candidate) => candidate.path === route.parentPath,
       )
