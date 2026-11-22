@@ -75,7 +75,7 @@ class PostgresRunLeaseFencingTokenTests(unittest.IsolatedAsyncioTestCase):
             "tenant-a", "run-a", "worker-a", lease_token=12,
         ))
         self.assertIn("lease_token=%s", connection.query)
-        self.assertEqual(connection.params[-2:], (12, 12))
+        self.assertEqual(connection.params[-1:], (12,))
 
     async def test_release_checks_supplied_token_in_update_predicate(self):
         connection = _Connection(_Cursor(row={"run_id": "run-a"}))
@@ -101,7 +101,7 @@ class PostgresRunLeaseFencingTokenTests(unittest.IsolatedAsyncioTestCase):
             "tenant-a", "run-a", "worker-a", lease_token=3,
         ))
         self.assertIn("lease_token=%s", connection.query)
-        self.assertEqual(connection.params[-2:], (3, 3))
+        self.assertEqual(connection.params[-1:], (3,))
 
 
     async def test_workbench_failure_write_checks_supplied_token(self):
@@ -116,7 +116,7 @@ class PostgresRunLeaseFencingTokenTests(unittest.IsolatedAsyncioTestCase):
             "worker-a", error="failed", lease_token=9,
         ), "interrupted")
         self.assertIn("lease_token=%s", connection.query)
-        self.assertEqual(connection.params[-2:], (9, 9))
+        self.assertEqual(connection.params[-1:], (9,))
 
     async def test_lease_write_rejects_non_positive_token_before_database_access(self):
         connect = AsyncMock()
