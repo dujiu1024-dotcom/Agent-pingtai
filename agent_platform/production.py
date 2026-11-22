@@ -86,7 +86,6 @@ from agent_platform.observability.operational_health import OperationalHealthMon
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.observability.prompt_store import PostgresPromptRegistry
 from agent_platform.observability.run_trace import PostgresRunTraceRepository
-from agent_platform.storage.production_composition import ManagedFileProcessingWorker
 from agent_platform.production_config import (
     ProductionSettings,
     load_production_settings,
@@ -112,11 +111,8 @@ from agent_platform.scheduling.feishu import FeishuNotifier, load_feishu_config
 from agent_platform.scheduling.service import PostgresSchedulerService
 from agent_platform.security.audit import PostgresAuditWriter, PostgresIdentityAuditReader
 from agent_platform.security.local_store import LocalSecretStore
+from agent_platform.storage.production_composition import ManagedFileProcessingWorker
 from agent_platform.tools.production_reconciliation import build_tool_effect_reconciliation_service
-from agent_platform.tools.idempotency import (
-    PostgresToolEffectStore,
-    ToolEffectReconciliationService,
-)
 from agent_platform.web.board_page import create_board_page_router
 from agent_platform.web.console_pages import create_console_pages_router
 from agent_platform.workflows.production_resolver import (
