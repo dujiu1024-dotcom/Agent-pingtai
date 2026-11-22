@@ -65,6 +65,9 @@ type UsageSummary = {
   tool_and_storage_pricing: string
 }
 type ListResponse<T> = { items?: T[]; data?: T[]; count?: number }
+type MetricSample = { name: string; value: number; labels?: Record<string, string> }
+type MetricFamily = { name: string; type: string; help?: string; samples?: MetricSample[]; labels?: Record<string, string>; value?: number }
+type MetricsResponse = { items?: MetricFamily[]; count?: number }
 type Health = { status: 'ok' | 'warning' | 'critical' | 'unavailable'; [key: string]: unknown }
 type EvaluationReport = Record<string, unknown>
 type EffectivePolicy = {
@@ -187,7 +190,7 @@ export function CostQualityCenter() {
   const [agentId, setAgentId] = useState('')
   const [datasetId, setDatasetId] = useState('')
   const [submittedDataset, setSubmittedDataset] = useState('')
-  const [tab, setTab] = useState<'cost' | 'quality' | 'quota'>('cost')
+  const [tab, setTab] = useState<'cost' | 'performance' | 'quality' | 'quota'>('cost')
   const [policyProjectId, setPolicyProjectId] = useState('')
   const [policySubjectId, setPolicySubjectId] = useState('')
   const [submittedPolicy, setSubmittedPolicy] = useState({ project: '', subject: '' })
@@ -215,6 +218,13 @@ export function CostQualityCenter() {
     queryFn: () => apiClient.get<ListResponse<UsageEvent>>(`/platform/v1/quotas/usage?${query}&limit=1000`),
     enabled: rangeValid,
     refetchInterval: 30_000,
+  })
+  const performanceMetrics = useQuery({
+    queryKey: ['quality-cost', 'performance-metrics'],
+    queryFn: () => apiClient.get<MetricsResponse>('/platform/v1/observability/metrics/json'),
+    enabled: tab === 'performance',
+    refetchInterval: 30_000,
+    retry: false,
   })
   const health = useQuery({
     queryKey: ['quality-cost', 'capacity-health'],
@@ -362,6 +372,7 @@ export function CostQualityCenter() {
           void summary.refetch()
           void usage.refetch()
           void health.refetch()
+          if (tab === 'performance') void performanceMetrics.refetch()
           if (submittedDataset) void reports.refetch()
           if (tab === 'quota') {
             void effectivePolicy.refetch()
@@ -373,6 +384,7 @@ export function CostQualityCenter() {
       <nav className="panel-tabs" role="tablist" aria-label="成本与质量分区">
         {([
           ['cost', '成本', summary.data?.request_count ?? summary.data?.events ?? events.length],
+          ['performance', '性能', performanceMetrics.data?.count ?? 0],
           ['quality', '质量', reportItems.length],
           ['quota', '配额策略', budgetRows.length],
         ] as const).map(([id, label, count]) => (
@@ -478,6 +490,52 @@ export function CostQualityCenter() {
           </section>
         </>
       )}
+      </>
+      )}
+
+      {tab === 'performance' && (
+      <>
+        <div className="cq-filters">
+          <label>开始日期<input type="date" value={start} max={end || undefined} onChange={(event) => setStart(event.target.value)} /></label>
+          <label>结束日期<input type="date" value={end} min={start || undefined} max={today()} onChange={(event) => setEnd(event.target.value)} /></label>
+          <label>模型<select value={model} onChange={(event) => setModel(event.target.value)}><option value="">全部模型</option>{modelOptions.map((item) => <option value={item} key={item}>{item}</option>)}</select></label>
+          <span className="cq-refresh-note">用量汇总按筛选范围；Prometheus 指标为采集器当前快照</span>
+        </div>
+        {!rangeValid && <p className="cq-inline-error" role="alert">日期范围无效，请确认开始日期不晚于结束日期。</p>}
+        <section className="cq-metrics">
+          <Metric label="请求数" value={summary.data?.request_count == null ? '—' : number(summary.data.request_count)} hint="仅使用服务端请求计数" />
+          <Metric label="成功率" value={summary.data?.success_rate == null ? '—' : (summary.data.success_rate * 100).toFixed(2) + '%'} hint="服务端未提供时不可用" />
+          <Metric label="错误率" value={summary.data?.error_rate == null ? '—' : (summary.data.error_rate * 100).toFixed(2) + '%'} hint="服务端未提供时不可用" />
+          <Metric label="P50 延迟" value={summary.data?.p50_latency_ms == null ? '—' : number(summary.data.p50_latency_ms) + ' ms'} hint="服务端百分位数" />
+          <Metric label="P95 延迟" value={summary.data?.p95_latency_ms == null ? '—' : number(summary.data.p95_latency_ms) + ' ms'} hint="服务端百分位数" />
+          <Metric label="首 Token P50" value={summary.data?.first_token_ms_p50 == null ? '—' : number(summary.data.first_token_ms_p50) + ' ms'} hint="服务端首 Token 指标" />
+          <Metric label="吞吐（请求/秒）" value="—" hint="当前接口没有时间序列或窗口速率字段" />
+        </section>
+        {summary.isError && <ErrorState title="性能用量汇总不可用" description={errorText(summary.error)} onRetry={() => void summary.refetch()} />}
+        <section className="cq-panel">
+          <header><div><h2>Prometheus 运行指标</h2><p>展示服务端 /observability/metrics/json 原始指标族与样本；不把累计计数冒充时间窗口吞吐。</p></div><span>{number(performanceMetrics.data?.count)} 个指标族</span></header>
+          {performanceMetrics.isPending ? <LoadingState label="正在读取 Prometheus 指标" /> : performanceMetrics.isError ? (
+            <ErrorState title="Prometheus 指标暂不可用" description={errorText(performanceMetrics.error)} onRetry={() => void performanceMetrics.refetch()} />
+          ) : (performanceMetrics.data?.items ?? []).length ? (
+            <div className="cq-table-wrap">
+              <table className="cq-table cq-performance-table">
+                <thead><tr><th>指标</th><th>类型</th><th>标签</th><th>样本值</th><th>说明</th></tr></thead>
+                <tbody>{(performanceMetrics.data?.items ?? []).flatMap((family) =>
+                  (family.samples ?? (typeof family.value === 'number' ? [{ name: family.name, value: family.value, labels: family.labels }] : [])).map((sample, index) => (
+                    <tr key={family.name + ':' + sample.name + ':' + index}>
+                      <td>{sample.name || family.name}</td>
+                      <td>{family.type}</td>
+                      <td>{Object.entries(sample.labels ?? {}).map(([key, value]) => key + '=' + value).join(', ') || '—'}</td>
+                      <td>{number(sample.value)}</td>
+                      <td>{family.help || '—'}</td>
+                    </tr>
+                  )),
+                )}</tbody>
+              </table>
+            </div>
+          ) : <EmptyState title="暂无 Prometheus 样本" description="指标采集器尚未导出样本；不会用账本事件数或运行时长替代性能指标。" />}
+          <p className="cq-footnote">采集接口：GET /platform/v1/observability/metrics/json。指标快照不保证具有所选日期窗口；标签仅展示服务端已导出的低基数维度。</p>
+        </section>
       </>
       )}
 
