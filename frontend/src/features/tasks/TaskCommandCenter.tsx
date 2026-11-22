@@ -325,11 +325,11 @@ export function TaskCommandCenter() {
     setBulkBusy(true)
     setBulkFeedback('')
     setBulkFailureIds([])
-    const results = await Promise.allSettled(eligible.map((task) => action === 'cancel'
+    const results = await Promise.allSettled(eligible.map((task) => Promise.resolve().then(() => action === 'cancel'
       ? apiClient.post(`${TASKS}/${encodeURIComponent(task.task_id)}/cancel`)
       : apiClient.post(`${TASKS}/${encodeURIComponent(task.task_id)}/retry`, {
           idempotency_key: retryKey(),
-        })))
+        }))))
     const succeededIds = eligible.filter((_, index) => results[index].status === 'fulfilled').map((task) => task.task_id)
     const failedIds = eligible.filter((_, index) => results[index].status === 'rejected').map((task) => task.task_id)
     setSelectedTaskIds((current) => current.filter((id) => !succeededIds.includes(id)))
