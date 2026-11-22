@@ -62,8 +62,9 @@ _FALSE_VALUES = {"0", "false", "no", "off"}
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
-def _validate_production_security(env: Mapping[str, str]) -> None:
+def validate_production_security_config(env: Mapping[str, str] | None = None) -> None:
     """Reject authentication bypasses and placeholder signing secrets at boot."""
+    env = os.environ if env is None else env
     auth_enabled = env.get("AUTH_ENABLED")
     if auth_enabled is not None:
         value = auth_enabled.strip().lower()
@@ -110,7 +111,7 @@ def load_production_settings(
 ) -> ProductionSettings:
     """Load settings and fail fast instead of serving a partially wired API."""
     env = os.environ if environ is None else environ
-    _validate_production_security(env)
+    validate_production_security_config(env)
     postgres_dsn = env.get("AGENT_PLATFORM_DSN", "").strip() or env.get(
         "DATABASE_URL", ""
     ).strip()
