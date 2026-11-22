@@ -178,12 +178,13 @@ class CredentialService:
             tenant_id=tenant, credential_id=credential,
             consumer_type=consumer_type, consumer_id=consumer,
         )
-        allowed = (
-            record is not None and record.revoked_at is None and grant is not None
-            and set(required).issubset(record.scopes)
-            and set(required).issubset(grant.scopes)
-        )
-        if not allowed:
+        if (
+            record is None
+            or record.revoked_at is not None
+            or grant is None
+            or not set(required).issubset(record.scopes)
+            or not set(required).issubset(grant.scopes)
+        ):
             await self._audit.record(
                 tenant_id=tenant, actor_id=actor, action="credential.resolve",
                 subject_id=credential, outcome="denied",

@@ -42,6 +42,12 @@ class IdentityHttpMiddlewareTests(unittest.IsolatedAsyncioTestCase):
         sent, _ = await self._request(middleware)
         self.assertEqual(sent[0]["status"], 401)
 
+    async def test_auth_enabled_requires_non_nullable_identity_service(self):
+        async def app(scope, receive, send):
+            pass
+        with self.assertRaisesRegex(ValueError, "identity service is required"):
+            IdentityASGIMiddleware(app, identity=None, auth_enabled=True)
+
     async def test_bearer_session_populates_principal_and_security_headers(self):
         async def app(scope, receive, send):
             await send({"type":"http.response.start","status":200,"headers":[]})
