@@ -205,6 +205,8 @@ include = [
   "tests/test_api_v1_compatibility_middleware.py",
   "scripts/evaluate_switch_performance_parity.py",
   "tests/test_issue_665_a_665_06_performance_parity.py",
+  "scripts/verify_switch_l4_t07_acceptance.py",
+  "tests/test_issue_665_l4_t07_acceptance_report.py",
 ]
 
 [tool.ruff.lint]
