@@ -19,15 +19,16 @@ def test_platform_web_serves_agent_platform_workbench_by_default():
     assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
     assert 'id="legacy-console-fallback"' in response.text
-    assert 'src="/app/assets/app.js"' in response.text
     assert "<title>Agent 平台</title>" in response.text
     assert response.headers["cache-control"] == "no-store"
 
     # The checked-in production bundle must expose the appended menu too;
     # source-only navigation changes are not sufficient for the served UI.
-    bundle = client.get("/app/assets/app.js")
-    stylesheet_path = re.search(r'href="([^"]+\.css)"', response.text)
+    script_path = re.search(r'<script type="module" crossorigin src="([^"]+\\.js)"', response.text)
+    stylesheet_path = re.search(r'href="([^"]+\\.css)"', response.text)
+    assert script_path is not None
     assert stylesheet_path is not None
+    bundle = client.get(script_path.group(1))
     stylesheet = client.get(stylesheet_path.group(1))
     assert bundle.status_code == 200
     assert "新增业务" in bundle.text
