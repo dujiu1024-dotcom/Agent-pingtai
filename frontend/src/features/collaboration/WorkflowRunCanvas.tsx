@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { isNodeRuntimeEvent, nodeStatusForRuntimeEvent } from './workflow-run-events'
+import { isNodeRuntimeEvent, nodeStatusForRuntimeEvent, runtimeEdgesFromEvents } from './workflow-run-events'
 
 type RuntimeEvent = Record<string, unknown>
 type RuntimeNode = { id: string; label: string; type: string; status: string; firstAt: string; lastAt: string; events: number; input?: unknown; output?: unknown; error?: unknown }
@@ -22,7 +22,6 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
   const [view, setView] = useState<'graph' | 'list'>('graph')
   const { nodes, edges } = useMemo(() => {
     const map = new Map<string, RuntimeNode>()
-    const links = new Map<string, RuntimeEdge>()
     for (const event of events) {
       const type = nodeEventType(event)
       const payload = nodePayload(event)
@@ -46,12 +45,8 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
       if (payload.output !== undefined || payload.output_summary !== undefined) current.output = payload.output_summary ?? payload.output
       if (payload.error !== undefined) current.error = payload.error
       map.set(nodeId, current)
-      const parent = str(payload.parent_node_id ?? payload.parentNodeId ?? payload.source_node_id)
-      const next = str(payload.next_node_id ?? payload.nextNodeId ?? payload.target_node_id)
-      if (parent && nodeId) links.set(parent + '→' + nodeId, { id: parent + '→' + nodeId, source: parent, target: nodeId, label: '事件引用' })
-      if (nodeId && next) links.set(nodeId + '→' + next, { id: nodeId + '→' + next, source: nodeId, target: next, label: '事件引用' })
     }
-    return { nodes: [...map.values()], edges: [...links.values()] }
+    return { nodes: [...map.values()], edges: runtimeEdgesFromEvents(events) }
   }, [events])
   const active = nodes.find(node => node.id === selected) ?? nodes[0]
   return <section className="workflow-run-canvas" aria-label="Workflow 运行节点画布">
@@ -64,7 +59,7 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
     </header>
     {nodes.length === 0 ? <p className="workflow-run-no-telemetry" role="status">暂无节点级遥测。当前事件流未包含可识别的 LangGraph 节点事件；不根据 Run 状态推算节点成功、失败或执行路径。</p> : <>
       <div className={view === 'graph' ? 'workflow-run-node-grid graph-view' : 'workflow-run-node-grid list-view'}>
-        {nodes.map((node, index) => <div className="workflow-run-node-wrap" key={node.id}>
+        {nodes.map((node) => <div className="workflow-run-node-wrap" key={node.id}>
           <button type="button" className={active?.id === node.id ? 'workflow-run-node selected' : 'workflow-run-node'} onClick={() => setSelected(node.id)} aria-pressed={active?.id === node.id}>
             <small>{node.type} · {node.events} 条事件</small><strong>{node.label}</strong><span className={'workflow-run-node-status ' + (node.status === 'failed' ? 'failed' : node.status === 'completed' || node.status === 'succeeded' ? 'success' : node.status === 'running' ? 'running' : '')}>{node.status}</span>
             <small>{node.lastAt || '事件未提供时间'}</small>
