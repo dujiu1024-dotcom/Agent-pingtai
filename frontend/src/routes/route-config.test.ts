@@ -154,6 +154,18 @@ describe('route configuration', () => {
     expect(matchRoutes(routeObjects, '/admin/models/routing/policy-1')?.[0].params.policyId).toBe('policy-1')
   })
 
+  it('registers system settings as an authenticated read-only route owned by #812', () => {
+    const settings = pageRoutes.find((route) => route.path === '/admin/settings')
+    expect(settings?.owner).toBe('#812')
+    expect(settings?.authOnly).toBe(true)
+    expect(
+      getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path)),
+    ).not.toContain('/admin/settings')
+    expect(
+      getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path)),
+    ).toContain('/admin/settings')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
