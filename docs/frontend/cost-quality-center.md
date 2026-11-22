@@ -80,3 +80,14 @@ The capacity health endpoint is dependency-injected and may return 503 when no m
 - The Prometheus table is a current collector snapshot and is explicitly not represented as matching the selected date/model filter. The quota summary cards do honor the existing date/model filters.
 - Loading, request error, empty collector and unavailable metric states are explicit. No metric values are synthesized from ledger event counts or runtime totals.
 - Verification: source/API contract reviewed against `agent_platform/api/observability.py`, `agent_platform/observability/metrics.py`, `agent_platform/observability/prometheus.py` and `agent_platform/quotas/usage_reporting.py`. This connector-only environment has no local frontend runner; CI is required for lint, typecheck, build and automated tests. No real-device or production-resource validation is claimed.
+
+
+## L2-T16 — 评测结果页（Dataset / Runs / 指标对比）
+
+- `EvaluationResultsPanel.tsx` 由成本与质量中心“质量”分区挂载；不改变成本、性能和配额分区。
+- Dataset 目录：`GET /platform/v1/observability/evaluations/datasets?limit=100`；版本：`GET /platform/v1/observability/evaluations/datasets/{dataset_id}/versions`。目录只显示服务端返回的数据集，版本列表展示版本号、样本数、创建者和创建时间。
+- Evaluation Runs：`GET /platform/v1/observability/evaluations?dataset_id={id}&limit=100`；按所选 dataset version 筛选报告，指标从报告原始 `report` JSON 的顶层字段及 `metrics` 对象读取，不推算缺失值。
+- 指标比较：选择同一 Dataset 版本的 2–32 个运行后调用 `POST /platform/v1/observability/evaluations/comparisons`，由服务端比较服务生成并持久化报告；可通过 `GET .../comparisons/{report_id}` 回读，并通过 `GET .../comparisons/{report_id}/export?format=html` 导出。
+- 比较表使用服务端 `metric_names`、`variants`、`comparisons_to_recommended` 与 `recommended`；差值只呈现共同指标。服务端比较算法的推荐顺序和口径不在前端重算。
+- 页面仅提供 Dataset/Run 管理页链接，不复制 #803 的 Dataset/Case 编辑、导入、样本证据和评测执行功能。所有目录、版本、运行和比较 API 均由服务端按当前 Principal/tenant 授权；前端不传 tenant/user 身份字段。
+- 验证边界：本次通过 GitHub 主线源码核对 API 路径、响应结构和服务端 tenant 过滤；本执行环境没有仓库 checkout 与 pnpm/Vitest runner，未声称本地 lint/typecheck/build 已通过。CI 以本 PR 最新 HEAD 的 GitHub Actions 结果为准；不做真机或生产资源验证。
