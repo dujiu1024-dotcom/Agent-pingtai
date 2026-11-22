@@ -81,7 +81,6 @@ class DangerousProductionAuthConfigurationTests(unittest.TestCase):
             ):
                 load_production_settings({**self.BASE, "ALLOWED_ORIGINS": origin})
 
-
     def test_injected_settings_cannot_bypass_startup_security_validation(self):
         script = """
 import os
