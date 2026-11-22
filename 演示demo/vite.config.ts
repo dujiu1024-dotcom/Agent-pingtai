@@ -9,7 +9,7 @@ const frontendSrc = fileURLToPath(new URL('../frontend/src', import.meta.url))
 
 export default defineConfig({
   root: demoRoot,
-  base: './',
+  base: '/',
   plugins: [react()],
   resolve: {
     alias: {
