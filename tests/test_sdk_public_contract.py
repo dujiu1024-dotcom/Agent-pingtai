@@ -1,9 +1,5 @@
 """Compatibility tests for the typed Python SDK."""
 
-import pytest
-
-pytestmark = pytest.mark.skipif(True, reason="SDK header expectation 'v1' vs '1' drift")
-
 import unittest
 from urllib.request import Request
 
