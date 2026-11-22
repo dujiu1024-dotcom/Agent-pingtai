@@ -81,7 +81,7 @@ export const pageRoutes: PageRoute[] = [
     title: 'Agent 运行态',
     section: '智能体运营',
     description: 'Agent 运行状态与负载入口。',
-    owner: '#746',
+    owner: '#808',
   },
   {
     path: '/operations/agents/:agentId',
@@ -91,7 +91,7 @@ export const pageRoutes: PageRoute[] = [
     description: 'Agent 运行态唯一详情路由。',
     parentPath: '/operations/agents',
     entityIdParam: 'agentId',
-    owner: '#746',
+    owner: '#808',
   },
   {
     path: '/operations/tasks/:taskId',
