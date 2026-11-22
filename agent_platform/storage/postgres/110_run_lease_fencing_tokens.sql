@@ -18,7 +18,7 @@ BEGIN
             ADD CONSTRAINT platform_runs_lease_token_nonnegative
             CHECK (lease_token >= 0);
     END IF;
-END
-$$;
+END;
+$;
 
 COMMIT;
