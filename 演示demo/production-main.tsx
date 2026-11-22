@@ -386,6 +386,37 @@ function fixtureForPath(path: string): DemoFixture {
   }
 }
 
+const fixtureStorageKey = 'agent-platform-demo-fixtures-v1'
+
+function readFixtureItems(key: string, fallback: JsonRecord[]): JsonRecord[] {
+  try {
+    const saved = window.localStorage.getItem(fixtureStorageKey)
+    if (saved) {
+      const parsed: unknown = JSON.parse(saved)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const items = (parsed as Record<string, unknown>)[key]
+        if (Array.isArray(items)) return items as JsonRecord[]
+      }
+    }
+  } catch {
+    // Local fixture state is optional in private browsing.
+  }
+  return fallback.map((item) => ({ ...item }))
+}
+
+function writeFixtureItems(key: string, items: JsonRecord[]): void {
+  try {
+    const saved = window.localStorage.getItem(fixtureStorageKey)
+    const parsed: Record<string, JsonRecord[]> = saved
+      ? JSON.parse(saved) as Record<string, JsonRecord[]>
+      : {}
+    parsed[key] = items
+    window.localStorage.setItem(fixtureStorageKey, JSON.stringify(parsed))
+  } catch {
+    // Keep the current page usable when storage is unavailable.
+  }
+}
+
 function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, path: string, method: string): Response {
   const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin)
   const fixture = fixtureForPath(path)
@@ -400,7 +431,14 @@ function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, 
     if (path.includes('/search') || path.includes('/answer')) {
       return jsonResponse({ ...fixture, answer: '根据演示数据检索，已整理出相关内容。', results: fixture.items ?? [] })
     }
-    const items = fixture.items ?? []
+    const fixtureKey = path.endsWith('/memories/candidates')
+      ? '/platform/v1/memories/candidates'
+      : path.endsWith('/memories/export')
+        ? '/platform/v1/memories/export'
+        : path.includes('/memories')
+          ? '/platform/v1/memories'
+          : path
+    const items = fixture.items ? readFixtureItems(fixtureKey, fixture.items) : []
     const status = url.searchParams.get('status')
     const query = url.searchParams.get('q') ?? url.searchParams.get('search')
     let filtered = items.filter(item => (!status || item.status === status) &&
@@ -415,6 +453,37 @@ function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, 
   const raw = init?.body
   if (typeof raw === 'string' && raw.trim()) {
     try { const parsed: unknown = JSON.parse(raw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as JsonRecord } catch { /* demo accepts form-like payloads */ }
+  }
+  if (path.includes('/memories/')) {
+    const candidateKey = '/platform/v1/memories/candidates'
+    const activeKey = '/platform/v1/memories'
+    const candidates = readFixtureItems(candidateKey, fixtureForPath(candidateKey).items ?? [])
+    const active = readFixtureItems(activeKey, fixtureForPath(activeKey).items ?? [])
+    const memoryId = decodeURIComponent(path.split('/memories/')[1]?.split('/')[0] ?? '')
+    if (method === 'DELETE') {
+      writeFixtureItems(candidateKey, candidates.filter((item) => item.memory_id !== memoryId))
+      writeFixtureItems(activeKey, active.filter((item) => item.memory_id !== memoryId))
+      return jsonResponse({ ok: true, deleted: true, demo: true })
+    }
+    if (method === 'POST') {
+      if (path.endsWith('/conflicts/resolve')) {
+        const selectedId = typeof body.selected_memory_id === 'string' ? body.selected_memory_id : ''
+        const updated = candidates.filter((item) => item.conflict_key !== body.conflict_key)
+        const selected = candidates.find((item) => item.memory_id === selectedId)
+        if (selected) active.unshift({ ...selected, status: 'active', version: Number(selected.version ?? 1) + 1 })
+        writeFixtureItems(candidateKey, updated)
+        writeFixtureItems(activeKey, active)
+        return jsonResponse({ memory_id: selectedId || 'memory-active-001', status: 'active', version: 2, ok: true, demo: true })
+      }
+      const candidate = candidates.find((item) => item.memory_id === memoryId)
+      if (candidate) {
+        const archived = path.endsWith('/archive')
+        const updated = { ...candidate, status: archived ? 'archived' : 'active', version: Number(candidate.version ?? 1) + 1 }
+        writeFixtureItems(candidateKey, candidates.filter((item) => item.memory_id !== memoryId))
+        writeFixtureItems(activeKey, [updated, ...active.filter((item) => item.memory_id !== memoryId)])
+        return jsonResponse({ memory_id: memoryId, status: updated.status, version: updated.version, ok: true, demo: true })
+      }
+    }
   }
   if (method === 'DELETE') return jsonResponse({ ok: true, deleted: true, demo: true })
   if (method === 'POST' && path.includes('/graph/extractions')) {
