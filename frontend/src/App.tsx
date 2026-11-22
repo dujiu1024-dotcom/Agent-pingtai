@@ -10,6 +10,7 @@ import {
   Routes,
   useNavigate,
   useLocation,
+  useParams,
 } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -47,6 +48,7 @@ import {
 import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
+import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -328,6 +330,7 @@ function RouteGuard({
   capabilities: string[]
   version: string
 }) {
+  const runId = useParams<{ runId?: string }>().runId ?? ''
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -363,6 +366,8 @@ function RouteGuard({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  const collaborationPage = resolveCollaborationPage(route.path, runId)
+  if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
@@ -394,6 +399,13 @@ function RouteGuard({
       />
     </section>
   )
+}
+
+/** Resolve the collaboration workspace and its run-scoped deep link. */
+export function resolveCollaborationPage(routePath: string, runId = ''): ReactElement | null {
+  if (routePath === '/workspace/collaboration') return <AgentCollaborationCenter />
+  if (routePath === '/operations/workflow-runs/:runId') return <AgentCollaborationCenter initialRunId={runId} />
+  return null
 }
 
 /** Resolve the dedicated admin resource page for each canonical route. */

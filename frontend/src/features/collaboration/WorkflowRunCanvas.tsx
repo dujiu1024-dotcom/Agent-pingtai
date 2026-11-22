@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
-import { isNodeRuntimeEvent, nodeStatusForRuntimeEvent } from './workflow-run-events'
+import { isNodeRuntimeEvent, nodeStatusForRuntimeEvent, runtimeEdgesFromEvents } from './workflow-run-events'
 
 type RuntimeEvent = Record<string, unknown>
 type RuntimeNode = { id: string; label: string; type: string; status: string; firstAt: string; lastAt: string; events: number; input?: unknown; output?: unknown; error?: unknown }
-type RuntimeEdge = { id: string; source: string; target: string; label: string }
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -22,7 +21,6 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
   const [view, setView] = useState<'graph' | 'list'>('graph')
   const { nodes, edges } = useMemo(() => {
     const map = new Map<string, RuntimeNode>()
-    const links = new Map<string, RuntimeEdge>()
     for (const event of events) {
       const type = nodeEventType(event)
       const payload = nodePayload(event)
@@ -46,12 +44,8 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
       if (payload.output !== undefined || payload.output_summary !== undefined) current.output = payload.output_summary ?? payload.output
       if (payload.error !== undefined) current.error = payload.error
       map.set(nodeId, current)
-      const parent = str(payload.parent_node_id ?? payload.parentNodeId ?? payload.source_node_id)
-      const next = str(payload.next_node_id ?? payload.nextNodeId ?? payload.target_node_id)
-      if (parent && nodeId) links.set(parent + '→' + nodeId, { id: parent + '→' + nodeId, source: parent, target: nodeId, label: '事件引用' })
-      if (nodeId && next) links.set(nodeId + '→' + next, { id: nodeId + '→' + next, source: nodeId, target: next, label: '事件引用' })
     }
-    return { nodes: [...map.values()], edges: [...links.values()] }
+    return { nodes: [...map.values()], edges: runtimeEdgesFromEvents(events) }
   }, [events])
   const active = nodes.find(node => node.id === selected) ?? nodes[0]
   return <section className="workflow-run-canvas" aria-label="Workflow 运行节点画布">
@@ -64,15 +58,27 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
     </header>
     {nodes.length === 0 ? <p className="workflow-run-no-telemetry" role="status">暂无节点级遥测。当前事件流未包含可识别的 LangGraph 节点事件；不根据 Run 状态推算节点成功、失败或执行路径。</p> : <>
       <div className={view === 'graph' ? 'workflow-run-node-grid graph-view' : 'workflow-run-node-grid list-view'}>
-        {nodes.map((node, index) => <div className="workflow-run-node-wrap" key={node.id}>
+        {nodes.map((node) => <div className="workflow-run-node-wrap" key={node.id}>
           <button type="button" className={active?.id === node.id ? 'workflow-run-node selected' : 'workflow-run-node'} onClick={() => setSelected(node.id)} aria-pressed={active?.id === node.id}>
             <small>{node.type} · {node.events} 条事件</small><strong>{node.label}</strong><span className={'workflow-run-node-status ' + (node.status === 'failed' ? 'failed' : node.status === 'completed' || node.status === 'succeeded' ? 'success' : node.status === 'running' ? 'running' : '')}>{node.status}</span>
             <small>{node.lastAt || '事件未提供时间'}</small>
           </button>
-          {view === 'graph' && index < nodes.length - 1 && <span className="workflow-run-connector" aria-hidden="true">⋯</span>}
+          
         </div>)}
       </div>
-      {edges.length > 0 && <p className="workflow-run-edge-note">事件明确提供的节点关系：{edges.map(edge => edge.id).join(' · ')}</p>}
+      <section className="workflow-run-edges" aria-label="Workflow 实际连线">
+        <h4>实际节点连线 <small>只读 · 来自运行事件</small></h4>
+        {edges.length > 0 ? (
+          <ul>
+            {edges.map(edge => <li key={edge.id}>
+              <span className="workflow-run-edge-node">{edge.source}</span>
+              <span className="workflow-run-edge-arrow" aria-label="指向">→</span>
+              <span className="workflow-run-edge-node">{edge.target}</span>
+              <small>{edge.label}</small>
+            </li>)}
+          </ul>
+        ) : <p role="status">当前 Run 事件未提供 parent/next 节点引用，暂无可确认的连线；不按节点顺序推断执行路径。</p>}
+      </section>
       {active && <aside className="workflow-run-node-detail" aria-live="polite">
         <h4>{active.label} · {active.id}</h4>
         <dl><div><dt>节点类型</dt><dd>{active.type}</dd></div><div><dt>事件数量</dt><dd>{active.events}</dd></div><div><dt>首次事件</dt><dd>{active.firstAt || '未提供'}</dd></div><div><dt>最近事件</dt><dd>{active.lastAt || '未提供'}</dd></div></dl>

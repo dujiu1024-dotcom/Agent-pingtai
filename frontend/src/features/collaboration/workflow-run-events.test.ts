@@ -4,6 +4,7 @@ import {
   mergeRunRuntimeEvents,
   nodeStatusForRuntimeEvent,
   normalizeRunSseEvent,
+  runtimeEdgesFromEvents,
 } from './workflow-run-events'
 
 describe('Workflow Run live event adapter', () => {
@@ -35,6 +36,18 @@ describe('Workflow Run live event adapter', () => {
     expect(nodeStatusForRuntimeEvent('STEP_ERROR', payload)).toBe('failed')
     expect(nodeStatusForRuntimeEvent('STEP_RETRY', payload)).toBe('retrying')
     expect(isNodeRuntimeEvent('RUN_START', '', {})).toBe(false)
+  })
+
+  it('renders only explicit parent/next workflow edges and never connects adjacent nodes', () => {
+    const events = [
+      { event_type: 'STEP_START', node_id: 'alpha', payload: { node_id: 'alpha', next_node_id: 'gamma' } },
+      { event_type: 'STEP_START', node_id: 'beta', payload: { node_id: 'beta' } },
+      { event_type: 'RUN_START', payload: { node_id: 'ignored', next_node_id: 'alpha' } },
+    ]
+    expect(runtimeEdgesFromEvents(events)).toEqual([
+      { id: 'alpha→gamma', source: 'alpha', target: 'gamma', label: '事件引用' },
+    ])
+    expect(runtimeEdgesFromEvents([{ event_type: 'STEP_START', node_id: 'alpha', payload: { node_id: 'alpha' } }])).toEqual([])
   })
 
   it('does not fabricate a runtime event for reconnect control frames', () => {

@@ -66,3 +66,28 @@ export function nodeStatusForRuntimeEvent(type: string, payload: RuntimeEventRec
   if (/(node|step)_retry(ing)?$/.test(normalized)) return 'retrying'
   return ''
 }
+
+
+export type RuntimeEdgeRecord = { id: string; source: string; target: string; label: string }
+
+/** Extract only explicit parent/next references carried by real node events. */
+export function runtimeEdgesFromEvents(events: RuntimeEventRecord[]): RuntimeEdgeRecord[] {
+  const edges = new Map<string, RuntimeEdgeRecord>()
+  for (const event of events) {
+    const payload = record(event.payload ?? event.data ?? event.summary)
+    const candidateNodeId = payload.node_id ?? payload.nodeId ?? event.node_id
+    const nodeId = typeof candidateNodeId === 'string' ? candidateNodeId : ''
+    if (!isNodeRuntimeEvent(String(event.event_type ?? event.type ?? ''), nodeId, payload)) continue
+    const parent = [payload.parent_node_id, payload.parentNodeId, payload.source_node_id].find(value => typeof value === 'string' && value.trim())
+    const next = [payload.next_node_id, payload.nextNodeId, payload.target_node_id].find(value => typeof value === 'string' && value.trim())
+    if (typeof parent === 'string' && nodeId) {
+      const id = parent + '→' + nodeId
+      edges.set(id, { id, source: parent, target: nodeId, label: '事件引用' })
+    }
+    if (nodeId && typeof next === 'string') {
+      const id = nodeId + '→' + next
+      edges.set(id, { id, source: nodeId, target: next, label: '事件引用' })
+    }
+  }
+  return [...edges.values()]
+}
