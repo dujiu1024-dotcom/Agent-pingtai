@@ -989,7 +989,7 @@ class RunExecutionWorker:
             return "failed"
         return "skipped"
 
-    async def _heartbeat_until_done(self, tenant_id: str, run_id: str) -> None:
+    async def _heartbeat_until_done(self, tenant_id: str, run_id: str, lease_token: int) -> None:
         heartbeat = getattr(self.run_store, "heartbeat", None)
         if not callable(heartbeat):
             raise RuntimeError("RunStateStore must implement worker lease heartbeat")
@@ -998,7 +998,7 @@ class RunExecutionWorker:
             await asyncio.sleep(interval)
             owned = await heartbeat(
                 tenant_id, run_id, self.worker_id,
-                lease_seconds=self.lease_seconds,
+                lease_seconds=self.lease_seconds, lease_token=lease_token,
             )
             if not owned:
                 raise WorkerLeaseLost(
@@ -1009,7 +1009,7 @@ class RunExecutionWorker:
         """Keep the lease alive across the entire claimed operation, including slot waits."""
         execution = asyncio.create_task(operation)
         heartbeat = asyncio.create_task(
-            self._heartbeat_until_done(snapshot.tenant_id, snapshot.run_id)
+            self._heartbeat_until_done(snapshot.tenant_id, snapshot.run_id, snapshot.lease_token)
         )
         try:
             done, _pending = await asyncio.wait(
@@ -1046,7 +1046,7 @@ class RunExecutionWorker:
             # 里面有 task_id，再用 task_id 拿完整 task record
             run_rec = await self.run_store.get_run_record(tenant_id, run_id)
             if run_rec is None:
-                await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
+                await self.run_store.release_lease(tenant_id, run_id, self.worker_id, lease_token=snapshot.lease_token)
                 return "skipped"
             task_id = run_rec.get("task_id")
             record = await self.run_store.get_task_record(tenant_id, str(task_id))
@@ -1105,6 +1105,7 @@ class RunExecutionWorker:
                         await record_failure(
                             tenant_id, run_id, self.worker_id,
                             error=f"workbench worker failed: {str(exc)[:400]}",
+                            lease_token=snapshot.lease_token,
                         )
                     else:
                         await lifecycle.finish(
@@ -1113,7 +1114,7 @@ class RunExecutionWorker:
                         )
                 return "failed"
             finally:
-                await self.run_store.release_lease(tenant_id, run_id, self.worker_id)
+                await self.run_store.release_lease(tenant_id, run_id, self.worker_id, lease_token=snapshot.lease_token)
 
         # 给整个 batch 套硬超时：哪怕 LangGraph 内部有同步阻塞，
         # 这一层也能强制放弃，让 worker 循环继续下一轮 claim。
@@ -1131,7 +1132,7 @@ class RunExecutionWorker:
             # 整个 batch 超时——把所有 run 的 lease 先释放了再继续
             for snap in claimed:
                 try:
-                    await self.run_store.release_lease(snap.tenant_id, snap.run_id, self.worker_id)
+                    await self.run_store.release_lease(snap.tenant_id, snap.run_id, self.worker_id, lease_token=snap.lease_token)
                     await self.run_store.save_failure(
                         snap.tenant_id, snap.run_id,
                         error=f"batch timeout after {_BATCH_TIMEOUT_SEC}s",
