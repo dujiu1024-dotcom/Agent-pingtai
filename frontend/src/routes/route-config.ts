@@ -176,6 +176,15 @@ export const pageRoutes: PageRoute[] = [
     owner: '#750',
   },
   {
+    path: '/operations/sessions',
+    pageId: 'OPS-SESSIONS',
+    title: '会话与消息',
+    section: '智能体运营',
+    description: '会话列表、消息时间线与关联文件资产。',
+    authOnly: true,
+    owner: '#801',
+  },
+  {
     path: '/operations/conversations',
     pageId: 'OPS-CONVERSATIONS',
     title: '会话与消息',
@@ -322,6 +331,17 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/operations/sessions/:sessionId',
+    pageId: 'OPS-SESSION-DETAIL',
+    title: '会话详情',
+    section: '智能体运营',
+    description: '会话消息时间线与关联文件资产。',
+    parentPath: '/operations/sessions',
+    entityIdParam: 'sessionId',
+    authOnly: true,
+    owner: '#801',
+  },
   {
     path: '/admin/prompts/:promptId',
     pageId: 'ADM-PROMPT-DETAIL',

@@ -35,6 +35,7 @@ import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
 import { AgentRuntimeDetail, AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { SessionFileWorkbench } from '@/features/sessions/SessionFileWorkbench'
+import { SessionsWorkspace } from '@/features/sessions/SessionsWorkspace'
 import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
 import { ApprovalDetailPage } from '@/features/approvals/ApprovalDetailPage'
 import { GenericListPage } from '@/components/GenericListPage'
@@ -375,6 +376,7 @@ function RouteGuard({
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/approvals') return <GenericListPage title="审批中心" description="查看服务端返回且当前身份有权访问的审批请求。" apiPath="/platform/v1/approvals" refetchInterval={15000} />
   if (route.path === '/operations/approvals/:approvalId') return <ApprovalDetailPage />
+  if (route.path === '/operations/sessions' || route.path === '/operations/sessions/:sessionId') return <SessionsWorkspace />
   if (route.path === '/operations/conversations' || route.path === '/operations/conversations/:conversationId') return <SessionFileWorkbench view="sessions" />
   if (route.path === '/operations/files' || route.path === '/operations/files/:fileId') return <SessionFileWorkbench view="files" />
   if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
