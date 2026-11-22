@@ -213,19 +213,23 @@ export function SystemOpsPage() {
             <div className="ops-scheduler-summary">
               <span>作业 <b>{jobRows.length}</b></span>
               <span>最近执行 <b>{runRows.length}</b></span>
+              <span>累计失败 <b>{jobRows.reduce((total, job) => total + (Number(job.failure_count) || 0), 0)}</b></span>
             </div>
             {jobRows.length ? (
-              <div className="ops-table-wrap"><table><thead><tr><th>Job</th><th>启用</th><th>状态</th><th>间隔</th></tr></thead>
+              <div className="ops-table-wrap"><table><thead><tr><th>Job</th><th>启用</th><th>状态</th><th>失败次数</th><th>最近结果 / 错误</th><th>间隔</th></tr></thead>
                 <tbody>{jobRows.map((job, index) => <tr key={job.job_id ?? String(index)}>
-                  <td>{display(job.name ?? job.job_id)}</td><td>{display(job.enabled)}</td><td>{display(job.status ?? '—')}</td>
+                  <td>{display(job.name ?? job.job_id)}</td><td>{display(job.enabled)}</td>
+                  <td><span className={statusClass(job.status)}>{display(job.status ?? '未知')}</span></td>
+                  <td>{display(job.failure_count ?? 0)}</td><td>{display(job.last_message ?? job.last_result)}</td>
                   <td>{job.interval_seconds ? `${display(job.interval_seconds)} 秒` : '—'}</td>
                 </tr>)}</tbody></table></div>
             ) : <p className="ops-muted">Scheduler API 返回空作业列表。</p>}
             {runRows.length ? (
-              <div className="ops-table-wrap"><table><thead><tr><th>Run</th><th>Job</th><th>状态</th><th>开始时间</th><th>结束时间</th></tr></thead>
+              <div className="ops-table-wrap"><table><thead><tr><th>Run</th><th>Job</th><th>状态</th><th>开始时间</th><th>结束时间</th><th>失败详情</th></tr></thead>
                 <tbody>{runRows.map((run, index) => <tr key={run.run_id ?? String(index)}>
-                  <td>{display(run.run_id)}</td><td>{display(run.job_id)}</td><td>{display(run.status)}</td>
-                  <td>{timestamp(run.started_at)}</td><td>{timestamp(run.finished_at)}</td>
+                  <td>{display(run.run_id)}</td><td>{display(run.job_id)}</td>
+                  <td><span className={statusClass(run.status)}>{display(run.status ?? '未知')}</span></td>
+                  <td>{timestamp(run.started_at)}</td><td>{timestamp(run.finished_at)}</td><td>{display(run.message)}</td>
                 </tr>)}</tbody></table></div>
             ) : <p className="ops-muted">Scheduler API 返回空执行记录。</p>}
           </>
