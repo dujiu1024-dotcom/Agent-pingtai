@@ -66,7 +66,7 @@ def test_platform_web_returns_503_when_both_frontends_are_missing(tmp_path, monk
 def test_platform_web_rejects_unknown_and_traversal_assets():
     client = _client()
     assert client.get("/app/assets/not-allowed.js").status_code == 404
-    assert client.get("/app/assets/../../console.html").status_code == 404
+    assert client.get("/app/assets/%2e%2e%2fconsole.html").status_code == 404
 
 
 def test_platform_web_spa_fallback_uses_legacy_when_index_is_missing(tmp_path, monkeypatch):
