@@ -35,6 +35,12 @@ describe('model routing empty state', () => {
     expect(state.description).toContain('不发起策略请求')
   })
 
+  it('includes the requested policy ID in an unavailable detail state', () => {
+    const state = getRoutingEmptyState(true, 'policy-primary')
+    expect(state.description).toContain('请求的策略 ID：policy-primary')
+    expect(state.description).toContain('不展示虚构策略')
+  })
+
   it('keeps the missing routing API explicit when auth is enabled', () => {
     const state = getRoutingEmptyState(true)
     expect(state.title).toContain('API')
