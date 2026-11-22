@@ -40,14 +40,6 @@ def _index_response() -> HTMLResponse | FileResponse:
             content = content.replace("</body>", _LEGACY_ENTRY + "</body>", 1)
         else:
             content += _LEGACY_ENTRY
-    # Vite hashes the JS asset; also expose an /app/assets/app.js alias so
-    # downstream contract tests can reference a stable URL.
-    import re as _re
-    content = _re.sub(
-        r'/app/assets/index-[A-Za-z0-9_-]+\.js',
-        '/app/assets/app.js',
-        content,
-    )
     return HTMLResponse(
         content,
         headers={"Cache-Control": "no-store"},
