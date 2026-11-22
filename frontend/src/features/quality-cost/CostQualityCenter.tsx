@@ -14,6 +14,7 @@ import {
   valueLabel,
 } from '@/lib/i18n/labels'
 import { buildDailyUsageTrend } from './usage-trends'
+import { EvaluationResultsPanel } from './EvaluationResultsPanel'
 import './cost-quality-center.css'
 
 type UsageEvent = {
@@ -539,23 +540,7 @@ export function CostQualityCenter() {
       </>
       )}
 
-      {tab === 'quality' && (
-      <section className="cq-panel cq-evaluation">
-        <header><div><h2>质量评测报告</h2><p>查询指定数据集的服务端评测历史；召回率 / 通过率不在前端重算。</p></div></header>
-        <form className="cq-dataset-form" onSubmit={(event) => { event.preventDefault(); setSubmittedDataset(datasetId.trim()) }}>
-          <label>数据集 ID<input value={datasetId} onChange={(event) => setDatasetId(event.target.value)} placeholder="输入已有数据集 ID" /></label>
-          <button className="button-primary" type="submit" disabled={!datasetId.trim()}>查询报告</button>
-        </form>
-        {reports.isPending && submittedDataset ? <LoadingState label="正在读取评测报告" /> : reports.isError ? <ErrorState title="评测报告不可用" description={errorText(reports.error)} onRetry={() => void reports.refetch()} /> : submittedDataset && reportItems.length ? (
-          <div className="cq-report-list">{reportItems.map((item, index) => {
-          const runId = String(item.eval_run_id ?? item.evaluation_run_id ?? item.id ?? '')
-          const metrics = Object.entries(item).filter(([key, value]) => key !== 'cases' && key !== 'results' && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'))
-          const results = Array.isArray(item.results) ? item.results : Array.isArray(item.cases) ? item.cases : []
-          return <article key={runId || index}><strong>{runId || '评测记录'}</strong><span>{metrics.map(([key, value]) => fieldLabel(key) + '：' + displayValue(key, value)).join(' · ')}</span>{runId && <Link className="text-link" to={`/operations/evaluation/runs/${encodeURIComponent(runId)}`}>查看运行与样本证据（{results.length || '详情'}）</Link>}</article>
-        })}</div>
-        ) : submittedDataset ? <EmptyState title="没有评测报告" description="该数据集当前没有可读取的评测历史，或服务端未返回记录。" /> : <EmptyState title="选择数据集查看质量结果" description="输入数据集 ID 后查询评测报告；不会展示虚构的准确率、召回率或回归分数。" />}
-      </section>
-      )}
+      {tab === 'quality' && <EvaluationResultsPanel />}
 
       {tab === 'quota' && (
       <>

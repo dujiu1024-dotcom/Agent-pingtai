@@ -63,3 +63,17 @@
 
 .cq-performance-table { min-width: 980px; }
 .cq-performance-table td:last-child { min-width: 220px; white-space:normal; }
+
+/* Evaluation results: dataset versions, runs and persisted metric comparisons */
+.cq-eval-results { display:grid; gap:14px; }
+.cq-eval-controls { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin:12px 0; }
+.cq-eval-controls label { display:grid; flex:1 1 220px; gap:6px; color:#66738a; font-size:11px; font-weight:650; }
+.cq-eval-controls input,.cq-eval-controls select { width:100%; min-height:36px; min-width:0; padding:7px 9px; border:1px solid var(--border); border-radius:7px; background:#fff; color:#26344b; font:inherit; font-size:12px; }
+.cq-eval-meta { align-self:center; color:var(--muted); font-size:11px; }
+.cq-eval-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-top:12px; color:var(--muted); font-size:11px; }
+.cq-eval-recommend { display:grid; gap:5px; margin:12px 0; padding:12px; border:1px solid var(--border); border-radius:8px; background:#f8f9fc; }
+.cq-eval-recommend strong { font-size:13px; }
+.cq-eval-recommend span,.cq-eval-recommend small { color:var(--muted); font-size:11px; line-height:1.6; }
+.cq-eval-results .cq-table td small { color:var(--muted); font-size:10px; }
+.cq-eval-results .cq-panel>header { align-items:center; }
+@media(max-width:650px) { .cq-eval-controls { align-items:stretch; } .cq-eval-controls label { flex-basis:100%; } .cq-eval-actions { align-items:stretch; flex-direction:column; } }
