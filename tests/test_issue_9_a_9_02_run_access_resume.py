@@ -168,7 +168,7 @@ class RunAccessAndCheckpointResumeTests(unittest.TestCase):
         )
         self.assertEqual(submitted.status_code, 201)
         self.assertEqual(submitted.json()["status"], "pending")
-        self.assertEqual(self.intervention_calls[0][0], "submit")
+        self.assertEqual(self.intervention_calls[0][0], "ensure")
 
         response = self.client.post("/api/platform/v1/runs/run-1/resume")
         self.assertEqual(response.status_code, 200)

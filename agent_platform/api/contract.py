@@ -165,7 +165,7 @@ def api_version_lifecycle_headers(*, deprecated_at: datetime | None = None,
             raise ValueError("sunset_at must be later than deprecated_at")
     if successor_url is not None:
         if (not isinstance(successor_url, str) or not successor_url.startswith("/")
-                or successor_url.startswith("//") or any(ch in successor_url for ch in "<>\\r\\n")):
+                or successor_url.startswith("//") or any(ch in successor_url for ch in "<>\r\n")):
             raise ValueError("successor_url must be a safe absolute-path reference")
         headers["Link"] = f'<{successor_url}>; rel="successor-version"'
     return headers
