@@ -164,6 +164,17 @@ describe('ApiClient', () => {
     ).toBeNull()
   })
 
+  it('retries transient GET failures and returns binary bodies through the client', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('temporarily unavailable', { status: 503 }))
+      .mockResolvedValueOnce(new Response(new Blob(['file-content'], { type: 'text/plain' }), { status: 200 }))
+    const client = new ApiClient({ baseUrl: 'https://example.test/api', fetcher })
+    const blob = await client.get<Blob>('/files/file-1', { responseType: 'blob', retries: 1, retryDelayMs: 0, headers: { Accept: '*/*' } })
+    await expect(blob.text()).resolves.toBe('file-content')
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(new Headers(fetcher.mock.calls[1][1]?.headers).get('Accept')).toBe('*/*')
+  })
+
   it('converts a timeout into a retryable API error', async () => {
     vi.useFakeTimers()
     const fetcher = vi.fn<typeof fetch>(
