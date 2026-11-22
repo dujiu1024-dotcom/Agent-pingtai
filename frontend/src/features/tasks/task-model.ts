@@ -211,7 +211,7 @@ export function parseRunEventFrame(frame: string, runId: string): RunEvent | nul
   let eventId = ''
   let eventName = ''
   const dataLines: string[] = []
-  for (const line of frame.split(/\\r?\\n/)) {
+  for (const line of frame.split(/\r?\n/)) {
     if (!line || line.startsWith(':')) continue
     const separator = line.indexOf(':')
     const field = separator < 0 ? line : line.slice(0, separator)
@@ -223,7 +223,7 @@ export function parseRunEventFrame(frame: string, runId: string): RunEvent | nul
   if (!dataLines.length) return null
   let data: Record<string, unknown>
   try {
-    const parsed: unknown = JSON.parse(dataLines.join('\\n'))
+    const parsed: unknown = JSON.parse(dataLines.join('\n'))
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
     data = parsed as Record<string, unknown>
   } catch {
