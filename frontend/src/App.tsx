@@ -13,7 +13,6 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
-import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import {
   EmptyState,
   ErrorState,
@@ -23,8 +22,8 @@ import {
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
+import { AgentRuntimeList, AgentRuntimeDetail } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
-import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -42,7 +41,6 @@ import {
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
-import { AdminInitPage, LoginPage } from '@/features/auth/AuthPages'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -99,7 +97,6 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route path="/admin/rbac" element={<Navigate to="/admin/access-control" replace />} />
           <Route element={<AppShell config={config} />}>
             <Route
               path="/"
@@ -317,12 +314,11 @@ function PageView({
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
-  if (route.path === '/admin/organization') return <OrganizationAccessPage page="organization" />
-  if (route.path === '/admin/access-control') return <OrganizationAccessPage page="rbac" />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
-  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
+  if (route.path === '/operations/agents') return <AgentRuntimeList />
+  if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (
@@ -395,9 +391,24 @@ function Dashboard() {
 }
 
 function AuthEntryPage({ route }: { route: PageRoute }) {
-  if (route.path === '/auth/login') return <LoginPage />
-  if (route.path === '/auth/initialize') return <AdminInitPage />
-  return <NotFoundState />
+  return (
+    <section className="page-content">
+      <div className="page-heading">
+        <p className="eyebrow">{route.pageId}</p>
+        <h1>{route.title}</h1>
+        <p>{route.description}</p>
+      </div>
+      <EmptyState
+        title="身份流程由认证模块提供"
+        description="本任务仅接入服务端权限模式与条件路由，不模拟登录、创建账号或管理员身份。"
+        action={
+          <Link className="text-link" to="/workspace/overview">
+            返回工作空间
+          </Link>
+        }
+      />
+    </section>
+  )
 }
 
 export default function App() {

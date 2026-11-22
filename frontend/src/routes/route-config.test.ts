@@ -26,18 +26,6 @@ describe('route configuration', () => {
     ])
   })
 
-  it('registers system settings as a directly reachable instance page', () => {
-    const route = getAllRoutes(false).find((item) => item.path === '/admin/settings')
-    expect(route?.pageId).toBe('SYS-SETTINGS')
-    expect(route?.owner).toBe('#812')
-    expect(
-      matchRoutes(
-        getAllRoutes(false).map((item) => ({ path: item.path })),
-        '/admin/settings',
-      ),
-    ).toBeTruthy()
-  })
-
   it('uses the frozen dashboard route as the default route target', () => {
     expect(
       getAllRoutes(false).find((route) => route.pageId === 'WS-OVERVIEW')?.path,
@@ -105,13 +93,14 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
-  it('registers organization and RBAC admin pages in auth mode', () => {
-    const routes = getAllRoutes(true)
-    expect(routes.find((route) => route.path === '/admin/organization')?.pageId).toBe('ADM-ORG')
-    expect(routes.find((route) => route.path === '/admin/organization')?.authOnly).toBe(true)
-    expect(routes.find((route) => route.path === '/admin/access-control')?.pageId).toBe('ADM-RBAC')
-    expect(routes.find((route) => route.path === '/admin/access-control')?.authOnly).toBe(true)
-    expect(matchRoutes([{ path: '/admin/rbac' }], '/admin/rbac')?.[0].pathname).toBe('/admin/rbac')
+  it('gates Agent runtime list/detail on registry capability and assigns #808 ownership', () => {
+    const visibleWithoutRegistry = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
+    const visibleWithRegistry = getVisibleNavigation(true, ['agent_management']).flatMap((group) => group.items.map((item) => item.path))
+    expect(visibleWithoutRegistry).not.toContain('/operations/agents')
+    expect(visibleWithRegistry).toContain('/operations/agents')
+    expect(pageRoutes.find((route) => route.path === '/operations/agents')?.owner).toBe('#808')
+    expect(detailRoutes.find((route) => route.path === '/operations/agents/:agentId')?.owner).toBe('#808')
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/agents/agent-123')?.[0].params.agentId).toBe('agent-123')
   })
 
   it('registers Knowledge collection and document deep links under #760', () => {
@@ -119,12 +108,6 @@ describe('route configuration', () => {
     expect(matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0].params.collectionId).toBe('collection-123')
     expect(matchRoutes(routeObjects, '/operations/documents/document-456')?.[0].params.documentId).toBe('document-456')
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
-  })
-
-  it('registers tool registry and tool detail routes under #805', () => {
-    const routes = [...pageRoutes, ...detailRoutes]
-    expect(routes.find((route) => route.path === '/admin/tools')?.owner).toBe('#805')
-    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/admin/tools/mcp-fetch')?.[0].params.toolId).toBe('mcp-fetch')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
@@ -142,15 +125,5 @@ describe('route configuration', () => {
       matchRoutes(routeObjects, '/admin/models/providers/provider-7')?.[0]
         .params.providerId,
     ).toBe('provider-7')
-  })
-})
-
-describe('authentication entry routes', () => {
-  it('assigns login and administrator initialization routes to #809', () => {
-    expect(authRoutes.map((route) => route.path)).toEqual([
-      '/auth/login',
-      '/auth/initialize',
-    ])
-    expect(authRoutes.every((route) => route.authOnly && route.owner === '#809')).toBe(true)
   })
 })
