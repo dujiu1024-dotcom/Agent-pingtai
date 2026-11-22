@@ -248,11 +248,11 @@ function TrendChart({
   )
 }
 
-export function Dashboard() {
+export function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
   const tasksQuery = useQuery({
-    queryKey: ['dashboard', 'workbench-tasks'],
+    queryKey: ['home-workspace', 'tasks'],
     queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   })
   const trendsQuery = useQuery({
     queryKey: ['dashboard', 'observability-trends'],
@@ -350,6 +350,55 @@ export function Dashboard() {
       hint: '累计任务成本',
     },
   ]
+
+  if (embedded) {
+    return (
+      <section
+        className="dashboard-redesign dashboard-embedded"
+        aria-label="工作台系统概览"
+      >
+        <div className="dashboard-kpi-grid">
+          {metrics.map((metric) => (
+            <article className="dashboard-kpi-card" key={metric.label}>
+              <span className={`dashboard-kpi-icon ${metric.tone}`}>{metric.icon}</span>
+              <span className="dashboard-kpi-label">{metric.label}</span>
+              <strong>
+                {tasksQuery.isPending && metric.label !== '平均耗时' && metric.label !== '总成本'
+                  ? '…'
+                  : metric.value}
+              </strong>
+              <small>{metric.hint}</small>
+            </article>
+          ))}
+        </div>
+        <section
+          className="dashboard-panel dashboard-trend-panel"
+          aria-labelledby="dashboard-embedded-trend-title"
+        >
+          <header className="dashboard-panel-heading">
+            <div>
+              <h2 id="dashboard-embedded-trend-title">系统概览</h2>
+              <p>任务数与成功率趋势</p>
+            </div>
+            <span className="dashboard-live-state">
+              <i />
+              趋势统计
+            </span>
+          </header>
+          <TrendChart
+            points={points}
+            loading={trendsQuery.isPending}
+            failed={trendsQuery.isError}
+          />
+        </section>
+        <p className="dashboard-data-note">
+          {tasksQuery.isError
+            ? '任务接口请求失败；请检查服务状态。'
+            : '仅展示后端已返回的指标；缺少成本或耗时字段时显示“暂无数据”，不填充演示值。'}
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section className="page-content dashboard-page dashboard-redesign">

@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { formatDuration, resolveAgentId, resolveTaskTitle, unwrapList } from '@/features/tasks/task-model'
 import type { TaskRecord } from '@/features/tasks/task-model'
+import { Dashboard } from '@/features/dashboard/Dashboard'
 import './HomeWorkspace.css'
 
 type AgentRegistryItem = {
@@ -115,11 +116,11 @@ function TaskListPanel() {
   const [tab, setTab] = useState<TaskTab>('all')
   const query = useQuery({
     queryKey: ['home-workspace', 'tasks'],
-    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
     refetchInterval: 15_000,
     retry: false,
   })
-  const tasks = query.data ?? []
+  const tasks = unwrapList<TaskRecord>(query.data)
   const filtered = filterHomeTasks(tasks, tab).slice(0, 5)
   const tabs: { id: TaskTab; label: string }[] = [
     { id: 'all', label: '全部' }, { id: 'running', label: '运行中' }, { id: 'approval', label: '等待审批' },
@@ -164,11 +165,11 @@ function PopularAgents() {
   })
   const tasksQuery = useQuery({
     queryKey: ['home-workspace', 'tasks'],
-    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
     refetchInterval: 15_000,
     retry: false,
   })
-  const ranked = useMemo(() => rankHomeAgents(agentsQuery.data ?? [], tasksQuery.data ?? []), [agentsQuery.data, tasksQuery.data])
+  const ranked = useMemo(() => rankHomeAgents(agentsQuery.data ?? [], unwrapList<TaskRecord>(tasksQuery.data)), [agentsQuery.data, tasksQuery.data])
   const loading = agentsQuery.isPending || tasksQuery.isPending
   const error = agentsQuery.error ?? tasksQuery.error
   if (loading) return <section className="home-r3-panel"><LoadingState label="正在读取热门 Agent" /></section>
@@ -197,7 +198,7 @@ function PopularAgents() {
 function ActivityFeed({ authEnabled }: { authEnabled: boolean }) {
   const tasksQuery = useQuery({
     queryKey: ['home-workspace', 'tasks'],
-    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
     refetchInterval: 15_000,
     retry: false,
   })
@@ -222,7 +223,7 @@ function ActivityFeed({ authEnabled }: { authEnabled: boolean }) {
   })
   const queries = [tasksQuery, agentsQuery, workflowsQuery, approvalsQuery]
   const events = useMemo(() => buildHomeActivityFeed(
-    tasksQuery.data ?? [], agentsQuery.data ?? [], workflowsQuery.data ?? [], approvalsQuery.data ?? [],
+    unwrapList<TaskRecord>(tasksQuery.data), agentsQuery.data ?? [], workflowsQuery.data ?? [], approvalsQuery.data ?? [],
   ), [tasksQuery.data, agentsQuery.data, workflowsQuery.data, approvalsQuery.data])
   const pending = [tasksQuery, agentsQuery, workflowsQuery].some((query) => query.isPending)
   const errors = queries.filter((query) => query.isError)
@@ -273,6 +274,7 @@ export function HomeWorkspace({ authEnabled }: { authEnabled: boolean }) {
           <Link className="home-r3-assistant" to="/workspace/quickstart"><Sparkles size={16} />你好！我是你的 Agent 助手</Link>
         </div>
       </header>
+      <Dashboard embedded />
       <div className="home-r3-main-grid">
         <TaskListPanel />
         <div className="home-r3-side-stack"><PopularAgents /><ActivityFeed authEnabled={authEnabled} /></div>

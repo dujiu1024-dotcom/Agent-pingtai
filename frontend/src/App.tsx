@@ -28,12 +28,16 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
-import { Dashboard } from '@/features/dashboard/Dashboard'
 import { OperationsDashboard } from '@/components'
 import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
+import { QuickStartPage } from '@/features/quickstart/QuickStartPage'
+import { StatusBoardPage } from '@/features/board/StatusBoardPage'
+import { MemoryGovernancePage } from '@/features/memories/MemoryGovernancePage'
+import { AuditCenterPage } from '@/features/audit/AuditCenterPage'
+import { AuditEventDetailPage } from '@/features/audit/AuditEventDetailPage'
 import { AgentRuntimeList } from '@/features/agents/AgentRuntimePage'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { SessionFileWorkbench } from '@/features/sessions/SessionFileWorkbench'
@@ -69,6 +73,7 @@ import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 import { AdminInitPage, LoginPage } from '@/features/auth/AuthPages'
 import '@/routes/issue-818-breadcrumbs.css'
+import '@/routes/prototype-navigation.css'
 
 function BootstrapGate() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null)
@@ -209,22 +214,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     view: section.id === 'home' || section.id === 'office' ? section.id : undefined,
   }))
 
-  const navigationExtensions = navigationSections.flatMap((section) =>
-    section.subpages
-      .filter((page) => page.path !== section.path)
-      .filter((page) => (!page.authOnly || config.auth.enabled) &&
-        (!page.capability || config.capabilities.includes(page.capability)))
-      .map((page) => ({ path: page.path, title: page.label, icon: section.icon })),
-  ).concat(
-    globalRoutes
-      .filter((route) => route.path !== '/search')
-      .map((route) => ({
-        path: route.path,
-        title: route.title,
-        icon: route.path === '/notifications' ? '♧' : '◷',
-      })),
-  )
-
+  const visibleGlobalNavigation = globalRoutes.filter((route) => route.path !== '/search')
 
   return (
     <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'} data-v={location.pathname.startsWith('/workspace/office') ? 'office' : 'home'}>
@@ -234,38 +224,64 @@ function AppShell({ config }: { config: BootstrapConfig }) {
           {!collapsed && <span>Agent 平台</span>}
         </Link>
         <nav className="prototype-navigation" aria-label="全局导航">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              title={collapsed ? item.title : undefined}
-              data-v={item.view}
-              end={
-                item.path === '/workspace/overview' ||
-                item.path === '/workspace/office'
-              }
-              className={({ isActive }) =>
-                isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
-              }
-            >
-              <i aria-hidden="true">{item.icon}</i>
-              {!collapsed && <span>{item.title}</span>}
-            </NavLink>
-          ))}
-          <div className="prototype-nav-section-label" aria-hidden="true">新增业务</div>
-          {navigationExtensions.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              title={collapsed ? item.title : undefined}
-              className={({ isActive }) =>
-                isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
-              }
-            >
-              <i aria-hidden="true">{item.icon}</i>
-              {!collapsed && <span>{item.title}</span>}
-            </NavLink>
-          ))}
+          {navigation.map((item) => {
+            const section = navigationSections.find((entry) => entry.path === item.path)
+            const subpages = (section?.subpages ?? []).filter((page) =>
+              page.path !== item.path &&
+              (!page.authOnly || config.auth.enabled) &&
+              (!page.capability || config.capabilities.includes(page.capability)),
+            )
+            const sectionActive = location.pathname === item.path ||
+              subpages.some((page) => location.pathname === page.path)
+            return (
+              <div className="prototype-nav-group" key={item.path}>
+                <NavLink
+                  to={item.path}
+                  title={collapsed ? item.title : undefined}
+                  data-v={item.view}
+                  end={item.path === '/workspace/overview' || item.path === '/workspace/office'}
+                  className={({ isActive }) =>
+                    isActive || sectionActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+                  }
+                >
+                  <i aria-hidden="true">{item.icon}</i>
+                  {!collapsed && <span>{item.title}</span>}
+                </NavLink>
+                {!collapsed && subpages.length > 0 && (
+                  <div className={sectionActive ? 'prototype-subnav is-active' : 'prototype-subnav'}>
+                    {subpages.map((page) => (
+                      <NavLink
+                        key={page.path}
+                        to={page.path}
+                        className={({ isActive }) =>
+                          isActive ? 'prototype-subnav-item on' : 'prototype-subnav-item'
+                        }
+                      >
+                        {page.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+          {!collapsed && visibleGlobalNavigation.length > 0 && (
+            <div className="prototype-global-nav">
+              <div className="prototype-nav-section-label">全局能力</div>
+              {visibleGlobalNavigation.map((route) => (
+                <NavLink
+                  key={route.path}
+                  to={route.path}
+                  className={({ isActive }) =>
+                    isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+                  }
+                >
+                  <i aria-hidden="true">{route.path === '/notifications' ? '♧' : '◷'}</i>
+                  <span>{route.title}</span>
+                </NavLink>
+              ))}
+            </div>
+          )}
           <button
             className="prototype-nav-item collapse-nav-item"
             type="button"
@@ -345,7 +361,10 @@ function RouteGuard({
   capabilities: string[]
   version: string
 }) {
-  const runId = useParams<{ runId?: string }>().runId ?? ''
+  const params = useParams<{ runId?: string; entryId?: string; memoryId?: string }>()
+  const runId = params.runId ?? ''
+  const entryId = params.entryId ?? ''
+  const memoryId = params.memoryId ?? ''
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -374,6 +393,40 @@ function RouteGuard({
   if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/operations/dashboard') return <OperationsDashboard />
   if (route.path === '/workspace/overview') return <HomeWorkspace authEnabled={authEnabled} />
+  if (route.path === '/workspace/quickstart') return <QuickStartPage />
+  if (route.path === '/workspace/status') return <StatusBoardPage />
+  if (route.path === '/operations/memories') return <MemoryGovernancePage />
+  if (route.path === '/operations/memories/:memoryId') {
+    return (
+      <GenericListPage
+        title="记忆版本历史"
+        description={`记忆 ${memoryId} 的版本记录与治理状态。`}
+        apiPath={`/platform/v1/memories/${encodeURIComponent(memoryId)}/history`}
+      />
+    )
+  }
+  if (route.path === '/admin/audit') return <AuditCenterPage />
+  if (route.path === '/admin/audit/:eventId') return <AuditEventDetailPage />
+  if (route.path === '/admin/scheduler/jobs') {
+    return (
+      <GenericListPage
+        title="调度任务"
+        description="查看定时作业状态、最近执行结果与失败原因。"
+        apiPath="/platform/v1/scheduler/jobs"
+        refetchInterval={30000}
+      />
+    )
+  }
+  if (route.path === '/admin/scheduler/subscriptions') {
+    return (
+      <GenericListPage
+        title="事件订阅"
+        description="查看事件订阅规则、投递目标与启用状态。"
+        apiPath="/platform/v1/scheduler/subscriptions"
+        refetchInterval={30000}
+      />
+    )
+  }
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (route.path === '/search')
     return (
@@ -382,7 +435,7 @@ function RouteGuard({
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/operations/tasks/timeline') return <TaskRunTimeline />
-  const collaborationPage = resolveCollaborationPage(route.path, runId)
+  const collaborationPage = resolveCollaborationPage(route.path, runId, entryId)
   if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (route.path === '/operations/agents/:agentId') return <AgentDefinitionPage />
@@ -421,9 +474,10 @@ function RouteGuard({
 }
 
 /** Resolve the collaboration workspace and its run-scoped deep link. */
-export function resolveCollaborationPage(routePath: string, runId = ''): ReactElement | null {
+export function resolveCollaborationPage(routePath: string, runId = '', entryId = ''): ReactElement | null {
   if (routePath === '/workspace/collaboration') return <AgentCollaborationCenter />
   if (routePath === '/operations/workflow-runs/:runId') return <AgentCollaborationCenter initialRunId={runId} />
+  if (routePath === '/operations/blackboard/:entryId') return <AgentCollaborationCenter initialEntryId={entryId} />
   return null
 }
 
