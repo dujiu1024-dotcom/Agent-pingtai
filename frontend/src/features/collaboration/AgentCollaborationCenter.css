@@ -862,3 +862,20 @@
 .workflow-run-legend{color:var(--muted)}
 .workflow-run-edge-note{margin:10px 0;color:var(--muted)}
 @media(max-width:650px){.agent-team-graph>header,.workflow-run-canvas-head{flex-direction:column}.agent-team-list li{grid-template-columns:1fr}.workflow-run-node-wrap{max-width:100%}.workflow-run-node{min-width:125px}}
+
+/* Explicit workflow edges are rendered from event references only. */
+.workflow-run-edges {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.workflow-run-edges h4 { margin: 0 0 10px; font-size: 12px; }
+.workflow-run-edges h4 small { margin-left: 8px; color: var(--muted, #64748b); font-weight: 400; }
+.workflow-run-edges ul { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.workflow-run-edges li { display: inline-flex; align-items: center; gap: 7px; padding: 6px 9px; border: 1px solid #dbe3ee; border-radius: 8px; background: #fff; }
+.workflow-run-edge-node { font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.workflow-run-edge-arrow { color: #2563eb; font-size: 16px; font-weight: 700; }
+.workflow-run-edges li small { color: var(--muted, #64748b); font-size: 10px; }
+.workflow-run-edges > p { margin: 0; color: var(--muted, #64748b); font-size: 11px; line-height: 1.6; }
