@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
-from agent_platform.control_plane.file_processing import FileProcessingJob, FileProcessingWorker
+from agent_platform.control_plane.file_processing import (
+    FileProcessingJob,
+    FileProcessingWorker,
+    InMemoryFileProcessingQueue,
+)
 from agent_platform.control_plane.sessions_assets import (
     AssetStatus,
     InMemoryObjectStorage,
@@ -256,6 +261,66 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         saved = await self.repository.get_asset("tenant-a", asset.asset_id)
         self.assertEqual(saved.status, AssetStatus.PENDING)
         self.assertEqual(self.queue.failures, ["valueerror"])
+
+    async def test_in_memory_queue_deduplicates_retries_and_dead_letters(self):
+        queue = InMemoryFileProcessingQueue(max_attempts=2)
+        await queue.enqueue(tenant_id="tenant-a", asset_id="asset-a")
+        await queue.enqueue(tenant_id="tenant-a", asset_id="asset-a")
+
+        first = await queue.claim(worker_id="worker-a")
+        assert first is not None
+        self.assertEqual(first.attempts, 1)
+        self.assertFalse(await queue.fail(first, error_code="temporary"))
+
+        second = await queue.claim(worker_id="worker-b")
+        assert second is not None
+        self.assertEqual(second.attempts, 2)
+        self.assertTrue(await queue.fail(second, error_code="permanent"))
+        self.assertIsNone(await queue.claim(worker_id="worker-a"))
+
+    async def test_worker_start_stop_health_processes_memory_queue(self):
+        asset = await self.service.upload_asset(
+            tenant_id="tenant-a", owner_id="user-a", filename="managed.txt",
+            media_type="text/plain", content=b"managed worker searchable content",
+        )
+        queue = InMemoryFileProcessingQueue()
+        await queue.enqueue(tenant_id="tenant-a", asset_id=asset.asset_id)
+        worker = FileProcessingWorker(
+            queue=queue, worker_id="memory-worker",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=Scanner(),
+            knowledge_for_tenant=lambda tenant: self.knowledge,
+        )
+
+        self.assertEqual(worker.health()["status"], "stopped")
+        await worker.start(poll_interval_seconds=0.01)
+        await worker.start(poll_interval_seconds=0.01)
+        self.assertEqual(worker.health()["status"], "running")
+
+        for _ in range(100):
+            saved = await self.repository.get_asset("tenant-a", asset.asset_id)
+            if saved.status is AssetStatus.AVAILABLE:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(saved.status, AssetStatus.AVAILABLE)
+
+        await worker.stop()
+        await worker.stop()
+        self.assertEqual(worker.health()["status"], "stopped")
+        self.assertFalse(worker.health()["running"])
+        self.assertIsNone(await queue.claim(worker_id="verification-worker"))
+
+    async def test_worker_rejects_non_positive_poll_interval(self):
+        worker = FileProcessingWorker(
+            queue=InMemoryFileProcessingQueue(), worker_id="memory-worker",
+            repository_for_tenant=lambda tenant: self.repository,
+            storage_for_tenant=lambda tenant: self.storage,
+            scanner=Scanner(),
+            knowledge_for_tenant=lambda tenant: self.knowledge,
+        )
+        with self.assertRaisesRegex(ValueError, "poll interval"):
+            await worker.start(poll_interval_seconds=0)
 
 
 if __name__ == "__main__":
