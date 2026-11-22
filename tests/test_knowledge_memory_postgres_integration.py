@@ -20,6 +20,7 @@ if DSN:
     )
     from agent_platform.knowledge.postgres_repository import PostgresKnowledgeRepository
     from agent_platform.memory.postgres_repository import PostgresMemoryRepository
+    from agent_platform.memory.deletion import MemoryDeletionWorker, PostgresMemoryDeletionQueue
     from agent_platform.memory.service import (
         MemoryCandidate,
         MemoryPrincipal,
@@ -402,3 +403,64 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(historical[0].citation.source_ref, "conversation:original")
         self.assertEqual(historical[0].citation.version, original.version)
         self.assertEqual(current[0].citation.source_ref, "manual:correction")
+
+    async def test_memory_forget_atomically_enqueues_and_worker_cleans_derived_data(self):
+        candidate = MemoryCandidate(
+            tenant_id=self.tenant_id, scope=MemoryScope.USER,
+            scope_id="memory-owner", content="delete propagation integration marker",
+            source_ref="conversation:delete-outbox", confidence=0.9,
+            created_by="memory-owner",
+        )
+        await self.memory.propose(candidate)
+        principal = MemoryPrincipal(tenant_id=self.tenant_id, user_id="memory-owner")
+        await self.memory.confirm(principal=principal, memory_id=candidate.memory_id)
+        self.assertTrue(await self.memory.forget(principal=principal, memory_id=candidate.memory_id))
+
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT status, attempts FROM platform_memory_deletion_jobs WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            job = await cur.fetchone()
+            self.assertEqual(job["status"], "pending")
+            self.assertEqual(job["attempts"], 0)
+            await conn.execute(
+                "UPDATE platform_memory_deletion_jobs SET status='dead', last_error_code='TimeoutError' WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            await conn.commit()
+        # A repeated DELETE revives a terminal job after an operator/user retry.
+        self.assertTrue(await self.memory.forget(principal=principal, memory_id=candidate.memory_id))
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT status, attempts FROM platform_memory_deletion_jobs WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            job = await cur.fetchone()
+            self.assertEqual(job["status"], "retry")
+            self.assertEqual(job["attempts"], 0)
+            cur = await conn.execute(
+                "SELECT status, deleted_at FROM platform_memories WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            tombstone = await cur.fetchone()
+            self.assertEqual(tombstone["status"], "deleted")
+            self.assertIsNotNone(tombstone["deleted_at"])
+
+        cleaned = []
+        worker = MemoryDeletionWorker(
+            queue=PostgresMemoryDeletionQueue(self.connect),
+            cleanup=lambda tenant_id, memory_id: cleaned.append((tenant_id, memory_id)),
+            worker_id="integration-memory-cleaner",
+        )
+        self.assertTrue(await worker.run_once())
+        self.assertFalse(await worker.run_once())
+        self.assertEqual(cleaned, [(self.tenant_id, candidate.memory_id)])
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT status, lease_token FROM platform_memory_deletion_jobs WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            completed = await cur.fetchone()
+            self.assertEqual(completed["status"], "completed")
+            self.assertIsNone(completed["lease_token"])

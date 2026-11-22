@@ -6,11 +6,16 @@ memory identity; this module never loads or copies memory content.
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -144,16 +149,24 @@ class MemoryDeletionWorker:
         self, *, queue: PostgresMemoryDeletionQueue,
         cleanup: Callable[[str, str], Awaitable[None]],
         worker_id: str, max_attempts: int = 8, lease_seconds: int = 60,
+        interval_seconds: float = 2.0,
     ) -> None:
         if not worker_id.strip():
             raise ValueError("worker_id is required")
         if not 1 <= max_attempts <= 100:
             raise ValueError("max_attempts must be between 1 and 100")
+        if not 1 <= lease_seconds <= 3600:
+            raise ValueError("lease_seconds must be between 1 and 3600")
+        if interval_seconds < 0.1:
+            raise ValueError("interval_seconds must be at least 0.1")
         self.queue = queue
         self.cleanup = cleanup
         self.worker_id = worker_id
         self.max_attempts = max_attempts
         self.lease_seconds = lease_seconds
+        self.interval_seconds = interval_seconds
+        self._task: asyncio.Task[None] | None = None
+        self._stop = asyncio.Event()
 
     async def run_once(self) -> bool:
         job = await self.queue.claim(
@@ -166,7 +179,6 @@ class MemoryDeletionWorker:
             if inspect.isawaitable(result):
                 await result
         except Exception as exc:
-            # Persist only the exception type, never provider messages or memory data.
             await self.queue.fail(
                 job_id=job.job_id, lease_token=job.lease_token,
                 attempts=job.attempts, error_code=type(exc).__name__,
@@ -175,3 +187,31 @@ class MemoryDeletionWorker:
             return True
         await self.queue.complete(job_id=job.job_id, lease_token=job.lease_token)
         return True
+
+    async def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                worked = await self.run_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("memory deletion worker iteration failed")
+                worked = False
+            if not worked:
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=self.interval_seconds)
+                except TimeoutError:
+                    continue
+
+    async def start(self) -> None:
+        if self._task is not None and not self._task.done():
+            return
+        self._stop.clear()
+        self._task = asyncio.create_task(self._run(), name=f"memory-deletion-{self.worker_id}")
+
+    async def stop(self) -> None:
+        self._stop.set()
+        task = self._task
+        self._task = None
+        if task is not None:
+            await task

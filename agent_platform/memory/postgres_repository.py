@@ -53,6 +53,24 @@ class PostgresMemoryRepository:
             async with conn.transaction():
                 cur=await conn.execute("UPDATE platform_memories SET status='deleted',deleted_at=%s,updated_at=%s,version=version+1 WHERE tenant_id=%s AND memory_id=%s AND deleted_at IS NULL RETURNING *",(at,at,tenant_id,memory_id))
                 row=await cur.fetchone()
-                if row is None:return False
-                await self._persist_version(conn,self._record(row))
-                return True
+                if row is None:
+                    cur=await conn.execute(
+                        "SELECT 1 FROM platform_memories WHERE tenant_id=%s AND memory_id=%s AND deleted_at IS NOT NULL",
+                        (tenant_id,memory_id),
+                    )
+                    if await cur.fetchone() is None:
+                        return False
+                else:
+                    await self._persist_version(conn,self._record(row))
+                # Tombstone/version and cleanup intent commit atomically.
+                await conn.execute(
+                    """INSERT INTO platform_memory_deletion_jobs
+                       (tenant_id,memory_id,status)
+                       VALUES (%s,%s,'pending')
+                       ON CONFLICT (tenant_id,memory_id) DO UPDATE
+                       SET status='retry', attempts=0, next_attempt_at=now(),
+                           last_error_code=NULL, updated_at=now()
+                       WHERE platform_memory_deletion_jobs.status='dead'""",
+                    (tenant_id,memory_id),
+                )
+                return row is not None
