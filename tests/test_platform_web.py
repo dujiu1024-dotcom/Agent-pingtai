@@ -20,6 +20,13 @@ def test_platform_web_serves_react_app_index_by_default():
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_legacy_console_bookmark_redirects_to_explicit_compatibility_route():
+    response = _client().get("/console.html", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/app/?legacy=1"
+    assert response.headers["cache-control"] == "no-store"
+
+
 def test_platform_web_explicitly_serves_modular_legacy_console():
     client = _client()
     response = client.get("/app/?legacy=1")
