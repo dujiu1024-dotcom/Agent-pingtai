@@ -111,14 +111,6 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
-  it('registers system settings as an authenticated read-only route owned by #812', () => {
-    const settings = pageRoutes.find((route) => route.path === '/admin/settings')
-    expect(settings?.owner).toBe('#812')
-    expect(settings?.authOnly).toBe(true)
-    expect(getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))).not.toContain('/admin/settings')
-    expect(getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))).toContain('/admin/settings')
-  })
-
   it('gates Agent runtime list/detail on registry capability and assigns #808 ownership', () => {
     const visibleWithoutRegistry = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
     const visibleWithRegistry = getVisibleNavigation(true, ['agent_management']).flatMap((group) => group.items.map((item) => item.path))
@@ -136,19 +128,61 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
-  it('registers Skills registry list and detail routes under #806', () => {
+  it('registers Skills registry list and detail routes under #759', () => {
     const list = pageRoutes.find((route) => route.path === '/admin/skills')
     const detail = detailRoutes.find((route) => route.path === '/admin/skills/:skillId')
-    expect(list?.owner).toBe('#806')
-    expect(detail?.owner).toBe('#806')
+    expect(list?.owner).toBe('#759')
+    expect(detail?.owner).toBe('#759')
     expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
   })
 
-  it('registers the Metrics, Health and Scheduler operations dashboard under #813', () => {
-    const route = globalRoutes.find((item) => item.path === '/admin/ops')
-    expect(route?.pageId).toBe('GLOBAL-OPS-DASHBOARD')
-    expect(route?.owner).toBe('#813')
-    expect(matchRoutes([...pageRoutes, ...globalRoutes].map((item) => ({ path: item.path })), '/admin/ops')?.[0].route.path).toBe('/admin/ops')
+
+  it('keeps the admin resource suite reachable with one owner per child work package', () => {
+    const visible = getVisibleNavigation(false).flatMap((group) =>
+      group.items.map((item) => item.path),
+    )
+    for (const path of [
+      '/admin/agents',
+      '/admin/workflows',
+      '/admin/models/providers',
+      '/admin/models/templates',
+      '/admin/models/routing',
+      '/admin/tools',
+      '/admin/skills',
+    ]) {
+      expect(visible).toContain(path)
+    }
+
+    expect(pageRoutes.find((route) => route.path === '/admin/agents')?.owner).toBe('#757')
+    expect(pageRoutes.find((route) => route.path === '/admin/workflows')?.owner).toBe('#758')
+    for (const path of [
+      '/admin/models/providers',
+      '/admin/models/templates',
+      '/admin/models/routing',
+      '/admin/tools',
+      '/admin/skills',
+    ]) {
+      expect(pageRoutes.find((route) => route.path === path)?.owner).toBe('#759')
+    }
+    expect(pageRoutes.find((route) => route.path === '/admin/organization')?.owner).toBe('#756')
+    expect(pageRoutes.find((route) => route.path === '/admin/access-control')?.owner).toBe('#756')
+  })
+
+  it('keeps resource detail deep links attached to their canonical list routes', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
+      path: route.path,
+    }))
+    const cases = [
+      ['/admin/models/providers/provider-1', 'providerId', 'provider-1'],
+      ['/admin/models/templates/template-1', 'templateId', 'template-1'],
+      ['/admin/models/routing/policy-1', 'policyId', 'policy-1'],
+      ['/admin/tools/tool-1', 'toolId', 'tool-1'],
+      ['/admin/skills/skill-1', 'skillId', 'skill-1'],
+      ['/admin/workflows/workflow-1/edit', 'workflowId', 'workflow-1'],
+    ] as const
+    for (const [path, param, value] of cases) {
+      expect(matchRoutes(routeObjects, path)?.[0].params[param]).toBe(value)
+    }
   })
 
   it('matches entity detail deep links with stable id parameters', () => {

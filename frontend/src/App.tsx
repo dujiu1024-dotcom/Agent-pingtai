@@ -48,6 +48,7 @@ import {
 import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
+import { ToolSkillResourcePage } from '@/features/resources/ToolSkillResourcePage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
 import { HomeWorkspace } from '@/features/home/HomeWorkspace'
@@ -378,11 +379,8 @@ function resolveApiPath(routePath: string): string | null {
     '/operations/files': '/platform/v1/files',
     '/admin/audit': '/platform/v1/audit/identity-events',
     // Registry 类 — 统一走 /platform/v1/registry/{kind}
-    '/admin/models/providers': '/platform/v1/registry/providers',
-    '/admin/models/templates': '/platform/v1/registry/models',
-    '/admin/models/routing': '/platform/v1/registry/routing-policies',
-    '/admin/tools': '/platform/v1/registry/tools',
-    '/admin/skills': '/platform/v1/registry/skills',
+    '/admin/models/providers': '/platform/v1/registry/model_provider',
+    '/admin/models/templates': '/platform/v1/registry/model_template',
     // 调度
     '/admin/scheduler/jobs': '/platform/v1/scheduler/jobs',
     '/admin/scheduler/subscriptions': '/platform/v1/scheduler/subscriptions',
@@ -498,6 +496,10 @@ function PageView({
     return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
+  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId')
+    return <ToolSkillResourcePage kind="tool" />
+  if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId')
+    return <ToolSkillResourcePage kind="skill" />
 
   // 通用分支：后端有 API → GenericListPage，无 API → EmptyState
   const apiPath = resolveApiPath(route.path)
