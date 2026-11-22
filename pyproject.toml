@@ -96,6 +96,8 @@ include = [
   "tests/test_prompt_variants.py",
   "tests/test_prompt_experiments.py",
   "tests/test_prompt_operations.py",
+  "tests/test_prompt_registry_listing.py",
+  "tests/test_bootstrap_prompt_capabilities.py",
   "tests/test_evaluation_store.py",
   "tests/test_evaluation_worker.py",
   "tests/test_evaluation_governance.py",

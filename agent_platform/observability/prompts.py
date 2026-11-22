@@ -51,6 +51,36 @@ class PromptRegistry:
         self._variant_history: dict[tuple[str, str], list[int]] = {}
         self._audit_events: list[PromptAuditEvent] = []
 
+    def list_prompts(self, *, prefix: str, limit: int = 50) -> tuple[dict[str, object], ...]:
+        """List only prompt keys under one tenant prefix; never return template contents."""
+        if not isinstance(prefix, str) or not prefix.startswith("tenant:") or not prefix.endswith(":"):
+            raise ValueError("a tenant prompt prefix is required")
+        prefix_body = prefix[len("tenant:"):-1]
+        length_text, separator, tenant_id = prefix_body.partition(":")
+        if (
+            not separator
+            or not length_text.isdigit()
+            or not tenant_id
+            or len(tenant_id) != int(length_text)
+        ):
+            raise ValueError("a valid tenant prompt prefix is required")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("limit must be between 1 and 200")
+        rows: list[dict[str, object]] = []
+        for storage_key in sorted(self._versions):
+            if not storage_key.startswith(prefix):
+                continue
+            versions = self._versions[storage_key]
+            if not versions:
+                continue
+            rows.append({
+                "storage_key": storage_key,
+                "latest_version": max(versions),
+                "active_version": self._active.get(storage_key),
+                "version_count": len(versions),
+            })
+        return tuple(rows[:limit])
+
     def _record_audit(
         self, prompt_id: str, action: str, actor_id: str,
         details: dict[str, str | int | float | None],
@@ -275,10 +305,15 @@ class PromptRegistry:
         return prompt.template.format_map(variables), prompt
 
 
-def tenant_prompt_key(tenant_id: str, prompt_id: str) -> str:
-    """Namespace prompt identifiers because the legacy registry schema is global."""
+def tenant_prompt_prefix(tenant_id: str) -> str:
+    """Return an unambiguous namespace prefix for one tenant."""
     if not isinstance(tenant_id, str) or not tenant_id.strip():
         raise ValueError("tenant_id is required")
+    return f"tenant:{len(tenant_id)}:{tenant_id}:"
+
+
+def tenant_prompt_key(tenant_id: str, prompt_id: str) -> str:
+    """Namespace prompt identifiers because the legacy registry schema is global."""
     if not isinstance(prompt_id, str) or not prompt_id.strip():
         raise ValueError("prompt_id is required")
-    return f"tenant:{len(tenant_id)}:{tenant_id}:{prompt_id}"
+    return f"{tenant_prompt_prefix(tenant_id)}{prompt_id}"

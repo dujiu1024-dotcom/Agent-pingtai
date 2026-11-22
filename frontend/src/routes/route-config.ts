@@ -296,8 +296,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-PROMPTS',
     title: 'Prompt 与模板管理',
     section: '平台管理',
-    description: 'Prompt Registry 条件能力入口。',
-    owner: '#749',
+    description: '租户隔离的 Prompt 模板、版本、差异与评测 Gate。',
+    owner: '#807',
     capability: 'prompt_management',
   },
   {
@@ -319,6 +319,18 @@ export const pageRoutes: PageRoute[] = [
 ]
 
 export const detailRoutes: PageRoute[] = [
+  {
+    path: '/admin/prompts/:promptId',
+    pageId: 'ADM-PROMPTS-DETAIL',
+    title: 'Prompt 详情',
+    section: '平台管理',
+    description: 'Prompt 版本内容、历史差异与评测门禁状态。',
+    parentPath: '/admin/prompts',
+    entityIdParam: 'promptId',
+    owner: '#807',
+    authOnly: true,
+    capability: 'prompt_management',
+  },
   {
     path: '/operations/knowledge-bases/:collectionId',
     pageId: 'OPS-KNOWLEDGE-COLLECTION-DETAIL',
