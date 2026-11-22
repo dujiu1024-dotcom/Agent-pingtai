@@ -24,7 +24,7 @@ concurrency:
 jobs:
   frontend:
     name: Frontend install, lint, typecheck, build, E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
@@ -43,14 +43,22 @@ jobs:
       - name: Unit tests
         run: pnpm test
       - name: Lint and format
+        if: always()
         run: pnpm lint
       - name: Typecheck
+        if: always()
         run: pnpm typecheck
       - name: Production build
+        if: always()
         run: pnpm build
+      - name: Parallel rollout artifact build
+        if: always()
+        run: pnpm exec vite build --mode parallel
       - name: Install Playwright browser
+        if: always()
         run: pnpm exec playwright install --with-deps chromium
       - name: Core UI E2E (desktop and tablet)
+        if: always()
         run: pnpm test:e2e
       - name: Upload Playwright report
         if: always()
@@ -59,3 +67,26 @@ jobs:
           name: frontend-playwright-report
           path: frontend/playwright-report/
           retention-days: 7
+
+  auth-cutover-e2e:
+    name: Auth and cutover Playwright
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Auth and cutover E2E
+        run: pnpm exec playwright test e2e/auth-cutover.spec.ts
