@@ -12,12 +12,18 @@ import json
 import os
 import sqlite3
 import statistics
+import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+
+_REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPOSITORY_ROOT not in sys.path:
+    sys.path.insert(0, _REPOSITORY_ROOT)
 
 
 def _summary(samples: list[float], operations: int, elapsed: float) -> dict[str, Any]:
@@ -128,29 +134,104 @@ async def run_postgres_pool_probe(dsn: str, *, workers: int, operations: int) ->
         open=False, timeout=30,
     )
     await pool.open(wait=True)
-    samples: list[float] = []
+    schema = f"s665_bench_{uuid4().hex[:12]}"
+    schema_created = False
     semaphore = asyncio.Semaphore(workers)
-    async def probe() -> None:
+    pool_wait_samples: list[float] = []
+
+    async def measure_run(index: int) -> float:
         async with semaphore:
             started = time.perf_counter()
+            wait_started = time.perf_counter()
             async with pool.connection() as connection:
-                await connection.execute("SELECT 1")
-            samples.append((time.perf_counter() - started) * 1000)
+                pool_wait_samples.append((time.perf_counter() - wait_started) * 1000)
+                async with connection.transaction():
+                    await connection.execute(
+                        f'INSERT INTO "{schema}".runs(run_id,status,payload) VALUES (%s,%s,%s)',
+                        (index, "queued", "{}"),
+                    )
+                    await connection.execute(
+                        f'UPDATE "{schema}".runs SET status=%s WHERE run_id=%s',
+                        ("succeeded", index),
+                    )
+                    cursor = await connection.execute(
+                        f'SELECT status FROM "{schema}".runs WHERE run_id=%s', (index,),
+                    )
+                    row = await cursor.fetchone()
+                    if row is None or row[0] != "succeeded":
+                        raise RuntimeError(f"PostgreSQL Run benchmark failed to persist operation {index}")
+            return (time.perf_counter() - started) * 1000
+
+    async def measure_blackboard(index: int) -> float:
+        async with semaphore:
+            started = time.perf_counter()
+            wait_started = time.perf_counter()
+            async with pool.connection() as connection:
+                pool_wait_samples.append((time.perf_counter() - wait_started) * 1000)
+                async with connection.transaction():
+                    await connection.execute(
+                        f'INSERT INTO "{schema}".blackboard(entry_id,scope_id,content) VALUES (%s,%s,%s)',
+                        (index, "benchmark", "{}"),
+                    )
+                    cursor = await connection.execute(
+                        f'SELECT content FROM "{schema}".blackboard WHERE entry_id=%s', (index,),
+                    )
+                    row = await cursor.fetchone()
+                    if row is None or row[0] != "{}":
+                        raise RuntimeError(
+                            f"PostgreSQL Blackboard benchmark failed to persist operation {index}"
+                        )
+            return (time.perf_counter() - started) * 1000
+
     try:
-        started = time.perf_counter()
-        await asyncio.gather(*(probe() for _ in range(operations)))
-        elapsed = time.perf_counter() - started
-        stats = pool.get_stats()
+        async with pool.connection() as connection:
+            await connection.execute(f'CREATE SCHEMA "{schema}"')
+            await connection.execute(
+                f'CREATE TABLE "{schema}".runs '
+                "(run_id BIGINT PRIMARY KEY, status TEXT NOT NULL, payload TEXT NOT NULL)"
+            )
+            await connection.execute(
+                f'CREATE TABLE "{schema}".blackboard '
+                "(entry_id BIGINT PRIMARY KEY, scope_id TEXT NOT NULL, content TEXT NOT NULL)"
+            )
+        schema_created = True
+
+        run_started = time.perf_counter()
+        run_samples = await asyncio.gather(*(measure_run(index) for index in range(operations)))
+        run_elapsed = time.perf_counter() - run_started
+
+        blackboard_started = time.perf_counter()
+        blackboard_samples = await asyncio.gather(
+            *(measure_blackboard(index) for index in range(operations))
+        )
+        blackboard_elapsed = time.perf_counter() - blackboard_started
+
+        wait_summary = _summary(
+            pool_wait_samples, len(pool_wait_samples),
+            max(run_elapsed + blackboard_elapsed, 0.000001),
+        )["latency_ms"]
         return {
             "status": "measured",
-            "backend": "postgres_connection_pool_select_probe",
+            "backend": "postgres_run_and_blackboard_transaction_probe",
             "pool_max_size": max(1, min(workers, 32)),
             "workers": workers,
-            "metrics": _summary(samples, operations, elapsed),
-            "pool_stats": stats,
-            "notes": ["SELECT 1 checkout+query latency; not a full Run transaction benchmark."],
+            "metrics": {
+                "run_lifecycle_transaction": _summary(run_samples, operations, run_elapsed),
+                "blackboard_write_read": _summary(
+                    blackboard_samples, operations, blackboard_elapsed,
+                ),
+                "pool_wait_latency_ms": wait_summary,
+            },
+            "pool_stats": pool.get_stats(),
+            "notes": [
+                "Isolated synthetic tables execute the same insert/update/read transaction shape as the SQLite baseline.",
+                "This measures PostgreSQL storage and pool pressure, not the full platform repositories or LLM execution.",
+            ],
         }
     finally:
+        if schema_created:
+            async with pool.connection() as connection:
+                await connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
         await pool.close()
 
 
@@ -163,12 +244,12 @@ async def run_redis_queue_probe(url: str, *, workers: int, operations: int) -> d
     tenant = f"bench-{uuid4().hex}"
     topic = "queue.latency"
     group = "benchmark"
-    consumer = "benchmark-consumer"
     await transport.connect()
     samples: list[float] = []
-    try:
-        await transport.ensure_group(tenant_id=tenant, topic=topic, group=group)
-        for index in range(operations):
+    semaphore = asyncio.Semaphore(workers)
+
+    async def publish_and_ack(index: int) -> None:
+        async with semaphore:
             event_id = str(uuid4())
             sent = time.perf_counter_ns()
             await transport.publish(
@@ -176,35 +257,48 @@ async def run_redis_queue_probe(url: str, *, workers: int, operations: int) -> d
                 payload={"sent_ns": sent, "index": index},
             )
             deadline = time.perf_counter() + 10
-            received = []
-            while not received and time.perf_counter() < deadline:
+            while time.perf_counter() < deadline:
                 received = await transport.read_group(
                     tenant_id=tenant, topic=topic, group=group,
-                    consumer=consumer, count=1, block_ms=100,
+                    consumer=f"benchmark-consumer-{index % workers}",
+                    count=1, block_ms=100,
                 )
-            if not received:
-                raise TimeoutError("Redis stream message was not delivered within 10 seconds")
-            for message_id, fields in received:
-                payload = json.loads(fields["payload"])
-                samples.append((time.perf_counter_ns() - int(payload["sent_ns"])) / 1_000_000)
-                await transport.acknowledge(
-                    tenant_id=tenant, topic=topic, group=group, message_id=message_id,
-                )
-        elapsed_ms = max(samples) if samples else 0
+                if not received:
+                    continue
+                for message_id, fields in received:
+                    payload = json.loads(fields["payload"])
+                    samples.append((time.perf_counter_ns() - int(payload["sent_ns"])) / 1_000_000)
+                    await transport.acknowledge(
+                        tenant_id=tenant, topic=topic, group=group, message_id=message_id,
+                    )
+                return
+            raise TimeoutError("Redis stream message was not delivered within 10 seconds")
+
+    try:
+        await transport.ensure_group(tenant_id=tenant, topic=topic, group=group)
+        started = time.perf_counter()
+        await asyncio.gather(*(publish_and_ack(index) for index in range(operations)))
+        elapsed = time.perf_counter() - started
+        ordered = sorted(samples)
         return {
             "status": "measured",
             "backend": "redis_stream_publish_to_consumer_ack",
             "workers": workers,
             "metrics": {
                 "messages": len(samples),
+                "ops_per_second": round(len(samples) / elapsed, 2) if elapsed else 0.0,
+                "elapsed_seconds": round(elapsed, 6),
                 "latency_ms": {
-                    "p50": round(statistics.median(samples), 3) if samples else 0.0,
-                    "p95": round(sorted(samples)[int((len(samples)-1)*0.95)], 3) if samples else 0.0,
-                    "p99": round(sorted(samples)[int((len(samples)-1)*0.99)], 3) if samples else 0.0,
-                    "max": round(elapsed_ms, 3),
+                    "p50": round(statistics.median(ordered), 3) if ordered else 0.0,
+                    "p95": round(ordered[int((len(ordered)-1)*0.95)], 3) if ordered else 0.0,
+                    "p99": round(ordered[int((len(ordered)-1)*0.99)], 3) if ordered else 0.0,
+                    "max": round(max(ordered), 3) if ordered else 0.0,
                 },
             },
-            "notes": ["Sequential publish→consumer-read→ACK latency; not multi-consumer throughput."],
+            "notes": [
+                "Concurrent publish→consumer-read→ACK probe bounded by the configured worker count.",
+                "Measures queue delivery latency and probe throughput, not full Run execution throughput.",
+            ],
         }
     finally:
         await transport.close()
@@ -238,6 +332,19 @@ async def async_main(args: argparse.Namespace) -> dict[str, Any]:
         result["platform_redis_queue"] = await run_redis_queue_probe(
             redis_url, workers=args.workers, operations=args.workers * args.operations,
         )
+    postgres = result["platform_postgres_pool"]
+    if postgres.get("status") == "measured":
+        sqlite_run = result["legacy_sqlite"]["run_lifecycle_transaction"]["ops_per_second"]
+        sqlite_blackboard = result["legacy_sqlite"]["blackboard_write_read"]["ops_per_second"]
+        postgres_run = postgres["metrics"]["run_lifecycle_transaction"]["ops_per_second"]
+        postgres_blackboard = postgres["metrics"]["blackboard_write_read"]["ops_per_second"]
+        result["comparison"]["diagnostic_only"] = {
+            "postgres_vs_sqlite_run_throughput_ratio": round(postgres_run / sqlite_run, 4)
+            if sqlite_run else None,
+            "postgres_vs_sqlite_blackboard_qps_ratio": round(postgres_blackboard / sqlite_blackboard, 4)
+            if sqlite_blackboard else None,
+            "note": "Diagnostic only: CI container storage profiles are not production parity evidence.",
+        }
     return result
 
 

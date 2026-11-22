@@ -8,7 +8,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from agent_platform.data_governance.diff import compare_migration_rows
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from agent_platform.data_governance.diff import compare_migration_rows  # noqa: E402
 
 
 def validate_input_paths(source: Path, target: Path) -> None:

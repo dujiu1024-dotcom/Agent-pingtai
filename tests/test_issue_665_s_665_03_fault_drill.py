@@ -60,6 +60,10 @@ class FailoverPostgresConnection:
         return FakeTransaction()
 
     async def execute(self, query, _params=None):
+        if "INSERT INTO platform_quota_budgets" in query:
+            return FakeCursor(None)
+        if "UPDATE platform_quota_reservations" in query:
+            return FakeCursor(None)
         if "SELECT * FROM platform_quota_budgets" in query:
             return FakeCursor(None)
         if "platform_quota_reserve_split" in query:

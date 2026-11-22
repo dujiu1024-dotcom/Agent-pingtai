@@ -6,6 +6,12 @@ import logging
 import sys
 import unittest
 from dataclasses import dataclass
+from pathlib import Path
+
+
+_REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
+if _REPOSITORY_ROOT not in sys.path:
+    sys.path.insert(0, _REPOSITORY_ROOT)
 
 
 CORE_SUITES = (
@@ -15,6 +21,7 @@ CORE_SUITES = (
     "tests.test_event_consumer",
     "tests.test_outbox_worker",
     "tests.test_alert_notifications",
+    "tests.test_issue_665_s_665_01_e2e",
 )
 
 

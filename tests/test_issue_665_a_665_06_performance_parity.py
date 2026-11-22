@@ -57,7 +57,7 @@ class SwitchPerformanceParityTests(unittest.TestCase):
 
     def test_explicit_regression_tolerance_is_applied(self):
         result = evaluate_parity(
-            report(), report(run=99.5, blackboard=199, redis=5.1, pool=2.1),
+            report(), report(run=99.5, blackboard=199, redis=5.1, pool=2.02),
             max_regression_pct=2,
         )
         self.assertEqual(result["status"], "pass")
