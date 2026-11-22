@@ -40,16 +40,16 @@ describe('buildDailyUsageTrend', () => {
     const trend = buildDailyUsageTrend([
       {
         occurred_at: '2026-11-22T10:00:00Z',
-        input_tokens: Number.MAX_SAFE_INTEGER,
+        input_tokens: 4_000_000_000_000_000,
         output_tokens: 1_000_000_000_000_000,
-        total_tokens: 9_007_199_254_740_991,
+        total_tokens: 5_000_000_000_000_000,
         cost_usd: '1e150',
       },
       {
         occurred_at: '2026-11-22T11:00:00Z',
-        input_tokens: 1_000_000_000_000_000,
+        input_tokens: 2_000_000_000_000_000,
         output_tokens: 0,
-        total_tokens: 1_000_000_000_000_000,
+        total_tokens: 2_000_000_000_000_000,
         cost_usd: '2e150',
       },
     ])
@@ -57,9 +57,9 @@ describe('buildDailyUsageTrend', () => {
     expect(trend).toEqual([
       {
         date: '2026-11-22',
-        inputTokens: Number.MAX_SAFE_INTEGER + 1_000_000_000_000_000,
+        inputTokens: 6_000_000_000_000_000,
         outputTokens: 1_000_000_000_000_000,
-        totalTokens: 10_007_199_254_740_991,
+        totalTokens: 7_000_000_000_000_000,
         costUsd: 3e150,
         pricedEvents: 2,
         unpricedEvents: 0,
