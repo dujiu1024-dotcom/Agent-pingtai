@@ -82,6 +82,58 @@ class FileCheckpointStore:
         return result
 
 
+class PostgresInvalidationSource:
+    """Read durable invalidation events without relying on PostgreSQL NOTIFY."""
+
+    def __init__(self, connection_factory: Callable[[], Awaitable[Any]]) -> None:
+        if not callable(connection_factory):
+            raise TypeError("connection_factory must be callable")
+        self._connect = connection_factory
+
+    async def high_watermark(self) -> int:
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                "SELECT COALESCE(MAX(event_id), 0) AS high_watermark "
+                "FROM knowledge_cache_invalidations"
+            )
+            row = await cursor.fetchone()
+        return _event_id(row["high_watermark"])
+
+    async def list_after(
+        self, event_id: int, *, limit: int,
+    ) -> Sequence[Mapping[str, Any]]:
+        offset = _event_id(event_id)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        connection = await self._connect()
+        async with connection:
+            cursor = await connection.execute(
+                """SELECT event_id, tenant_id, resource_type, resource_id,
+                          reason, created_at
+                   FROM knowledge_cache_invalidations
+                   WHERE event_id > %s
+                   ORDER BY event_id
+                   LIMIT %s""",
+                (offset, limit),
+            )
+            rows = await cursor.fetchall()
+        return [
+            {
+                "event_id": _event_id(row["event_id"]),
+                "tenant_id": row["tenant_id"],
+                "resource_type": row["resource_type"],
+                "resource_id": str(row["resource_id"]),
+                "reason": row["reason"],
+                "created_at": (
+                    row["created_at"].isoformat()
+                    if row["created_at"] is not None else None
+                ),
+            }
+            for row in rows
+        ]
+
+
 class PostgresCheckpointStore:
     """PostgreSQL-backed independent consumer offsets; no DB needed by unit tests."""
 
