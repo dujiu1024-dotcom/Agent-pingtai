@@ -27,7 +27,7 @@ _ALLOWED={
 class RunSnapshot:
  tenant_id:str; run_id:str; status:RunStatus; version:int
  checkpoint_ref:str|None=None; last_error:str|None=None; updated_at:datetime|None=None
- output:Any=None; input:Any=None; usage:Any=None
+ output:Any=None; input:Any=None; usage:Any=None; lease_token:int=0
 class RunStateStore(Protocol):
  async def get(self,tenant_id:str,run_id:str)->RunSnapshot|None: ...
  async def transition(self,snapshot:RunSnapshot,*,expected_version:int)->RunSnapshot: ...
