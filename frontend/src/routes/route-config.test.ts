@@ -180,6 +180,27 @@ describe('route configuration', () => {
     expect(matchRoutes(routeObjects, '/admin/models/routing/policy-1')?.[0].params.policyId).toBe('policy-1')
   })
 
+  it('registers authenticated session list and detail routes under #801', () => {
+    const list = pageRoutes.find((route) => route.path === '/operations/sessions')
+    const detail = detailRoutes.find((route) => route.path === '/operations/sessions/:sessionId')
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+
+    expect(list).toMatchObject({ owner: '#801', authOnly: true })
+    expect(detail).toMatchObject({
+      owner: '#801',
+      authOnly: true,
+      parentPath: '/operations/sessions',
+      entityIdParam: 'sessionId',
+    })
+    expect(matchRoutes(routeObjects, '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
+    expect(
+      getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path)),
+    ).not.toContain('/operations/sessions')
+    expect(
+      getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path)),
+    ).toContain('/operations/sessions')
+  })
+
   it('registers system settings as an authenticated read-only route owned by #812', () => {
     const settings = pageRoutes.find((route) => route.path === '/admin/settings')
     expect(settings?.owner).toBe('#812')
