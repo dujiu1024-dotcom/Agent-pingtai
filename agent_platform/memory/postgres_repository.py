@@ -67,7 +67,10 @@ class PostgresMemoryRepository:
                     """INSERT INTO platform_memory_deletion_jobs
                        (tenant_id,memory_id,status)
                        VALUES (%s,%s,'pending')
-                       ON CONFLICT (tenant_id,memory_id) DO NOTHING""",
+                       ON CONFLICT (tenant_id,memory_id) DO UPDATE
+                       SET status='retry', attempts=0, next_attempt_at=now(),
+                           last_error_code=NULL, updated_at=now()
+                       WHERE platform_memory_deletion_jobs.status='dead'""",
                     (tenant_id,memory_id),
                 )
                 return row is not None
