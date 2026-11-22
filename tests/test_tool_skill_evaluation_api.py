@@ -125,7 +125,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "healthy")
         self.assertEqual(response.json()["discovered_tools"], ["read", "search"])
         self.assertEqual(self.probe_calls, [("tenant-a", "mcp-docs")])
-        self.assertEqual([event["outcome"] for event in self.audit.events], ["started", "succeeded"])
+        self.assertEqual([event["outcome"] for event in self.audit.events], ["requested", "succeeded"])
 
     def test_skill_evaluation_is_version_pinned_and_audited(self):
         self._publish("skill", "summarize", {
