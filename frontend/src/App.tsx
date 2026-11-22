@@ -185,7 +185,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
 
   // Keep the seven prototype entries unchanged. New capabilities are appended
   // after them so the original navigation order remains stable.
-  const navigationExtensions = [
+  const navigationExtensions: { path: string; title: string; icon: string; authOnly?: boolean; capability?: string }[] = [
     { path: '/operations/agents', title: 'Agent 运行态', icon: '◈' },
     { path: '/admin/agents', title: 'Agent 定义', icon: '✧' },
     { path: '/operations/approvals', title: '审批中心', icon: '✓' },
@@ -205,7 +205,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     { path: '/admin/scheduler/subscriptions', title: '事件订阅', icon: '⌁' },
     { path: '/admin/organization', title: '组织与成员', icon: '♙', authOnly: true },
     { path: '/admin/access-control', title: '角色与权限', icon: '⚿', authOnly: true },
-    { path: '/admin/settings', title: '系统设置', icon: '⚙', authOnly: true },
   ].filter((item) =>
     (!item.authOnly || config.auth.enabled) &&
     (!item.capability || config.capabilities.includes(item.capability))
