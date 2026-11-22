@@ -465,6 +465,19 @@ class PlatformApiCompositionTests(unittest.TestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(evaluations.listed[0]["tenant_id"], "tenant-a")
 
+    def test_tool_skill_evaluation_dependencies_must_be_paired(self):
+        with self.assertRaisesRegex(ValueError, "Tool/MCP checker"):
+            create_platform_app(
+                auth_enabled=True,
+                identity=self.identity,
+                identity_repository=FakeIdentityRepository(),
+                knowledge=self.knowledge,
+                memory=self.memory,
+                redis=FakeRedis(),
+                allowed_origins=("https://console.example.com",),
+                tool_mcp_checker_resolver=object(),
+            )
+
     def test_observability_evaluation_dependencies_must_be_paired(self):
         with self.assertRaisesRegex(ValueError, "evaluation services and evaluation manager authorizer"):
             create_platform_app(auth_enabled=True, identity=self.identity,
