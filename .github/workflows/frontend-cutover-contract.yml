@@ -1,0 +1,33 @@
+name: frontend-cutover-contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/frontend_cutover_policy.py"
+      - "tests/test_frontend_cutover_policy.py"
+      - "docs/frontend/issue-752-cutover-rollback-contract.md"
+      - ".github/workflows/frontend-cutover-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/frontend_cutover_policy.py"
+      - "tests/test_frontend_cutover_policy.py"
+      - "docs/frontend/issue-752-cutover-rollback-contract.md"
+      - ".github/workflows/frontend-cutover-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-contract:
+    name: Frontend cutover rollback contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate rollback decision contract
+        run: python -m unittest tests.test_frontend_cutover_policy -v
