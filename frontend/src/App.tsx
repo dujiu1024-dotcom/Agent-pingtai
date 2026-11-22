@@ -110,7 +110,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route element={<AppShell />}>
+          <Route element={<AppShell config={config} />}>
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
@@ -157,7 +157,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
   )
 }
 
-function AppShell() {
+function AppShell({ config }: { config: BootstrapConfig }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const navigate = useNavigate()
@@ -188,6 +188,48 @@ function AppShell() {
     { path: '/admin/settings', title: '系统管理', icon: '⚙' },
   ]
 
+  // Keep the seven prototype entries unchanged. New capabilities are appended
+  // after them so the original navigation order remains stable.
+  const navigationExtensions: {
+    path: string
+    title: string
+    icon: string
+    authOnly?: boolean
+    capability?: string
+  }[] = [
+    { path: '/operations/agents', title: 'Agent 运行态', icon: '◈' },
+    { path: '/admin/agents', title: 'Agent 定义', icon: '✧' },
+    { path: '/operations/approvals', title: '审批中心', icon: '✓' },
+    { path: '/operations/knowledge-bases', title: '知识库', icon: '▤' },
+    { path: '/operations/memories', title: '记忆治理', icon: '◇' },
+    { path: '/operations/conversations', title: '会话与消息', icon: '☷' },
+    { path: '/operations/files', title: '文件与产物', icon: '▧' },
+    { path: '/operations/evaluation/datasets', title: '评测数据集', icon: '◎' },
+    { path: '/operations/evaluation/runs', title: '评测运行', icon: '◴' },
+    { path: '/admin/tools', title: '工具与 MCP', icon: '⌘' },
+    { path: '/admin/skills', title: 'Skills', icon: '✦' },
+    { path: '/admin/models/providers', title: '模型供应商', icon: '◉' },
+    { path: '/admin/models/templates', title: '模型模板', icon: '▦' },
+    { path: '/admin/models/routing', title: '模型路由', icon: '⇄' },
+    {
+      path: '/admin/prompts',
+      title: 'Prompt 管理',
+      icon: '¶',
+      capability: 'prompt_management',
+    },
+    { path: '/admin/ops', title: '系统运维', icon: '⌁' },
+    { path: '/admin/audit', title: '审计中心', icon: '◷' },
+    { path: '/notifications', title: '通知中心', icon: '♧' },
+    { path: '/admin/scheduler/jobs', title: '调度任务', icon: '◴' },
+    { path: '/admin/scheduler/subscriptions', title: '事件订阅', icon: '⌁' },
+    { path: '/admin/organization', title: '组织与成员', icon: '♙', authOnly: true },
+    { path: '/admin/access-control', title: '角色与权限', icon: '⚿', authOnly: true },
+  ].filter(
+    (item) =>
+      (!item.authOnly || config.auth.enabled) &&
+      (!item.capability || config.capabilities.includes(item.capability)),
+  )
+
   return (
     <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
@@ -206,6 +248,20 @@ function AppShell() {
                 item.path === '/workspace/overview' ||
                 item.path === '/workspace/office'
               }
+              className={({ isActive }) =>
+                isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+              }
+            >
+              <i aria-hidden="true">{item.icon}</i>
+              {!collapsed && <span>{item.title}</span>}
+            </NavLink>
+          ))}
+          <div className="prototype-nav-section-label" aria-hidden="true">新增业务</div>
+          {navigationExtensions.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              title={collapsed ? item.title : undefined}
               className={({ isActive }) =>
                 isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
               }

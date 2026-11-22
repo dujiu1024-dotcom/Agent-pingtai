@@ -40,14 +40,6 @@ def _index_response() -> HTMLResponse | FileResponse:
             content = content.replace("</body>", _LEGACY_ENTRY + "</body>", 1)
         else:
             content += _LEGACY_ENTRY
-    # Vite hashes the JS asset; also expose an /app/assets/app.js alias so
-    # downstream contract tests can reference a stable URL.
-    import re as _re
-    content = _re.sub(
-        r'/app/assets/index-[A-Za-z0-9_-]+\.js',
-        '/app/assets/app.js',
-        content,
-    )
     return HTMLResponse(
         content,
         headers={"Cache-Control": "no-store"},
@@ -68,11 +60,10 @@ def create_platform_web_router() -> APIRouter:
 
     @router.get("/app", include_in_schema=False)
     @router.get("/app/", include_in_schema=False)
-    async def index(legacy: bool = False, modern: bool = False):
-        # Preserve the established console as the product's default UI.
-        # The redesigned React workbench remains available explicitly at
-        # /app/?modern=1; legacy=1 remains a backwards-compatible alias.
-        if legacy or not modern or not (STATIC / "index.html").is_file():
+    async def index(legacy: bool = False):
+        # The Agent Platform prototype is the product UI. Keep the former
+        # FDE console available only through the explicit compatibility flag.
+        if legacy:
             return _legacy_console_response()
         return _index_response()
 

@@ -1,4 +1,6 @@
 
+import re
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -11,19 +13,43 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def test_platform_web_serves_established_console_by_default():
-    response = _client().get("/app/")
+def test_platform_web_serves_agent_platform_workbench_by_default():
+    client = _client()
+    response = client.get("/app/")
     assert response.status_code == 200
-    assert "FDE 工作室" in response.text
-    assert '<script type="module" src="/app/assets/legacy-console.js">' in response.text
+    assert '<div id="root"></div>' in response.text
+    assert 'id="legacy-console-fallback"' in response.text
+    assert "<title>Agent 平台</title>" in response.text
     assert response.headers["cache-control"] == "no-store"
 
+    # The checked-in production bundle must expose the appended menu too;
+    # source-only navigation changes are not sufficient for the served UI.
+    script_path = re.search(r'<script type="module" crossorigin src="([^"]+\.js)"', response.text)
+    stylesheet_path = re.search(r'href="([^"]+\.css)"', response.text)
+    assert script_path is not None
+    assert stylesheet_path is not None
+    bundle = client.get(script_path.group(1))
+    stylesheet = client.get(stylesheet_path.group(1))
+    assert bundle.status_code == 200
+    assert "新增业务" in bundle.text
+    assert "Agent 运行态" in bundle.text
+    assert stylesheet.status_code == 200
+    assert ".prototype-nav-section-label" in stylesheet.text
 
-def test_platform_web_serves_react_workbench_only_when_explicitly_requested():
+
+def test_platform_web_keeps_react_workbench_available_with_explicit_modern_flag():
     response = _client().get("/app/?modern=1")
     assert response.status_code == 200
     assert '<div id="root"></div>' in response.text
     assert 'id="legacy-console-fallback"' in response.text
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_platform_web_serves_legacy_console_only_when_explicitly_requested():
+    response = _client().get("/app/?legacy=1")
+    assert response.status_code == 200
+    assert "FDE 工作室" in response.text
+    assert '<script type="module" src="/app/assets/legacy-console.js">' in response.text
     assert response.headers["cache-control"] == "no-store"
 
 
