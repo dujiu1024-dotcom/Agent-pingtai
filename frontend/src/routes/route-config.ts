@@ -259,6 +259,15 @@ export const pageRoutes: PageRoute[] = [
     authOnly: true,
   },
   {
+    path: '/admin/rbac',
+    pageId: 'ADM-RBAC-CANONICAL',
+    title: '角色与权限',
+    section: '平台管理',
+    description: '角色与权限管理；仅权限模式可用。',
+    owner: '#798',
+    authOnly: true,
+  },
+  {
     path: '/admin/settings',
     pageId: 'SYS-SETTINGS',
     title: '系统设置',
@@ -629,7 +638,7 @@ export const navigationSections: NavigationSection[] = [
       },
       {
         label: '角色与权限',
-        path: '/admin/access-control',
+        path: '/admin/rbac',
         authOnly: true,
       },
       { label: '系统设置', path: '/admin/settings' },
