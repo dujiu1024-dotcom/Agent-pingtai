@@ -112,7 +112,7 @@ for file in "${files[@]}"; do
       exit 2
     fi
   fi
-  if ((10#$version <= last_version)); then
+  if ((10#$version < last_version)); then
     echo "migration versions must be strictly increasing: $name" >&2
     exit 2
   fi
