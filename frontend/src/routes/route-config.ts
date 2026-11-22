@@ -176,6 +176,15 @@ export const pageRoutes: PageRoute[] = [
     owner: '#750',
   },
   {
+    path: '/operations/sessions',
+    pageId: 'OPS-SESSIONS',
+    title: '会话与消息',
+    section: '智能体运营',
+    description: '会话列表、消息时间线与关联文件资产。',
+    owner: '#801',
+    authOnly: true,
+  },
+  {
     path: '/operations/conversations',
     pageId: 'OPS-CONVERSATIONS',
     title: '会话与消息',
@@ -454,6 +463,17 @@ export const detailRoutes: PageRoute[] = [
     owner: '#750',
   },
   {
+    path: '/operations/sessions/:sessionId',
+    pageId: 'OPS-SESSION-DETAIL',
+    title: '会话详情',
+    section: '智能体运营',
+    description: '会话消息时间线与关联文件资产。',
+    parentPath: '/operations/sessions',
+    entityIdParam: 'sessionId',
+    owner: '#801',
+    authOnly: true,
+  },
+  {
     path: '/operations/conversations/:conversationId',
     pageId: 'OPS-CONVERSATIONS',
     title: '会话详情',
@@ -586,6 +606,7 @@ export const navigationSections: NavigationSection[] = [
     subpages: [
       { label: '任务列表', path: '/workspace/tasks' },
       { label: '审批中心', path: '/operations/approvals' },
+      { label: '会话工作区', path: '/operations/sessions', authOnly: true },
       { label: '会话与消息', path: '/operations/conversations' },
       { label: '文件与产物', path: '/operations/files' },
     ],
