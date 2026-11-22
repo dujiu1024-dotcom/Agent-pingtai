@@ -45,6 +45,7 @@ class PostgresGovernanceStoreTests(unittest.IsolatedAsyncioTestCase):
             "error_code": "tool_inventory_mismatch",
         }
         connection = Connection(row)
+
         async def connect():
             return connection
 
