@@ -207,3 +207,30 @@
 - 新增 Token 必须同时补充本文件表格和可运行样例；语义色含义不得随页面改变。
 - 组件新增变体需说明默认态、hover、focus-visible、pressed、disabled、loading、错误态。
 - 本规范是第一版工程基线；截图评审后允许调数值，但必须以同一 Token 更新文档、CSS 和样例，不能单页私改。
+
+
+## 12. 基础组件 API（L1-T13）
+
+组件统一从 `@/components` 导入，避免页面直接依赖组件内部文件：
+
+```tsx
+import { Button, Card, Empty, Loading, Modal, Table } from '@/components'
+import type { TableColumn } from '@/components'
+```
+
+| 组件 | 统一职责 | 关键约束 |
+|---|---|---|
+| Button | primary / secondary / tertiary / danger / ghost 操作按钮 | 原生 button 属性透传；默认 type=button；loading/disabled 阻止重复提交；支持 sm/md/lg 和图标槽位 |
+| Card | section/article/div 内容容器 | 标题、说明、操作区与 none/sm/md/lg 内边距；不隐式承担数据请求 |
+| Table | 类型安全的记录表格 | 显式 columns、data、rowKey；支持列宽、对齐、render、密度、loading 与 empty；表头使用 scope=col |
+| Modal | 模态对话框 | 受控 open/onClose；Escape、遮罩关闭可配置；焦点初始定位与 Tab 循环；锁定背景滚动并恢复原焦点 |
+| Empty | 空数据状态 | 有标题/说明/可选操作；role=status；不得将空数据伪装成请求成功的业务记录 |
+| Loading | 加载反馈 | role=status、aria-live；支持尺寸与整页布局；尊重 prefers-reduced-motion |
+
+### 12.1 Story 演示
+
+`frontend/src/components/ComponentStories.tsx` 是可运行的组件 Story 集合，由 `DesignSystemShowcase` 挂载。演示覆盖按钮变体/禁用/加载、Card 结构、Table 密度和数据、Modal 键盘/遮罩交互、Empty 操作槽及 Loading 状态。演示数据仅为本地静态样例，不调用业务 API、不写入后端。
+
+### 12.2 样式与可访问性
+
+组件样式只消费本文件定义的 CSS Token（品牌/中性/语义色、间距、圆角、层级、动效）；交互控件提供可见 focus-visible 状态。Loading 动效在系统启用 reduced motion 时关闭。Modal 通过 aria-modal/aria-labelledby 暴露语义，关闭后恢复触发前焦点。Table 使用原生 table/thead/th/tbody 结构，窄屏由外层容器横向滚动。
