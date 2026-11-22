@@ -213,7 +213,7 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-MODEL-TEMPLATES',
     title: '模型模板与目录',
     section: '平台管理',
-    description: '模型模板与目录配置入口。',
+    description: '模型模板 Registry 入口；能力字段以 Provider schema 为准。',
     owner: '#749',
   },
   {
@@ -221,7 +221,7 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-MODEL-ROUTING',
     title: '模型路由策略',
     section: '平台管理',
-    description: '模型路由策略配置入口。',
+    description: '路由策略专用 API 尚未接入；当前不展示可执行配置操作。',
     owner: '#749',
   },
   {
@@ -229,16 +229,16 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-TOOLS',
     title: '工具与 MCP',
     section: '平台管理',
-    description: '工具和 MCP Server 管理入口。',
-    owner: '#749',
+    description: 'Tool/MCP Registry 列表、详情与版本生命周期。',
+    owner: '#759',
   },
   {
     path: '/admin/skills',
     pageId: 'ADM-SKILLS',
     title: 'Skills',
     section: '平台管理',
-    description: 'Skill 管理入口。',
-    owner: '#749',
+    description: 'Skill Registry 列表、详情与版本生命周期。',
+    owner: '#759',
   },
   {
     path: '/admin/organization',
