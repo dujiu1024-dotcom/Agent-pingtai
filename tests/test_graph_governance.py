@@ -68,7 +68,7 @@ class GraphGovernanceTests(unittest.IsolatedAsyncioTestCase):
         )
         audit = await self.repository.audit_events("tenant-a", "doc-a")
         self.assertEqual(audit[-1].action, "deleted")
-        self.assertEqual(audit[-1].details["affected_relation_ids"], ["edge-1"])
+        self.assertEqual(list(audit[-1].details["affected_relation_ids"]), ["edge-1"])
 
     async def test_delete_is_idempotent_and_does_not_duplicate_audit_or_jobs(self):
         await self.repository.add_entity(_entity("doc-a"))

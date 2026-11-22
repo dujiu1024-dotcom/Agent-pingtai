@@ -99,7 +99,7 @@ class BatchReportTests(unittest.TestCase):
             "batch", "tenant-a", "template", 2, 1, 0,
             self.now, self.now, 1, invalid,
         )
-        with self.assertRaisesRegex(ValueError, "totals"):
+        with self.assertRaisesRegex(ValueError, "finite number"):
             build_batch_report(inconsistent)
 
 

@@ -361,7 +361,7 @@ class GoogleDriveKnowledgeConnector(BaseConnector):
     async def revoke(self, *, tenant_id: str, credential_ref: str) -> None:
         if credential_ref != self.credential_ref:
             raise PermissionError("Google Drive credential reference mismatch")
-        token = await self._token()
+        token = await self._token(tenant_id=tenant_id)
         response = await self.client.post(
             "https://oauth2.googleapis.com/revoke",
             data={"token": token},

@@ -122,7 +122,6 @@ class PostgresModelUsageRecorder:
 @dataclass(frozen=True)
 class RoutedModelResponse:
     content: str
-    tool_calls: Any
     model_id: str
     template_id: str
     template_version: int
@@ -130,6 +129,7 @@ class RoutedModelResponse:
     provider_version: int
     usage: Mapping[str, Any]
     fallback_used: bool
+    tool_calls: Any = None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

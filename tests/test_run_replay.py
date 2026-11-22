@@ -73,7 +73,7 @@ class RunReplayServiceTests(unittest.IsolatedAsyncioTestCase):
         rerun=await self.service.rerun(tenant_id="tenant-a",run_id="run-a",session_id=session.session_id,sequence=2)
         self.assertTrue(rerun["result"]["replayed"])
         self.assertEqual(calls[0]["context"]["version"],7)
-        with self.assertRaisesRegex(ValueError,"replay_input"):
+        with self.assertRaisesRegex(ValueError, "no replayable"):
             await self.service.rerun(tenant_id="tenant-a",run_id="run-a",session_id=session.session_id,sequence=1)
     async def test_registry_snapshot_is_restored(self):
         class Registry:
