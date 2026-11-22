@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ErrorState, LoadingState } from '@/components/States'
 import { apiClient } from '@/lib/api/api-client'
 import { valueLabel } from '@/lib/i18n/labels'
+import { WorkflowGraphEditor, type WorkflowEdge, type WorkflowNode } from './WorkflowGraphEditor'
 import './workflow-designer.css'
 
 const WORKFLOW_LABELS: Record<string, string> = {
@@ -52,6 +53,39 @@ function toDefinition(item: RegistryItem | undefined): WorkflowDefinition {
   }
 }
 
+function safeArray<T>(value: string): T[] {
+  try {
+    const parsed: unknown = JSON.parse(value || '[]')
+    return Array.isArray(parsed) ? parsed as T[] : []
+  } catch {
+    return []
+  }
+}
+
+function workflowNodes(value: string): WorkflowNode[] {
+  return safeArray<WorkflowNode>(value).map((node) => ({
+    ...node,
+    config: node.config ?? {},
+    config_schema: node.config_schema ?? { type: 'object', properties: {} },
+    input_schema: node.input_schema ?? { type: 'object' },
+    output_schema: node.output_schema ?? { type: 'object' },
+    ports: node.ports ?? { inputs: ['main'], outputs: ['main'] },
+    permissions: node.permissions ?? [],
+    risk: node.risk ?? 'low',
+    error_retry: node.error_retry ?? { max_attempts: 1, backoff: 'none' },
+    version: node.version ?? 1,
+  }))
+}
+
+function workflowEdges(value: string): WorkflowEdge[] {
+  return safeArray<WorkflowEdge>(value).map((edge, index) => ({
+    ...edge,
+    id: edge.id ?? `edge-${index + 1}`,
+    source_port: edge.source_port ?? 'main',
+    target_port: edge.target_port ?? 'main',
+  }))
+}
+
 function parseJson(value: string, label: string): unknown {
   try {
     return JSON.parse(value || '[]')
@@ -67,6 +101,7 @@ export function WorkflowDesignerPage() {
   const listKey = ['registry', 'workflow']
   const [newItemId, setNewItemId] = useState('')
   const [form, setForm] = useState<WorkflowDefinition>(EMPTY)
+  const [compareVersion, setCompareVersion] = useState<number | null>(null)
 
   const list = useQuery({
     queryKey: listKey,
@@ -93,6 +128,15 @@ export function WorkflowDesignerPage() {
     retry: false,
   })
 
+  const diff = useQuery({
+    queryKey: ['registry', 'workflow', workflowId, 'diff', compareVersion, active.data?.version],
+    queryFn: () => apiClient.get<Record<string, unknown>>(
+      `/platform/v1/registry/workflow/${workflowId}/diff/${compareVersion}/${active.data?.version}`,
+    ),
+    enabled: Boolean(workflowId && compareVersion && active.data && compareVersion !== active.data.version),
+    retry: false,
+  })
+
   useEffect(() => {
     if (!workflowId) {
       setForm(EMPTY)
@@ -111,6 +155,7 @@ export function WorkflowDesignerPage() {
   const save = useMutation({
     mutationFn: async (publish: boolean) => {
       if (!workflowId) throw new Error('缺少工作流 ID')
+      if (publish) throw new Error('当前后端仅提供 Registry 发布接口，未提供 LangGraph StateGraph 编译/诊断 API；为避免发布未编译定义，请先保存草稿。此版本不会伪报编译成功。')
       const definition = {
         name: form.name || workflowId,
         description: form.description,
@@ -255,7 +300,14 @@ export function WorkflowDesignerPage() {
         />
       )}
 
-      <div className="editor-grid">
+      <WorkflowGraphEditor
+        nodes={workflowNodes(form.nodes)}
+        edges={workflowEdges(form.edges)}
+        onNodesChange={(nodes) => setForm((current) => ({ ...current, nodes: pretty(nodes) }))}
+        onEdgesChange={(edges) => setForm((current) => ({ ...current, edges: pretty(edges) }))}
+      />
+
+      <details className="workflow-advanced-json"><summary>高级 JSON 定义（可选）</summary><div className="editor-grid">
         <label className="editor-field">
           <span>名称</span>
           <input
@@ -292,16 +344,16 @@ export function WorkflowDesignerPage() {
             }
           />
         </label>
-      </div>
+      </div></details>
 
       <div className="detail-actions">
         <button
           className="button-primary"
           type="button"
           disabled={save.isPending}
-          onClick={() => save.mutate(true)}
+          disabled\n          title="后端尚无 LangGraph 编译与诊断 API"\n          onClick={() => save.mutate(true)}
         >
-          保存并发布
+          编译发布（后端接口待接入）
         </button>
         <button
           className="button-secondary"
@@ -354,19 +406,24 @@ export function WorkflowDesignerPage() {
                       <button
                         className="text-link"
                         type="button"
-                        onClick={() => publish.mutate(item.version)}
+                        disabled\n                        title="后端尚无 LangGraph 编译与诊断 API"\n                        onClick={() => publish.mutate(item.version)}
                       >
                         发布
                       </button>
                     )}
                     {active.data && item.version !== active.data.version && (
-                      <button
-                        className="text-link"
-                        type="button"
-                        onClick={() => rollback.mutate(item.version)}
-                      >
-                        回滚到此版本
-                      </button>
+                      <>
+                        <button className="text-link" type="button" onClick={() => setCompareVersion(item.version)}>
+                          与当前版本比较
+                        </button>
+                        <button
+                          className="text-link"
+                          type="button"
+                          onClick={() => rollback.mutate(item.version)}
+                        >
+                          回滚到此版本
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>
