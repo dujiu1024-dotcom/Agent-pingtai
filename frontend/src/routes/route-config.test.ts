@@ -12,6 +12,7 @@ import {
   pageRoutes,
   getNavigationSections,
   getRouteBreadcrumbs,
+  getAuthEntryRedirect,
 } from './route-config'
 
 describe('route configuration', () => {
@@ -258,6 +259,10 @@ describe('authentication entry routes', () => {
 })
 
 describe('unified shell navigation and breadcrumbs', () => {
+  it('redirects disabled-auth entry routes to the workbench', () => {
+    expect(getAuthEntryRedirect(false)).toBe('/workspace/overview')
+    expect(getAuthEntryRedirect(true)).toBeNull()
+  })
   it('filters auth-only and capability navigation from the canonical sections', () => {
     const noAuth = getNavigationSections(false).flatMap((section) => section.subpages.map((page) => page.path))
     const withAuth = getNavigationSections(true).flatMap((section) => section.subpages.map((page) => page.path))
