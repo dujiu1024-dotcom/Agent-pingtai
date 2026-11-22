@@ -76,6 +76,14 @@ export const pageRoutes: PageRoute[] = [
     owner: '#748',
   },
   {
+    path: '/operations/dashboard',
+    pageId: 'OPS-DASHBOARD',
+    title: '运营驾驶舱',
+    section: '智能体运营',
+    description: '基于真实 API 指标的运营驾驶舱。',
+    owner: '#797',
+  },
+  {
     path: '/operations/agents',
     pageId: 'OPS-AGENTS',
     title: 'Agent 运行态',

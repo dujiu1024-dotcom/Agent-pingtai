@@ -65,6 +65,17 @@ describe('route configuration', () => {
     ).toBe('/workspace/overview')
   })
 
+  it('registers the OperationsDashboard route under Issue #797', () => {
+    const route = pageRoutes.find((item) => item.path === '/operations/dashboard')
+    expect(route).toMatchObject({ pageId: 'OPS-DASHBOARD', owner: '#797' })
+    expect(
+      matchRoutes(
+        getAllRoutes(false).map((item) => ({ path: item.path })),
+        '/operations/dashboard',
+      ),
+    ).not.toBeNull()
+  })
+
   it('registers home and office as the two prototype main views', () => {
     const mainPaths = pageRoutes.map((route) => route.path)
     expect(mainPaths).toContain('/workspace/overview')

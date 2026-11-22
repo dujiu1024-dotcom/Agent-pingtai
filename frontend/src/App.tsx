@@ -25,6 +25,7 @@ import { NotificationsPage } from '@/components/NotificationsPage'
 import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
 import { Dashboard } from '@/features/dashboard/Dashboard'
+import { OperationsDashboard } from '@/components'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { SystemOpsPage } from '@/features/admin/SystemOpsPage'
@@ -366,6 +367,7 @@ function RouteGuard({
   if (route.path === '/admin/organization') return <OrganizationAccessPage page="organization" />
   if (route.path === '/admin/rbac') return <OrganizationAccessPage page="rbac" />
   if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
+  if (route.path === '/operations/dashboard') return <OperationsDashboard />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (route.path === '/search')
