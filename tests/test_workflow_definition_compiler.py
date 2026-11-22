@@ -90,6 +90,39 @@ class WorkflowCompilerTests(unittest.TestCase):
         self.definition["nodes"][0]["permissions"] = ["admin.*"]
         self.assertIn("node.permissions", {item.code for item in self.compiler.diagnose(self.definition)})
 
+    def test_current_visual_designer_payload_normalizes_and_compiles(self):
+        structural_retry = {"max_attempts": 1, "backoff": "none"}
+        nodes = [
+            {"id": "start", "node_type": "start", "version": 1, "config": {},
+             "config_schema": {"type": "object"}, "input_schema": {"type": "object"},
+             "output_schema": {"type": "object"}, "ports": {"inputs": [], "outputs": ["main"]},
+             "permissions": [], "risk": "low", "error_retry": structural_retry},
+            {"id": "agent", "node_type": "agent", "version": 1, "config": {},
+             "config_schema": {"type": "object"}, "input_schema": {"type": "object"},
+             "output_schema": {"type": "object"}, "ports": {"inputs": ["main"], "outputs": ["main"]},
+             "permissions": ["agent.execute"], "risk": "medium",
+             "error_retry": {"max_attempts": 2}},
+            {"id": "end", "node_type": "end", "version": 1, "config": {},
+             "config_schema": {"type": "object"}, "input_schema": {"type": "object"},
+             "output_schema": {"type": "object"}, "ports": {"inputs": ["main"], "outputs": []},
+             "permissions": [], "risk": "low", "error_retry": structural_retry},
+        ]
+        designer = {
+            "name": "Flow", "description": "designer graph", "nodes": nodes,
+            "edges": [
+                {"id": "e1", "source": "start", "target": "agent", "source_port": "main", "target_port": "main"},
+                {"id": "e2", "source": "agent", "target": "end", "source_port": "main", "target_port": "main"},
+            ],
+        }
+        compiler = LangGraphWorkflowCompiler(
+            node_registry=WorkflowNodeRegistry([self.spec]),
+            graph_factory=lambda definition, compiled: {"entries": definition["entry_points"], "nodes": tuple(compiled)},
+        )
+        graph, metadata = compiler.compile(designer)
+        self.assertEqual(graph["entries"], ["agent"])
+        self.assertEqual(graph["nodes"], ("agent",))
+        self.assertEqual(metadata["engine"], "langgraph")
+
     def test_invalid_retry_attempts_are_rejected(self):
         self.definition["nodes"][0]["error_retry"] = {"max_attempts": 0}
         self.assertIn("node.retry", {item.code for item in self.compiler.diagnose(self.definition)})
