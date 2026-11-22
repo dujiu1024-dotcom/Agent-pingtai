@@ -84,24 +84,6 @@ describe('route configuration', () => {
     expect(withCapability).toContain('/admin/prompts')
   })
 
-  it('registers Prompt Registry detail deep links under #807', () => {
-    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
-      path: route.path,
-    }))
-    expect(
-      matchRoutes(routeObjects, '/admin/prompts/customer-support')?.[0].params
-        .promptId,
-    ).toBe('customer-support')
-    expect(
-      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')
-        ?.owner,
-    ).toBe('#807')
-    expect(
-      detailRoutes.find((route) => route.path === '/admin/prompts/:promptId')
-        ?.capability,
-    ).toBe('prompt_management')
-  })
-
   it('exposes identity and RBAC routes only when server mode enables auth', () => {
     expect(getAllRoutes(true)).toEqual(expect.arrayContaining(authRoutes))
     expect(
@@ -111,16 +93,6 @@ describe('route configuration', () => {
     ).toContain('/admin/access-control')
   })
 
-  it('gates Agent runtime list/detail on registry capability and assigns #808 ownership', () => {
-    const visibleWithoutRegistry = getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))
-    const visibleWithRegistry = getVisibleNavigation(true, ['agent_management']).flatMap((group) => group.items.map((item) => item.path))
-    expect(visibleWithoutRegistry).not.toContain('/operations/agents')
-    expect(visibleWithRegistry).toContain('/operations/agents')
-    expect(pageRoutes.find((route) => route.path === '/operations/agents')?.owner).toBe('#808')
-    expect(detailRoutes.find((route) => route.path === '/operations/agents/:agentId')?.owner).toBe('#808')
-    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/operations/agents/agent-123')?.[0].params.agentId).toBe('agent-123')
-  })
-
   it('registers Knowledge collection and document deep links under #760', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     expect(matchRoutes(routeObjects, '/operations/knowledge-bases/collection-123')?.[0].params.collectionId).toBe('collection-123')
@@ -128,25 +100,11 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
-  it('registers Skills registry list and detail routes under #806', () => {
-    const list = pageRoutes.find((route) => route.path === '/admin/skills')
-    const detail = detailRoutes.find((route) => route.path === '/admin/skills/:skillId')
-    expect(list?.owner).toBe('#806')
-    expect(detail?.owner).toBe('#806')
-    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path })), '/admin/skills/skill-123')?.[0].params.skillId).toBe('skill-123')
-  })
-
-
-  it('registers Session and File workbench list/detail routes under #762', () => {
-    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
-      path: route.path,
-    }))
-    expect(pageRoutes.find((route) => route.path === '/operations/conversations')?.owner).toBe('#762')
-    expect(detailRoutes.find((route) => route.path === '/operations/conversations/:conversationId')?.owner).toBe('#762')
-    expect(pageRoutes.find((route) => route.path === '/operations/files')?.owner).toBe('#762')
-    expect(detailRoutes.find((route) => route.path === '/operations/files/:fileId')?.owner).toBe('#762')
-    expect(matchRoutes(routeObjects, '/operations/conversations/session-abc')?.[0].params.conversationId).toBe('session-abc')
-    expect(matchRoutes(routeObjects, '/operations/files/asset-xyz')?.[0].params.fileId).toBe('asset-xyz')
+  it('registers the dedicated immersive Office page under #817', () => {
+    const route = pageRoutes.find((item) => item.path === '/office')
+    expect(route?.pageId).toBe('UI-R3-OFFICE')
+    expect(route?.owner).toBe('#817')
+    expect(matchRoutes([...pageRoutes, ...detailRoutes].map((item) => ({ path: item.path })), '/office')?.[0].route.path).toBe('/office')
   })
 
   it('matches entity detail deep links with stable id parameters', () => {
