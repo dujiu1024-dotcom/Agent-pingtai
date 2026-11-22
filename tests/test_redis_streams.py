@@ -80,7 +80,7 @@ class RedisStreamsRecoveryTests(unittest.IsolatedAsyncioTestCase):
         dlq_id = await transport.dead_letter(
             tenant_id="tenant-a", topic="events", group="workers",
             message_id="5-0",
-            fields={"event_id": "evt-5", "payload": "{\\"ok\\":false}"},
+            fields={"event_id": "evt-5", "payload": '{"ok":false}'},
             event_id="evt-5", reason="handler_failed", consumer_name="worker-1",
         )
         self.assertEqual(dlq_id, "9-0")
