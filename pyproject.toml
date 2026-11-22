@@ -47,6 +47,7 @@ include = [
   "tests/test_approval_service.py",
   "tests/test_approval_token_replay_negative.py",
   "tests/test_approval_audit_rollback.py",
+  "tests/test_issue_15_l2_t29_tool_effect_production_wiring.py",
   "tests/test_secret_manager.py",
   "tests/test_approval_workbench_ui.py",
   "tests/test_platform_ui_contract.py",

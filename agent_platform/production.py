@@ -110,6 +110,7 @@ from agent_platform.scheduling.feishu import FeishuNotifier, load_feishu_config
 from agent_platform.scheduling.service import PostgresSchedulerService
 from agent_platform.security.audit import PostgresAuditWriter, PostgresIdentityAuditReader
 from agent_platform.security.local_store import LocalSecretStore
+from agent_platform.tools.production_reconciliation import build_tool_effect_reconciliation_service
 from agent_platform.tools.idempotency import (
     PostgresToolEffectStore,
     ToolEffectReconciliationService,
@@ -882,10 +883,12 @@ def create_production_app(
         )
 
     async def _resolve_tool_effects(principal):
-        return ToolEffectReconciliationService(
-            store=PostgresToolEffectStore(connection_factory=connection_factory),
-            authorize_operator=lambda *a, **kw: None,
-            audit_sink=None,
+        return build_tool_effect_reconciliation_service(
+            principal=principal,
+            identity_repository=identity_repository,
+            authorize_run=authorize_run,
+            connection_factory=connection_factory,
+            audit_writer=audit_writer,
         )
 
     app = create_platform_app(
