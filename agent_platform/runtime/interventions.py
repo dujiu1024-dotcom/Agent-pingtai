@@ -204,7 +204,9 @@ class RunInterventionService:
         """Append an operator action to the tenant-scoped Run audit timeline."""
         if tenant_id != self.tenant_id:
             raise PermissionError("Run action tenant mismatch")
-        if event_type not in {"human.run_resumed"}:
+        if event_type not in {
+            "human.run_resumed", "human.run_cancel_requested", "human.run_paused",
+        }:
             raise ValueError("unsupported human Run action")
         if not actor_id.strip():
             raise ValueError("actor_id is required")
