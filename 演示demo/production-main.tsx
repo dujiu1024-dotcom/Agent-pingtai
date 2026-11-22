@@ -476,9 +476,10 @@ function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, 
         return jsonResponse({ memory_id: selectedId || 'memory-active-001', status: 'active', version: 2, ok: true, demo: true })
       }
       const candidate = candidates.find((item) => item.memory_id === memoryId)
-      if (candidate) {
+      const existing = candidate ?? active.find((item) => item.memory_id === memoryId)
+      if (existing) {
         const archived = path.endsWith('/archive')
-        const updated = { ...candidate, status: archived ? 'archived' : 'active', version: Number(candidate.version ?? 1) + 1 }
+        const updated = { ...existing, status: archived ? 'archived' : 'active', version: Number(existing.version ?? 1) + 1 }
         writeFixtureItems(candidateKey, candidates.filter((item) => item.memory_id !== memoryId))
         writeFixtureItems(activeKey, [updated, ...active.filter((item) => item.memory_id !== memoryId)])
         return jsonResponse({ memory_id: memoryId, status: updated.status, version: updated.version, ok: true, demo: true })
@@ -602,5 +603,26 @@ demoMarker.setAttribute('role', 'note')
 demoMarker.style.cssText =
   'position:fixed;right:16px;bottom:12px;z-index:10000;padding:7px 11px;border:1px solid #dbe4f4;border-radius:7px;background:#ffffffed;color:#52627a;font:11px Inter,Arial,sans-serif;box-shadow:0 3px 12px #1d355714;pointer-events:none'
 document.body.append(demoMarker)
+
+// Localize the production file-download links so the standalone demo never
+// navigates to a real backend endpoint.
+document.addEventListener('click', (event) => {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  const link = target.closest<HTMLAnchorElement>('a[href^="/api/platform/v1/files/"]')
+  if (!link) return
+  event.preventDefault()
+  const name = decodeURIComponent(link.getAttribute('href')?.split('/').slice(-3, -2)[0] ?? 'demo-file')
+  const blob = new Blob(
+    [JSON.stringify({ demo: true, filename: name, message: '这是独立演示环境生成的模拟文件。' }, null, 2)],
+    { type: 'application/json;charset=utf-8' },
+  )
+  const url = URL.createObjectURL(blob)
+  const download = document.createElement('a')
+  download.href = url
+  download.download = name.includes('.') ? name : 'demo-file.json'
+  download.click()
+  URL.revokeObjectURL(url)
+})
 
 export {}
