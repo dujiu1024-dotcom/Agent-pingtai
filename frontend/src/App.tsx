@@ -242,7 +242,7 @@ function AppShell({ config }: { config: BootstrapConfig }) {
                   data-v={item.view}
                   end={item.path === '/workspace/overview' || item.path === '/workspace/office'}
                   className={({ isActive }) =>
-                    isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+                    isActive || sectionActive ? 'prototype-nav-item on' : 'prototype-nav-item'
                   }
                 >
                   <i aria-hidden="true">{item.icon}</i>
