@@ -85,7 +85,11 @@ from agent_platform.observability.operational_health import OperationalHealthMon
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
 from agent_platform.observability.prompt_store import PostgresPromptRegistry
 from agent_platform.observability.run_trace import PostgresRunTraceRepository
-from agent_platform.production_config import ProductionSettings, load_production_settings
+from agent_platform.production_config import (
+    ProductionSettings,
+    load_production_settings,
+    validate_production_security_config,
+)
 from agent_platform.quotas.concurrency import QuotaReservationMaintenanceWorker
 from agent_platform.quotas.policies import PostgresQuotaPolicyRepository, QuotaPolicyService
 from agent_platform.quotas.postgres import PostgresQuotaStore
@@ -163,6 +167,7 @@ def create_production_app(
     local_tenant_id: str | None = None,
 ) -> FastAPI:
     """Build the production API graph; optional arguments are test seams only."""
+    validate_production_security_config()
     configured = settings or load_production_settings()
     if workflow_compiler_resolver is None:
         workflow_compiler_resolver = load_trusted_workflow_compiler_resolver()
