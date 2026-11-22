@@ -7,7 +7,6 @@ const record = (value: unknown): RuntimeEventRecord =>
 export function normalizeRunSseEvent(
   raw: unknown,
   eventId: string,
-  occurredAt = new Date().toISOString(),
 ): RuntimeEventRecord | null {
   const data = record(raw)
   const type = typeof data.event_type === 'string' ? data.event_type : ''
@@ -18,7 +17,7 @@ export function normalizeRunSseEvent(
     event_type: type,
     type,
     sequence,
-    occurred_at: typeof data.occurred_at === 'string' ? data.occurred_at : occurredAt,
+    occurred_at: typeof data.occurred_at === 'string' ? data.occurred_at : undefined,
     node_id: typeof data.node_id === 'string' ? data.node_id : undefined,
     agent_id: typeof data.agent_id === 'string' ? data.agent_id : undefined,
     payload: data.payload ?? data,
