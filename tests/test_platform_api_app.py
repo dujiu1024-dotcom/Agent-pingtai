@@ -85,6 +85,11 @@ class PlatformApiCompositionTests(unittest.TestCase):
         client = TestClient(app, base_url="https://testserver")
         response = client.get("/api/platform/v1/workbench/capabilities")
         self.assertEqual(response.status_code, 200, response.text)
+        features = response.json()["features"]
+        self.assertFalse(features["knowledge"])
+        self.assertFalse(features["memory"])
+        self.assertFalse(features["rag"])
+        self.assertFalse(features["rag_query"])
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
         # auth_enabled=False 时 /auth/me 存在但不强制认证，返回空
         self.assertIn(client.get("/auth/me").status_code, (200, 401, 404))
