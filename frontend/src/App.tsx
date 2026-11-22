@@ -12,6 +12,7 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
+import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
   EmptyState,
   ErrorState,
@@ -113,6 +114,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                     route={route}
                     authEnabled={config.auth.enabled}
                     capabilities={config.capabilities}
+                    version={config.version}
                   />
                 }
               />
@@ -260,10 +262,12 @@ function RouteGuard({
   route,
   authEnabled,
   capabilities,
+  version,
 }: {
   route: PageRoute
   authEnabled: boolean
   capabilities: string[]
+  version: string
 }) {
   if (route.authOnly && !authEnabled) {
     return (
@@ -280,6 +284,7 @@ function RouteGuard({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
+  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version, capabilities }} />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (route.path === '/search')
