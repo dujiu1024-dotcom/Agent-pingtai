@@ -398,6 +398,7 @@ def create_platform_app(
             resolve_principal=_principal_from_request,
             resolve_service=registry_service_resolver,
             authorize=registry_authorizer,
+            resolve_workflow_compiler=workflow_compiler_resolver,
         ))
     if workflow_compiler_resolver is not None:
         if registry_service_resolver is None or registry_authorizer is None:
