@@ -122,10 +122,70 @@ function jsonResponse(value: unknown, status = 200): Response {
   })
 }
 
-function mockApi(input: RequestInfo | URL, init?: RequestInit): Response {
-  const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin)
-  const path = url.pathname.replace(/^\/api(?=\/)/, '')
-  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+const storageKey = 'agent-platform-demo-api-v1'
+const idFields = ['task_id', 'item_id', 'approval_id', 'run_id', 'id'] as const
+
+function readCollections(): Record<string, JsonRecord[]> {
+  try {
+    const saved = window.localStorage.getItem(storageKey)
+    if (saved) {
+      const parsed: unknown = JSON.parse(saved)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        return parsed as Record<string, JsonRecord[]>
+    }
+  } catch {
+    // Private browsing or disabled storage: retain this page's in-memory demo data.
+  }
+  return Object.fromEntries(
+    Object.entries(collections).map(([path, items]) => [
+      path,
+      items.map((item) => ({ ...(item as JsonRecord) })),
+    ]),
+  )
+}
+
+let demoCollections = readCollections()
+
+function persistCollections(): void {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(demoCollections))
+  } catch {
+    // The demo remains interactive for the current page session without storage.
+  }
+}
+
+function getItemId(item: JsonRecord): string | undefined {
+  for (const field of idFields) {
+    const value = item[field]
+    if (typeof value === 'string' && value) return value
+  }
+  return undefined
+}
+
+function responseForCollection(items: JsonRecord[], url: URL): Response {
+  let filtered = [...items]
+  const status = url.searchParams.get('status')
+  const query = url.searchParams.get('q') ?? url.searchParams.get('search')
+  if (status) filtered = filtered.filter((item) => item.status === status)
+  if (query) {
+    const needle = query.toLocaleLowerCase()
+    filtered = filtered.filter((item) =>
+      JSON.stringify(item).toLocaleLowerCase().includes(needle),
+    )
+  }
+  const total = filtered.length
+  const limit = Number(url.searchParams.get('limit') ?? url.searchParams.get('page_size'))
+  const page = Math.max(1, Number(url.searchParams.get('page') ?? 1) || 1)
+  if (Number.isFinite(limit) && limit > 0)
+    filtered = filtered.slice((page - 1) * limit, page * limit)
+  return jsonResponse({ items: filtered, total })
+}
+
+async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const request = input instanceof Request ? input : undefined
+  const url = new URL(request?.url ?? String(input), window.location.origin)
+  const path = url.pathname.replace(/^\\/api(?=\\/)/, '').replace(/\\/$/, '') || '/'
+  const method = (init?.method ?? request?.method ?? 'GET').toUpperCase()
 
   if (path.endsWith('/platform/v1/bootstrap')) {
     return jsonResponse({
@@ -135,31 +195,75 @@ function mockApi(input: RequestInfo | URL, init?: RequestInit): Response {
     })
   }
 
-  if (method === 'GET') {
-    const exact = collections[path]
-    if (exact) return jsonResponse({ items: exact, total: exact.length })
-    if (path.includes('/platform/v1/workbench/tasks/')) {
-      const id = decodeURIComponent(path.split('/').pop() ?? '')
-      return jsonResponse(tasks.find((item) => item.task_id === id) ?? tasks[0])
-    }
-    if (path.includes('/platform/v1/registry/agent/')) {
-      const id = decodeURIComponent(path.split('/').pop() ?? '')
-      return jsonResponse(agents.find((item) => item.item_id === id) ?? agents[0])
-    }
-    if (path.includes('/platform/v1/runs/')) {
-      return jsonResponse(collections['/platform/v1/runs'][0])
-    }
-    return jsonResponse({ items: [], total: 0 })
+  const collectionPath = Object.keys(demoCollections).find((key) => path === key || path.startsWith(key + '/'))
+  if (!collectionPath) {
+    return jsonResponse({
+      error: 'demo_endpoint_not_implemented',
+      message: `演示环境尚未接入接口：${method} ${path}`,
+    }, 501)
   }
 
-  if (method === 'DELETE') return jsonResponse({ ok: true, deleted: true })
+  const items = demoCollections[collectionPath]
+  const suffix = path.slice(collectionPath.length).replace(/^\\//, '')
+  const itemId = suffix ? decodeURIComponent(suffix.split('/')[0]) : ''
+  if (method === 'GET') {
+    if (!itemId) return responseForCollection(items, url)
+    const item = items.find((entry) => getItemId(entry) === itemId)
+    return item
+      ? jsonResponse(item)
+      : jsonResponse({ error: 'not_found', message: '演示数据不存在' }, 404)
+  }
+
+  let body: JsonRecord = {}
+  const rawBody = init?.body ?? (request ? await request.clone().text() : undefined)
+  if (typeof rawBody === 'string' && rawBody.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(rawBody)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+        body = parsed as JsonRecord
+    } catch {
+      return jsonResponse({ error: 'invalid_json', message: '请求体不是有效 JSON' }, 400)
+    }
+  }
+
+  if (method === 'POST' && !itemId) {
+    const idField = collectionPath.endsWith('/workbench/tasks')
+      ? 'task_id'
+      : collectionPath.endsWith('/approvals')
+        ? 'approval_id'
+        : collectionPath.endsWith('/runs')
+          ? 'run_id'
+          : 'item_id'
+    const item: JsonRecord = {
+      ...body,
+      [idField]: body[idField] ?? `demo-${crypto.randomUUID()}`,
+      created_at: body.created_at ?? new Date().toISOString(),
+    }
+    items.unshift(item)
+    persistCollections()
+    return jsonResponse(item, 201)
+  }
+
+  if ((method === 'PUT' || method === 'PATCH') && itemId) {
+    const index = items.findIndex((entry) => getItemId(entry) === itemId)
+    if (index < 0) return jsonResponse({ error: 'not_found' }, 404)
+    items[index] = { ...items[index], ...body, updated_at: new Date().toISOString() }
+    persistCollections()
+    return jsonResponse(items[index])
+  }
+
+  if (method === 'DELETE' && itemId) {
+    const index = items.findIndex((entry) => getItemId(entry) === itemId)
+    if (index < 0) return jsonResponse({ error: 'not_found' }, 404)
+    const [deleted] = items.splice(index, 1)
+    persistCollections()
+    return jsonResponse({ ok: true, deleted })
+  }
+
   return jsonResponse({
-    ok: true,
-    demo: true,
-    id: 'demo-' + Math.random().toString(36).slice(2, 9),
-    status: 'accepted',
-    created_at: now,
-  })
+    error: 'demo_operation_not_supported',
+    message: `演示环境不支持此操作：${method} ${path}`,
+  }, 501)
 }
 
 // Install the local transport before importing production modules. ApiClient
