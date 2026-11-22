@@ -331,7 +331,7 @@ class TaskCenterAndInterventionIntegrationTests(unittest.IsolatedAsyncioTestCase
         manager = RunLifecycleManager(PostgresRunStateStore(self.connect))
         resumed = await manager.request_resume(self.tenant_id, str(self.run_id))
         self.assertEqual(resumed.status.value, "interrupted")
-        await events.record_event(
+        await interventions.record_event(
             tenant_id=self.tenant_id, run_id=str(self.run_id),
             event_type="run.step.failed", actor_id="worker-a",
             payload={"step_id": "publish", "error": "upstream unavailable"},

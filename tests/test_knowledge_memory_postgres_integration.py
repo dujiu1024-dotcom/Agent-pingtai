@@ -386,8 +386,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.memory.propose(candidate)
         principal = MemoryPrincipal(tenant_id=self.tenant_id, user_id="history-user")
         await self.memory.confirm(
-            tenant_id=self.tenant_id, memory_id=candidate.memory_id,
-            confirmer_id="history-user",
+            principal=principal, memory_id=candidate.memory_id,
         )
         original = await self.memory.repository.get(self.tenant_id, candidate.memory_id)
         await self.memory.correct(

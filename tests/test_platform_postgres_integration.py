@@ -648,9 +648,15 @@ class PostgresPlatformIntegrationTests(unittest.IsolatedAsyncioTestCase):
             idempotency_key=f"retry:{original_run_id}:integration-1",
             request_digest="c" * 64,
         )
-        retried = await store.get_task_record(
-            self.tenant_id, retried_run_id, actor_id="retry-user",
+        retry_records = await store.list_task_records(
+            self.tenant_id, "retry-user",
         )
+        retried = next(
+            (record for record in retry_records
+             if str(record["run_id"]) == retried_run_id),
+            None,
+        )
+        self.assertIsNotNone(retried)
         self.assertEqual(retried["status"], "queued")
         self.assertEqual(retried["priority"], 800)
         self.assertEqual(str(retried["retry_of_run_id"]), original_run_id)
