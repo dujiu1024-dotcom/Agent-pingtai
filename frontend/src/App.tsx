@@ -47,6 +47,7 @@ import {
 } from '@/features/tasks/TaskCommandCenter'
 import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
+import { AgentRuntimeList } from '@/features/agents/AgentRuntimeList'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
 import { GenericListPage } from '@/components/GenericListPage'
@@ -476,8 +477,8 @@ function PageView({
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
+  if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (
-    route.path === '/operations/agents' ||
     route.path === '/operations/agents/:agentId' ||
     route.path === '/admin/agents' ||
     route.path === '/admin/agents/:agentId'
