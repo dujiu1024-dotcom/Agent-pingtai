@@ -223,4 +223,15 @@ describe('authentication entry routes', () => {
     expect(authRoutes.map((route) => route.path)).toEqual(['/auth/login', '/auth/initialize'])
     expect(authRoutes.every((route) => route.authOnly && route.owner === '#809')).toBe(true)
   })
+
+  it('registers Tools registry list and detail routes under #805', () => {
+    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
+    expect(pageRoutes.find((route) => route.path === '/admin/tools')?.owner).toBe('#805')
+    expect(detailRoutes.find((route) => route.path === '/admin/tools/:toolId')?.owner).toBe('#805')
+    expect(
+      matchRoutes(routeObjects, '/admin/tools/mcp-fetch')?.[0].params.toolId,
+    ).toBe('mcp-fetch')
+  })
+
+
 })

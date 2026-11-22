@@ -229,8 +229,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'ADM-TOOLS',
     title: '工具与 MCP',
     section: '平台管理',
-    description: '工具和 MCP Server 管理入口。',
-    owner: '#749',
+    description: '查看已注册工具、MCP Server 元数据与 JSON Schema。',
+    owner: '#805',
   },
   {
     path: '/admin/skills',
@@ -383,7 +383,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Tool/MCP Server 唯一详情路由。',
     parentPath: '/admin/tools',
     entityIdParam: 'toolId',
-    owner: '#749',
+    owner: '#805',
   },
   {
     path: '/admin/skills/:skillId',

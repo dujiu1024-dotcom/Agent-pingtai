@@ -29,6 +29,7 @@ import { AgentRuntimeDetail, AgentRuntimeList } from '@/features/agents/AgentRun
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
+import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -312,6 +313,7 @@ function RouteGuard({
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   if (route.path.startsWith('/admin/models/routing')) return <ModelsManagementPage authEnabled={authEnabled} />
+  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
   return (
     <section className="page-content">
       <div className="page-heading">
