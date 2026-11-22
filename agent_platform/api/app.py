@@ -14,6 +14,9 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
+from agent_platform.business_automation import (
+    WorkflowDefinitionRepository, create_business_automation_router,
+)
 from agent_platform.api.contract import (
     API_V1_PREFIX,
     ApiV1CompatibilityMiddleware,
@@ -32,7 +35,6 @@ from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
 from agent_platform.api.knowledge_catalog import create_knowledge_catalog_router
-from agent_platform.api.knowledge_assets import create_knowledge_asset_router
 from agent_platform.api.knowledge_memory import create_knowledge_memory_router
 from agent_platform.api.knowledge_upload import create_knowledge_upload_router
 from agent_platform.api.localization import create_locale_preferences_router
@@ -48,6 +50,7 @@ from agent_platform.api.replay import create_run_replay_router
 from agent_platform.api.runs import create_runs_router
 from agent_platform.api.search import create_search_router
 from agent_platform.api.sessions import create_sessions_router
+from agent_platform.api.value_management import create_value_management_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
@@ -97,6 +100,8 @@ def create_platform_app(
     connector_authorizer: Any | None = None,
     connector_sync_worker: Any | None = None,
     connector_cleanup_worker: Any | None = None,
+    workflow_definition_repository: WorkflowDefinitionRepository | None = None,
+    workflow_authorizer: Any | None = None,
     run_lifecycle_resolver: Any | None = None,
     run_replay_resolver: Any | None = None,
     run_authorizer: Any | None = None,
@@ -177,7 +182,8 @@ def create_platform_app(
     office_tenant_resolver: Any | None = None,
     bootstrap_capabilities: Sequence[str] | None = None,
     knowledge_catalog: Any | None = None,
-    knowledge_asset_repository: Any | None = None,
+    value_management_resolver: Any | None = None,
+    value_management_authorizer: Any | None = None,
 ) -> FastAPI:
     """Assemble auth middleware, identity routes, and tenant-aware business routes.
 
@@ -428,11 +434,6 @@ def create_platform_app(
         app.include_router(create_knowledge_catalog_router(
             catalog=knowledge_catalog,
             knowledge=knowledge,
-            resolve_principal=IdentityContextResolver(identity_repository).knowledge,
-        ))
-    if knowledge_asset_repository is not None:
-        app.include_router(create_knowledge_asset_router(
-            repository=knowledge_asset_repository,
             resolve_principal=IdentityContextResolver(identity_repository).knowledge,
         ))
     rag_playground_configured = rag_playground_resolver is not None
@@ -729,6 +730,15 @@ def create_platform_app(
             authorize=connector_authorizer,
             audit_writer=resource_audit_writer,
         ))
+    workflow_configured = any(value is not None for value in (workflow_definition_repository, workflow_authorizer))
+    if workflow_configured:
+        if workflow_definition_repository is None or workflow_authorizer is None:
+            raise ValueError("workflow definition repository and authorizer must be configured together")
+        app.include_router(create_business_automation_router(
+            resolve_principal=_principal_from_request,
+            repository=workflow_definition_repository,
+            authorize=workflow_authorizer,
+        ))
     for worker, name in (
         (connector_sync_worker, "connector_sync_worker"),
         (connector_cleanup_worker, "connector_cleanup_worker"),
@@ -779,5 +789,15 @@ def create_platform_app(
             service=locale_preference_service,
             authorize_manage=locale_manage_authorizer,
             audit_writer=resource_audit_writer,
+        ))
+    value_management_configured = any(value is not None for value in (
+        value_management_resolver, value_management_authorizer,
+    ))
+    if value_management_configured:
+        if value_management_resolver is None or value_management_authorizer is None:
+            raise ValueError("AI value management resolver and authorizer must be configured together")
+        app.include_router(create_value_management_router(
+            service_resolver=value_management_resolver,
+            authorize_manage=value_management_authorizer,
         ))
     return app
