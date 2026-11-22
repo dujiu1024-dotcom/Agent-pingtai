@@ -60,7 +60,6 @@ import {
   authRoutes,
   detailRoutes,
   globalRoutes,
-  systemRoutes,
   pageRoutes,
   navigationSections,
   getRouteBreadcrumbs,
@@ -139,7 +138,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
               path="/app"
               element={<Navigate to="/workspace/overview" replace />}
             />
-            {[...pageRoutes, ...detailRoutes, ...globalRoutes, ...systemRoutes].map((route) => (
+            {[...pageRoutes, ...detailRoutes, ...globalRoutes].map((route) => (
               <Route
                 key={route.path}
                 path={route.path}

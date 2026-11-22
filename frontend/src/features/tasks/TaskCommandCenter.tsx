@@ -699,7 +699,7 @@ export function TaskCommandCenter() {
             </select>
           </div>
         </>
-      )
+      )}
       <p className="task-data-note">
         状态列完全来自服务端枚举；无可信依赖与截止时间字段时不显示
         Gantt。写操作仅限任务详情页的取消与重试。

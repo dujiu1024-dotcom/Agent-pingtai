@@ -28,7 +28,6 @@ logs/
 coverage.json
 
 # 归档旧系统的本地运行数据
-legacy/v1-archive/agency/state/
 
 # 飞书表导出（含业务记录与表标识）
 /tbl*.ndjson

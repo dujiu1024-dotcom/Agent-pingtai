@@ -261,7 +261,6 @@ def create_platform_app(
             request_id=getattr(request.state, "api.request_id", None),
         )
         return JSONResponse(status_code=422, content=error.to_dict())
-    # Independent first-party UI; no dependency on legacy console/gui.
     app.include_router(create_platform_web_router())
     # Add request auditing before Identity middleware so it executes inside the
     # authenticated identity boundary and sees the verified principal.

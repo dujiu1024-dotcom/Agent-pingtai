@@ -1,6 +1,0 @@
-# 全量 lint 口径（含存量文件），供 T-0113 验收使用：
-#   python3 tools/debt_check.py 06:5.7b
-# 日常门禁仍走 pyproject.toml，只覆盖新增/本轮改动文件。
-[lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]
