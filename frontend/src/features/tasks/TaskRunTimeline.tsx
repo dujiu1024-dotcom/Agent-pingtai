@@ -11,16 +11,11 @@ import {
   unwrapList,
 } from './task-model'
 import type { RunEvent, TaskRecord } from './task-model'
+import { buildTaskRunTimelineEntries } from './task-run-timeline-model'
 import './task-controls.css'
 
 const TASKS_API = '/platform/v1/workbench/tasks'
 const RUNS_API = '/platform/v1/runs'
-
-type TimelineEntry = {
-  task: TaskRecord
-  runId: string
-  event: RunEvent
-}
 
 /** Run timeline backed exclusively by persisted Run events. */
 export function TaskRunTimeline() {
@@ -51,21 +46,13 @@ export function TaskRunTimeline() {
       refetchInterval: 10000,
     })),
   })
-  const entries = useMemo<TimelineEntry[]>(() => {
-    const byRun = new Map(runs.map((run) => [run.runId, run.task]))
-    return eventQueries.flatMap((query, index) =>
-      (query.data ?? []).map((event) => ({
-        task: byRun.get(runs[index]?.runId ?? '')!,
-        runId: runs[index]?.runId ?? '',
-        event,
-      })),
-    ).filter((entry) => Boolean(entry.task)).sort((a, b) =>
-      (Date.parse(a.event.occurred_at ?? '') || 0) -
-      (Date.parse(b.event.occurred_at ?? '') || 0) ||
-      a.runId.localeCompare(b.runId) ||
-      a.event.event_id.localeCompare(b.event.event_id),
-    )
-  }, [eventQueries, runs])
+  const entries = useMemo(
+    () => buildTaskRunTimelineEntries(
+      runs,
+      eventQueries.map((query) => query.data ?? []),
+    ),
+    [eventQueries, runs],
+  )
   const filtered = useMemo(() => {
     return entries.filter((entry) =>
       filterRunEvents([entry.event], eventType, search).length > 0,
