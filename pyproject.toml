@@ -55,6 +55,7 @@ include = [
   "tests/test_issue_753_page_map_contract.py",
   "tests/test_identity_audit_contract.py",
   "tests/test_platform_api_app.py",
+  "tests/test_platform_web.py",
   "tests/test_identity_http.py",
   "tests/test_identity_api.py",
   "tests/test_identity_context.py",
