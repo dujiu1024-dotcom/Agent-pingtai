@@ -47,6 +47,7 @@ import {
 import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
+import { AgentCollaborationCenter } from '@/features/collaboration/AgentCollaborationCenter'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -363,6 +364,8 @@ function RouteGuard({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  const collaborationPage = resolveCollaborationPage(route.path)
+  if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
@@ -397,6 +400,10 @@ function RouteGuard({
 }
 
 /** Resolve the dedicated admin resource page for each canonical route. */
+export function resolveCollaborationPage(routePath: string): ReactElement | null {
+  return routePath === '/workspace/collaboration' ? <AgentCollaborationCenter /> : null
+}
+
 export function resolveAdminPage(
   routePath: string,
   authEnabled: boolean,
