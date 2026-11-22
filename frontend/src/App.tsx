@@ -30,6 +30,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
+import { SkillsPage } from '@/features/admin/SkillsPage'
 import {
   EmptyState,
   ErrorState,
@@ -475,6 +476,7 @@ function PageView({
   )
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (
     route.path === '/operations/agents' ||
