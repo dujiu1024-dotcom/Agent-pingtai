@@ -8,6 +8,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
 } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
@@ -45,6 +46,8 @@ import {
   detailRoutes,
   globalRoutes,
   pageRoutes,
+  getNavigationSections,
+  getRouteBreadcrumbs,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
@@ -105,7 +108,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
     <BrowserRouter basename={basename}>
       <ErrorBoundary>
         <Routes>
-          <Route element={<AppShell />}>
+          <Route element={<AppShell authEnabled={config.auth.enabled} capabilities={config.capabilities} />}>
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
@@ -136,10 +139,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                   config.auth.enabled ? (
                     <AuthEntryPage route={route} />
                   ) : (
-                    <ModeRestrictedState
-                      title="当前模式不提供身份入口"
-                      description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。"
-                    />
+                    <Navigate to="/workspace/overview" replace />
                   )
                 }
               />
@@ -152,10 +152,13 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
   )
 }
 
-function AppShell() {
+function AppShell({ authEnabled, capabilities }: { authEnabled: boolean; capabilities: string[] }) {
   const collapsed = useUiStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useUiStore((state) => state.toggleSidebar)
   const navigate = useNavigate()
+  const location = useLocation()
+  const breadcrumbs = getRouteBreadcrumbs(location.pathname)
+  const navigation = getNavigationSections(authEnabled, capabilities)
   const [toast, setToast] = useState('')
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -173,16 +176,6 @@ function AppShell() {
     window.setTimeout(() => setToast(''), 1700)
   }
 
-  const navigation = [
-    { path: '/workspace/overview', title: '工作台', icon: '⌂', view: 'home' },
-    { path: '/workspace/office', title: '3D 办公室', icon: '▣', view: 'office' },
-    { path: '/workspace/tasks', title: '任务中心', icon: '☰' },
-    { path: '/workspace/collaboration', title: 'Agent 协作', icon: '⚇' },
-    { path: '/admin/workflows', title: 'Workflow', icon: '⌘' },
-    { path: '/workspace/quality-cost', title: '成本分摊', icon: '¥' },
-    { path: '/admin/settings', title: '系统管理', icon: '⚙' },
-  ]
-
   return (
     <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
       <aside className="sidebar" aria-label="主导航">
@@ -193,20 +186,20 @@ function AppShell() {
         <nav className="prototype-navigation" aria-label="全局导航">
           {navigation.map((item) => (
             <NavLink
-              key={item.path}
+              key={item.id}
               to={item.path}
-              title={collapsed ? item.title : undefined}
-              data-v={item.view}
-              end={
-                item.path === '/workspace/overview' ||
-                item.path === '/workspace/office'
-              }
+              title={collapsed ? item.label : undefined}
+              data-v={item.id === 'home' || item.id === 'office' ? item.id : undefined}
+              end
               className={({ isActive }) =>
-                isActive ? 'prototype-nav-item on' : 'prototype-nav-item'
+                isActive || location.pathname === item.path ||
+                item.subpages.some((page) => location.pathname === page.path || location.pathname.startsWith(page.path + '/'))
+                  ? 'prototype-nav-item on'
+                  : 'prototype-nav-item'
               }
             >
               <i aria-hidden="true">{item.icon}</i>
-              {!collapsed && <span>{item.title}</span>}
+              {!collapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
           <button
@@ -258,6 +251,16 @@ function AppShell() {
             </button>
           </div>
         </header>
+        {breadcrumbs.length > 0 && (
+          <nav className="app-breadcrumbs" aria-label="面包屑">
+            {breadcrumbs.map((crumb, index) => (
+              <span className="app-breadcrumb-item" key={`${crumb.label}-${index}`}>
+                {index > 0 && <span className="app-breadcrumb-separator" aria-hidden="true">/</span>}
+                {crumb.path && index < breadcrumbs.length - 1 ? <Link to={crumb.path}>{crumb.label}</Link> : <span aria-current="page">{crumb.label}</span>}
+              </span>
+            ))}
+          </nav>
+        )}
         <Outlet />
       </main>
       <div className={toast ? 'prototype-toast visible' : 'prototype-toast'} role="status" aria-live="polite">
