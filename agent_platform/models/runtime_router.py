@@ -666,16 +666,17 @@ class OpenAICompatibleModelRouter:
                     raise ModelUsageRecordingError(
                         "streaming model outcome is ambiguous; fallback is prohibited"
                     ) from exc
-                # Circuit breaker already recorded the failure. Move to next candidate
-                # in the fallback list — but first cancel this candidate's quota
-                # reservation if one was created; otherwise the next candidate's
-                # reserve_run() hits the unique constraint on (run_id, scope).
-                if quota_reservation is not None and hasattr(self.quota_service, "cancel_run"):
-                    try:
-                        await self.quota_service.cancel_run(reservation=quota_reservation)
-                    except Exception:
-                        pass  # Best-effort cleanup; don't mask the transport error
-                quota_reservation = None
+                if quota_reservation is not None:
+                    # The transport failed after dispatch began; the provider may have
+                    # accepted and billed the request even though no response arrived.
+                    # Keep the reservation for reconciliation and prohibit a second
+                    # provider dispatch under the same Run/quota scope.
+                    raise ModelUsageRecordingError(
+                        "model provider outcome is ambiguous; quota reservation retained "
+                        "and fallback is prohibited"
+                    ) from exc
+                # Without quota accounting there is no reservation to reconcile, so
+                # the explicit fallback policy remains available.
                 last_error = exc
                 safe_metric(
                     self.metrics, "increment", "model_retries_total",
