@@ -110,6 +110,35 @@ def _with_source_id(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
+
+_SQL_LITERAL_OR_COMMENT = re.compile(r"'(?:''|\\\\.|[^'])*'|\\\"(?:\\\"\\\"|[^\\\"])*\\\"|--[^\\n]*|/\\*.*?\\*/", re.DOTALL)
+_SQL_WRITE_KEYWORDS = re.compile(
+    r"\\b(?:INSERT|UPDATE|DELETE|MERGE|REPLACE|UPSERT|CREATE|ALTER|DROP|TRUNCATE|"
+    r"GRANT|REVOKE|COMMENT|RENAME|CALL|EXECUTE|PREPARE|DEALLOCATE|COPY|"
+    r"VACUUM|ANALYZE|REFRESH|LOCK|SET|RESET|BEGIN|COMMIT|ROLLBACK)\\b",
+    re.IGNORECASE,
+)
+
+
+def _readonly_query(query: str, *, provider: str) -> str:
+    """Validate a single read-only SELECT before handing it to a database driver.
+
+    The database transaction is independently marked READ ONLY; this lexical
+    guard gives callers an early, deterministic rejection for write statements
+    and multi-statement payloads.
+    """
+    raw = (query or "").strip()
+    if not raw:
+        raise ConnectorError(f"{provider} 只允许单条只读 SELECT 查询")
+    scrubbed = _SQL_LITERAL_OR_COMMENT.sub(" ", raw).strip()
+    normalized = scrubbed.rstrip().removesuffix(";").strip()
+    if ";" in normalized or not re.match(r"^(?:SELECT|WITH)\\b", normalized, re.IGNORECASE):
+        raise ConnectorError(f"{provider} 只允许单条只读 SELECT 查询，已拒绝写操作或多语句")
+    if _SQL_WRITE_KEYWORDS.search(normalized) or re.search(r"\\bINTO\\b", normalized, re.IGNORECASE):
+        raise ConnectorError(f"{provider} 只读约束：已拒绝写操作或数据定义语句")
+    return raw
+
+
 def _qualified(name: str) -> str:
     parts = name.split(".")
     if not all(_IDENTIFIER.fullmatch(part) for part in parts):
@@ -168,6 +197,7 @@ class PostgresSourceProvider:
                     connect_timeout=15,
                 )
             async with connection:
+                await connection.execute("SET TRANSACTION READ ONLY")
                 cursor_obj = await connection.execute(sql, params)
                 rows = await cursor_obj.fetchall()
         except ConnectorError:
@@ -228,6 +258,7 @@ class MySQLSourceProvider:
             )
             try:
                 with connection.cursor() as page:
+                    page.execute("START TRANSACTION READ ONLY")
                     page.execute(sql, params)
                     return [dict(row) for row in page.fetchall()]
             finally:
