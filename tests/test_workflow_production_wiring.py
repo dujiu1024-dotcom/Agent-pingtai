@@ -13,7 +13,7 @@ from agent_platform.workflows.production_resolver import (
 
 class WorkflowProductionResolverTests(unittest.TestCase):
     def test_missing_trusted_entry_point_is_not_replaced_with_a_fake_compiler(self):
-        with patch("importlib.metadata.entry_points", return_value=()):
+        with patch("agent_platform.workflows.production_resolver.entry_points", return_value=()):
             self.assertIsNone(_load_trusted_workflow_compiler_resolver())
 
     def test_exactly_one_trusted_resolver_entry_point_is_loaded(self):
@@ -21,14 +21,14 @@ class WorkflowProductionResolverTests(unittest.TestCase):
         entry = Mock(name="workflow-compiler-entry")
         entry.name = "resolver"
         entry.load.return_value = resolver
-        with patch("importlib.metadata.entry_points", return_value=(entry,)):
+        with patch("agent_platform.workflows.production_resolver.entry_points", return_value=(entry,)):
             self.assertIs(_load_trusted_workflow_compiler_resolver(), resolver)
 
     def test_multiple_resolvers_fail_closed_instead_of_choosing_implicitly(self):
         first = Mock(name="first")
         second = Mock(name="second")
         first.name = second.name = "resolver"
-        with patch("importlib.metadata.entry_points", return_value=(first, second)):
+        with patch("agent_platform.workflows.production_resolver.entry_points", return_value=(first, second)):
             with self.assertRaisesRegex(RuntimeError, "exactly one"):
                 _load_trusted_workflow_compiler_resolver()
 
@@ -36,7 +36,7 @@ class WorkflowProductionResolverTests(unittest.TestCase):
         entry = Mock(name="invalid")
         entry.name = "resolver"
         entry.load.return_value = object()
-        with patch("importlib.metadata.entry_points", return_value=(entry,)):
+        with patch("agent_platform.workflows.production_resolver.entry_points", return_value=(entry,)):
             with self.assertRaisesRegex(TypeError, "callable resolver"):
                 _load_trusted_workflow_compiler_resolver()
 
