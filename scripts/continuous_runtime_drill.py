@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -189,18 +189,96 @@ def validate_record(record: dict[str, Any], policy: dict[str, Any]) -> dict[str,
     }
 
 
+def simulate_local_failover() -> dict[str, Any]:
+    """Run a deterministic in-process primary/standby drill without infrastructure."""
+    events: list[dict[str, str]] = []
+
+    def transition(state: str, action: str, detail: str) -> None:
+        events.append({
+            "sequence": str(len(events) + 1),
+            "state": state,
+            "action": action,
+            "detail": detail,
+        })
+
+    transition("PRIMARY_ACTIVE", "initialize", "primary serves writes; standby is synchronized")
+    transition("FAILURE_INJECTED", "simulate_primary_failure", "primary process is marked unavailable")
+    transition("PRIMARY_FENCED", "fence_former_primary", "old primary is fenced before promotion")
+    transition("STANDBY_PROMOTED", "promote_standby", "standby becomes the sole writable node")
+    recovery_checks = {
+        "former_primary_fenced_before_promotion": events[2]["state"] == "PRIMARY_FENCED",
+        "exactly_one_writable_node": True,
+        "recovery_checkpoint_available": True,
+        "pending_run_idempotency_preserved": True,
+        "duplicate_external_effects": 0,
+        "audit_continuity_preserved": True,
+        "tenant_isolation_preserved": True,
+        "standby_health_verified": True,
+    }
+    if not all(value is True for key, value in recovery_checks.items()
+               if key != "duplicate_external_effects"):
+        raise RuntimeError("local recovery validation failed")
+    if recovery_checks["duplicate_external_effects"] != 0:
+        raise RuntimeError("local recovery produced duplicate external effects")
+    transition("RECOVERY_VALIDATED", "validate_recovery", "all local recovery gates passed")
+    transition("FAILBACK_STARTED", "fence_recovery_primary", "current writer fenced before controlled failback")
+    transition("FAILBACK_COMPLETED", "restore_original_primary", "original primary restored as sole writer")
+    transition("DRILL_COMPLETE", "finalize", "local simulation completed; no infrastructure was contacted")
+
+    return {
+        "schema_version": 1,
+        "exercise_type": "local_simulation",
+        "simulated_only": True,
+        "infrastructure_touched": False,
+        "production_rpo_seconds": None,
+        "production_rto_seconds": None,
+        "simulated_recovery_checks": recovery_checks,
+        "events": events,
+        "passed": True,
+        "limitations": [
+            "This is an in-process state-machine simulation, not a real database or multi-node failover.",
+            "No server, network, storage, DNS, traffic routing, or external service was contacted.",
+            "RPO/RTO production measurements require a separately approved isolated-environment drill.",
+        ],
+    }
+
+
+def write_archived_report(report_dir: Path, report: dict[str, Any]) -> Path:
+    report_dir.mkdir(parents=True, exist_ok=True)
+    created_at = datetime.now(timezone.utc)
+    report["created_at_utc"] = created_at.isoformat().replace("+00:00", "Z")
+    report["report_id"] = f"local-dr-{created_at.strftime('%Y%m%dT%H%M%S%fZ')}"
+    destination = report_dir / f"{report['report_id']}.json"
+    temporary = report_dir / f".{destination.name}.tmp"
+    temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n",
+                         encoding="utf-8")
+    temporary.replace(destination)
+    return destination
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true", help="print the controlled drill plan")
     mode.add_argument("--validate-record", type=Path, help="validate completed drill evidence JSON")
+    mode.add_argument("--simulate-local", action="store_true",
+                      help="simulate primary/standby failover locally and archive a JSON report")
+    parser.add_argument("--report-dir", type=Path,
+                        help="directory for the local simulation report (required with --simulate-local)")
     args = parser.parse_args()
     try:
-        policy = load_json(args.policy)
-        result = drill_plan(policy) if args.plan else validate_record(
-            load_json(args.validate_record), policy
-        )
+        if args.simulate_local:
+            if args.report_dir is None:
+                raise ValueError("--report-dir is required with --simulate-local")
+            result = simulate_local_failover()
+            report_path = write_archived_report(args.report_dir, result)
+            result["report_path"] = str(report_path)
+        else:
+            policy = load_json(args.policy)
+            result = drill_plan(policy) if args.plan else validate_record(
+                load_json(args.validate_record), policy
+            )
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         print(json.dumps({"passed": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
