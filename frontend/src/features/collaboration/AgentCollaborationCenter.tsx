@@ -6,6 +6,8 @@ import { ApiError, apiClient } from '@/lib/api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { eventLabel, localizedJson, valueLabel } from '@/lib/i18n/labels'
 import { useAuth } from '@/providers/AuthProvider'
+import { AgentTeamGraph } from './AgentTeamGraph'
+import { WorkflowRunCanvas } from './WorkflowRunCanvas'
 import './AgentCollaborationCenter.css'
 
 type RecordValue = Record<string, unknown>
@@ -665,17 +667,7 @@ export function AgentCollaborationCenter() {
         {agentsQuery.isPending ? <LoadingState label="正在读取智能体注册表" /> :
           agentsQuery.isError ? <ErrorState title="智能体列表读取失败" description={errorText(agentsQuery.error)} onRetry={() => void agentsQuery.refetch()} /> :
           agents.length === 0 ? <EmptyState title="暂无已注册智能体" description="注册表未返回智能体定义，不会用示例卡片代替真实团队成员。" /> :
-          <div className="collab-agent-grid">
-            {agents.map((agent, index) => {
-              const definition = (agent.definition && typeof agent.definition === 'object' ? agent.definition : {}) as RecordValue
-              return <Link to={`/admin/agents/${agent.item_id}`} key={text(agent.item_id, String(index))} className="collab-agent-card" aria-label={`查看智能体 ${text(definition.name, text(agent.item_id, ''))} 详情`}>
-                <div className="collab-agent-avatar" aria-hidden="true">{text(definition.name, text(agent.item_id, 'A')).slice(0, 1).toUpperCase()}</div>
-                <div className="collab-agent-title"><strong>{text(definition.name, text(agent.item_id, '未命名智能体'))}</strong><span>{text(valueLabel(definition.role), valueLabel(agent.kind))}</span></div>
-                <p>{text(definition.description, '该智能体尚未提供描述。')}</p>
-                <dl><div><dt>定义版本</dt><dd>{text(agent.version, '—')}</dd></div><div><dt>发布状态</dt><dd>{valueLabel(agent.status)}</dd></div><div><dt>模型模板</dt><dd>{text(definition.model_template_id, '未声明')}</dd></div></dl>
-              </Link>
-            })}
-          </div>}
+          <AgentTeamGraph agents={agents} />
       </section>
       )}
 
@@ -722,6 +714,8 @@ export function AgentCollaborationCenter() {
             </article>
 
             {/* ==== 可观测区域 ==== */}
+            <WorkflowRunCanvas events={events} />
+
             <div className="collab-run-observability">
               {/* 事件摘要 + 时间线 */}
               <div className="collab-run-canvas">
