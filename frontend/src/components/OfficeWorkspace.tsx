@@ -50,6 +50,8 @@ const taskTimestamp = (task: OfficeTask) => Date.parse(task.updated_at ?? task.c
 type OfficeSnapshotAgent = {
   agent_id: string
   name?: string
+  title?: string
+  desc?: string
   role?: string
   status?: string
   floor_id?: string
@@ -65,6 +67,9 @@ type OfficeSnapshotAgent = {
 type OfficeSnapshotRun = {
   run_id?: string
   agent_id?: string
+  role?: string
+  id?: string
+  model?: string
   status?: string
   task_id?: string
   title?: string
@@ -90,7 +95,8 @@ export function normalizeOfficeAgents(snapshot: unknown): NormalizedOfficeAgent[
   const rawAgents = Array.isArray(data.agents) ? data.agents as OfficeSnapshotAgent[] : []
   const runs = Array.isArray(data.runs) ? data.runs as OfficeSnapshotRun[] : []
   return rawAgents.map((agent) => {
-    const latest = runs.filter((run) => run.agent_id === agent.agent_id)
+    const agentId = agent.agent_id || agent.name || ''
+    const latest = runs.filter((run) => (run.agent_id || run.role) === agentId)
       .sort((a, b) => Date.parse(b.updated_at ?? b.created_at ?? '') - Date.parse(a.updated_at ?? a.created_at ?? ''))[0]
     const rawStatus = (latest?.status ?? agent.status ?? '').toLowerCase()
     let status: AgentStatus = 'offline'
@@ -105,16 +111,16 @@ export function normalizeOfficeAgents(snapshot: unknown): NormalizedOfficeAgent[
     else if (latest?.ok === true) status = 'idle'
     else if (latest?.ok === false || latest?.error) status = 'failed'
     return {
-      agent_id: agent.agent_id,
-      name: agent.name || agent.agent_id,
-      role: agent.role || '',
+      agent_id: agentId,
+      name: agent.title || agent.name || agent.agent_id || '未命名 Agent',
+      role: agent.role || agent.desc || '',
       status,
       floor_id: agent.floor_id,
       desk_id: agent.desk_id,
       task_id: latest?.task_id || agent.current_task?.task_id,
       task: latest?.title || agent.current_task?.title,
-      current_run_id: latest?.run_id || agent.current_run_id,
-      model_template: latest?.model_template || agent.model_template,
+      current_run_id: latest?.run_id || latest?.id || agent.current_run_id,
+      model_template: latest?.model_template || latest?.model || agent.model_template,
       last_active_at: latest?.updated_at || latest?.created_at || agent.last_active_at,
       // Position is trusted only when both finite coordinates are explicitly returned.
       x: Number.isFinite(agent.x) ? agent.x : undefined,
