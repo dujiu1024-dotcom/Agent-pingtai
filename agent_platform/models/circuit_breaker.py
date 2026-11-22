@@ -78,16 +78,19 @@ class AsyncCircuitBreaker:
                 elapsed = self._clock() - state.opened_at
                 if elapsed >= self._recovery_timeout:
                     state.state = "half-open"
-                    state.failures = 0
+                    state.failures = 1  # first half-open probe slot consumed
                     state.success = 0
                     logger.info(
                         "circuit %s open→half-open after %.1fs", breaker_key, elapsed
                     )
                     return True
                 return False
-            # half-open: allow up to half_open_max concurrent probes
+            # half-open: allow up to half_open_max concurrent probes.
+            # Each call to allow_request that returns True increments the
+            # probe counter so the next caller sees the budget consumed.
             probes = state.success + state.failures
             if probes < self._half_open_max:
+                state.failures += 1  # consume one probe slot
                 return True
             return False
 
@@ -153,6 +156,8 @@ class ModelCircuitBreaker(AsyncCircuitBreaker):
     ) -> None:
         if failure_threshold < 1:
             raise ValueError("failure_threshold must be >= 1")
+        if reset_timeout_seconds <= 0:
+            raise ValueError("reset_timeout_seconds must be > 0")
         super().__init__(
             failure_threshold=failure_threshold,
             recovery_timeout_seconds=reset_timeout_seconds,

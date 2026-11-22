@@ -475,7 +475,17 @@ class SessionFileVersionAuditTests(unittest.TestCase):
         self.assertTrue(all(event["actor_id"] == "user-a" for event in audit.events))
 
         route_counts = {}
-        for route in app.routes:
+        # FastAPI 0.115+ wraps included routers in _IncludedRouter placeholders
+        # on app.routes. Recursively resolve to the original APIRouter.
+        def _iter_routes(root):
+            for r in getattr(root, "routes", []) or []:
+                sub = getattr(r, "original_router", None)
+                if sub is not None:
+                    yield from _iter_routes(sub)
+                elif getattr(r, "path", None):
+                    yield r
+
+        for route in _iter_routes(app.router):
             path = getattr(route, "path", None)
             methods = getattr(route, "methods", set()) or set()
             for method in methods:

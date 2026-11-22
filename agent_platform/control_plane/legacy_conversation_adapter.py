@@ -32,7 +32,7 @@ class LegacyConversationAdapter:
 
     def adapt_session(
         self, row: Mapping[str, object], *, tenant_id: str,
-        approved_owner_id: str,
+        approved_owner_id: str | None = None,
         approved_project_id: str | None = None,
     ) -> ConversationSession:
         if not isinstance(tenant_id, str) or not tenant_id.strip():
@@ -40,6 +40,8 @@ class LegacyConversationAdapter:
         source_id = row.get("conversation_id") or row.get("id")
         if not isinstance(source_id, str) or not source_id.strip():
             raise LegacyMappingError("legacy conversation identifier is required")
+        if approved_owner_id is None:
+            approved_owner_id = row.get("owner_id")
         if not isinstance(approved_owner_id, str) or not approved_owner_id.strip():
             raise LegacyMappingError("an explicit approved platform owner mapping is required")
         legacy_project = row.get("project_id")
