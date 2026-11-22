@@ -209,6 +209,17 @@ describe('route configuration', () => {
     ).toBe('provider-7')
   })
 
+  it('registers authenticated Sessions workspace routes under #801', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    const list = pageRoutes.find((route) => route.path === '/operations/sessions')
+    const detail = detailRoutes.find((route) => route.path === '/operations/sessions/:sessionId')
+    expect(list).toMatchObject({ owner: '#801', authOnly: true })
+    expect(detail).toMatchObject({ owner: '#801', authOnly: true, parentPath: '/operations/sessions' })
+    expect(getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))).not.toContain('/operations/sessions')
+    expect(getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))).toContain('/operations/sessions')
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
+  })
+
   it('mounts the unified Session/File workbench for list and detail routes owned by #762', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
