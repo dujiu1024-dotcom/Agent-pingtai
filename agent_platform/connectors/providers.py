@@ -111,33 +111,27 @@ def _with_source_id(row: dict[str, Any]) -> dict[str, Any]:
 
 
 
-_SQL_LITERAL_OR_COMMENT = re.compile(r"'(?:''|\\\\.|[^'])*'|\\\"(?:\\\"\\\"|[^\\\"])*\\\"|--[^\\n]*|/\\*.*?\\*/", re.DOTALL)
+_SQL_LITERAL_OR_COMMENT = re.compile(r"'(?:''|[^'])*'|""(?: ""|[^""])*""|--[^\n]*|/\*.*?\*/", re.DOTALL)
 _SQL_WRITE_KEYWORDS = re.compile(
-    r"\\b(?:INSERT|UPDATE|DELETE|MERGE|REPLACE|UPSERT|CREATE|ALTER|DROP|TRUNCATE|"
+    r"\b(?:INSERT|UPDATE|DELETE|MERGE|REPLACE|UPSERT|CREATE|ALTER|DROP|TRUNCATE|"
     r"GRANT|REVOKE|COMMENT|RENAME|CALL|EXECUTE|PREPARE|DEALLOCATE|COPY|"
-    r"VACUUM|ANALYZE|REFRESH|LOCK|SET|RESET|BEGIN|COMMIT|ROLLBACK)\\b",
+    r"VACUUM|ANALYZE|REFRESH|LOCK|SET|RESET|BEGIN|COMMIT|ROLLBACK)\b",
     re.IGNORECASE,
 )
 
 
 def _readonly_query(query: str, *, provider: str) -> str:
-    """Validate a single read-only SELECT before handing it to a database driver.
-
-    The database transaction is independently marked READ ONLY; this lexical
-    guard gives callers an early, deterministic rejection for write statements
-    and multi-statement payloads.
-    """
+    """Validate one SELECT statement; the transaction is separately READ ONLY."""
     raw = (query or "").strip()
     if not raw:
         raise ConnectorError(f"{provider} 只允许单条只读 SELECT 查询")
     scrubbed = _SQL_LITERAL_OR_COMMENT.sub(" ", raw).strip()
     normalized = scrubbed.rstrip().removesuffix(";").strip()
-    if ";" in normalized or not re.match(r"^(?:SELECT|WITH)\\b", normalized, re.IGNORECASE):
+    if ";" in normalized or not re.match(r"^(?:SELECT|WITH)\b", normalized, re.IGNORECASE):
         raise ConnectorError(f"{provider} 只允许单条只读 SELECT 查询，已拒绝写操作或多语句")
-    if _SQL_WRITE_KEYWORDS.search(normalized) or re.search(r"\\bINTO\\b", normalized, re.IGNORECASE):
+    if _SQL_WRITE_KEYWORDS.search(normalized) or re.search(r"\bINTO\b", normalized, re.IGNORECASE):
         raise ConnectorError(f"{provider} 只读约束：已拒绝写操作或数据定义语句")
     return raw
-
 
 def _qualified(name: str) -> str:
     parts = name.split(".")
@@ -168,9 +162,7 @@ class PostgresSourceProvider:
             sql = f"SELECT * FROM {_qualified(target)} ORDER BY 1 LIMIT %s OFFSET %s"
             params: list[Any] = [page_size, offset]
         elif kind == "query":
-            base = target.strip().rstrip(";")
-            if not base:
-                raise ConnectorError("query scope 不能为空")
+            base = _readonly_query(target, provider="MySQL").rstrip(";")
             sql = base if re.search(r"\blimit\b", base, re.IGNORECASE) else f"{base} LIMIT %s OFFSET %s"
             params = [] if sql == base else [page_size, offset]
         else:
