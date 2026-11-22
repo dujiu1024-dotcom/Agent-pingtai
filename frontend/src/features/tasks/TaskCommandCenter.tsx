@@ -366,7 +366,7 @@ export function TaskCommandCenter() {
           <h1>任务指挥中心</h1>
           <p>跟踪任务生命周期、负责人、阻塞和交付。</p>
         </div>
-        <small>自动刷新 · 15s</small>
+        <div className="task-heading-actions"><small>自动刷新 · 15s</small><Link className="button-secondary" to="/operations/tasks/timeline">Run 事件时间线</Link></div>
       </div>
       <div className="task-toolbar">
         <input
