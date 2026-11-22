@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,12 +54,22 @@ def build_report(benchmark: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(value, dict) or value.get("operations") != expected:
                 raise ValueError(f"{backend}.{name} expected {expected} measured operations")
             latency = value.get("latency_ms", {})
-            if not all(isinstance(latency.get(key), (int, float))
-                       and latency[key] >= 0 for key in ("p50", "p95", "p99", "max")):
+            if not all(
+                isinstance(latency.get(key), (int, float))
+                and not isinstance(latency.get(key), bool)
+                and math.isfinite(latency[key])
+                and latency[key] >= 0
+                for key in ("p50", "p95", "p99", "max")
+            ):
                 raise ValueError(f"{backend}.{name} latency distribution is incomplete")
+            throughput = value.get("ops_per_second")
+            if (not isinstance(throughput, (int, float))
+                    or isinstance(throughput, bool)
+                    or not math.isfinite(throughput) or throughput <= 0):
+                raise ValueError(f"{backend}.{name} throughput is invalid")
             measured[f"{backend}.{name}"] = {
                 "operations": value["operations"],
-                "ops_per_second": value.get("ops_per_second"),
+                "ops_per_second": throughput,
                 "latency_ms": latency,
             }
 
@@ -66,9 +77,19 @@ def build_report(benchmark: dict[str, Any]) -> dict[str, Any]:
     if redis_metrics.get("messages") != expected:
         raise ValueError(f"Redis queue expected {expected} acknowledged messages")
     redis_latency = redis_metrics.get("latency_ms", {})
-    if not all(isinstance(redis_latency.get(key), (int, float)) and redis_latency[key] >= 0
-               for key in ("p50", "p95", "p99", "max")):
+    if not all(
+        isinstance(redis_latency.get(key), (int, float))
+        and not isinstance(redis_latency.get(key), bool)
+        and math.isfinite(redis_latency[key])
+        and redis_latency[key] >= 0
+        for key in ("p50", "p95", "p99", "max")
+    ):
         raise ValueError("Redis queue latency distribution is incomplete")
+    redis_throughput = redis_metrics.get("ops_per_second")
+    if (not isinstance(redis_throughput, (int, float))
+            or isinstance(redis_throughput, bool)
+            or not math.isfinite(redis_throughput) or redis_throughput <= 0):
+        raise ValueError("Redis queue throughput is invalid")
 
     return {
         "schema_version": 1,
@@ -87,7 +108,7 @@ def build_report(benchmark: dict[str, Any]) -> dict[str, Any]:
             "metrics": measured,
             "redis_queue": {
                 "messages": redis_metrics["messages"],
-                "ops_per_second": redis_metrics.get("ops_per_second"),
+                "ops_per_second": redis_throughput,
                 "latency_ms": redis_latency,
             },
             "legacy_comparison": "diagnostic_only",
