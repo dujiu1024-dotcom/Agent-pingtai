@@ -5,8 +5,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from agent_platform.identity.models import Principal
-from agent_platform.tools.production_reconciliation import build_tool_effect_reconciliation_service
 from agent_platform.security.audit import PostgresAuditWriter
+from agent_platform.tools.production_reconciliation import (
+    build_tool_effect_reconciliation_service,
+)
 
 
 class ToolEffectProductionWiringTests(unittest.IsolatedAsyncioTestCase):
@@ -44,7 +46,12 @@ class ToolEffectProductionWiringTests(unittest.IsolatedAsyncioTestCase):
             tenant_id="tenant-1", user_id="operator-1",
         )
         self.authorize_run.assert_awaited_once()
-        authorized_principal, resource_type, run_id, action = self.authorize_run.await_args.args
+        (
+            authorized_principal,
+            resource_type,
+            run_id,
+            action,
+        ) = self.authorize_run.await_args.args
         self.assertEqual(authorized_principal.user_id, "operator-1")
         self.assertEqual(authorized_principal.tenant_id, "tenant-1")
         self.assertEqual((resource_type, run_id, action), ("run", "run-1", "reconcile"))
