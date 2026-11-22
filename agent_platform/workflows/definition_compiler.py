@@ -124,7 +124,7 @@ class LangGraphWorkflowCompiler:
             default = branch["default"]
             def route(state: Mapping[str, Any], *, key: str = field, fallback: Any = default, route_map: Mapping[str, Any] = routes) -> Any:
                 value = state.get(key)
-                return value if value in route_map else fallback
+                return value if isinstance(value, str) and value in route_map else fallback
             graph.add_conditional_edges(
                 source, route,
                 {key: END if target == "__end__" else target for key, target in routes.items()},
@@ -280,19 +280,45 @@ class LangGraphWorkflowCompiler:
                 diagnostics.append(WorkflowDiagnostic(
                     "node.retry", "error_retry semantics differ from registry", path + ".error_retry",
                 ))
-            if not isinstance(node.get("config", {}), Mapping):
+            config = node.get("config", {})
+            if not isinstance(config, Mapping):
                 diagnostics.append(WorkflowDiagnostic("node.config", "config must be an object", path + ".config"))
+            else:
+                try:
+                    from jsonschema import Draft202012Validator
+                    Draft202012Validator.check_schema(spec.config_schema)
+                    for error in Draft202012Validator(spec.config_schema).iter_errors(config):
+                        diagnostics.append(WorkflowDiagnostic(
+                            "node.config_invalid", error.message[:300],
+                            path + ".config" + "".join(f"[{part}]" for part in error.absolute_path),
+                        ))
+                    Draft202012Validator.check_schema(spec.input_schema)
+                    Draft202012Validator.check_schema(spec.output_schema)
+                except ImportError:
+                    diagnostics.append(WorkflowDiagnostic(
+                        "schema.validator_unavailable", "jsonschema is required for Workflow schema validation",
+                        path + ".config_schema",
+                    ))
+                except Exception as exc:
+                    diagnostics.append(WorkflowDiagnostic(
+                        "node.schema_invalid", str(exc)[:300], path + ".config_schema",
+                    ))
             retry = node.get("error_retry", {})
             if not isinstance(retry, Mapping):
                 diagnostics.append(WorkflowDiagnostic("node.retry", "error_retry must be an object", path + ".error_retry"))
-            elif "max_attempts" in retry and (
-                isinstance(retry["max_attempts"], bool)
-                or not isinstance(retry["max_attempts"], int)
-                or retry["max_attempts"] < 1
-            ):
-                diagnostics.append(WorkflowDiagnostic(
-                    "node.retry", "max_attempts must be a positive integer", path + ".error_retry.max_attempts",
-                ))
+            else:
+                if "max_attempts" in retry and (
+                    isinstance(retry["max_attempts"], bool)
+                    or not isinstance(retry["max_attempts"], int)
+                    or retry["max_attempts"] < 1
+                ):
+                    diagnostics.append(WorkflowDiagnostic(
+                        "node.retry", "max_attempts must be a positive integer", path + ".error_retry.max_attempts",
+                    ))
+                if retry.get("backoff", "exponential") not in {"none", "linear", "exponential"}:
+                    diagnostics.append(WorkflowDiagnostic(
+                        "node.retry", "backoff must be none, linear, or exponential", path + ".error_retry.backoff",
+                    ))
 
         entries = definition.get("entry_points")
         if not isinstance(entries, list) or not entries or any(
@@ -360,11 +386,10 @@ class LangGraphWorkflowCompiler:
                 continue
             if branch.get("default") not in routes:
                 diagnostics.append(WorkflowDiagnostic("branch.default", "default must name a route key", path + ".default"))
-            targets = list(routes.values())
             for route_key, target in routes.items():
                 if target == "__duplicate_route__":
                     diagnostics.append(WorkflowDiagnostic("branch.duplicate_port", "condition output port is connected more than once", path + ".routes"))
-                if not isinstance(target, str) or target not in ids | {"__end__"}:
+                if target != "__duplicate_route__" and (not isinstance(target, str) or target not in ids | {"__end__"}):
                     diagnostics.append(WorkflowDiagnostic("branch.target", "branch target is unknown", path + ".routes"))
         for edge in edges:
             if isinstance(edge, Mapping) and isinstance(edge.get("source"), str) and edge.get("source") in branch_sources:
