@@ -52,6 +52,15 @@ export const pageRoutes: PageRoute[] = [
     owner: '#745',
   },
   {
+    path: '/operations/tasks/timeline',
+    pageId: 'WS-TASK-RUN-TIMELINE',
+    title: 'Run 事件时间线',
+    section: '智能体运营',
+    description: '汇总任务关联 Run 的真实持久化事件。',
+    parentPath: '/workspace/tasks',
+    owner: '#745',
+  },
+  {
     path: '/workspace/collaboration',
     pageId: 'WS-COLLAB',
     title: 'Agent 协作中心',
@@ -605,6 +614,7 @@ export const navigationSections: NavigationSection[] = [
     path: '/workspace/tasks',
     subpages: [
       { label: '任务列表', path: '/workspace/tasks' },
+      { label: 'Run 事件时间线', path: '/operations/tasks/timeline' },
       { label: '审批中心', path: '/operations/approvals' },
       { label: '会话工作区', path: '/operations/sessions', authOnly: true },
       { label: '会话与消息', path: '/operations/conversations' },
