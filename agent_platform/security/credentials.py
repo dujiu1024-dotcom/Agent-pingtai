@@ -53,10 +53,6 @@ class CredentialRepository(Protocol):
         self, *, tenant_id: str, credential_id: str,
         consumer_type: str, consumer_id: str,
     ) -> CredentialGrant | None: ...
-    async def revoke(self, *, tenant_id: str, credential_id: str) -> bool: ...
-    async def revoke_grant(
-        self, *, tenant_id: str, credential_id: str, consumer_type: str, consumer_id: str,
-    ) -> None: ...
 
 
 class CredentialService:
