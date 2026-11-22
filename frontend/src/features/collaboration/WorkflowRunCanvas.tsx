@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { isNodeRuntimeEvent, nodeStatusForRuntimeEvent } from './workflow-run-events'
 
 type RuntimeEvent = Record<string, unknown>
 type RuntimeNode = { id: string; label: string; type: string; status: string; firstAt: string; lastAt: string; events: number; input?: unknown; output?: unknown; error?: unknown }
@@ -9,15 +10,6 @@ const record = (value: unknown): Record<string, unknown> =>
 const str = (value: unknown) => typeof value === 'string' && value.trim() ? value : ''
 const nodeEventType = (event: RuntimeEvent) => str(event.event_type ?? event.type).toLowerCase()
 const nodePayload = (event: RuntimeEvent) => record(event.payload ?? event.data ?? event.summary)
-const statusForEvent = (type: string, payload: Record<string, unknown>) => {
-  const explicit = str(payload.node_status ?? payload.status ?? payload.to_status)
-  if (explicit) return explicit
-  if (type.includes('node.started') || type.includes('task.started')) return 'running'
-  if (type.includes('node.finished') || type.includes('node.completed')) return 'completed'
-  if (type.includes('node.failed')) return 'failed'
-  if (type.includes('node.interrupted')) return 'interrupted'
-  return ''
-}
 const safeSummary = (value: unknown) => {
   if (value === null || value === undefined) return '暂无摘要'
   const raw = typeof value === 'string' ? value : JSON.stringify(value)
@@ -35,8 +27,7 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
       const type = nodeEventType(event)
       const payload = nodePayload(event)
       const nodeId = str(payload.node_id ?? payload.nodeId ?? event.node_id)
-      const isNodeEvent = type.includes('node.') || type.startsWith('langgraph.node') || Boolean(nodeId && (payload.node_type || payload.node_name))
-      if (!isNodeEvent || !nodeId) continue
+      if (!isNodeRuntimeEvent(type, nodeId, payload)) continue
       const timestamp = str(event.occurred_at ?? event.created_at)
       const current = map.get(nodeId) ?? {
         id: nodeId,
@@ -50,7 +41,7 @@ export function WorkflowRunCanvas({ events }: { events: RuntimeEvent[] }) {
       current.events += 1
       current.firstAt = current.firstAt || timestamp
       current.lastAt = timestamp || current.lastAt
-      current.status = statusForEvent(type, payload) || current.status
+      current.status = nodeStatusForRuntimeEvent(type, payload) || current.status
       if (payload.input !== undefined || payload.input_summary !== undefined) current.input = payload.input_summary ?? payload.input
       if (payload.output !== undefined || payload.output_summary !== undefined) current.output = payload.output_summary ?? payload.output
       if (payload.error !== undefined) current.error = payload.error

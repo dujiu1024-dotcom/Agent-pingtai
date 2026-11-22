@@ -8,6 +8,7 @@ import { eventLabel, localizedJson, valueLabel } from '@/lib/i18n/labels'
 import { useAuth } from '@/providers/AuthProvider'
 import { AgentTeamGraph } from './AgentTeamGraph'
 import { WorkflowRunCanvas } from './WorkflowRunCanvas'
+import { mergeRunRuntimeEvents, normalizeRunSseEvent } from './workflow-run-events'
 import './AgentCollaborationCenter.css'
 
 type RecordValue = Record<string, unknown>
@@ -378,6 +379,8 @@ export function AgentCollaborationCenter() {
   // 切换运行时重置事件分页
   useEffect(() => { setEvPage(0) }, [runId])
   const [liveRefresh, setLiveRefresh] = useState(false)
+  const [liveRunEvents, setLiveRunEvents] = useState<RecordValue[]>([])
+  const [runStreamStatus, setRunStreamStatus] = useState<'idle' | 'connecting' | 'connected' | 'reconnecting' | 'closed' | 'unsupported'>('idle')
   const [liveStatus, setLiveStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle')
   const [lastLiveEvent, setLastLiveEvent] = useState('')
   const [editContent, setEditContent] = useState('{}')
@@ -430,8 +433,7 @@ export function AgentCollaborationCenter() {
 
   // 协作黑板默认空 scopeId = tenant 级全部，无需自动填充
 
-  // TODO(#746): Bind the runtime canvas to LangGraph node/edge telemetry once
-  // the backend publishes its versioned graph snapshot and event schema.
+  // Run events are the only source of node/edge telemetry; no graph snapshot is assumed.
   const runQuery = useQuery({
     queryKey: ['collaboration', 'run', runId],
     enabled: Boolean(runId.trim()),
@@ -444,8 +446,72 @@ export function AgentCollaborationCenter() {
     queryFn: () => apiClient.get<unknown>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}/events?limit=200`),
     refetchInterval: 10000,
   })
-  // TODO(#746): Extend this adapter with authorized evidence/source locators
-  // after the Blackboard locator contract is finalized.
+
+  // Subscribe to the same durable Run broker used by workers. Reconnect by
+  // opening a fresh EventSource so a rejected/expired Last-Event-ID cannot trap
+  // the browser in an endless retry loop. Replayed history is deduplicated below.
+  useEffect(() => {
+    setLiveRunEvents([])
+    if (!runId.trim() || !runQuery.isSuccess) {
+      setRunStreamStatus('idle')
+      return
+    }
+    if (typeof EventSource === 'undefined') {
+      setRunStreamStatus('unsupported')
+      return
+    }
+    let disposed = false
+    let retryTimer: number | undefined
+    let source: EventSource | undefined
+    const eventNames = ['step_progress', 'token_stream', 'tool_output', 'run_complete', 'run_error', 'error']
+    const connect = () => {
+      if (disposed) return
+      setRunStreamStatus('connecting')
+      source = new EventSource(`/api/platform/v1/runs/${encodeURIComponent(runId.trim())}/stream`)
+      const currentSource = source
+      currentSource.onopen = () => setRunStreamStatus('connected')
+      currentSource.onerror = () => {
+        setRunStreamStatus('reconnecting')
+        currentSource.close()
+        if (!disposed) retryTimer = window.setTimeout(connect, 2000)
+      }
+      const handleRunEvent = (rawEvent: Event) => {
+        const message = rawEvent as MessageEvent<string>
+        let payload: unknown
+        try {
+          payload = JSON.parse(message.data)
+        } catch {
+          return
+        }
+        const raw = payload && typeof payload === 'object' ? payload as RecordValue : {}
+        if (raw.event_type === 'RECONNECT_REQUIRED') {
+          setRunStreamStatus('reconnecting')
+          void eventsQuery.refetch()
+          currentSource.close()
+          if (!disposed) retryTimer = window.setTimeout(connect, 250)
+          return
+        }
+        const normalized = normalizeRunSseEvent(payload, message.lastEventId)
+        if (!normalized) return
+        setLiveRunEvents(current => mergeRunRuntimeEvents(current, [normalized]))
+        if (raw.event_type === 'COMPLETE' || raw.event_type === 'ERROR') {
+          setRunStreamStatus('closed')
+          currentSource.close()
+          void runQuery.refetch()
+          void eventsQuery.refetch()
+        }
+      }
+      for (const name of eventNames) currentSource.addEventListener(name, handleRunEvent)
+    }
+    connect()
+    return () => {
+      disposed = true
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer)
+      source?.close()
+    }
+  }, [runId, runQuery.isSuccess, runQuery.refetch, eventsQuery.refetch])
+
+  // The current Entry contract exposes source_refs; the UI does not invent locator fields.
   const entriesQuery = useQuery({
     queryKey: ['collaboration', 'blackboard', scope, scopeId, kind, bbPage],
     enabled: true,
@@ -462,7 +528,7 @@ export function AgentCollaborationCenter() {
       if (scope && scope !== 'tenant') params.set('scope', scope)
       return apiClient.get<unknown>(`/platform/v1/blackboard/entries/all?${params}`)
     },
-    refetchInterval: liveRefresh && Boolean(scopeId.trim()) ? false : 20000,
+    refetchInterval: liveRefresh && Boolean(scopeId.trim()) && liveStatus === 'connected' ? false : 20000,
   })
   const entries = useMemo(() => unwrap<RecordValue>(entriesQuery.data), [entriesQuery.data])
   const hasVersion = useMemo(() => entries.some(entry => entryVersion(entry) > 0), [entries])
@@ -491,12 +557,8 @@ export function AgentCollaborationCenter() {
   const history = unwrap<RecordValue>(historyQuery.data)
   const events = useMemo(() => {
     const items = unwrap<RecordValue>(eventsQuery.data)
-    return [...items].sort((a, b) => {
-      const sequenceA = typeof a.sequence === 'number' ? a.sequence : Number.MAX_SAFE_INTEGER
-      const sequenceB = typeof b.sequence === 'number' ? b.sequence : Number.MAX_SAFE_INTEGER
-      return sequenceA - sequenceB || String(a.occurred_at ?? '').localeCompare(String(b.occurred_at ?? ''))
-    })
-  }, [eventsQuery.data])
+    return mergeRunRuntimeEvents(items, liveRunEvents)
+  }, [eventsQuery.data, liveRunEvents])
 
   // 运行快照 / 事件分页派生值
   const runSnapshot = runQuery.data
@@ -573,7 +635,7 @@ export function AgentCollaborationCenter() {
       try {
         const payload = JSON.parse(event.data) as RecordValue
         setLastLiveEvent(
-          `${date(payload.occurred_at)} · ${eventTypeZh(text(payload.event_type, '')) || '黑板更新'}`,
+          `${date(payload.occurred_at)} · ${eventTypeZh(text(payload.event_type, ''))} · v${String(payload.entry_version ?? '—')} · ${text(payload.entry_id, '条目未提供').slice(0, 12)}`,
         )
       } catch {
         setLastLiveEvent('收到实时更新事件。')
@@ -673,7 +735,7 @@ export function AgentCollaborationCenter() {
 
       {tab === 'runtime' && (
       <section className="collab-section" aria-labelledby="collab-run-title">
-        <div className="collab-section-heading"><div><p className="eyebrow">运行可观测</p><h2 id="collab-run-title">运行执行时间线</h2></div><span className="muted">10 秒刷新</span></div>
+        <div className="collab-section-heading"><div><p className="eyebrow">运行可观测</p><h2 id="collab-run-title">运行执行时间线</h2></div><span className="muted">事件流：{{ idle: '未连接', connecting: '连接中', connected: '实时连接', reconnecting: '断线恢复中', closed: '运行已结束', unsupported: '浏览器不支持实时流' }[runStreamStatus]} · 10 秒快照补偿</span></div>
         <div className="collab-controls"><label>最近运行
           <select value={recentRuns.some(r => text(r.run_id, '') === runId) ? runId : ''} onChange={event => setRunId(event.target.value)}>
             <option value="">— 选择一个运行 —</option>
@@ -829,7 +891,7 @@ export function AgentCollaborationCenter() {
           <div className={liveStatus === 'error' ? 'collab-bb-live error' : 'collab-bb-live'}>
             <strong>{{ idle: '待启用', connecting: '连接中…', connected: '已连接', error: '连接中断，将自动重连' }[liveStatus]}</strong>
             {lastLiveEvent && <span>最近事件：{lastLiveEvent}</span>}
-            <span>实时开启时暂停 20 秒轮询。</span>
+            <span>连接正常时暂停轮询；断线恢复期间自动回到 20 秒快照刷新。</span>
           </div>
         )}
         {entriesQuery.isPending ? <LoadingState label="正在读取黑板条目" /> :
