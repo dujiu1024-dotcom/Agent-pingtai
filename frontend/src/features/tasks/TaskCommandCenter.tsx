@@ -532,7 +532,7 @@ export function TaskCommandCenter() {
             <Card t={task} agentNameOf={agentNameOf} />
           )}
         />
-      ) : view === 'list' ? (
+      ) : (
         <>
           <div className="task-bulk-toolbar" aria-label="批量任务操作">
             <span>已选 {selectedTasks.length} 项（当前页 {paged.length} 项）</span>
