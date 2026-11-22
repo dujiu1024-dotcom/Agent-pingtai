@@ -427,6 +427,10 @@ export function resolveCollaborationPage(routePath: string, runId = ''): ReactEl
 }
 
 /** Resolve the dedicated admin resource page for each canonical route. */
+export function resolveCollaborationPage(routePath: string): ReactElement | null {
+  return routePath === '/workspace/collaboration' ? <AgentCollaborationCenter /> : null
+}
+
 export function resolveAdminPage(
   routePath: string,
   authEnabled: boolean,

@@ -366,3 +366,15 @@ describe('Issue #818 unified shell navigation', () => {
     expect(getRouteBreadcrumbs('/unknown/path')).toEqual([])
   })
 })
+
+
+describe('Issue #746 Agent collaboration route', () => {
+  it('mounts the dedicated collaboration center instead of the generic placeholder', async () => {
+    const [{ resolveCollaborationPage }, { AgentCollaborationCenter }] = await Promise.all([
+      import('../App'),
+      import('../features/collaboration/AgentCollaborationCenter'),
+    ])
+    expect(resolveCollaborationPage('/workspace/collaboration')?.type).toBe(AgentCollaborationCenter)
+    expect(resolveCollaborationPage('/workspace/overview')).toBeNull()
+  })
+})
