@@ -21,7 +21,7 @@ import {
   NotFoundState,
 } from '@/components/States'
 import { NotificationsPage } from '@/components/NotificationsPage'
-import { Dashboard as OperationsDashboard } from '@/components/OperationsDashboard'
+import { SystemOpsPage } from '@/features/operations/SystemOpsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import {
@@ -308,13 +308,13 @@ function PageView({
         description="服务端 bootstrap 未声明此 capability；前端不自行开启功能。"
       />
     )
-  if (route.path === '/operations/dashboard') return <OperationsDashboard />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/search')
     return (
       <GlobalSearch authEnabled={authEnabled} capabilities={capabilities} />
     )
   if (route.path === '/notifications') return <NotificationsPage />
+  if (route.path === '/admin/ops') return <SystemOpsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
