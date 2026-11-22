@@ -335,6 +335,48 @@ class BlackboardApiTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(self.repository.entries, {})
 
+    def test_stale_revision_conflict_preserves_current_version_and_history(self):
+        proposed = self.client.post(
+            "/api/platform/v1/blackboard/entries",
+            json={
+                "scope": "task",
+                "scope_id": "task-a",
+                "kind": "fact",
+                "content": {"value": "initial"},
+            },
+        )
+        self.assertEqual(proposed.status_code, 201)
+        entry_id = proposed.json()["entry_id"]
+
+        first_revision = self.client.patch(
+            f"/api/platform/v1/blackboard/entries/{entry_id}",
+            json={"expected_version": 1, "content": {"value": "winner"}},
+        )
+        self.assertEqual(first_revision.status_code, 200)
+        self.assertEqual(first_revision.json()["version"], 2)
+
+        stale_revision = self.client.patch(
+            f"/api/platform/v1/blackboard/entries/{entry_id}",
+            json={"expected_version": 1, "content": {"value": "stale loser"}},
+        )
+        self.assertEqual(stale_revision.status_code, 409)
+
+        current = self.client.get(
+            f"/api/platform/v1/blackboard/entries/{entry_id}",
+        )
+        self.assertEqual(current.status_code, 200)
+        self.assertEqual(current.json()["version"], 2)
+        self.assertEqual(current.json()["content"], {"value": "winner"})
+
+        history = self.client.get(
+            f"/api/platform/v1/blackboard/entries/{entry_id}/history",
+        )
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(
+            [(item["version"], item["content"]["value"]) for item in history.json()["items"]],
+            [(1, "initial"), (2, "winner")],
+        )
+
     def test_expected_version_rejects_boolean_and_non_positive_values(self):
         proposed = self.client.post(
             "/api/platform/v1/blackboard/entries",
