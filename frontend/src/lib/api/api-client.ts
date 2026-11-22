@@ -357,7 +357,7 @@ export class ApiClient {
         status,
         code: envelope?.code ?? 'HTTP_ERROR',
         requestId: envelope?.request_id ?? requestId,
-        details: envelope?.details,
+        details: envelope?.details ?? payload,
         retryable: envelope?.retryable ?? status >= 500,
       },
     )
