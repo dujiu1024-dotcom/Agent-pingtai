@@ -33,6 +33,13 @@ type PromptDiff = {
   diff: string
 }
 
+export function parseCanaryPercentage(value: string): number | null {
+  const percentage = Number(value)
+  return Number.isFinite(percentage) && percentage > 0 && percentage <= 100
+    ? percentage
+    : null
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401) return '当前会话未通过身份认证，请重新登录。'
@@ -175,8 +182,8 @@ export function PromptRegistryPage({
 
   const configureCanary = useMutation({
     mutationFn: () => {
-      const percentage = Number(canaryPercentage)
-      if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
+      const percentage = parseCanaryPercentage(canaryPercentage)
+      if (percentage === null) {
         throw new Error('灰度比例必须大于 0 且不超过 100。')
       }
       if (!currentVersion) throw new Error('没有可灰度的版本。')
