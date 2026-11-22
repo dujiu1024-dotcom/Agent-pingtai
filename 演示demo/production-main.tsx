@@ -181,6 +181,145 @@ function responseForCollection(items: JsonRecord[], url: URL): Response {
   return jsonResponse({ items: filtered, total })
 }
 
+type DemoFixture = JsonRecord & { items?: JsonRecord[]; total?: number; count?: number }
+
+function fixtureForPath(path: string): DemoFixture {
+  const now = new Date().toISOString()
+  const common = (id: string, name: string, status = 'active') => ({
+    id, item_id: id, name, title: name, display_name: name, status,
+    description: name + ' · 本地演示样例', created_at: now, updated_at: now,
+  })
+  if (path.includes('/observability/metrics')) return {
+    items: [
+      { name: '请求总量', metric: 'http_requests_total', value: 128430, unit: '次' },
+      { name: '平均响应时间', metric: 'http_request_duration_ms', value: 126, unit: 'ms' },
+      { name: '活跃 Agent', metric: 'agents_active', value: 8, unit: '个' },
+      { name: '任务成功率', metric: 'task_success_ratio', value: '98.6', unit: '%' },
+    ], total: 4, count: 4,
+  }
+  if (path.includes('/health/') || path.endsWith('/health/ready') || path.endsWith('/ready')) {
+    return { status: 'healthy', checks: { api: 'ok', database: 'ok', redis: 'ok', scheduler: 'ok', storage: 'ok' }, reason: '演示环境模拟健康状态' }
+  }
+  if (path.includes('/scheduler/jobs')) return {
+    items: [
+      { job_id: 'job-cleanup', name: '历史记录清理', enabled: true, status: 'scheduled', interval_seconds: 3600 },
+      { job_id: 'job-sync', name: '资源目录同步', enabled: true, status: 'running', interval_seconds: 900 },
+      { job_id: 'job-report', name: '日报生成', enabled: false, status: 'paused', interval_seconds: 86400 },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/scheduler/runs')) return {
+    items: [
+      { run_id: 'scheduler-run-001', job_id: 'job-sync', status: 'completed', started_at: now, finished_at: now },
+      { run_id: 'scheduler-run-002', job_id: 'job-cleanup', status: 'running', started_at: now },
+    ], total: 2, count: 2,
+  }
+  if (path.includes('/knowledge')) return {
+    items: [
+      { ...common('kb-product', '产品知识库', 'ready'), collection_id: 'kb-product', document_count: 128, chunk_count: 2460, index_status: 'ready' },
+      { ...common('kb-tech', '技术文档库', 'indexing'), collection_id: 'kb-tech', document_count: 86, chunk_count: 1732, index_status: 'indexing' },
+      { ...common('kb-support', '客户支持知识库', 'ready'), collection_id: 'kb-support', document_count: 54, chunk_count: 980, index_status: 'ready' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/memories')) return {
+    items: [
+      { ...common('memory-001', '用户偏好与工作习惯', 'confirmed'), memory_id: 'memory-001', category: 'preference', confidence: 0.96 },
+      { ...common('memory-002', '项目背景与目标', 'pending'), memory_id: 'memory-002', category: 'project', confidence: 0.91 },
+      { ...common('memory-003', '常用工具链', 'archived'), memory_id: 'memory-003', category: 'workflow', confidence: 0.88 },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/sessions') || path.includes('/conversations')) return {
+    items: [
+      { ...common('session-001', '产品需求讨论'), session_id: 'session-001', message_count: 18, agent_name: '总控调度 Agent' },
+      { ...common('session-002', '代码审查与修复', 'completed'), session_id: 'session-002', message_count: 32, agent_name: '工程执行 Agent' },
+      { ...common('session-003', '知识库资料整理'), session_id: 'session-003', message_count: 12, agent_name: '研究分析 Agent' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/files')) return {
+    items: [
+      { ...common('file-001', '需求分析报告.pdf'), file_id: 'file-001', filename: '需求分析报告.pdf', mime_type: 'application/pdf', size: 248320, type: 'document' },
+      { ...common('file-002', '回归测试结果.xlsx'), file_id: 'file-002', filename: '回归测试结果.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 86400, type: 'spreadsheet' },
+      { ...common('file-003', '产品演示截图.png'), file_id: 'file-003', filename: '产品演示截图.png', mime_type: 'image/png', size: 512000, type: 'image' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/evaluations') || path.includes('/evaluation')) return {
+    items: [
+      { ...common('eval-dataset-001', '客服问答基准集', 'ready'), dataset_id: 'eval-dataset-001', eval_run_id: 'eval-run-001', case_count: 240, score: 0.94, pass_rate: 94 },
+      { ...common('eval-dataset-002', '工具调用准确率测试', 'completed'), dataset_id: 'eval-dataset-002', eval_run_id: 'eval-run-002', case_count: 180, score: 0.91, pass_rate: 91 },
+      { ...common('eval-dataset-003', '复杂任务规划评测', 'running'), dataset_id: 'eval-dataset-003', eval_run_id: 'eval-run-003', case_count: 96, score: 0.89, pass_rate: 89 },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/blackboard')) return {
+    items: [
+      { ...common('blackboard-001', '需求拆解结果', 'published'), entry_id: 'blackboard-001', owner: '研究分析 Agent', content: '已整理 12 项需求与验收标准' },
+      { ...common('blackboard-002', '技术方案草稿', 'shared'), entry_id: 'blackboard-002', owner: '工程执行 Agent', content: '前后端模块边界与接口方案' },
+      { ...common('blackboard-003', '风险清单', 'review'), entry_id: 'blackboard-003', owner: '总控调度 Agent', content: '识别 4 项需关注风险' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/registry/model') || path.includes('/models')) return {
+    items: [
+      { ...common('model-provider-openai', 'OpenAI'), provider_id: 'model-provider-openai', version: 3, model: 'GPT-6' },
+      { ...common('model-provider-anthropic', 'Anthropic'), provider_id: 'model-provider-anthropic', version: 2, model: 'Claude' },
+      { ...common('model-provider-local', '本地模型服务', 'draft'), provider_id: 'model-provider-local', version: 1, model: 'Qwen' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/prompts')) return {
+    items: [
+      { ...common('prompt-planner', '任务规划 Prompt', 'published'), prompt_id: 'prompt-planner', version: '2.1.0' },
+      { ...common('prompt-reviewer', '代码审查 Prompt', 'published'), prompt_id: 'prompt-reviewer', version: '1.8.0' },
+      { ...common('prompt-support', '客服应答 Prompt', 'draft'), prompt_id: 'prompt-support', version: '0.9.0' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/organization') || path.includes('/members') || path.includes('/rbac') || path.includes('/roles')) return {
+    items: [
+      { ...common('member-admin', '平台管理员'), member_id: 'member-admin', role: '管理员', email: 'admin@example.demo' },
+      { ...common('member-operator', '运营专员'), member_id: 'member-operator', role: '运营人员', email: 'operator@example.demo' },
+      { ...common('member-developer', '研发工程师'), member_id: 'member-developer', role: '开发人员', email: 'developer@example.demo' },
+    ], total: 3, count: 3,
+  }
+  if (path.includes('/bootstrap')) return { auth: { enabled: true }, version: 'demo-local-fixtures', capabilities: ['prompt_management', 'prompt_evaluation_gate'] }
+  return {
+    items: [
+      { ...common('demo-record-001', '演示记录 A'), version: 1, owner: '平台运营组' },
+      { ...common('demo-record-002', '演示记录 B', 'pending'), version: 2, owner: '研发团队' },
+      { ...common('demo-record-003', '演示记录 C', 'completed'), version: 1, owner: '业务团队' },
+    ], total: 3, count: 3,
+  }
+}
+
+function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, path: string, method: string): Response {
+  const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin)
+  const fixture = fixtureForPath(path)
+  if (method === 'GET') {
+    if (path.endsWith('/active') || path.endsWith('/latest') || path.endsWith('/current')) {
+      const first = fixture.items?.[0]
+      return jsonResponse(first ?? fixture)
+    }
+    if (path.includes('/search') || path.includes('/answer')) {
+      return jsonResponse({ ...fixture, answer: '根据演示数据检索，已整理出相关内容。', results: fixture.items ?? [] })
+    }
+    const items = fixture.items ?? []
+    const status = url.searchParams.get('status')
+    const query = url.searchParams.get('q') ?? url.searchParams.get('search')
+    let filtered = items.filter(item => (!status || item.status === status) &&
+      (!query || JSON.stringify(item).toLowerCase().includes(query.toLowerCase())))
+    const total = filtered.length
+    const limit = Number(url.searchParams.get('limit') ?? url.searchParams.get('page_size'))
+    const page = Math.max(1, Number(url.searchParams.get('page') ?? 1) || 1)
+    if (Number.isFinite(limit) && limit > 0) filtered = filtered.slice((page - 1) * limit, page * limit)
+    return jsonResponse({ ...fixture, items: filtered, total, count: total })
+  }
+  let body: JsonRecord = {}
+  const raw = init?.body
+  if (typeof raw === 'string' && raw.trim()) {
+    try { const parsed: unknown = JSON.parse(raw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) body = parsed as JsonRecord } catch { /* demo accepts form-like payloads */ }
+  }
+  if (method === 'DELETE') return jsonResponse({ ok: true, deleted: true, demo: true })
+  if (method === 'POST' && (path.includes('/search') || path.includes('/answer'))) {
+    return jsonResponse({ ok: true, answer: '演示操作已完成，已返回本地模拟结果。', results: fixture.items ?? [], items: fixture.items ?? [], total: fixture.total ?? 0 })
+  }
+  return jsonResponse({ ...body, id: body.id ?? 'demo-' + crypto.randomUUID(), item_id: body.item_id ?? 'demo-' + crypto.randomUUID(), status: body.status ?? 'completed', ok: true, demo: true, created_at: new Date().toISOString() }, method === 'POST' ? 201 : 200)
+}
+
 async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const request = input instanceof Request ? input : undefined
   const url = new URL(request?.url ?? String(input), window.location.origin)
@@ -196,21 +335,11 @@ async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
   }
 
   const collectionPath = Object.keys(demoCollections).find((key) => path === key || path.startsWith(key + '/'))
-  if (!collectionPath) {
-    return jsonResponse({
-      error: 'demo_endpoint_not_implemented',
-      message: `演示环境尚未接入接口：${method} ${path}`,
-    }, 501)
-  }
+  if (!collectionPath) return localFallback(input, init, path, method)
 
   const items = demoCollections[collectionPath]
   const suffix = path.slice(collectionPath.length).replace(/^\//, '')
-  if (suffix.includes('/')) {
-    return jsonResponse({
-      error: 'demo_subresource_not_implemented',
-      message: `演示环境尚未接入子资源接口：${method} ${path}`,
-    }, 501)
-  }
+  if (suffix.includes('/')) return localFallback(input, init, path, method)
   const itemId = suffix ? decodeURIComponent(suffix) : ''
   if (method === 'GET') {
     if (!itemId) return responseForCollection(items, url)
@@ -266,10 +395,7 @@ async function mockApi(input: RequestInfo | URL, init?: RequestInit): Promise<Re
     return jsonResponse({ ok: true, deleted })
   }
 
-  return jsonResponse({
-    error: 'demo_operation_not_supported',
-    message: `演示环境不支持此操作：${method} ${path}`,
-  }, 501)
+  return localFallback(input, init, path, method)
 }
 
 // Install the local transport before importing production modules. ApiClient
