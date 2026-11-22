@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import timedelta
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -464,3 +465,67 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             completed = await cur.fetchone()
             self.assertEqual(completed["status"], "completed")
             self.assertIsNone(completed["lease_token"])
+
+
+    async def test_memory_repository_round_trips_applicability_bounds_and_version_snapshots(self):
+        starts = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        ends = datetime(2027, 1, 1, tzinfo=timezone.utc)
+        candidate = MemoryCandidate(
+            tenant_id=self.tenant_id,
+            scope=MemoryScope.USER,
+            scope_id="memory-owner",
+            content="temporary preference",
+            source_ref="manual:applicability",
+            confidence=0.9,
+            created_by="memory-owner",
+            applies_from=starts,
+            applies_until=ends,
+            metadata={"retention": "bounded"},
+        )
+        await self.memory.propose(candidate)
+        principal = MemoryPrincipal(
+            tenant_id=self.tenant_id,
+            user_id="memory-owner",
+            permissions=frozenset({"memory.manage"}),
+        )
+        await self.memory.confirm(principal=principal, memory_id=candidate.memory_id)
+
+        current = await self.memory.repository.get(
+            self.tenant_id, candidate.memory_id,
+        )
+        self.assertIsNotNone(current)
+        self.assertEqual(current.candidate.applies_from, starts)
+        self.assertEqual(current.candidate.applies_until, ends)
+        self.assertEqual(current.candidate.metadata, {"retention": "bounded"})
+
+        revised_starts = datetime(2026, 2, 1, tzinfo=timezone.utc)
+        revised_ends = datetime(2026, 12, 1, tzinfo=timezone.utc)
+        revised = replace(
+            current,
+            candidate=replace(
+                current.candidate,
+                applies_from=revised_starts,
+                applies_until=revised_ends,
+                metadata={"retention": "revised"},
+            ),
+            version=current.version + 1,
+            updated_at=datetime.now(timezone.utc),
+        )
+        await self.memory.repository.put(revised)
+
+        persisted = await self.memory.repository.get(
+            self.tenant_id, candidate.memory_id,
+        )
+        self.assertEqual(persisted.candidate.applies_from, revised_starts)
+        self.assertEqual(persisted.candidate.applies_until, revised_ends)
+        self.assertEqual(persisted.candidate.metadata, {"retention": "revised"})
+
+        history = await self.memory.repository.list_versions(
+            self.tenant_id, candidate.memory_id,
+        )
+        self.assertEqual([item.version for item in history], [1, 2, 3])
+        self.assertEqual(history[0].candidate.applies_from, starts)
+        self.assertEqual(history[1].candidate.applies_until, ends)
+        self.assertEqual(history[2].candidate.applies_from, revised_starts)
+        self.assertEqual(history[2].candidate.applies_until, revised_ends)
+        self.assertEqual(history[2].candidate.metadata, {"retention": "revised"})

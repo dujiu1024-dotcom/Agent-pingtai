@@ -28,7 +28,9 @@ from agent_platform.memory.review import (
     MemoryReviewDecision,
     MemoryReviewEvent,
 )
+from agent_platform.memory.postgres_repository import PostgresMemoryRepository
 from agent_platform.memory.service import (
+    MemoryRepository,
     InMemoryMemoryRepository,
     MemoryCandidate,
     MemoryPrincipal,
@@ -50,7 +52,9 @@ __all__ = [
     "MemoryRecall",
     "MemoryRecallPolicy",
     "MemoryRetrievalService",
+    "MemoryRepository",
     "InMemoryMemoryRepository",
+    "PostgresMemoryRepository",
     "MemoryCandidate",
     "MemoryPrincipal",
     "MemoryRecord",
