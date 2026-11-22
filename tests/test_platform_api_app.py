@@ -494,6 +494,7 @@ class PlatformApiCompositionTests(unittest.TestCase):
             ),
             registry_service_resolver=lambda principal: object(),
             registry_authorizer=lambda *args: True,
+            tool_skill_evaluation_authorizer=lambda *args: True,
             tool_mcp_checker_resolver=lambda principal: object(),
             skill_dependency_reviewer_resolver=lambda principal: object(),
             resource_audit_writer=object(),
