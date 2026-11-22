@@ -214,9 +214,10 @@ class LangGraphWorkflowCompiler:
             source, target = edge.get("source"), edge.get("target")
             if not isinstance(source, str) or source not in ids or not isinstance(target, str) or target not in ids | {"__end__"}:
                 diagnostics.append(WorkflowDiagnostic("edge.reference", "edge references an unknown node", path))
-            if (source, target) in seen_edges:
-                diagnostics.append(WorkflowDiagnostic("edge.duplicate", "duplicate edge", path))
-            seen_edges.add((source, target))
+            if isinstance(source, str) and isinstance(target, str):
+                if (source, target) in seen_edges:
+                    diagnostics.append(WorkflowDiagnostic("edge.duplicate", "duplicate edge", path))
+                seen_edges.add((source, target))
 
         branch_sources: set[str] = set()
         for index, branch in enumerate(branches):
@@ -229,18 +230,19 @@ class LangGraphWorkflowCompiler:
                 diagnostics.append(WorkflowDiagnostic("branch.source", "branch source and state field are required", path))
             if source in branch_sources:
                 diagnostics.append(WorkflowDiagnostic("branch.duplicate", "only one branch declaration per source is allowed", path))
-            branch_sources.add(source)
+            if isinstance(source, str):
+                branch_sources.add(source)
             if not isinstance(routes, Mapping) or not routes:
                 diagnostics.append(WorkflowDiagnostic("branch.routes", "routes must be a non-empty object", path + ".routes"))
                 continue
-            if branch.get("default") is not None and branch["default"] not in routes:
+            if branch.get("default") not in routes:
                 diagnostics.append(WorkflowDiagnostic("branch.default", "default must name a route key", path + ".default"))
             targets = list(routes.values())
             for target in targets:
                 if not isinstance(target, str) or target not in ids | {"__end__"}:
                     diagnostics.append(WorkflowDiagnostic("branch.target", "branch target is unknown", path + ".routes"))
         for edge in edges:
-            if isinstance(edge, Mapping) and edge.get("source") in branch_sources:
+            if isinstance(edge, Mapping) and isinstance(edge.get("source"), str) and edge.get("source") in branch_sources:
                 diagnostics.append(WorkflowDiagnostic(
                     "graph.mixed_outgoing", "a node cannot mix normal edges and conditional branches",
                     "$.edges",
