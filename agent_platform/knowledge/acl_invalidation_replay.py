@@ -12,6 +12,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Protocol, Sequence
 
+from agent_platform.knowledge.acl_invalidation_events import KnowledgeACLInvalidationEvent
+
 
 class CheckpointStore(Protocol):
     async def load(self, subscriber_id: str) -> int | None: ...
@@ -119,17 +121,7 @@ class PostgresInvalidationSource:
             )
             rows = await cursor.fetchall()
         return [
-            {
-                "event_id": _event_id(row["event_id"]),
-                "tenant_id": row["tenant_id"],
-                "resource_type": row["resource_type"],
-                "resource_id": str(row["resource_id"]),
-                "reason": row["reason"],
-                "created_at": (
-                    row["created_at"].isoformat()
-                    if row["created_at"] is not None else None
-                ),
-            }
+            KnowledgeACLInvalidationEvent.from_record(row).to_dict()
             for row in rows
         ]
 
