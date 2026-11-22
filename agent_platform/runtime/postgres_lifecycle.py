@@ -27,7 +27,7 @@ class PostgresRunStateStore(RunStateStore):
   return RunSnapshot(
     row["tenant_id"],str(row["run_id"]),RunStatus(row["status"]),int(row["version"]),
     row.get("checkpoint_ref"),row.get("last_error"),row.get("updated_at"),
-    row.get("output"),row.get("input"),row.get("usage"),
+    row.get("output"),row.get("input"),row.get("usage"),int(row.get("lease_token") or 0),
   )
  async def create_task_run(self, *, tenant_id:str, run_id:str, actor_id:str,
   agent_id:str, agent_version:int, template_id:str, template_version:int, input:Mapping[str,Any],
@@ -358,9 +358,9 @@ class PostgresRunStateStore(RunStateStore):
       AND (%s::text IS NULL OR tenant_id=%s)
     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s
     )
-    UPDATE platform_runs r SET worker_id=%s,lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
+    UPDATE platform_runs r SET worker_id=%s,lease_token=r.lease_token+1,lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
-    RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at""",
+    RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at,r.lease_token""",
     (tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
  async def claim_workbench_tasks(self,worker_id:str,*,tenant_id:str|None=None,limit:int=20,lease_seconds:int=60)->list[RunSnapshot]:
@@ -399,11 +399,12 @@ class PostgresRunStateStore(RunStateStore):
     claimed AS (
     UPDATE platform_runs r SET worker_id=%s,
       worker_attempts=COALESCE(r.worker_attempts,0)+1,
+      lease_token=r.lease_token+1,
       lease_expires_at=now()+(%s * interval '1 second'),updated_at=now()
     FROM candidates c WHERE r.tenant_id=c.tenant_id AND r.run_id=c.run_id
-    RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at,r.priority
+    RETURNING r.tenant_id,r.run_id,r.status,r.version,r.checkpoint_ref,r.last_error,r.updated_at,r.priority,r.lease_token
     )
-    SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at
+    SELECT tenant_id,run_id,status,version,checkpoint_ref,last_error,updated_at,lease_token
     FROM claimed ORDER BY priority DESC,run_id ASC""",
     (tenant_id,tenant_id,tenant_id,tenant_id,limit,worker_id,lease_seconds))
    return [self._snapshot(row) for row in await cur.fetchall()]
@@ -412,25 +413,30 @@ class PostgresRunStateStore(RunStateStore):
   if not worker_id.strip() or lease_seconds<5:raise ValueError("invalid worker lease parameters")
   c=await self._connect()
   async with c:
-   cur=await c.execute("""UPDATE platform_runs SET worker_id=%s,lease_expires_at=now()+(%s * interval '1 second')
+   cur=await c.execute("""UPDATE platform_runs SET worker_id=%s,lease_token=lease_token+1,lease_expires_at=now()+(%s * interval '1 second')
     WHERE tenant_id=%s AND run_id=%s AND status IN ('queued','running')
       AND (worker_id IS NULL OR worker_id=%s OR lease_expires_at<=now()) RETURNING run_id""",
     (worker_id,lease_seconds,tenant_id,run_id,worker_id))
    return await cur.fetchone() is not None
- async def owns_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
+ async def owns_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int|None=None)->bool:
+  if lease_token is not None and (type(lease_token) is not int or lease_token<1):
+   raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
   async with c:
    cur=await c.execute("""SELECT 1 FROM platform_runs
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s
-      AND lease_expires_at>now()""",(tenant_id,run_id,worker_id))
+      AND lease_expires_at>now() AND (%s::bigint IS NULL OR lease_token=%s)""",(tenant_id,run_id,worker_id,lease_token,lease_token))
    return await cur.fetchone() is not None
 
- async def heartbeat(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60)->bool:
+ async def heartbeat(self,tenant_id:str,run_id:str,worker_id:str,*,lease_seconds:int=60,lease_token:int|None=None)->bool:
+  if lease_token is not None and (type(lease_token) is not int or lease_token<1):
+   raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_runs SET lease_expires_at=now()+(%s * interval '1 second')
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s AND lease_expires_at>now() AND status='running'
-    RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id))
+      AND (%s::bigint IS NULL OR lease_token=%s)
+    RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id,lease_token,lease_token))
    return await cur.fetchone() is not None
  async def record_workbench_failure(self,tenant_id:str,run_id:str,worker_id:str,*,error:str)->str|None:
   """Retry an owned task after failure, or atomically move exhausted work to the DLQ."""
@@ -483,11 +489,14 @@ class PostgresRunStateStore(RunStateStore):
     RETURNING run_id""",(reason,tenant_id,UUID(run_id)))
    return await cur.fetchone() is not None
 
- async def release_lease(self,tenant_id:str,run_id:str,worker_id:str)->bool:
+ async def release_lease(self,tenant_id:str,run_id:str,worker_id:str,*,lease_token:int|None=None)->bool:
+  if lease_token is not None and (type(lease_token) is not int or lease_token<1):
+   raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
   async with c:
    cur=await c.execute("""UPDATE platform_runs SET worker_id=NULL,lease_expires_at=NULL
-    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s RETURNING run_id""",(tenant_id,run_id,worker_id))
+    WHERE tenant_id=%s AND run_id=%s AND worker_id=%s
+      AND (%s::bigint IS NULL OR lease_token=%s) RETURNING run_id""",(tenant_id,run_id,worker_id,lease_token,lease_token))
    return await cur.fetchone() is not None
  async def tick_worker_heartbeat(self,worker_id:str)->None:
   """Ensure this worker is visible to ops monitoring even when idle.
