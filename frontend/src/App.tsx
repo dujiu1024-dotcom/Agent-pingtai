@@ -30,6 +30,7 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
+import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
   EmptyState,
   ErrorState,
@@ -395,7 +396,6 @@ function resolveApiPath(routePath: string): string | null {
     // Organization / RBAC / Settings（admin.py 新增）
     '/admin/organization': '/platform/v1/admin/organization',
     '/admin/access-control': '/platform/v1/admin/access-control',
-    '/admin/settings': '/platform/v1/admin/settings',
     // Metrics JSON
     '/admin/operations': '/platform/v1/observability/metrics/json',
   }
@@ -410,7 +410,6 @@ function resolveApiPath(routePath: string): string | null {
     [
       '/admin/organization',
       '/admin/access-control',
-      '/admin/settings',
     ].includes(routePath)
   )
     return null
@@ -460,6 +459,7 @@ function PageView({
       />
     )
   }
+  if (route.path === '/admin/settings') return <SystemSettingsPage config={{ auth: { enabled: authEnabled }, version: 'unknown', capabilities }} />
   if (route.path === '/workspace/overview') return <Dashboard />
   if (route.path === '/workspace/quickstart') return <QuickStartPage />
   if (route.path === '/workspace/status') return <StatusBoardPage />
