@@ -68,12 +68,46 @@ class FakeCredentialRepository:
     async def create(self, record):
         self.records[(record.tenant_id, record.credential_id)] = record
 
+    async def create_with_audit(self, record, *, audit):
+        key = (record.tenant_id, record.credential_id)
+        await self.create(record)
+        try:
+            await audit.record(
+                tenant_id=record.tenant_id, actor_id=record.created_by,
+                action="credential.created", subject_id=record.credential_id,
+                detail={"credential_type": record.credential_type,
+                        "scopes": list(record.scopes)},
+            )
+        except Exception:
+            self.records.pop(key, None)
+            raise
+
     async def get(self, *, tenant_id, credential_id):
         return self.records.get((tenant_id, credential_id))
 
     async def grant(self, grant):
         self.grants[(grant.tenant_id, grant.credential_id,
                      grant.consumer_type, grant.consumer_id)] = grant
+
+    async def grant_with_audit(self, grant, *, audit):
+        key = (grant.tenant_id, grant.credential_id,
+               grant.consumer_type, grant.consumer_id)
+        previous = self.grants.get(key)
+        await self.grant(grant)
+        try:
+            await audit.record(
+                tenant_id=grant.tenant_id, actor_id=grant.granted_by,
+                action="credential.granted", subject_id=grant.credential_id,
+                detail={"consumer_type": grant.consumer_type,
+                        "consumer_id": grant.consumer_id,
+                        "scopes": list(grant.scopes)},
+            )
+        except Exception:
+            if previous is None:
+                self.grants.pop(key, None)
+            else:
+                self.grants[key] = previous
+            raise
 
     async def get_grant(self, *, tenant_id, credential_id, consumer_type, consumer_id):
         return self.grants.get((tenant_id, credential_id, consumer_type, consumer_id))
@@ -90,6 +124,24 @@ class FakeCredentialRepository:
         self.records[key] = replace(row, revoked_at=datetime.now(timezone.utc))
         self.grants = {key: value for key, value in self.grants.items()
                        if key[:2] != (tenant_id, credential_id)}
+        return True
+
+    async def revoke_with_audit(self, *, tenant_id, credential_id, actor_id, audit):
+        key = (tenant_id, credential_id)
+        previous_record = self.records.get(key)
+        previous_grants = dict(self.grants)
+        changed = await self.revoke(tenant_id=tenant_id, credential_id=credential_id)
+        if not changed:
+            return False
+        try:
+            await audit.record(
+                tenant_id=tenant_id, actor_id=actor_id,
+                action="credential.revoked", subject_id=credential_id,
+            )
+        except Exception:
+            self.records[key] = previous_record
+            self.grants = previous_grants
+            raise
         return True
 
 
