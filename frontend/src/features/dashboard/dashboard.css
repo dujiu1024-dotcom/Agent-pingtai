@@ -355,3 +355,28 @@
   .dashboard-kpi-icon { width: 28px; height: 28px; }
   .dashboard-kpi-card strong { font-size: 19px; }
 }
+
+
+/* Home composition: KPI + trend insights above HomeWorkspace activity panels. */
+.dashboard-embedded {
+  max-width: 1500px;
+  margin: 0 auto 18px;
+  padding: 0;
+}
+.dashboard-embedded .dashboard-kpi-grid {
+  margin-bottom: 16px;
+}
+.dashboard-embedded .dashboard-trend-panel {
+  min-height: 0;
+}
+.dashboard-embedded .dashboard-chart svg {
+  max-height: 220px;
+}
+.dashboard-embedded .dashboard-data-note {
+  margin-top: 9px;
+}
+@media (max-width: 680px) {
+  .dashboard-embedded .dashboard-panel {
+    padding: 16px;
+  }
+}
