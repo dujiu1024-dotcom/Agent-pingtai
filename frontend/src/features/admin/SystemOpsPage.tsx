@@ -31,7 +31,7 @@ type SchedulerRun = {
 const endpoints = {
   metrics: '/platform/v1/observability/metrics/json',
   capacity: '/platform/v1/observability/health/capacity',
-  readiness: '/health/ready',
+  readiness: '../health/ready',
   jobs: '/platform/v1/scheduler/jobs',
   runs: '/platform/v1/scheduler/runs?limit=20',
 }
