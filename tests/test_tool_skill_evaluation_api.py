@@ -135,6 +135,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
     def test_missing_principal_is_rejected(self):
         app = FastAPI()
         app.add_middleware(ApiV1CompatibilityMiddleware)
+
         async def missing(request):
             return None
         app.include_router(create_tool_skill_evaluation_router(
@@ -188,6 +189,7 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
 
     def test_secret_bearing_probe_exception_is_not_returned_or_audited(self):
         self._publish("tool", "safe-error", {"allowlist": ["read"]})
+
         def broken_checker(actor):
             class BrokenSession:
                 async def __aenter__(self):
