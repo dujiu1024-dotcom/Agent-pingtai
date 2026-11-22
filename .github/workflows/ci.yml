@@ -133,6 +133,32 @@ jobs:
           agent_platform/resilience/__init__.py
           tests/test_offline_policy.py
 
+  hybrid-control-plane:
+    name: Hybrid control-plane handoff tests
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Ruff
+        run: python -m pip install ruff
+      - name: Run hybrid control-plane tests
+        run: python -m unittest tests.test_hybrid_control_plane -v
+      - name: Lint hybrid control-plane files
+        run: >-
+          ruff check
+          agent_platform/resilience/hybrid_control_plane.py
+          agent_platform/resilience/__init__.py
+          tests/test_hybrid_control_plane.py
+
   test:
     needs: [changes, lint, typecheck]
     if: needs.changes.outputs.platform == 'true'
