@@ -438,8 +438,10 @@ class PostgresRunStateStore(RunStateStore):
       AND (%s::bigint IS NULL OR lease_token=%s)
     RETURNING run_id""",(lease_seconds,tenant_id,run_id,worker_id,lease_token,lease_token))
    return await cur.fetchone() is not None
- async def record_workbench_failure(self,tenant_id:str,run_id:str,worker_id:str,*,error:str)->str|None:
+ async def record_workbench_failure(self,tenant_id:str,run_id:str,worker_id:str,*,error:str,lease_token:int|None=None)->str|None:
   """Retry an owned task after failure, or atomically move exhausted work to the DLQ."""
+  if lease_token is not None and (type(lease_token) is not int or lease_token<1):
+   raise ValueError("lease_token must be a positive integer")
   c=await self._connect()
   async with c:
    cur=await c.execute("""WITH updated AS (
@@ -451,6 +453,7 @@ class PostgresRunStateStore(RunStateStore):
       finished_at=CASE WHEN worker_attempts>=max_worker_attempts THEN now() ELSE NULL END,
       worker_id=NULL,lease_expires_at=NULL,version=version+1,updated_at=now()
     WHERE tenant_id=%s AND run_id=%s AND worker_id=%s
+      AND (%s::bigint IS NULL OR lease_token=%s)
       AND status NOT IN ('succeeded','failed','cancelled','timed_out')
     RETURNING tenant_id,run_id,status,worker_attempts,max_worker_attempts,last_error
    ), dead_letter AS (
@@ -464,7 +467,7 @@ class PostgresRunStateStore(RunStateStore):
       reason=EXCLUDED.reason,payload=EXCLUDED.payload,updated_at=now()
     RETURNING run_id
    )
-   SELECT status FROM updated""",(error[:500],error[:500],tenant_id,UUID(run_id),worker_id))
+   SELECT status FROM updated""",(error[:500],error[:500],tenant_id,UUID(run_id),worker_id,lease_token,lease_token))
    row=await cur.fetchone()
    return row["status"] if row is not None else None
 
