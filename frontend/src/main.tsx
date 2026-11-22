@@ -6,6 +6,7 @@ import AppProviders from '@/providers/AppProviders'
 import '@/components/design-system.css'
 import '@/theme.css'
 import '@/styles.css'
+import '@/responsive-layout.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
