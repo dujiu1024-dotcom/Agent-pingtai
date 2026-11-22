@@ -198,7 +198,8 @@ function OfficeScene({ selectedDesk, onSelectDesk }: { selectedDesk: string | nu
             </mesh>
           </group>
         ))}
-        <OfficeDecorations />\n        {desks.map((desk) => (
+        <OfficeDecorations />
+        {desks.map((desk) => (
           <Desk key={desk.id} {...desk} selected={selectedDesk === desk.id} onSelect={onSelectDesk} />
         ))}
         <group position={[-9.8, 0.45, 0]}>
@@ -249,6 +250,7 @@ export function OfficeWorkspace() {
   const runningTasks = (tasksQuery.data ?? []).filter((task) => ['running', 'executing'].includes((task.status ?? '').toLowerCase())).length
   const activeAgents = visibleAgents.filter((agent) => ['running', 'collaborating', 'waiting_approval', 'queued'].includes(agent.status)).length
   const dataUnavailable = agentsQuery.isError || tasksQuery.isError
+  const selectedDeskAgent = visibleAgents.find((agent) => agent.desk_id === selectedDesk)
 
   return (
     <main className="office-workspace">
@@ -296,7 +298,7 @@ export function OfficeWorkspace() {
             {agentsQuery.isLoading || tasksQuery.isLoading ? <div className="office-no-agents"><span>⌁</span><strong>正在读取 Agent Registry</strong><p>正在同步服务端 Agent 定义与任务执行记录。</p></div> : dataUnavailable ? <div className="office-no-agents"><span>!</span><strong>实时数据暂不可用</strong><p>无法完整读取 Agent Registry 或任务执行记录，请检查服务端 API。</p></div> : visibleAgents.length ? visibleAgents.map((agent) => <div className="office-agent-row" key={agent.agent_id}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}</small></span></div>) :
               <div className="office-no-agents"><span>⌁</span><strong>暂无匹配的 Agent</strong><p>当前 Registry 没有匹配的 Agent，或搜索条件没有结果。</p></div>}
           </div>
-          <div className="office-selected-desk">{selectedDesk ? <><span>当前选中工位</span><strong>{selectedDesk.toUpperCase()}</strong><small>尚未分配 Agent</small></> : <><span>工位详情</span><strong>选择一个工位</strong><small>点击 3D 场景中的桌面查看详情</small></>}</div>
+          <div className="office-selected-desk">{selectedDesk ? <><span>当前选中工位</span><strong>{selectedDesk.toUpperCase()}</strong><small>{selectedDeskAgent ? `Agent：${selectedDeskAgent.name} · ${statusLabels[selectedDeskAgent.status]}` : '尚未关联 Agent 数据'}</small></> : <><span>工位详情</span><strong>选择一个工位</strong><small>点击 3D 场景中的桌面查看详情</small></>}</div>
           <p className="office-api-note">状态数据：服务端 Agent Registry + Workbench Tasks API，按 60 秒 / 30 秒轮询；无任务状态的 Agent 标记为未知，不生成模拟遥测。</p>
         </aside>
       </section>
