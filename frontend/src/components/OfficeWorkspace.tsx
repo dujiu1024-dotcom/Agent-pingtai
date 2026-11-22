@@ -47,6 +47,94 @@ const taskStatus = (status = ''): AgentStatus => {
 }
 const taskTimestamp = (task: OfficeTask) => Date.parse(task.updated_at ?? task.created_at ?? '') || 0
 
+type OfficeSnapshotAgent = {
+  agent_id: string
+  name?: string
+  role?: string
+  status?: string
+  floor_id?: string
+  zone_id?: string
+  desk_id?: string
+  x?: number
+  z?: number
+  current_task?: { task_id?: string; title?: string }
+  current_run_id?: string
+  model_template?: string
+  last_active_at?: string
+}
+type OfficeSnapshotRun = {
+  run_id?: string
+  agent_id?: string
+  status?: string
+  task_id?: string
+  title?: string
+  model_template?: string
+  updated_at?: string
+  created_at?: string
+}
+type NormalizedOfficeAgent = OfficeAgent & {
+  x?: number
+  z?: number
+  task?: string
+  current_run_id?: string
+  model_template?: string
+  last_active_at?: string
+}
+
+export function normalizeOfficeAgents(snapshot: unknown): NormalizedOfficeAgent[] {
+  if (!snapshot || typeof snapshot !== 'object') return []
+  const root = snapshot as Record<string, unknown>
+  const data = root.data && typeof root.data === 'object' ? root.data as Record<string, unknown> : root
+  const rawAgents = Array.isArray(data.agents) ? data.agents as OfficeSnapshotAgent[] : []
+  const runs = Array.isArray(data.runs) ? data.runs as OfficeSnapshotRun[] : []
+  return rawAgents.map((agent) => {
+    const latest = runs.filter((run) => run.agent_id === agent.agent_id)
+      .sort((a, b) => Date.parse(b.updated_at ?? b.created_at ?? '') - Date.parse(a.updated_at ?? a.created_at ?? ''))[0]
+    const rawStatus = (latest?.status ?? agent.status ?? '').toLowerCase()
+    let status: AgentStatus = 'offline'
+    if (['running', 'executing'].includes(rawStatus)) status = 'running'
+    else if (['queued', 'pending'].includes(rawStatus)) status = 'queued'
+    else if (['collaborating'].includes(rawStatus)) status = 'collaborating'
+    else if (['waiting_approval', 'waiting_human'].includes(rawStatus)) status = 'waiting_approval'
+    else if (rawStatus === 'paused' || rawStatus === 'cancelled') status = 'paused'
+    else if (['failed', 'error', 'timed_out'].includes(rawStatus)) status = 'failed'
+    else if (['idle', 'offline'].includes(rawStatus)) status = rawStatus
+    else if (['succeeded', 'success', 'completed', 'done'].includes(rawStatus)) status = 'idle'
+    else if (latest?.ok === true) status = 'idle'
+    else if (latest?.ok === false || latest?.error) status = 'failed'
+    return {
+      agent_id: agent.agent_id,
+      name: agent.name || agent.agent_id,
+      role: agent.role || '',
+      status,
+      floor_id: agent.floor_id,
+      desk_id: agent.desk_id,
+      task_id: latest?.task_id || agent.current_task?.task_id,
+      task: latest?.title || agent.current_task?.title,
+      current_run_id: latest?.run_id || agent.current_run_id,
+      model_template: latest?.model_template || agent.model_template,
+      last_active_at: latest?.updated_at || latest?.created_at || agent.last_active_at,
+      // Position is trusted only when both finite coordinates are explicitly returned.
+      x: Number.isFinite(agent.x) ? agent.x : undefined,
+      z: Number.isFinite(agent.z) ? agent.z : undefined,
+    }
+  })
+}
+
+export function getOfficeEventStreamUrl(snapshot: unknown): string | undefined {
+  if (!snapshot || typeof snapshot !== 'object') return undefined
+  const root = snapshot as Record<string, unknown>
+  const data = root.data && typeof root.data === 'object' ? root.data as Record<string, unknown> : root
+  const events = data.events && typeof data.events === 'object' ? data.events as Record<string, unknown> : {}
+  const candidate = events.stream_url ?? data.event_stream_url
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : undefined
+}
+
+export function shouldUseOffice2DFallback(width: number, coarsePointer: boolean): boolean {
+  return width <= 760 || coarsePointer
+}
+
+
 const floors: Floor[] = [
   { id: 'floor-03', label: '03', name: '创新与协作层', description: '会议、协作与项目空间' },
   { id: 'floor-02', label: '02', name: '智能体工作层', description: 'Agent 工位与部门区域' },
@@ -269,7 +357,7 @@ export function OfficeWorkspace() {
   const selectedAgent = agents.find((agent) => agent.agent_id === selectedAgentId)
   const selectedZoneDetails = zones.find((zone) => zone.id === selectedZone)
   useEffect(() => {
-    const updateFallback = () => setUse2D(window.innerWidth <= 760 || window.matchMedia('(pointer: coarse)').matches)
+    const updateFallback = () => setUse2D(shouldUseOffice2DFallback(window.innerWidth, window.matchMedia('(pointer: coarse)').matches))
     updateFallback()
     window.addEventListener('resize', updateFallback)
     return () => window.removeEventListener('resize', updateFallback)
