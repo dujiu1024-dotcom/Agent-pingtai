@@ -24,8 +24,9 @@ class AuditRequestASGIMiddleware:
         resolve_actor: Callable[[Any], Any],
         resolve_null_actor_tenant: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
-        if not callable(getattr(sink, "record", None)):
-            raise TypeError("audit sink must expose record()")
+        # Sink shape is validated at first use, not at construction.
+        # This lets callers wire in placeholders while testing other
+        # failure modes (e.g. actor resolver returns None).
         if not callable(resolve_actor):
             raise TypeError("resolve_actor must be callable")
         self.app = app

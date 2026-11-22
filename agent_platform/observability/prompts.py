@@ -55,7 +55,7 @@ class PromptRegistry:
     def list_prompts(self, *, prefix: str, limit: int = 50) -> tuple[dict[str, object], ...]:
         """List only prompt keys under one tenant prefix; never return template contents."""
         if not isinstance(prefix, str) or not prefix.startswith("tenant:") or not prefix.endswith(":"):
-            raise ValueError("a tenant prompt prefix is required")
+            raise ValueError("tenant prompt prefix must end with a separator")
         prefix_body = prefix[len("tenant:"):-1]
         length_text, separator, tenant_id = prefix_body.partition(":")
         if (
@@ -74,11 +74,21 @@ class PromptRegistry:
             versions = self._versions[storage_key]
             if not versions:
                 continue
+            # prompt_id = storage_key stripped of the tenant prefix
+            prompt_id = storage_key[len(prefix):] if storage_key.startswith(prefix) else storage_key
+            # canary_version = second-highest version if any
+            canary = None
+            sorted_versions = sorted(versions)
+            if len(sorted_versions) >= 2:
+                canary = sorted_versions[-2]
             rows.append({
+                "prompt_id": prompt_id,
                 "storage_key": storage_key,
                 "latest_version": max(versions),
+                "canary_version": canary,
                 "active_version": self._active.get(storage_key),
                 "version_count": len(versions),
+                "versions_count": len(versions),
             })
         return tuple(rows[:limit])
 

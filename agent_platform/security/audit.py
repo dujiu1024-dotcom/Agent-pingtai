@@ -21,7 +21,7 @@ class PostgresAuditWriter:
     """Write only redacted metadata to the append-only identity audit ledger."""
 
     _ACTION = re.compile(r"[a-z][a-z0-9_.-]{1,127}")
-    _OUTCOMES = {"succeeded", "denied", "failed"}
+    _OUTCOMES = {"succeeded", "denied", "failed", "started", "skipped", "unknown"}
 
     def __init__(self, connection_factory: Any) -> None:
         self._connect = connection_factory

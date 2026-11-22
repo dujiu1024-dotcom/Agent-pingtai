@@ -42,7 +42,10 @@ and append, and cannot update, delete, or truncate either audit table.
 A successful write-ahead event proves that the attempt was authorized for
 dispatch; it does not prove the final outcome. A missing completion event is
 therefore an explicit reconciliation condition, not permission to repeat the
-external action. Retry is allowed only when the operation's own idempotency
+external action. A side effect that leaves the audit ledger without a
+completion event must not be retried automatically; it becomes an explicit
+reconciliation condition, not permission to repeat the external action.
+Retry is allowed only when the operation's own idempotency
 contract proves that repeating it cannot duplicate the effect.
 
 ## Verification boundary

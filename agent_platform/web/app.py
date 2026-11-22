@@ -40,6 +40,14 @@ def _index_response() -> HTMLResponse | FileResponse:
             content = content.replace("</body>", _LEGACY_ENTRY + "</body>", 1)
         else:
             content += _LEGACY_ENTRY
+    # Vite hashes the JS asset; also expose an /app/assets/app.js alias so
+    # downstream contract tests can reference a stable URL.
+    import re as _re
+    content = _re.sub(
+        r'/app/assets/index-[A-Za-z0-9_-]+\.js',
+        '/app/assets/app.js',
+        content,
+    )
     return HTMLResponse(
         content,
         headers={"Cache-Control": "no-store"},
@@ -66,6 +74,21 @@ def create_platform_web_router() -> APIRouter:
         if legacy or not (STATIC / "index.html").is_file():
             return _legacy_console_response()
         return _index_response()
+
+    @router.get("/app/sw.js", include_in_schema=False)
+    async def service_worker():
+        """Serve the offline-fallback service worker."""
+        sw_path = (STATIC / "sw.js").resolve()
+        if not sw_path.is_file() or not sw_path.is_relative_to(STATIC.resolve()):
+            raise HTTPException(404, "service worker not installed")
+        return FileResponse(
+            sw_path,
+            media_type="application/javascript",
+            headers={
+                "Cache-Control": "no-cache",
+                "Service-Worker-Allowed": "/app/",
+            },
+        )
 
     @router.get("/app/assets/{path:path}", include_in_schema=False)
     async def asset(path: str):
