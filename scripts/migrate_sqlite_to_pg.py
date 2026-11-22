@@ -267,15 +267,118 @@ if __name__ == "__main__":
 def dry_run(src, dst, config=None):
     """Run the parity migration checker in dry-run mode.
 
-    Returns migration plan with parity analysis. Stub augmented for tests
-    that import this script as a module.
+    Reads source SQLite and target JSONL snapshots, compares row-level parity
+    per business chain defined in the mapping config, and returns a report.
+    Raises ValueError for invalid input.
     """
-    # Test-facing parity result structure
+    import sqlite3
+    from hashlib import sha256
+
+    src_path = Path(src) if src else None
+    dst_path = Path(dst) if dst else None
+    mapping_path = Path(config) if config else None
+
+    # --- Load & validate mapping ---
+    if mapping_path is None or not mapping_path.is_file():
+        return {"matched": False, "error": "mapping config is required"}
+
+    mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
+
+    # Sensitive column rejection
+    sensitive = {"api_token", "secret", "password", "private_key", "credential"}
+    for chain in mapping.get("chains", []):
+        for table in chain.get("tables", []):
+            for src_col, dst_col in table.get("columns", {}).items():
+                if src_col.lower() in sensitive or (isinstance(dst_col, str) and dst_col.lower() in sensitive):
+                    raise ValueError(f"sensitive columns cannot be mapped: {src_col}")
+
+    # Target symlink / missing file check
+    if dst_path is None or not dst_path.exists():
+        raise ValueError(f"target must be a regular, non-symlink file: {dst_path}")
+    if dst_path.is_symlink():
+        raise ValueError(f"target must be a regular, non-symlink file: {dst_path}")
+
+    # Duplicate primary key check on target JSONL files
+    all_source_rows = []
+    all_target_rows = []
+    chain_reports = []
+
+    with sqlite3.connect(str(src_path)) as db:
+        db.row_factory = sqlite3.Row
+        for chain in mapping.get("chains", []):
+            chain_name = chain.get("name", "unnamed")
+            tables = chain.get("tables", [])
+            for table in tables:
+                src_table = table.get("source_table", "")
+                tgt_table = table.get("target_table", src_table)
+                tgt_file = table.get("target_file", f"{tgt_table}.jsonl")
+                pkey = table.get("key", "id")
+
+                # --- Source read ---
+                cur = db.execute(f"SELECT * FROM {src_table}")
+                src_rows = [dict(r) for r in cur.fetchall()]
+                all_source_rows.extend(src_rows)
+
+                # --- Target file validation ---
+                tpath = dst_path / tgt_file
+                if not tpath.exists() or tpath.is_symlink():
+                    raise ValueError(f"target must be a regular, non-symlink file: {tpath}")
+
+                # Duplicate PK check
+                seen_pks = set()
+                tgt_rows = []
+                for line in tpath.read_text(encoding="utf-8").strip().split("\n"):
+                    if not line:
+                        continue
+                    row = json.loads(line)
+                    pk_val = row.get(pkey)
+                    if pk_val in seen_pks:
+                        raise ValueError(f"duplicate primary key {pkey}={pk_val} in {tgt_file}")
+                    seen_pks.add(pk_val)
+                    tgt_rows.append(row)
+                all_target_rows.extend(tgt_rows)
+
+                # --- Parity check ---
+                src_by_pk = {r[pkey]: r for r in src_rows}
+                tgt_by_pk = {r[pkey]: r for r in tgt_rows}
+
+                missing_in_target = sum(1 for pk in src_by_pk if pk not in tgt_by_pk)
+                extra_in_target = sum(1 for pk in tgt_by_pk if pk not in src_by_pk)
+                changed = sum(1 for pk in src_by_pk if pk in tgt_by_pk and src_by_pk[pk] != tgt_by_pk[pk])
+
+                src_checksum = sha256(
+                    json.dumps(src_rows, sort_keys=True, default=str).encode()
+                ).hexdigest()
+                tgt_checksum = sha256(
+                    json.dumps(tgt_rows, sort_keys=True, default=str).encode()
+                ).hexdigest()
+
+                chain_reports.append({
+                    "chain": chain_name,
+                    "table": tgt_table,
+                    "matched": src_checksum == tgt_checksum,
+                    "source_checksum": src_checksum,
+                    "target_checksum": tgt_checksum,
+                    "missing_in_target": missing_in_target,
+                    "extra_in_target": extra_in_target,
+                    "changed_rows": changed,
+                })
+
+    total_missing = sum(r["missing_in_target"] for r in chain_reports)
+    total_extra = sum(r["extra_in_target"] for r in chain_reports)
+    total_changed = sum(r["changed_rows"] for r in chain_reports)
+    all_matched = total_missing == 0 and total_extra == 0 and total_changed == 0
+
     return {
-        "matched": [],
-        "added": [],
-        "removed": [],
-        "changed": [],
-        "parity": True,
-        "errors": [],
+        "matched": all_matched,
+        "writes_performed": False,
+        "postgres_connection_opened": False,
+        "business_chains": len(mapping.get("chains", [])),
+        "tables": sum(len(c.get("tables", [])) for c in mapping.get("chains", [])),
+        "rows_source": len(all_source_rows),
+        "rows_target": len(all_target_rows),
+        "missing_in_target": total_missing,
+        "extra_in_target": total_extra,
+        "changed_rows": total_changed,
+        "chain_reports": chain_reports,
     }
