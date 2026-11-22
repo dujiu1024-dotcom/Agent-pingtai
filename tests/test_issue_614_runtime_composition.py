@@ -272,5 +272,78 @@ class ProductionEntrypointWiringTests(unittest.TestCase):
 
 
 
+class DedicatedProductionWorkerEntrypointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_starts_and_stops_run_and_outbox_workers_and_closes_root_redis(self):
+        from unittest.mock import patch
+
+        from agent_platform.worker import run_worker
+
+        calls = []
+
+        class FakeRunWorker:
+            async def start(self):
+                calls.append("run.start")
+
+            async def stop(self):
+                calls.append("run.stop")
+
+        class FakeOutboxWorker:
+            async def start(self):
+                calls.append("outbox.start")
+
+            async def stop(self):
+                calls.append("outbox.stop")
+
+        class FakeTransport:
+            def __init__(self, url):
+                self.url = url
+
+        class FakeRedis:
+            async def aclose(self):
+                calls.append("redis.close")
+
+        production_app = SimpleNamespace(
+            state=SimpleNamespace(
+                production_settings=SimpleNamespace(
+                    postgres_dsn="postgresql://platform@db/platform",
+                    redis_url="redis://redis:6379/0",
+                ),
+                run_execution=SimpleNamespace(task_worker=FakeRunWorker()),
+                redis_client=FakeRedis(),
+            )
+        )
+        stop_event = __import__("asyncio").Event()
+        stop_event.set()
+
+        with (
+            patch("agent_platform.worker.RedisStreamsTransport", FakeTransport),
+            patch("agent_platform.worker.PostgresOutboxStore"),
+            patch("agent_platform.worker.PostgresAuditWriter"),
+            patch("agent_platform.worker.OutboxRelayWorker", return_value=FakeOutboxWorker()),
+        ):
+            await run_worker(production_app=production_app, stop_event=stop_event)
+
+        self.assertEqual(
+            calls,
+            ["run.start", "outbox.start", "outbox.stop", "run.stop", "redis.close"],
+        )
+
+    async def test_fails_closed_when_trusted_run_builder_is_missing(self):
+        from agent_platform.worker import run_worker
+
+        production_app = SimpleNamespace(
+            state=SimpleNamespace(
+                production_settings=SimpleNamespace(
+                    postgres_dsn="postgresql://platform@db/platform",
+                    redis_url="redis://redis:6379/0",
+                ),
+                run_execution=None,
+                redis_client=None,
+            )
+        )
+        with self.assertRaisesRegex(RuntimeError, "trusted production Run execution builder"):
+            await run_worker(production_app=production_app, stop_event=__import__("asyncio").Event())
+
+
 if __name__ == "__main__":
     unittest.main()
