@@ -424,6 +424,21 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             job = await cur.fetchone()
             self.assertEqual(job["status"], "pending")
             self.assertEqual(job["attempts"], 0)
+            await conn.execute(
+                "UPDATE platform_memory_deletion_jobs SET status='dead', last_error_code='TimeoutError' WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            await conn.commit()
+        # A repeated DELETE revives a terminal job after an operator/user retry.
+        self.assertTrue(await self.memory.forget(principal=principal, memory_id=candidate.memory_id))
+        async with await self.connect() as conn:
+            cur = await conn.execute(
+                "SELECT status, attempts FROM platform_memory_deletion_jobs WHERE tenant_id=%s AND memory_id=%s",
+                (self.tenant_id, candidate.memory_id),
+            )
+            job = await cur.fetchone()
+            self.assertEqual(job["status"], "retry")
+            self.assertEqual(job["attempts"], 0)
             cur = await conn.execute(
                 "SELECT status, deleted_at FROM platform_memories WHERE tenant_id=%s AND memory_id=%s",
                 (self.tenant_id, candidate.memory_id),
