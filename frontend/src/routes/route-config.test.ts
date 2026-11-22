@@ -183,18 +183,21 @@ describe('route configuration', () => {
     ).toBe('provider-7')
   })
 
-  it('wires the files workspace route and assigns list/detail ownership to #802', () => {
+  it('mounts the unified Session/File workbench for list and detail routes owned by #762', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
     const fileDetailRoute = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
+    const conversationRoute = pageRoutes.find((route) => route.path === '/operations/conversations')
+    const conversationDetail = detailRoutes.find((route) => route.path === '/operations/conversations/:conversationId')
 
-    expect(filesRoute?.owner).toBe('#802')
+    expect(filesRoute?.owner).toBe('#762')
     expect(filesRoute?.authOnly).toBeUndefined()
-    expect(fileDetailRoute?.owner).toBe('#802')
+    expect(fileDetailRoute?.owner).toBe('#762')
     expect(fileDetailRoute?.authOnly).toBeUndefined()
-    expect(
-      matchRoutes(routeObjects, '/operations/files/asset-123')?.[0].params.fileId,
-    ).toBe('asset-123')
+    expect(conversationRoute?.owner).toBe('#762')
+    expect(conversationDetail?.owner).toBe('#762')
+    expect(matchRoutes(routeObjects, '/operations/files/asset-123')?.[0].params.fileId).toBe('asset-123')
+    expect(matchRoutes(routeObjects, '/operations/conversations/session-123')?.[0].params.conversationId).toBe('session-123')
   })
   it('registers Skills list and detail routes under #806', () => {
     const routes = [...pageRoutes, ...detailRoutes]
