@@ -358,14 +358,14 @@ const Badge: React.FC<{ status?: string; children: React.ReactNode }> = ({ statu
   <span className={`ctl-badge ${statusClass(status)}`}>{children}</span>
 )
 
-export function AgentCollaborationCenter() {
+export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?: string } = {}) {
   const queryClient = useQueryClient()
   const { session } = useAuth()
   const ownerId = session?.user?.user_id ?? ''
   const ownerName = session?.user?.display_name || session?.user?.email?.split('@')[0] || ''
   const [scope, setScope] = useState('')
   const [scopeId, setScopeId] = useState('')
-  const [runId, setRunId] = useState('')
+  const [runId, setRunId] = useState(initialRunId)
   const [selectedEntry, setSelectedEntry] = useState('')
   const [kind, setKind] = useState('')
   const [tab, setTab] = useState<'team' | 'runtime' | 'blackboard'>('team')
@@ -377,6 +377,7 @@ export function AgentCollaborationCenter() {
   // 筛选条件变化时重置到第一页
   useEffect(() => { setBbPage(0) }, [scope, scopeId, kind])
   // 切换运行时重置事件分页
+  useEffect(() => { setRunId(initialRunId) }, [initialRunId])
   useEffect(() => { setEvPage(0) }, [runId])
   const [liveRefresh, setLiveRefresh] = useState(false)
   const [liveRunEvents, setLiveRunEvents] = useState<RecordValue[]>([])
