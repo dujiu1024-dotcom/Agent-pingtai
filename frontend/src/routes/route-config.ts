@@ -694,7 +694,7 @@ export function getRouteBreadcrumbs(pathname: string): BreadcrumbItem[] {
   }
 
   const crumbs: BreadcrumbItem[] = [{ label: section.label, path: section.path }]
-  const currentLabel = subpage?.label ?? route?.title
+  const currentLabel = route?.parentPath ? route.title : subpage?.label ?? route?.title
   const currentPath = subpage?.path
   if (currentLabel && (currentLabel !== section.label || route?.parentPath)) {
     if (route?.parentPath && currentPath !== route.parentPath) {
@@ -704,7 +704,7 @@ export function getRouteBreadcrumbs(pathname: string): BreadcrumbItem[] {
       if (parent) crumbs.push({ label: parent.title, path: parent.path })
     }
     const entityId = route?.entityIdParam
-      ? decodeURIComponent(pathname.split('/').filter(Boolean).at(-1) ?? '')
+      ? decodeURIComponent(pathname.split('/').filter(Boolean).slice(-1)[0] ?? '')
       : ''
     crumbs.push({ label: entityId ? `${currentLabel} · ${entityId}` : currentLabel })
   }
