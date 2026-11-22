@@ -30,6 +30,7 @@ import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
 import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
 import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
+import { SkillsPage } from '@/features/admin/SkillsPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -310,6 +311,7 @@ function RouteGuard({
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/files') return <FilesWorkspace authEnabled={authEnabled} />
   if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
+  if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   if (route.path.startsWith('/admin/models/routing')) return <ModelsManagementPage authEnabled={authEnabled} />

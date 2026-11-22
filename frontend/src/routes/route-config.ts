@@ -238,7 +238,7 @@ export const pageRoutes: PageRoute[] = [
     title: 'Skills',
     section: '平台管理',
     description: 'Skill 管理入口。',
-    owner: '#749',
+    owner: '#806',
   },
   {
     path: '/admin/organization',
@@ -393,7 +393,7 @@ export const detailRoutes: PageRoute[] = [
     description: 'Skill 唯一详情路由。',
     parentPath: '/admin/skills',
     entityIdParam: 'skillId',
-    owner: '#749',
+    owner: '#806',
   },
   {
     path: '/admin/agents/:agentId',
