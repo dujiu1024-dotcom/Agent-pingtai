@@ -48,6 +48,7 @@ import {
   pageRoutes,
   getNavigationSections,
   getRouteBreadcrumbs,
+  getAuthEntryRedirect,
 } from '@/routes/route-config'
 import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
@@ -136,10 +137,10 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                 key={route.pageId}
                 path={route.path}
                 element={
-                  config.auth.enabled ? (
-                    <AuthEntryPage route={route} />
+                  getAuthEntryRedirect(config.auth.enabled) ? (
+                    <Navigate to={getAuthEntryRedirect(config.auth.enabled)!} replace />
                   ) : (
-                    <Navigate to="/workspace/overview" replace />
+                    <AuthEntryPage route={route} />
                   )
                 }
               />
