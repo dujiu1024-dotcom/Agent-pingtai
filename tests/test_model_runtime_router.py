@@ -201,7 +201,10 @@ class ModelRuntimeRouterTests(unittest.IsolatedAsyncioTestCase):
             transport=transport,
             circuit_breaker=breaker,
         )
-        with self.assertRaisesRegex(ModelRoutingError, "all pinned model routes failed"):
+        with self.assertRaisesRegex(
+            ModelRoutingError,
+            r"all pinned model routes failed: CircuitOpenError: model provider circuit is open",
+        ):
             await router.complete(
                 snapshot=self.snapshot(), tenant_id="tenant-a", run_id="run-breaker",
                 template_id="primary", messages=({"role": "user", "content": "hello"},),
