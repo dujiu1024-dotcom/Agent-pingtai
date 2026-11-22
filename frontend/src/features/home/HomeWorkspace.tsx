@@ -165,7 +165,7 @@ function PopularAgents() {
   })
   const tasksQuery = useQuery({
     queryKey: ['home-workspace', 'tasks'],
-    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
     refetchInterval: 15_000,
     retry: false,
   })
@@ -198,7 +198,7 @@ function PopularAgents() {
 function ActivityFeed({ authEnabled }: { authEnabled: boolean }) {
   const tasksQuery = useQuery({
     queryKey: ['home-workspace', 'tasks'],
-    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    queryFn: () => apiClient.get<unknown>('/platform/v1/workbench/tasks'),
     refetchInterval: 15_000,
     retry: false,
   })
