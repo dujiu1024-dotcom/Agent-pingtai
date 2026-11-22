@@ -39,6 +39,7 @@ import { ApprovalDetailPage } from '@/features/approvals/ApprovalDetailPage'
 import { GenericListPage } from '@/components/GenericListPage'
 import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
 import { SkillsPage } from '@/features/admin/SkillsPage'
+import { ToolSkillResourcePage } from '@/features/resources/ToolSkillResourcePage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -373,12 +374,14 @@ function RouteGuard({
   if (route.path === '/operations/conversations' || route.path === '/operations/conversations/:conversationId') return <SessionFileWorkbench view="sessions" />
   if (route.path === '/operations/files' || route.path === '/operations/files/:fileId') return <SessionFileWorkbench view="files" />
   if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
-  if (route.path === '/admin/skills' || route.path === '/admin/skills/:skillId') return <SkillsPage />
+  if (route.path === '/admin/skills') return <SkillsPage />
+  if (route.path === '/admin/skills/:skillId') return <ToolSkillResourcePage kind="skill" />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   const adminPage = resolveAdminPage(route.path, authEnabled)
   if (adminPage) return adminPage
-  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
+  if (route.path === '/admin/tools') return <ToolsRegistryPage />
+  if (route.path === '/admin/tools/:toolId') return <ToolSkillResourcePage kind="tool" />
   return (
     <section className="page-content">
       <div className="page-heading">
