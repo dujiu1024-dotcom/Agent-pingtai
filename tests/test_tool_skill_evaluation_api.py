@@ -166,7 +166,16 @@ class ToolSkillEvaluationApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.probe_calls, [])
-        self.assertEqual(self.audit.events, [])
+        self.assertEqual([event["outcome"] for event in self.audit.events], ["denied"])
+
+    def test_caller_cannot_override_endpoint_or_credentials(self):
+        self._publish("tool", "no-override", {"allowlist": ["read"]})
+        response = self.client.post(
+            "/api/v1/tools/no-override/test-connection",
+            json={"version": 2, "endpoint": "https://attacker.invalid", "secret": "do-not-use"},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.probe_calls, [])
 
     def test_audit_failure_fails_closed_before_probe(self):
         self._publish("tool", "audit-tool", {"allowlist": ["read"]})
