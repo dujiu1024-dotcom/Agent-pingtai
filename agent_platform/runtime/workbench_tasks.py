@@ -1101,7 +1101,11 @@ class RunExecutionWorker:
                 lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
                 current = await self.run_store.get(tenant_id, run_id)
                 if current and current.status == RunStatus.CANCELLING:
-                    await lifecycle.finish(tenant_id, run_id, RunStatus.CANCELLED)
+                    token_context = set_worker_lease_token(snapshot.lease_token)
+                    try:
+                        await lifecycle.finish(tenant_id, run_id, RunStatus.CANCELLED)
+                    finally:
+                        reset_worker_lease_token(token_context)
                 elif current and current.status not in {
                     RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.TIMED_OUT,
                 }:
