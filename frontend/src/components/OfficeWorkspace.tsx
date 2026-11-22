@@ -4,7 +4,8 @@ import { Canvas, useFrame } from '@react-three/fiber'
 /// <reference types="@react-three/fiber" />
 import { Detailed, Html, OrbitControls } from '@react-three/drei'
 import type { Group } from 'three'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { createEventBus } from '@/lib/events'
 
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { apiClient } from '@/lib/api/api-client'
@@ -54,7 +55,8 @@ type OfficeSnapshot = {
   floors?: Array<Partial<Floor> & { id: string }>
   zones?: Array<{ id: string; name?: string; label?: string; x?: number; z?: number; width?: number; depth?: number }>
   desks?: Array<{ id: string; floor_id?: string; x?: number; z?: number; zone_id?: string }>
-  events?: { pending?: number }
+  events?: { pending?: number; stream_url?: string }
+  event_stream_url?: string
 }
 type OfficeAgent = {
   agent_id: string
@@ -67,6 +69,11 @@ type OfficeAgent = {
   x?: number
   z?: number
   task?: string
+  current_run_id?: string
+  model_template?: string
+  team?: string
+  department?: string
+  last_active_at?: string
 }
 type DeskLayout = { id: string; x: number; z: number; floor_id?: string; zone_id?: string }
 
@@ -97,7 +104,23 @@ const statusColors: Record<AgentStatus, string> = {
   waiting_approval: '#e2a33c', paused: '#9a88d5', failed: '#d86d78', offline: '#9aa5b8',
 }
 const validStatus = (value: unknown): AgentStatus | undefined =>
-  typeof value === 'string' && value in statusLabels ? value as AgentStatus : undefined
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(statusLabels, value)
+    ? value as AgentStatus
+    : undefined
+
+function statusFromRun(run?: OfficeRun): AgentStatus | undefined {
+  if (!run) return undefined
+  const status = run.status?.toLowerCase()
+  if (status === 'succeeded' || status === 'completed') return 'idle'
+  if (status === 'timed_out' || status === 'interrupted') return 'failed'
+  if (status === 'cancelled') return 'paused'
+  return validStatus(status) ?? (run.error ? 'failed' : run.ok === true ? 'idle' : undefined)
+}
+
+export function getOfficeEventStreamUrl(snapshot?: OfficeSnapshot): string | undefined {
+  const value = snapshot?.events?.stream_url ?? snapshot?.event_stream_url
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
 
 function latestRunFor(agent: OfficeAgentPayload, runs: OfficeRun[]): OfficeRun | undefined {
   const id = agent.agent_id ?? agent.id
@@ -111,8 +134,8 @@ export function normalizeOfficeAgents(snapshot: OfficeSnapshot): OfficeAgent[] {
   return (snapshot.agents ?? []).map((agent, index) => {
     const run = latestRunFor(agent, snapshot.runs ?? [])
     const status = validStatus(agent.status ?? agent.current_status ?? agent.state)
-      ?? validStatus(run?.status)
-      ?? (run?.error ? 'failed' : run?.ok === true ? 'idle' : 'offline')
+      ?? statusFromRun(run)
+      ?? 'offline'
     const position = agent.position
     const currentTask = typeof agent.current_task === 'string'
       ? agent.current_task
@@ -128,6 +151,11 @@ export function normalizeOfficeAgents(snapshot: OfficeSnapshot): OfficeAgent[] {
       x: typeof position?.x === 'number' ? position.x : typeof agent.x === 'number' ? agent.x : undefined,
       z: typeof position?.z === 'number' ? position.z : typeof agent.z === 'number' ? agent.z : undefined,
       task: currentTask,
+      current_run_id: run?.run_id ?? run?.id,
+      model_template: run?.model,
+      team: typeof agent.team === 'string' ? agent.team : undefined,
+      department: typeof agent.department === 'string' ? agent.department : undefined,
+      last_active_at: typeof agent.last_active_at === 'string' ? agent.last_active_at : undefined,
     }
   })
 }
@@ -254,6 +282,7 @@ export function OfficeWorkspace() {
   const [selectedDesk, setSelectedDesk] = useState<string | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const queryClient = useQueryClient()
   const snapshot = useQuery({
     queryKey: ['office-state'],
     queryFn: () => apiClient.get<{ ok: boolean; data: OfficeSnapshot }>('/platform/v1/office/state'),
@@ -261,6 +290,20 @@ export function OfficeWorkspace() {
     retry: false,
   })
   const data = snapshot.data?.data
+  const eventStreamUrl = getOfficeEventStreamUrl(data)
+  useEffect(() => {
+    if (!eventStreamUrl) return
+    const bus = createEventBus({ url: eventStreamUrl, credentials: 'same-origin' })
+    const unsubscribe = bus.subscribe(() => {
+      // Reconcile from the authoritative snapshot; do not synthesize state from event payloads.
+      void queryClient.invalidateQueries({ queryKey: ['office-state'] })
+    })
+    bus.start()
+    return () => {
+      unsubscribe()
+      bus.stop()
+    }
+  }, [eventStreamUrl, queryClient])
   const floors = data?.floors?.length ? data.floors.map((floor, index) => ({
     id: floor.id, label: floor.label ?? String(data.floors!.length - index).padStart(2, '0'),
     name: floor.name ?? floor.id, description: floor.description ?? '',
@@ -279,7 +322,13 @@ export function OfficeWorkspace() {
   const pendingEvents = data?.events?.pending
   const selected = agents.find((agent) => agent.agent_id === selectedAgent)
   const selectedDeskInfo = desks.find((desk) => desk.id === selectedDesk)
-  const apiState = snapshot.isPending ? '正在连接 Office 服务' : snapshot.isError ? 'Office 服务连接失败' : '实时状态已同步'
+  const apiState = snapshot.isPending
+    ? '正在连接 Office 服务'
+    : snapshot.isError
+      ? 'Office 服务连接失败'
+      : eventStreamUrl
+        ? '事件驱动 · 快照校准'
+        : '快照轮询 · 等待事件流'
 
   return (
     <main className="office-workspace">
@@ -333,7 +382,7 @@ export function OfficeWorkspace() {
             {snapshot.isPending ? <LoadingState label="正在读取 Agent 实时状态" /> : snapshot.isError ? <ErrorState title="Office 状态读取失败" description={snapshot.error instanceof Error ? snapshot.error.message : 'Office 快照请求失败'} onRetry={() => void snapshot.refetch()} /> : visibleAgents.length ? visibleAgents.map((agent) => <button type="button" className={selectedAgent === agent.agent_id ? 'office-agent-row selected' : 'office-agent-row'} key={agent.agent_id} onClick={() => setSelectedAgent(agent.agent_id)}><span className={`office-agent-status status-${agent.status}`} /><span><strong>{agent.name}</strong><small>{agent.role} · {statusLabels[agent.status]}{agent.task ? ` · ${agent.task}` : ''}</small></span></button>) : <EmptyState title="暂无实时 Agent 数据" description="服务端快照返回 Agent 后会在此显示；不会用演示数据填充。" />}
           </div>
           <div className="office-selected-desk">{selected ? <><span>当前 Agent</span><strong>{selected.name}</strong><small>{statusLabels[selected.status]} · {selected.task ?? selected.agent_id}</small></> : selectedDeskInfo ? <><span>当前选中工位</span><strong>{selectedDeskInfo.id.toUpperCase()}</strong><small>{selectedDeskInfo.zone_id ?? '尚未关联 Agent'}</small></> : <><span>空间详情</span><strong>选择一个工位或 Agent</strong><small>在 3D 场景中交互查看详情</small></>}</div>
-          <p className="office-api-note">数据源：/platform/v1/office/state · 10 秒轮询。缺少位置元数据的 Agent 仍会列在侧栏，但不会被错误放置到虚构工位。</p>
+          <p className="office-api-note">数据源：/platform/v1/office/state · 10 秒快照校准{eventStreamUrl ? ' + 服务端事件流' : '（服务端尚未提供 events.stream_url，暂用轮询）'}。缺少位置元数据的 Agent 仍会列在侧栏，但不会被错误放置到虚构工位。</p>
         </aside>
       </section>
     </main>
