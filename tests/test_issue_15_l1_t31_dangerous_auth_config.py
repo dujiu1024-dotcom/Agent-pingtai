@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import os
 import unittest
+from unittest.mock import patch
 
+from agent_platform.production import create_production_app
+from agent_platform.production_config import ProductionSettings
 from agent_platform.production_config import (
     ProductionConfigurationError,
     load_production_settings,
@@ -23,6 +27,16 @@ class DangerousProductionAuthConfigurationTests(unittest.TestCase):
             "AUTH_SECRET": "a" * 48,
         })
         self.assertEqual(settings.allowed_origins, ("https://platform.example.com",))
+
+    def test_production_composition_rejects_auth_disabled_even_with_injected_settings(self):
+        settings = ProductionSettings(
+            postgres_dsn="postgresql://platform@db/platform",
+            redis_url="redis://redis:6379/0",
+            allowed_origins=("https://platform.example.com",),
+        )
+        with patch.dict(os.environ, {"AUTH_ENABLED": "false"}, clear=True):
+            with self.assertRaisesRegex(ProductionConfigurationError, "AUTH_ENABLED"):
+                create_production_app(settings=settings)
 
     def test_authentication_cannot_be_disabled_or_misconfigured(self):
         for value in ("false", "0", "no", "off", "invalid"):
