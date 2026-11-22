@@ -40,10 +40,11 @@ const listFrom = <T,>(value: unknown): T[] => {
 const taskStatus = (status = ''): AgentStatus => {
   const value = status.toLowerCase()
   if (['running', 'executing'].includes(value)) return 'running'
+  if (value === 'collaborating') return 'collaborating'
   if (['waiting_approval', 'waiting_human'].includes(value)) return 'waiting_approval'
   if (['queued', 'pending'].includes(value)) return 'queued'
-  if (value === 'paused') return 'paused'
-  if (['failed', 'error'].includes(value)) return 'failed'
+  if (['paused', 'cancelled'].includes(value)) return 'paused'
+  if (['failed', 'error', 'timed_out'].includes(value)) return 'failed'
   if (['succeeded', 'success', 'completed', 'done'].includes(value)) return 'idle'
   return 'unknown'
 }
