@@ -189,6 +189,106 @@ function fixtureForPath(path: string): DemoFixture {
     id, item_id: id, name, title: name, display_name: name, status,
     description: name + ' · 本地演示样例', created_at: now, updated_at: now,
   })
+  if (path.endsWith('/observability/metrics') && !path.endsWith('/metrics/json')) {
+    return { __text: '# HELP http_requests_total Total HTTP requests\n# TYPE http_requests_total counter\nhttp_requests_total{method="GET"} 128430\n# HELP scheduler_jobs_active Active scheduler jobs\n# TYPE scheduler_jobs_active gauge\nscheduler_jobs_active 2\n# HELP process_resident_memory_bytes Resident memory\nprocess_resident_memory_bytes 268435456\n' }
+  }
+  if (path.includes('/graph/extractions')) return {
+    items: [{
+      job_id: 'graph-extraction-001', status: 'succeeded', total: 12, processed: 12,
+      entity_count: 38, relation_count: 24, skipped: 0, error: null,
+      created_at: now, updated_at: now,
+    }], total: 1, count: 1,
+  }
+  if (path.includes('/graph/entities/') && path.includes('/neighbors')) {
+    const entities = [
+      { entity_id: 'entity-product', entity_type: 'concept', name: '产品平台', attributes: { domain: '产品' }, project_id: 'project-demo', source_ref: null },
+      { entity_id: 'entity-agent', entity_type: 'concept', name: '智能体', attributes: { domain: 'Agent' }, project_id: 'project-demo', source_ref: null },
+      { entity_id: 'entity-workflow', entity_type: 'concept', name: '工作流', attributes: { domain: '流程' }, project_id: 'project-demo', source_ref: null },
+    ]
+    return { entities, relations: [
+      { relation_id: 'rel-001', relation_type: 'contains', source_entity_id: 'entity-product', target_entity_id: 'entity-agent', project_id: 'project-demo', attributes: {} },
+      { relation_id: 'rel-002', relation_type: 'orchestrates', source_entity_id: 'entity-agent', target_entity_id: 'entity-workflow', project_id: 'project-demo', attributes: {} },
+    ], truncated: false, visited_count: 3 }
+  }
+  if (path.includes('/graph/entities')) return {
+    items: [
+      { entity_id: 'entity-product', entity_type: 'concept', name: '产品平台', attributes: { domain: '产品', owner: '产品团队' }, project_id: 'project-demo', source_ref: null },
+      { entity_id: 'entity-agent', entity_type: 'concept', name: '智能体', attributes: { domain: 'Agent', count: 12 }, project_id: 'project-demo', source_ref: null },
+      { entity_id: 'entity-workflow', entity_type: 'concept', name: '工作流', attributes: { domain: '流程', count: 8 }, project_id: 'project-demo', source_ref: null },
+    ], limit: 50,
+  }
+  if (path.includes('/graph/metrics')) return {
+    query: '智能体', sampled: 3, entity_count: 3, relation_count: 2,
+    isolated_entity_count: 0, isolated_entity_ratio: 0, relation_density: 0.67,
+    active_subgraph_count: 1, truncated: false,
+  }
+  if (path.endsWith('/memories/candidates')) return {
+    items: [
+      { memory_id: 'memory-candidate-001', scope: 'project', scope_id: 'project-demo', content: '平台采用模块化 Agent 协作架构', source_ref: 'session-001', confidence: 0.96, conflict_key: null, status: 'candidate', version: 1 },
+      { memory_id: 'memory-candidate-002', scope: 'user', scope_id: 'user-demo', content: '偏好使用中文进行项目沟通', source_ref: 'session-002', confidence: 0.93, conflict_key: null, status: 'candidate', version: 1 },
+      { memory_id: 'memory-conflict-001', scope: 'project', scope_id: 'project-demo', content: '默认部署环境为容器集群', source_ref: 'session-003', confidence: 0.82, conflict_key: 'deployment-target', status: 'conflict', version: 2 },
+      { memory_id: 'memory-conflict-002', scope: 'project', scope_id: 'project-demo', content: '默认部署环境为虚拟机', source_ref: 'session-004', confidence: 0.78, conflict_key: 'deployment-target', status: 'conflict', version: 1 },
+    ], total: 4,
+  }
+  if (path.endsWith('/memories/export')) return {
+    items: [
+      { memory_id: 'memory-active-001', scope: 'project', scope_id: 'project-demo', content: '平台采用模块化 Agent 协作架构', status: 'active' },
+      { memory_id: 'memory-active-002', scope: 'user', scope_id: 'user-demo', content: '偏好使用中文进行项目沟通', status: 'active' },
+    ], total: 2,
+  }
+  if (path.includes('/memories/conflicts/resolve') || /\/memories\/[^/]+\/(confirm|archive)$/.test(path)) {
+    return { memory_id: 'memory-active-001', status: 'active', version: 2, ok: true }
+  }
+  if (path.includes('/memories')) return {
+    items: [
+      { memory_id: 'memory-active-001', scope: 'project', scope_id: 'project-demo', content: '平台采用模块化 Agent 协作架构', source_ref: 'session-001', confidence: 0.96, conflict_key: null, status: 'active', version: 2, expires_at: null },
+      { memory_id: 'memory-active-002', scope: 'user', scope_id: 'user-demo', content: '偏好使用中文进行项目沟通', source_ref: 'session-002', confidence: 0.93, conflict_key: null, status: 'active', version: 1, expires_at: null },
+      { memory_id: 'memory-active-003', scope: 'agent', scope_id: 'agent-orchestrator', content: '任务拆分后由专职 Agent 执行', source_ref: 'session-003', confidence: 0.89, conflict_key: null, status: 'archived', version: 1, expires_at: null },
+    ], total: 3,
+  }
+  if (path.includes('/observability/evaluations/') && path.endsWith('/scores')) return {
+    items: [
+      { score_id: 'score-001', eval_run_id: 'eval-run-001', case_id: 'case-001', reviewer_id: 'reviewer-demo', score: 0.96, rationale: '回答准确且引用完整', created_at: now },
+      { score_id: 'score-002', eval_run_id: 'eval-run-001', case_id: 'case-002', reviewer_id: 'reviewer-demo', score: 0.91, rationale: '结论正确，细节可补充', created_at: now },
+    ],
+  }
+  if (path.includes('/observability/evaluations/') && path.endsWith('/compare')) return {
+    comparison_id: 'comparison-demo-001', baseline_run_id: 'eval-run-001', candidate_run_id: 'eval-run-002',
+    regressions: [], deltas: [
+      { metric: 'pass_rate', baseline: 0.91, candidate: 0.94, delta: 0.03, regressed: false },
+      { metric: 'average_score', baseline: 0.88, candidate: 0.92, delta: 0.04, regressed: false },
+    ],
+  }
+  if (path.includes('/evaluations/') && path.endsWith('/rollout')) return {
+    experiment_id: 'experiment-demo-001', prompt_id: 'prompt-planner', selected_variant: 'candidate',
+    mode: 'weighted', weights: { baseline: 20, candidate: 80 }, policy_revision: 3,
+  }
+  if (path.includes('/observability/evaluations') || path.includes('/evaluations')) return {
+    items: [
+      { eval_run_id: 'eval-run-001', dataset_id: 'dataset-support', dataset_version: 3, model_key: 'gpt-demo', gate_passed: true, created_at: now, report: { pass_rate: 0.94, average_score: 0.92, average_recall_at_k: 0.89, metrics: { latency_ms: 420, cost_usd: 0.012 }, results: [{ case_id: 'case-001', passed: true, score: 0.96 }, { case_id: 'case-002', passed: true, score: 0.91 }], gate_failures: [] } },
+      { eval_run_id: 'eval-run-002', dataset_id: 'dataset-tools', dataset_version: 2, model_key: 'claude-demo', gate_passed: true, created_at: now, report: { pass_rate: 0.91, average_score: 0.89, metrics: { latency_ms: 510, cost_usd: 0.015 }, results: [{ case_id: 'case-003', passed: true, score: 0.89 }], gate_failures: [] } },
+    ], total: 2,
+  }
+  if (path.includes('/sessions/') && path.endsWith('/messages')) return {
+    items: [
+      { message_id: 'message-001', session_id: 'session-001', role: 'user', content: '请整理当前产品需求和关键风险。', created_at: now },
+      { message_id: 'message-002', session_id: 'session-001', role: 'assistant', content: '已完成需求归纳，识别出 12 项需求和 4 项重点风险。', created_at: now },
+    ], total: 2,
+  }
+  if (path.includes('/sessions') || path.includes('/conversations')) return {
+    items: [
+      { session_id: 'session-001', title: '产品需求讨论', status: 'active', message_count: 18, agent_name: '总控调度 Agent', updated_at: now },
+      { session_id: 'session-002', title: '代码审查与修复', status: 'completed', message_count: 32, agent_name: '工程执行 Agent', updated_at: now },
+      { session_id: 'session-003', title: '知识库资料整理', status: 'active', message_count: 12, agent_name: '研究分析 Agent', updated_at: now },
+    ], total: 3,
+  }
+  if (path.includes('/files')) return {
+    items: [
+      { asset_id: 'file-001', file_id: 'file-001', filename: '需求分析报告.pdf', name: '需求分析报告.pdf', mime_type: 'application/pdf', size: 248320, version: 1, session_id: 'session-001', created_at: now },
+      { asset_id: 'file-002', file_id: 'file-002', filename: '回归测试结果.xlsx', name: '回归测试结果.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 86400, version: 2, session_id: 'session-001', created_at: now },
+      { asset_id: 'file-003', file_id: 'file-003', filename: '产品演示截图.png', name: '产品演示截图.png', mime_type: 'image/png', size: 512000, version: 1, session_id: 'session-003', created_at: now },
+    ], total: 3,
+  }
   if (path.includes('/observability/metrics')) return {
     items: [
       { name: '请求总量', metric: 'http_requests_total', value: 128430, unit: '次' },
@@ -290,6 +390,9 @@ function localFallback(input: RequestInfo | URL, init: RequestInit | undefined, 
   const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin)
   const fixture = fixtureForPath(path)
   if (method === 'GET') {
+    if (typeof fixture.__text === 'string') {
+      return new Response(fixture.__text, { status: 200, headers: { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' } })
+    }
     if (path.endsWith('/active') || path.endsWith('/latest') || path.endsWith('/current')) {
       const first = fixture.items?.[0]
       return jsonResponse(first ?? fixture)
