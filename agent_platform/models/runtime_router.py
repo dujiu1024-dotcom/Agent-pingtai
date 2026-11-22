@@ -57,6 +57,8 @@ class OpenAICompatibleTransport(Protocol):
         messages: Sequence[Mapping[str, Any]],
         request_parameters: Mapping[str, Any],
         timeout_seconds: float,
+        tools: Sequence[Mapping[str, Any]] | None = None,
+        tool_choice: Any = None,
         on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> Mapping[str, Any]: ...
 
@@ -501,7 +503,7 @@ class OpenAICompatibleModelRouter:
                     await record_preflight_failure(
                         candidate_id=candidate,
                         reason="token_estimation_failed",
-                        error_type=type(exc).__name__,
+                        outcome="failed", error_type=type(exc).__name__,
                     )
                     # Unknown tokenizer/encoding failures remain fail-closed.
                     raise
@@ -902,4 +904,4 @@ class OpenAICompatibleModelRouter:
                 usage=dict(usage), fallback_used=index > 0,
             )
         cause = f"{type(last_error).__name__}: {last_error}" if last_error else "未知原因"
-        raise ModelRoutingError(f"模型路由失败：所有候选线路都不可用（{cause[:400]}）") from last_error
+        raise ModelRoutingError(f"all pinned model routes failed: {cause[:400]}") from last_error

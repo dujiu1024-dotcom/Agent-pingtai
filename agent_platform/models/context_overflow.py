@@ -171,6 +171,7 @@ async def prepare_context(
                 estimator, model_id=model_id, messages=candidate,
                 request_parameters=request_parameters,
                 context_window_tokens=context_window_tokens,
+                allow_overflow_count=True,
             )
             if candidate_counts[2] <= context_window_tokens:
                 retained_older.insert(0, message)
