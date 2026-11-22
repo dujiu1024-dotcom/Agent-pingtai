@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 
 import { ApiError, apiClient } from '@/lib/api'
+import { terminalTaskOutcome } from './operations-cockpit-metrics'
 import { OperationsCockpitExtension } from './OperationsCockpitExtension'
 
 type UsageEvent = {
@@ -404,8 +405,8 @@ export function Dashboard() {
     (event) => dayKey(event.occurred_at) === yesterdayKey,
   )
   const runsTrend = trendNote(todayEvents.length, yesterdayEvents.length)
-  const successRate =
-    allTasks.length > 0 ? (doneCount / allTasks.length) * 100 : undefined
+  const taskOutcome = terminalTaskOutcome(allTasks)
+  const successRate = taskOutcome.rate
   const avgRuntime =
     events.length > 0
       ? events.reduce((sum, event) => sum + Number(event.runtime_ms || 0), 0) /
@@ -438,9 +439,9 @@ export function Dashboard() {
     },
     {
       to: '/workspace/tasks',
-      label: '成功率',
+      label: '任务样本成功率',
       value: successRate !== undefined ? `${successRate.toFixed(1)}%` : '—',
-      note: allTasks.length ? `${doneCount}/${allTasks.length} 已完成` : '暂无任务',
+      note: taskOutcome.sampleSize ? `${taskOutcome.successCount}/${taskOutcome.sampleSize} 个成功/失败终态样本` : '暂无终态样本',
       noteMuted: true,
       icon: <CheckCircle2 size={16} strokeWidth={2} />,
       tone: 'green' as const,
