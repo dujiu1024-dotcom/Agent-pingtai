@@ -569,6 +569,8 @@ def create_platform_app(
             "sessions": sessions_configured,
             "registry": registry_configured,
             "agent_management": registry_configured,
+            "tool_connection_test": tool_skill_evaluation_configured,
+            "skill_compatibility_evaluation": tool_skill_evaluation_configured,
             "task_execution": task_center_configured,
             "graph": graph_configured,
             "graph_annotation": graph_governance_resolver is not None,
