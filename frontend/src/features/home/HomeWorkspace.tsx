@@ -160,17 +160,17 @@ function PopularAgents() {
     refetchInterval: 30_000,
     retry: false,
   })
-  const runsQuery = useQuery({
-    queryKey: ['home-workspace', 'agent-usage-runs'],
-    queryFn: async () => unwrapList<RunRecord>(await apiClient.get<unknown>('/platform/v1/runs')),
-    refetchInterval: 30_000,
+  const tasksQuery = useQuery({
+    queryKey: ['home-workspace', 'tasks'],
+    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
+    refetchInterval: 15_000,
     retry: false,
   })
-  const ranked = useMemo(() => rankHomeAgents(agentsQuery.data ?? [], runsQuery.data ?? []), [agentsQuery.data, runsQuery.data])
-  const loading = agentsQuery.isPending || runsQuery.isPending
-  const error = agentsQuery.error ?? runsQuery.error
+  const ranked = useMemo(() => rankHomeAgents(agentsQuery.data ?? [], tasksQuery.data ?? []), [agentsQuery.data, tasksQuery.data])
+  const loading = agentsQuery.isPending || tasksQuery.isPending
+  const error = agentsQuery.error ?? tasksQuery.error
   if (loading) return <section className="home-r3-panel"><LoadingState label="正在读取热门 Agent" /></section>
-  if (error) return <section className="home-r3-panel"><ErrorState title="热门 Agent 读取失败" description={error instanceof Error ? error.message : 'Agent 服务请求失败'} onRetry={() => { void agentsQuery.refetch(); void runsQuery.refetch() }} /></section>
+  if (error) return <section className="home-r3-panel"><ErrorState title="热门 Agent 读取失败" description={error instanceof Error ? error.message : 'Agent 服务请求失败'} onRetry={() => { void agentsQuery.refetch(); void tasksQuery.refetch() }} /></section>
   return (
     <section className="home-r3-panel home-r3-agent-panel" aria-labelledby="home-r3-agent-title">
       <header className="home-r3-panel-heading">
@@ -187,37 +187,67 @@ function PopularAgents() {
           </Link>
         ))}
       </div> : <EmptyState title="暂无已登记 Agent" description="注册中心返回的 Agent 会展示在这里。" />}
-      <footer className="home-r3-panel-foot">依据注册中心数据及 Run 记录统计；仅统计当前返回的运行记录</footer>
+      <footer className="home-r3-panel-foot">运行数按任务服务返回的非空 Run ID 去重统计；仅统计当前返回记录</footer>
     </section>
   )
 }
 
 function ActivityFeed() {
-  const query = useQuery({
-    queryKey: ['home-workspace', 'recent-runs'],
-    queryFn: async () => unwrapList<RunRecord>(await apiClient.get<unknown>('/platform/v1/runs')),
+  const tasksQuery = useQuery({
+    queryKey: ['home-workspace', 'tasks'],
+    queryFn: async () => unwrapList<TaskRecord>(await apiClient.get<unknown>('/platform/v1/workbench/tasks')),
     refetchInterval: 15_000,
     retry: false,
   })
-  const runs = useMemo(() => sortRecentRuns(query.data ?? []), [query.data])
+  const agentsQuery = useQuery({
+    queryKey: ['home-workspace', 'agents'],
+    queryFn: async () => unwrapList<AgentRegistryItem>(await apiClient.get<unknown>('/platform/v1/registry/agent')),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const workflowsQuery = useQuery({
+    queryKey: ['home-workspace', 'workflows'],
+    queryFn: async () => unwrapList<AgentRegistryItem>(await apiClient.get<unknown>('/platform/v1/registry/workflow')),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const approvalsQuery = useQuery({
+    queryKey: ['home-workspace', 'approvals'],
+    queryFn: async () => unwrapList<ApprovalRecord>(await apiClient.get<unknown>('/platform/v1/approvals?limit=20')),
+    refetchInterval: 15_000,
+    retry: false,
+  })
+  const queries = [tasksQuery, agentsQuery, workflowsQuery, approvalsQuery]
+  const events = useMemo(() => buildHomeActivityFeed(
+    tasksQuery.data ?? [], agentsQuery.data ?? [], workflowsQuery.data ?? [], approvalsQuery.data ?? [],
+  ), [tasksQuery.data, agentsQuery.data, workflowsQuery.data, approvalsQuery.data])
+  const pending = queries.some((query) => query.isPending)
+  const errors = queries.filter((query) => query.isError)
+  const refresh = () => queries.forEach((query) => void query.refetch())
   return (
     <section className="home-r3-panel home-r3-activity-panel" aria-labelledby="home-r3-activity-title">
       <header className="home-r3-panel-heading">
         <div><span className="home-r3-eyebrow">RECENT ACTIVITY</span><h2 id="home-r3-activity-title">最近动态</h2></div>
         <Link className="home-r3-more" to="/workspace/tasks">运行记录 <ArrowRight size={14} /></Link>
       </header>
-      {query.isPending ? <LoadingState label="正在读取最近动态" /> : query.isError ? (
-        <ErrorState title="最近动态读取失败" description={query.error instanceof Error ? query.error.message : '运行记录请求失败'} onRetry={() => void query.refetch()} />
-      ) : runs.length ? (
-        <ol className="home-r3-timeline">
-          {runs.map((run) => {
-            const status = run.status.toLowerCase()
-            const label = COMPLETED.has(status) ? '任务执行完成' : status === 'failed' ? '任务执行失败' : APPROVAL.has(status) ? '任务进入审批' : RUNNING.has(status) ? '任务运行状态更新' : '任务状态更新'
-            return <li key={run.run_id}><span className={`home-r3-timeline-dot tone-${statusTone(status)}`} /><time>{formatClock(run.updated_at ?? run.finished_at ?? run.started_at ?? run.created_at)}</time><span className="home-r3-timeline-copy"><strong>{label}</strong><small>{run.task_id ?? run.run_id}{run.agent_id ? ` · Agent ${run.agent_id}` : ''}</small></span><Link to={`/operations/runs/${encodeURIComponent(run.run_id)}`} aria-label={`查看运行 ${run.run_id}`}>查看</Link></li>
-          })}
-        </ol>
-      ) : <EmptyState title="暂无最近动态" description="任务运行产生记录后，会出现在此时间线。" />}
-      <footer className="home-r3-panel-foot">来源：真实 Run 记录 · 15 秒刷新</footer>
+      {pending && !events.length ? <LoadingState label="正在读取最近动态" /> : events.length ? (
+        <>
+          <ol className="home-r3-timeline">
+            {events.map((event) => (
+              <li key={event.id}>
+                <span className={`home-r3-timeline-dot tone-${event.kind === 'task' ? 'success' : event.kind === 'approval' ? 'waiting' : 'neutral'}`} />
+                <time>{formatClock(event.at)}</time>
+                <span className="home-r3-timeline-copy"><strong>{event.title}</strong><small>{event.detail}</small></span>
+                <Link to={event.href} aria-label={`查看${event.title}`}>查看</Link>
+              </li>
+            ))}
+          </ol>
+          {errors.length > 0 && <p className="home-r3-feed-note">部分动态源暂不可用（{errors.length}）；已展示成功读取的真实记录。</p>}
+        </>
+      ) : errors.length ? (
+        <ErrorState title="动态暂不可用" description="任务、Agent、Workflow 或审批数据源请求失败。" onRetry={refresh} />
+      ) : <EmptyState title="暂无最近动态" description="Agent、Workflow、任务或审批产生记录后，会出现在此时间线。" />}
+      <footer className="home-r3-panel-foot">来源：任务、Agent/Workflow 注册中心与审批 API；只展示可验证的真实记录</footer>
     </section>
   )
 }
