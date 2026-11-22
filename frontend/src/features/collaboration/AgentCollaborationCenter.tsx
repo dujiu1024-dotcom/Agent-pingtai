@@ -3,6 +3,12 @@ import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ApiError, apiClient } from '@/lib/api'
+import {
+  fetchCollaborationAgents,
+  fetchCollaborationRun,
+  fetchCollaborationRunEvents,
+  fetchRecentCollaborationRuns,
+} from './collaboration-api'
 import { EmptyState, ErrorState, LoadingState } from '@/components/States'
 import { eventLabel, localizedJson, valueLabel } from '@/lib/i18n/labels'
 import { useAuth } from '@/providers/AuthProvider'
@@ -399,7 +405,7 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
   // when backend pagination and live-health fields are available.
   const agentsQuery = useQuery({
     queryKey: ['collaboration', 'agents'],
-    queryFn: () => apiClient.get<unknown>('/platform/v1/registry/agent'),
+    queryFn: fetchCollaborationAgents,
     refetchInterval: 30000,
   })
   const agents = useMemo(() => unwrap<RecordValue>(agentsQuery.data), [agentsQuery.data])
@@ -424,7 +430,7 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
   // 最近 Agent 运行列表（run_store），供工作流运行态与协作黑板 Tab 快速选择
   const runsQuery = useQuery({
     queryKey: ['collaboration', 'recent-runs'],
-    queryFn: () => apiClient.get<unknown>('/platform/v1/runs?limit=10'),
+    queryFn: fetchRecentCollaborationRuns,
     refetchInterval: 30000,
   })
   const recentRuns = useMemo(() => unwrap<RecordValue>(runsQuery.data), [runsQuery.data])
@@ -442,13 +448,13 @@ export function AgentCollaborationCenter({ initialRunId = '' }: { initialRunId?:
   const runQuery = useQuery({
     queryKey: ['collaboration', 'run', runId],
     enabled: Boolean(runId.trim()),
-    queryFn: () => apiClient.get<RecordValue>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}`),
+    queryFn: () => fetchCollaborationRun(runId),
     refetchInterval: 10000,
   })
   const eventsQuery = useQuery({
     queryKey: ['collaboration', 'run-events', runId],
     enabled: Boolean(runId.trim()) && runQuery.isSuccess,
-    queryFn: () => apiClient.get<unknown>(`/platform/v1/runs/${encodeURIComponent(runId.trim())}/events?limit=200`),
+    queryFn: () => fetchCollaborationRunEvents(runId),
     refetchInterval: 10000,
   })
 
