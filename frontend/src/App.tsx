@@ -14,6 +14,7 @@ import {
 } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import DesignSystemShowcase from '@/components/DesignSystemShowcase'
 import { GlobalSearch } from '@/components/GlobalSearch'
 import { SystemSettingsPage } from '@/features/admin/SystemSettingsPage'
 import {
@@ -124,6 +125,10 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
       <ErrorBoundary>
         <Routes>
           <Route element={<AppShell config={config} />}>
+            <Route
+              path="/_storybook/design-system"
+              element={<DesignSystemShowcase />}
+            />
             <Route
               path="/"
               element={<Navigate to="/workspace/overview" replace />}
