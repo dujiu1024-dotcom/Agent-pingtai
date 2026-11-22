@@ -20,7 +20,6 @@ import {
   ListTodo,
   LogIn,
   Search,
-  Settings,
   UserRound,
   Users,
   Wallet,
@@ -61,6 +60,7 @@ import {
   findNavigationSection,
   findSubPage,
   getNavigationSections,
+  getWorkspaceViewMode,
   globalRoutes,
   pageRoutes,
 } from '@/routes/route-config'
@@ -152,10 +152,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                   config.auth.enabled ? (
                     <AuthEntryPage route={route} />
                   ) : (
-                    <ModeRestrictedState
-                      title="当前模式不提供身份入口"
-                      description="auth.enabled=false 时不显示登录、注册或管理员初始化流程。"
-                    />
+                    <Navigate to="/workspace/overview" replace />
                   )
                 }
               />
@@ -236,11 +233,13 @@ function AppShell({ config }: { config: BootstrapConfig }) {
     collaboration: Users,
     workflow: Workflow,
     cost: Wallet,
-    administration: Settings,
   }
 
   return (
-    <div className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}>
+    <div
+      className={collapsed ? 'app-shell nav-collapsed' : 'app-shell'}
+      data-v={getWorkspaceViewMode(location.pathname)}
+    >
       <aside className="sidebar" aria-label="主导航">
         <Link
           className="brand"
@@ -344,6 +343,11 @@ function AppShell({ config }: { config: BootstrapConfig }) {
             </span>
           </div>
         </header>
+        {collapsed && (
+          <div className="sidebar-collapsed-hint" role="status">
+            已收起侧边栏（演示）
+          </div>
+        )}
         {section && section.subpages.length > 1 && (
           <nav className="subnav" aria-label={`${section.label}子页面`}>
             {section.subpages.map((page) => (
