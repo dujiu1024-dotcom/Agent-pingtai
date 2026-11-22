@@ -34,7 +34,7 @@ jobs:
             exit 0
           fi
           changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
-          if printf '%s\n' "$changed" | grep -Eq '^(agent_platform/|tests/|scripts/|frontend/|requirements[^/]*\.txt$|pyproject\.toml$|mypy\.ini$|ruff\.toml$|Dockerfile|docker/|deploy/|compose[^/]*\.ya?ml$)'; then
+          if printf '%s\n' "$changed" | grep -Eq '^(\.github/workflows/|agent_platform/|tests/|scripts/|frontend/|requirements[^/]*\.txt$|pyproject\.toml$|mypy\.ini$|ruff\.toml$|Dockerfile|docker/|deploy/|compose[^/]*\.ya?ml$)'; then
             echo "platform=true" >> "$GITHUB_OUTPUT"
           else
             echo "platform=false" >> "$GITHUB_OUTPUT"
@@ -197,21 +197,8 @@ jobs:
           cache-dependency-path: requirements-platform.txt
       - name: Install lint dependency
         run: python -m pip install ruff
-      - name: Run Ruff on changed Python files
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA" -- '*.py')"
-          else
-            changed="$(git ls-files '*.py')"
-          fi
-          if [[ -z "$changed" ]]; then
-            echo "No changed Python files to lint."
-            exit 0
-          fi
-          printf '%s\n' "$changed" | xargs ruff check
+      - name: Run full-repository Ruff
+        run: ruff check .
 
   typecheck:
     name: Type check
