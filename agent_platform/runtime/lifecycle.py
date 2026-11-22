@@ -187,7 +187,7 @@ class RunLifecycleManager:
       checkpoint_ref=row.checkpoint_ref,error=f"recovery failed: {str(exc)[:400]}")
    finally:
     if worker_id and release is not None:
-     await release(row.tenant_id,row.run_id,worker_id)
+     await release(row.tenant_id,row.run_id,worker_id,lease_token=row.lease_token)
   return resumed
  async def run_with_timeout(self,tenant_id:str,run_id:str,operation:Any,*,timeout:float)->Any:
   if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
