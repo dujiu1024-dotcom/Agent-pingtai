@@ -164,8 +164,8 @@ def create_tool_skill_evaluation_router(
             body = await request.json()
         except Exception as exc:
             raise HTTPException(400, "JSON object is required") from exc
-        if not isinstance(body, dict):
-            raise HTTPException(400, "JSON object is required")
+        if not isinstance(body, dict) or set(body) != {"version"}:
+            raise HTTPException(400, "JSON object with only a version field is required")
         version = body.get("version")
         if isinstance(version, bool) or not isinstance(version, int) or version < 1:
             raise HTTPException(400, "a positive published version is required")
