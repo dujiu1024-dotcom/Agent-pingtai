@@ -15,9 +15,19 @@ vi.mock('@/lib/api', () => ({
   apiClient: { get: mocks.get, post: mocks.post },
 }))
 
-import { PromptRegistryPage } from './PromptRegistryPage'
+import { parseCanaryPercentage, PromptRegistryPage } from './PromptRegistryPage'
 
 describe('PromptRegistryPage', () => {
+  it('accepts only finite canary percentages in the open-closed range (0, 100]', () => {
+    expect(parseCanaryPercentage('10')).toBe(10)
+    expect(parseCanaryPercentage('0.1')).toBe(0.1)
+    expect(parseCanaryPercentage('100')).toBe(100)
+    expect(parseCanaryPercentage('0')).toBeNull()
+    expect(parseCanaryPercentage('100.1')).toBeNull()
+    expect(parseCanaryPercentage('Infinity')).toBeNull()
+    expect(parseCanaryPercentage('not-a-number')).toBeNull()
+  })
+
   beforeEach(() => {
     mocks.get.mockReset()
     mocks.post.mockReset()
