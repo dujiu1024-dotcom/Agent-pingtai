@@ -1,0 +1,104 @@
+"""Tests for the declarative Workflow-to-LangGraph compiler contract."""
+import unittest
+
+from agent_platform.workflows.definition_compiler import (
+    LangGraphWorkflowCompiler,
+    WorkflowDefinitionError,
+    WorkflowNodeRegistry,
+    WorkflowNodeType,
+)
+
+
+def node_factory(config):
+    return lambda state: {**state, **config}
+
+
+class WorkflowCompilerTests(unittest.TestCase):
+    def setUp(self):
+        self.spec = WorkflowNodeType(
+            node_type="agent", version=1, factory=node_factory,
+            config_schema={"type": "object"}, input_schema={"type": "object"},
+            output_schema={"type": "object"},
+            ports={"inputs": ["default"], "outputs": ["default"]},
+            permissions=("agent.execute",), risk="medium",
+            error_retry={"max_attempts": 2},
+        )
+        self.compiler = LangGraphWorkflowCompiler(
+            node_registry=WorkflowNodeRegistry([self.spec]),
+            graph_factory=lambda definition, nodes: {
+                "nodes": tuple(nodes), "definition": definition,
+            },
+        )
+        self.definition = {
+            "schema_version": 1,
+            "entry_point": "first",
+            "nodes": [{
+                "id": "first", "node_type": "agent", "version": 1,
+                "config": {"label": "first"},
+                "config_schema": {"type": "object"},
+                "input_schema": {"type": "object"},
+                "output_schema": {"type": "object"},
+                "ports": {"inputs": ["default"], "outputs": ["default"]},
+                "permissions": ["agent.execute"], "risk": "medium",
+                "error_retry": {"max_attempts": 2},
+            }],
+            "edges": [{"source": "first", "target": "__end__"}],
+            "branches": [],
+        }
+
+    def test_valid_definition_compiles_to_registered_factories(self):
+        graph, metadata = self.compiler.compile(self.definition)
+        self.assertEqual(graph["nodes"], ("first",))
+        self.assertEqual(metadata["engine"], "langgraph")
+        self.assertFalse(metadata["execution_started"])
+        self.assertEqual(len(metadata["definition_sha256"]), 64)
+
+    def test_unknown_node_is_diagnosed_and_blocks_compile(self):
+        self.definition["nodes"][0]["node_type"] = "untrusted.python"
+        diagnostics = self.compiler.diagnose(self.definition)
+        self.assertIn("node.unknown", {item.code for item in diagnostics})
+        with self.assertRaises(WorkflowDefinitionError):
+            self.compiler.compile(self.definition)
+
+    def test_incompatible_schema_is_diagnosed(self):
+        self.definition["nodes"][0]["output_schema"] = {"type": "string"}
+        self.assertIn(
+            "node.schema_incompatible",
+            {item.code for item in self.compiler.diagnose(self.definition)},
+        )
+
+    def test_duplicate_ids_and_dangling_edges_are_rejected(self):
+        duplicate = dict(self.definition["nodes"][0], id="second")
+        self.definition["nodes"].append(duplicate)
+        self.definition["edges"][0]["target"] = "missing"
+        codes = {item.code for item in self.compiler.diagnose(self.definition)}
+        self.assertIn("node.duplicate", codes)
+        self.assertIn("edge.reference", codes)
+
+    def test_invalid_entry_point_is_rejected(self):
+        self.definition["entry_point"] = "missing"
+        self.assertIn("entry.invalid", {item.code for item in self.compiler.diagnose(self.definition)})
+
+    def test_branch_routes_are_validated(self):
+        self.definition["branches"] = [{
+            "source": "first", "field": "decision",
+            "routes": {"yes": "__end__", "no": "missing"},
+        }]
+        self.assertIn("branch.target", {item.code for item in self.compiler.diagnose(self.definition)})
+
+    def test_permission_metadata_cannot_be_escalated(self):
+        self.definition["nodes"][0]["permissions"] = ["admin.*"]
+        self.assertIn("node.permissions", {item.code for item in self.compiler.diagnose(self.definition)})
+
+    def test_graph_compile_exception_is_returned_as_diagnostic(self):
+        compiler = LangGraphWorkflowCompiler(
+            node_registry=WorkflowNodeRegistry([self.spec]),
+            graph_factory=lambda definition, nodes: (_ for _ in ()).throw(RuntimeError("compile exploded")),
+        )
+        with self.assertRaises(WorkflowDefinitionError) as raised:
+            compiler.compile(self.definition)
+        self.assertEqual(raised.exception.diagnostics[0].code, "compile.failed")
+
+
+if __name__ == "__main__":
+    unittest.main()
