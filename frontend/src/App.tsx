@@ -24,6 +24,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -321,6 +322,7 @@ function PageView({
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
+  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
   return (

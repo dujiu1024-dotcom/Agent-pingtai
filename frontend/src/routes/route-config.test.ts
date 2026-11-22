@@ -121,6 +121,12 @@ describe('route configuration', () => {
     expect(detailRoutes.find((route) => route.path === '/operations/knowledge-bases/:collectionId')?.owner).toBe('#760')
   })
 
+  it('registers tool registry and tool detail routes under #805', () => {
+    const routes = [...pageRoutes, ...detailRoutes]
+    expect(routes.find((route) => route.path === '/admin/tools')?.owner).toBe('#805')
+    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/admin/tools/mcp-fetch')?.[0].params.toolId).toBe('mcp-fetch')
+  })
+
   it('matches entity detail deep links with stable id parameters', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({
       path: route.path,
