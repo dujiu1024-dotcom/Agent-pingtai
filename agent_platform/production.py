@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from agent_platform.api.app import create_platform_app
@@ -112,39 +112,10 @@ from agent_platform.tools.idempotency import (
 )
 from agent_platform.web.board_page import create_board_page_router
 from agent_platform.web.console_pages import create_console_pages_router
-
-
-def _load_trusted_workflow_compiler_resolver() -> Callable[..., Any] | None:
-    """Load the single deployment-installed Workflow compiler resolver.
-
-    Executable node factories are deployment code, not Registry data. Only a
-    reviewed Python distribution entry point may supply them; Agent-authored
-    definitions and environment variables cannot select imports or callables.
-    """
-    from importlib.metadata import entry_points
-
-    candidates = tuple(
-        entry for entry in entry_points(group="agent_platform.workflow_compiler")
-        if entry.name == "resolver"
-    )
-    if len(candidates) > 1:
-        raise RuntimeError(
-            "multiple Workflow compiler resolvers are installed; exactly one is allowed"
-        )
-    if not candidates:
-        return None
-    resolver = candidates[0].load()
-    if not callable(resolver):
-        raise TypeError("trusted Workflow compiler entry point must load a callable resolver")
-    return resolver
-
-
-async def _workflow_compiler_unavailable(_principal: Any) -> Any:
-    """Keep production compile/publish routes mounted but fail closed until configured."""
-    raise HTTPException(
-        503,
-        "trusted Workflow compiler resolver is not installed; compile and publish are disabled",
-    )
+from agent_platform.workflows.production_resolver import (
+    load_trusted_workflow_compiler_resolver,
+    workflow_compiler_unavailable,
+)
 
 
 def _postgres_connection_factory(dsn: str) -> Callable[[], Any]:
@@ -194,12 +165,12 @@ def create_production_app(
     """Build the production API graph; optional arguments are test seams only."""
     configured = settings or load_production_settings()
     if workflow_compiler_resolver is None:
-        workflow_compiler_resolver = _load_trusted_workflow_compiler_resolver()
+        workflow_compiler_resolver = load_trusted_workflow_compiler_resolver()
     if workflow_compiler_resolver is None:
         # The HTTP routes remain discoverable in every production composition,
         # but compile and publish return 503 until a trusted node registry is
         # installed. Never create an empty/pretend registry or accept user code.
-        workflow_compiler_resolver = _workflow_compiler_unavailable
+        workflow_compiler_resolver = workflow_compiler_unavailable
     if not callable(workflow_compiler_resolver):
         raise TypeError("workflow_compiler_resolver must be a trusted callable")
     if connection_factory is None:
