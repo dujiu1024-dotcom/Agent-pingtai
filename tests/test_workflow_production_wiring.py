@@ -26,14 +26,14 @@ class WorkflowProductionResolverTests(unittest.TestCase):
 
     def test_multiple_resolvers_fail_closed_instead_of_choosing_implicitly(self):
         first = Mock(name="first")
-        second = unittest.mock.Mock(name="second")
+        second = Mock(name="second")
         first.name = second.name = "resolver"
         with patch("importlib.metadata.entry_points", return_value=(first, second)):
             with self.assertRaisesRegex(RuntimeError, "exactly one"):
                 _load_trusted_workflow_compiler_resolver()
 
     def test_non_callable_entry_point_is_rejected(self):
-        entry = unittest.mock.Mock(name="invalid")
+        entry = Mock(name="invalid")
         entry.name = "resolver"
         entry.load.return_value = object()
         with patch("importlib.metadata.entry_points", return_value=(entry,)):
