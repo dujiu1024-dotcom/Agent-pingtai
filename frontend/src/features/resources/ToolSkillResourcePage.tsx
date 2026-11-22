@@ -36,6 +36,10 @@ interface SkillEvaluationResult {
   reviewed_at: string
 }
 
+interface WorkbenchCapabilities {
+  features: Record<string, boolean>
+}
+
 function safeValue(value: unknown, key = ''): string {
   if (/(secret|token|api.?key|password|credential)/i.test(key)) {
     return '[敏感字段已隐藏；请使用 secret_ref]'
@@ -64,6 +68,12 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
   const list = useQuery({
     queryKey: base,
     queryFn: () => apiClient.get<{ items: RegistryItem[] }>(`/platform/v1/registry/${kind}`),
+    retry: false,
+  })
+  const capabilities = useQuery({
+    queryKey: ['workbench', 'capabilities'],
+    queryFn: () =>
+      apiClient.get<WorkbenchCapabilities>('/platform/v1/workbench/capabilities'),
     retry: false,
   })
   const active = useQuery({
@@ -194,7 +204,10 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
       {active.data && <>
         <div className="detail-actions">
           <button className="button-secondary" type="button" disabled={disable.isPending || active.data.status === 'disabled'} onClick={() => disable.mutate()}>停用资源</button>
-          {kind === 'tool' && (
+          {kind === 'tool' && capabilities.isPending && (
+            <span className="detail-empty">正在检查连接测试能力…</span>
+          )}
+          {kind === 'tool' && capabilities.data?.features.tool_connection_test === true && (
             <button
               className="button-secondary"
               type="button"
@@ -204,18 +217,32 @@ export function ToolSkillResourcePage({ kind }: { kind: ResourceKind }) {
               {connectionTest.isPending ? '连接测试中…' : '测试连接'}
             </button>
           )}
-          {kind === 'skill' && (
-            <button
-              className="button-secondary"
-              type="button"
-              disabled={
-                compatibilityEvaluation.isPending || active.data.status !== 'published'
-              }
-              onClick={() => compatibilityEvaluation.mutate()}
-            >
-              {compatibilityEvaluation.isPending ? '评估中…' : '评估兼容性'}
-            </button>
+          {kind === 'tool' &&
+            !capabilities.isPending &&
+            capabilities.data?.features.tool_connection_test !== true && (
+              <span className="detail-empty">连接测试能力未配置或不可用。</span>
+            )}
+          {kind === 'skill' && capabilities.isPending && (
+            <span className="detail-empty">正在检查兼容性评估能力…</span>
           )}
+          {kind === 'skill' &&
+            capabilities.data?.features.skill_compatibility_evaluation === true && (
+              <button
+                className="button-secondary"
+                type="button"
+                disabled={
+                  compatibilityEvaluation.isPending || active.data.status !== 'published'
+                }
+                onClick={() => compatibilityEvaluation.mutate()}
+              >
+                {compatibilityEvaluation.isPending ? '评估中…' : '评估兼容性'}
+              </button>
+            )}
+          {kind === 'skill' &&
+            !capabilities.isPending &&
+            capabilities.data?.features.skill_compatibility_evaluation !== true && (
+              <span className="detail-empty">兼容性评估能力未配置或不可用。</span>
+            )}
           {error && <span className="auth-error" role="alert">{error instanceof Error ? error.message : '操作失败'}</span>}
         </div>
         {kind === 'tool' && connectionTest.data && (
