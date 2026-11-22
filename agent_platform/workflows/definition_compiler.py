@@ -161,23 +161,36 @@ class LangGraphWorkflowCompiler:
                 normalized_edges.append(edge)
                 continue
             source, target = edge.get("source"), edge.get("target")
+            port_checks.append({
+                "source": source, "target": target,
+                "source_port": edge.get("source_port", "default"),
+                "target_port": edge.get("target_port", "default"),
+            })
             if source == start_id:
                 continue
-            if isinstance(source, str) and isinstance(target, str) and isinstance(node_map.get(source), Mapping) and node_map[source].get("node_type") == "condition":
+            source_node = node_map.get(source) if isinstance(source, str) else None
+            target_node = node_map.get(target) if isinstance(target, str) else None
+            if isinstance(source_node, Mapping) and source_node.get("node_type") == "condition" and isinstance(target, str):
+                raw_config = source_node.get("config", {})
+                config = raw_config if isinstance(raw_config, Mapping) else {}
                 branch = branches.setdefault(source, {
                     "source": source,
-                    "field": str(node_map[source].get("config", {}).get("route_field", "route")),
+                    "field": str(config.get("route_field", "route")),
                     "routes": {},
-                    "default": str(node_map[source].get("config", {}).get("default_port") or edge.get("source_port") or ""),
+                    "default": str(config.get("default_port") or edge.get("source_port") or ""),
                 })
-                branch["routes"][str(edge.get("source_port") or "default")] = (
-                    "__end__" if isinstance(node_map.get(target), Mapping) and node_map[target].get("node_type") == "end"
-                    else target
-                )
+                route_key = str(edge.get("source_port") or "default")
+                if route_key in branch["routes"]:
+                    branch["routes"][route_key] = "__duplicate_route__"
+                else:
+                    branch["routes"][route_key] = (
+                        "__end__" if isinstance(target_node, Mapping) and target_node.get("node_type") == "end"
+                        else target
+                    )
                 continue
             normalized_edges.append({
                 "source": source,
-                "target": "__end__" if isinstance(node_map.get(target), Mapping) and node_map[target].get("node_type") == "end" else target,
+                "target": "__end__" if isinstance(target_node, Mapping) and target_node.get("node_type") == "end" else target,
             })
         return {
             "schema_version": 1,
@@ -348,7 +361,9 @@ class LangGraphWorkflowCompiler:
             if branch.get("default") not in routes:
                 diagnostics.append(WorkflowDiagnostic("branch.default", "default must name a route key", path + ".default"))
             targets = list(routes.values())
-            for target in targets:
+            for route_key, target in routes.items():
+                if target == "__duplicate_route__":
+                    diagnostics.append(WorkflowDiagnostic("branch.duplicate_port", "condition output port is connected more than once", path + ".routes"))
                 if not isinstance(target, str) or target not in ids | {"__end__"}:
                     diagnostics.append(WorkflowDiagnostic("branch.target", "branch target is unknown", path + ".routes"))
         for edge in edges:
