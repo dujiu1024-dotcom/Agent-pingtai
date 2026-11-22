@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -312,7 +313,7 @@ class DedicatedProductionWorkerEntrypointTests(unittest.IsolatedAsyncioTestCase)
                 redis_client=FakeRedis(),
             )
         )
-        stop_event = __import__("asyncio").Event()
+        stop_event = asyncio.Event()
         stop_event.set()
 
         with (
@@ -342,7 +343,7 @@ class DedicatedProductionWorkerEntrypointTests(unittest.IsolatedAsyncioTestCase)
             )
         )
         with self.assertRaisesRegex(RuntimeError, "trusted production Run execution builder"):
-            await run_worker(production_app=production_app, stop_event=__import__("asyncio").Event())
+            await run_worker(production_app=production_app, stop_event=asyncio.Event())
 
 
 if __name__ == "__main__":
