@@ -13,7 +13,6 @@ import {
 
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
-import { SessionsWorkspace } from '@/features/sessions/SessionsWorkspace'
 import {
   EmptyState,
   ErrorState,
@@ -24,7 +23,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
-import { EvaluationWorkspace } from '@/features/evaluation/EvaluationWorkspace'
+import { FilesWorkspace } from '@/features/files/FilesWorkspace'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -316,12 +315,11 @@ function PageView({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
-  if (route.path === '/operations/sessions' || route.path === '/operations/sessions/:sessionId') return <SessionsWorkspace />
+  if (route.path === '/operations/files') return <FilesWorkspace authEnabled={authEnabled} />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
   if (route.path === '/operations/knowledge-bases' || route.path === '/operations/knowledge-bases/:collectionId' || route.path === '/operations/documents/:documentId') return <KnowledgeWorkbench />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
-  if (route.path.startsWith('/admin/evaluation/')) return <EvaluationWorkspace />
   return (
     <section className="page-content">
       <div className="page-heading">
