@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-
 _REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
 if _REPOSITORY_ROOT not in sys.path:
     sys.path.insert(0, _REPOSITORY_ROOT)

@@ -11,7 +11,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Mapping, Protocol, Sequence
+from typing import Protocol
 from uuid import uuid4
 
 

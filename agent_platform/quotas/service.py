@@ -147,37 +147,6 @@ class UsageEvent:
         if self.source not in {"estimated", "provider_reported", "reconciled"}:
             raise ValueError("invalid usage source")
 
-    def __post_init__(self) -> None:
-        if not self.event_id or not self.tenant_id or not self.run_id or not self.model_key:
-            raise ValueError("usage event identifiers and model_key are required")
-        if self.root_run_id is not None and not self.root_run_id:
-            raise ValueError("root_run_id must be a non-empty string when supplied")
-        counters = (
-            self.input_tokens, self.output_tokens, self.tool_calls,
-            self.runtime_ms, self.storage_bytes,
-        )
-        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counters):
-            raise ValueError("usage counters must be non-negative integers")
-        if not isinstance(self.cost_usd, Decimal) or not self.cost_usd.is_finite() or self.cost_usd < 0:
-            raise ValueError("usage cost must be a finite non-negative Decimal")
-        if self.occurred_at.tzinfo is None:
-            raise ValueError("usage timestamp must be timezone-aware")
-        if self.source not in {"estimated", "provider_reported", "reconciled"}:
-            raise ValueError("invalid usage source")
-
-    def __post_init__(self) -> None:
-        if not self.event_id or not self.tenant_id or not self.run_id or not self.model_key:
-            raise ValueError("usage event identifiers and model_key are required")
-        for value in (self.input_tokens, self.output_tokens, self.tool_calls, self.runtime_ms, self.storage_bytes):
-            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError("usage counters must be non-negative integers")
-        if not isinstance(self.cost_usd, Decimal) or not self.cost_usd.is_finite() or self.cost_usd < 0:
-            raise ValueError("usage cost must be a finite non-negative Decimal")
-        if self.occurred_at.tzinfo is None:
-            raise ValueError("usage timestamp must be timezone-aware")
-        if self.source not in {"estimated", "provider_reported", "reconciled"}:
-            raise ValueError("invalid usage source")
-
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens

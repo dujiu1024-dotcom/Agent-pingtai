@@ -1090,7 +1090,7 @@ class RunExecutionWorker:
                 return "cancelled" if current and current.status == RunStatus.CANCELLED else "skipped"
             except Exception as exc:
                 import traceback
-                traceback.print_exc(file=_sys.stderr)
+                traceback.print_exc(file=__import__("sys").stderr)
                 lifecycle = await self._resolve(self.lifecycle_resolver, tenant_id)
                 current = await self.run_store.get(tenant_id, run_id)
                 if current and current.status == RunStatus.CANCELLING:
@@ -1159,7 +1159,7 @@ class RunExecutionWorker:
                 await self.run_once()
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:
+            except Exception:
                 # A transient database outage must not terminate the worker process.
                 import sys as _sys
                 import traceback as _tb

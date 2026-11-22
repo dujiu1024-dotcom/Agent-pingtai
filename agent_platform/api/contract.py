@@ -387,7 +387,7 @@ class ApiV1CompatibilityMiddleware:
                 return
 
             if is_versioned_api and response_status == 404:
-                response_body = message.get("body", b"")
+                message.get("body", b"")
                 if message.get("more_body", False):
                     # FastAPI's normal 404 response is a single body frame.
                     # Keep streaming 404s intact rather than buffering indefinitely.

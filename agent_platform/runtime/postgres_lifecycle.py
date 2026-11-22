@@ -46,7 +46,7 @@ class PostgresRunStateStore(RunStateStore):
   run_uuid=UUID(run_id)
   if (parent_run_id is None) != (budget_lineage_key is None):
    raise ValueError("parent_run_id and budget_lineage_key must be supplied together")
-  parent_uuid=UUID(parent_run_id) if parent_run_id is not None else None
+  UUID(parent_run_id) if parent_run_id is not None else None
   if budget_lineage_key is not None and not budget_lineage_key.strip():
    raise ValueError("budget_lineage_key must be non-empty")
   try:

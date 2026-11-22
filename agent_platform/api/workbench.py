@@ -426,7 +426,6 @@ def create_workbench_router(
             # If in-process worker_id is not in DB records, add it as a pseudo-entry
             db_worker_ids = {w["worker_id"] for w in workers}
             if inproc_worker_id and inproc_worker_id not in db_worker_ids:
-                import datetime as _dt2
                 workers.append({
                     "worker_id": inproc_worker_id,
                     "active_runs": 0,
@@ -557,7 +556,6 @@ def create_workbench_router(
             # Case 2: Redis 不可达
             try:
                 await redis_client.ping()
-                redis_ok = True
             except Exception as exc:
                 return {
                     "redis_ok": False,

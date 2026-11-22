@@ -21,7 +21,6 @@ from agent_platform.approval.policy import RiskLevel
 from agent_platform.approval.postgres import PostgresAuditReader
 from agent_platform.approval.service import ApprovalService, PostgresApprovalRepository
 from agent_platform.batch.executor import BatchTemplate
-from agent_platform.observability.alert_store import PostgresAlertEventStore
 from agent_platform.batch.service import (
     BatchJobRunner,
     PostgresBatchRepository,
@@ -31,8 +30,8 @@ from agent_platform.batch.service import (
 )
 from agent_platform.blackboard.postgres_repository import PostgresBlackboardRepository
 from agent_platform.blackboard.replay import PostgresBlackboardEventReplay
-from agent_platform.contracts import Scope
 from agent_platform.connectors.providers import build_default_providers
+from agent_platform.contracts import Scope
 from agent_platform.control_plane.data_connectors import DataConnectorService
 from agent_platform.control_plane.postgres import (
     PostgresRegistryRepository,
@@ -58,12 +57,12 @@ from agent_platform.graph.postgres_governance import PostgresGraphGovernanceRepo
 from agent_platform.graph.postgres_repository import PostgresGraphRepository
 from agent_platform.graph.query import GraphQueryService
 from agent_platform.graph.schema import default_graph_schema
-from agent_platform.identity.models import Principal, ResourceRef
-from agent_platform.identity.postgres import PostgresIdentityRepository
 from agent_platform.i18n.preferences import (
     PostgresLocalePreferenceStore,
     TenantLocalePreferenceService,
 )
+from agent_platform.identity.models import Principal, ResourceRef
+from agent_platform.identity.postgres import PostgresIdentityRepository
 from agent_platform.identity.service import AuthorizationDenied, IdentityService
 from agent_platform.knowledge.ollama import (
     OllamaChatGenerator,
@@ -76,6 +75,7 @@ from agent_platform.knowledge.rag import RAGService
 from agent_platform.knowledge.service import KnowledgeService
 from agent_platform.memory.postgres_repository import PostgresMemoryRepository
 from agent_platform.memory.service import MemoryService
+from agent_platform.observability.alert_store import PostgresAlertEventStore
 from agent_platform.observability.evaluation_store import PostgresEvaluationRepository
 from agent_platform.observability.operational_health import OperationalHealthMonitor
 from agent_platform.observability.prometheus import PrometheusClientMetricsRecorder
@@ -89,23 +89,23 @@ from agent_platform.quotas.service import Budget, QuotaService
 from agent_platform.runtime.interventions import RunInterventionService
 from agent_platform.runtime.lifecycle import RunLifecycleManager
 from agent_platform.runtime.postgres_lifecycle import PostgresRunStateStore
-from agent_platform.runtime.replay import RunReplayService
-from agent_platform.tools.idempotency import (
-    PostgresToolEffectStore,
-    ToolEffectReconciliationService,
-)
-from agent_platform.runtime.run_context import (
-    PostgresRunContextSnapshotStore,
-    RunContextSnapshotService,
-)
 from agent_platform.runtime.production_composition import (
     ProductionRunExecution,
     load_trusted_run_execution_builder,
+)
+from agent_platform.runtime.replay import RunReplayService
+from agent_platform.runtime.run_context import (
+    PostgresRunContextSnapshotStore,
+    RunContextSnapshotService,
 )
 from agent_platform.scheduling.feishu import FeishuNotifier, load_feishu_config
 from agent_platform.scheduling.service import PostgresSchedulerService
 from agent_platform.security.audit import PostgresAuditWriter, PostgresIdentityAuditReader
 from agent_platform.security.local_store import LocalSecretStore
+from agent_platform.tools.idempotency import (
+    PostgresToolEffectStore,
+    ToolEffectReconciliationService,
+)
 from agent_platform.web.board_page import create_board_page_router
 from agent_platform.web.console_pages import create_console_pages_router
 

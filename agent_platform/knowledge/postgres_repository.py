@@ -392,54 +392,13 @@ class PostgresKnowledgeRepository:
                     await conn.execute("INSERT INTO knowledge_cache_invalidations(tenant_id,resource_type,resource_id,reason) VALUES(%s,'chunk',%s,'acl_changed')", (tenant_id, chunk_id))
                 return cur.rowcount > 0
 
-    async def replace_document_access(
-        self, tenant_id: str, document_id: str,
-        grants: Sequence[tuple[str, str, str]], granted_by: str,
-    ) -> None:
-        if not granted_by.strip():
-            raise ValueError("ACL grantor is required")
-        normalized = set(grants)
-        if any(
-            kind not in {"user", "role", "project"}
-            or permission not in {"read", "manage"}
-            or not identifier.strip()
-            for kind, identifier, permission in normalized
-        ):
-            raise ValueError("invalid connector ACL grant")
-        conn = await self._connect()
-        async with conn:
-            async with conn.transaction():
-                cur = await conn.execute(
-                    "SELECT 1 FROM knowledge_documents WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL ORDER BY version DESC LIMIT 1",
-                    (tenant_id, document_id),
-                )
-                if await cur.fetchone() is None:
-                    raise ValueError("document not found")
-                # Enforce ACL before replacing grants. An empty grant set means
-                # source-side sharing is private to the mapped owner only.
-                await conn.execute(
-                    "UPDATE knowledge_documents SET acl_enforced=true WHERE tenant_id=%s AND document_id=%s AND deleted_at IS NULL",
-                    (tenant_id, document_id),
-                )
-                await conn.execute(
-                    "DELETE FROM knowledge_document_acl WHERE tenant_id=%s AND document_id=%s",
-                    (tenant_id, document_id),
-                )
-                for kind, identifier, permission in sorted(normalized):
-                    await conn.execute(
-                        """INSERT INTO knowledge_document_acl
-                        (tenant_id,document_id,principal_type,principal_id,permission,granted_by)
-                        VALUES(%s,%s,%s,%s,%s,%s)""",
-                        (tenant_id, document_id, kind, identifier, permission, granted_by),
-                    )
-
     async def list_chunks(self, tenant_id: str, document_id: str, version: int) -> list[DocumentChunk]:
         conn = await self._connect()
         async with conn:
             cur = await conn.execute("SELECT * FROM knowledge_chunks WHERE tenant_id=%s AND document_id=%s AND document_version=%s ORDER BY ordinal", (tenant_id, document_id, version))
             rows = await cur.fetchall()
         return [DocumentChunk(tenant_id=r["tenant_id"], document_id=str(r["document_id"]), document_version=r["document_version"], ordinal=r["ordinal"], text=r["body"], content_hash=r["content_hash"], start_offset=r["start_offset"], end_offset=r["end_offset"], page_number=r["page_number"], chunk_id=str(r["chunk_id"]), metadata=dict(r["metadata"] or {})) for r in rows]
-    
+
     async def list_visible_chunks(
         self, principal: KnowledgePrincipal, document_id: str, version: int,
     ) -> list[DocumentChunk]:

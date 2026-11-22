@@ -6,7 +6,7 @@ idempotency key; this adapter provides ownership fencing and durable retries.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from uuid import UUID, uuid4
 

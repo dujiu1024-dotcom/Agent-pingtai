@@ -40,4 +40,7 @@ __all__ = [
     "QuotaReservationGroupService", "AdmissionRequest",
     "TenantFairQuotaAdmissionController", "QuotaConcurrencyLimiter",
     "QuotaReservationMaintenanceWorker",
+    "InMemoryQuotaPolicyRepository", "PostgresQuotaPolicyRepository",
+    "QuotaPolicy", "QuotaPolicyAudit", "QuotaPolicyContext",
+    "QuotaPolicyService", "ResolvedQuotaPolicy",
 ]

@@ -639,29 +639,6 @@ class PostgresSessionRepository:
         )
 
 
-    async def set_asset_status_if_not_deleted(
-        self, tenant_id: str, asset_id: str, status: AssetStatus
-    ) -> bool:
-        if tenant_id != self.tenant_id:
-            raise PermissionError("asset tenant mismatch")
-        connection = await self._connection_factory()
-        async with connection:
-            cursor = await connection.execute(
-                """UPDATE platform_file_assets SET status=%s
-                   WHERE tenant_id=%s AND asset_id=%s AND status <> 'deleted'
-                   RETURNING current_version""",
-                (status.value, self.tenant_id, _uuid(asset_id)),
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                return False
-            await connection.execute(
-                """UPDATE platform_file_asset_versions SET status=%s
-                   WHERE tenant_id=%s AND asset_id=%s AND version=%s""",
-                (status.value, self.tenant_id, _uuid(asset_id), row["current_version"]),
-            )
-            return True
-
     @staticmethod
     def _to_asset_version(row: Any) -> FileAssetVersion:
         return FileAssetVersion(

@@ -8,6 +8,8 @@ from agent_platform.api.contract import (
     PublicApiContractASGIMiddleware,
     api_rate_limit_key,
     api_version_lifecycle_headers,
+    decode_secure_cursor,
+    encode_secure_cursor,
     error_for_http_status,
     idempotency_scope,
     rate_limit_headers,
@@ -15,6 +17,7 @@ from agent_platform.api.contract import (
     validate_idempotency_key,
     validate_page,
 )
+from agent_platform.sdk.client import PlatformClient
 
 
 class PublicApiContractTests(unittest.TestCase):

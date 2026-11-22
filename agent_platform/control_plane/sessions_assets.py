@@ -509,21 +509,6 @@ class InMemorySessionRepository:
             versions[-1] = replace(versions[-1], status=status)
         return True
 
-    async def set_asset_status_if_not_deleted(
-        self, tenant_id: str, asset_id: str, status: AssetStatus
-    ) -> bool:
-        key = (tenant_id, asset_id)
-        asset = self.assets.get(key)
-        if asset is None or asset.status is AssetStatus.DELETED:
-            return False
-        from dataclasses import replace
-        self.assets[key] = replace(asset, status=status)
-        versions = self.asset_versions.get(key, [])
-        if versions:
-            versions[-1] = replace(versions[-1], status=status)
-        return True
-
-
 class InMemoryObjectStorage:
     """Test adapter. Never use as production durable storage."""
     def __init__(self) -> None:

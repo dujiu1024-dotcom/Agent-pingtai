@@ -395,13 +395,6 @@ class RuntimeAdapterContractTests(unittest.IsolatedAsyncioTestCase):
 
 
     def test_media_reference_rejects_header_injection_and_unsafe_identifiers(self):
-        bad_args = [
-            ("asset\nX-Injected: yes", "image/png"),
-            ("asset-1", "image/png\r\nX-Injected: yes"),
-            ("asset-1", "image/png"),  # filename 注入在测试里单独验证
-            ("asset-1", "image/png"),  # .. 路径遍历
-            ("asset with space", "image/png"),
-        ]
         # 构造调用必须在 assertRaises 上下文里，__post_init__ 会抛 ValueError
         with self.assertRaises(ValueError):
             MediaInput("image", "asset\nX-Injected: yes", "image/png", 1, "a" * 64)

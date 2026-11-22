@@ -1828,26 +1828,3 @@ class PostgresTenantBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 
-    async def test_postgres_session_repository_lists_only_owner_sessions_and_assets(self):
-        repository = PostgresSessionRepository(
-            tenant_id=self.tenant_id, connection_factory=self.connect,
-        )
-        service = SessionAssetService(repository, InMemoryObjectStorage())
-        own = await service.create_session(
-            tenant_id=self.tenant_id, owner_id="owner-a", title="Owned session",
-        )
-        await service.create_session(
-            tenant_id=self.tenant_id, owner_id="owner-b", title="Other session",
-        )
-        asset = await service.upload_asset(
-            tenant_id=self.tenant_id, owner_id="owner-a", filename="notes.txt",
-            media_type="text/plain", content=b"notes", session_id=own.session_id,
-        )
-        sessions = await repository.list_sessions(self.tenant_id, "owner-a")
-        assets = await repository.list_assets(self.tenant_id, "owner-a")
-        self.assertEqual([row.session_id for row in sessions], [own.session_id])
-        self.assertEqual([row.asset_id for row in assets], [asset.asset_id])
-
-
-if __name__ == "__main__":
-    unittest.main()

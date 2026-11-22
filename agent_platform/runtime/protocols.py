@@ -205,48 +205,6 @@ def ensure_runtime_adapter_compatible(
 
 
 @dataclass(frozen=True)
-class RuntimeAdapterDescriptor:
-    """Versioned, inspectable declaration for a runtime adapter implementation."""
-
-    adapter_id: str
-    adapter_version: str
-    contract_version: str
-    capabilities: HarnessCapabilities
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.adapter_id, str) or not re.fullmatch(
-            r"[a-z][a-z0-9_.-]{1,127}", self.adapter_id
-        ):
-            raise ValueError("adapter_id must be a stable lowercase identifier")
-        _parse_version(self.adapter_version, field_name="adapter_version")
-        _parse_version(self.contract_version, field_name="contract_version")
-        if not isinstance(self.capabilities, HarnessCapabilities):
-            raise TypeError("capabilities must be HarnessCapabilities")
-
-
-class RuntimeAdapterCompatibilityError(RuntimeError):
-    """Raised when an adapter cannot satisfy the platform Runtime contract."""
-
-
-def ensure_runtime_adapter_compatible(
-    descriptor: RuntimeAdapterDescriptor,
-    *,
-    required_contract_version: str = RUNTIME_ADAPTER_CONTRACT_VERSION,
-) -> None:
-    """Fail closed for unsupported contract majors or older contract revisions.
-
-    A newer minor/patch revision within the same major is backward-compatible.
-    Adapter package versions are informational and do not determine contract support.
-    """
-    required = _parse_version(required_contract_version, field_name="required_contract_version")
-    provided = _parse_version(descriptor.contract_version, field_name="contract_version")
-    if provided[0] != required[0] or provided < required:
-        raise RuntimeAdapterCompatibilityError(
-            f"adapter {descriptor.adapter_id} implements contract "
-            f"{descriptor.contract_version}; platform requires {required_contract_version}"
-        )
-
-
 class UnsupportedHarnessCapability(RuntimeError):
     """Raised when a request requires a feature not declared by its adapter."""
 

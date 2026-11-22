@@ -12,4 +12,4 @@ from agent_platform.knowledge.embedding import EmbeddingProfile, VersionedEmbedd
 from agent_platform.knowledge.retrieval import RetrievalFilters, RetrievalStrategy
 from agent_platform.knowledge.service import KnowledgeService, QueryRewriter
 
-__all__ = ["Document", "DocumentChunk", "KnowledgeCollection", "KnowledgeIndex", "KnowledgeScope", "RetrievalHit", "KnowledgeService", "QueryRewriter", "EmbeddingProfile", "VersionedEmbedder"]
+__all__ = ["Document", "DocumentChunk", "KnowledgeCollection", "KnowledgeIndex", "KnowledgeScope", "RetrievalHit", "KnowledgeService", "QueryRewriter", "EmbeddingProfile", "VersionedEmbedder", "RetrievalFilters", "RetrievalStrategy"]

@@ -9,7 +9,6 @@ from typing import Any, Callable
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from agent_platform.identity.models import Principal
-from agent_platform.observability.prompts import tenant_prompt_key
 
 
 def _principal(request: Request) -> Principal:
@@ -86,7 +85,7 @@ def create_prompt_registry_router(
 
     @router.get("/")
     async def list_prompts(request: Request, limit: int = Query(default=50, ge=1, le=200)):
-        actor = _principal(request)
+        _principal(request)
         list_fn = getattr(registry, "list_prompts", None)
         if not callable(list_fn):
             raise HTTPException(501, "prompt listing is not supported by this registry")

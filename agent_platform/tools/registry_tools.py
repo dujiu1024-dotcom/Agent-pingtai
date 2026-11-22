@@ -12,7 +12,7 @@ import json
 import os
 from collections.abc import Sequence
 from typing import Any, Mapping
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from agent_platform.approval.policy import RiskLevel
 from agent_platform.tools.gateway import ToolDefinition
@@ -256,7 +256,7 @@ async def _dispatch_task_handler(arguments: Mapping[str, Any], context: Any = No
     async with conn:
         # 1. 读目标 agent 定义
         cur = await conn.execute(
-            """SELECT a.active_version, v.definition, 
+            """SELECT a.active_version, v.definition,
                       v.definition->>'model_template_id' AS template_id
                FROM platform_registry_active a
                JOIN platform_registry_versions v
@@ -556,8 +556,8 @@ def _tenant_roles_allowed(ctx, args):
 # 路径：<LEDGER_ROOT>/<tenant_id>/ledger.json
 # ──────────────────────────────────────────────────────────────
 
-from datetime import datetime, timezone
-from decimal import Decimal
+from datetime import datetime, timezone  # noqa: E402
+from decimal import Decimal  # noqa: E402
 
 LEDGER_ROOT = "/Users/longyi/FDE工程/finance"
 

@@ -6,8 +6,11 @@ from typing import Any, Awaitable, Callable
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from agent_platform.knowledge.asset_lineage import (
-    AssetKind, KnowledgeAsset, KnowledgeAssetRepository,
-    KnowledgeLineageEdge, LineageRelation,
+    AssetKind,
+    KnowledgeAsset,
+    KnowledgeAssetRepository,
+    KnowledgeLineageEdge,
+    LineageRelation,
 )
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 

@@ -14,9 +14,6 @@ from agent_platform.api.batch import create_batch_router
 from agent_platform.api.blackboard import create_blackboard_router
 from agent_platform.api.bootstrap import create_bootstrap_router
 from agent_platform.api.connectors import create_connectors_router
-from agent_platform.business_automation import (
-    WorkflowDefinitionRepository, create_business_automation_router,
-)
 from agent_platform.api.contract import (
     API_V1_PREFIX,
     ApiV1CompatibilityMiddleware,
@@ -27,10 +24,6 @@ from agent_platform.api.evaluation_rollout import create_evaluation_rollout_rout
 from agent_platform.api.extension_publishers import create_extension_publisher_router
 from agent_platform.api.graph import create_graph_router
 from agent_platform.api.graph_extraction import create_graph_extraction_router
-from agent_platform.graph.knowledge_extraction import (
-    KnowledgeGraphExtractionService,
-    build_extractor_from_env,
-)
 from agent_platform.api.health import create_health_router
 from agent_platform.api.identity import create_identity_router
 from agent_platform.api.identity_context import IdentityContextResolver
@@ -54,7 +47,15 @@ from agent_platform.api.value_management import create_value_management_router
 from agent_platform.api.webhook_deliveries import create_webhook_delivery_admin_router
 from agent_platform.api.webhooks import create_webhook_admin_router
 from agent_platform.api.workbench import create_workbench_router
+from agent_platform.business_automation import (
+    WorkflowDefinitionRepository,
+    create_business_automation_router,
+)
 from agent_platform.events.admin import WebhookSubscriptionService
+from agent_platform.graph.knowledge_extraction import (
+    KnowledgeGraphExtractionService,
+    build_extractor_from_env,
+)
 from agent_platform.identity.http import (
     IdentityASGIMiddleware,
     RedisSlidingWindowRateLimiter,

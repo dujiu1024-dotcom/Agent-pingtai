@@ -493,6 +493,7 @@ async def _fallback_db_metrics() -> list[dict[str, Any]]:
     """
     import psycopg
     from psycopg.rows import dict_row
+
     from agent_platform.production_config import load_production_settings
 
     settings = load_production_settings()

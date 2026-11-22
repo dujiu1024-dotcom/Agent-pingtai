@@ -7,8 +7,11 @@ from typing import Any, Awaitable, Callable
 from fastapi import APIRouter, HTTPException, Request
 
 from agent_platform.knowledge.asset_governance import (
-    FreshnessPolicy, KnowledgeAssetGovernanceService, QualityAssessment,
-    QualityDimension, SourcePermission,
+    FreshnessPolicy,
+    KnowledgeAssetGovernanceService,
+    QualityAssessment,
+    QualityDimension,
+    SourcePermission,
 )
 from agent_platform.knowledge.contracts import KnowledgePrincipal
 

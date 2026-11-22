@@ -69,7 +69,7 @@ def create_registry_router(
                 conn = await _cf()
                 try:
                     cur = await conn.execute(
-                        f"""SELECT a.item_id AS agent_id, v.definition->%s AS refs
+                        """SELECT a.item_id AS agent_id, v.definition->%s AS refs
                            FROM platform_registry_active a
                            JOIN platform_registry_versions v ON v.tenant_id=a.tenant_id
                              AND v.kind=a.kind AND v.item_id=a.item_id AND v.version=a.active_version

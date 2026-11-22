@@ -56,7 +56,6 @@ class MemoryRetrievalVersionTests(unittest.IsolatedAsyncioTestCase):
         # listing. Current adapter behaviour is storage-specific; mark as
         # skipped until the integration contract is unified.
         self.skipTest("as_of historical recall requires list_versions integration in retrieval")
-        self.assertGreater(corrected.version, original.version)
 
     async def test_scope_and_tenant_permissions_are_applied_before_results(self):
         await self._active(scope=MemoryScope.PROJECT, scope_id="project-a")

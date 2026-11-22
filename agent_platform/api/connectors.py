@@ -8,8 +8,8 @@ from fastapi import APIRouter, HTTPException, Request
 from agent_platform.connectors.providers import PROVIDER_LABELS
 from agent_platform.control_plane.data_connectors import (
     ConnectorError,
-    DataConnectorService,
     DataConnection,
+    DataConnectorService,
 )
 from agent_platform.identity.models import Principal
 
