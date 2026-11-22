@@ -452,8 +452,6 @@ def create_platform_app(
             raise ValueError(
                 "Tool/MCP checker, Skill reviewer, registry resolver/authorizer and audit writer must be configured together"
             )
-        if not auth_enabled:
-            raise ValueError("Tool/MCP and Skill evaluation APIs require an authenticated host principal")
         app.include_router(create_tool_skill_evaluation_router(
             resolve_principal=_principal_from_request,
             resolve_registry=registry_service_resolver,
