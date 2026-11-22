@@ -103,9 +103,9 @@ class LangGraphWorkflowCompiler:
             field = branch["field"]
             routes = dict(branch["routes"])
             default = branch.get("default")
-            def route(state: Mapping[str, Any], *, key: str = field, fallback: Any = default) -> Any:
+            def route(state: Mapping[str, Any], *, key: str = field, fallback: Any = default, route_map: Mapping[str, Any] = routes) -> Any:
                 value = state.get(key)
-                return value if value in routes else fallback
+                return value if value in route_map else fallback
             graph.add_conditional_edges(
                 source, route,
                 {key: END if target == "__end__" else target for key, target in routes.items()},
@@ -213,7 +213,9 @@ class LangGraphWorkflowCompiler:
             if not isinstance(routes, Mapping) or not routes:
                 diagnostics.append(WorkflowDiagnostic("branch.routes", "routes must be a non-empty object", path + ".routes"))
                 continue
-            targets = list(routes.values()) + ([branch["default"]] if branch.get("default") is not None else [])
+            if branch.get("default") is not None and branch["default"] not in routes:
+                diagnostics.append(WorkflowDiagnostic("branch.default", "default must name a route key", path + ".default"))
+            targets = list(routes.values())
             for target in targets:
                 if target not in ids | {"__end__"}:
                     diagnostics.append(WorkflowDiagnostic("branch.target", "branch target is unknown", path + ".routes"))
