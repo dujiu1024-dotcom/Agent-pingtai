@@ -319,10 +319,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   )
 }
 
-function useRouteParamRunId(): string {
-  return useParams<{ runId?: string }>().runId ?? ''
-}
-
 function RouteGuard({
   route,
   authEnabled,
@@ -334,6 +330,7 @@ function RouteGuard({
   capabilities: string[]
   version: string
 }) {
+  const runId = useParams<{ runId?: string }>().runId ?? ''
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -369,7 +366,7 @@ function RouteGuard({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
-  const collaborationPage = resolveCollaborationPage(route.path, useRouteParamRunId())
+  const collaborationPage = resolveCollaborationPage(route.path, runId)
   if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />
   if (route.path === '/operations/agents/:agentId') return <AgentRuntimeDetail />
