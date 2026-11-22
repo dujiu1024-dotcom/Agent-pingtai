@@ -1,16 +1,1 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-
-import App from '@/App'
-import AppProviders from '@/providers/AppProviders'
-import '@/components/design-system.css'
-import '@/theme.css'
-import '@/styles.css'
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <AppProviders>
-      <App />
-    </AppProviders>
-  </React.StrictMode>,
-)
+import React from 'react'\nimport ReactDOM from 'react-dom/client'\n\nimport App from '@/App'\nimport AppProviders from '@/providers/AppProviders'\nimport '@/components/design-system.css'\nimport '@/theme.css'\nimport '@/styles.css'\nimport '@/responsive-layout.css'\n\nReactDOM.createRoot(document.getElementById('root')!).render(\n  <React.StrictMode>\n    <AppProviders>\n      <App />\n    </AppProviders>\n  </React.StrictMode>,\n)\n
