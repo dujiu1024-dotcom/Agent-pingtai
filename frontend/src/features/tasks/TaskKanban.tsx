@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { ReactNode } from 'react'
+import { reorderKanbanTaskIds } from './task-kanban-model'
 
 type KanbanTask = { task_id: string; status: string }
 type Props<T extends KanbanTask> = {
@@ -72,16 +73,8 @@ export function TaskKanban<T extends KanbanTask>({
   }
 
   const reorderTasks = (status: string, sourceId: string, targetId: string) => {
-    if (sourceId === targetId) return
-    const inColumn = orderedTasks.filter((task) => task.status === status)
-    const ids = inColumn.map((task) => task.task_id)
-    const from = ids.indexOf(sourceId)
-    const to = ids.indexOf(targetId)
-    if (from < 0 || to < 0) return
-    ids.splice(from, 1)
-    ids.splice(to, 0, sourceId)
-    const otherIds = orderedTasks.filter((task) => task.status !== status).map((task) => task.task_id)
-    updateParam('kanban_order', [...otherIds, ...ids])
+    const nextOrder = reorderKanbanTaskIds(orderedTasks, status, sourceId, targetId)
+    if (nextOrder) updateParam('kanban_order', nextOrder)
   }
 
   const toggleColumn = (status: string, visible: boolean) => {
