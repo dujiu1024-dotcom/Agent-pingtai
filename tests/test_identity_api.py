@@ -1,5 +1,6 @@
 """FastAPI identity route integration tests."""
 import unittest
+from unittest.mock import AsyncMock, patch
 from datetime import datetime, timezone
 
 from agent_platform.api.identity import create_identity_router
@@ -38,6 +39,51 @@ class FakeIdentity:
 
 
 class IdentityApiTests(unittest.TestCase):
+    def test_initialize_creates_first_tenant_when_connection_factory_is_configured(self):
+        try:
+            from fastapi import FastAPI
+            from starlette.testclient import TestClient
+        except ImportError:
+            self.skipTest("FastAPI and Starlette test client are optional platform dependencies")
+
+        class FakeCursor:
+            async def fetchone(self):
+                return {"total": 0}
+
+        class FakeConnection:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+            async def execute(self, query, params=None):
+                return FakeCursor()
+
+            async def close(self):
+                return None
+
+        identity = FakeIdentity()
+        app = FastAPI()
+        app.add_middleware(IdentityASGIMiddleware, identity=identity)
+        app.include_router(create_identity_router(
+            identity=identity,
+            connection_factory=lambda: FakeConnection(),
+        ))
+        with patch("agent_platform.api.identity.create_tenant_with_owner", new=AsyncMock(return_value="owner-id")) as create_owner:
+            with TestClient(app, base_url="https://testserver") as client:
+                response = client.post("/auth/initialize", json={
+                    "tenant_id": "tenant-new",
+                    "tenant_name": "New Tenant",
+                    "email": "owner@example.com",
+                    "display_name": "Tenant Owner",
+                    "password": "a-secure-password-123",
+                })
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(response.json()["initialized"], True)
+            self.assertEqual(response.json()["tenant_id"], "tenant-new")
+            create_owner.assert_awaited_once()
+
     def test_login_sets_secure_cookies_without_exposing_session_token(self):
         try:
             from fastapi import FastAPI
