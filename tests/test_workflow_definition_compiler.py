@@ -114,8 +114,16 @@ class WorkflowCompilerTests(unittest.TestCase):
                 {"id": "e2", "source": "agent", "target": "end", "source_port": "main", "target_port": "main"},
             ],
         }
+        designer_spec = WorkflowNodeType(
+            node_type="agent", version=1, factory=node_factory,
+            config_schema={"type": "object"}, input_schema={"type": "object"},
+            output_schema={"type": "object"},
+            ports={"inputs": ["main"], "outputs": ["main"]},
+            permissions=("agent.execute",), risk="medium",
+            error_retry={"max_attempts": 2},
+        )
         compiler = LangGraphWorkflowCompiler(
-            node_registry=WorkflowNodeRegistry([self.spec]),
+            node_registry=WorkflowNodeRegistry([designer_spec]),
             graph_factory=lambda definition, compiled: {"entries": definition["entry_points"], "nodes": tuple(compiled)},
         )
         graph, metadata = compiler.compile(designer)
