@@ -28,7 +28,6 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { OrganizationAccessPage } from '@/components/OrganizationAccessPage'
 import { PromptRegistryPage } from '@/features/admin/PromptRegistryPage'
-import { Dashboard } from '@/features/dashboard/Dashboard'
 import { OperationsDashboard } from '@/components'
 import { HomeWorkspace } from '@/features/home/HomeWorkspace'
 import { OfficeWorkspace } from '@/components/OfficeWorkspace'
