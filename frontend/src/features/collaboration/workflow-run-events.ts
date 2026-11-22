@@ -75,7 +75,8 @@ export function runtimeEdgesFromEvents(events: RuntimeEventRecord[]): RuntimeEdg
   const edges = new Map<string, RuntimeEdgeRecord>()
   for (const event of events) {
     const payload = record(event.payload ?? event.data ?? event.summary)
-    const nodeId = typeof payload.node_id === 'string' ? payload.node_id : typeof event.node_id === 'string' ? event.node_id : ''
+    const candidateNodeId = payload.node_id ?? payload.nodeId ?? event.node_id
+    const nodeId = typeof candidateNodeId === 'string' ? candidateNodeId : ''
     if (!isNodeRuntimeEvent(String(event.event_type ?? event.type ?? ''), nodeId, payload)) continue
     const parent = [payload.parent_node_id, payload.parentNodeId, payload.source_node_id].find(value => typeof value === 'string' && value.trim())
     const next = [payload.next_node_id, payload.nextNodeId, payload.target_node_id].find(value => typeof value === 'string' && value.trim())
