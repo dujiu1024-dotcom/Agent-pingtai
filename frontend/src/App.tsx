@@ -49,6 +49,7 @@ import {
   TaskDetailPage,
   RunTracePage,
 } from '@/features/tasks/TaskCommandCenter'
+import { TaskRunTimeline } from '@/features/tasks/TaskRunTimeline'
 import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
 import { AgentDefinitionPage } from '@/features/agents/AgentDefinitionPage'
 import { WorkflowDesignerPage } from '@/features/workflows/WorkflowDesignerPage'
@@ -381,6 +382,7 @@ function RouteGuard({
     )
   if (route.path === '/notifications') return <NotificationsPage />
   if (route.path === '/workspace/tasks') return <TaskCommandCenter />
+  if (route.path === '/operations/tasks/timeline') return <TaskRunTimeline />
   const collaborationPage = resolveCollaborationPage(route.path, runId)
   if (collaborationPage) return collaborationPage
   if (route.path === '/operations/agents') return <AgentRuntimeList />

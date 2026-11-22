@@ -192,8 +192,8 @@ function Card({
 export function TaskCommandCenter() {
   const [sp, setSp] = useSearchParams(),
     // 默认视图改为列表，支持 URL 中已有的 view 参数
-    [view, setView] = useState<'kanban' | 'list' | 'timeline'>(
-      (sp.get('view') as 'kanban' | 'list' | 'timeline') ?? 'list',
+    [view, setView] = useState<'kanban' | 'list'>(
+      sp.get('view') === 'kanban' ? 'kanban' : 'list',
     )
   const visibleColumns = normalizeTaskListColumns(sp.get('columns'))
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([])
@@ -366,7 +366,12 @@ export function TaskCommandCenter() {
           <h1>任务指挥中心</h1>
           <p>跟踪任务生命周期、负责人、阻塞和交付。</p>
         </div>
-        <small>自动刷新 · 15s</small>
+        <div className="task-heading-actions">
+          <small>自动刷新 · 15s</small>
+          <Link className="button-secondary" to="/operations/tasks/timeline">
+            Run 事件时间线
+          </Link>
+        </div>
       </div>
       <div className="task-toolbar">
         <input
@@ -462,7 +467,7 @@ export function TaskCommandCenter() {
           <option value="asc">升序</option>
         </select>
         <div className="task-view-switch">
-          {(['kanban', 'list', 'timeline'] as const).map((v) => (
+          {(['kanban', 'list'] as const).map((v) => (
             <button
               className={view === v ? 'selected' : ''}
               key={v}
@@ -475,9 +480,12 @@ export function TaskCommandCenter() {
                 setSp(n)
               }}
             >
-              {v === 'kanban' ? '看板' : v === 'list' ? '列表' : '时间线'}
+              {v === 'kanban' ? '看板' : '列表'}
             </button>
           ))}
+          <Link className="button-secondary" to="/operations/tasks/timeline">
+            时间线
+          </Link>
         </div>
         {view === 'list' && (
           <details className="task-column-config">
@@ -531,7 +539,7 @@ export function TaskCommandCenter() {
             <Card t={task} agentNameOf={agentNameOf} />
           )}
         />
-      ) : view === 'list' ? (
+      ) : (
         <>
           <div className="task-bulk-toolbar" aria-label="批量任务操作">
             <span>已选 {selectedTasks.length} 项（当前页 {paged.length} 项）</span>
@@ -691,39 +699,7 @@ export function TaskCommandCenter() {
             </select>
           </div>
         </>
-      ) : (
-        <div className="task-timeline">
-          {filtered
-            .filter((t) => t.created_at)
-            .sort(
-              (a, b) => Date.parse(a.created_at!) - Date.parse(b.created_at!),
-            )
-            .map((t) => {
-              const agentId = resolveAgentId(t)
-              const agentLabel = agentNameOf(agentId) ?? agentId ?? '未分派'
-              return (
-                <article key={t.task_id}>
-                  <time>{dt(t.created_at)}</time>
-                  <div>
-                    <Link
-                      to={`/operations/tasks/${encodeURIComponent(t.task_id)}`}
-                    >
-                      {resolveTaskTitle(t)}
-                    </Link>
-                    <span>
-                      <span
-                        className={`status-badge ${statusBadgeClass(t.status)}`}
-                      >
-                        {valueLabel(t.status)}
-                      </span>{' '}
-                      · {agentLabel}
-                    </span>
-                  </div>
-                </article>
-              )
-            })}
-        </div>
-      )}
+      )
       <p className="task-data-note">
         状态列完全来自服务端枚举；无可信依赖与截止时间字段时不显示
         Gantt。写操作仅限任务详情页的取消与重试。
