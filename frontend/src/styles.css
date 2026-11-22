@@ -1521,3 +1521,13 @@ input:focus-visible {
 [data-v='home'] .main-content {
   --workspace-view-mode: home;
 }
+
+.primary-navigation .nav-item:hover {
+  background: #f4f6fc;
+  color: #2f6af0;
+}
+
+.primary-navigation .nav-item.active {
+  background: #edf2ff;
+  color: #2f6af0;
+}
