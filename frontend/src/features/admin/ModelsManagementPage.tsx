@@ -73,7 +73,19 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : '模型 Registry 请求失败'
 }
 
-export function ModelsManagementPage() {
+export function getRoutingEmptyState(authEnabled: boolean) {
+  return authEnabled
+    ? {
+        title: '路由策略 API 尚未提供',
+        description: '当前后端未提供可核验的 routing_policy 数据类型或策略查询、创建、版本与解释接口。本页保持只读空态，不展示虚构策略或写入配置。',
+      }
+    : {
+        title: '共享实例模式下暂无路由策略数据',
+        description: '当前 auth.enabled=false：平台按实例共享模式运行，不按用户或部门隔离路由策略。后端尚未提供 routing_policy 查询与管理 API，因此此处显示空态且不发起策略请求、不提供写入操作。',
+      }
+}
+
+export function ModelsManagementPage({ authEnabled = true }: { authEnabled?: boolean }) {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -188,9 +200,9 @@ export function ModelsManagementPage() {
           <p>路由策略入口保留，但当前后端尚未提供可核验的路由策略 Registry 类型或 CRUD API。</p>
         </div>
         <div className="ops-panel">
-          <h2>后端能力缺口</h2>
-          <p>当前 Registry 仅声明 model_provider、model_template 等资源类型；没有 routing_policy 类型，也没有 Provider/Template 与模型路由策略之间的可查询绑定接口。</p>
-          <p>因此本页不展示虚构策略、不允许提交配置。需要先补齐路由策略的数据模型、租户授权、版本与审计 API，再接入真实页面。</p>
+          <h2>{getRoutingEmptyState(authEnabled).title}</h2>
+          <p>{getRoutingEmptyState(authEnabled).description}</p>
+          <p>现有 Provider 与 Model Template 管理保持独立；路由策略不会被错误映射到无关 Registry 类型。</p>
         </div>
       </section>
     )

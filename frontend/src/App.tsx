@@ -31,6 +31,7 @@ import {
   TaskDetailPage,
   RunTracePage,
 } from '@/features/tasks/TaskCommandCenter'
+import { ModelsManagementPage } from '@/features/admin/ModelsManagementPage'
 import { loadBootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import type { BootstrapConfig } from '@/lib/bootstrap/bootstrap'
 import {
@@ -303,6 +304,7 @@ function RouteGuard({
   if (['/operations/evaluation/datasets', '/operations/evaluation/datasets/:datasetId', '/operations/evaluation/runs', '/operations/evaluation/runs/:evaluationRunId'].includes(route.path)) return <EvaluationWorkspace />
   if (route.path === '/operations/tasks/:taskId') return <TaskDetailPage />
   if (route.path === '/operations/runs/:runId') return <RunTracePage />
+  if (route.path.startsWith('/admin/models/routing')) return <ModelsManagementPage authEnabled={authEnabled} />
   return (
     <section className="page-content">
       <div className="page-heading">
