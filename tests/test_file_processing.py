@@ -269,12 +269,12 @@ class FileProcessingWorkerTests(unittest.IsolatedAsyncioTestCase):
         await queue.enqueue(tenant_id="tenant-a", asset_id="asset-a")
 
         first = await queue.claim(worker_id="worker-a")
-        self.assertIsNotNone(first)
+        assert first is not None
         self.assertEqual(first.attempts, 1)
         self.assertFalse(await queue.fail(first, error_code="temporary"))
 
         second = await queue.claim(worker_id="worker-b")
-        self.assertIsNotNone(second)
+        assert second is not None
         self.assertEqual(second.attempts, 2)
         self.assertTrue(await queue.fail(second, error_code="permanent"))
         self.assertIsNone(await queue.claim(worker_id="worker-a"))
