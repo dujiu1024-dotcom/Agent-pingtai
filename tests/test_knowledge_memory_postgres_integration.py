@@ -119,7 +119,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.knowledge.save_document(doc,[chunk])
         await self.knowledge.save_embeddings(
             tenant_id=self.tenant_id, chunks=[chunk],
-            vectors=[[1.0] + [0.0] * 1535],
+            vectors=[[1.0] + [0.0] * 1023],
         )
         # A document can have multiple immutable versions. Deletion must
         # tombstone every version and remove all derived chunks/vectors.
@@ -133,7 +133,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.knowledge.save_document(newer, [newer_chunk])
         await self.knowledge.save_embeddings(
             tenant_id=self.tenant_id, chunks=[newer_chunk],
-            vectors=[[0.0, 1.0] + [0.0] * 1534],
+            vectors=[[0.0, 1.0] + [0.0] * 1022],
         )
         async with await self.connect() as conn:
             await conn.execute(
@@ -273,7 +273,7 @@ class KnowledgeMemoryPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase):
             end_offset=34,
         )
         await self.knowledge.save_document(document, [chunk])
-        query_vector = [1.0] + [0.0] * 1535
+        query_vector = [1.0] + [0.0] * 1023
         await self.knowledge.save_embeddings(
             tenant_id=self.tenant_id, chunks=[chunk], vectors=[query_vector],
         )

@@ -19,7 +19,7 @@ def _jsonb(value: Any)->Any:
     except ImportError as exc:raise RuntimeError("Install psycopg[binary,pool]") from exc
     return Jsonb(value)
 class PostgresKnowledgeRepository:
-    def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=1536)->None:
+    def __init__(self,connection_factory: ConnectionFactory,*,embedding_model: str="default",embedding_model_version: str="1",embedding_dimensions: int=1024)->None:
         if not embedding_model.strip() or not embedding_model_version.strip():
             raise ValueError("embedding model and version are required")
         if isinstance(embedding_dimensions, bool) or not isinstance(embedding_dimensions, int) or embedding_dimensions < 1:

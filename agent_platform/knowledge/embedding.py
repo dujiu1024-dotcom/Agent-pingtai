@@ -15,7 +15,7 @@ class EmbeddingProvider(Protocol):
 class EmbeddingProfile:
     model_id: str
     version: str
-    dimensions: int = 1536
+    dimensions: int = 1024
     normalize: bool = False
 
     def __post_init__(self) -> None:

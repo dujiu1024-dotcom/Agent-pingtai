@@ -95,7 +95,7 @@ class KnowledgeCatalogPostgresIntegrationTests(unittest.IsolatedAsyncioTestCase)
         index = KnowledgeIndex(
             tenant_id=self.tenant_id, collection_id=project.collection_id,
             index_name="semantic-v1", embedding_model="embed-v1",
-            dimensions=1536, status=IndexStatus.PENDING,
+            dimensions=1024, status=IndexStatus.PENDING,
         )
         self.assertTrue(await self.catalog.create_index(index))
         self.assertFalse(await self.catalog.create_index(index))
