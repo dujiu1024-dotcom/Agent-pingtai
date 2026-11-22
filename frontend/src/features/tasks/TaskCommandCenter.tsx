@@ -12,6 +12,8 @@ import {
   resolveTaskDescription,
   resolveTaskTitle,
   sortEvents,
+  mergeRunEvents,
+  parseRunEventFrame,
   normalizeTaskListColumns,
   TASK_LIST_COLUMNS,
   unwrapList,
@@ -1125,12 +1127,12 @@ export function RunTracePage() {
             const { value, done } = await reader.read()
             if (done) break
             buffer += decoder.decode(value, { stream: true })
-            const frames = buffer.split(/\\r?\\n\\r?\\n/)
+            const frames = buffer.split(/\r?\n\r?\n/)
             buffer = frames.pop() ?? ''
             for (const frame of frames) {
               const parsed = parseRunEventFrame(frame, runId)
               if (!parsed) continue
-              const idLine = frame.split(/\\r?\\n/).find((line) => line.startsWith('id:'))
+              const idLine = frame.split(/\r?\n/).find((line) => line.startsWith('id:'))
               if (idLine) lastEventId = idLine.slice(3).trim()
               else if (parsed.event_id.includes(':')) lastEventId = parsed.event_id
               if (parsed.type === 'RECONNECT_REQUIRED') {
