@@ -12,9 +12,11 @@ from agent_platform.control_plane.registry import (
     RegistryService,
 )
 from agent_platform.identity.models import Principal
+from agent_platform.workflows.definition_compiler import LangGraphWorkflowCompiler, WorkflowDefinitionError
 
 PrincipalResolver = Callable[[Request], Awaitable[Principal]]
 ServiceResolver = Callable[[Principal], Awaitable[RegistryService]]
+WorkflowCompilerResolver = Callable[[Principal], Awaitable[LangGraphWorkflowCompiler]]
 Authorizer = Callable[[Principal, str, str, str], Awaitable[bool]]
 
 
@@ -22,6 +24,7 @@ def create_registry_router(
     *, resolve_principal: PrincipalResolver,
     resolve_service: ServiceResolver,
     authorize: Authorizer,
+    resolve_workflow_compiler: WorkflowCompilerResolver | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/platform/v1/registry", tags=["registry"])
 
@@ -114,6 +117,25 @@ def create_registry_router(
     @router.post("/{kind}/{item_id}/versions/{version}/publish")
     async def publish(kind: str, item_id: str, version: int, request: Request):
         principal, service = await context(request, kind, item_id, "publish")
+        if kind == "workflow":
+            if resolve_workflow_compiler is None:
+                raise HTTPException(503, "Workflow LangGraph compiler is not configured; publish is disabled")
+            draft = await service.repository.get(principal.tenant_id, kind, item_id, version)
+            if draft is None:
+                raise HTTPException(404, "workflow version not found")
+            if draft.status != "draft":
+                raise HTTPException(409, "only a draft Workflow version can be compiled and published")
+            compiler = await resolve_workflow_compiler(principal)
+            try:
+                compiled_graph, _artifact = compiler.compile(draft.definition)
+                del compiled_graph
+            except WorkflowDefinitionError as exc:
+                raise HTTPException(422, {
+                    "code": "workflow_compile_rejected",
+                    "workflow_id": item_id,
+                    "version": version,
+                    "diagnostics": [entry.to_dict() for entry in exc.diagnostics],
+                }) from exc
         try:
             return serialize(await service.publish(
                 tenant_id=principal.tenant_id, kind=kind, item_id=item_id, version=version,
