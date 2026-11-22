@@ -1,17 +1,18 @@
-import { fileURLToPath, URL } from 'node:url'
-
-import react from '@vitejs/plugin-react'
+import { mergeConfig } from 'vite'
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+import viteConfig from './vite.config'
+
+export default mergeConfig(
+  viteConfig,
+  defineConfig({
+    test: {
+      exclude: [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/e2e/**',
+        '**/.{idea,git,cache,output,temp}/**',
+      ],
     },
-  },
-  test: {
-    include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
-  },
-})
+  }),
+)

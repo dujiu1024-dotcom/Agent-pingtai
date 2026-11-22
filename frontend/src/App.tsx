@@ -32,13 +32,11 @@ import { InitializePage, LoginPage } from '@/components/AuthPages'
 import {
   EmptyState,
   ErrorState,
-  ForbiddenState,
   LoadingState,
   ModeRestrictedState,
   NotFoundState,
 } from '@/components/States'
 import { AuthProvider, useAuth } from '@/providers/AuthProvider'
-import { canAccess } from '@/auth/authorization'
 import { GenericListPage } from '@/components/GenericListPage'
 import { CrudListPage } from '@/components/crud/CrudListPage'
 import { RegistryCatalogPage } from '@/components/crud/RegistryCatalogPage'
@@ -69,7 +67,7 @@ import type { PageRoute } from '@/routes/route-config'
 import { useUiStore } from '@/stores/ui-store'
 
 // 路由级代码分块：每个 feature 页面独立 chunk
-const Dashboard = lazy(() => import('@/features/dashboard/Dashboard').then((m) => ({ default: m.Dashboard })))
+const Dashboard = lazy(() => import('@/components/OperationsDashboard').then((m) => ({ default: m.Dashboard })))
 const QuickStartPage = lazy(() => import('@/features/quickstart/QuickStartPage').then((m) => ({ default: m.QuickStartPage })))
 const StatusBoardPage = lazy(() => import('@/features/board/StatusBoardPage').then((m) => ({ default: m.StatusBoardPage })))
 const NotificationsPage = lazy(() => import('@/components/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
@@ -92,7 +90,7 @@ const BatchExecutionPage = lazy(() => import('@/features/batches/BatchExecutionP
 const RunReplayPage = lazy(() => import('@/features/replay/RunReplayPage').then((m) => ({ default: m.RunReplayPage })))
 const RagPlaygroundPage = lazy(() => import('@/features/rag/RagPlaygroundPage').then((m) => ({ default: m.RagPlaygroundPage })))
 const ExtensionPublishersPage = lazy(() => import('@/features/extensions/ExtensionPublishersPage').then((m) => ({ default: m.ExtensionPublishersPage })))
-const PromptLifecyclePage = lazy(() => import('@/features/prompts/PromptLifecyclePage').then((m) => ({ default: m.PromptLifecyclePage })))
+const PromptRegistryPage = lazy(() => import('@/features/prompts/PromptRegistryPage').then((m) => ({ default: m.PromptRegistryPage })))
 const AuditCenterPage = lazy(() => import('@/features/audit/AuditCenterPage').then((m) => ({ default: m.AuditCenterPage })))
 const AuditEventDetailPage = lazy(() => import('@/features/audit/AuditEventDetailPage').then((m) => ({ default: m.AuditEventDetailPage })))
 const ApprovalDetailPage = lazy(() => import('@/features/approvals/ApprovalDetailPage').then((m) => ({ default: m.ApprovalDetailPage })))
@@ -214,6 +212,7 @@ function PlatformRouter({ config }: { config: BootstrapConfig }) {
                   <PageView
                     route={route}
                     authEnabled={config.auth.enabled}
+                    capabilities={config.capabilities}
                   />
                 }
               />
@@ -308,7 +307,6 @@ function AppShell({ config }: { config: BootstrapConfig }) {
   const sections = getNavigationSections(
     config.auth.enabled,
     config.capabilities,
-    auth.session?.permissions,
   )
   const effectivePath = current?.parentPath ?? location.pathname
   const section = findNavigationSection(effectivePath)
@@ -520,11 +518,20 @@ function Lazy({ children }: { children: React.ReactNode }) {
 function PageView({
   route,
   authEnabled,
+  capabilities,
 }: {
   route: PageRoute
   authEnabled: boolean
+  capabilities: string[]
 }) {
-  const auth = useAuth()
+  if (route.capability && !capabilities.includes(route.capability)) {
+    return (
+      <ModeRestrictedState
+        title="当前实例未启用此能力"
+        description={`服务端启动配置未声明 ${route.capability}，此入口不会尝试调用对应 API。`}
+      />
+    )
+  }
   if (route.authOnly && !authEnabled) {
     return (
       <ModeRestrictedState
@@ -532,9 +539,6 @@ function PageView({
         description="当前服务端 auth.enabled=false，组织、成员与 RBAC 管理不适用。"
       />
     )
-  }
-  if (route.permission && !canAccess(authEnabled, auth.session, [route.permission])) {
-    return <ForbiddenState />
   }
   if (route.path === '/workspace/overview') return <Lazy><Dashboard /></Lazy>
   if (route.path === '/workspace/quickstart') return <Lazy><QuickStartPage /></Lazy>
@@ -582,7 +586,7 @@ function PageView({
   if (route.path === '/operations/replay') return <Lazy><RunReplayPage /></Lazy>
   if (route.path === '/operations/alerts') return <Lazy><AlertsPage /></Lazy>
   if (route.path === '/admin/extensions') return <Lazy><ExtensionPublishersPage /></Lazy>
-  if (route.path === '/admin/prompts') return <Lazy><PromptLifecyclePage /></Lazy>
+  if (route.path === '/admin/prompts' || route.path === '/admin/prompts/:promptId') return <Lazy><PromptRegistryPage /></Lazy>
   if (route.path === '/admin/audit') return <Lazy><AuditCenterPage /></Lazy>
   if (route.path === '/operations/memories') return <Lazy><MemoryGovernancePage /></Lazy>
   if (route.path === '/operations/evaluation/insights') return <Lazy><EvaluationInsightsPage /></Lazy>
