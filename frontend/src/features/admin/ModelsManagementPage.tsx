@@ -73,15 +73,16 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : '模型 Registry 请求失败'
 }
 
-export function getRoutingEmptyState(authEnabled: boolean) {
+export function getRoutingEmptyState(authEnabled: boolean, policyId?: string) {
+  const detail = policyId ? ` 请求的策略 ID：${policyId}。` : ''
   return authEnabled
     ? {
         title: '路由策略 API 尚未提供',
-        description: '当前后端未提供可核验的 routing_policy 数据类型或策略查询、创建、版本与解释接口。本页保持只读空态，不展示虚构策略或写入配置。',
+        description: `当前后端未提供可核验的 routing_policy 数据类型或策略查询、创建、版本与解释接口。本页保持只读空态，不展示虚构策略或写入配置。${detail}`,
       }
     : {
         title: '共享实例模式下暂无路由策略数据',
-        description: '当前 auth.enabled=false：平台按实例共享模式运行，不按用户或部门隔离路由策略。后端尚未提供 routing_policy 查询与管理 API，因此此处显示空态且不发起策略请求、不提供写入操作。',
+        description: `当前 auth.enabled=false：平台按实例共享模式运行，不按用户或部门隔离路由策略。后端尚未提供 routing_policy 查询与管理 API，因此此处显示空态且不发起策略请求、不提供写入操作。${detail}`,
       }
 }
 
@@ -89,7 +90,7 @@ export function ModelsManagementPage({ authEnabled = true }: { authEnabled?: boo
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { providerId, templateId } = useParams<{ providerId: string; templateId: string }>()
+  const { providerId, templateId, policyId } = useParams<{ providerId: string; templateId: string; policyId: string }>()
   const section = modelSections.find((item) => location.pathname.startsWith(item.path)) ?? modelSections[0]
   const kind: ModelKind | null = section.kind
   const itemId = kind === 'model_provider' ? providerId : kind === 'model_template' ? templateId : undefined
@@ -196,12 +197,13 @@ export function ModelsManagementPage({ authEnabled = true }: { authEnabled?: boo
       <section className="page-content">
         <div className="page-heading">
           <p className="eyebrow">PLATFORM MANAGEMENT / MODEL ROUTING</p>
-          <h1>模型路由策略</h1>
+          <h1>{policyId ? '模型路由策略详情' : '模型路由策略'}</h1>
           <p>路由策略入口保留，但当前后端尚未提供可核验的路由策略 Registry 类型或 CRUD API。</p>
         </div>
         <div className="ops-panel">
-          <h2>{getRoutingEmptyState(authEnabled).title}</h2>
-          <p>{getRoutingEmptyState(authEnabled).description}</p>
+          <h2>{getRoutingEmptyState(authEnabled, policyId).title}</h2>
+          <p>{getRoutingEmptyState(authEnabled, policyId).description}</p>
+          {policyId ? <p className="muted">策略 ID：<code>{policyId}</code> · 状态：后端未提供，无法核验</p> : null}
           <p>现有 Provider 与 Model Template 管理保持独立；路由策略不会被错误映射到无关 Registry 类型。</p>
         </div>
       </section>
@@ -255,7 +257,7 @@ export function ModelsManagementPage({ authEnabled = true }: { authEnabled?: boo
               <div role="listitem" key={item.item_id} className="ops-panel-heading">
                 <div>
                   <strong>{itemLabel(item)}</strong>
-                  <small>{item.item_id} · v{item.version} · {item.status}</small>
+                  <small>{item.item_id} · v{item.version} · {item.status}{kind === 'model_provider' ? ' · 健康状态：未提供探测 API' : ''}</small>
                 </div>
                 <Link className="text-link" to={`${section.path}/${encodeURIComponent(item.item_id)}`}>查看详情</Link>
               </div>
@@ -280,6 +282,7 @@ export function ModelsManagementPage({ authEnabled = true }: { authEnabled?: boo
                 <>
                   <p><strong>{itemLabel(activeQuery.data)}</strong></p>
                   <p className="muted">active v{activeQuery.data.version} · {activeQuery.data.status}</p>
+                  {kind === 'model_provider' ? <p className="muted">连接健康：未知（后端未提供 Provider 连接测试/健康探测 API；未发起外部请求）</p> : null}
                   <dl>
                     <dt>创建者</dt><dd>{activeQuery.data.created_by ?? '未提供'}</dd>
                     <dt>创建时间</dt><dd>{formatDate(activeQuery.data.created_at)}</dd>
