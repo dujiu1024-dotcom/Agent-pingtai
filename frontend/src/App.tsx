@@ -40,6 +40,7 @@ import {
 import { NotificationsPage } from '@/components/NotificationsPage'
 import { CostQualityCenter } from '@/features/quality-cost/CostQualityCenter'
 import { KnowledgeWorkbench } from '@/features/knowledge/KnowledgeWorkbench'
+import { ToolsRegistryPage } from '@/features/tools/ToolsRegistryPage'
 import {
   TaskCommandCenter,
   TaskDetailPage,
@@ -475,6 +476,7 @@ function PageView({
   )
     return <AgentCollaborationCenter />
   if (route.path === '/workspace/quality-cost') return <CostQualityCenter />
+  if (route.path === '/admin/tools' || route.path === '/admin/tools/:toolId') return <ToolsRegistryPage />
   if (route.path === '/workspace/office') return <OfficeWorkspace />
   if (
     route.path === '/operations/agents' ||
