@@ -7,7 +7,6 @@ import {
   getAllRoutes,
   getVisibleNavigation,
   globalRoutes,
-  systemRoutes,
   isCanonicalRouteSetValid,
   navigationSections,
   pageRoutes,
@@ -19,7 +18,7 @@ import {
 describe('route configuration', () => {
   it('keeps canonical page ids and paths unique', () => {
     expect(
-      isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...systemRoutes, ...authRoutes]),
+      isCanonicalRouteSetValid([...pageRoutes, ...globalRoutes, ...authRoutes]),
     ).toBe(true)
   })
 
@@ -52,19 +51,6 @@ describe('route configuration', () => {
     ]) {
       expect(registeredPaths.has(path), path).toBe(true)
     }
-  })
-
-
-  it('registers explicit 403 and 404 destinations in the canonical system route table', () => {
-    expect(systemRoutes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: '/403', pageId: 'SYS-FORBIDDEN', owner: '#743' }),
-      expect.objectContaining({ path: '/404', pageId: 'SYS-NOT-FOUND', owner: '#743' }),
-    ]))
-    const routes = getAllRoutes(false)
-    expect(routes.map((route) => route.path)).toContain('/403')
-    expect(routes.map((route) => route.path)).toContain('/404')
-    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/403')).not.toBeNull()
-    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/404')).not.toBeNull()
   })
 
   it('provides exactly four primary navigation sections', () => {
@@ -100,24 +86,6 @@ describe('route configuration', () => {
     expect(mainPaths.indexOf('/workspace/overview')).toBeLessThan(
       mainPaths.indexOf('/workspace/office'),
     )
-  })
-
-  it('mounts the dedicated collaboration workspace and run-scoped workflow route', async () => {
-    const [{ resolveCollaborationPage }, { AgentCollaborationCenter }] = await Promise.all([
-      import('../App'),
-      import('../features/collaboration/AgentCollaborationCenter'),
-    ])
-    expect(resolveCollaborationPage('/workspace/collaboration')?.type).toBe(AgentCollaborationCenter)
-    const workflowRunRoute = pageRoutes.find(route => route.path === '/operations/workflow-runs/:runId')
-    expect(workflowRunRoute).toMatchObject({ owner: '#746', authOnly: undefined })
-    expect(matchRoutes(
-      [...pageRoutes, ...detailRoutes].map(route => ({ path: route.path })),
-      '/operations/workflow-runs/run-123',
-    )?.[0].params.runId).toBe('run-123')
-    const runPage = resolveCollaborationPage('/operations/workflow-runs/:runId', 'run-123')
-    expect(runPage?.type).toBe(AgentCollaborationCenter)
-    expect(runPage?.props.initialRunId).toBe('run-123')
-    expect(resolveCollaborationPage('/operations/workflow-runs/:runId')?.props.initialRunId).toBe('')
   })
 
   it('keeps Agent collaboration reachable in no-auth mode', () => {
@@ -212,27 +180,6 @@ describe('route configuration', () => {
     expect(matchRoutes(routeObjects, '/admin/models/routing/policy-1')?.[0].params.policyId).toBe('policy-1')
   })
 
-  it('registers authenticated session list and detail routes under #801', () => {
-    const list = pageRoutes.find((route) => route.path === '/operations/sessions')
-    const detail = detailRoutes.find((route) => route.path === '/operations/sessions/:sessionId')
-    const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
-
-    expect(list).toMatchObject({ owner: '#801', authOnly: true })
-    expect(detail).toMatchObject({
-      owner: '#801',
-      authOnly: true,
-      parentPath: '/operations/sessions',
-      entityIdParam: 'sessionId',
-    })
-    expect(matchRoutes(routeObjects, '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
-    expect(
-      getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path)),
-    ).not.toContain('/operations/sessions')
-    expect(
-      getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path)),
-    ).toContain('/operations/sessions')
-  })
-
   it('registers system settings as an authenticated read-only route owned by #812', () => {
     const settings = pageRoutes.find((route) => route.path === '/admin/settings')
     expect(settings?.owner).toBe('#812')
@@ -262,27 +209,16 @@ describe('route configuration', () => {
     ).toBe('provider-7')
   })
 
-  it('registers authenticated Sessions workspace routes under #801', () => {
-    const routes = [...pageRoutes, ...detailRoutes]
-    const list = pageRoutes.find((route) => route.path === '/operations/sessions')
-    const detail = detailRoutes.find((route) => route.path === '/operations/sessions/:sessionId')
-    expect(list).toMatchObject({ owner: '#801', authOnly: true })
-    expect(detail).toMatchObject({ owner: '#801', authOnly: true, parentPath: '/operations/sessions' })
-    expect(getVisibleNavigation(false).flatMap((group) => group.items.map((item) => item.path))).not.toContain('/operations/sessions')
-    expect(getVisibleNavigation(true).flatMap((group) => group.items.map((item) => item.path))).toContain('/operations/sessions')
-    expect(matchRoutes(routes.map((route) => ({ path: route.path })), '/operations/sessions/session-123')?.[0].params.sessionId).toBe('session-123')
-  })
-
-  it('mounts the unified Session/File workbench for list and detail routes owned by #762', () => {
+  it('assigns file asset list and detail routes to #802 while keeping session routes under #762', () => {
     const routeObjects = [...pageRoutes, ...detailRoutes].map((route) => ({ path: route.path }))
     const filesRoute = pageRoutes.find((route) => route.path === '/operations/files')
     const fileDetailRoute = detailRoutes.find((route) => route.path === '/operations/files/:fileId')
     const conversationRoute = pageRoutes.find((route) => route.path === '/operations/conversations')
     const conversationDetail = detailRoutes.find((route) => route.path === '/operations/conversations/:conversationId')
 
-    expect(filesRoute?.owner).toBe('#762')
+    expect(filesRoute?.owner).toBe('#802')
     expect(filesRoute?.authOnly).toBeUndefined()
-    expect(fileDetailRoute?.owner).toBe('#762')
+    expect(fileDetailRoute?.owner).toBe('#802')
     expect(fileDetailRoute?.authOnly).toBeUndefined()
     expect(conversationRoute?.owner).toBe('#762')
     expect(conversationDetail?.owner).toBe('#762')

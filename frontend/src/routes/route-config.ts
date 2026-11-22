@@ -197,8 +197,8 @@ export const pageRoutes: PageRoute[] = [
     pageId: 'OPS-FILES',
     title: '文件与产物',
     section: '智能体运营',
-    description: '文件和运行产物入口。',
-    owner: '#762',
+    description: '文件资产、预览下载与运行产物关联入口。',
+    owner: '#802',
   },
   {
     path: '/admin/agents',
@@ -488,10 +488,10 @@ export const detailRoutes: PageRoute[] = [
     pageId: 'OPS-FILES',
     title: '文件与产物详情',
     section: '智能体运营',
-    description: 'File/Artifact 唯一详情路由。',
+    description: 'File/Artifact 元数据、预览、版本与下载详情。',
     parentPath: '/operations/files',
     entityIdParam: 'fileId',
-    owner: '#762',
+    owner: '#802',
   },
   {
     path: '/admin/audit/:eventId',

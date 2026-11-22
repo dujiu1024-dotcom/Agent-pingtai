@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, apiClient } from '@/lib/api'
-import { EmptyState, ErrorState, LoadingState } from '@/components/States'
+import { EmptyState, ErrorState, LoadingState, ModeRestrictedState } from '@/components/States'
 import './session-file-workbench.css'
 
 type SessionRecord = {
@@ -40,6 +40,9 @@ type FileAsset = {
   version: number
   created_at: string
   owner_id?: string | null
+  artifact_type?: string | null
+  task_id?: string | null
+  run_id?: string | null
 }
 type FileList = { items: FileAsset[] }
 type FileMetadata = FileAsset & { sha256: string }
@@ -102,13 +105,14 @@ async function downloadVersion(assetId: string, version: number, filename: strin
   }
 }
 
-export function SessionFileWorkbench({ view }: { view: 'sessions' | 'files' }) {
+export function SessionFileWorkbench({ view, authEnabled = true }: { view: 'sessions' | 'files'; authEnabled?: boolean }) {
   const { conversationId, fileId } = useParams()
   if (view === 'sessions') {
     return conversationId
       ? <SessionDetail sessionId={conversationId} />
       : <SessionList />
   }
+  if (!authEnabled) return <main className="page-content sf-page"><ModeRestrictedState title="文件资产仅在权限模式开放" description="当前服务端 auth.enabled=false。文件列表、预览和下载依赖身份与资源授权；免登录模式下不会请求文件 API。" /></main>
   return fileId ? <FileDetail assetId={fileId} /> : <FileList />
 }
 
@@ -258,7 +262,7 @@ function FileList() {
     <main className="page-content sf-page">
       <header className="sf-heading"><div><p className="eyebrow">OPERATIONS / FILES</p><h1>文件与产物</h1><p>展示当前身份经服务端授权可访问的文件元数据与版本。</p></div><span className="sf-count">{visible.length} / {files.length} 个文件</span></header>
       <div className="sf-toolbar"><label>搜索文件<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="文件名、资产 ID、会话或项目" /></label><button className="sf-secondary" type="button" onClick={() => void filesQuery.refetch()}>刷新</button></div>
-      {visible.length === 0 ? <EmptyState title="暂无文件或产物" description={files.length ? '没有符合筛选条件的文件。' : '服务端没有返回当前身份可访问的文件。'} /> : <div className="sf-table-wrap"><table className="sf-table"><thead><tr><th>文件名</th><th>类型</th><th>大小</th><th>来源会话</th><th>版本 / 状态</th><th>上传时间</th><th>操作</th></tr></thead><tbody>{visible.map((file) => <tr key={file.asset_id}><td><strong>{file.filename}</strong><small>{file.asset_id}</small></td><td>{file.media_type}</td><td>{byteLabel(file.size_bytes)}</td><td>{file.session_id ? <Link to={`/operations/conversations/${encodeURIComponent(file.session_id)}`}>{file.session_id}</Link> : file.project_id || '—'}</td><td>{file.status} · v{file.version}</td><td>{dateLabel(file.created_at)}</td><td><Link to={`/operations/files/${encodeURIComponent(file.asset_id)}`}>详情 / 下载</Link></td></tr>)}</tbody></table></div>}
+      {visible.length === 0 ? <EmptyState title="暂无文件或产物" description={files.length ? '没有符合筛选条件的文件。' : '服务端没有返回当前身份可访问的文件。'} /> : <div className="sf-table-wrap"><table className="sf-table"><thead><tr><th>文件名</th><th>类型</th><th>大小</th><th>来源会话</th><th>版本 / 状态</th><th>产物关联</th><th>上传时间</th><th>操作</th></tr></thead><tbody>{visible.map((file) => <tr key={file.asset_id}><td><strong>{file.filename}</strong><small>{file.asset_id}</small></td><td>{file.media_type}</td><td>{byteLabel(file.size_bytes)}</td><td>{file.session_id ? <Link to={`/operations/conversations/${encodeURIComponent(file.session_id)}`}>{file.session_id}</Link> : file.project_id || '—'}</td><td>{file.status} · v{file.version}</td><td>{file.artifact_type || '—'}{file.task_id && <> · <Link to={`/operations/tasks/${encodeURIComponent(file.task_id)}`}>Task</Link></>}{file.run_id && <> · <Link to={`/operations/runs/${encodeURIComponent(file.run_id)}`}>Run</Link></>}</td><td>{dateLabel(file.created_at)}</td><td><Link to={`/operations/files/${encodeURIComponent(file.asset_id)}`}>详情 / 下载</Link></td></tr>)}</tbody></table></div>}
       <p className="sf-footnote">仅显示服务端返回的前 100 条。服务端逐项执行 file、session、project 授权并记录访问审计。</p>
     </main>
   )
@@ -277,7 +281,32 @@ function FileDetail({ assetId }: { assetId: string }) {
   })
   const [downloadError, setDownloadError] = useState('')
   const [downloading, setDownloading] = useState<number | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState('')
   const metadata = metadataQuery.data
+  const previewType = metadata?.media_type?.toLowerCase() ?? ''
+  const previewable = previewType.startsWith('image/') || previewType.startsWith('video/') || previewType.startsWith('audio/') || previewType === 'application/pdf'
+  useEffect(() => {
+    let active = true
+    let objectUrl: string | null = null
+    setPreviewUrl(null)
+    setPreviewError('')
+    if (!metadata || !previewable) return () => { active = false }
+    void fetch(`/api${API}/files/${encodeURIComponent(assetId)}/versions/${metadata.version}`, {
+      credentials: 'same-origin', cache: 'no-store', headers: { Accept: metadata.media_type },
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(errorLabel(new ApiError('文件预览被拒绝', { status: response.status, code: 'file_preview_denied' })))
+      const blob = await response.blob()
+      if (active) {
+        objectUrl = URL.createObjectURL(blob)
+        setPreviewUrl(objectUrl)
+      }
+    }).catch((error: unknown) => { if (active) setPreviewError(errorLabel(error)) })
+    return () => {
+      active = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [assetId, metadata?.media_type, metadata?.version, previewable])
   const download = async (version: FileVersion) => {
     setDownloading(version.version)
     setDownloadError('')
@@ -291,7 +320,8 @@ function FileDetail({ assetId }: { assetId: string }) {
   return (
     <main className="page-content sf-page">
       <header className="sf-heading"><div><p className="eyebrow">FILE / ARTIFACT</p><h1>{metadata.filename}</h1><p>{metadata.asset_id} · {metadata.media_type} · {byteLabel(metadata.size_bytes)}</p></div><Link className="sf-secondary sf-link-button" to="/operations/files">返回文件列表</Link></header>
-      <section className="sf-panel sf-file-detail"><h2>资产元数据</h2><dl><dt>状态</dt><dd>{metadata.status}</dd><dt>当前版本</dt><dd>v{metadata.version}</dd><dt>SHA-256</dt><dd className="sf-digest">{metadata.sha256}</dd><dt>来源会话</dt><dd>{metadata.session_id ? <Link to={`/operations/conversations/${encodeURIComponent(metadata.session_id)}`}>{metadata.session_id}</Link> : '—'}</dd><dt>创建时间</dt><dd>{dateLabel(metadata.created_at)}</dd></dl></section>
+      <section className="sf-panel sf-file-detail"><h2>资产元数据</h2><dl><dt>状态</dt><dd>{metadata.status}</dd><dt>当前版本</dt><dd>v{metadata.version}</dd><dt>SHA-256</dt><dd className="sf-digest">{metadata.sha256}</dd><dt>来源会话</dt><dd>{metadata.session_id ? <Link to={`/operations/conversations/${encodeURIComponent(metadata.session_id)}`}>{metadata.session_id}</Link> : '—'}</dd><dt>产物类型</dt><dd>{metadata.artifact_type || '—'}</dd><dt>关联 Task</dt><dd>{metadata.task_id ? <Link to={`/operations/tasks/${encodeURIComponent(metadata.task_id)}`}>{metadata.task_id}</Link> : '—'}</dd><dt>关联 Run</dt><dd>{metadata.run_id ? <Link to={`/operations/runs/${encodeURIComponent(metadata.run_id)}`}>{metadata.run_id}</Link> : '—'}</dd><dt>创建时间</dt><dd>{dateLabel(metadata.created_at)}</dd></dl></section>
+      {previewable && <section className="sf-panel sf-file-preview"><h2>文件预览</h2>{previewError ? <p className="sf-inline-error" role="alert">{previewError}</p> : !previewUrl ? <p className="sf-muted">正在加载受保护的文件预览…</p> : previewType.startsWith('image/') ? <img src={previewUrl} alt={metadata.filename} /> : previewType.startsWith('video/') ? <video src={previewUrl} controls preload="metadata" /> : previewType.startsWith('audio/') ? <audio src={previewUrl} controls preload="metadata" /> : <iframe src={previewUrl} title={`PDF 预览：${metadata.filename}`} />}</section>}
       <section className="sf-panel"><h2>文件版本</h2>{downloadError && <p className="sf-inline-error" role="alert">{downloadError}</p>}<div className="sf-table-wrap"><table className="sf-table"><thead><tr><th>版本</th><th>文件名</th><th>类型</th><th>大小</th><th>SHA-256</th><th>创建时间</th><th>下载</th></tr></thead><tbody>{(versionsQuery.data?.items ?? []).map((version) => <tr key={version.version}><td>v{version.version}{version.version === versionsQuery.data?.current_version ? ' · 当前' : ''}</td><td>{version.filename}</td><td>{version.media_type}</td><td>{byteLabel(version.size_bytes)}</td><td className="sf-digest">{version.sha256}</td><td>{dateLabel(version.created_at)}</td><td><button className="sf-download" type="button" disabled={downloading !== null} onClick={() => void download(version)}>{downloading === version.version ? '下载中…' : '下载'}</button></td></tr>)}</tbody></table></div></section>
       <p className="sf-footnote">下载通过 same-origin credentials 请求受保护的版本端点；不使用预签名 URL、不缓存文件内容，服务端在每次下载时重新检查 file/session/project 权限并记录审计。</p>
     </main>
