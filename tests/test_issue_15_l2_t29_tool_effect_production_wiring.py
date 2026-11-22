@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from agent_platform.identity.models import Principal
-from agent_platform.production import _build_tool_effect_reconciliation_service
+from agent_platform.tools.production_reconciliation import build_tool_effect_reconciliation_service
 from agent_platform.security.audit import PostgresAuditWriter
 
 
@@ -26,7 +26,7 @@ class ToolEffectProductionWiringTests(unittest.IsolatedAsyncioTestCase):
         self.connection_factory = AsyncMock()
 
     def build_service(self):
-        return _build_tool_effect_reconciliation_service(
+        return build_tool_effect_reconciliation_service(
             principal=self.principal,
             identity_repository=self.identity_repository,
             authorize_run=self.authorize_run,
